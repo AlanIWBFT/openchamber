@@ -37,6 +37,7 @@ import {
     tryParseJsonOutput,
     coerceToText,
     capToolOutputText,
+    parseReadToolOutput,
 } from '../toolRenderers';
 import { JsonTreeViewer } from '@/components/ui/JsonTreeViewer';
 import { JsonSummaryView } from './JsonSummaryView';
@@ -101,7 +102,9 @@ import {
     toolFileDiffs,
 } from '@/lib/opencode/tools';
 import { parseWebSearchOutput, webSearchProviderOf } from '@/lib/opencode/websearch';
-import { createScriptToolProjection } from '@/lib/opencode/script';
+import { createScriptToolProjection, groupScriptTools, type ScriptToolEntry } from '@/lib/opencode/script';
+import { ExplorationDisclosure } from './ExplorationDisclosure';
+import { formatDirectoryDisplayPath, getReadToolDisplayType } from './toolRenderUtils';
 import { ApplyPatchFileButtons } from './ApplyPatchFileButtons';
 import { openApplyPatchFileInEditor } from './applyPatchEditorAction';
 import { WebSearchResults } from './WebSearchResults';
@@ -632,6 +635,10 @@ const getToolOutputText = (
     const capped = capToolOutputText(output);
     if (isShellTool(part.tool)) {
         return capped;
+    }
+
+    if (normalizeToolName(part.tool) === 'read') {
+        return parseReadToolOutput(capped).lines.map((line) => line.text).join('\n');
     }
 
     return formatEditOutput(capped, part.tool, metadata);
@@ -1447,6 +1454,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     const hasStringOutput = typeof rawOutput === 'string' && rawOutput.length > 0;
     const rawOutputString = typeof rawOutput === 'string' ? rawOutput : '';
     const isStreamingBash = isShellTool(part.tool) && state.status === 'running';
+    const isReadDirectory = isReadTool(part.tool) && getReadToolDisplayType(metadata, rawOutputString) === 'directory';
     const throttledOutputString = useStreamingTextThrottle({
         text: rawOutputString,
         isStreaming: isStreamingBash,
@@ -1472,7 +1480,8 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
         || part.tool === 'openchamber_notify'
         || isPatchTool(part.tool)
         || isEditTool(part.tool)
-        || isExecuteTool(part.tool);
+        || isExecuteTool(part.tool)
+        || isReadDirectory;
     const isExecute = isExecuteTool(part.tool);
     const executeCode = React.useMemo(() => (isExecute ? executeScript(input) : undefined), [input, isExecute]);
     const projectScriptTools = React.useMemo(
@@ -1480,6 +1489,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
         [part.id, part.sessionID, part.messageID],
     );
     const executeEntries = React.useMemo(() => (isExecute ? projectScriptTools(metadata) : []), [isExecute, metadata, projectScriptTools]);
+    const executeGroups = React.useMemo(() => groupScriptTools(part.id, executeEntries), [part.id, executeEntries]);
     const childExpansion = React.useMemo(() => ({ expanded: expandedScriptTools, toggle: onToggleScriptTool }), [expandedScriptTools, onToggleScriptTool]);
     const executeTruncation = React.useMemo(
         () => (isExecute ? executeOutputTruncation(metadata) : null),
@@ -1830,6 +1840,21 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
         || isExecCommandTool(part.tool)
         || Boolean(unifiedExecMetadata.execError);
 
+    const renderScriptEntry = (entry: ScriptToolEntry, index: number) => entry.kind === 'part' ? (
+        <li key={entry.part.id}>
+            <MemoToolPart part={entry.part} isExpanded={expandedScriptTools.has(entry.part.id)} onToggle={onToggleScriptTool}
+                nestedTools={isExecuteTool(entry.part.tool) ? childExpansion : undefined} isMobile={isMobile} onShowPopup={onShowPopup} />
+        </li>
+    ) : (
+        <li key={`${entry.call.tool}-${index}`} className="flex min-w-0 items-baseline gap-2">
+            <span className="typography-code flex-shrink-0" style={entry.call.status === 'error' ? TOOL_ERROR_TITLE_STYLE : undefined}>{entry.call.tool}</span>
+            {entry.call.status && entry.call.status !== 'error' && entry.call.status !== 'completed' ? (
+                <span className="typography-micro flex-shrink-0 text-muted-foreground/70">{entry.call.status}</span>
+            ) : null}
+            {entry.call.input ? <span className="typography-meta truncate text-muted-foreground/70">{entry.call.input}</span> : null}
+        </li>
+    );
+
     return (
         <div
             className={cn(
@@ -1858,37 +1883,14 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                                         {t('chat.toolPart.scriptCalls')}
                                     </div>
                                     <ul className="space-y-0.5">
-                                        {executeEntries.map((entry, index) => entry.kind === 'part' ? (
-                                            <li key={entry.part.id}>
-                                                <MemoToolPart
-                                                    part={entry.part}
-                                                    isExpanded={expandedScriptTools.has(entry.part.id)}
-                                                    onToggle={onToggleScriptTool}
-                                                    nestedTools={isExecuteTool(entry.part.tool) ? childExpansion : undefined}
-                                                    isMobile={isMobile}
-                                                    onShowPopup={onShowPopup}
-                                                />
+                                        {executeGroups.map((entry, index) => entry.kind === 'exploration' ? (
+                                            <li key={entry.id}>
+                                                <ExplorationDisclosure id={entry.id} counts={entry.counts}
+                                                    isExpanded={expandedScriptTools.has(entry.id)} onToggle={onToggleScriptTool}>
+                                                    {expandedScriptTools.has(entry.id) ? <ul className="space-y-0.5">{entry.entries.map(renderScriptEntry)}</ul> : null}
+                                                </ExplorationDisclosure>
                                             </li>
-                                        ) : (
-                                            <li key={`${entry.call.tool}-${index}`} className="flex min-w-0 items-baseline gap-2">
-                                                <span
-                                                    className="typography-code flex-shrink-0"
-                                                    style={entry.call.status === 'error' ? TOOL_ERROR_TITLE_STYLE : undefined}
-                                                >
-                                                    {entry.call.tool}
-                                                </span>
-                                                {entry.call.status && entry.call.status !== 'error' && entry.call.status !== 'completed' ? (
-                                                    <span className="typography-micro flex-shrink-0 text-muted-foreground/70">
-                                                        {entry.call.status}
-                                                    </span>
-                                                ) : null}
-                                                {entry.call.input ? (
-                                                    <span className="typography-meta truncate text-muted-foreground/70">
-                                                        {entry.call.input}
-                                                    </span>
-                                                ) : null}
-                                            </li>
-                                        ))}
+                                        ) : renderScriptEntry(entry, index))}
                                     </ul>
                                 </div>
                             ) : null}
@@ -2244,16 +2246,25 @@ const ToolPartContent: React.FC<ToolPartProps & { background?: BackgroundShellHe
         return isWriteTool(normalizedPartTool) ? parseWriteLineCount(input) : null;
     }, [input, normalizedPartTool]);
     const isMultiFileApplyPatch = isPatchTool(normalizedPartTool) && Array.isArray(metadata?.files) && (metadata?.files as []).length > 1;
+    const isReadDirectory = isReadTool(normalizedPartTool)
+        && getReadToolDisplayType(metadata, stateWithData.output) === 'directory';
     const normalizedPart = normalizedPartTool !== part.tool ? ({ ...part, tool: normalizedPartTool } as ToolPartType) : part;
-    const descriptionPath = getToolDescriptionPath(normalizedPart, state, currentDirectory);
-    const builtInDescription = getToolDescription(normalizedPart, state, currentDirectory, t);
+    const rawDescriptionPath = getToolDescriptionPath(normalizedPart, state, currentDirectory);
+    const descriptionPath = isReadDirectory && rawDescriptionPath
+        ? formatDirectoryDisplayPath(rawDescriptionPath)
+        : rawDescriptionPath;
+    const builtInDescription = isReadDirectory && descriptionPath
+        ? descriptionPath
+        : getToolDescription(normalizedPart, state, currentDirectory, t);
     const stateOutput = typeof stateWithData.output === 'string' ? stateWithData.output : undefined;
     const guestHeader = React.useMemo(
         () => (presentation ? renderGuestToolHeader(presentation, { input, output: stateOutput, metadata }) : null),
         [input, metadata, presentation, stateOutput],
     );
     const description = guestHeader?.subtitle ?? builtInDescription;
-    const displayName = guestHeader?.title ?? (normalizedPartTool === 'exec_command'
+    const displayName = guestHeader?.title ?? (isReadDirectory
+        ? t('chat.toolPart.readDirectory')
+        : normalizedPartTool === 'exec_command'
         ? t('chat.toolPart.unifiedExec.shellCommand')
         : normalizedPartTool === 'write_stdin'
             ? t('chat.toolPart.unifiedExec.processInput')
@@ -2265,7 +2276,7 @@ const ToolPartContent: React.FC<ToolPartProps & { background?: BackgroundShellHe
     // extension declared replaces it, since both land in the same slot.
     const guestSubtitle = guestHeader?.subtitle ?? null;
     const justificationText = React.useMemo(() => {
-        if (guestSubtitle) {
+        if (guestSubtitle || isReadDirectory) {
             return null;
         }
         if (isShellTool(normalizedPartTool) || isUnifiedExecTool(normalizedPartTool)) {
@@ -2285,7 +2296,7 @@ const ToolPartContent: React.FC<ToolPartProps & { background?: BackgroundShellHe
             return inputDesc;
         }
         return null;
-    }, [descriptionPath, guestSubtitle, normalizedPartTool, input]);
+    }, [descriptionPath, guestSubtitle, isReadDirectory, normalizedPartTool, input]);
     const runtime = React.useContext(RuntimeAPIContext);
     const mobileActions = useMobileAppActions();
 
@@ -2484,7 +2495,9 @@ const ToolPartContent: React.FC<ToolPartProps & { background?: BackgroundShellHe
                                     )}
                                     style={iconStyle}
                                 >
-                                    {getToolIcon(normalizedPartTool || part.tool, presentation)}
+                                    {isReadDirectory && !presentation?.icon
+                                        ? <Icon name="folder-6" className="h-3.5 w-3.5 flex-shrink-0" />
+                                        : getToolIcon(normalizedPartTool || part.tool, presentation)}
                                 </div>
                                 <div
                                     className={cn(
@@ -2564,7 +2577,7 @@ const ToolPartContent: React.FC<ToolPartProps & { background?: BackgroundShellHe
                             )}
                             {!justificationText && description && (
                                 descriptionPath && description === descriptionPath ? (
-                                    renderAnimatedPathWithIcon(descriptionPath, animateTailText, false, showToolFileIcons)
+                                    renderAnimatedPathWithIcon(descriptionPath, animateTailText, false, showToolFileIcons && !isReadDirectory)
                                 ) : (
                                     <Text
                                         variant={animateTailText ? 'generate-effect' : 'static'}

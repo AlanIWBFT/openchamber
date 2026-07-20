@@ -18,10 +18,10 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Renders grouped Activity rows and grouped static tools.
   - Contains `StaticToolRow`.
   - Contains static tool short description logic (`getToolShortDescription`).
-  - If you want to change how `read/grep/perplexity/webfetch/...` look in compact/grouped mode, edit here.
+  - If you want to change Exploration grouping or compact `skill` rows, edit here.
 
 - `ToolPart.tsx`
-  - Renders expandable tool rows (shell/edit/write/question/subagent + fallback).
+  - Renders expandable tool rows (read/shell/edit/write/question/subagent + fallback).
   - Controls expandable header title/description/diff stats/timer and expanded output body.
   - If you want to change expandable tool layout, edit here.
 
@@ -140,10 +140,23 @@ The header retains its report when expanded and has no hover background. Its
 left inset matches sorted Activity. Diff deletions use the ASCII hyphen.
 The header reports five categories: changed files, codebase
 exploration, commands, web research, and subagents. Narrow chat columns only
-show file changes. Exploration and research are flags, not synthetic counts.
+show file changes and any running-command indicator. Exploration and research are flags, not synthetic counts.
 Subagents count distinct child session IDs; commands count calls, not shell
 subcommands. Unknown tools and administrative tools stay in the disclosure
 without a guessed summary category.
+
+Unified Exec commands count their `exec_command` roots, never their polling,
+stdin, or termination controls. A final answer still collapses the outer
+Activity while root `processRunning` metadata keeps a running-command count
+visible in its header. Updated root metadata clears that count on exit;
+finishing the assistant turn does not end a background command. Expanded
+Activity retains the local exploration groups and command controls.
+
+Activity and finished-turn file reporting include Script child calls through
+`lib/opencode/tool-activity.ts`. This projection reads reporting fields only,
+not Script source, output transcripts or attachment bodies. Message preview-URL
+discovery checks a Script's own output before its visible child outputs and uses
+the latest exec preview; it stops at the first matching URL.
 
 File statistics come exclusively from successful edit/write/patch tool
 results, not user-message summary diffs or the current workspace Git diff.
@@ -202,8 +215,14 @@ finished with `stop`, so no tool patch is parsed while the turn streams.
   Workspace-external images receive the existing path-bound `outsideFileGrant`
   only when the server verifies the exact source in the owning assistant
   message and the real file is inside OpenCode's dedicated temporary directory.
-- `read` and `skill` are **static navigation tools** and render via `StaticToolRow`.
-- Every other tool, including search/fetch, OpenCode built-ins, custom tools, plugins, and MCP tools, is **expandable** and renders through `ToolPart`.
+- Consecutive built-in `read`, `glob`, `grep`, and `list` calls render in one collapsible **Exploration** group in both live and sorted modes. Groups may cross assistant messages in the same user turn, but visible text, visible reasoning, every other tool, and namespaced custom tools end the group.
+- The group title is state-independent and its localized summary reports non-zero search (`glob`/`grep`/`list`) and read counts. Its disclosure icon and content rail follow the Reasoning block pattern.
+- Script child calls use the same `ExplorationDisclosure` within the Script. Groups end at another tool or the Script boundary; their first child's identity anchors the expansion key in the message owner's expansion memory. Child cards retain their full results and their own expansion choices.
+- Read classification accepts the official V2 `Read file`/`Read directory` output header and retained V1 display metadata/tags. The shared output parser removes the V2 header without treating literal `<content>` or `<entries>` in file contents as V1 wrappers.
+- Exploration counts and rows include active calls, explicit error/cancellation terminal states, or successful calls with an authoritative valid end time, preventing partial sync state from producing an empty expandable group without hiding failures.
+- Sorted Activity aggregates Exploration groups before applying its collapsed recent-row preview, so a group is never split at the preview boundary.
+- Inside an expanded Exploration group, `read`, `glob`, `grep`, and `list` all use the standard expandable `ToolPart` card. A completed directory read keeps that card but switches its leading icon and localized title to the directory presentation, suppresses the secondary file icon, and shows the relative directory path only in the card header. Directory display paths without `/` gain a trailing `/` (`.` becomes `./`); input and output values are unchanged. Read output is normalized through the shared tagged-output parser and rendered as multiline text, so file contents and directory entries do not use special navigation rows. Image/PDF attachments continue through the shared attachment renderer.
+- Outside Exploration groups, `read` also uses the standard expandable card; only `skill` remains a static navigation row. Historical Todo calls remain visible through the generic tool renderer; OpenCode 2 has no live model Todo list. Every other tool remains **expandable**.
 - The managed `openchamber` plugin tool uses the expandable path and hides its broad protocol input. The plugin supplies the selected action's human description as the native tool title; the UI renders that metadata without owning an action map. The full versioned result envelope renders through the same neutral JSON summary/tree/raw views as other tools, without a tool-specific output card.
 - Selecting a JSON summary, tree, or raw view saves that mode in the persisted UI settings. New and refreshed JSON tool outputs read the saved mode across sessions; missing or invalid preferences use Summary.
 - Unified Exec reuses the Shell presentation: `exec_command` is the visible root card, while successful `poll_exec`, `write_stdin` and `terminate_exec` controls are omitted from live, sorted Activity, Task summaries and Script children. Follow-up failures remain visible, with `chars` removed from their input presentation. Script source and script output keep their normal rendering. A pending `write_stdin` has incomplete input, so operation-specific status is derived only after its running state arrives.
@@ -237,25 +256,25 @@ finished with `stop`, so no tool patch is parsed while the turn streams.
 - A background `shell` call (`background: true`, or moved to the background mid-run) settles at once with `metadata.status: "running"` and a `shellID`; its text is a notice plus an instruction for the model. `ToolPart` renders it through `BackgroundShellToolPartContent`, which rebuilds the part from the command's real state (`backgroundShellPart.ts`) so the row keeps the ordinary shell look collapsed and expanded: while `sync/background-shells.ts` lists the command it is a running shell with a live timer from the call start and an `in background` label, and its expanded output is read from `/api/shell/:id/output` once a second, only while expanded (`useBackgroundShellOutput.ts`, starting from the last 64 KiB). Once OpenCode appends the command's completion (a `synthetic` message with `source: "shell"`, see `@/lib/opencode/background-shell`) the row is a finished or failed shell ending at that message, with its real output; the completion message itself stays hidden from the timeline. While it runs the row has a stop action. OpenCode 2.0.19 has no route that cancels a background job, and `shell.remove` reports the command to the agent as an error (`Shell.NotFoundError`, "nothing ran"), after which agents relaunch it; `opencodeClient.stopBackgroundShell` therefore first admits a non-resuming synthetic note (`shellCancellationNote`) that explains the coming error as the user's stop without forbidding the command, and removes the shell only once the note is in. The note stays out of the timeline (no context metadata); its `openchamberShellCancellation` metadata makes the row read "stopped" instead of failed. Drop the note once OpenCode reports a cancel itself. The composer's `BackgroundShellsStrip` offers the same stop for every running command of the session and its subagents (see `composer/DOCUMENTATION.md`). Between the two, or before the list was read, the row shows the notice without the model instruction and no duration. The user moves a foreground command (or a subagent the turn waits on) there with `session.background`, which backgrounds all of the session's blocking work at once: the action sits in the status chip above the composer and in the scroll-to-bottom pill (`components/BackgroundWorkButton.tsx`, a sibling of the pill's scroll button), shown only while `useAssistantStatus` reports `working.canBackground`, and on the customizable `background_session_work` shortcut (default `mod+shift+b`; not the TUI's `ctrl+b`, which the composer's macOS emacs keymap uses to move the caret and which is `mod+b` elsewhere). The row then turns into the background row above.
 - A `subagent` call that went to the background (`background: true`, or moved there with `session.background`) settles at once with `metadata.status: "running"` and the child in `metadata.sessionID`. `ToolPart` renders it through `BackgroundSubagentToolPartContent` (`backgroundSubagentPart.ts`): running while the child session is active in `global-session-status`, then finished, failed or stopped from the report OpenCode appends (`findSubagentRun`), with the `in background` / `stopped` header label. `ChatContainer` drops that report from the timeline (`keepCommandSubagentReports`), so the subagent stays where it was started instead of reappearing as a new turn at the end. Only reports of `subagent: true` commands, which have no call row, still render as their own `TimelineNotice` turn, and only when the child started inside the loaded history; any other report (a call not loaded yet, an unknown child) stays out of the chat and is reachable from the session's subagent list, so loading older history never makes the chat shift.
 - The result of a session the agent dispatched with `returnResult` arrives as a `synthetic` message with `source: "openchamber-session"` (`@/lib/opencode/dispatched-session`, delivered by the server's `lib/dispatch-results`). It is a background report like a subagent run (`isBackgroundReportEntry`): it opens a turn, so the woken agent's reply renders below it, and a fork after an answer cuts before it. `TimelineNotice` renders it as one collapsed row, `Session finished: <title>` (failed / stopped variants carry the status icon), that opens to the answer as Markdown with an `Open session` action going through `openSessionLink`.
-- Thinking/Justification duration is hidden in `sorted` mode (handled in `ReasoningPart.tsx` + `JustificationBlock.tsx`).
+- Thinking/Justification duration is hidden in `sorted` mode (handled in `ReasoningPart.tsx` + `JustificationBlock.tsx`). Justification rows in sorted Activity start expanded; Thinking rows retain their streaming-driven default.
 - Reasoning streaming presentation derives from the live stream phase (`streaming`/`cooldown`), never from missing persisted timing: a cached part without `time.end` is not live, and a part whose `time.end` is set never streams (issue #2020).
 - Assistant text parts carry the same part-finalization gate (`assistantTextVisibility.ts`): live mode's block-commit reveal holds a still-growing part's trailing line, while a part sealed with `time.end` renders in full immediately — including while the turn stays blocked on a pending question or permission ask (#3277).
 
 ## "I want to change description for Perplexity" (example recipe)
 
-If task is: "change text shown near Read or Skill in compact mode":
+If task is: "change text shown near Skill in compact mode":
 
 1. Edit `ProgressiveGroup.tsx` -> `getToolShortDescription(activity)`.
-2. Update the branch that handles `read` or `skill` in `StaticToolRow`.
+2. Update the branch that handles `skill` in `StaticToolRow`.
 3. Keep all other tool header/output behavior in `ToolPart.tsx`.
 4. Keep icon changes (if any) in `toolPresentation.tsx`.
 
-Why: only navigation tools use the compact static path; all other tools need observable input and output.
+Why: `skill` has a purpose-built compact navigation interaction; all other tools need observable input and output.
 
 ## "I want tool to become expandable" (example)
 
 1. Update `toolRenderUtils.ts`:
-   - add/remove a tool name from `STATIC_TOOL_NAMES` only when it has a reliable direct in-app navigation action
+   - add/remove a tool name from `STATIC_TOOL_NAMES` only when it has a reliable purpose-built compact interaction
 2. Ensure `ToolPart.tsx` supports desired header + expanded output format for that tool.
 3. Validate both modes (`sorted` and `live`).
 

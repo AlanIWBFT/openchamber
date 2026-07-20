@@ -20,7 +20,7 @@
 
 import { z } from "zod"
 
-import type { Metadata, ToolInput } from "./model"
+import type { Metadata, Part, ToolInput } from "./model"
 
 /** Built-in tool names as the server reports them. */
 export const OPENCODE_TOOLS = {
@@ -111,6 +111,10 @@ export const carriesFileDiffs = (toolName: ToolName): boolean => {
 }
 
 export const isExplorationTool = (toolName: ToolName): boolean => EXPLORATION_TOOLS.has(normalizeToolName(toolName))
+const EXPLORATION_GROUP_TOOLS = new Set<string>([OPENCODE_TOOLS.read, OPENCODE_TOOLS.glob, OPENCODE_TOOLS.grep, "list"])
+export const isExplorationGroupTool = (toolName: ToolName): boolean => EXPLORATION_GROUP_TOOLS.has(toolName?.trim().toLowerCase().replace(/:\d+$/, "") ?? "")
+export const isExplorationPartDisplayReady = (part: Part): boolean => part.type === "tool"
+  && (part.state.status !== "completed" || part.state.time.end >= part.state.time.start)
 export const isWebTool = (toolName: ToolName): boolean => WEB_TOOLS.has(normalizeToolName(toolName))
 export const isWebSearchTool = (toolName: ToolName): boolean => normalizeToolName(toolName) === OPENCODE_TOOLS.websearch
 
@@ -126,6 +130,25 @@ export const blocksOnForm = isQuestionTool
 
 const optionalText = z.string().trim().min(1).optional().catch(undefined)
 const optionalCount = z.number().int().nonnegative().optional().catch(undefined)
+
+const readDisplaySchema = z.object({ type: z.enum(["file", "directory"]) })
+type ReadOutputHeader = { type: "file" | "directory"; length: number }
+
+export function readToolOutputHeader(output: string): ReadOutputHeader | undefined {
+  const match = output.match(/^Read (file|directory) .+, (?:0 (?:lines|entries)|(?:lines|entries) \d+-\d+)(?:\r?\n|$)/)
+  const type = match?.[1]
+  if (match && (type === "file" || type === "directory")) return { type, length: match[0].length }
+}
+
+export function getReadToolDisplayType(metadata: Metadata | undefined, output: string | undefined): "file" | "directory" | "unknown" {
+  const display = readDisplaySchema.safeParse(metadata?.display)
+  if (display.success) return display.data.type
+  // V2 ReadTool.toModelContent uses this header; retained V1 history uses tags.
+  const header = output ? readToolOutputHeader(output) : undefined
+  if (header) return header.type
+  const tag = output?.match(/<type>(file|directory)<\/type>/i)?.[1]?.toLowerCase()
+  return tag === "file" || tag === "directory" ? tag : "unknown"
+}
 
 const execText = z.string().optional().catch(undefined)
 const execFlag = z.boolean().optional().catch(undefined)

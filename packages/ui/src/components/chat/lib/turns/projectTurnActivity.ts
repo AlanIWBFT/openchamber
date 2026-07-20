@@ -4,9 +4,11 @@ import type {
     ChatMessageEntry,
     TurnActivityGroup,
     TurnActivityRecord,
+    TurnExplorationGroup,
     TurnPartRecord,
 } from './types';
 import { shouldHideExecFollowUp } from '../../message/unifiedExec';
+import { isExplorationTool } from '../../message/parts/toolRenderUtils';
 
 const isStandaloneTool = (toolName: ToolName): boolean => {
     return ACTIVITY_STANDALONE_TOOL_NAMES.has(normalizeToolName(toolName));
@@ -60,11 +62,13 @@ interface ProjectActivityInput {
     summarySourceMessageId?: string;
     summarySourcePartId?: string;
     showTextJustificationActivity: boolean;
+    showReasoningTraces: boolean;
 }
 
 interface ProjectActivityResult {
     activityParts: TurnActivityRecord[];
     activitySegments: TurnActivityGroup[];
+    explorationGroups: TurnExplorationGroup[];
     hasTools: boolean;
     hasReasoning: boolean;
 }
@@ -92,10 +96,27 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
     const taskOrder: string[] = [];
     const partsByAfterTool = new Map<string | null, TurnActivityRecord[]>();
     let currentAfterToolPartId: string | null = null;
+    const explorationGroups: TurnExplorationGroup[] = [];
+    let explorationParts: TurnActivityRecord[] = [];
+
+    const flushExploration = (isTail = false) => {
+        const first = explorationParts[0];
+        if (!first) return;
+        explorationGroups.push({
+            id: `${input.turnId}:exploration:${first.id}`,
+            anchorMessageId: first.messageId,
+            parts: explorationParts,
+            isTail,
+        });
+        explorationParts = [];
+    };
 
     input.assistantMessages.forEach((message) => {
         const finish = getMessageFinish(message);
-        const messageHasTool = message.parts.some((part) => part.type === 'tool' && !shouldHideExecFollowUp(part));
+        const messageHasTool = message.parts.some((part) => (
+            part.type === 'tool'
+            && !shouldHideExecFollowUp(part)
+        ));
         // A turn blocked on a question never reaches finish === 'stop' (the
         // user must answer first). Treating the text the model produced
         // before the question as 'justification' would bury it inside the
@@ -114,9 +135,8 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
                 : undefined;
             const partId = part.id ?? `${message.info.id}-part-${partIndex}-${part.type}`;
 
-            // SAFETY: a tool part always carries a string `tool` name; this
-            // view only reads it and tolerates its absence.
-            const toolName = isTool ? (part as { tool?: string }).tool : undefined;
+            const toolName = isTool ? part.tool : undefined;
+            const explorationTool = isTool && isExplorationTool(toolName);
             const standaloneTool = isTool && isStandaloneTool(toolName);
             if (standaloneTool) {
                 const toolPartId = partId;
@@ -151,6 +171,16 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
                 kind = 'justification';
             }
 
+            if (
+                !explorationTool
+                && (
+                    (part.type === 'text' && Boolean(text))
+                    || (part.type === 'reasoning' && input.showReasoningTraces && Boolean(text))
+                )
+            ) {
+                flushExploration();
+            }
+
             if (!kind) {
                 return;
             }
@@ -161,6 +191,12 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
             };
             activityParts.push(activity);
 
+            if (explorationTool) {
+                explorationParts.push(activity);
+            } else if (isTool) {
+                flushExploration();
+            }
+
             if (kind === 'tool' && standaloneTool) {
                 return;
             }
@@ -170,6 +206,8 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
             partsByAfterTool.set(currentAfterToolPartId, list);
         });
     });
+
+    flushExploration(true);
 
     const activitySegments: TurnActivityGroup[] = [];
 
@@ -220,6 +258,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
     return {
         activityParts,
         activitySegments,
+        explorationGroups,
         hasTools,
         hasReasoning,
     };
