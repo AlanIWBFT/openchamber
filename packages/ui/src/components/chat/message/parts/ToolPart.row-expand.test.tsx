@@ -9,6 +9,7 @@ import type { ToolPart as ToolPartData } from '@/lib/opencode/model';
 import { SyncProvider } from '@/sync/sync-context';
 import { I18nProvider } from '@/lib/i18n';
 import { onRowExpand } from '@/components/chat/lib/scroll/timelineScrollIntent';
+import { useUIStore } from '@/stores/useUIStore';
 
 // Bun does not implement Vite's worker asset-query imports.
 plugin({
@@ -50,7 +51,7 @@ const Row = ({ onToggled }: { onToggled: () => void }) => {
   );
 };
 
-test('opening a tool row tells the timeline before the row grows; closing it does not', async () => {
+test('opening a tool row announces growth; an image fullscreen action opens the panel without toggling', async () => {
   const happyWindow = new Window({ url: 'http://localhost' });
   const globals = {
     window: happyWindow,
@@ -89,6 +90,7 @@ test('opening a tool row tells the timeline before the row grows; closing it doe
   // of the end before the row's state changes.
   const events: string[] = [];
   const stop = onRowExpand(container, () => { events.push('expand'); });
+  const initialUI = useUIStore.getState();
 
   try {
     await act(async () => {
@@ -108,9 +110,29 @@ test('opening a tool row tells the timeline before the row grows; closing it doe
 
     await act(async () => { header?.click(); });
     expect(events).toEqual(['expand', 'toggle', 'toggle']);
+
+    const opened: Parameters<typeof initialUI.openContextFile>[] = [];
+    useUIStore.setState({ openContextFile: (...args) => { opened.push(args); } });
+    const image: ToolPartData = {
+      ...part, tool: 'read', state: { status: 'completed', input: { filePath: '/repo/image.png' }, output: '', metadata: {}, time: { start: 1, end: 2 } },
+    };
+    const renderImage = (isMobile: boolean) => root.render(
+      <SyncProvider sdk={sdk} directory=""><I18nProvider>
+        <ToolPart part={image} isExpanded={false} isMobile={isMobile} onToggle={() => { events.push('unexpected toggle'); }} />
+      </I18nProvider></SyncProvider>,
+    );
+    await act(async () => renderImage(false));
+    const fullscreen = container.querySelector<HTMLButtonElement>('button[aria-label="Open"]');
+    expect(fullscreen).not.toBeNull();
+    await act(async () => fullscreen?.click());
+    expect(opened).toEqual([['', '/repo/image.png', { expanded: true }]]);
+    expect(events).toEqual(['expand', 'toggle', 'toggle']);
+    await act(async () => renderImage(true));
+    expect(container.querySelector('button[aria-label="Open"]')).toBeNull();
   } finally {
     stop();
     await act(async () => { root.unmount(); });
+    useUIStore.setState(initialUI, true);
     await happyWindow.happyDOM.abort();
     for (const [name, descriptor] of previous) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);
