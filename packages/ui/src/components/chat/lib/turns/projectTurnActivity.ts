@@ -5,6 +5,7 @@ import type {
     TurnActivityRecord,
     TurnPartRecord,
 } from './types';
+import { shouldHideExecFollowUp } from '../../message/unifiedExec';
 
 const isStandaloneTool = (toolName: unknown): boolean => {
     return typeof toolName === 'string' && ACTIVITY_STANDALONE_TOOL_NAMES.has(toolName.toLowerCase());
@@ -78,6 +79,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
 
     input.assistantMessages.forEach((message) => {
         message.parts.forEach((part) => {
+            if (part.type === 'tool' && shouldHideExecFollowUp(part)) return;
             if (part.type === 'tool') {
                 hasTools = true;
                 return;
@@ -96,10 +98,11 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
 
     input.assistantMessages.forEach((message) => {
         const finish = getMessageFinish(message);
-        const messageHasTool = message.parts.some((part) => part.type === 'tool');
+        const messageHasTool = message.parts.some((part) => part.type === 'tool' && !shouldHideExecFollowUp(part));
         const messageIsCompactionSummary = isCompactionSummaryMessage(message);
 
         message.parts.forEach((part, partIndex) => {
+            if (part.type === 'tool' && shouldHideExecFollowUp(part)) return;
             const isTool = part.type === 'tool';
 
             const text = part.type === 'reasoning' || part.type === 'text'
