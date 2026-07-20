@@ -1,6 +1,7 @@
 import type { MessageRecord } from '@/lib/messageCompletion';
 
 import { readTaskTagSessionIdFromOutput } from './taskSessionIdParser';
+import { redactExecFollowUpInput, shouldHideExecFollowUp, shouldHideExecFollowUpState } from '../unifiedExec';
 
 export type TaskToolSummaryEntry = {
     id?: string;
@@ -9,6 +10,7 @@ export type TaskToolSummaryEntry = {
         status?: string;
         title?: string;
         input?: Record<string, unknown>;
+        error?: string;
     };
 };
 
@@ -40,21 +42,38 @@ export const normalizeTaskSummaryEntries = (value: unknown): TaskToolSummaryEntr
             tool?: unknown;
             title?: unknown;
             status?: unknown;
-            state?: { status?: unknown; title?: unknown; input?: unknown };
+            metadata?: unknown;
+            state?: { status?: unknown; title?: unknown; input?: unknown; metadata?: unknown; error?: unknown };
         };
+        const tool = typeof record.tool === 'string' ? record.tool : 'tool';
+        const status = typeof record.state?.status === 'string'
+            ? record.state.status
+            : typeof record.status === 'string' ? record.status : undefined;
+        const metadataCandidate = record.state?.metadata ?? record.metadata;
+        const metadata = metadataCandidate && typeof metadataCandidate === 'object'
+            ? metadataCandidate as Record<string, unknown>
+            : {};
+        if (shouldHideExecFollowUpState(tool, status, metadata)) continue;
+        const error = typeof record.state?.error === 'string' && record.state.error.length > 0
+            ? record.state.error
+            : typeof metadata.execError === 'string' && metadata.execError.length > 0
+                ? metadata.execError
+                : undefined;
         normalized.push({
             id: typeof record.id === 'string' ? record.id : undefined,
-            tool: typeof record.tool === 'string' ? record.tool : 'tool',
+            tool,
             state: {
-                status: typeof record.state?.status === 'string'
-                    ? record.state.status
-                    : typeof record.status === 'string' ? record.status : undefined,
+                status: error ? 'error' : status,
                 title: typeof record.state?.title === 'string'
                     ? record.state.title
                     : typeof record.title === 'string' ? record.title : undefined,
-                input: record.state?.input && typeof record.state.input === 'object'
-                    ? record.state.input as Record<string, unknown>
-                    : undefined,
+                input: redactExecFollowUpInput(
+                    tool,
+                    record.state?.input && typeof record.state.input === 'object'
+                        ? record.state.input as Record<string, unknown>
+                        : undefined,
+                ),
+                ...(error ? { error } : {}),
             },
         });
     }
@@ -102,18 +121,31 @@ const projectMessageSummaryEntries = (message: MessageRecord): TaskToolSummaryEn
     if (message.info.role === 'assistant') {
         for (const part of message.parts) {
             if (part.type !== 'tool') continue;
+            if (shouldHideExecFollowUp(part)) continue;
             const toolName = part.tool?.trim().toLowerCase();
             if (!toolName || toolName === 'task' || toolName === 'todowrite' || toolName === 'todoread') continue;
-            const state = part.state as { status?: string; title?: string; input?: unknown } | undefined;
+            const state = part.state as { status?: string; title?: string; input?: unknown; metadata?: unknown; error?: unknown } | undefined;
+            const metadata = state?.metadata && typeof state.metadata === 'object'
+                ? state.metadata as Record<string, unknown>
+                : {};
+            const error = typeof state?.error === 'string' && state.error.length > 0
+                ? state.error
+                : typeof metadata.execError === 'string' && metadata.execError.length > 0
+                    ? metadata.execError
+                    : undefined;
             entries.push({
                 id: part.id,
                 tool: part.tool,
                 state: {
-                    status: state?.status,
+                    status: error ? 'error' : state?.status,
                     title: state?.title,
-                    input: state?.input && typeof state.input === 'object'
-                        ? state.input as Record<string, unknown>
-                        : undefined,
+                    input: redactExecFollowUpInput(
+                        part.tool,
+                        state?.input && typeof state.input === 'object'
+                            ? state.input as Record<string, unknown>
+                            : undefined,
+                    ),
+                    ...(error ? { error } : {}),
                 },
             });
         }
