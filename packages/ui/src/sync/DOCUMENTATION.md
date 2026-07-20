@@ -145,6 +145,20 @@ running record's id and creation time instead of adding a second record, the
 way OpenCode's own message store does. The timeline notice shows the summary
 as it grows and collapses it behind a toggle once settled.
 
+## Unified exec previews
+
+The local `session.exec.updated` and durable `session.exec.captured` events update
+presentation metadata on an existing tool call. `session.script.captured` updates
+the parent's child-call list. The wire translator converts them to tool transitions;
+`lib/opencode/exec-metadata.ts` applies `execRevision` and `codeModeRevision` guards.
+An older Script capture cannot replace newer command output inside that Script.
+Tool settlement and HTTP history materialization use the same reconciliation.
+
+A command can keep running after its model tool call completed. These updates must
+not reopen the tool, alter its original result, create another assistant message,
+or mark its session busy. Only the addressed part changes. Child exec updates retain
+unrelated child identities and inspect their identities rather than their result payloads.
+
 ## A location's services going away
 
 OpenCode caches the service graph that serves a directory and drops it after
