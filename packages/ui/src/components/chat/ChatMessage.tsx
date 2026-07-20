@@ -1,4 +1,5 @@
 import React from 'react';
+import { defaultExpandedScriptToolIDs } from '@/lib/opencode/script';
 import type { Message, Part } from '@/lib/opencode/model';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -384,6 +385,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             }
             if (showExpandedEditTools && isFileChangeTool(toolName)) {
                 next.add(toolId);
+            }
+            if (part.type === 'tool') {
+                for (const id of defaultExpandedScriptToolIDs(part, { shell: showExpandedBashTools, edit: showExpandedEditTools })) next.add(id);
             }
         }
 

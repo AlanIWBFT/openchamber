@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Part } from '@/lib/opencode/model';
-import { isQuestionTool } from '@/lib/opencode/tools';
+import { isExecuteTool, isQuestionTool } from '@/lib/opencode/tools';
 
 import UserTextPart from './parts/UserTextPart';
 import ToolPart from './parts/ToolPart';
@@ -61,6 +61,7 @@ import { useAgentColors } from '@/hooks/useAgentColors';
 import { isCapacitorMobileApp } from '@/apps/mobileNativeChrome';
 import { WorktreeRequiresGitRepositoryError } from '@/lib/worktrees/worktreeCreate';
 import { cloneMessageImageExportSource } from './imageExport';
+import { getUnifiedExecMetadata, isExecProcessRunning, shouldHideExecFollowUp } from './unifiedExec';
 
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const, transform: 'translateZ(0)' };
@@ -1094,9 +1095,12 @@ const AssistantMessageBody = React.memo(({
     const { src: footerLogoSrc, onError: handleFooterLogoError, hasLogo: footerHasLogo } = useProviderLogo(footerProviderID ?? null);
     const awaitingMessageCompletion = !isMessageCompleted;
     const animateActivityRows = awaitingMessageCompletion || Boolean(turnGroupingContext?.isWorking);
+    const nestedTools = React.useMemo(() => ({ expanded: expandedTools, toggle: onToggleTool }), [expandedTools, onToggleTool]);
 
     const visibleParts = React.useMemo(() => {
-        return parts.filter((part) => !isEmptyTextPart(part));
+        return parts
+            .filter((part) => !isEmptyTextPart(part))
+            .filter((part) => part.type !== 'tool' || !shouldHideExecFollowUp(part));
     }, [parts]);
 
     const toolParts = React.useMemo(() => {
@@ -1213,8 +1217,8 @@ const AssistantMessageBody = React.memo(({
             return url.includes('0.0.0.0') ? url.replace('0.0.0.0', '127.0.0.1') : url;
         }
         for (const part of toolParts) {
-            const state = (part as unknown as { state?: unknown }).state as Record<string, unknown> | undefined;
-            const output = state && typeof state.output === 'string' ? state.output : null;
+            const fallback = 'output' in part.state ? part.state.output : undefined;
+            const output = part.tool === 'exec_command' ? getUnifiedExecMetadata(part).output ?? fallback : fallback;
             if (!output) {
                 continue;
             }
@@ -1293,10 +1297,16 @@ const AssistantMessageBody = React.memo(({
     const isActiveTool = React.useCallback((toolPart: ToolPartType): boolean => {
         const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
         const status = state?.status;
-        return status === 'pending' || status === 'running' || status === 'started';
+        return status === 'pending'
+            || status === 'running'
+            || status === 'started'
+            || isExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), toolPart.state.status);
     }, []);
 
     const isToolFinalized = React.useCallback((toolPart: ToolPartType) => {
+        if (isExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), toolPart.state?.status)) {
+            return false;
+        }
         const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
         const status = state?.status;
         if (status === 'pending' || status === 'running' || status === 'started') {
@@ -1903,6 +1913,7 @@ const AssistantMessageBody = React.memo(({
                         <FadeInOnReveal key={`tool-${toolPart.id}`}>
                             <ToolRevealOnMount animate={animatedToolIdsLookup.has(toolPart.id)} wipe>
                                 <ToolPart
+                                    nestedTools={isExecuteTool(toolPart.tool) ? nestedTools : undefined}
                                     part={toolPart}
                                     isExpanded={expandedTools.has(toolPart.id)}
                                     onToggle={onToggleTool}
@@ -1980,6 +1991,7 @@ const AssistantMessageBody = React.memo(({
         collapsibleThinkingBlocks,
         collapsedPreviewCount,
         expandedTools,
+        nestedTools,
         isMobile,
         isActivityOwnerMessage,
         isSortedRenderMode,
