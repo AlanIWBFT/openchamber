@@ -1,5 +1,7 @@
 import React from 'react';
 import type { Part } from '@/lib/opencode/model';
+import { isExecuteTool } from '@/lib/opencode/tools';
+import { shouldHideExecFollowUp } from './unifiedExec';
 
 import UserTextPart from './parts/UserTextPart';
 import ToolPart from './parts/ToolPart';
@@ -1168,9 +1170,10 @@ const AssistantMessageBody = React.memo(({
     const alwaysShowMessageActions = Boolean(alwaysShowActions ?? isMobile);
     const { src: footerLogoSrc, onError: handleFooterLogoError, hasLogo: footerHasLogo } = useProviderLogo(footerProviderID ?? null);
     const awaitingMessageCompletion = !isMessageCompleted;
+    const nestedTools = React.useMemo(() => ({ expanded: expandedTools, toggle: onToggleTool }), [expandedTools, onToggleTool]);
 
     const visibleParts = React.useMemo(() => {
-        return parts.filter((part) => !isEmptyTextPart(part));
+        return parts.filter((part) => !isEmptyTextPart(part) && (part.type !== 'tool' || !shouldHideExecFollowUp(part)));
     }, [parts]);
 
     const toolParts = React.useMemo(() => {
@@ -1747,6 +1750,7 @@ const AssistantMessageBody = React.memo(({
                         <FadeInOnReveal key={`tool-${toolPart.id}`}>
                             <ToolRevealOnMount animate={animatedToolIdsLookup.has(toolPart.id)} wipe>
                                 <ToolPart
+                                    nestedTools={isExecuteTool(toolPart.tool) ? nestedTools : undefined}
                                     part={toolPart}
                                     isExpanded={expandedTools.has(toolPart.id)}
                                     onToggle={onToggleTool}
@@ -1808,6 +1812,7 @@ const AssistantMessageBody = React.memo(({
         animatedToolIdsLookup,
         collapsibleThinkingBlocks,
         expandedTools,
+        nestedTools,
         isMobile,
         liveFinalActivity,
         isLastAssistantInTurn,

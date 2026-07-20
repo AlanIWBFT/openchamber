@@ -14,6 +14,7 @@
  */
 
 import type { OpenCodeEvent } from "@opencode/client"
+import type { ExecPreview, ScriptPreview } from "./exec-metadata"
 import {
   compact,
   partIds,
@@ -73,6 +74,8 @@ export type MessagePatch = {
 
 /** State transitions of a tool call that need the part's existing state to apply. */
 export type ToolTransition =
+  | ({ kind: "exec" } & ExecPreview)
+  | ({ kind: "script" } & ScriptPreview)
   | { kind: "input"; raw: string }
   | { kind: "called"; input: Record<string, JsonValue>; executed: boolean; start: number }
   | { kind: "progress"; metadata: Metadata }
@@ -228,6 +231,9 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
       return [{ type: "installation.update-available", properties: { version: event.data.version } }]
 
     // --- sessions -----------------------------------------------------------
+
+    case "session.archive.updated":
+      return [sessionEvent(event.data.sessionID, { time: { archived: event.data.archivedAt, updated: event.created } })]
 
     case "session.created": {
       const info: Session = compact({
@@ -679,6 +685,39 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
           }),
         ),
       ]
+
+    case "session.exec.updated":
+    case "session.exec.captured":
+      return [toolTransition(event.data.sessionID, event.data.assistantMessageID, event.data.id, compact({
+        kind: "exec",
+        revision: event.data.revision,
+        childID: event.data.childID,
+        metadata: compact({ ...event.data.metadata, interactions: event.data.metadata.interactions.map((item) => ({ ...item })) }),
+      }))]
+    case "session.script.captured":
+      return [toolTransition(event.data.sessionID, event.data.assistantMessageID, event.data.id, {
+        kind: "script",
+        revision: event.data.revision,
+        toolCalls: event.data.toolCalls.map((call) => {
+          const record: Metadata = { tool: call.tool, status: call.status }
+          for (const key of ["id", "name", "title", "input", "metadata", "error"] as const) {
+            const value = call[key]
+            if (value !== undefined) record[key] = value
+          }
+          if (call.time) {
+            const time: Metadata = { start: call.time.start }
+            if (call.time.end !== undefined) time.end = call.time.end
+            record.time = time
+          }
+          if (call.content) record.content = call.content.map((content): Metadata => {
+            if (content.type === "text") return { type: "text", text: content.text }
+            const file: Metadata = { type: "file", uri: content.uri, mime: content.mime }
+            if (content.name !== undefined) file.name = content.name
+            return file
+          })
+          return record
+        }),
+      })]
 
     // --- shell and compaction -------------------------------------------------
 
