@@ -42,6 +42,7 @@ const turnEntry = (assistant: ChatMessageEntry): StreamingTailEntry => {
             assistantMessageIds: [assistant.info.id],
             assistantMessages: [assistant],
             activityParts: [],
+            explorationGroups: [],
             summary: {},
             hasTools: false,
             hasReasoning: false,
@@ -58,6 +59,7 @@ describe('buildLiveStreamingEntry', () => {
         const next = buildLiveStreamingEntry(entry, {
             livePartsByMessageId: { assistant_other: [textPart('part_live', 'live')] },
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next).toBe(entry);
@@ -71,6 +73,7 @@ describe('buildLiveStreamingEntry', () => {
         const next = buildLiveStreamingEntry(entry, {
             livePartsByMessageId: { assistant_1: liveParts },
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next).not.toBe(entry);
@@ -92,6 +95,7 @@ describe('buildLiveStreamingEntry', () => {
         const next = buildLiveStreamingEntry(entry, {
             livePartsByMessageId: { assistant_1: liveParts },
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next).not.toBe(entry);
@@ -112,6 +116,7 @@ describe('buildLiveStreamingEntry', () => {
         const next = buildLiveStreamingEntry(entry, {
             livePartsByMessageId: { assistant_1: [malformed, visible] },
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next.kind).toBe('turn');
@@ -132,6 +137,7 @@ describe('buildLiveStreamingEntry', () => {
         const next = buildLiveStreamingEntry(entry, {
             livePartsByMessageId: { assistant_1: finishedLive, assistant_2: streamingLive },
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next.kind).toBe('turn');
@@ -160,6 +166,7 @@ describe('buildLiveStreamingEntry', () => {
         const next = buildLiveStreamingEntry(entry, {
             livePartsByMessageId: { assistant_1: liveParts },
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next.kind).toBe('turn');
@@ -176,6 +183,7 @@ describe('buildLiveStreamingEntry', () => {
         const next = buildLiveStreamingEntry(entry, {
             livePartsByMessageId: { assistant_1: [] },
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next).toBe(entry);
@@ -186,6 +194,7 @@ describe('buildLiveStreamingEntry reuse across publishes', () => {
     const options = (liveParts: Part[]) => ({
         livePartsByMessageId: { asst_1: liveParts },
         showTurnChangedFiles: false,
+        showReasoningTraces: true,
     });
 
     test('an unchanged record and live parts normalize to the same message object', () => {

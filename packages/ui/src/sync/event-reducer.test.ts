@@ -368,7 +368,7 @@ describe("streaming parts", () => {
     ).toBe(false)
   })
 
-  test("a finished read keeps no result, since its row opens the file instead", () => {
+  test("a finished read keeps its live result for the expandable read card", () => {
     const draft = state()
     apply(draft, {
       type: "message.part.updated",
@@ -383,8 +383,8 @@ describe("streaming parts", () => {
     })
     const done = draft.part.msg_a[0]
     if (done.type !== "tool" || done.state.status !== "completed") throw new Error("expected completed tool")
-    expect(done.state).toEqual({ status: "completed", input: { path: "a.ts" }, output: "", metadata: { openchamberContentShell: { chars: 9 } }, time: { start: 1, end: 2 } })
-    expect(toolContentShellChars(done)).toBe(9)
+    expect(done.state).toEqual({ status: "completed", input: { path: "a.ts" }, output: "file body", time: { start: 1, end: 2 } })
+    expect(toolContentShellChars(done)).toBeNull()
   })
 
   test("a transition for an unknown call asks for materialization", () => {
