@@ -1,13 +1,22 @@
-import { OPENCODE_TOOLS, isNavigationTool, normalizeToolName, type ToolName } from '@/lib/opencode/tools';
+import { isNavigationTool, normalizeToolName, type ToolName } from '@/lib/opencode/tools';
+import { isExplorationGroupTool as isExplorationTool } from '@/lib/opencode/exploration';
+export { getReadToolDisplayType, isExplorationGroupTool as isExplorationTool, isExplorationPartDisplayReady } from '@/lib/opencode/exploration';
 
-const STANDALONE_TOOL_NAMES = new Set<string>([OPENCODE_TOOLS.subagent]);
+export const formatDirectoryDisplayPath = (path: string): string => {
+    return path && !path.includes('/') ? `${path}/` : path;
+};
 
 export const isExpandableTool = (toolName: ToolName): boolean => {
     return !isStaticTool(toolName);
 };
 
-export const isStandaloneTool = (toolName: ToolName): boolean => {
-    return STANDALONE_TOOL_NAMES.has(normalizeToolName(toolName));
-};
-
+export const isStandaloneTool = (toolName: ToolName): boolean => normalizeToolName(toolName) === 'subagent';
 export const isStaticTool = (toolName: ToolName): boolean => isNavigationTool(toolName);
+export const countExplorationTools = (toolNames: ToolName[]) => {
+    return toolNames.reduce<{ search: number; read: number }>((result, toolName) => {
+        if (!isExplorationTool(toolName)) return result;
+        if (normalizeToolName(toolName) === 'read') result.read += 1;
+        else result.search += 1;
+        return result;
+    }, { search: 0, read: 0 });
+};

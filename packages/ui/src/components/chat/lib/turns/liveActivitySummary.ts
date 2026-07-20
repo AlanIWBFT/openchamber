@@ -1,7 +1,8 @@
-import { z } from 'zod';
+import { activityToolCalls } from '@/lib/opencode/tool-activity';
 import { getRelativeFilePath, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
 import {
     isExplorationTool,
+    isExecCommandTool,
     isFileChangeTool,
     isPatchTool,
     isShellTool,
@@ -9,37 +10,6 @@ import {
     isWebTool,
 } from '@/lib/opencode/tools';
 import type { ChatMessageEntry } from './types';
-
-const patchTextSchema = z.string().regex(/\S/);
-const patchSchema = z.union([patchTextSchema, z.object({ patch: patchTextSchema }).transform((value) => value.patch)]);
-const optionalText = z.string().trim().min(1).optional().catch(undefined);
-const optionalCount = z.number().int().nonnegative().optional().catch(undefined);
-const fileSchema = z.object({
-    file: optionalText,
-    filePath: optionalText,
-    relativePath: optionalText,
-    movePath: optionalText,
-    type: optionalText,
-    status: optionalText,
-    patch: patchSchema.optional().catch(undefined),
-    diff: patchSchema.optional().catch(undefined),
-    additions: optionalCount,
-    deletions: optionalCount,
-});
-const metadataSchema = z.object({
-    files: z.array(fileSchema.nullable().catch(null)).optional().catch(undefined),
-    filediff: fileSchema.optional().catch(undefined),
-    patch: patchSchema.optional().catch(undefined),
-    diff: patchSchema.optional().catch(undefined),
-    sessionID: optionalText,
-    sessionId: optionalText,
-    exit: z.number().optional().catch(undefined),
-});
-const inputSchema = z.object({
-    path: optionalText,
-    filePath: optionalText,
-    file_path: optionalText,
-});
 
 interface TurnFileChange {
     path: string;
@@ -55,6 +25,7 @@ export interface LiveActivitySummary {
     hasCompleteDiff: boolean;
     explored: boolean;
     commands: number;
+    runningCommands: number;
     researched: boolean;
     subagents: number;
 }
@@ -66,7 +37,6 @@ function countPatch(patch: string | undefined): { additions: number; deletions: 
     let hasHunk = false;
     let oldRemaining = 0;
     let newRemaining = 0;
-    // external: https://git-scm.com/docs/diff-format Count added and deleted hunk lines, including source lines beginning with ++ or --.
     for (const line of patch.split('\n')) {
         const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
         if (hunk) {
@@ -102,7 +72,7 @@ interface FileChangeRecord {
 export function summarizeLiveActivity(messages: readonly ChatMessageEntry[]): LiveActivitySummary {
     const summary: LiveActivitySummary = {
         files: 0, changedFiles: [], additions: 0, deletions: 0, hasCompleteDiff: true,
-        explored: false, commands: 0, researched: false, subagents: 0,
+        explored: false, commands: 0, runningCommands: 0, researched: false, subagents: 0,
     };
     const changedFiles = new Map<string, FileChangeRecord>();
     const subagents = new Set<string>();
@@ -121,21 +91,20 @@ export function summarizeLiveActivity(messages: readonly ChatMessageEntry[]): Li
             }
             return absolute.startsWith('/') ? toAbsoluteFilePath('/', absolute.slice(1)) : absolute;
         };
-        // external: https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#naming-conventions Windows drive and UNC paths compare case-insensitively.
         const keyOf = (canonical: string) => /^([A-Za-z]:\/|\/\/)/.test(canonical) ? canonical.toLowerCase() : canonical;
-        for (const part of message.parts) {
-            if (part.type !== 'tool') continue;
-            const callKey = `${message.info.id}:${part.callID || part.id}`;
+        for (const call of activityToolCalls(message.parts)) {
+            const callKey = `${message.info.id}:${call.id}`;
             if (seenCalls.has(callKey)) continue;
             seenCalls.add(callKey);
-            const state = part.state;
-            if (state.status !== 'completed' && state.status !== 'error') continue;
-            const tool = part.tool;
-            const metadata = metadataSchema.safeParse(state.metadata).data;
-            if (isShellTool(tool) && (state.status === 'completed' || metadata?.exit !== undefined)) {
+            const { tool, status, metadata, input } = call;
+            if (isExecCommandTool(tool) && status !== 'error' && !metadata?.execError && metadata?.processRunning === true) {
+                summary.runningCommands++;
+            }
+            if (status !== 'completed' && status !== 'error') continue;
+            if (isShellTool(tool) && (status === 'completed' || metadata?.exit !== undefined || metadata?.exitCode !== undefined)) {
                 summary.commands++;
             }
-            if (state.status !== 'completed') continue;
+            if (status !== 'completed') continue;
             summary.explored ||= isExplorationTool(tool);
             summary.researched ||= isWebTool(tool);
             if (isSubagentTool(tool)) {
@@ -144,7 +113,6 @@ export function summarizeLiveActivity(messages: readonly ChatMessageEntry[]): Li
             }
             if (!isFileChangeTool(tool)) continue;
 
-            const input = inputSchema.safeParse(state.input).data;
             if (metadata?.files?.some((file) => file === null)) summary.hasCompleteDiff = false;
             const entries = metadata?.files?.filter((file) => file !== null);
             const files = entries?.length ? entries : [metadata?.filediff ?? {}];

@@ -25,6 +25,7 @@ export const useTimelineRows = (
     const { projection, staticTurns, streamingTurn } = useTurnRecords(displayMessages, {
         sessionKey,
         showTurnChangedFiles,
+        showReasoningTraces,
     });
     const hasUngroupedStaticEntries = projection.ungroupedMessageIds.size > 0;
     const tailHasAssistant = Boolean(streamingTurn?.assistantMessages.length);

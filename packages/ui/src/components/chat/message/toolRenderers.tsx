@@ -1,4 +1,5 @@
 import { carriesFileDiffs, isFileChangeTool } from '@/lib/opencode/tools';
+import { getReadToolDisplayType, readToolOutputHeader } from '@/lib/opencode/exploration';
 import type { JsonValue } from '@/lib/opencode/model';
 import { z } from 'zod';
 
@@ -224,11 +225,12 @@ interface ParsedReadToolOutput {
 }
 
 export const parseReadToolOutput = (output: string): ParsedReadToolOutput => {
-    const typeMatch = output.match(/<type>(file|directory)<\/type>/i);
-    const detectedType = (typeMatch?.[1]?.toLowerCase() ?? 'unknown') as ParsedReadToolOutput['type'];
+    const header = readToolOutputHeader(output);
+    const detectedType = getReadToolDisplayType(undefined, output);
 
-    const contentMatch = output.match(/<content>([\s\S]*?)<\/content>/i);
-    const rawContent = contentMatch?.[1] ?? output;
+    const contentMatch = header ? undefined : output.match(/<content>([\s\S]*?)<\/content>/i);
+    const entriesMatch = header ? undefined : output.match(/<entries>\s*([\s\S]*?)\s*<\/entries>/i);
+    const rawContent = header ? output.slice(header.length) : contentMatch?.[1] ?? entriesMatch?.[1] ?? output;
     const normalizedContent = rawContent.replace(/\r\n/g, '\n');
     const rawLines = normalizedContent.split('\n');
 

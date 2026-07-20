@@ -25,7 +25,7 @@ export const isWriteTool = is(OPENCODE_TOOLS.write)
 export const isPatchTool = is(OPENCODE_TOOLS.patch)
 export const isTodoWriteTool = is(OPENCODE_TOOLS.todowrite)
 
-const NAVIGATION_TOOLS = new Set<string>([OPENCODE_TOOLS.read, OPENCODE_TOOLS.skill])
+const NAVIGATION_TOOLS = new Set<string>([OPENCODE_TOOLS.skill])
 export const isNavigationTool = (toolName: ToolName): boolean => NAVIGATION_TOOLS.has(normalizeToolName(toolName))
 
 const FILE_CHANGE_TOOLS = new Set<string>([OPENCODE_TOOLS.edit, OPENCODE_TOOLS.write, OPENCODE_TOOLS.patch])

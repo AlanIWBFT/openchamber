@@ -1,4 +1,5 @@
 import React from 'react';
+import { getReadToolDisplayType } from '../toolRenderUtils';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { SimpleMarkdownRenderer } from '../../../MarkdownRenderer';
@@ -120,7 +121,8 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
         || (opencodeResult !== null && !showRawToolAnswer)
         || isPatchTool(part.tool)
         || isEditTool(part.tool)
-        || isExecuteTool(part.tool);
+        || isExecuteTool(part.tool)
+        || (part.tool === 'read' && getReadToolDisplayType(metadata, rawOutputString) === 'directory');
     const isExecute = isExecuteTool(part.tool);
     const executeCode = React.useMemo(() => (isExecute ? executeScript(input) : undefined), [input, isExecute]);
     const project = React.useMemo(() => createScriptToolProjection({ id: part.id, sessionID: part.sessionID, messageID: part.messageID }), [part.id, part.sessionID, part.messageID]);

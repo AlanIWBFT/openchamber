@@ -18,6 +18,7 @@ type BuildLiveStreamingEntryOptions = {
     livePartsByMessageId: Readonly<Record<string, Part[]>>;
     showTurnChangedFiles: boolean;
     mergeHiddenUserTurns?: boolean;
+    showReasoningTraces: boolean;
 };
 
 const liveMessageByRecord = new WeakMap<ChatMessageEntry, { parts: Part[]; message: ChatMessageEntry }>();
@@ -87,6 +88,7 @@ export const buildLiveStreamingEntry = <TEntry extends StreamingTailEntry>(
         showTurnChangedFiles: options.showTurnChangedFiles,
         mergeHiddenUserTurns: options.mergeHiddenUserTurns,
         firstMessageOpensTurn: true,
+        showReasoningTraces: options.showReasoningTraces,
     });
     const turn = projection.turns[0] ?? {
         ...entry.turn,

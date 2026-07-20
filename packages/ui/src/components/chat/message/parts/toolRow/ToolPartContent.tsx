@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDirectoryDisplayPath, getReadToolDisplayType } from '../toolRenderUtils';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { cn } from '@/lib/utils';
 import { BlockBody } from '../BlockLine';
@@ -96,10 +97,12 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
     }, [input, normalizedPartTool]);
     const isMultiFileApplyPatch = isPatchTool(normalizedPartTool) && Array.isArray(metadata?.files) && metadata.files.length > 1;
     const normalizedPart = normalizedPartTool !== part.tool ? ({ ...part, tool: normalizedPartTool } as ToolPartType) : part;
-    const descriptionPath = getToolDescriptionPath(normalizedPart, state, currentDirectory);
     const stateOutput = typeof stateWithData.output === 'string' ? stateWithData.output : undefined;
+    const isReadDirectory = normalizedPartTool === 'read' && getReadToolDisplayType(metadata, stateOutput) === 'directory';
+    const rawDescriptionPath = getToolDescriptionPath(normalizedPart, state, currentDirectory);
+    const descriptionPath = isReadDirectory && rawDescriptionPath ? formatDirectoryDisplayPath(rawDescriptionPath) : rawDescriptionPath;
     const scriptNamespace = isExecuteTool(part.tool) ? executeNamespace(metadata) : undefined;
-    const plainDescription = getToolDescription(normalizedPart, state, currentDirectory, t, scriptNamespace);
+    const plainDescription = isReadDirectory && descriptionPath ? descriptionPath : getToolDescription(normalizedPart, state, currentDirectory, t, scriptNamespace);
     const builtInDescription = describeOpenChamberRow(normalizedPart, input, stateOutput, t)
         ?? describeOpencodeRow(part, plainDescription, t)
         ?? plainDescription;
@@ -109,13 +112,13 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
     );
     const description = guestHeader?.subtitle ?? builtInDescription;
     const rowTool = scriptNamespace ?? (normalizedPartTool || part.tool);
-    const displayName = guestHeader?.title ?? toolDisplayName(rowTool, t);
+    const displayName = guestHeader?.title ?? (isReadDirectory ? t('chat.toolPart.readDirectory') : toolDisplayName(rowTool, t));
 
     const failureDetail = isError && !isExpanded ? failureReason : undefined;
 
     const guestSubtitle = guestHeader?.subtitle ?? null;
     const justificationText = React.useMemo(() => {
-        if (guestSubtitle) {
+        if (guestSubtitle || isReadDirectory) {
             return null;
         }
         if (isShellTool(normalizedPartTool)) {
@@ -135,15 +138,16 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
             return inputDesc;
         }
         return null;
-    }, [descriptionPath, guestSubtitle, normalizedPartTool, input]);
+    }, [descriptionPath, guestSubtitle, isReadDirectory, normalizedPartTool, input]);
     const runtime = React.useContext(RuntimeAPIContext);
-    const { openApplyPatchFile, handleMainRowClick, handleMainKeyDown, quickOpenTarget, handleQuickOpen } = useToolRowOpenActions({
+    const { openApplyPatchFile, handleMainRowClick, handleMainKeyDown, quickOpenTarget, handleQuickOpen, expandedImagePath } = useToolRowOpenActions({
         part,
         normalizedPartTool,
         input,
         metadata,
         currentDirectory,
         isTaskTool,
+        isMobile,
         onToggle,
     });
 
@@ -232,7 +236,7 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
                                     )}
                                     style={iconStyle}
                                 >
-                                    {getToolIcon(rowTool, presentation)}
+                                    {isReadDirectory && !presentation?.icon ? <Icon name="folder-6" className="h-3.5 w-3.5 flex-shrink-0" /> : getToolIcon(rowTool, presentation)}
                                 </div>
                                 <div
                                     className={cn(
@@ -244,7 +248,7 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
                                     {isExpanded ? <Icon name="arrow-down-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-right-s" className="h-3.5 w-3.5" />}
                                 </div>
                             </div>
-                            <div className={cn('flex items-center min-w-0 flex-1', quickOpenTarget || taskSessionId ? 'gap-1' : 'gap-2')}>
+                            <div className={cn('flex items-center min-w-0 flex-1', quickOpenTarget || expandedImagePath || taskSessionId ? 'gap-1' : 'gap-2')}>
                                 <MinDurationShineText
                                     active={Boolean(isActive && !isError)}
                                     minDurationMs={300}
@@ -254,6 +258,16 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
                                 >
                                     {displayName}
                                 </MinDurationShineText>
+                                {expandedImagePath ? (
+                                    <button type="button" aria-label={t('chat.toolPart.openImageExpanded')} title={t('chat.toolPart.openImageExpanded')}
+                                        className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded opacity-60 hover:opacity-100 focus-visible:opacity-100"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            useUIStore.getState().openContextFile(currentDirectory, expandedImagePath, { expanded: true });
+                                        }}>
+                                        <Icon name="fullscreen" className="h-3 w-3" />
+                                    </button>
+                                ) : null}
                                 {quickOpenTarget ? (
                                     <HoverTooltip label={t('chat.toolPart.openFile')}>
                                         <button
@@ -312,7 +326,7 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
                             )}
                             {!justificationText && description && (
                                 descriptionPath && description === descriptionPath ? (
-                                    renderAnimatedPathWithIcon(descriptionPath, animateTailText, false, showToolFileIcons)
+                                    renderAnimatedPathWithIcon(descriptionPath, animateTailText, false, showToolFileIcons && !isReadDirectory)
                                 ) : (
                                     <Text
                                         variant={animateTailText ? 'generate-effect' : 'static'}

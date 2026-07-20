@@ -10,8 +10,9 @@ export const LiveTailSource: React.FC<{
     entry: RenderEntry | undefined;
     directory?: string;
     showTurnChangedFiles: boolean;
+    showReasoningTraces: boolean;
     store: LiveTailStore;
-}> = ({ entry, directory, showTurnChangedFiles, store }) => {
+}> = ({ entry, directory, showTurnChangedFiles, showReasoningTraces, store }) => {
     const tailMessageIds = React.useMemo(() => {
         if (!entry) return EMPTY_ROW_MESSAGE_IDS;
         if (entry.kind === 'turn') return entry.turn.assistantMessageIds;
@@ -21,8 +22,9 @@ export const LiveTailSource: React.FC<{
     const liveEntry = React.useMemo(() => (entry ? buildLiveStreamingEntry(entry, {
         livePartsByMessageId,
         showTurnChangedFiles,
+        showReasoningTraces,
         mergeHiddenUserTurns: true,
-    }) : null), [entry, livePartsByMessageId, showTurnChangedFiles]);
+    }) : null), [entry, livePartsByMessageId, showTurnChangedFiles, showReasoningTraces]);
     store.set(liveEntry);
     React.useLayoutEffect(() => {
         store.notify();

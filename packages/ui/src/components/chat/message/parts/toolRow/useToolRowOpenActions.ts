@@ -1,4 +1,5 @@
 import React from 'react';
+import { isImageFile } from '@/lib/toolHelpers';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import type { Metadata, ToolInput, ToolPart as ToolPartType } from '@/lib/opencode/model';
@@ -17,6 +18,7 @@ export const useToolRowOpenActions = ({
     metadata,
     currentDirectory,
     isTaskTool,
+    isMobile,
     onToggle,
 }: {
     part: ToolPartType;
@@ -25,10 +27,14 @@ export const useToolRowOpenActions = ({
     metadata: Metadata | undefined;
     currentDirectory: string;
     isTaskTool: boolean;
+    isMobile: boolean;
     onToggle: (toolId: string) => void;
 }) => {
     const runtime = React.useContext(RuntimeAPIContext);
     const mobileActions = useMobileAppActions();
+    const imagePath = normalizedPartTool === 'read' ? toolInputPath(input) : undefined;
+    const expandedImagePath = imagePath && isImageFile(imagePath) && !runtime?.editor && !mobileActions && !isMobile
+        ? toAbsoluteFilePath(currentDirectory, imagePath) : null;
 
     const openApplyPatchFile = (file: Record<string, unknown>, event: React.MouseEvent<HTMLButtonElement>) => {
         if (!runtime?.editor) {
@@ -142,5 +148,5 @@ export const useToolRowOpenActions = ({
         openQuickTarget();
     };
 
-    return { openApplyPatchFile, handleMainRowClick, handleMainKeyDown, quickOpenTarget, handleQuickOpen };
+    return { openApplyPatchFile, handleMainRowClick, handleMainKeyDown, quickOpenTarget, handleQuickOpen, expandedImagePath };
 };

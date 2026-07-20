@@ -144,7 +144,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     return (
         <FadeInDisabledProvider disabled>
             <LiveTailSource entry={trailingStreamingEntry} directory={directory}
-                showTurnChangedFiles={showTurnChangedFiles} store={liveTail} />
+                showTurnChangedFiles={showTurnChangedFiles} showReasoningTraces={showReasoningTraces} store={liveTail} />
             <TimelineList
                 key={sessionKey}
                 rows={rows}

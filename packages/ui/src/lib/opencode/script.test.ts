@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Metadata, ToolPart } from "./model"
-import { createScriptToolProjection, defaultExpandedScriptToolIDs } from "./script"
+import type { Metadata } from "./model"
+import { createScriptToolProjection } from "./script"
 
 const owner = { id: "script_1", sessionID: "ses_1", messageID: "msg_1" }
 const child = (tool: string, overrides: Metadata = {}): Metadata => ({
@@ -8,27 +8,25 @@ const child = (tool: string, overrides: Metadata = {}): Metadata => ({
 })
 
 describe("Script child presentation", () => {
-  test("default expansion includes the parent and only the matching command or edit children", () => {
-    const parent: ToolPart = { ...owner, type: "tool", tool: "execute", callID: owner.id, state: {
-      status: "completed", input: {}, output: "", time: { start: 1, end: 2 },
-      metadata: { toolCalls: [child("exec_command"), child("edit"), child("read"), child("poll_exec")] },
-    } }
-    expect(defaultExpandedScriptToolIDs(parent, { shell: false, edit: false })).toEqual([])
-    expect(defaultExpandedScriptToolIDs(parent, { shell: true, edit: false })).toEqual([owner.id, "script_1:child:exec_command_1"])
-    expect(defaultExpandedScriptToolIDs(parent, { shell: false, edit: true })).toEqual([owner.id, "script_1:child:edit_1"])
-    expect(defaultExpandedScriptToolIDs(parent, { shell: true, edit: true })).toEqual([owner.id, "script_1:child:exec_command_1", "script_1:child:edit_1"])
+  test("ordinary calls stay compact even when historical records contain full results", () => {
+    const entries = createScriptToolProjection(owner)({ toolCalls: [
+      child("read", { content: [{ type: "text", text: "old full result" }] }),
+      { tool: "openchamber_memory", status: "error", input: { action: "memory.save", parameters: { title: "note" } } },
+      child("exec_command"),
+    ] })
+    expect(entries.map((entry) => entry.kind)).toEqual(["summary", "summary", "part"])
+    expect(entries[1]).toMatchObject({ call: { tool: "openchamber_memory", action: "memory.save", status: "error" } })
+    expect(JSON.stringify(entries)).not.toContain("old full result")
   })
 
-  test("renders full results and attachments without adding independent transcript records", () => {
+  test("renders exec output from its snapshot without adding independent transcript records", () => {
     const entries = createScriptToolProjection(owner)({ toolCalls: [child("exec_command", {
-      input: { cmd: "echo test" }, metadata: { processRunning: true, execID: 7 },
-      content: [{ type: "text", text: "result" }, { type: "file", uri: "file:///repo/result.png", mime: "image/png", name: "result.png" }],
+      input: { cmd: "echo test" }, metadata: { processRunning: true, execID: 7, output: "result" },
     })] })
     expect(entries).toHaveLength(1)
     expect(entries[0]).toMatchObject({ kind: "part", part: {
       id: "script_1:child:exec_command_1", sessionID: "ses_1", messageID: "msg_1", tool: "exec_command",
-      state: { status: "completed", input: { cmd: "echo test" }, output: "result", metadata: { processRunning: true, execID: 7 },
-        attachments: [{ url: "file:///repo/result.png", mime: "image/png", filename: "result.png" }] },
+      state: { status: "completed", input: { cmd: "echo test" }, output: "result", metadata: { processRunning: true, execID: 7 } },
     } })
   })
 
@@ -52,7 +50,7 @@ describe("Script child presentation", () => {
   test("one changed child reparses only that child and retains the other 63 cards", () => {
     let reads = 0
     const make = (index: number): Metadata => ({
-      ...child("read", { id: `read_${index}` }),
+      ...child("exec_command", { id: `exec_${index}` }),
       get input() { reads++; return { path: `file_${index}` } },
     })
     const calls = Array.from({ length: 64 }, (_, index) => make(index))
@@ -66,6 +64,6 @@ describe("Script child presentation", () => {
     project(undefined)
     expect(project({ toolCalls: calls })[1]).not.toBe(first[1])
     const other = createScriptToolProjection({ ...owner, id: "script_2" })({ toolCalls: calls })
-    expect(other[0]).toMatchObject({ kind: "part", part: { id: "script_2:child:read_0" } })
+    expect(other[0]).toMatchObject({ kind: "part", part: { id: "script_2:child:exec_0" } })
   })
 })

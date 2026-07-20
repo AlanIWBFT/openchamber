@@ -1,6 +1,6 @@
 import type { ToolPart as ToolPartType } from '@/lib/opencode/model';
-import { formatEditOutput, detectLanguageFromOutput, capToolOutputText } from '../../toolRenderers';
-import { isShellTool } from '@/lib/opencode/tools';
+import { formatEditOutput, detectLanguageFromOutput, capToolOutputText, parseReadToolOutput } from '../../toolRenderers';
+import { isShellTool, normalizeToolName } from '@/lib/opencode/tools';
 
 export const getToolOutputLanguage = (
     output: string,
@@ -25,6 +25,7 @@ export const getToolOutputText = (
     if (isShellTool(part.tool)) {
         return capped;
     }
+    if (normalizeToolName(part.tool) === 'read') return parseReadToolOutput(capped).lines.map((line) => line.text).join('\n');
 
     return formatEditOutput(capped, part.tool, metadata);
 };

@@ -2,10 +2,12 @@ import React from 'react';
 
 import { earlierAssistantText } from '../lib/turns/earlierAssistantText';
 import { isEmptyTextPart } from '../message/partUtils';
-import type { ChatMessageEntry, TurnRecord, TurnGroupingContext } from '../lib/turns/types';
+import type { ChatMessageEntry, TurnExplorationGroup, TurnRecord, TurnGroupingContext } from '../lib/turns/types';
 import type { ReviewTransferDirection } from '@/lib/reviewFlow';
 import type { StreamPhase } from '../message/types';
 import { MessageRow } from './MessageRow';
+const EMPTY_EXPLORATION_GROUPS: TurnExplorationGroup[] = [];
+const EMPTY_PART_IDS: string[] = [];
 
 const isAssistantMessageCompleted = (message: ChatMessageEntry): boolean => {
     const info = message.info as { time?: { completed?: unknown }; status?: unknown };
@@ -123,6 +125,21 @@ export const useTurnMessageRenderer = ({
         };
     }, [turn.activityParts, turn.changedFiles, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summaryText, turn.turnId, turn.assistantMessages, turn.userMessage.info]);
 
+    const explorationByMessage = React.useMemo(() => {
+        const anchored = new Map<string, TurnExplorationGroup[]>();
+        const memberIds = new Map<string, string[]>();
+        for (const group of turn.explorationGroups) {
+            const groups = anchored.get(group.anchorMessageId) ?? [];
+            groups.push(group);
+            anchored.set(group.anchorMessageId, groups);
+            for (const activity of group.parts) {
+                const ids = memberIds.get(activity.messageId) ?? [];
+                ids.push(activity.id);
+                memberIds.set(activity.messageId, ids);
+            }
+        }
+        return { anchored, memberIds };
+    }, [turn.explorationGroups]);
     return React.useCallback(
         (message: ChatMessageEntry) => {
             const assistantIndex = assistantIndexById.get(message.info.id) ?? -1;
@@ -130,6 +147,8 @@ export const useTurnMessageRenderer = ({
             const isFirstAssistant = assistantIndex === 0;
             const isLastAssistant = assistantIndex === turn.assistantMessages.length - 1;
             const isActivityOwner = Boolean(activityOwnerMessageId) && message.info.id === activityOwnerMessageId;
+            const explorationGroups = explorationByMessage.anchored.get(message.info.id) ?? EMPTY_EXPLORATION_GROUPS;
+            const explorationPartIds = explorationByMessage.memberIds.get(message.info.id) ?? EMPTY_PART_IDS;
             const shouldAttachFullTurnContext = isActivityOwner || isFirstAssistant || isLastAssistant;
             const assistantHeaderMessageId = turn.assistantMessages[0]?.info.id ?? turn.headerMessageId;
 
@@ -143,7 +162,9 @@ export const useTurnMessageRenderer = ({
                     opensAnswerText: message.info.id === answerTextOpenerId,
                     earlierAssistantText: isLastAssistant && turnEarlierAssistantText.length > 0 ? turnEarlierAssistantText : undefined,
                     isLatestTurn: isLastTurn,
-                    isWorking: isLastTurn && sessionIsWorking && message.info.id === streamingAssistantMessageId,
+                    isWorking: isLastTurn && sessionIsWorking && (message.info.id === streamingAssistantMessageId || explorationGroups.some((group) => group.isTail)),
+                    explorationGroups,
+                    explorationPartIds,
                     hasTools: turn.hasTools,
                     hasReasoning: turn.hasReasoning,
                     ...(shouldAttachFullTurnContext ? {
@@ -188,6 +209,7 @@ export const useTurnMessageRenderer = ({
             activeStreamingPhase,
             reviewTransferDirection,
             assistantIndexById,
+            explorationByMessage,
             turnEarlierAssistantText,
             activityOwnerMessageId,
             shouldAnimateUserMessage,

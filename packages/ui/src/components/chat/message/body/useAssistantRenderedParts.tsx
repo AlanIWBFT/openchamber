@@ -1,4 +1,5 @@
 import React from 'react';
+import { ExplorationToolGroup } from '../parts/ExplorationToolGroup';
 import type { Part, ToolPart as ToolPartType } from '@/lib/opencode/model';
 import type { StreamPhase, ToolPopupContent } from '../types';
 import type { TurnGroupingContext } from '../../lib/turns/types';
@@ -69,6 +70,11 @@ export const useAssistantRenderedParts = ({
     const nestedTools = React.useMemo(() => ({ expanded: expandedTools, toggle: onToggleTool }), [expandedTools, onToggleTool]);
 
     return React.useMemo(() => {
+        const explorationGroups = new Map((turnGroupingContext?.explorationGroups ?? []).flatMap((group) => {
+            const first = group.parts[0];
+            return first ? [[first.id, group] as const] : [];
+        }));
+        const explorationPartIds = new Set(turnGroupingContext?.explorationPartIds ?? []);
         const answerRendered: React.ReactNode[] = [];
         const activityRendered: React.ReactNode[] = [];
         let rendered = answerRendered;
@@ -211,6 +217,18 @@ export const useAssistantRenderedParts = ({
                     continue;
                 }
 
+                const explorationGroup = explorationGroups.get(toolPart.id);
+                if (explorationGroup) {
+                    rendered.push(<ExplorationToolGroup key={explorationGroup.id} id={explorationGroup.id} activities={explorationGroup.parts}
+                        isExpanded={expandedTools.has(explorationGroup.id)} isMobile={isMobile} expandedTools={expandedTools}
+                        onToggleTool={onToggleTool} onShowPopup={onShowPopup} />);
+                    i++;
+                    continue;
+                }
+                if (explorationPartIds.has(toolPart.id)) {
+                    i++;
+                    continue;
+                }
                 if (!isToolRowShown(toolPart)) {
                     i++;
                     continue;

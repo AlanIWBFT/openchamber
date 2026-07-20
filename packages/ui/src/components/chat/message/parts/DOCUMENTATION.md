@@ -18,11 +18,13 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Contains `StaticToolRow`, the compact one-line row of a navigation tool.
     The file keeps the name of the grouped Activity block it used to hold.
   - Contains static tool short description logic (`getToolShortDescription`).
-  - If you want to change how `read/grep/perplexity/webfetch/...` look in compact mode, edit here.
+  - If you want to change compact `skill` rows, edit here.
+  - `ExplorationToolGroup.tsx` renders cross-message Exploration groups.
 
 - `ToolPart.tsx`
-  - The entry of expandable tool rows (shell/edit/write/question/subagent + fallback). It only composes: it picks the row for the call (`BackgroundShellToolPartContent`, `SubagentToolPartContent`, `ShellToolPartContent` or `ToolPartContent`) and wraps it in `ToolPartErrorBoundary`.
+  - The entry of expandable tool rows (including read, shell, edit, write, question and subagent). It picks the row for the call (`BackgroundShellToolPartContent`, `SubagentToolPartContent`, `ShellToolPartContent` or `ToolPartContent`) and wraps it in `ToolPartErrorBoundary`.
   - The pieces live in `toolRow/`: `ToolPartContent.tsx` is the row (header title/description/diff stats/timer, with `useToolRowTiming` and `useToolRowOpenActions`), `ToolExpandedContent.tsx` is the expanded body, `toolDescriptions.ts` builds the row's text, and the output views (`ToolScrollableTextOutput`, `JsonToolOutput`, `CommandOutput`, `DiffPreview`, ...) are one file each.
+  - An image read keeps the upstream fullscreen action beside quick-open on web and desktop: it opens the file with `expanded: true`. Mobile already opens a full-screen Files pane and VS Code opens its editor, so neither shows that extra action.
   - If you want to change expandable tool layout, edit in `toolRow/`.
   - A subagent call is an ordinary tool row, rendered through `SubagentToolPartContent`: shine and a live duration while it runs, the final duration (red on failure) once settled, and an open action that shows the child session. Expanded, it shows the prompt and the result. The row never reads the child session's messages; the child's own chat is where its work is shown.
   - While the child runs, foreground or background, the row has a stop action. OpenCode 2.0.23 has no route that cancels a subagent job; interrupting the child ends the job as cancelled, which the agent reads as a failed subagent and tends to restart. `opencodeClient.stopSubagent` therefore first admits a non-resuming synthetic note (`subagentCancellationNote` in `@/lib/opencode/subagent-run`) that explains the cancellation as the user's stop without forbidding the work, and interrupts the child only once the note is in. A foreground call the note names reads `stopped` instead of failed (`toStoppedSubagentPart`). Drop the note once OpenCode reports a user cancel itself.
@@ -613,10 +615,24 @@ The header retains its report when expanded and has no hover background. Its
 left inset matches the tool rows. Diff deletions use the ASCII hyphen.
 The header reports five categories: changed files, codebase
 exploration, commands, web research, and subagents. Narrow chat columns only
-show file changes. Exploration and research are flags, not synthetic counts.
+show file changes and any running-command indicator. Exploration and research are flags, not synthetic counts.
 Subagents count distinct child session IDs; commands count calls, not shell
 subcommands. Unknown tools and administrative tools stay in the disclosure
 without a guessed summary category.
+
+Unified Exec commands count their `exec_command` roots, never their polling,
+stdin, or termination controls. A final answer still collapses the outer
+Activity while root `processRunning` metadata keeps a running-command count
+visible in its header. Updated root metadata clears that count on exit;
+finishing the assistant turn does not end a background command. Expanded
+Activity retains the local exploration groups and command controls.
+
+Activity reporting includes Script child summaries through
+`lib/opencode/tool-activity.ts`. Ordinary children do not retain their full results
+or file metadata; the Script keeps the official outer result and file collection. This projection reads
+reporting fields only, not Script source, output transcripts or attachment bodies.
+Message preview-URL discovery checks a Script's own output before its exec child
+outputs and uses the latest exec preview; it stops at the first matching URL.
 
 File statistics come exclusively from successful edit/write/patch tool
 results, not user-message summary diffs or the current workspace Git diff.
@@ -773,12 +789,6 @@ update, with the `shellID`, when the command starts.
   same-runtime credential renewal. Reconnection also checks the URL resolver
   identity because hidden providers can miss endpoint events.
 
-- `read` and `skill` are **static navigation tools** and render via `StaticToolRow`.
-  A `read` of an image adds a fullscreen icon after the title, placed and
-  styled like the open icon of the edit rows; it opens the image with the files zone expanded beside the chat
-  (`openContextFile` with `expanded`). Only web and desktop show it: VS Code
-  and mobile open files full size already, through the path itself.
-- Every other tool, including search/fetch, OpenCode built-ins, custom tools, plugins, and MCP tools, is **expandable** and renders through `ToolPart`.
 - OpenChamber's own tools (`openchamber`, `openchamber_*`, and an `execute` script that made exactly one of their calls) use the expandable path. Their result is a versioned envelope (`{ ok, action, data }`, `openChamberToolEnvelope.ts`):
   - The row keeps the tool's name as its title. Once the envelope says the action succeeded, the description is the action's verb from the i18n map (`OPENCHAMBER_ACTION_VERB_KEYS`, "Remembered · Uses bun"); a running, failed, or unreadable call keeps the action's own name (`memory.save`). A history page leaves results out (`toolContentShells.ts`), so the row reads the action and outcome the server kept in the shell marker; without them every reloaded row fell back to `memory.save` until opened.
   - The expanded row draws the action's own view (`OpenChamberToolOutput.tsx`) when `hasOpenChamberView` finds a successful action it knows with the data that view reads; anything else keeps the neutral JSON views, so a changed answer never leaves the row empty. A failed call shows its error message as text. "Show the raw answer" switches to the JSON views.
@@ -793,6 +803,14 @@ update, with the `shellID`, when the command starts.
   - The expanded row reads the call's answer, the tool's structured output that the script returned (`opencodeToolResult.ts`), against that tool's output schema from the OpenCode repository, and draws it in `OpencodeToolOutput.tsx`; anything else keeps the plain output. While the view shows, the raw input is hidden; the raw answer and a failed call keep it.
 - Selecting a JSON summary, tree, or raw view saves that mode in the persisted UI settings. New and refreshed JSON tool outputs read the saved mode across sessions; missing or invalid preferences use Summary. A summary section's chevron turns on that section's own `<details>` state (`JsonSummarySection`), never on an enclosing one, so a nested row that is still collapsed keeps pointing right while its parent is open. A collapsed object row adds a preview of its first two non-identity fields after its label and identity (`{ key: value, … }`, nested containers as `{…}`/`[…]`, empty ones as `{}`/`[]`, capped at 96 characters); the row stays one line and truncates to the available width, and an expanded row shows only its label and identity.
 - Unified Exec reuses the Shell presentation: `exec_command` is the visible root card, while successful `poll_exec`, `write_stdin` and `terminate_exec` controls are omitted from live, sorted Activity and Script children. Follow-up failures remain visible, with `chars` removed from their input presentation. Script source and script output keep their normal rendering. A pending `write_stdin` has incomplete input, so operation-specific status is derived only after its running state arrives.
+- Consecutive built-in `read`, `glob`, `grep`, and `list` calls render in one collapsible **Exploration** group. Groups may cross assistant messages in the same user turn, but visible text, visible reasoning, every other tool, and namespaced custom tools end the group.
+- The group title is state-independent and its localized summary reports non-zero search (`glob`/`grep`/`list`) and read counts. Its disclosure icon and content rail follow the Reasoning block pattern.
+- Ordinary Script child calls use the upstream compact name/argument rows. Only persistent exec calls project command cards; Script children do not form Exploration groups.
+- Read classification accepts the official V2 `Read file`/`Read directory` output header and retained V1 display metadata/tags. The shared output parser removes the V2 header without treating literal `<content>` or `<entries>` in file contents as V1 wrappers.
+- Exploration counts and rows include active calls, explicit error/cancellation terminal states, or successful calls with an authoritative valid end time, preventing partial sync state from producing an empty expandable group without hiding failures.
+- Activity aggregates Exploration groups before applying its collapsed recent-row preview, so a group is never split at the preview boundary.
+- Inside an expanded Exploration group, `read`, `glob`, `grep`, and `list` all use the standard expandable `ToolPart` card. A completed directory read keeps that card but switches its leading icon and localized title to the directory presentation, suppresses the secondary file icon, and shows the relative directory path only in the card header. Directory display paths without `/` gain a trailing `/` (`.` becomes `./`); input and output values are unchanged. Read output is normalized through the shared tagged-output parser and rendered as multiline text, so file contents and directory entries do not use special navigation rows. Image/PDF attachments continue through the shared attachment renderer.
+- Outside Exploration groups, `read` also uses the standard expandable card; only `skill` remains a static navigation row. Historical Todo calls remain visible through the generic tool renderer; OpenCode 2 has no live model Todo list. Every other tool remains **expandable**.
 - A completed `exec_command` can still represent a running process. Its root card follows OpenCode Desktop's authority rules: server metadata alone drives process status and timing, `sessionExposed` gates live and completed duration, and fast commands that never expose a process session show no completion timer. OpenCode guarantees that `metadata.output` is a control-sequence-free UI transcript; OpenChamber only normalizes its line endings.
 - `ToolPart` defers expanded content after a user toggle, preventing large tool input/output payloads from mounting during the initial chat render.
 - A failed `!command` row states its reason while collapsed, after the description and in the error colour, so a red row is not a bare duration. `TimelineNotice` passes it as `failureReason`: for a command that exited on its own, the last non-empty line of its output as the terminal shows it, because that is where sudo or ls prints the problem; for one killed or timed out, one that printed nothing, or one whose output OpenCode truncated (it keeps the start, so the last stored line is not the end), how it ended (`timeout`, `exited (1)`). The line is capped at 300 characters, its tooltip shows what the row cuts off, and the whole line is in the expanded output. An expanded row does not repeat it, because the body already shows the error and output. Agent tool rows get no reason line: a call interrupted by Stop keeps its streamed output, and its last line would read as the failure.
@@ -807,15 +825,15 @@ update, with the `shellID`, when the command starts.
   `@/lib/opencode/tools`; while the script is running, or if it called nothing,
   the row falls back to the script's first line, capped like a shell command.
   The expanded body replaces the generic input preview with the script as
-  highlighted JavaScript, then complete child tool cards, then the normal output
-  section. `lib/opencode/script.ts` projects those cards from the parent's metadata;
-  they are not independent transcript parts or model calls. Results, attachments,
-  failures and command previews use the normal tool renderer. Older records without
-  child IDs or timing keep their compact name/argument rows. Each mounted Script
-  retains only its current child projections, reusing unchanged child references
-  during preview updates. Child expansion uses the message owner's existing expansion
-  memory in live and sorted rendering. Default-expanded Shell/edit settings open both
-  matching children and their parent Script; manual collapse remains authoritative.
+  highlighted JavaScript, then compact child name/argument rows, then the normal output
+  section. `lib/opencode/script.ts` projects live cards only for persistent execs,
+  using their metadata for output and errors. Ordinary child results and attachments
+  are not duplicated; the script's own output and collected files stay on its outer
+  part. Extra fields in older records do not restore the old child cards. Each
+  mounted Script retains only its current projections, reusing unchanged references
+  during exec preview updates. Exec expansion uses the message owner's existing expansion
+  memory. Tools and Script children expand on click; the former default-expanded
+  Shell/edit settings no longer apply. Historical tool content is fetched on demand.
   `metadata.truncated` adds a plain note with `metadata.outputPath` as
   text: the app has no open-file affordance for a path outside the project.
   The status pill says `running a script`, or `calling <tool>` once
@@ -964,19 +982,19 @@ icon service. A globe represents sites without an icon.
 
 ## "I want to change description for Perplexity" (example recipe)
 
-If task is: "change text shown near Read or Skill in compact mode":
+If task is: "change text shown near Skill in compact mode":
 
 1. Edit `ProgressiveGroup.tsx` -> `getToolShortDescription(activity)`.
-2. Update the branch that handles `read` or `skill` in `StaticToolRow`.
+2. Update the branch that handles `skill` in `StaticToolRow`.
 3. Keep all other tool header/output behavior in `ToolPart.tsx` and `toolRow/`.
 4. Keep icon changes (if any) in `toolPresentation.tsx`.
 
-Why: only navigation tools use the compact static path; all other tools need observable input and output.
+Why: `skill` has a purpose-built compact navigation interaction; all other tools need observable input and output.
 
 ## "I want tool to become expandable" (example)
 
 1. Update `toolRenderUtils.ts`:
-   - add/remove a tool name from `STATIC_TOOL_NAMES` only when it has a reliable direct in-app navigation action
+   - add/remove a navigation tool name only when it has a reliable purpose-built compact interaction
 2. Ensure `ToolPart.tsx` (`toolRow/`) supports desired header + expanded output format for that tool.
 3. Validate with Activity Default set to Expanded and to Collapsed.
 
