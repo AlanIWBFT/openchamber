@@ -23,6 +23,7 @@ type BuildLiveStreamingEntryOptions = {
     livePartsByMessageId: Readonly<Record<string, Part[]>>;
     showTurnChangedFiles: boolean;
     mergeHiddenUserTurns?: boolean;
+    showReasoningTraces: boolean;
 };
 
 // The record with its live parts, kept per record so an unchanged pair is the
@@ -94,6 +95,7 @@ export const buildLiveStreamingEntry = <TEntry extends StreamingTailEntry>(
         showTurnChangedFiles: options.showTurnChangedFiles,
         mergeHiddenUserTurns: options.mergeHiddenUserTurns,
         firstMessageOpensTurn: true,
+        showReasoningTraces: options.showReasoningTraces,
     });
     const turn = projection.turns[0] ?? {
         ...entry.turn,

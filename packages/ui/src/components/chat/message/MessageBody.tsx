@@ -48,6 +48,7 @@ import { Icon } from "@/components/icon/Icon";
 import { formatTimestampForDisplay } from './timeFormat';
 import { ToolRevealOnMount } from './parts/ToolRevealOnMount';
 import { StaticToolRow } from './parts/ProgressiveGroup';
+import { ExplorationToolGroup } from './parts/ExplorationToolGroup';
 import { isExpandableTool } from './parts/toolRenderUtils';
 import { LiveActivityCollapse } from '../components/LiveActivityCollapse';
 import { ActivityRowSkipContext, isActivityRowPart, isToolRowShown } from '../lib/turns/activityRows';
@@ -1199,7 +1200,10 @@ const AssistantMessageBody = React.memo(({
         };
     }
 
-    const currentToolIds = React.useMemo(() => toolParts.map((toolPart) => toolPart.id), [toolParts]);
+    const currentToolIds = React.useMemo(() => [...new Set([
+        ...toolParts.map((toolPart) => toolPart.id),
+        ...(turnGroupingContext?.explorationGroups ?? []).flatMap((group) => group.parts.map((activity) => activity.id)),
+    ])], [toolParts, turnGroupingContext?.explorationGroups]);
     const shouldAnimateNewToolMount = Boolean(turnGroupingContext?.isWorking && toolRevealReadyRef.current);
     const persistedToolIds = toolRevealStateRef.current.persistedToolIds;
     const animatedToolIds = toolRevealStateRef.current.animatedToolIds;
@@ -1616,6 +1620,11 @@ const AssistantMessageBody = React.memo(({
     const shouldRenderStandaloneActionsAfterContent = shouldShowStandaloneMessageActions && lastRenderableTextPartIndex < 0;
 
     const renderedParts = React.useMemo(() => {
+        const explorationGroups = new Map((turnGroupingContext?.explorationGroups ?? []).flatMap((group) => {
+            const first = group.parts[0];
+            return first ? [[first.id, group] as const] : [];
+        }));
+        const explorationPartIds = new Set(turnGroupingContext?.explorationPartIds ?? []);
         const answerRendered: React.ReactNode[] = [];
         const activityRendered: React.ReactNode[] = [];
         let rendered = answerRendered;
@@ -1717,6 +1726,19 @@ const AssistantMessageBody = React.memo(({
             if (part.type === 'tool') {
                 const toolPart = part as ToolPartType;
                 const toolName = toolPart.tool?.toLowerCase() ?? '';
+
+                const explorationGroup = explorationGroups.get(toolPart.id);
+                if (explorationGroup) {
+                    rendered.push(<ExplorationToolGroup key={explorationGroup.id} id={explorationGroup.id} activities={explorationGroup.parts}
+                        isExpanded={expandedTools.has(explorationGroup.id)} isMobile={isMobile} expandedTools={expandedTools}
+                        onToggleTool={onToggleTool} onShowPopup={onShowPopup} animatedToolIds={animatedToolIdsLookup} />);
+                    i++;
+                    continue;
+                }
+                if (explorationPartIds.has(toolPart.id)) {
+                    i++;
+                    continue;
+                }
 
                 if (!isToolRowShown(toolPart)) {
                     i++;

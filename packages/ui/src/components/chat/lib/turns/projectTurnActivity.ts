@@ -1,9 +1,11 @@
 import type {
     ChatMessageEntry,
     TurnActivityRecord,
+    TurnExplorationGroup,
     TurnPartRecord,
 } from './types';
 import { shouldHideExecFollowUp } from '../../message/unifiedExec';
+import { isExplorationGroupTool } from '@/lib/opencode/tools';
 
 const getPartEndTime = (part: unknown): number | undefined => {
     const stateEnd = (part as { state?: { time?: { end?: unknown } } }).state?.time?.end;
@@ -45,10 +47,12 @@ const buildTurnPartRecord = (
 interface ProjectActivityInput {
     turnId: string;
     assistantMessages: ChatMessageEntry[];
+    showReasoningTraces: boolean;
 }
 
 interface ProjectActivityResult {
     activityParts: TurnActivityRecord[];
+    explorationGroups: TurnExplorationGroup[];
     hasTools: boolean;
     hasReasoning: boolean;
 }
@@ -56,12 +60,23 @@ interface ProjectActivityResult {
 /** The turn's tool calls and non-empty reasoning, in the order they ran. */
 export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivityResult => {
     const activityParts: TurnActivityRecord[] = [];
+    const explorationGroups: TurnExplorationGroup[] = [];
+    let explorationParts: TurnActivityRecord[] = [];
+    const flushExploration = (isTail = false) => {
+        const first = explorationParts[0];
+        if (!first) return;
+        explorationGroups.push({ id: `${input.turnId}:exploration:${first.id}`, anchorMessageId: first.messageId, parts: explorationParts, isTail });
+        explorationParts = [];
+    };
     let hasTools = false;
     let hasReasoning = false;
 
     input.assistantMessages.forEach((message) => {
         message.parts.forEach((part, partIndex) => {
             if (part.type === 'tool' && shouldHideExecFollowUp(part)) return;
+            const explorationTool = part.type === 'tool' && isExplorationGroupTool(part.tool);
+            if (!explorationTool && (part.type === 'tool' || (part.type === 'text' && getPartText(part))
+                || (part.type === 'reasoning' && input.showReasoningTraces && getPartText(part)))) flushExploration();
             let kind: TurnActivityRecord['kind'];
             if (part.type === 'tool') {
                 hasTools = true;
@@ -73,15 +88,19 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
                 return;
             }
 
-            activityParts.push({
+            const activity: TurnActivityRecord = {
                 ...buildTurnPartRecord(input.turnId, message.info.id, part, partIndex),
                 kind,
-            });
+            };
+            activityParts.push(activity);
+            if (explorationTool) explorationParts.push(activity);
         });
     });
+    flushExploration(true);
 
     return {
         activityParts,
+        explorationGroups,
         hasTools,
         hasReasoning,
     };
