@@ -46,12 +46,14 @@ export const buildProjectionCacheKey = (
   sessionKey: string,
   messages: ChatMessageEntry[],
   showTurnChangedFiles: boolean,
+  showReasoningTraces: boolean,
   mergeHiddenUserTurnsKey: string,
 ): string => {
   return [
     sessionKey,
     buildMessagesVersionSignature(messages),
     showTurnChangedFiles ? '1' : '0',
+    showReasoningTraces ? '1' : '0',
     mergeHiddenUserTurnsKey,
   ].join('|');
 };

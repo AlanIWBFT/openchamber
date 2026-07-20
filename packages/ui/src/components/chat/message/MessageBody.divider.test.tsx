@@ -96,14 +96,14 @@ describe('final answer divider', () => {
   });
 
   test('ignores invisible reasoning in an earlier assistant step', () => {
-    const activity = projectTurnActivity({ turnId: 'turn', assistantMessages: [assistant('earlier-step', [reasoning('')])] });
+    const activity = projectTurnActivity({ turnId: 'turn', assistantMessages: [assistant('earlier-step', [reasoning('')])], showReasoningTraces: true });
     expect(renderAnswer([answer], {
       ...context, ...activity, isFirstAssistantInTurn: false,
     })).not.toContain(divider);
   });
 
   test('keeps the divider after visible reasoning in an earlier assistant step', () => {
-    const activity = projectTurnActivity({ turnId: 'turn', assistantMessages: [assistant('earlier-step', [reasoning('Checking the response.')])] });
+    const activity = projectTurnActivity({ turnId: 'turn', assistantMessages: [assistant('earlier-step', [reasoning('Checking the response.')])], showReasoningTraces: true });
     expect(renderAnswer([answer], {
       ...context, ...activity, isFirstAssistantInTurn: false,
     })).toContain(divider);

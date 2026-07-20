@@ -1,5 +1,5 @@
 import type { Message, Part } from '@/lib/opencode/model';
-import type { TurnActivityRecord, TurnChangedFile, TurnGroupingContext } from '../lib/turns/types';
+import type { TurnActivityRecord, TurnChangedFile, TurnExplorationGroup, TurnGroupingContext } from '../lib/turns/types';
 
 type MessageRecord = {
   info: Message;
@@ -216,6 +216,16 @@ const areStringListsEqual = (left: string[] | undefined, right: string[] | undef
   return left.every((value, index) => value === right[index]);
 };
 
+const areTurnExplorationGroupsEqual = (left: TurnExplorationGroup[] | undefined, right: TurnExplorationGroup[] | undefined): boolean => {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((group, index) => {
+    const other = right[index];
+    return group.id === other.id && group.anchorMessageId === other.anchorMessageId && group.isTail === other.isTail
+      && group.parts.length === other.parts.length && group.parts.every((part, partIndex) => areTurnActivityRecordsEqual(part, other.parts[partIndex]));
+  });
+};
+
 export const areRelevantTurnGroupingContextsEqual = (
   left: TurnGroupingContext | undefined,
   right: TurnGroupingContext | undefined,
@@ -253,6 +263,9 @@ export const areRelevantTurnGroupingContextsEqual = (
   if (!areRelevantActivityPartsEqual(left.activityParts, right.activityParts, messageId)) {
     return false;
   }
+
+  if (!areTurnExplorationGroupsEqual(left.explorationGroups, right.explorationGroups)
+    || !areStringListsEqual(left.explorationPartIds, right.explorationPartIds)) return false;
 
   if ((left.isLastAssistantInTurn || right.isLastAssistantInTurn) && !areTurnChangedFilesEqual(left.changedFiles, right.changedFiles)) {
     return false;
