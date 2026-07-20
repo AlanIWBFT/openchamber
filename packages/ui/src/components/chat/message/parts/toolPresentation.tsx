@@ -4,6 +4,7 @@ import { GuestIcon } from '@/components/layout/GuestRailIcon';
 import { resolveGuestToolIcon } from '@/lib/guests/icon';
 import type { GuestToolRule } from '@/lib/guests/tool-presentation';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
+import { isUnifiedExecTool } from '@/lib/opencode/tools';
 
 /**
  * Icon for a tool row, dialog header, or error fallback. An extension rule
@@ -42,7 +43,7 @@ export const getToolIcon = (toolName: string, presentation?: GuestToolRule | nul
     if (tool === 'execute') {
         return <Icon name="braces" className={iconClass} />;
     }
-    if (tool === 'shell' || tool === 'bash' || tool === 'cmd' || tool === 'terminal' || tool === 'shell_command') {
+    if (tool === 'shell' || tool === 'bash' || tool === 'cmd' || tool === 'terminal' || tool === 'shell_command' || isUnifiedExecTool(tool)) {
         return <Icon name="terminal-box" className={iconClass} />;
     }
     if (tool === 'ls' || tool === 'dir' || tool === 'list_files') {

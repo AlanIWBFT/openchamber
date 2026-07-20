@@ -7,6 +7,8 @@ import {
     isExecuteTool,
     isShellTool,
     isSubagentTool,
+    isUnifiedExecTool,
+    isWriteStdinTool,
     lastExecuteToolCall,
     mcpToolServer,
     opencodeNamespaceTool,
@@ -21,6 +23,7 @@ import { useDirectorySync, useSession, useSessionMessages, useSessionPermissions
 import { useSessionActivity } from './useSessionActivity';
 import type { AgentStatus } from '@/lib/agentStatus';
 import type { I18nKey } from '@/lib/i18n';
+import { getWriteStdinOperation, type WriteStdinOperation } from '@/components/chat/message/unifiedExec';
 
 type AssistantActivity = 'idle' | 'streaming' | 'tooling' | 'cooldown' | 'permission';
 
@@ -115,6 +118,10 @@ const TOOL_BUCKETS = new Map<string, ToolBucket>(Object.entries({
     write: 'edit',
     patch: 'edit',
     shell: 'command',
+    exec_command: 'command',
+    poll_exec: 'command',
+    write_stdin: 'command',
+    terminate_exec: 'command',
     execute: 'command',
     webfetch: 'lookup',
     websearch: 'lookup',
@@ -161,6 +168,7 @@ type ParsedStatusResult = {
     activePartType: 'text' | 'tool' | 'reasoning' | 'editing' | undefined;
     activeToolName: string | undefined;
     status: AgentStatus;
+    writeStdinOperation: WriteStdinOperation | undefined;
     isGenericStatus: boolean;
     canBackground: boolean;
 };
@@ -325,6 +333,7 @@ const getStableWorkingStatus = (key: string): AgentStatus => {
  */
 export const hasBackgroundableWork = (parts: readonly Part[]): boolean => parts.some((part) => {
     if (part.type !== 'tool' || part.state?.status !== 'running') return false;
+    if (isUnifiedExecTool(part.tool)) return false;
     if (isShellTool(part.tool) || isSubagentTool(part.tool)) return true;
     if (!isExecuteTool(part.tool)) return false;
     return executeHasBackgroundableWork(part.state.metadata);
@@ -337,6 +346,7 @@ export const createParsedStatus = (parts: Part[], genericKey: string, mcpServers
     let activeToolName: string | undefined = undefined;
     let activeToolStatus: AgentStatus | undefined = undefined;
     let activeReasoningId: string | undefined = undefined;
+    let writeStdinOperation: WriteStdinOperation | undefined = undefined;
 
     for (let index = parts.length - 1; index >= 0; index -= 1) {
         const part = parts[index];
@@ -360,6 +370,9 @@ export const createParsedStatus = (parts: Part[], genericKey: string, mcpServers
                     activePartType = bucket === 'edit' ? 'editing' : 'tool';
                     activeToolName = toolName;
                     activeToolStatus = getRunningToolStatus(part, toolName, runningToolCounts.get(bucket ?? toolName) ?? 1, mcpServers);
+                    writeStdinOperation = isWriteStdinTool(toolName)
+                        ? getWriteStdinOperation(toolStatus, part.state.input)
+                        : undefined;
                 }
                 break;
             }
@@ -392,13 +405,14 @@ export const createParsedStatus = (parts: Part[], genericKey: string, mcpServers
         return getStableWorkingStatus(genericKey);
     })();
 
-    return { activePartType, activeToolName, status: resolved, isGenericStatus, canBackground: hasBackgroundableWork(parts) };
+    return { activePartType, activeToolName, writeStdinOperation, status: resolved, isGenericStatus, canBackground: hasBackgroundableWork(parts) };
 };
 
 const encodeParsedStatus = (status: ParsedStatusResult): string => {
     return [
         status.activePartType ?? '',
         status.activeToolName ?? '',
+        status.writeStdinOperation ?? '',
         // The signature decides re-renders: equal statuses encode the same.
         JSON.stringify([status.status.key, status.status.count ?? null, status.status.name ?? null, status.status.seed ?? null]),
         status.isGenericStatus ? '1' : '0',
@@ -419,16 +433,27 @@ const decodeStatus = (encoded: string | undefined): AgentStatus => {
 };
 
 const decodeParsedStatus = (signature: string): ParsedStatusResult => {
-    const [activePartType, activeToolName, encodedStatus, isGenericStatus, canBackground] = signature.split(STATUS_SIGNATURE_SEPARATOR);
+    const [activePartType, activeToolName, writeStdinOperation, encodedStatus, isGenericStatus, canBackground] = signature.split(STATUS_SIGNATURE_SEPARATOR);
     return {
         activePartType: activePartType === 'text' || activePartType === 'tool' || activePartType === 'reasoning' || activePartType === 'editing'
             ? activePartType
             : undefined,
         activeToolName: activeToolName || undefined,
         status: decodeStatus(encodedStatus),
+        writeStdinOperation: writeStdinOperation === 'preparing' || writeStdinOperation === 'polling' || writeStdinOperation === 'sending'
+            ? writeStdinOperation
+            : undefined,
         isGenericStatus: isGenericStatus === '1',
         canBackground: canBackground === '1',
     };
+};
+
+export const createAssistantStatusSignature = (parts: Part[], genericKey: string, mcpServers: readonly string[] = []): string => {
+    return encodeParsedStatus(createParsedStatus(parts, genericKey, mcpServers));
+};
+
+export const parseAssistantStatusSignature = (signature: string): ParsedStatusResult => {
+    return decodeParsedStatus(signature);
 };
 
 const isReasoningPart = (part: Part): part is ReasoningPart => part.type === 'reasoning';
@@ -593,7 +618,7 @@ export function useAssistantStatus(): AssistantStatusSnapshot {
         React.useCallback((state) => {
             const genericKey = `${currentSessionId ?? ''}:${lastAssistantId ?? ''}`;
             const parts = lastAssistantId ? (state.part[lastAssistantId] ?? EMPTY_PARTS) : EMPTY_PARTS;
-            return encodeParsedStatus(createParsedStatus(parts, genericKey, mcpServers));
+            return createAssistantStatusSignature(parts, genericKey, mcpServers);
         }, [currentSessionId, lastAssistantId, mcpServers]),
         currentSessionDirectory ?? undefined,
     );
@@ -631,8 +656,24 @@ export function useAssistantStatus(): AssistantStatusSnapshot {
     }, [rawSessionMessages, lastAssistantId]);
 
     const parsedStatus = React.useMemo<ParsedStatusResult>(() => {
-        return decodeParsedStatus(lastAssistantStatusSignature);
+        return parseAssistantStatusSignature(lastAssistantStatusSignature);
     }, [lastAssistantStatusSignature]);
+    const localizedParsedStatus = React.useMemo<ParsedStatusResult>(() => {
+        const key = parsedStatus.activeToolName === 'exec_command'
+            ? 'chat.assistantStatus.unifiedExec.runningCommand'
+            : parsedStatus.activeToolName === 'write_stdin'
+                ? parsedStatus.writeStdinOperation === 'preparing'
+                    ? 'chat.assistantStatus.unifiedExec.preparingProcessOperation'
+                    : parsedStatus.writeStdinOperation === 'polling'
+                        ? 'chat.assistantStatus.unifiedExec.pollingProcessOutput'
+                        : parsedStatus.writeStdinOperation === 'sending'
+                            ? 'chat.assistantStatus.unifiedExec.sendingProcessInput'
+                            : 'chat.assistantStatus.unifiedExec.runningCommand'
+                : parsedStatus.activeToolName === 'terminate_exec'
+                    ? 'chat.assistantStatus.unifiedExec.terminatingProcess'
+                    : undefined;
+        return key ? { ...parsedStatus, status: { key } } : parsedStatus;
+    }, [parsedStatus]);
 
     const abortState = React.useMemo(() => {
         const hasActiveAbort = Boolean(sessionAbortRecord && !sessionAbortRecord.acknowledged);
@@ -664,7 +705,7 @@ export function useAssistantStatus(): AssistantStatusSnapshot {
 
         let activity: AssistantActivity = 'idle';
         if (isWorking) {
-            if (parsedStatus.activePartType === 'tool' || parsedStatus.activePartType === 'editing') {
+            if (localizedParsedStatus.activePartType === 'tool' || localizedParsedStatus.activePartType === 'editing') {
                 activity = 'tooling';
             } else {
                 activity = isCooldown ? 'cooldown' : 'streaming';
@@ -682,31 +723,31 @@ export function useAssistantStatus(): AssistantStatusSnapshot {
         return {
             activity,
             hasWorkingContext: isWorking,
-            hasActiveTools: parsedStatus.activePartType === 'tool' || parsedStatus.activePartType === 'editing',
+            hasActiveTools: localizedParsedStatus.activePartType === 'tool' || localizedParsedStatus.activePartType === 'editing',
             isWorking,
             isStreaming,
             isCooldown,
             lifecyclePhase: isStreaming ? 'streaming' : isCooldown ? 'cooldown' : null,
-            status: isWorking ? parsedStatus.status : null,
-            isGenericStatus: isWorking ? parsedStatus.isGenericStatus : true,
+            status: isWorking ? localizedParsedStatus.status : null,
+            isGenericStatus: isWorking ? localizedParsedStatus.isGenericStatus : true,
             isWaitingForPermission: false,
             canAbort: isWorking,
             compactionDeadline: null,
-            activePartType: isWorking ? parsedStatus.activePartType : undefined,
-            activeToolName: isWorking ? parsedStatus.activeToolName : undefined,
+            activePartType: isWorking ? localizedParsedStatus.activePartType : undefined,
+            activeToolName: isWorking ? localizedParsedStatus.activeToolName : undefined,
             wasAborted: false,
             abortActive: false,
             lastCompletionId: null,
             isComplete: false,
             retryInfo,
-            canBackground: isWorking && parsedStatus.canBackground,
+            canBackground: isWorking && localizedParsedStatus.canBackground,
         };
-    }, [activityPhase, isPhaseWorking, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, assistantRetry]);
+    }, [activityPhase, isPhaseWorking, localizedParsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, assistantRetry]);
 
     const forming = React.useMemo<FormingSummary>(() => {
-        const isActive = isPhaseWorking && parsedStatus.activePartType === 'text';
+        const isActive = isPhaseWorking && localizedParsedStatus.activePartType === 'text';
         return { isActive, characterCount: 0 };
-    }, [isPhaseWorking, parsedStatus.activePartType]);
+    }, [isPhaseWorking, localizedParsedStatus.activePartType]);
 
     const working = React.useMemo<WorkingSummary>(() => {
         if (baseWorking.wasAborted || baseWorking.abortActive) {
