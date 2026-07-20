@@ -1,9 +1,45 @@
 import { z } from "zod"
 import type { JsonValue, Metadata, ToolPart } from "./model"
 import { toolAttachments, toolOutputText } from "./projection"
-import { executeToolCalls, isExecFollowUpTool, isExecuteTool, isFileChangeTool, isShellTool, readUnifiedExecMetadata, redactExecFollowUpInput, shouldHideExecFollowUpState, type ExecuteToolCall } from "./tools"
+import {
+  executeToolCalls, isExecFollowUpTool, isExplorationGroupTool, isExplorationPartDisplayReady,
+  normalizeToolName, readUnifiedExecMetadata, redactExecFollowUpInput, shouldHideExecFollowUpState, soleNamedCall, type ExecuteToolCall,
+} from "./tools"
 
-type ScriptToolEntry = { kind: "part"; part: ToolPart } | { kind: "summary"; call: ExecuteToolCall }
+export type ScriptToolEntry = { kind: "part"; part: ToolPart } | { kind: "summary"; call: ExecuteToolCall }
+type ScriptExplorationGroup = { kind: "exploration"; id: string; entries: ScriptToolEntry[]; counts: { search: number; read: number } }
+
+/** The compact named row uses the child's result; details keep the original script. */
+export function namedScriptToolPart(part: ToolPart): ToolPart {
+  const metadata = "metadata" in part.state ? part.state.metadata : undefined
+  const sole = soleNamedCall(metadata)
+  if (!sole) return part
+  const entry = createScriptToolProjection(part)(metadata)[0]
+  if (entry?.kind !== "part") return part
+  return { ...part, tool: sole.tool, state: part.state.status === "error" ? { ...part.state, input: sole.input } : entry.part.state }
+}
+
+export function groupScriptTools(parentID: string, entries: readonly ScriptToolEntry[]): Array<ScriptToolEntry | ScriptExplorationGroup> {
+  const result: Array<ScriptToolEntry | ScriptExplorationGroup> = []
+  let group: ScriptExplorationGroup | undefined
+  for (const [index, entry] of entries.entries()) {
+    const tool = entry.kind === "part" ? entry.part.tool : entry.call.tool
+    if (!isExplorationGroupTool(tool)) {
+      group = undefined
+      result.push(entry)
+      continue
+    }
+    if (entry.kind === "part" && !isExplorationPartDisplayReady(entry.part)) continue
+    if (!group) {
+      group = { kind: "exploration", id: `${parentID}:exploration:${entry.kind === "part" ? entry.part.id : index}`, entries: [], counts: { search: 0, read: 0 } }
+      result.push(group)
+    }
+    group.entries.push(entry)
+    if (normalizeToolName(tool) === "read") group.counts.read++
+    else group.counts.search++
+  }
+  return result
+}
 
 const inputSchema = z.record(z.string(), z.json())
 const callSchema = z.object({
@@ -20,27 +56,7 @@ const callSchema = z.object({
   error: z.string().optional(),
   time: z.object({ start: z.number(), end: z.number().optional() }).optional(),
 })
-const identitySchema = callSchema.pick({ id: true, name: true, tool: true, status: true, time: true })
 const childID = (parent: string, child: string) => `${parent}:child:${child}`
-
-/** Default-open settings also reveal the enclosing Script; manual overrides remain with the message owner. */
-export function defaultExpandedScriptToolIDs(parent: ToolPart, options: { shell: boolean; edit: boolean }): string[] {
-  if ((!options.shell && !options.edit) || !isExecuteTool(parent.tool) || parent.state.status === "pending") return []
-  const values = parent.state.metadata?.toolCalls
-  if (!Array.isArray(values)) return []
-  const ids: string[] = []
-  for (const value of values) {
-    const parsed = identitySchema.safeParse(value)
-    if (!parsed.success) continue
-    const call = parsed.data
-    if (!call.id || !call.time || (call.status !== "running" && call.status !== "completed" && call.status !== "error")) continue
-    const tool = call.name ?? call.tool
-    if (!(options.shell && isShellTool(tool)) && !(options.edit && isFileChangeTool(tool))) continue
-    if (ids.length === 0) ids.push(parent.id)
-    ids.push(childID(parent.id, call.id))
-  }
-  return ids
-}
 
 /** One expanded Script owns this projection. Only its current child records are retained. */
 export function createScriptToolProjection(owner: Pick<ToolPart, "id" | "sessionID" | "messageID">) {

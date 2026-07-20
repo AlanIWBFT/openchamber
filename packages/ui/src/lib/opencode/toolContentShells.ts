@@ -56,8 +56,8 @@ export function toolContentShellEnvelope(part: Part): { ok: boolean; action: str
 }
 
 /**
- * A finished `read` or `skill` call as the store keeps it: its row opens the
- * file in the app and never shows the result, so the result is left out the
+ * A finished `skill` call as the store keeps it: its row opens the resource
+ * in the app and never shows the result, so the result is left out the
  * moment the call finishes, marked the same way a shelled page marks it.
  */
 export function withoutUnshownResult(part: ToolPart): ToolPart {

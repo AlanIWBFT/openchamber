@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Metadata, ToolPart } from "./model"
-import { createScriptToolProjection, defaultExpandedScriptToolIDs } from "./script"
+import { createScriptToolProjection, groupScriptTools, namedScriptToolPart } from "./script"
 
 const owner = { id: "script_1", sessionID: "ses_1", messageID: "msg_1" }
 const child = (tool: string, overrides: Metadata = {}): Metadata => ({
@@ -8,15 +8,44 @@ const child = (tool: string, overrides: Metadata = {}): Metadata => ({
 })
 
 describe("Script child presentation", () => {
-  test("default expansion includes the parent and only the matching command or edit children", () => {
-    const parent: ToolPart = { ...owner, type: "tool", tool: "execute", callID: owner.id, state: {
-      status: "completed", input: {}, output: "", time: { start: 1, end: 2 },
-      metadata: { toolCalls: [child("exec_command"), child("edit"), child("read"), child("poll_exec")] },
+  test("a caught named-call failure does not borrow the successful script's state", () => {
+    const part: ToolPart = { ...owner, type: "tool", callID: owner.id, tool: "execute", state: {
+      status: "completed", input: { code: "try { await tools.openchamber_memory(...) } catch {}" },
+      output: "script final output", time: { start: 1, end: 30 }, metadata: { toolCalls: [
+        child("openchamber_memory", { status: "error", error: "save failed", input: { request: { action: "memory.save" } } }),
+      ] },
     } }
-    expect(defaultExpandedScriptToolIDs(parent, { shell: false, edit: false })).toEqual([])
-    expect(defaultExpandedScriptToolIDs(parent, { shell: true, edit: false })).toEqual([owner.id, "script_1:child:exec_command_1"])
-    expect(defaultExpandedScriptToolIDs(parent, { shell: false, edit: true })).toEqual([owner.id, "script_1:child:edit_1"])
-    expect(defaultExpandedScriptToolIDs(parent, { shell: true, edit: true })).toEqual([owner.id, "script_1:child:exec_command_1", "script_1:child:edit_1"])
+    expect(namedScriptToolPart(part)).toMatchObject({ id: part.id, tool: "openchamber_memory", state: {
+      status: "error", error: "save failed", input: { request: { action: "memory.save" } },
+    } })
+    expect(part.state).toMatchObject({ status: "completed", output: "script final output" })
+  })
+
+  test("a named row uses the child's real output and attachments, not the script's output", () => {
+    const part: ToolPart = { ...owner, type: "tool", callID: owner.id, tool: "execute", state: {
+      status: "completed", input: { code: "return await tools.openchamber_memory(...)" }, output: "script final output",
+      time: { start: 1, end: 30 }, metadata: { toolCalls: [child("openchamber_memory", { content: [
+        { type: "text", text: "child result" }, { type: "file", uri: "file:///repo/result.png", mime: "image/png" },
+      ] })] },
+    } }
+    expect(namedScriptToolPart(part).state).toMatchObject({ status: "completed", output: "child result", attachments: [{ url: "file:///repo/result.png" }] })
+  })
+
+  test("groups adjacent built-in exploration inside its owner without copying child cards", () => {
+    const entries = createScriptToolProjection(owner)({ toolCalls: [
+      child("read"), child("grep"), child("exec_command"), child("read", { id: "read_2" }), child("plugin.read"),
+    ] })
+    const groups = groupScriptTools(owner.id, entries)
+    expect(groups.map((group) => group.kind)).toEqual(["exploration", "part", "exploration", "part"])
+    const first = groups[0]
+    if (first.kind !== "exploration") throw new Error("Expected an exploration group")
+    expect(first.counts).toEqual({ search: 1, read: 1 })
+    expect(first.entries[0]).toBe(entries[0])
+    expect(first.entries[1]).toBe(entries[1])
+    expect(groupScriptTools(owner.id, entries.slice(0, 2))[0]).toMatchObject({ id: first.id })
+    const other = groupScriptTools("another_script", entries)[0]
+    if (other.kind !== "exploration") throw new Error("Expected an exploration group")
+    expect(other.id).not.toBe(first.id)
   })
 
   test("renders full results and attachments without adding independent transcript records", () => {
