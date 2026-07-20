@@ -82,6 +82,7 @@ interface ProjectTurnRecordsOptions {
      * previous turn instead of starting a new one.
      */
     mergeHiddenUserTurns?: boolean;
+    showReasoningTraces: boolean;
 }
 
 const DEFAULT_OPTIONS: ProjectTurnRecordsOptions = {
@@ -89,6 +90,7 @@ const DEFAULT_OPTIONS: ProjectTurnRecordsOptions = {
     showTextJustificationActivity: false,
     showTurnChangedFiles: false,
     mergeHiddenUserTurns: false,
+    showReasoningTraces: true,
 };
 
 const areSameMessageRefs = (left: ChatMessageEntry[], right: ChatMessageEntry[]): boolean => {
@@ -134,9 +136,11 @@ const hydrateTurnRecord = (
         summarySourceMessageId: turn.summary.sourceMessageId,
         summarySourcePartId: turn.summary.sourcePartId,
         showTextJustificationActivity: effectiveOptions.showTextJustificationActivity,
+        showReasoningTraces: effectiveOptions.showReasoningTraces,
     });
     turn.activityParts = activity.activityParts;
     turn.activitySegments = activity.activitySegments;
+    turn.explorationGroups = activity.explorationGroups;
     turn.hasTools = activity.hasTools;
     turn.hasReasoning = activity.hasReasoning;
 
@@ -239,6 +243,7 @@ export const projectTurnRecords = (
             assistantMessages: [],
             activityParts: [],
             activitySegments: [],
+            explorationGroups: [],
             summary: {},
             summaryText: undefined,
             hasTools: false,

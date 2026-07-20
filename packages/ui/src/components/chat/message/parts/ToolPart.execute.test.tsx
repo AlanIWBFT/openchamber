@@ -146,6 +146,32 @@ test('a Code Mode call shows its script, the tools it called, and the truncation
   });
 });
 
+test('Script exploration shares its disclosure and keeps full directory results behind it', async () => {
+  const script: ToolPartData = { ...part, state: {
+    status: 'completed', input: { code: 'await tools.read()' }, output: '', time: { start: 1, end: 2 },
+    metadata: { toolCalls: [{ id: 'read-child', name: 'read', tool: 'functions.read', status: 'completed',
+      input: { path: '/repo/src' }, time: { start: 1, end: 2 },
+      content: [{ type: 'text', text: 'Read directory /repo/src, entries 1-1\nnested-file.ts' }],
+    }] },
+  } };
+  await withToolPart(async (container, render) => {
+    const toggled: string[] = [];
+    const childID = `${script.id}:child:read-child`;
+    const toggle = (id: string) => { toggled.push(id); };
+    await render(script, { expanded: new Set([childID]), toggle });
+    const group = container.querySelector('[data-exploration-group]');
+    const groupID = group?.getAttribute('data-exploration-group');
+    if (!group || !groupID) throw new Error('Expected the Script exploration disclosure');
+    expect(container.textContent).not.toContain('nested-file.ts');
+    await act(async () => { group.querySelector<HTMLButtonElement>('button')?.click(); });
+    expect(toggled).toEqual([groupID]);
+    await render(script, { expanded: new Set([groupID, childID]), toggle });
+    expect(container.textContent).toContain('nested-file.ts');
+    await render(script, { expanded: new Set([childID]), toggle });
+    expect(container.textContent).not.toContain('nested-file.ts');
+  });
+});
+
 test('Script children use real cards, redact controls, and recover the message owner expansion state after remount', async () => {
   const script: ToolPartData = { ...part, state: {
     status: 'completed', input: { code: 'await functions.exec_command({ cmd: "echo test" })' }, output: 'script result', time: { start: 1, end: 2 },

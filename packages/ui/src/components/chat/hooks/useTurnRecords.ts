@@ -8,6 +8,7 @@ interface UseTurnRecordsOptions {
     sessionKey?: string;
     showTextJustificationActivity: boolean;
     showTurnChangedFiles: boolean;
+    showReasoningTraces: boolean;
 }
 
 export interface TurnRecordsResult {
@@ -26,15 +27,18 @@ export const useTurnRecords = (
     const previousSessionKeyRef = React.useRef<string | undefined>(options.sessionKey);
     const previousShowTextJustificationActivityRef = React.useRef(options.showTextJustificationActivity);
     const previousShowTurnChangedFilesRef = React.useRef(options.showTurnChangedFiles);
+    const previousShowReasoningTracesRef = React.useRef(options.showReasoningTraces);
 
     if (
         previousSessionKeyRef.current !== options.sessionKey
         || previousShowTextJustificationActivityRef.current !== options.showTextJustificationActivity
         || previousShowTurnChangedFilesRef.current !== options.showTurnChangedFiles
+        || previousShowReasoningTracesRef.current !== options.showReasoningTraces
     ) {
         previousSessionKeyRef.current = options.sessionKey;
         previousShowTextJustificationActivityRef.current = options.showTextJustificationActivity;
         previousShowTurnChangedFilesRef.current = options.showTurnChangedFiles;
+        previousShowReasoningTracesRef.current = options.showReasoningTraces;
         previousProjectionRef.current = null;
         staticTurnsRef.current = [];
         streamingTurnRef.current = undefined;
@@ -44,7 +48,7 @@ export const useTurnRecords = (
         previousProjectionRef.current = null;
         staticTurnsRef.current = [];
         streamingTurnRef.current = undefined;
-    }, [options.sessionKey, options.showTextJustificationActivity, options.showTurnChangedFiles]);
+    }, [options.sessionKey, options.showReasoningTraces, options.showTextJustificationActivity, options.showTurnChangedFiles]);
 
     const projection = React.useMemo(() => {
         const sessionKey = options.sessionKey ?? '';
@@ -53,6 +57,7 @@ export const useTurnRecords = (
             messages,
             options.showTextJustificationActivity,
             options.showTurnChangedFiles,
+            options.showReasoningTraces,
             'merge',
         );
         const cached = getCachedProjection(cacheKey);
@@ -67,14 +72,14 @@ export const useTurnRecords = (
                 showTextJustificationActivity: options.showTextJustificationActivity,
                 showTurnChangedFiles: options.showTurnChangedFiles,
                 mergeHiddenUserTurns: true,
+                showReasoningTraces: options.showReasoningTraces,
             });
             previousProjectionRef.current = nextProjection;
-
             setCachedProjection(cacheKey, nextProjection);
 
             return nextProjection;
         });
-    }, [messages, options.showTextJustificationActivity, options.showTurnChangedFiles, options.sessionKey]);
+    }, [messages, options.showReasoningTraces, options.showTextJustificationActivity, options.showTurnChangedFiles, options.sessionKey]);
 
     // The last turn is the live tail only while nothing follows it. A notice
     // that lands after it (a compaction, a shell run) ends the turn, so the
