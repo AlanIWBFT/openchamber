@@ -1,5 +1,6 @@
 import React from 'react';
 import { findCatalogModel, type Message, type Part } from '@/lib/opencode/model';
+import { defaultExpandedScriptToolIDs } from '@/lib/opencode/script';
 import { useShallow } from 'zustand/react/shallow';
 
 import { MessageFreshnessDetector } from '@/lib/messageFreshness';
@@ -381,6 +382,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             }
             if (showExpandedEditTools && isFileChangeTool(toolName)) {
                 next.add(toolId);
+            }
+            if (part.type === 'tool') {
+                for (const id of defaultExpandedScriptToolIDs(part, { shell: showExpandedBashTools, edit: showExpandedEditTools })) next.add(id);
             }
         }
 

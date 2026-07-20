@@ -1,4 +1,6 @@
 import type { Message, Part } from "@/lib/opencode/model"
+import { reconcileExecMetadata } from "@/lib/opencode/exec-metadata"
+import { isExecCommandTool, isExecuteTool } from "@/lib/opencode/tools"
 import { mergeMessages } from "./optimistic"
 import type { SessionMaterializationReason } from "./event-reducer"
 import { sortMessagesChronologically } from "./message-ordering"
@@ -201,6 +203,10 @@ function mergeMaterializedPart(existing: Part | undefined, next: Part): Part {
     // stale copy win would lose it until the call settles.
     if (existing.state.status === "running" && next.state.status === "pending") {
       return existing
+    }
+    if (existing.state.status !== "pending" && next.state.status !== "pending" && (isExecCommandTool(next.tool) || isExecuteTool(next.tool))) {
+      const metadata = reconcileExecMetadata(next.tool, existing.state.metadata, next.state.metadata)
+      if (metadata !== next.state.metadata) next = { ...next, state: { ...next.state, metadata } }
     }
     if (
       existing.state.status === "running"

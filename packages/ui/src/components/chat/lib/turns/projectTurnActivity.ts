@@ -6,6 +6,7 @@ import type {
     TurnActivityRecord,
     TurnPartRecord,
 } from './types';
+import { shouldHideExecFollowUp } from '../../message/unifiedExec';
 
 const isStandaloneTool = (toolName: ToolName): boolean => {
     return ACTIVITY_STANDALONE_TOOL_NAMES.has(normalizeToolName(toolName));
@@ -75,6 +76,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
 
     input.assistantMessages.forEach((message) => {
         message.parts.forEach((part) => {
+            if (part.type === 'tool' && shouldHideExecFollowUp(part)) return;
             if (part.type === 'tool') {
                 hasTools = true;
                 return;
@@ -93,7 +95,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
 
     input.assistantMessages.forEach((message) => {
         const finish = getMessageFinish(message);
-        const messageHasTool = message.parts.some((part) => part.type === 'tool');
+        const messageHasTool = message.parts.some((part) => part.type === 'tool' && !shouldHideExecFollowUp(part));
         // A turn blocked on a question never reaches finish === 'stop' (the
         // user must answer first). Treating the text the model produced
         // before the question as 'justification' would bury it inside the
@@ -104,6 +106,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
         ));
 
         message.parts.forEach((part, partIndex) => {
+            if (part.type === 'tool' && shouldHideExecFollowUp(part)) return;
             const isTool = part.type === 'tool';
 
             const text = part.type === 'reasoning' || part.type === 'text'

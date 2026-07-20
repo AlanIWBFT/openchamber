@@ -1,4 +1,4 @@
-import { isSkillTool, toolDescription } from '@/lib/opencode/tools';
+import { isExecuteTool, isSkillTool, toolDescription } from '@/lib/opencode/tools';
 import React from 'react';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { cn } from '@/lib/utils';
@@ -6,7 +6,7 @@ import type { TurnActivityRecord as TurnActivityPart } from '../../lib/turns/typ
 import type { Metadata, ToolInput, ToolPart as ToolPartType } from '@/lib/opencode/model';
 import type { StreamPhase } from '../types';
 import type { ToolPopupContent } from '../types';
-import ToolPart from './ToolPart';
+import ToolPart, { type ToolExpansionState } from './ToolPart';
 import { MinDurationShineText } from './MinDurationShineText';
 import { ToolRevealOnMount } from './ToolRevealOnMount';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
@@ -246,6 +246,7 @@ type AggregatedRow =
     | { type: 'tool-fallback'; activity: TurnActivityPart };
 
 interface ExpandableToolRowProps {
+    nestedTools?: ToolExpansionState;
     activity: TurnActivityPart;
     isExpanded: boolean;
     isMobile: boolean;
@@ -255,6 +256,7 @@ interface ExpandableToolRowProps {
 }
 
 const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
+    nestedTools,
     activity,
     isExpanded,
     isMobile,
@@ -268,6 +270,7 @@ const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
 
     const content = (
         <ToolPart
+            nestedTools={nestedTools}
             part={activity.part as ToolPartType}
             isExpanded={isExpanded}
             onToggle={handleToggle}
@@ -292,6 +295,7 @@ const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
 
 const MemoExpandableToolRow = React.memo(ExpandableToolRow, (prev, next) => {
     return prev.isExpanded === next.isExpanded
+        && prev.nestedTools === next.nestedTools
         && prev.isMobile === next.isMobile
         && prev.onToggleTool === next.onToggleTool
         && prev.onShowPopup === next.onShowPopup
@@ -706,6 +710,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     animatedToolIds,
     renderJustificationActions,
 }) => {
+    const nestedTools = React.useMemo(() => ({ expanded: expandedTools, toggle: onToggleTool }), [expandedTools, onToggleTool]);
     const previewCount = showHeader && !isExpanded
         ? Math.max(0, Math.floor(collapsedPreviewCount))
         : 0;
@@ -778,6 +783,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
             case 'tool-expandable':
                 return (
                     <MemoExpandableToolRow
+                        nestedTools={row.activity.part.type === 'tool' && isExecuteTool(row.activity.part.tool) ? nestedTools : undefined}
                         key={row.activity.id}
                         activity={row.activity}
                         isExpanded={expandedTools.has(row.activity.id)}
@@ -801,6 +807,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
             case 'tool-fallback':
                 return (
                     <MemoExpandableToolRow
+                        nestedTools={row.activity.part.type === 'tool' && isExecuteTool(row.activity.part.tool) ? nestedTools : undefined}
                         key={row.activity.id}
                         activity={row.activity}
                         isExpanded={expandedTools.has(row.activity.id)}
