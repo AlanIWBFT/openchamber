@@ -20,6 +20,7 @@ type BuildLiveStreamingEntryOptions = {
     showTextJustificationActivity: boolean;
     showTurnChangedFiles: boolean;
     mergeHiddenUserTurns?: { planModeEnabled: boolean };
+    showReasoningTraces: boolean;
 };
 
 const withLiveParts = (
@@ -85,6 +86,7 @@ export const buildLiveStreamingEntry = <TEntry extends StreamingTailEntry>(
         showTextJustificationActivity: options.showTextJustificationActivity,
         showTurnChangedFiles: options.showTurnChangedFiles,
         mergeHiddenUserTurns: options.mergeHiddenUserTurns,
+        showReasoningTraces: options.showReasoningTraces,
     });
     const turn = projection.turns[0] ?? {
         ...entry.turn,

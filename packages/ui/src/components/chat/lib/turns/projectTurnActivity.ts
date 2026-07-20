@@ -3,12 +3,15 @@ import type {
     ChatMessageEntry,
     TurnActivityGroup,
     TurnActivityRecord,
+    TurnExplorationGroup,
     TurnPartRecord,
 } from './types';
 import { shouldHideExecFollowUp } from '../../message/unifiedExec';
+import { isExplorationTool, isHiddenSessionTool } from '../../message/parts/toolRenderUtils';
 
 const isStandaloneTool = (toolName: unknown): boolean => {
-    return typeof toolName === 'string' && ACTIVITY_STANDALONE_TOOL_NAMES.has(toolName.toLowerCase());
+    return typeof toolName === 'string'
+        && ACTIVITY_STANDALONE_TOOL_NAMES.has(toolName.trim().toLowerCase().replace(/:\d+$/, ''));
 };
 
 const getPartEndTime = (part: unknown): number | undefined => {
@@ -63,11 +66,13 @@ interface ProjectActivityInput {
     summarySourceMessageId?: string;
     summarySourcePartId?: string;
     showTextJustificationActivity: boolean;
+    showReasoningTraces: boolean;
 }
 
 interface ProjectActivityResult {
     activityParts: TurnActivityRecord[];
     activitySegments: TurnActivityGroup[];
+    explorationGroups: TurnExplorationGroup[];
     hasTools: boolean;
     hasReasoning: boolean;
 }
@@ -80,6 +85,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
     input.assistantMessages.forEach((message) => {
         message.parts.forEach((part) => {
             if (part.type === 'tool' && shouldHideExecFollowUp(part)) return;
+            if (part.type === 'tool' && isHiddenSessionTool(part.tool, part.state?.status)) return;
             if (part.type === 'tool') {
                 hasTools = true;
                 return;
@@ -95,14 +101,33 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
     const taskOrder: string[] = [];
     const partsByAfterTool = new Map<string | null, TurnActivityRecord[]>();
     let currentAfterToolPartId: string | null = null;
+    const explorationGroups: TurnExplorationGroup[] = [];
+    let explorationParts: TurnActivityRecord[] = [];
+
+    const flushExploration = (isTail = false) => {
+        const first = explorationParts[0];
+        if (!first) return;
+        explorationGroups.push({
+            id: `${input.turnId}:exploration:${first.id}`,
+            anchorMessageId: first.messageId,
+            parts: explorationParts,
+            isTail,
+        });
+        explorationParts = [];
+    };
 
     input.assistantMessages.forEach((message) => {
         const finish = getMessageFinish(message);
-        const messageHasTool = message.parts.some((part) => part.type === 'tool' && !shouldHideExecFollowUp(part));
+        const messageHasTool = message.parts.some((part) => (
+            part.type === 'tool'
+            && !shouldHideExecFollowUp(part)
+            && !isHiddenSessionTool(part.tool, part.state?.status)
+        ));
         const messageIsCompactionSummary = isCompactionSummaryMessage(message);
 
         message.parts.forEach((part, partIndex) => {
             if (part.type === 'tool' && shouldHideExecFollowUp(part)) return;
+            if (part.type === 'tool' && isHiddenSessionTool(part.tool, part.state?.status)) return;
             const isTool = part.type === 'tool';
 
             const text = part.type === 'reasoning' || part.type === 'text'
@@ -113,6 +138,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
             const toolName = isTool
                 ? (part as { tool?: unknown }).tool
                 : undefined;
+            const explorationTool = isTool && isExplorationTool(toolName);
             const standaloneTool = isTool && isStandaloneTool(toolName);
             if (standaloneTool) {
                 const toolPartId = partId;
@@ -151,6 +177,16 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
                 kind = 'justification';
             }
 
+            if (
+                !explorationTool
+                && (
+                    (part.type === 'text' && Boolean(text))
+                    || (part.type === 'reasoning' && input.showReasoningTraces && Boolean(text))
+                )
+            ) {
+                flushExploration();
+            }
+
             if (!kind) {
                 return;
             }
@@ -161,6 +197,12 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
             };
             activityParts.push(activity);
 
+            if (explorationTool) {
+                explorationParts.push(activity);
+            } else if (isTool) {
+                flushExploration();
+            }
+
             if (kind === 'tool' && standaloneTool) {
                 return;
             }
@@ -170,6 +212,8 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
             partsByAfterTool.set(currentAfterToolPartId, list);
         });
     });
+
+    flushExploration(true);
 
     const activitySegments: TurnActivityGroup[] = [];
 
@@ -220,6 +264,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
     return {
         activityParts,
         activitySegments,
+        explorationGroups,
         hasTools,
         hasReasoning,
     };
