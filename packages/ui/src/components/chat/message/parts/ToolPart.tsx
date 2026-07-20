@@ -80,7 +80,6 @@ import { toAbsoluteFilePath } from '@/lib/path-utils';
 import {
     executeOutputTruncation,
     executeScript,
-    executeToolCalls,
     isEditTool,
     isExecuteTool,
     isFileChangeTool,
@@ -98,6 +97,7 @@ import {
     toolFileDiffs,
 } from '@/lib/opencode/tools';
 import { parseWebSearchOutput, webSearchProviderOf } from '@/lib/opencode/websearch';
+import { createScriptToolProjection } from '@/lib/opencode/script';
 import { ApplyPatchFileButtons } from './ApplyPatchFileButtons';
 import { openApplyPatchFileInEditor } from './applyPatchEditorAction';
 import { WebSearchResults } from './WebSearchResults';
@@ -106,6 +106,17 @@ import { toBackgroundSubagentPart, toStoppedSubagentPart, type BackgroundSubagen
 import { findSubagentCancellation, findSubagentRun, readBackgroundSubagentChildID } from '@/lib/opencode/subagent-run';
 import { useGlobalSessionStatusStore } from '@/sync/global-session-status';
 import { useBackgroundShellOutput } from './useBackgroundShellOutput';
+import {
+    getUnifiedExecCommand,
+    getUnifiedExecMetadata,
+    getUnifiedExecOutput,
+    getUnifiedExecStatus,
+    formatUnifiedExecDuration,
+    isExecCommandTool,
+    isExecProcessRunning,
+    isUnifiedExecTool,
+    type UnifiedExecMetadata,
+} from '../unifiedExec';
 
 type ToolJsonViewMode = 'summary' | 'formatted' | 'raw';
 
@@ -115,6 +126,8 @@ const TOOL_ROW_DESCRIPTION_CLASS = cn('typography-meta', TOOL_ROW_TEXT_CLASS);
 
 type ToolStateWithMetadata = ToolStateUnion & { metadata?: Metadata; input?: ToolInput; output?: string; error?: string; time?: { start: number; end?: number }; attachments?: Array<FilePart> };
 
+export type ToolExpansionState = { expanded: ReadonlySet<string>; toggle: (toolId: string) => void };
+
 interface ToolPartProps {
     part: ToolPartType;
     isExpanded: boolean;
@@ -123,6 +136,7 @@ interface ToolPartProps {
     alwaysShowActions?: boolean;
     onShowPopup?: (content: ToolPopupContent) => void;
     animateTailText?: boolean;
+    nestedTools?: ToolExpansionState;
 }
 
 const formatDuration = (start: number, end?: number, now: number = Date.now()) => {
@@ -137,6 +151,51 @@ const LiveDuration: React.FC<{ start: number; end?: number; active: boolean }> =
     const now = useDurationTickerNow(active, 250);
 
     return <>{formatDuration(start, end, now)}</>;
+};
+
+const UnifiedExecDuration: React.FC<{
+    metadata: UnifiedExecMetadata;
+    active: boolean;
+    stateStatus?: ToolPartType['state']['status'];
+}> = ({ metadata, active, stateStatus }) => {
+    const { locale, t } = useI18n();
+    const now = useDurationTickerNow(active, 250);
+    const status = getUnifiedExecStatus(metadata, now, stateStatus);
+    if (!status) return null;
+    const duration = status.durationMs !== undefined
+        ? formatUnifiedExecDuration(status.durationMs, locale)
+        : undefined;
+    const text = (() => {
+        if (status.kind === 'error') {
+            return duration
+                ? t('chat.toolPart.unifiedExec.status.errorWithDuration', { duration })
+                : t('chat.toolPart.unifiedExec.status.error');
+        }
+        if (status.kind === 'running') {
+            return duration
+                ? t('chat.toolPart.unifiedExec.status.runningWithDuration', { duration })
+                : t('chat.toolPart.unifiedExec.status.running');
+        }
+        if (status.kind === 'terminated') {
+            return duration
+                ? t('chat.toolPart.unifiedExec.status.terminatedWithDuration', { duration })
+                : t('chat.toolPart.unifiedExec.status.terminated');
+        }
+        if (status.kind === 'exited') {
+            return duration
+                ? t('chat.toolPart.unifiedExec.status.exitedWithDuration', { code: status.exitCode ?? '', duration })
+                : t('chat.toolPart.unifiedExec.status.exited', { code: status.exitCode ?? '' });
+        }
+        return duration
+            ? t('chat.toolPart.unifiedExec.status.completedWithDuration', { duration })
+            : t('chat.toolPart.unifiedExec.status.completed');
+    })();
+
+    return (
+        <span style={status.error ? TOOL_ERROR_TITLE_STYLE : undefined}>
+            {text}
+        </span>
+    );
 };
 
 const deferredToolBodyMounts: Array<{ active: boolean; fn: () => void }> = [];
@@ -821,6 +880,78 @@ const ToolScrollableTextOutput: React.FC<{
 
 ToolScrollableTextOutput.displayName = 'ToolScrollableTextOutput';
 
+const UnifiedExecOutput: React.FC<{
+    command: string;
+    output: string;
+    metadata: UnifiedExecMetadata;
+}> = ({ command, output, metadata }) => {
+    const { t } = useI18n();
+    const scrollRef = React.useRef<HTMLElement | null>(null);
+    const followingRef = React.useRef(true);
+    const initializedRef = React.useRef(false);
+    const [copied, setCopied] = React.useState(false);
+    const text = command ? `${command}${output ? `\n\n${output}` : ''}` : output;
+
+    React.useLayoutEffect(() => {
+        initializedRef.current = false;
+        followingRef.current = true;
+    }, [command]);
+
+    React.useLayoutEffect(() => {
+        const element = scrollRef.current;
+        if (!element || (!followingRef.current && initializedRef.current)) return;
+        element.scrollTop = element.scrollHeight;
+        initializedRef.current = true;
+    }, [command, output]);
+
+    const handleCopy = React.useCallback(async (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        const result = await copyTextToClipboard(text);
+        if (!result.ok) {
+            toast.error(t('chat.toolPart.copyOutputFailed'));
+            return;
+        }
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+    }, [t, text]);
+
+    return (
+        <div className="relative">
+            <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-2 top-2 z-10 h-6 w-6 rounded-md bg-[var(--surface-elevated)]/80 text-muted-foreground hover:text-foreground"
+                onClick={handleCopy}
+                onPointerDown={(event) => event.stopPropagation()}
+                aria-label={copied ? t('chat.toolPart.copiedOutput') : t('chat.toolPart.copyOutput')}
+                title={copied ? t('chat.toolPart.copiedOutput') : t('chat.toolPart.copyOutput')}
+            >
+                <Icon name={copied ? 'check' : 'file-copy'} className="h-3.5 w-3.5" />
+            </Button>
+            <ScrollShadow
+                ref={scrollRef}
+                className="tool-output-surface max-h-[46vh] w-full min-w-0 overflow-auto rounded-xl p-2 pr-10"
+                onScroll={(event) => {
+                    const element = event.currentTarget;
+                    followingRef.current = element.scrollTop + element.clientHeight >= element.scrollHeight - 2;
+                }}
+            >
+                {metadata.truncated === true ? (
+                    <div className="mb-2 typography-meta text-muted-foreground">{t('chat.toolPart.unifiedExec.outputTruncated')}</div>
+                ) : null}
+                {metadata.outputError !== undefined ? (
+                    <div className="mb-2 typography-meta text-[var(--status-error)]">
+                        {t('chat.toolPart.unifiedExec.outputStreamError', { error: metadata.outputError })}
+                    </div>
+                ) : null}
+                <pre className="m-0 whitespace-pre-wrap break-words typography-code text-muted-foreground/90">{text}</pre>
+            </ScrollShadow>
+        </div>
+    );
+};
+
+UnifiedExecOutput.displayName = 'UnifiedExecOutput';
+
 const useRunningTaskChildSessionId = (part: ToolPartType | undefined, directory: string): string | undefined => {
     const startedAt = part?.state.status === 'running' ? part.state.time.start : undefined;
     const agent = part?.state.input.agent;
@@ -1051,6 +1182,9 @@ interface ToolExpandedContentProps {
     state: ToolStateUnion;
     currentDirectory: string;
     isExpanded: boolean;
+    isMobile: boolean;
+    expandedScriptTools: ReadonlySet<string>;
+    onToggleScriptTool: (toolId: string) => void;
     onShowPopup?: (content: ToolPopupContent) => void;
     presentation: GuestToolRule | null;
 }
@@ -1060,6 +1194,9 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     state,
     currentDirectory,
     isExpanded,
+    isMobile,
+    expandedScriptTools,
+    onToggleScriptTool,
     onShowPopup,
     presentation,
 }) => {
@@ -1082,6 +1219,10 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     });
     const outputString = isStreamingBash ? throttledOutputString : rawOutputString;
     const attachments = stateWithData.attachments;
+    const unifiedExecMetadata = getUnifiedExecMetadata(part);
+    const unifiedExecCommand = getUnifiedExecCommand(input, unifiedExecMetadata);
+    const unifiedExecOutput = getUnifiedExecOutput(unifiedExecMetadata, rawOutputString);
+
     const diffContent = getToolFallbackDiff(metadata) ?? null;
     const diffEntries = React.useMemo(
         () => getDiffPatchEntries(metadata, diffContent ?? undefined, (path) => getRelativePath(path, currentDirectory)),
@@ -1098,7 +1239,12 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
         || isExecuteTool(part.tool);
     const isExecute = isExecuteTool(part.tool);
     const executeCode = React.useMemo(() => (isExecute ? executeScript(input) : undefined), [input, isExecute]);
-    const executeCalls = React.useMemo(() => (isExecute ? executeToolCalls(metadata) : []), [isExecute, metadata]);
+    const projectScriptTools = React.useMemo(
+        () => createScriptToolProjection({ id: part.id, sessionID: part.sessionID, messageID: part.messageID }),
+        [part.id, part.sessionID, part.messageID],
+    );
+    const executeEntries = React.useMemo(() => (isExecute ? projectScriptTools(metadata) : []), [isExecute, metadata, projectScriptTools]);
+    const childExpansion = React.useMemo(() => ({ expanded: expandedScriptTools, toggle: onToggleScriptTool }), [expandedScriptTools, onToggleScriptTool]);
     const executeTruncation = React.useMemo(
         () => (isExecute ? executeOutputTruncation(metadata) : null),
         [isExecute, metadata],
@@ -1238,9 +1384,30 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
             );
         };
 
-        // An extension that declared how this tool's output renders goes
-        // first; `auto` and a missing rule keep every built-in branch below.
-        if (presentation?.output && presentation.output !== 'auto' && hasStringOutput && outputString.trim()) {
+        if (unifiedExecMetadata.execError) {
+            return (
+                <div className="typography-meta rounded-xl border p-2" style={{
+                    backgroundColor: 'var(--status-error-background)',
+                    color: 'var(--status-error)',
+                    borderColor: 'var(--status-error-border)',
+                }}>
+                    {unifiedExecMetadata.execError}
+                </div>
+            );
+        }
+
+        if (isExecCommandTool(part.tool)) {
+            return (
+                <UnifiedExecOutput
+                    command={unifiedExecCommand}
+                    output={unifiedExecOutput}
+                    metadata={unifiedExecMetadata}
+                />
+            );
+        }
+
+        // Unified Exec owns its output and control-input visibility.
+        if (!isUnifiedExecTool(part.tool) && presentation?.output && presentation.output !== 'auto' && hasStringOutput && outputString.trim()) {
             return renderScrollableBlock(
                 <ToolScrollableTextOutput
                     output={coerceToText(outputString)}
@@ -1423,7 +1590,9 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
 
     const hasVisibleOutput = outputString.trim().length > 0;
     const shouldRenderResult = (state.status === 'completed' && 'output' in state)
-        || (isShellTool(part.tool) && hasVisibleOutput);
+        || (isShellTool(part.tool) && hasVisibleOutput)
+        || isExecCommandTool(part.tool)
+        || Boolean(unifiedExecMetadata.execError);
 
     return (
         <div
@@ -1447,28 +1616,39 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                                 />,
                                 { maxHeightClass: 'max-h-60', className: 'tool-input-surface' },
                             ) : null}
-                            {executeCalls.length > 0 ? (
+                            {executeEntries.length > 0 ? (
                                 <div>
                                     <div className="typography-meta font-medium text-muted-foreground/80 mb-1">
                                         {t('chat.toolPart.scriptCalls')}
                                     </div>
                                     <ul className="space-y-0.5">
-                                        {executeCalls.map((call, index) => (
-                                            <li key={`${call.tool}-${index}`} className="flex min-w-0 items-baseline gap-2">
+                                        {executeEntries.map((entry, index) => entry.kind === 'part' ? (
+                                            <li key={entry.part.id}>
+                                                <MemoToolPart
+                                                    part={entry.part}
+                                                    isExpanded={expandedScriptTools.has(entry.part.id)}
+                                                    onToggle={onToggleScriptTool}
+                                                    nestedTools={isExecuteTool(entry.part.tool) ? childExpansion : undefined}
+                                                    isMobile={isMobile}
+                                                    onShowPopup={onShowPopup}
+                                                />
+                                            </li>
+                                        ) : (
+                                            <li key={`${entry.call.tool}-${index}`} className="flex min-w-0 items-baseline gap-2">
                                                 <span
                                                     className="typography-code flex-shrink-0"
-                                                    style={call.status === 'error' ? TOOL_ERROR_TITLE_STYLE : undefined}
+                                                    style={entry.call.status === 'error' ? TOOL_ERROR_TITLE_STYLE : undefined}
                                                 >
-                                                    {call.tool}
+                                                    {entry.call.tool}
                                                 </span>
-                                                {call.status && call.status !== 'error' && call.status !== 'completed' ? (
+                                                {entry.call.status && entry.call.status !== 'error' && entry.call.status !== 'completed' ? (
                                                     <span className="typography-micro flex-shrink-0 text-muted-foreground/70">
-                                                        {call.status}
+                                                        {entry.call.status}
                                                     </span>
                                                 ) : null}
-                                                {call.input ? (
+                                                {entry.call.input ? (
                                                     <span className="typography-meta truncate text-muted-foreground/70">
-                                                        {call.input}
+                                                        {entry.call.input}
                                                     </span>
                                                 ) : null}
                                             </li>
@@ -1479,7 +1659,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                         </div>
                     ) : null}
 
-                    {hasInputText ? (
+                    {hasInputText && !isUnifiedExecTool(part.tool) ? (
                         <div className="my-1">
                             {renderScrollableBlock(
                                 isShellTool(part.tool) ? (
@@ -1558,6 +1738,7 @@ type ToolRowHeader = {
 };
 
 const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subagentSessionId?: string }> = ({
+    nestedTools,
     part,
     isExpanded,
     onToggle,
@@ -1581,9 +1762,28 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
     // the built-in switches below keep the normalized one.
     const presentation = useGuestToolPresentation(part.tool);
 
+    const time = stateWithData.time;
+    const unifiedExecMetadata = getUnifiedExecMetadata(part);
     const status = state?.status as string | undefined;
-    const isFinalized = status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled';
-    const isError = status === 'error' || status === 'failed';
+    const execProcessRunning = isExecProcessRunning(normalizedPartTool, unifiedExecMetadata, part.state.status);
+    const [expandedScriptTools, setExpandedScriptTools] = React.useState<ReadonlySet<string>>(() => new Set());
+    const nestedToolsRef = React.useRef(nestedTools);
+    React.useLayoutEffect(() => { nestedToolsRef.current = nestedTools; }, [nestedTools]);
+    const onToggleScriptTool = React.useCallback((id: string) => {
+        if (nestedToolsRef.current) {
+            nestedToolsRef.current.toggle(id);
+            return;
+        }
+        setExpandedScriptTools((previous) => {
+            const next = new Set(previous);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    }, []);
+
+    const isFinalized = !execProcessRunning && (status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled');
+    const isError = status === 'error' || status === 'failed' || Boolean(unifiedExecMetadata.execError);
 
     const [activeLatched, setActiveLatched] = React.useState<boolean>(!isFinalized);
     const previousPartIdRef = React.useRef<string | undefined>(part.id);
@@ -1615,8 +1815,6 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
         element.style.overflow = isExpanded ? 'visible' : 'hidden';
     }, [isExpanded]);
 
-    const time = stateWithData.time;
-
     const [pinnedTime, setPinnedTime] = React.useState<{ start?: number; end?: number }>(() => ({
         start: typeof time?.start === 'number' ? time.start : undefined,
         end: typeof time?.end === 'number' ? time.end : undefined,
@@ -1634,11 +1832,14 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
         if (isFinalized) {
             return;
         }
+        if (isExecCommandTool(normalizedPartTool)) {
+            return;
+        }
         if (typeof time?.start === 'number') {
             return;
         }
         setLocalStartAt((prev) => prev ?? Date.now());
-    }, [isFinalized, time?.start]);
+    }, [isFinalized, normalizedPartTool, time?.start]);
 
     React.useEffect(() => {
         setPinnedTime((prev) => {
@@ -1660,21 +1861,31 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
     }, [time?.end, time?.start]);
 
     const effectiveTimeStart = React.useMemo(() => {
+        if (isExecCommandTool(normalizedPartTool) && unifiedExecMetadata.startedAt !== undefined) {
+            return unifiedExecMetadata.startedAt;
+        }
         // Once we captured a local start (during pending, before server sends time.start),
         // always prefer it so the timer never jumps when server start arrives later.
         if (typeof localStartAt === 'number') {
             return localStartAt;
         }
-        const candidates = [pinnedTime.start, time?.start].filter(
+        const candidates = [
+            pinnedTime.start,
+            time?.start,
+        ].filter(
             (value): value is number => typeof value === 'number'
         );
         if (candidates.length === 0) {
             return undefined;
         }
         return Math.min(...candidates);
-    }, [localStartAt, pinnedTime.start, time?.start]);
+    }, [localStartAt, normalizedPartTool, pinnedTime.start, time?.start, unifiedExecMetadata.startedAt]);
 
     React.useEffect(() => {
+        if (isExecCommandTool(normalizedPartTool)) {
+            setLocalFinalizedAt(undefined);
+            return;
+        }
         if (typeof time?.end === 'number' || typeof pinnedTime.end === 'number') {
             setLocalFinalizedAt(undefined);
             return;
@@ -1692,6 +1903,7 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
     }, [
         effectiveTimeStart,
         isFinalized,
+        normalizedPartTool,
         pinnedTime.end,
         time?.end,
     ]);
@@ -1718,7 +1930,13 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
         [input, metadata, presentation, stateOutput],
     );
     const description = guestHeader?.subtitle ?? builtInDescription;
-    const displayName = guestHeader?.title ?? getToolMetadata(normalizedPartTool || part.tool).displayName;
+    const displayName = guestHeader?.title ?? (normalizedPartTool === 'exec_command'
+        ? t('chat.toolPart.unifiedExec.shellCommand')
+        : normalizedPartTool === 'write_stdin'
+            ? t('chat.toolPart.unifiedExec.processInput')
+            : normalizedPartTool === 'terminate_exec'
+                ? t('chat.toolPart.unifiedExec.processTermination')
+                : getToolMetadata(normalizedPartTool || part.tool).displayName);
     
     // Tool title/description — shown inline as context. A subtitle the
     // extension declared replaces it, since both land in the same slot.
@@ -1727,7 +1945,7 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
         if (guestSubtitle) {
             return null;
         }
-        if (isShellTool(normalizedPartTool)) {
+        if (isShellTool(normalizedPartTool) || isUnifiedExecTool(normalizedPartTool)) {
             return null;
         }
         if (isPatchTool(normalizedPartTool)) {
@@ -1985,7 +2203,15 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
                                     <OpenSubtaskButton sessionId={taskSessionId} agent={subagentAgent(input)} isMobile={isMobile} />
                                 ) : null}
                             </div>
-                            {showsDuration && typeof effectiveTimeStart === 'number' && !header?.durationUnknown ? (
+                            {isExecCommandTool(normalizedPartTool) ? (
+                                <span className={cn('flex-shrink-0 tabular-nums text-muted-foreground/80 empty:hidden', TOOL_ROW_DESCRIPTION_CLASS)}>
+                                    <UnifiedExecDuration
+                                        metadata={unifiedExecMetadata}
+                                        active={execProcessRunning && unifiedExecMetadata.sessionExposed === true}
+                                        stateStatus={part.state.status}
+                                    />
+                                </span>
+                            ) : showsDuration && typeof effectiveTimeStart === 'number' && !header?.durationUnknown ? (
                                 <span className={cn('flex-shrink-0 tabular-nums text-muted-foreground/80', TOOL_ROW_DESCRIPTION_CLASS)}>
                                     <LiveDuration
                                         start={effectiveTimeStart}
@@ -2079,6 +2305,9 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
                     >
                         <BlockLine onToggle={() => onToggle(part.id)} topOffset={1} />
                         <ToolExpandedContent
+                            isMobile={isMobile}
+                            expandedScriptTools={nestedTools?.expanded ?? expandedScriptTools}
+                            onToggleScriptTool={onToggleScriptTool}
                             part={part}
                             state={state}
                             currentDirectory={currentDirectory}
@@ -2265,8 +2494,14 @@ const SubagentToolPartContent: React.FC<ToolPartProps> = (props) => {
 const ToolPart: React.FC<ToolPartProps> = (props) => {
     const { t } = useI18n();
     const toolName = normalizeToolName(props.part.tool) || 'tool';
-    const displayName = getToolMetadata(toolName).displayName;
-    const backgroundShellID = isShellTool(toolName) ? readBackgroundShellID(props.part) : undefined;
+    const backgroundShellID = isShellTool(toolName) && !isUnifiedExecTool(toolName) ? readBackgroundShellID(props.part) : undefined;
+    const displayName = toolName === 'exec_command'
+        ? t('chat.toolPart.unifiedExec.shellCommand')
+        : toolName === 'write_stdin'
+            ? t('chat.toolPart.unifiedExec.processInput')
+            : toolName === 'terminate_exec'
+                ? t('chat.toolPart.unifiedExec.processTermination')
+                : getToolMetadata(toolName).displayName;
 
     return (
         <ToolPartErrorBoundary
@@ -2284,11 +2519,14 @@ const ToolPart: React.FC<ToolPartProps> = (props) => {
     );
 };
 
-export default React.memo(ToolPart, (prev, next) => {
+const MemoToolPart = React.memo(ToolPart, (prev, next) => {
     return areRenderRelevantPartsEqual([prev.part], [next.part])
         && prev.isExpanded === next.isExpanded
         && prev.isMobile === next.isMobile
         && prev.alwaysShowActions === next.alwaysShowActions
         && prev.onShowPopup === next.onShowPopup
-        && prev.animateTailText === next.animateTailText;
+        && prev.animateTailText === next.animateTailText
+        && prev.nestedTools === next.nestedTools;
 });
+
+export default MemoToolPart;

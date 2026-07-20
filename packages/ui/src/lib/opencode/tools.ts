@@ -32,6 +32,10 @@ export const OPENCODE_TOOLS = {
   question: "question",
   read: "read",
   shell: "shell",
+  execCommand: "exec_command",
+  pollExec: "poll_exec",
+  writeStdin: "write_stdin",
+  terminateExec: "terminate_exec",
   skill: "skill",
   subagent: "subagent",
   webfetch: "webfetch",
@@ -65,7 +69,15 @@ export function normalizeToolName(toolName: ToolName): string {
 
 const is = (name: OpencodeToolName) => (toolName: ToolName): boolean => normalizeToolName(toolName) === name
 
-export const isShellTool = is(OPENCODE_TOOLS.shell)
+export const isExecCommandTool = is(OPENCODE_TOOLS.execCommand)
+export const isWriteStdinTool = is(OPENCODE_TOOLS.writeStdin)
+const EXEC_FOLLOW_UP_TOOLS = new Set<string>([OPENCODE_TOOLS.pollExec, OPENCODE_TOOLS.writeStdin, OPENCODE_TOOLS.terminateExec])
+export const isExecFollowUpTool = (toolName: ToolName): boolean => EXEC_FOLLOW_UP_TOOLS.has(normalizeToolName(toolName))
+export const isUnifiedExecTool = (toolName: ToolName): boolean => isExecCommandTool(toolName) || isExecFollowUpTool(toolName)
+export const isShellTool = (toolName: ToolName): boolean => {
+  const name = normalizeToolName(toolName)
+  return name === OPENCODE_TOOLS.shell || name === OPENCODE_TOOLS.execCommand
+}
 /**
  * Code Mode: one tool that runs a short JS script which calls the MCP and
  * integration tools as functions. The script is `input.code`; what it actually
@@ -108,6 +120,49 @@ export const isWebSearchTool = (toolName: ToolName): boolean => normalizeToolNam
 const optionalText = z.string().trim().min(1).optional().catch(undefined)
 const optionalCount = z.number().int().nonnegative().optional().catch(undefined)
 
+const execText = z.string().optional().catch(undefined)
+const execFlag = z.boolean().optional().catch(undefined)
+const execNumber = z.number().optional().catch(undefined)
+const unifiedExecMetadataSchema = z.object({
+  command: execText,
+  output: execText,
+  interactions: z.array(z.object({ type: z.enum(["stdin", "terminate"]), time: z.number() })).optional().catch(undefined),
+  sessionID: optionalCount,
+  execID: optionalCount,
+  laneID: optionalCount,
+  shellGeneration: optionalCount,
+  shellReused: execFlag,
+  cwd: execText,
+  sessionExposed: execFlag,
+  startedAt: execNumber,
+  durationMs: execNumber,
+  processRunning: execFlag,
+  exitCode: execNumber,
+  outputError: execText,
+  truncated: execFlag,
+  terminationRequested: execFlag,
+  execDisplay: z.enum(["root", "poll", "stdin", "terminate"]).optional().catch(undefined),
+  execError: execText,
+}).catch({})
+
+export type UnifiedExecMetadata = z.infer<typeof unifiedExecMetadataSchema>
+
+export const readUnifiedExecMetadata = (value: Metadata | undefined): UnifiedExecMetadata => unifiedExecMetadataSchema.parse(value)
+
+const unifiedExecInputSchema = z.object({ cmd: execText, command: execText, chars: execText, close_stdin: execFlag }).catch({})
+export const readUnifiedExecInput = (input: ToolInput | undefined) => unifiedExecInputSchema.parse(input)
+
+export function redactExecFollowUpInput(tool: ToolName, input: ToolInput | undefined): ToolInput | undefined {
+  if (!input || !isExecFollowUpTool(tool)) return input
+  const safeInput = { ...input }
+  delete safeInput.chars
+  return safeInput
+}
+
+export function shouldHideExecFollowUpState(tool: ToolName, status: string | undefined, metadata: UnifiedExecMetadata): boolean {
+  return isExecFollowUpTool(tool) && status !== "error" && !metadata.execError
+}
+
 const inputSchema = z
   .object({
     // v2 file tools use `path`; the other two keep MCP and plugin tools that
@@ -116,6 +171,7 @@ const inputSchema = z
     filePath: optionalText,
     file_path: optionalText,
     command: optionalText,
+    cmd: optionalText,
     description: optionalText,
     agent: optionalText,
     name: optionalText,
@@ -442,6 +498,9 @@ export function toolDescription(
   const parsed = readInput(input)
 
   switch (name) {
+    case OPENCODE_TOOLS.execCommand:
+      return parsed.cmd ? { kind: "text", value: parsed.cmd.split("\n")[0].slice(0, MAX_COMMAND_LENGTH) } : null
+
     case OPENCODE_TOOLS.shell:
       return parsed.command ? { kind: "text", value: parsed.command.split("\n")[0].slice(0, MAX_COMMAND_LENGTH) } : null
 

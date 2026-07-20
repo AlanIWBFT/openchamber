@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import type { AssistantMessage, Part, SyntheticMessage, ToolState, UserMessage } from '@/lib/opencode/model';
+import type { AssistantMessage, Part, SyntheticMessage, ToolInput, ToolPart, ToolState, UserMessage } from '@/lib/opencode/model';
 
-import { createParsedStatus, getActiveAssistantContext, hasBackgroundableWork } from './useAssistantStatus';
+import {
+    createParsedStatus,
+    createAssistantStatusSignature,
+    getActiveAssistantContext,
+    hasBackgroundableWork,
+    parseAssistantStatusSignature,
+} from './useAssistantStatus';
 
 const userMessage = (id: string): UserMessage => ({
     id,
@@ -137,6 +143,43 @@ describe('hasBackgroundableWork', () => {
             metadata: { status: 'running', shellID: 'sh_1' },
             time: { start: 1, end: 2 },
         })])).toBe(false);
+    });
+
+    test('persistent exec commands and controls are not official background jobs', () => {
+        for (const name of ['exec_command', 'poll_exec', 'write_stdin', 'terminate_exec']) {
+            expect(hasBackgroundableWork([tool(name, { status: 'running', input: {}, time: { start: 1 } })])).toBe(false);
+        }
+    });
+});
+
+const writeStdinPart = (status: 'pending' | 'running', input: ToolInput): ToolPart => ({
+    id: `write-stdin-${status}`,
+    sessionID: 'session-1',
+    messageID: 'message-1',
+    callID: 'call-1',
+    type: 'tool',
+    tool: 'write_stdin',
+    state: status === 'pending'
+        ? { status, input, raw: '' }
+        : { status, input, time: { start: 1 } },
+});
+
+describe('assistant status signature', () => {
+    test('preserves write_stdin operations through encoding', () => {
+        const cases = [
+            [writeStdinPart('pending', {}), 'preparing'],
+            [writeStdinPart('running', { session_id: 1 }), 'polling'],
+            [writeStdinPart('running', { session_id: 1, chars: '\n' }), 'sending'],
+            [writeStdinPart('running', { session_id: 1, close_stdin: true }), 'sending'],
+        ] as const;
+
+        for (const [part, expectedOperation] of cases) {
+            const signature = createAssistantStatusSignature([part], 'session-1:message-1');
+            const parsed = parseAssistantStatusSignature(signature);
+
+            expect(parsed.activeToolName).toBe('write_stdin');
+            expect(parsed.writeStdinOperation).toBe(expectedOperation);
+        }
     });
 });
 

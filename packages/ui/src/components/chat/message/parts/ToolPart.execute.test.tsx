@@ -11,6 +11,8 @@ import { I18nProvider } from '@/lib/i18n';
 import { ThemeSystemContext, type ThemeContextValue } from '@/contexts/theme-system-context';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import { useGuestsStore } from '@/lib/guests/store';
+import { defaultExpandedScriptToolIDs } from '@/lib/opencode/script';
+import type { ToolExpansionState } from './ToolPart';
 
 // Bun does not implement Vite's worker asset-query imports.
 plugin({
@@ -66,7 +68,7 @@ const part: ToolPartData = {
   },
 };
 
-test('a Code Mode call shows its script, the tools it called, and the truncation note', async () => {
+async function withToolPart(check: (container: HTMLElement, render: (part: ToolPartData | null, nestedTools?: ToolExpansionState) => Promise<void>) => Promise<void>) {
   const happyWindow = new Window({ url: 'http://localhost' });
   const globals = {
     window: happyWindow,
@@ -103,18 +105,31 @@ test('a Code Mode call shows its script, the tools it called, and the truncation
 
   try {
     useGuestsStore.setState({ status: 'ready', guests: [], runtimeKey: 'test' });
-    await act(async () => {
-      root.render(
+    const render = async (part: ToolPartData | null, nestedTools?: ToolExpansionState) => act(async () => {
+      root.render(part ? (
         <SyncProvider sdk={sdk} directory="">
           <I18nProvider>
             <ThemeSystemContext.Provider value={themeContext}>
-              <ToolPart part={part} isExpanded isMobile={false} onToggle={() => {}} />
+              <ToolPart part={part} nestedTools={nestedTools} isExpanded isMobile={false} onToggle={() => {}} />
             </ThemeSystemContext.Provider>
           </I18nProvider>
-        </SyncProvider>,
-      );
+        </SyncProvider>
+      ) : null);
     });
+    await check(container, render);
+  } finally {
+    await act(async () => { root.unmount(); });
+    await happyWindow.happyDOM.abort();
+    for (const [name, descriptor] of previous) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else Reflect.deleteProperty(globalThis, name);
+    }
+  }
+}
 
+test('a Code Mode call shows its script, the tools it called, and the truncation note', async () => {
+  await withToolPart(async (container, render) => {
+    await render(part);
     // The row is named "Script", not "execute", and carries the braces icon.
     expect(container.textContent).toContain('Script');
     expect(container.textContent).not.toContain('execute');
@@ -128,12 +143,38 @@ test('a Code Mode call shows its script, the tools it called, and the truncation
     expect(container.textContent).toContain('{"teamId":"OPE"}');
     expect(container.textContent).toContain('Output was truncated');
     expect(container.textContent).toContain('/tmp/oc-script-output.json');
-  } finally {
-    await act(async () => { root.unmount(); });
-    await happyWindow.happyDOM.abort();
-    for (const [name, descriptor] of previous) {
-      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
-      else Reflect.deleteProperty(globalThis, name);
-    }
-  }
+  });
+});
+
+test('Script children use real cards, redact controls, and recover the message owner expansion state after remount', async () => {
+  const script: ToolPartData = { ...part, state: {
+    status: 'completed', input: { code: 'await functions.exec_command({ cmd: "echo test" })' }, output: 'script result', time: { start: 1, end: 2 },
+    metadata: { toolCalls: [
+      { id: 'command', name: 'exec_command', tool: 'functions.exec_command', status: 'completed', input: { cmd: 'echo test' }, time: { start: 1, end: 2 },
+        content: [{ type: 'text', text: 'initial result' }], metadata: { command: 'echo test', output: 'latest command output', execID: 1, processRunning: false } },
+      { id: 'poll', name: 'poll_exec', tool: 'functions.poll_exec', status: 'completed', input: { exec_id: 1 }, time: { start: 1, end: 2 } },
+      { id: 'input', name: 'write_stdin', tool: 'functions.write_stdin', status: 'error', input: { exec_id: 1, chars: 'sensitive input' },
+        error: 'stdin unavailable', time: { start: 1, end: 2 } },
+    ] },
+  } };
+  await withToolPart(async (container, render) => {
+    const expanded = new Set(defaultExpandedScriptToolIDs(script, { shell: true, edit: false }));
+    expanded.add('prt_execute:child:input');
+    const toggled: string[] = [];
+    const nestedTools: ToolExpansionState = { expanded, toggle: (id) => { toggled.push(id); } };
+    await render(script, nestedTools);
+    expect(container.textContent).toContain('latest command output');
+    expect(container.textContent).toContain('stdin unavailable');
+    expect(container.textContent).not.toContain('sensitive input');
+    const command = Array.from(container.querySelectorAll<HTMLElement>('[role="button"]')).find((element) => element.textContent?.includes('Shell Command'));
+    expect(command).toBeDefined();
+    await act(async () => { command?.click(); });
+    expect(toggled).toEqual(['prt_execute:child:command']);
+    await render(script, { ...nestedTools, expanded: new Set() });
+    expect(container.textContent).not.toContain('latest command output');
+    await render(null);
+    await render(script, nestedTools);
+    expect(container.textContent).toContain('latest command output');
+    expect(container.textContent).not.toContain('sensitive input');
+  });
 });
