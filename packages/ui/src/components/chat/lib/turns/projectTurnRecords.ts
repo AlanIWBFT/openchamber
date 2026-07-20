@@ -64,6 +64,7 @@ const buildTurnStreamState = (userMessage: ChatMessageEntry, assistantMessages: 
 };
 
 interface ProjectTurnRecordsOptions {
+    showReasoningTraces: boolean;
     previousProjection?: TurnProjectionResult | null;
     showTurnChangedFiles: boolean;
     /**
@@ -81,6 +82,7 @@ interface ProjectTurnRecordsOptions {
 }
 
 const DEFAULT_OPTIONS: ProjectTurnRecordsOptions = {
+    showReasoningTraces: true,
     previousProjection: null,
     showTurnChangedFiles: false,
     mergeHiddenUserTurns: false,
@@ -144,7 +146,7 @@ const hydrateTurnRecord = (
 
     let activity: TurnActivity | undefined;
     const readActivity = (): TurnActivity => {
-        activity ??= projectTurnActivity({ turnId, assistantMessages });
+        activity ??= projectTurnActivity({ turnId, assistantMessages, showReasoningTraces: effectiveOptions.showReasoningTraces });
         return activity;
     };
 
@@ -154,6 +156,7 @@ const hydrateTurnRecord = (
         summaryText: lazy(() => readSummary().text),
         changedFiles: lazy(readChangedFiles),
         activityParts: lazy(() => readActivity().activityParts),
+        explorationGroups: lazy(() => readActivity().explorationGroups),
         hasTools: lazy(() => readActivity().hasTools),
         hasReasoning: lazy(() => readActivity().hasReasoning),
     });
@@ -230,6 +233,7 @@ export const projectTurnRecords = (
             assistantMessageIds: [],
             assistantMessages: [],
             activityParts: [],
+            explorationGroups: [],
             summary: {},
             summaryText: undefined,
             hasTools: false,

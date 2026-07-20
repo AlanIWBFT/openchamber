@@ -59,6 +59,7 @@ export const dict = {
   'commitComparison.emptyDiff': 'Bu committe değişiklik yok',
   'chat.liveActivity.title': 'Etkinlik',
   'chat.liveActivity.moreRows': '+{count} daha',
+  'chat.liveActivity.runningCommands': 'Çalışan komutlar: {count}',
   'chat.liveActivity.changedFile': '{count} dosya değiştirildi',
   'chat.liveActivity.changedFiles': '{count} dosya değiştirildi',
   'chat.liveActivity.explored': 'Kod tabanı incelendi',
