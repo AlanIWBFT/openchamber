@@ -47,7 +47,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Icon } from "@/components/icon/Icon";
 import { formatTimestampForDisplay } from './timeFormat';
 import { ToolRevealOnMount } from './parts/ToolRevealOnMount';
-import { StaticToolRow } from './parts/ProgressiveGroup';
+import { ExplorationToolGroup, StaticToolRow } from './parts/ProgressiveGroup';
 import { isExpandableTool, isStandaloneTool } from './parts/toolRenderUtils';
 import TurnActivity from '../components/TurnActivity';
 import { LiveActivityCollapse } from '../components/LiveActivityCollapse';
@@ -70,6 +70,7 @@ import { shareFileFromNativeApp } from '@/lib/nativeFileShare';
 import { WorktreeRequiresGitRepositoryError } from '@/lib/worktrees/worktreeCreate';
 import { cloneMessageImageExportSource } from './imageExport';
 import { getUnifiedExecMetadata, isExecProcessRunning, shouldHideExecFollowUp } from './unifiedExec';
+import { toolPreviewOutputs } from '@/lib/opencode/script';
 
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const, transform: 'translateZ(0)' };
@@ -1247,8 +1248,17 @@ const AssistantMessageBody = React.memo(({
             }
         }
 
+        const explorationGroups = turnGroupingContext?.explorationGroups;
+        if (Array.isArray(explorationGroups)) {
+            for (const group of explorationGroups) {
+                for (const activity of group.parts) {
+                    ids.add(activity.id);
+                }
+            }
+        }
+
         return Array.from(ids);
-    }, [messageId, toolParts, turnGroupingContext?.activityGroupSegments]);
+    }, [messageId, toolParts, turnGroupingContext?.activityGroupSegments, turnGroupingContext?.explorationGroups]);
     const shouldAnimateNewToolMount = Boolean(turnGroupingContext?.isWorking && toolRevealReadyRef.current);
     const persistedToolIds = toolRevealStateRef.current.persistedToolIds;
     const animatedToolIds = toolRevealStateRef.current.animatedToolIds;
@@ -1311,17 +1321,11 @@ const AssistantMessageBody = React.memo(({
             return url.includes('0.0.0.0') ? url.replace('0.0.0.0', '127.0.0.1') : url;
         }
         for (const part of toolParts) {
-            const fallback = 'output' in part.state ? part.state.output : undefined;
-            const output = part.tool === 'exec_command' ? getUnifiedExecMetadata(part).output ?? fallback : fallback;
-            if (!output) {
-                continue;
+            for (const output of toolPreviewOutputs(part)) {
+                // eslint-disable-next-line no-control-regex
+                const url = extractLoopbackUrls(output.replace(/\x1b\[[0-9;]*m/g, ''))[0];
+                if (url) return url.includes('0.0.0.0') ? url.replace('0.0.0.0', '127.0.0.1') : url;
             }
-            // eslint-disable-next-line no-control-regex
-            const url = extractLoopbackUrls(output.replace(/\x1b\[[0-9;]*m/g, ''))[0];
-            if (!url) {
-                continue;
-            }
-            return url.includes('0.0.0.0') ? url.replace('0.0.0.0', '127.0.0.1') : url;
         }
         return null;
     }, [assistantTextParts, isMobile, isMiniChatSurface, isVSCode, toolParts]);
@@ -1703,6 +1707,21 @@ const AssistantMessageBody = React.memo(({
         };
     }, [activityPartsForTurn]);
 
+    const liveExplorationGroups = React.useMemo(() => {
+        if (isSortedRenderMode) return new Map<string, NonNullable<TurnGroupingContext['explorationGroups']>[number]>();
+        return new Map(
+            (turnGroupingContext?.explorationGroups ?? []).flatMap((group) => {
+                const first = group.parts[0];
+                return first ? [[first.id, group] as const] : [];
+            })
+        );
+    }, [isSortedRenderMode, turnGroupingContext?.explorationGroups]);
+
+    const liveExplorationPartIds = React.useMemo(() => {
+        if (isSortedRenderMode) return new Set<string>();
+        return new Set(turnGroupingContext?.explorationPartIds ?? []);
+    }, [isSortedRenderMode, turnGroupingContext?.explorationPartIds]);
+
     const toggleActivityGroup = turnGroupingContext?.toggleGroup;
     const isActivityOwnerMessage = !isSortedRenderMode
         || !turnGroupingContext?.activityOwnerMessageId
@@ -1901,8 +1920,7 @@ const AssistantMessageBody = React.memo(({
         };
 
         // Flat rendering: iterate parts in natural order.
-        // Group consecutive static tools (read, grep, glob, etc.) into compact rows.
-        // Expandable tools (bash, edit, task) get individual rows.
+        // Static tools use compact rows; expandable tools get individual cards.
         // Text renders inline at its natural position.
         let i = 0;
         while (i < visibleParts.length) {
@@ -1994,6 +2012,31 @@ const AssistantMessageBody = React.memo(({
                 const toolPart = part as ToolPartType;
                 const toolName = toolPart.tool?.toLowerCase() ?? '';
                 const toolPartId = toolPart.id ?? `${messageId}-part-${i}-${part.type}`;
+
+                if (!isSortedRenderMode) {
+                    const explorationGroup = liveExplorationGroups.get(toolPart.id);
+                    if (explorationGroup) {
+                        rendered.push(
+                            <ExplorationToolGroup
+                                key={explorationGroup.id}
+                                id={explorationGroup.id}
+                                activities={explorationGroup.parts}
+                                isExpanded={expandedTools.has(explorationGroup.id)}
+                                isMobile={isMobile}
+                                expandedTools={expandedTools}
+                                onToggleTool={onToggleTool}
+                                onShowPopup={onShowPopup}
+                                animatedToolIds={animatedToolIdsLookup}
+                            />
+                        );
+                        i += 1;
+                        continue;
+                    }
+                    if (liveExplorationPartIds.has(toolPart.id)) {
+                        i += 1;
+                        continue;
+                    }
+                }
 
                 if (isSortedRenderMode && !isActivityOwnerMessage) {
                     flushSegmentsAfterTool(toolPartId);
@@ -2105,6 +2148,8 @@ const AssistantMessageBody = React.memo(({
         liveFinalActivity,
         isLastAssistantInTurn,
         hasStopFinish,
+        liveExplorationGroups,
+        liveExplorationPartIds,
         lastRenderableTextPartIndex,
         messageId,
         messageActionButtons,

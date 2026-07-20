@@ -1,9 +1,35 @@
 import { z } from "zod"
 import type { JsonValue, Metadata, ToolPart } from "./model"
 import { toolAttachments, toolOutputText } from "./projection"
-import { executeToolCalls, isExecFollowUpTool, isExecuteTool, isFileChangeTool, isShellTool, readUnifiedExecMetadata, redactExecFollowUpInput, shouldHideExecFollowUpState, type ExecuteToolCall } from "./tools"
+import {
+  executeToolCalls, isExecCommandTool, isExecFollowUpTool, isExecuteTool, isExplorationGroupTool, isExplorationPartDisplayReady,
+  isFileChangeTool, isShellTool, normalizeToolName, readUnifiedExecMetadata, redactExecFollowUpInput, shouldHideExecFollowUpState, type ExecuteToolCall,
+} from "./tools"
 
-type ScriptToolEntry = { kind: "part"; part: ToolPart } | { kind: "summary"; call: ExecuteToolCall }
+export type ScriptToolEntry = { kind: "part"; part: ToolPart } | { kind: "summary"; call: ExecuteToolCall }
+type ScriptExplorationGroup = { kind: "exploration"; id: string; entries: ScriptToolEntry[]; counts: { search: number; read: number } }
+
+export function groupScriptTools(parentID: string, entries: readonly ScriptToolEntry[]): Array<ScriptToolEntry | ScriptExplorationGroup> {
+  const result: Array<ScriptToolEntry | ScriptExplorationGroup> = []
+  let group: ScriptExplorationGroup | undefined
+  for (const [index, entry] of entries.entries()) {
+    const tool = entry.kind === "part" ? entry.part.tool : entry.call.tool
+    if (!isExplorationGroupTool(tool)) {
+      group = undefined
+      result.push(entry)
+      continue
+    }
+    if (entry.kind === "part" && !isExplorationPartDisplayReady(entry.part)) continue
+    if (!group) {
+      group = { kind: "exploration", id: `${parentID}:exploration:${entry.kind === "part" ? entry.part.id : index}`, entries: [], counts: { search: 0, read: 0 } }
+      result.push(group)
+    }
+    group.entries.push(entry)
+    if (normalizeToolName(tool) === "read") group.counts.read++
+    else group.counts.search++
+  }
+  return result
+}
 
 const inputSchema = z.record(z.string(), z.json())
 const callSchema = z.object({
@@ -22,6 +48,32 @@ const callSchema = z.object({
 })
 const identitySchema = callSchema.pick({ id: true, name: true, tool: true, status: true, time: true })
 const childID = (parent: string, child: string) => `${parent}:child:${child}`
+
+const previewSchema = callSchema.pick({ name: true, tool: true, status: true }).extend({
+  metadata: z.object({ output: z.string().optional(), execError: z.string().optional() }).optional().catch(undefined),
+  content: z.array(z.object({ type: z.string(), text: z.string().optional() })).optional().catch(undefined),
+})
+
+/** Preserve the message preview action's first-match order without mounting child cards. */
+export function* toolPreviewOutputs(part: ToolPart): Generator<string> {
+  const state = part.state
+  const metadata = state.status === "pending" ? undefined : state.metadata
+  const fallback = "output" in state ? state.output : undefined
+  const output = isExecCommandTool(part.tool) ? readUnifiedExecMetadata(metadata).output ?? fallback : fallback
+  if (output) yield output
+  if (!isExecuteTool(part.tool) || !Array.isArray(metadata?.toolCalls)) return
+  for (const value of metadata.toolCalls) {
+    const parsed = previewSchema.safeParse(value)
+    if (!parsed.success) continue
+    const call = parsed.data
+    const tool = call.name ?? call.tool
+    if (shouldHideExecFollowUpState(tool, call.status, call.metadata ?? {})) continue
+    const text = isExecCommandTool(tool) && call.metadata?.output !== undefined
+      ? call.metadata.output
+      : call.content?.filter((item) => item.type === "text").map((item) => item.text ?? "").join("\n")
+    if (text) yield text
+  }
+}
 
 /** Default-open settings also reveal the enclosing Script; manual overrides remain with the message owner. */
 export function defaultExpandedScriptToolIDs(parent: ToolPart, options: { shell: boolean; edit: boolean }): string[] {
