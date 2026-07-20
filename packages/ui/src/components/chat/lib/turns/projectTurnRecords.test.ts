@@ -127,6 +127,42 @@ describe('projectTurnRecords', () => {
         expect(next.turns[0]?.stream.isRetrying).toBe(false);
     });
 
+    test('omits successful exec follow-ups from Activity without hiding failures', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
+            parts: [
+                { id: 'exec-1', type: 'tool', tool: 'exec_command', state: { status: 'completed', metadata: { processRunning: true } } },
+                { id: 'poll-1', type: 'tool', tool: 'write_stdin', state: { status: 'completed', metadata: { execDisplay: 'poll' } } },
+                { id: 'terminate-1', type: 'tool', tool: 'terminate_exec', state: { status: 'completed', metadata: { execError: 'not found' } } },
+            ] as unknown as Part[],
+        };
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.hasTools).toBe(true);
+        expect(projection.turns[0]?.activityParts.map((record) => record.id)).toEqual(['exec-1', 'terminate-1']);
+        expect(projection.turns[0]?.activitySegments.flatMap((group) => group.parts.map((record) => record.id)))
+            .toEqual(['exec-1', 'terminate-1']);
+    });
+
+    test('does not create tool Activity for a message containing only successful exec follow-ups', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
+            parts: [
+                { id: 'poll-1', type: 'tool', tool: 'write_stdin', state: { status: 'completed', metadata: { execDisplay: 'poll' } } },
+                { id: 'terminate-1', type: 'tool', tool: 'terminate_exec', state: { status: 'completed', metadata: { execDisplay: 'terminate' } } },
+            ] as unknown as Part[],
+        };
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.hasTools).toBe(false);
+        expect(projection.turns[0]?.activityParts).toEqual([]);
+        expect(projection.turns[0]?.activitySegments).toEqual([]);
+    });
+
     test('reuses the whole turns array when every turn is unchanged', () => {
         const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
         const assistant = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 });
