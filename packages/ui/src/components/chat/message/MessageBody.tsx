@@ -1,6 +1,8 @@
 import React from 'react';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import type { FilePart, Part } from '@/lib/opencode/model';
+import { isExecuteTool } from '@/lib/opencode/tools';
+import { shouldHideExecFollowUp } from './unifiedExec';
 
 import { sessionMentionChipsOf } from './parts/sessionMentionChips';
 import UserTextPart from './parts/UserTextPart';
@@ -1266,9 +1268,10 @@ const AssistantMessageBody = React.memo(({
     const isTouchContext = Boolean(hasTouchInput ?? isMobile);
     const alwaysShowMessageActions = Boolean(alwaysShowActions ?? isMobile);
     const awaitingMessageCompletion = !isMessageCompleted;
+    const nestedTools = React.useMemo(() => ({ expanded: expandedTools, toggle: onToggleTool }), [expandedTools, onToggleTool]);
 
     const visibleParts = React.useMemo(() => {
-        return parts.filter((part) => !isEmptyTextPart(part));
+        return parts.filter((part) => !isEmptyTextPart(part) && (part.type !== 'tool' || !shouldHideExecFollowUp(part)));
     }, [parts]);
 
     const assistantTextParts = React.useMemo(() => {
@@ -1880,6 +1883,7 @@ const AssistantMessageBody = React.memo(({
                     rendered.push(
                         <FadeInOnReveal key={`tool-${toolPart.id}`}>
                             <ToolPart
+                                nestedTools={isExecuteTool(toolPart.tool) ? nestedTools : undefined}
                                 part={toolPart}
                                 isExpanded={expandedTools.has(toolPart.id)}
                                 onToggle={onToggleTool}
@@ -1937,6 +1941,7 @@ const AssistantMessageBody = React.memo(({
         hoistedPages,
         collapsibleThinkingBlocks,
         expandedTools,
+        nestedTools,
         isMobile,
         liveFinalActivity,
         isLastAssistantInTurn,
