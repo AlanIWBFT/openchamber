@@ -2,12 +2,14 @@ import React from 'react';
 import { z } from 'zod';
 import { useChatSessionSelection } from '@/components/chat/chatColumnSession';
 import type { Message, ModelRef, Part, ReasoningPart, StructuredError, TextPart, ToolPart } from '@/lib/opencode/model';
-import { executeHasBackgroundableWork, executeToolCalls, isExecuteTool, isShellTool, isSubagentTool } from '@/lib/opencode/tools';
+import { executeHasBackgroundableWork, executeToolCalls, isExecuteTool, isShellTool, isSubagentTool, isUnifiedExecTool, isWriteStdinTool } from '@/lib/opencode/tools';
 
 import type { MessageStreamPhase } from '@/stores/types/sessionTypes';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useDirectorySync, useSession, useSessionMessages, useSessionPermissions, useSessionForms, useSessionStatus } from '@/sync/sync-context';
 import { useSessionActivity } from './useSessionActivity';
+import { getWriteStdinOperation, type WriteStdinOperation } from '@/components/chat/message/unifiedExec';
+import { useI18n } from '@/lib/i18n';
 
 type AssistantActivity = 'idle' | 'streaming' | 'tooling' | 'cooldown' | 'permission';
 
@@ -101,6 +103,10 @@ const TOOL_BUCKETS = new Map<string, ToolBucket>(Object.entries({
     write: 'edit',
     patch: 'edit',
     shell: 'command',
+    exec_command: 'command',
+    poll_exec: 'command',
+    write_stdin: 'command',
+    terminate_exec: 'command',
     execute: 'command',
     webfetch: 'lookup',
     websearch: 'lookup',
@@ -142,6 +148,7 @@ const WORKING_PHRASES = [
 type ParsedStatusResult = {
     activePartType: 'text' | 'tool' | 'reasoning' | 'editing' | undefined;
     activeToolName: string | undefined;
+    writeStdinOperation: WriteStdinOperation | undefined;
     statusText: string;
     isGenericStatus: boolean;
     canBackground: boolean;
@@ -193,6 +200,7 @@ const getStableWorkingPhrase = (key: string): string => {
  */
 export const hasBackgroundableWork = (parts: readonly Part[]): boolean => parts.some((part) => {
     if (part.type !== 'tool' || part.state?.status !== 'running') return false;
+    if (isUnifiedExecTool(part.tool)) return false;
     if (isShellTool(part.tool) || isSubagentTool(part.tool)) return true;
     if (!isExecuteTool(part.tool)) return false;
     return executeHasBackgroundableWork(part.state.metadata);
@@ -203,6 +211,7 @@ export const createParsedStatus = (parts: Part[], genericKey: string): ParsedSta
     let activePartType: ParsedStatusResult['activePartType'] = undefined;
     let activeToolName: string | undefined = undefined;
     let activeToolPhrase: string | undefined = undefined;
+    let writeStdinOperation: WriteStdinOperation | undefined = undefined;
 
     for (let index = parts.length - 1; index >= 0; index -= 1) {
         const part = parts[index];
@@ -225,6 +234,9 @@ export const createParsedStatus = (parts: Part[], genericKey: string): ParsedSta
                     activePartType = bucket === 'edit' ? 'editing' : 'tool';
                     activeToolName = toolName;
                     activeToolPhrase = getRunningToolPhrase(part, toolName, runningToolCounts.get(bucket ?? toolName) ?? 1);
+                    writeStdinOperation = isWriteStdinTool(toolName)
+                        ? getWriteStdinOperation(toolStatus, part.state.input)
+                        : undefined;
                 }
                 break;
             }
@@ -253,13 +265,14 @@ export const createParsedStatus = (parts: Part[], genericKey: string): ParsedSta
         return getStableWorkingPhrase(genericKey);
     })();
 
-    return { activePartType, activeToolName, statusText, isGenericStatus, canBackground: hasBackgroundableWork(parts) };
+    return { activePartType, activeToolName, writeStdinOperation, statusText, isGenericStatus, canBackground: hasBackgroundableWork(parts) };
 };
 
 const encodeParsedStatus = (status: ParsedStatusResult): string => {
     return [
         status.activePartType ?? '',
         status.activeToolName ?? '',
+        status.writeStdinOperation ?? '',
         status.statusText,
         status.isGenericStatus ? '1' : '0',
         status.canBackground ? '1' : '0',
@@ -267,16 +280,27 @@ const encodeParsedStatus = (status: ParsedStatusResult): string => {
 };
 
 const decodeParsedStatus = (signature: string): ParsedStatusResult => {
-    const [activePartType, activeToolName, statusText = 'working', isGenericStatus, canBackground] = signature.split(STATUS_SIGNATURE_SEPARATOR);
+    const [activePartType, activeToolName, writeStdinOperation, statusText = 'working', isGenericStatus, canBackground] = signature.split(STATUS_SIGNATURE_SEPARATOR);
     return {
         activePartType: activePartType === 'text' || activePartType === 'tool' || activePartType === 'reasoning' || activePartType === 'editing'
             ? activePartType
             : undefined,
         activeToolName: activeToolName || undefined,
+        writeStdinOperation: writeStdinOperation === 'preparing' || writeStdinOperation === 'polling' || writeStdinOperation === 'sending'
+            ? writeStdinOperation
+            : undefined,
         statusText,
         isGenericStatus: isGenericStatus === '1',
         canBackground: canBackground === '1',
     };
+};
+
+export const createAssistantStatusSignature = (parts: Part[], genericKey: string): string => {
+    return encodeParsedStatus(createParsedStatus(parts, genericKey));
+};
+
+export const parseAssistantStatusSignature = (signature: string): ParsedStatusResult => {
+    return decodeParsedStatus(signature);
 };
 
 const isReasoningPart = (part: Part): part is ReasoningPart => part.type === 'reasoning';
@@ -411,6 +435,7 @@ export function limitResetsAt(error: StructuredError | undefined): number | unde
 }
 
 export function useAssistantStatus(): AssistantStatusSnapshot {
+    const { t } = useI18n();
     // Inside the chat column, follow the session the timeline shows rather
     // than the live selection, so the status chip changes together with the
     // conversation instead of a commit ahead of it.
@@ -432,7 +457,7 @@ export function useAssistantStatus(): AssistantStatusSnapshot {
         React.useCallback((state) => {
             const genericKey = `${currentSessionId ?? ''}:${lastAssistantId ?? ''}`;
             const parts = lastAssistantId ? (state.part[lastAssistantId] ?? EMPTY_PARTS) : EMPTY_PARTS;
-            return encodeParsedStatus(createParsedStatus(parts, genericKey));
+            return createAssistantStatusSignature(parts, genericKey);
         }, [currentSessionId, lastAssistantId]),
         currentSessionDirectory ?? undefined,
     );
@@ -470,8 +495,24 @@ export function useAssistantStatus(): AssistantStatusSnapshot {
     }, [rawSessionMessages, lastAssistantId]);
 
     const parsedStatus = React.useMemo<ParsedStatusResult>(() => {
-        return decodeParsedStatus(lastAssistantStatusSignature);
+        return parseAssistantStatusSignature(lastAssistantStatusSignature);
     }, [lastAssistantStatusSignature]);
+    const localizedParsedStatus = React.useMemo<ParsedStatusResult>(() => {
+        const statusText = parsedStatus.activeToolName === 'exec_command'
+            ? t('chat.assistantStatus.unifiedExec.runningCommand')
+            : parsedStatus.activeToolName === 'write_stdin'
+                ? parsedStatus.writeStdinOperation === 'preparing'
+                    ? t('chat.assistantStatus.unifiedExec.preparingProcessOperation')
+                    : parsedStatus.writeStdinOperation === 'polling'
+                        ? t('chat.assistantStatus.unifiedExec.pollingProcessOutput')
+                        : parsedStatus.writeStdinOperation === 'sending'
+                            ? t('chat.assistantStatus.unifiedExec.sendingProcessInput')
+                            : t('chat.assistantStatus.unifiedExec.runningCommand')
+                : parsedStatus.activeToolName === 'terminate_exec'
+                    ? t('chat.assistantStatus.unifiedExec.terminatingProcess')
+                    : parsedStatus.statusText;
+        return statusText === parsedStatus.statusText ? parsedStatus : { ...parsedStatus, statusText };
+    }, [parsedStatus, t]);
 
     const abortState = React.useMemo(() => {
         const hasActiveAbort = Boolean(sessionAbortRecord && !sessionAbortRecord.acknowledged);
@@ -503,7 +544,7 @@ export function useAssistantStatus(): AssistantStatusSnapshot {
 
         let activity: AssistantActivity = 'idle';
         if (isWorking) {
-            if (parsedStatus.activePartType === 'tool' || parsedStatus.activePartType === 'editing') {
+            if (localizedParsedStatus.activePartType === 'tool' || localizedParsedStatus.activePartType === 'editing') {
                 activity = 'tooling';
             } else {
                 activity = isCooldown ? 'cooldown' : 'streaming';
@@ -521,31 +562,31 @@ export function useAssistantStatus(): AssistantStatusSnapshot {
         return {
             activity,
             hasWorkingContext: isWorking,
-            hasActiveTools: parsedStatus.activePartType === 'tool' || parsedStatus.activePartType === 'editing',
+            hasActiveTools: localizedParsedStatus.activePartType === 'tool' || localizedParsedStatus.activePartType === 'editing',
             isWorking,
             isStreaming,
             isCooldown,
             lifecyclePhase: isStreaming ? 'streaming' : isCooldown ? 'cooldown' : null,
-            statusText: isWorking ? parsedStatus.statusText : null,
-            isGenericStatus: isWorking ? parsedStatus.isGenericStatus : true,
+            statusText: isWorking ? localizedParsedStatus.statusText : null,
+            isGenericStatus: isWorking ? localizedParsedStatus.isGenericStatus : true,
             isWaitingForPermission: false,
             canAbort: isWorking,
             compactionDeadline: null,
-            activePartType: isWorking ? parsedStatus.activePartType : undefined,
-            activeToolName: isWorking ? parsedStatus.activeToolName : undefined,
+            activePartType: isWorking ? localizedParsedStatus.activePartType : undefined,
+            activeToolName: isWorking ? localizedParsedStatus.activeToolName : undefined,
             wasAborted: false,
             abortActive: false,
             lastCompletionId: null,
             isComplete: false,
             retryInfo,
-            canBackground: isWorking && parsedStatus.canBackground,
+            canBackground: isWorking && localizedParsedStatus.canBackground,
         };
-    }, [activityPhase, isPhaseWorking, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, assistantRetry]);
+    }, [activityPhase, isPhaseWorking, localizedParsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, assistantRetry]);
 
     const forming = React.useMemo<FormingSummary>(() => {
-        const isActive = isPhaseWorking && parsedStatus.activePartType === 'text';
+        const isActive = isPhaseWorking && localizedParsedStatus.activePartType === 'text';
         return { isActive, characterCount: 0 };
-    }, [isPhaseWorking, parsedStatus.activePartType]);
+    }, [isPhaseWorking, localizedParsedStatus.activePartType]);
 
     const working = React.useMemo<WorkingSummary>(() => {
         if (baseWorking.wasAborted || baseWorking.abortActive) {
