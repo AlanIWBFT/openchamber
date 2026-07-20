@@ -46,7 +46,7 @@ const EXPANDED_TOOLS_CACHE_MAX = 4000;
 const expandedToolsStateCache = new Map<string, Set<string>>();
 const collapsedToolsStateCache = new Map<string, Set<string>>();
 
-const BASH_TOOL_NAMES = new Set(['bash', 'shell', 'cmd', 'terminal']);
+const BASH_TOOL_NAMES = new Set(['bash', 'shell', 'cmd', 'terminal', 'exec_command']);
 const EDIT_TOOL_NAMES = new Set([
     'apply_patch',
     'edit',

@@ -23,6 +23,18 @@ describe('taskToolModel', () => {
         expect(readTaskSessionIdFromOutput(output)).toBe('child-1');
     });
 
+    test('filters and redacts Unified Exec controls in authoritative task summary metadata', () => {
+        expect(parseTaskMetadataBlock(`result
+<task_metadata>{"calls":[
+  {"id":"poll","tool":"write_stdin","state":{"status":"completed","input":{"session_id":1}}},
+  {"id":"failed","tool":"write_stdin","state":{"status":"completed","input":{"session_id":1,"chars":"secret"},"metadata":{"execError":"stdin unavailable"}}}
+        ]}</task_metadata>`).summaryEntries).toEqual([{
+            id: 'failed',
+            tool: 'write_stdin',
+            state: { status: 'error', title: undefined, input: { session_id: 1 }, error: 'stdin unavailable' },
+        }]);
+    });
+
     test('projects tool calls while excluding nested task and todo bookkeeping', () => {
         const message = {
             info: { id: 'message-1', role: 'assistant' } as Message,
@@ -38,5 +50,29 @@ describe('taskToolModel', () => {
             tool: 'read',
             state: { status: 'completed', title: undefined, input: { filePath: 'a.ts' } },
         }]);
+    });
+
+    test('omits successful exec follow-ups while preserving failed controls', () => {
+        const message = {
+            info: { id: 'message-1', role: 'assistant' } as Message,
+            parts: [
+                { id: 'exec-1', type: 'tool', tool: 'exec_command', state: { status: 'completed', input: { cmd: 'npm test' } } },
+                { id: 'poll-1', type: 'tool', tool: 'write_stdin', state: { status: 'completed', input: { session_id: 1 } } },
+                { id: 'stdin-error', type: 'tool', tool: 'write_stdin', state: { status: 'completed', input: { session_id: 1, chars: 'secret' }, metadata: { execError: 'stdin unavailable' } } },
+            ] as unknown as Part[],
+        };
+
+        expect(buildTaskSummaryEntriesFromSession([message])).toEqual([
+            {
+                id: 'exec-1',
+                tool: 'exec_command',
+                state: { status: 'completed', title: undefined, input: { cmd: 'npm test' } },
+            },
+            {
+                id: 'stdin-error',
+                tool: 'write_stdin',
+                state: { status: 'error', title: undefined, input: { session_id: 1 }, error: 'stdin unavailable' },
+            },
+        ]);
     });
 });
