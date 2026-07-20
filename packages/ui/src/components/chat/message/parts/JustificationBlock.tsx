@@ -22,12 +22,14 @@ interface JustificationBlockProps {
     part: Part;
     messageId: string;
     actions?: React.ReactNode;
+    defaultExpanded?: boolean;
 }
 
 const JustificationBlock: React.FC<JustificationBlockProps> = ({
     part,
     messageId,
     actions,
+    defaultExpanded,
 }) => {
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const partWithText = part as PartWithText;
@@ -48,6 +50,7 @@ const JustificationBlock: React.FC<JustificationBlockProps> = ({
             time={time}
             showDuration={chatRenderMode !== 'sorted'}
             actions={actions}
+            defaultExpanded={defaultExpanded}
         />
     );
 };
