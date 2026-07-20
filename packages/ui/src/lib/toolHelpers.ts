@@ -1,4 +1,5 @@
 import { normalizeToolName, opencodeNamespaceTool } from '@/lib/opencode/tools';
+import { shellMetadata } from './opencode/shell-tool-metadata';
 import {
   isEditTool,
   isPatchTool,
@@ -75,17 +76,7 @@ const TOOL_METADATA: Record<string, ToolMetadata> = {
     ]
   },
 
-  shell: {
-    displayName: 'Shell Command',
-    category: 'system',
-    outputLanguage: 'text',
-    inputFields: [
-      { key: 'command', label: 'Command', type: 'command', language: 'bash' },
-      { key: 'description', label: 'Description', type: 'text' },
-      { key: 'timeout', label: 'Timeout (ms)', type: 'text' },
-      { key: 'background', label: 'Background', type: 'text' }
-    ]
-  },
+  ...shellMetadata,
 
   grep: {
     displayName: 'Search Files',
@@ -882,7 +873,7 @@ export function formatToolInput(input: Record<string, unknown>, toolName: string
   };
 
   if (isShellTool(toolName)) {
-    const cmd = getString('command');
+    const cmd = getString(normalizeToolName(toolName) === 'exec_command' ? 'cmd' : 'command');
     if (cmd) return cmd;
   }
 

@@ -3,6 +3,8 @@ import type { ToolPopupContent } from '../../types';
 
 export type ToolJsonViewMode = 'summary' | 'formatted' | 'raw';
 
+export type ToolExpansionState = { expanded: ReadonlySet<string>; toggle: (toolId: string) => void };
+
 export type ToolStateWithMetadata = ToolStateUnion & { metadata?: Metadata; input?: ToolInput; output?: string; error?: string; time?: { start: number; end?: number }; attachments?: Array<FilePart> };
 
 export interface ToolPartProps {
@@ -14,6 +16,7 @@ export interface ToolPartProps {
     onShowPopup?: (content: ToolPopupContent) => void;
     animateTailText?: boolean;
     failureReason?: string;
+    nestedTools?: ToolExpansionState;
 }
 
 export type ToolRowHeader = {

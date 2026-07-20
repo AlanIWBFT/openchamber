@@ -1,4 +1,5 @@
 import type { MessagePatch, SessionPatch, SyncEvent, ToolTransition } from "@/lib/opencode/events"
+import { applyExecPreview, applyScriptPreview, reconcileExecMetadata } from "@/lib/opencode/exec-metadata"
 import {
   compact,
   isFinalToolStatus,
@@ -229,6 +230,10 @@ function isLocallyMarkedToolState(state: ToolPart["state"]): boolean {
 function applyToolTransition(part: ToolPart, transition: ToolTransition): ToolPart {
   const state = part.state
   switch (transition.kind) {
+    case "exec":
+      return applyExecPreview(part, transition)
+    case "script":
+      return applyScriptPreview(part, transition)
     case "input":
       if (state.status !== "pending") return part
       return { ...part, state: { ...state, raw: transition.raw } }
@@ -241,7 +246,7 @@ function applyToolTransition(part: ToolPart, transition: ToolTransition): ToolPa
       }
     case "progress":
       if (state.status !== "running") return part
-      return { ...part, state: { ...state, metadata: transition.metadata } }
+      return { ...part, state: { ...state, metadata: reconcileExecMetadata(part.tool, state.metadata, transition.metadata) } }
     case "success": {
       if (isFinalToolStatus(state.status) && !isLocallyMarkedToolState(state)) return part
       const start = state.status === "pending" ? transition.end : state.time.start
@@ -253,7 +258,7 @@ function applyToolTransition(part: ToolPart, transition: ToolTransition): ToolPa
           status: "completed",
           input: state.input,
           output: transition.output,
-          metadata: transition.metadata ?? (state.status === "running" ? state.metadata : undefined),
+          metadata: reconcileExecMetadata(part.tool, state.status === "running" ? state.metadata : undefined, transition.metadata),
           time: { start, end: transition.end },
           attachments,
         }),
@@ -271,7 +276,7 @@ function applyToolTransition(part: ToolPart, transition: ToolTransition): ToolPa
           error: transition.error,
           errorType: transition.errorType,
           output: transition.output,
-          metadata: transition.metadata ?? (state.status === "running" ? state.metadata : undefined),
+          metadata: reconcileExecMetadata(part.tool, state.status === "running" ? state.metadata : undefined, transition.metadata),
           time: { start, end: transition.end },
         }),
       })

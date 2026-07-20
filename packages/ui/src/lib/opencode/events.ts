@@ -1,12 +1,12 @@
 
 import type { OpenCodeEvent } from "@opencode/client"
 import type { WorkflowRun } from "@/lib/workflows/model"
+import { execEvent, toolTransition, type ToolTransition } from "./tool-event"
+export type { ToolTransition } from "./tool-event"
 import {
   compact,
   partIds,
-  type FilePart,
   type FormRequest,
-  type JsonValue,
   type Message,
   type Metadata,
   type ModelRef,
@@ -49,13 +49,6 @@ export type MessagePatch = {
   retry?: Extract<Message, { role: "assistant" }>["retry"] | null
   shell?: { status: "running" | "exited" | "timeout" | "killed"; exit?: number; signal?: string; output?: Extract<Message, { role: "shell" }>["output"] }
 }
-
-export type ToolTransition =
-  | { kind: "input"; raw: string }
-  | { kind: "called"; input: Record<string, JsonValue>; executed: boolean; start: number }
-  | { kind: "progress"; metadata: Metadata }
-  | { kind: "success"; output: string; attachments?: FilePart[]; metadata?: Metadata; executed: boolean; end: number }
-  | { kind: "failed"; error: string; errorType?: string; output?: string; metadata?: Metadata; executed: boolean; end: number }
 
 export type CatalogKind =
   | "config"
@@ -167,11 +160,6 @@ const partUpdated = (sessionID: string, part: Part): SyncEvent => ({
   properties: { sessionID, part },
 })
 
-const toolTransition = (sessionID: string, messageID: string, callID: string, transition: ToolTransition): SyncEvent => ({
-  type: "message.tool.transition",
-  properties: { sessionID, messageID, partID: partIds.tool(callID), transition },
-})
-
 const finiteExit = (exit: number | "Infinity" | "-Infinity" | "NaN" | undefined): number | undefined =>
   exit === "Infinity" || exit === "-Infinity" || exit === "NaN" ? undefined : exit
 
@@ -184,6 +172,9 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
     case "installation.update-available":
       return [{ type: "installation.update-available", properties: { version: event.data.version } }]
 
+
+    case "session.archive.updated":
+      return [sessionEvent(event.data.sessionID, { time: { archived: event.data.archivedAt, updated: event.created } })]
 
     case "session.created": {
       const info: Session = compact({
@@ -599,6 +590,10 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
         ),
       ]
 
+    case "session.exec.updated":
+    case "session.exec.captured":
+    case "session.script.captured":
+      return [execEvent(event)]
 
     case "session.shell.started":
       return [

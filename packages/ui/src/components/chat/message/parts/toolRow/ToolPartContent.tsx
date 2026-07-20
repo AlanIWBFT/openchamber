@@ -23,6 +23,8 @@ import { DiffCount } from '@/components/ui/diff-count';
 import type { ToolStateWithMetadata, ToolPartProps, ToolRowHeader } from './types';
 import { TOOL_ROW_TITLE_CLASS, TOOL_ROW_DESCRIPTION_CLASS, TOOL_ERROR_ICON_STYLE, TOOL_NORMAL_ICON_STYLE, TOOL_ERROR_TITLE_STYLE, TOOL_NORMAL_TITLE_STYLE } from './toolRowStyles';
 import { LiveDuration } from './LiveDuration';
+import { UnifiedExecDuration } from './UnifiedExecDuration';
+import { getUnifiedExecMetadata, isExecCommandTool, isExecProcessRunning } from '../../unifiedExec';
 import { useDeferredExpandedContent } from './deferredExpandedContent';
 import { parseDiffStats, parseWriteLineCount } from './toolChangeSummary';
 import { getToolDescriptionPath, toolDisplayName, getToolDescription, describeOpenChamberRow, describeOpencodeRow } from './toolDescriptions';
@@ -40,6 +42,7 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
     onShowPopup,
     animateTailText = true,
     failureReason,
+    nestedTools,
     header,
     subagentSessionId: taskSessionId,
 }) => {
@@ -61,8 +64,10 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
     const presentation = useGuestToolPresentation(part.tool);
 
     const status = state?.status as string | undefined;
-    const isFinalized = status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled';
-    const isError = status === 'error' || status === 'failed';
+    const exec = getUnifiedExecMetadata(part);
+    const running = isExecProcessRunning(normalizedPartTool, exec, state.status);
+    const isFinalized = !running && (status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled');
+    const isError = status === 'error' || status === 'failed' || Boolean(exec.execError);
 
     const { isActive, effectiveTimeStart, effectiveTimeEnd } = useToolRowTiming(part.id, stateWithData.time, isFinalized);
 
@@ -269,7 +274,11 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
                                     <OpenSubtaskButton sessionId={taskSessionId} agent={subagentAgent(input)} isMobile={isMobile} />
                                 ) : null}
                             </div>
-                            {showsDuration && typeof effectiveTimeStart === 'number' && !header?.durationUnknown ? (
+                            {isExecCommandTool(normalizedPartTool) ? (
+                                <span className={cn('flex-shrink-0 tabular-nums text-muted-foreground empty:hidden', TOOL_ROW_DESCRIPTION_CLASS)}>
+                                    <UnifiedExecDuration metadata={exec} active={running && exec.sessionExposed === true} stateStatus={part.state.status} />
+                                </span>
+                            ) : showsDuration && typeof effectiveTimeStart === 'number' && !header?.durationUnknown ? (
                                 <span className={cn('flex-shrink-0 tabular-nums text-muted-foreground', TOOL_ROW_DESCRIPTION_CLASS)}>
                                     <LiveDuration
                                         start={effectiveTimeStart}
@@ -371,6 +380,7 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
                     <BlockBody onToggle={() => onToggle(part.id)}>
                         {contentCompletion.status === 'whole' ? (
                             <ToolExpandedContent
+                                nestedTools={nestedTools}
                                 part={part}
                                 state={state}
                                 currentDirectory={currentDirectory}

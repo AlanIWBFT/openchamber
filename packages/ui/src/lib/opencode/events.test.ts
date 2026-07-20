@@ -8,6 +8,13 @@ const base = { id: "evt_1", created: 1000, location: { directory: "/repo" } }
 const durable = { aggregateID: "ses_1", seq: 1, version: 1 as const }
 
 describe("translateWireEvent", () => {
+  test("backend archive authority uses the normal session patch, including null restoration", () => {
+    for (const archivedAt of [123, null]) {
+      expect(translateWireEvent({ ...base, type: "session.archive.updated", durable, data: { sessionID: "ses_1", archivedAt } }))
+        .toEqual([{ type: "session.patched", properties: { sessionID: "ses_1", patch: { time: { archived: archivedAt, updated: 1000 } } } }])
+    }
+  })
+
   test("session.created becomes a full session with zeroed usage", () => {
     const [event] = translateWireEvent({
       ...base,

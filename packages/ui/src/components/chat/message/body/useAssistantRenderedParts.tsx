@@ -13,7 +13,7 @@ import { readSessionNoticePart } from '@/lib/opencode/session-notices';
 import { StaticToolRow } from '../parts/ProgressiveGroup';
 import { isExpandableTool } from '../parts/toolRenderUtils';
 import { ShownPartCard, ShownToolCard } from '../parts/ShownToolCard';
-import { isShownInPlace } from '@/lib/opencode/tools';
+import { isExecuteTool, isShownInPlace } from '@/lib/opencode/tools';
 import { LiveActivityCollapse } from '../../components/LiveActivityCollapse';
 import { ActivityRowSkipContext, isActivityRowPart, isToolRowShown } from '../../lib/turns/activityRows';
 import { LiveFinalActivityContext, LiveTurnHoistedPagesContext } from '../../components/liveActivityContext';
@@ -66,6 +66,7 @@ export const useAssistantRenderedParts = ({
     const activityRowSkip = React.useContext(ActivityRowSkipContext);
     const hoistedPages = React.useContext(LiveTurnHoistedPagesContext);
     const slice = React.useContext(MessageSliceContext);
+    const nestedTools = React.useMemo(() => ({ expanded: expandedTools, toggle: onToggleTool }), [expandedTools, onToggleTool]);
 
     return React.useMemo(() => {
         const answerRendered: React.ReactNode[] = [];
@@ -230,6 +231,7 @@ export const useAssistantRenderedParts = ({
                                 part={toolPart}
                                 isExpanded={expandedTools.has(toolPart.id)}
                                 onToggle={onToggleTool}
+                                nestedTools={isExecuteTool(toolPart.tool) ? nestedTools : undefined}
                                 isMobile={isMobile}
                                 alwaysShowActions={alwaysShowMessageActions}
                                 onShowPopup={onShowPopup}
@@ -293,6 +295,7 @@ export const useAssistantRenderedParts = ({
         sessionId,
         onShowPopup,
         onToggleTool,
+        nestedTools,
         shouldShowStandaloneMessageActions,
         effectiveStreamPhase,
         showReasoningTraces,

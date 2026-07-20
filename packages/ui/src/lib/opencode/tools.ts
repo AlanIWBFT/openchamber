@@ -4,35 +4,18 @@ import { z } from "zod"
 import type { JsonValue, Metadata, ToolInput, ToolState } from "./model"
 import { opencodeNamespaceTool } from "./opencode-namespace-tools"
 import { normalizeToolName, type ToolName } from "./tool-name"
+import { OPENCODE_TOOLS } from "./builtin-tool-names"
+import { isShellTool } from "./unified-exec-tools"
+export { OPENCODE_TOOLS }
+export { isExecCommandTool, isWriteStdinTool, isExecFollowUpTool, isUnifiedExecTool, isShellTool, readUnifiedExecMetadata, readUnifiedExecInput, redactExecFollowUpInput, shouldHideExecFollowUpState, type UnifiedExecMetadata } from "./unified-exec-tools"
 
 export { normalizeToolName, opencodeNamespaceTool, type ToolName }
-
-export const OPENCODE_TOOLS = {
-  edit: "edit",
-  execute: "execute",
-  glob: "glob",
-  grep: "grep",
-  patch: "patch",
-  question: "question",
-  read: "read",
-  shell: "shell",
-  skill: "skill",
-  subagent: "subagent",
-  todowrite: "todowrite",
-  webfetch: "webfetch",
-  websearch: "websearch",
-  write: "write",
-  sessionRename: "session_rename",
-  sessionMove: "session_move",
-  models: "models",
-} as const
 
 type OpencodeToolName = (typeof OPENCODE_TOOLS)[keyof typeof OPENCODE_TOOLS]
 
 
 const is = (name: OpencodeToolName) => (toolName: ToolName): boolean => normalizeToolName(toolName) === name
 
-export const isShellTool = is(OPENCODE_TOOLS.shell)
 export const isExecuteTool = is(OPENCODE_TOOLS.execute)
 export const isSubagentTool = is(OPENCODE_TOOLS.subagent)
 export const isQuestionTool = is(OPENCODE_TOOLS.question)
@@ -80,6 +63,7 @@ const inputSchema = z
     filePath: optionalText,
     file_path: optionalText,
     command: optionalText,
+    cmd: optionalText,
     description: optionalText,
     agent: optionalText,
     name: optionalText,
@@ -776,6 +760,8 @@ export function toolDescription(
   switch (name) {
     case OPENCODE_TOOLS.shell:
       return parsed.command ? { kind: "text", value: parsed.command.split("\n")[0].slice(0, MAX_COMMAND_LENGTH) } : null
+    case OPENCODE_TOOLS.execCommand:
+      return parsed.cmd ? { kind: "text", value: parsed.cmd.split("\n")[0].slice(0, MAX_COMMAND_LENGTH) } : null
 
     case OPENCODE_TOOLS.execute:
       return describeExecute(executeToolCalls(metadata), parsed.code)

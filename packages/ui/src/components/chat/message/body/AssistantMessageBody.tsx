@@ -3,6 +3,7 @@ import { MessageFilesDisplay } from '../../FileAttachment';
 import type { StreamPhase } from '../types';
 import { cn } from '@/lib/utils';
 import { isEmptyTextPart } from '../partUtils';
+import { shouldHideExecFollowUp } from '../unifiedExec';
 import { ErrorResponseDetails } from '@/components/chat/ErrorResponseDetails';
 import { SaveProjectPlanDialog } from '@/components/session/SaveProjectPlanDialog';
 import { ForkSessionDialog } from '@/components/session/ForkSessionDialog';
@@ -94,7 +95,7 @@ export const AssistantMessageBody = React.memo(({
     const awaitingMessageCompletion = !isMessageCompleted;
 
     const visibleParts = React.useMemo(() => {
-        return parts.filter((part) => !isEmptyTextPart(part));
+        return parts.filter((part) => !isEmptyTextPart(part) && (part.type !== 'tool' || !shouldHideExecFollowUp(part)));
     }, [parts]);
 
     const assistantTextParts = React.useMemo(() => {

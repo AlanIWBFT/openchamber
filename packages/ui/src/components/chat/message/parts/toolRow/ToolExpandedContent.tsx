@@ -23,7 +23,11 @@ import { extractFirstChangedLineFromDiff, getDiffPatchEntries, getToolFallbackDi
 import { useStreamingTextThrottle } from '../../../hooks/useStreamingTextThrottle';
 import { getToolOutput } from '../toolOutput';
 import { toAbsoluteFilePath } from '@/lib/path-utils';
-import { executeOutputTruncation, executeScript, executeToolCalls, isEditTool, isExecuteTool, isFileChangeTool, isPatchTool, isQuestionTool, isShellTool, isSubagentTool, isTodoWriteTool, isWebSearchTool, todoWriteItems, isWriteTool, isOpenChamberTool, openChamberCallSummary } from '@/lib/opencode/tools';
+import { executeOutputTruncation, executeScript, isEditTool, isExecuteTool, isFileChangeTool, isPatchTool, isQuestionTool, isShellTool, isSubagentTool, isTodoWriteTool, isWebSearchTool, todoWriteItems, isWriteTool, isOpenChamberTool, openChamberCallSummary } from '@/lib/opencode/tools';
+import { createScriptToolProjection } from '@/lib/opencode/script';
+import { getUnifiedExecCommand, getUnifiedExecMetadata, getUnifiedExecOutput, isExecCommandTool, isUnifiedExecTool } from '../../unifiedExec';
+import ToolPart from '../ToolPart';
+import { CopyToolOutputButton } from './CopyToolOutputButton';
 import { parseWebSearchOutput, webSearchProviderOf } from '@/lib/opencode/websearch';
 import { OpenChamberToolOutput } from '../OpenChamberToolOutput';
 import { OpencodeToolOutput } from '../OpencodeToolOutput';
@@ -33,7 +37,7 @@ import { Field, QuietAction } from '../ToolResultParts';
 import { WebSearchResults } from '../WebSearchResults';
 import { TodoWriteList } from '../TodoWriteList';
 import { createPortal } from 'react-dom';
-import type { ToolStateWithMetadata } from './types';
+import type { ToolExpansionState, ToolStateWithMetadata } from './types';
 import { TOOL_COLLAPSED_CUSTOM_STYLE, CODE_TAG_PROPS, TOOL_ERROR_TITLE_STYLE } from './toolRowStyles';
 import { getRelativePath } from './toolPaths';
 import { buildWritePreviewPatch } from './toolChangeSummary';
@@ -54,6 +58,7 @@ interface ToolExpandedContentProps {
     state: ToolStateUnion;
     currentDirectory: string;
     isExpanded: boolean;
+    nestedTools?: ToolExpansionState;
     onShowPopup?: (content: ToolPopupContent) => void;
     presentation: GuestToolRule | null;
     headerActionsSlot: HTMLElement | null;
@@ -64,6 +69,7 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
     state,
     currentDirectory,
     isExpanded,
+    nestedTools,
     onShowPopup,
     presentation,
     headerActionsSlot,
@@ -79,6 +85,7 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
     const rawOutput = getToolOutput(part.tool, stateWithData.output, metadata?.output, state.status);
     const hasStringOutput = typeof rawOutput === 'string' && rawOutput.length > 0;
     const rawOutputString = typeof rawOutput === 'string' ? rawOutput : '';
+    const exec = getUnifiedExecMetadata(part);
     const isStreamingBash = isShellTool(part.tool) && state.status === 'running';
     const throttledOutputString = useStreamingTextThrottle({
         text: rawOutputString,
@@ -116,7 +123,16 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
         || isExecuteTool(part.tool);
     const isExecute = isExecuteTool(part.tool);
     const executeCode = React.useMemo(() => (isExecute ? executeScript(input) : undefined), [input, isExecute]);
-    const executeCalls = React.useMemo(() => (isExecute ? executeToolCalls(metadata) : []), [isExecute, metadata]);
+    const project = React.useMemo(() => createScriptToolProjection({ id: part.id, sessionID: part.sessionID, messageID: part.messageID }), [part.id, part.sessionID, part.messageID]);
+    const executeEntries = React.useMemo(() => isExecute ? project(metadata) : [], [isExecute, project, metadata]);
+    const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(() => new Set());
+    const toggle = React.useCallback((id: string) => setExpanded(previous => {
+        const next = new Set(previous);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+    }), []);
+    const expansion = nestedTools ?? { expanded, toggle };
     const executeTruncation = React.useMemo(
         () => (isExecute ? executeOutputTruncation(metadata) : null),
         [isExecute, metadata],
@@ -181,6 +197,18 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
     );
 
     const renderResultContent = () => {
+        if (exec.execError) return <div className="typography-meta text-[var(--status-error)]">{exec.execError}</div>;
+        if (isExecCommandTool(part.tool)) {
+            const text = [getUnifiedExecCommand(input, exec), getUnifiedExecOutput(exec, rawOutputString)].filter(Boolean).join('\n\n');
+            return <div className="relative">
+                <div className="absolute end-1 top-1 z-10"><CopyToolOutputButton output={text} /></div>
+                <ToolScrollableSection maxHeightClass="max-h-[46vh]" className="tool-output-surface pe-8" followKey={text}>
+                    {exec.truncated ? <div className="typography-meta text-muted-foreground">{t('chat.toolPart.unifiedExec.outputTruncated')}</div> : null}
+                    {exec.outputError ? <div className="typography-meta text-[var(--status-error)]">{t('chat.toolPart.unifiedExec.outputStreamError', { error: exec.outputError })}</div> : null}
+                    <pre dir="ltr" className="m-0 whitespace-pre-wrap break-words typography-code">{text}</pre>
+                </ToolScrollableSection>
+            </div>;
+        }
         const getEntryAbsolutePath = (entry: DiffPatchEntry) => toAbsoluteFilePath(currentDirectory, entry.filePath ?? entry.title);
         const openEntryFile = (entry: DiffPatchEntry, event: React.MouseEvent<HTMLButtonElement>) => {
             event.stopPropagation();
@@ -504,7 +532,7 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
 
     const hasVisibleOutput = outputString.trim().length > 0;
     const shouldRenderResult = (state.status === 'completed' && 'output' in state)
-        || (isShellTool(part.tool) && hasVisibleOutput);
+        || (isShellTool(part.tool) && hasVisibleOutput) || isExecCommandTool(part.tool) || Boolean(exec.execError);
 
     return (
         <div className="relative space-y-2">
@@ -524,13 +552,20 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
                                 />,
                                 { maxHeightClass: 'max-h-60', className: 'tool-input-surface' },
                             ) : null}
-                            {executeCalls.length > 0 ? (
+                            {executeEntries.length > 0 ? (
                                 <div>
                                     <div className="typography-meta font-medium text-muted-foreground mb-1">
                                         {t('chat.toolPart.scriptCalls')}
                                     </div>
                                     <ul className="space-y-0.5">
-                                        {executeCalls.map((call, index) => (
+                                        {executeEntries.map((entry, index) => {
+                                            if (entry.kind === 'part') return <li key={entry.part.id}>
+                                                <ToolPart part={entry.part} isExpanded={expansion.expanded.has(entry.part.id)}
+                                                    onToggle={expansion.toggle} nestedTools={isExecuteTool(entry.part.tool) ? expansion : undefined}
+                                                    isMobile={isMobile} onShowPopup={onShowPopup} />
+                                            </li>;
+                                            const call = entry.call;
+                                            return (
                                             <li key={`${call.tool}-${index}`} className="flex min-w-0 items-baseline gap-2">
                                                 <span
                                                     className="typography-code flex-shrink-0"
@@ -549,14 +584,15 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
                                                     </span>
                                                 ) : null}
                                             </li>
-                                        ))}
+                                            );
+                                        })}
                                     </ul>
                                 </div>
                             ) : null}
                         </div>
                     ) : null}
 
-                    {hasInputText ? renderScrollableBlock(
+                    {hasInputText && !isUnifiedExecTool(part.tool) ? renderScrollableBlock(
                         isWriteLikeTool && writeLikeInputPatch ? (
                             <DiffPreview
                                 diff={writeLikeInputPatch}

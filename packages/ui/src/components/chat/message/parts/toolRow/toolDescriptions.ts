@@ -51,6 +51,9 @@ const describeTool = (described: ToolDescription | null, currentDirectory: strin
 };
 
 export const toolDisplayName = (toolName: string, t: DescriptionTranslate): string => (
+    toolName === 'exec_command' ? t('chat.toolPart.unifiedExec.shellCommand') :
+    toolName === 'write_stdin' ? t('chat.toolPart.unifiedExec.processInput') :
+    toolName === 'terminate_exec' ? t('chat.toolPart.unifiedExec.processTermination') :
     isTodoWriteTool(toolName) ? t('chat.workStatus.section.tasks') : getToolMetadata(toolName).displayName
 );
 

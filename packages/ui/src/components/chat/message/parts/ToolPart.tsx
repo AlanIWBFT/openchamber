@@ -2,8 +2,9 @@ import React from 'react';
 import { readBackgroundShellID } from '@/lib/opencode/background-shell';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { useI18n } from '@/lib/i18n';
-import { isShellTool, isSubagentTool, normalizeToolName } from '@/lib/opencode/tools';
+import { isShellTool, isSubagentTool, isUnifiedExecTool, normalizeToolName } from '@/lib/opencode/tools';
 import type { ToolPartProps } from './toolRow/types';
+export type { ToolExpansionState } from './toolRow/types';
 import { toolDisplayName } from './toolRow/toolDescriptions';
 import { ToolPartContent } from './toolRow/ToolPartContent';
 import { ToolPartErrorBoundary } from './toolRow/ToolPartErrorBoundary';
@@ -18,7 +19,8 @@ const ToolPart: React.FC<ToolPartProps> = (incoming) => {
     const props = part === incoming.part ? incoming : { ...incoming, part };
     const toolName = normalizeToolName(props.part.tool) || 'tool';
     const displayName = toolDisplayName(toolName, t);
-    const backgroundShellID = isShellTool(toolName) ? readBackgroundShellID(props.part) : undefined;
+    const shell = isShellTool(toolName) && !isUnifiedExecTool(toolName);
+    const backgroundShellID = shell ? readBackgroundShellID(props.part) : undefined;
 
     return (
         <ToolPartErrorBoundary
@@ -31,7 +33,7 @@ const ToolPart: React.FC<ToolPartProps> = (incoming) => {
                 ? <BackgroundShellToolPartContent {...props} shellID={backgroundShellID} />
                 : isSubagentTool(toolName)
                     ? <SubagentToolPartContent {...props} />
-                    : isShellTool(toolName)
+                    : shell
                         ? <ShellToolPartContent {...props} />
                         : <ToolPartContent {...props} />}
         </ToolPartErrorBoundary>
@@ -45,5 +47,6 @@ export default React.memo(ToolPart, (prev, next) => {
         && prev.alwaysShowActions === next.alwaysShowActions
         && prev.onShowPopup === next.onShowPopup
         && prev.animateTailText === next.animateTailText
-        && prev.failureReason === next.failureReason;
+        && prev.failureReason === next.failureReason
+        && prev.nestedTools === next.nestedTools;
 });
