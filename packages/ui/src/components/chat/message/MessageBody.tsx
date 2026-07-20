@@ -61,6 +61,7 @@ import { useProviderLogo } from '@/hooks/useProviderLogo';
 import { getAgentColor } from '@/lib/agentColors';
 import { isCapacitorMobileApp } from '@/apps/mobileNativeChrome';
 import { WorktreeRequiresGitRepositoryError } from '@/lib/worktrees/worktreeCreate';
+import { getUnifiedExecMetadata, isExecProcessRunning, shouldHideExecFollowUp } from './unifiedExec';
 
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const, transform: 'translateZ(0)' };
@@ -1253,7 +1254,8 @@ const AssistantMessageBody = React.memo(({
             .filter((part) => {
                 const rawPart = part as Record<string, unknown>;
                 return rawPart.type !== 'compaction';
-            });
+            })
+            .filter((part) => part.type !== 'tool' || !shouldHideExecFollowUp(part));
     }, [parts]);
 
     const toolParts = React.useMemo(() => {
@@ -1371,7 +1373,10 @@ const AssistantMessageBody = React.memo(({
         }
         for (const part of toolParts) {
             const state = (part as unknown as { state?: unknown }).state as Record<string, unknown> | undefined;
-            const output = state && typeof state.output === 'string' ? state.output : null;
+            const metadata = state?.metadata as Record<string, unknown> | undefined;
+            const output = part.tool === 'exec_command' && typeof metadata?.output === 'string'
+                ? metadata.output
+                : state && typeof state.output === 'string' ? state.output : null;
             if (!output) {
                 continue;
             }
@@ -1450,10 +1455,16 @@ const AssistantMessageBody = React.memo(({
     const isActiveTool = React.useCallback((toolPart: ToolPartType): boolean => {
         const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
         const status = state?.status;
-        return status === 'pending' || status === 'running' || status === 'started';
+        return status === 'pending'
+            || status === 'running'
+            || status === 'started'
+            || isExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), status);
     }, []);
 
     const isToolFinalized = React.useCallback((toolPart: ToolPartType) => {
+        if (isExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), toolPart.state?.status)) {
+            return false;
+        }
         const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
         const status = state?.status;
         if (status === 'pending' || status === 'running' || status === 'started') {
