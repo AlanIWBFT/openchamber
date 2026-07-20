@@ -26,6 +26,166 @@ function createMessageEntry({
 }
 
 describe('projectTurnRecords', () => {
+    test('groups exploration tools across adjacent assistant messages', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant1 = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
+            parts: [{ id: 'grep-1', type: 'tool', tool: 'grep', state: { status: 'completed' } }] as unknown as Part[],
+        };
+        const assistant2 = {
+            ...createMessageEntry({ id: 'a2', role: 'assistant', parentID: 'u1', createdAt: 3 }),
+            parts: [{ id: 'read-1', type: 'tool', tool: 'read', state: { status: 'completed' } }] as unknown as Part[],
+        };
+
+        const projection = projectTurnRecords([user, assistant1, assistant2]);
+
+        expect(projection.turns[0]?.explorationGroups).toHaveLength(1);
+        expect(projection.turns[0]?.explorationGroups[0]?.anchorMessageId).toBe('a1');
+        expect(projection.turns[0]?.explorationGroups[0]?.parts.map((part) => part.id)).toEqual(['grep-1', 'read-1']);
+    });
+
+    test('splits exploration groups at visible text', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
+            parts: [
+                { id: 'grep-1', type: 'tool', tool: 'grep', state: { status: 'completed' } },
+                { id: 'text-1', type: 'text', text: 'Checking the result.' },
+                { id: 'read-1', type: 'tool', tool: 'read', state: { status: 'completed' } },
+            ] as unknown as Part[],
+        };
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.explorationGroups.map((group) => group.parts.map((part) => part.id)))
+            .toEqual([['grep-1'], ['read-1']]);
+    });
+
+    test('uses reasoning visibility as an exploration boundary', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
+            parts: [
+                { id: 'glob-1', type: 'tool', tool: 'glob', state: { status: 'completed' } },
+                { id: 'reasoning-1', type: 'reasoning', text: 'Inspecting candidates.' },
+                { id: 'read-1', type: 'tool', tool: 'read', state: { status: 'completed' } },
+            ] as unknown as Part[],
+        };
+
+        const visible = projectTurnRecords([user, assistant], { showReasoningTraces: true });
+        const hidden = projectTurnRecords([user, assistant], { showReasoningTraces: false });
+
+        expect(visible.turns[0]?.explorationGroups.map((group) => group.parts.map((part) => part.id)))
+            .toEqual([['glob-1'], ['read-1']]);
+        expect(hidden.turns[0]?.explorationGroups.map((group) => group.parts.map((part) => part.id)))
+            .toEqual([['glob-1', 'read-1']]);
+    });
+
+    test('does not classify namespaced custom tools as exploration tools', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
+            parts: [
+                { id: 'read-1', type: 'tool', tool: 'read:0', state: { status: 'completed' } },
+                { id: 'custom-read', type: 'tool', tool: 'plugin.read', state: { status: 'completed' } },
+                { id: 'grep-1', type: 'tool', tool: 'grep', state: { status: 'completed' } },
+            ] as unknown as Part[],
+        };
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.explorationGroups.map((group) => group.parts.map((part) => part.id)))
+            .toEqual([['read-1'], ['grep-1']]);
+    });
+
+    test('keeps exploration activity segmented around indexed task tools', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
+            parts: [
+                { id: 'read-1', type: 'tool', tool: 'read', state: { status: 'running' } },
+                { id: 'task-1', type: 'tool', tool: 'task:0', state: { status: 'running' } },
+                { id: 'grep-1', type: 'tool', tool: 'grep', state: { status: 'running' } },
+            ] as unknown as Part[],
+        };
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.activitySegments.map((segment) => ({
+            afterToolPartId: segment.afterToolPartId,
+            partIds: segment.parts.map((part) => part.id),
+        }))).toEqual([
+            { afterToolPartId: null, partIds: ['read-1'] },
+            { afterToolPartId: 'task-1', partIds: ['grep-1'] },
+        ]);
+        expect(projection.turns[0]?.explorationGroups.map((group) => group.parts.map((part) => part.id)))
+            .toEqual([['read-1'], ['grep-1']]);
+    });
+
+    test('keeps the first exploration identity stable while appending and splitting the tail', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const initialAssistant = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
+            parts: [
+                { id: 'read-1', type: 'tool', tool: 'read', state: { status: 'running' } },
+            ] as unknown as Part[],
+        };
+        const appendedAssistant = {
+            ...initialAssistant,
+            parts: [
+                ...initialAssistant.parts,
+                { id: 'grep-1', type: 'tool', tool: 'grep', state: { status: 'running' } } as unknown as Part,
+            ],
+        };
+        const splitAssistant = {
+            ...appendedAssistant,
+            parts: [
+                ...appendedAssistant.parts,
+                { id: 'text-1', type: 'text', text: 'Now inspect a specific file.' } as unknown as Part,
+                { id: 'read-2', type: 'tool', tool: 'read', state: { status: 'running' } } as unknown as Part,
+            ],
+        };
+
+        const initial = projectTurnRecords([user, initialAssistant]);
+        const appended = projectTurnRecords([user, appendedAssistant]);
+        const split = projectTurnRecords([user, splitAssistant]);
+
+        expect(appended.turns[0]?.explorationGroups[0]?.id).toBe(initial.turns[0]?.explorationGroups[0]?.id);
+        expect(split.turns[0]?.explorationGroups.map((group) => ({ id: group.id, parts: group.parts.map((part) => part.id) })))
+            .toEqual([
+                { id: 'u1:exploration:read-1', parts: ['read-1', 'grep-1'] },
+                { id: 'u1:exploration:read-2', parts: ['read-2'] },
+            ]);
+    });
+
+    test('projects large exploration sequences with deterministic text boundaries', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const parts = Array.from({ length: 1_000 }, (_, index) => {
+            const tool = {
+                id: `tool-${index}`,
+                type: 'tool',
+                tool: index % 2 === 0 ? 'grep' : 'read',
+                state: { status: 'running' },
+            } as unknown as Part;
+            if (index === 0 || index % 50 !== 0) return [tool];
+            return [
+                { id: `text-${index}`, type: 'text', text: `Boundary ${index}` } as unknown as Part,
+                tool,
+            ];
+        }).flat();
+        const assistant = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
+            parts,
+        };
+
+        const projection = projectTurnRecords([user, assistant]);
+        const groups = projection.turns[0]?.explorationGroups ?? [];
+
+        expect(groups).toHaveLength(20);
+        expect(groups.every((group) => group.parts.length === 50)).toBe(true);
+        expect(groups.reduce((total, group) => total + group.parts.length, 0)).toBe(1_000);
+    });
+
     test('groups assistant replies under their parent user turn', () => {
         const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
         const assistant = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 });
@@ -161,6 +321,39 @@ describe('projectTurnRecords', () => {
         expect(projection.turns[0]?.hasTools).toBe(false);
         expect(projection.turns[0]?.activityParts).toEqual([]);
         expect(projection.turns[0]?.activitySegments).toEqual([]);
+    });
+
+    test('does not create tool Activity for todo updates', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
+            parts: [
+                { id: 'todo-1', type: 'tool', tool: 'todowrite', state: { status: 'completed' } },
+            ] as unknown as Part[],
+        };
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.hasTools).toBe(false);
+        expect(projection.turns[0]?.activityParts).toEqual([]);
+        expect(projection.turns[0]?.activitySegments).toEqual([]);
+    });
+
+    test('keeps failed todo updates in Activity', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
+            parts: [
+                { id: 'todo-1', type: 'tool', tool: 'todowrite', state: { status: 'error', error: 'Todo update failed' } },
+            ] as unknown as Part[],
+        };
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.hasTools).toBe(true);
+        expect(projection.turns[0]?.activityParts.map((record) => record.id)).toEqual(['todo-1']);
+        expect(projection.turns[0]?.activitySegments.flatMap((group) => group.parts.map((record) => record.id)))
+            .toEqual(['todo-1']);
     });
 
     test('reuses the whole turns array when every turn is unchanged', () => {

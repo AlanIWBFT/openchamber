@@ -33,6 +33,7 @@ import {
     tryParseJsonOutput,
     coerceToText,
     capToolOutputText,
+    parseReadToolOutput,
 } from '../toolRenderers';
 import { JsonTreeViewer } from '@/components/ui/JsonTreeViewer';
 import { JsonSummaryView } from './JsonSummaryView';
@@ -69,7 +70,7 @@ import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedC
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import { getStreamingOutputAppend, getToolOutput } from './toolOutput';
 import { toAbsoluteFilePath } from '@/lib/path-utils';
-import { getToolDescriptionFallback } from './toolRenderUtils';
+import { formatDirectoryDisplayPath, getReadToolDisplayType, getToolDescriptionFallback } from './toolRenderUtils';
 import { ApplyPatchFileButtons } from './ApplyPatchFileButtons';
 import { openApplyPatchFileInEditor } from './applyPatchEditorAction';
 import {
@@ -486,8 +487,9 @@ const getToolDescriptionPath = (part: ToolPartType, state: ToolStateUnion, curre
         }
     }
 
-    if (part.tool === 'read' && input) {
-        const filePath = input?.filePath || input?.file_path || input?.path || metadata?.filePath || metadata?.file_path || metadata?.path;
+    if (normalizeToolName(part.tool) === 'read') {
+        const display = isRecord(metadata?.display) ? metadata.display : undefined;
+        const filePath = input?.filePath || input?.file_path || input?.path || metadata?.filePath || metadata?.file_path || metadata?.path || display?.path;
         if (typeof filePath === 'string') {
             return getRelativePath(filePath, currentDirectory);
         }
@@ -677,6 +679,10 @@ const getToolOutputText = (
     const capped = capToolOutputText(output);
     if (part.tool === 'bash') {
         return capped;
+    }
+
+    if (normalizeToolName(part.tool) === 'read') {
+        return parseReadToolOutput(capped).lines.map((line) => line.text).join('\n');
     }
 
     return formatEditOutput(capped, part.tool, metadata);
@@ -1385,6 +1391,8 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     const rawOutput = getToolOutput(part.tool, stateWithData.output, metadata?.output, state.status);
     const hasStringOutput = typeof rawOutput === 'string' && rawOutput.length > 0;
     const rawOutputString = typeof rawOutput === 'string' ? rawOutput : '';
+    const isReadDirectory = normalizeToolName(part.tool) === 'read'
+        && getReadToolDisplayType(metadata, rawOutput) === 'directory';
     const isStreamingBash = part.tool === 'bash' && state.status === 'running';
     const throttledOutputString = useStreamingTextThrottle({
         text: rawOutputString,
@@ -1409,7 +1417,8 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
         || part.tool === 'openchamber_memory'
         || part.tool === 'apply_patch'
         || part.tool === 'edit'
-        || part.tool === 'multiedit';
+        || part.tool === 'multiedit'
+        || isReadDirectory;
     const diagnosticSection = React.useMemo(
         () => getToolDiagnosticSection(part.tool, input, metadata, currentDirectory),
         [currentDirectory, input, metadata, part.tool],
@@ -2120,19 +2129,31 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         return normalizedPartTool === 'write' ? parseWriteLineCount(input) : null;
     }, [input, normalizedPartTool]);
     const isMultiFileApplyPatch = normalizedPartTool === 'apply_patch' && Array.isArray(metadata?.files) && (metadata?.files as []).length > 1;
+    const isReadDirectory = normalizedPartTool === 'read'
+        && getReadToolDisplayType(metadata, stateWithData.output) === 'directory';
     const normalizedPart = normalizedPartTool !== part.tool ? ({ ...part, tool: normalizedPartTool } as ToolPartType) : part;
-    const descriptionPath = getToolDescriptionPath(normalizedPart, state, currentDirectory);
-    const description = getToolDescription(normalizedPart, state, currentDirectory);
-    const displayName = normalizedPartTool === 'exec_command'
-        ? t('chat.toolPart.unifiedExec.shellCommand')
-        : normalizedPartTool === 'write_stdin'
-            ? t('chat.toolPart.unifiedExec.processInput')
-            : normalizedPartTool === 'terminate_exec'
-                ? t('chat.toolPart.unifiedExec.processTermination')
-                : getToolMetadata(normalizedPartTool || part.tool).displayName;
+    const rawDescriptionPath = getToolDescriptionPath(normalizedPart, state, currentDirectory);
+    const descriptionPath = isReadDirectory && rawDescriptionPath
+        ? formatDirectoryDisplayPath(rawDescriptionPath)
+        : rawDescriptionPath;
+    const description = isReadDirectory && descriptionPath
+        ? descriptionPath
+        : getToolDescription(normalizedPart, state, currentDirectory);
+    const displayName = isReadDirectory
+        ? t('chat.toolPart.readDirectory')
+        : normalizedPartTool === 'exec_command'
+            ? t('chat.toolPart.unifiedExec.shellCommand')
+            : normalizedPartTool === 'write_stdin'
+                ? t('chat.toolPart.unifiedExec.processInput')
+                : normalizedPartTool === 'terminate_exec'
+                    ? t('chat.toolPart.unifiedExec.processTermination')
+                    : getToolMetadata(normalizedPartTool || part.tool).displayName;
     
     // Tool title/description — shown inline as context
     const justificationText = React.useMemo(() => {
+        if (isReadDirectory) {
+            return null;
+        }
         if (normalizedPartTool === 'bash' || isUnifiedExecTool(normalizedPartTool)) {
             return null;
         }
@@ -2157,7 +2178,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             return inputDesc;
         }
         return null;
-    }, [descriptionPath, normalizedPartTool, stateWithData, input]);
+    }, [descriptionPath, isReadDirectory, normalizedPartTool, stateWithData, input]);
     const runtime = React.useContext(RuntimeAPIContext);
     const mobileActions = useMobileAppActions();
 
@@ -2362,7 +2383,9 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                     )}
                                     style={iconStyle}
                                 >
-                                    {getToolIcon(normalizedPartTool || part.tool)}
+                                    {isReadDirectory
+                                        ? <Icon name="folder-6" className="h-3.5 w-3.5 flex-shrink-0" />
+                                        : getToolIcon(normalizedPartTool || part.tool)}
                                 </div>
                                 <div
                                     className={cn(
@@ -2438,7 +2461,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                             ) : null}
                             {!justificationText && normalizedPartTool !== 'lsp' && description && (
                                 descriptionPath && description === descriptionPath ? (
-                                    renderAnimatedPathWithIcon(descriptionPath, animateTailText, false, showToolFileIcons)
+                                    renderAnimatedPathWithIcon(descriptionPath, animateTailText, false, showToolFileIcons && !isReadDirectory)
                                 ) : (
                                     <Text
                                         variant={animateTailText ? 'generate-effect' : 'static'}
