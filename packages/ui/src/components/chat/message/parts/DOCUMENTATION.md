@@ -206,6 +206,8 @@ finished with `stop`, so no tool patch is parsed while the turn streams.
 - Every other tool, including search/fetch, OpenCode built-ins, custom tools, plugins, and MCP tools, is **expandable** and renders through `ToolPart`.
 - The managed `openchamber` plugin tool uses the expandable path and hides its broad protocol input. The plugin supplies the selected action's human description as the native tool title; the UI renders that metadata without owning an action map. The full versioned result envelope renders through the same neutral JSON summary/tree/raw views as other tools, without a tool-specific output card.
 - Selecting a JSON summary, tree, or raw view saves that mode in the persisted UI settings. New and refreshed JSON tool outputs read the saved mode across sessions; missing or invalid preferences use Summary.
+- Unified Exec reuses the Shell presentation: `exec_command` is the visible root card, while successful `poll_exec`, `write_stdin` and `terminate_exec` controls are omitted from live, sorted Activity, Task summaries and Script children. Follow-up failures remain visible, with `chars` removed from their input presentation. Script source and script output keep their normal rendering. A pending `write_stdin` has incomplete input, so operation-specific status is derived only after its running state arrives.
+- A completed `exec_command` can still represent a running process. Its root card follows OpenCode Desktop's authority rules: server metadata alone drives process status and timing, `sessionExposed` gates live and completed duration, and fast commands that never expose a process session show no completion timer. OpenCode guarantees that `metadata.output` is a control-sequence-free UI transcript; OpenChamber only normalizes its line endings.
 - `ToolPart` defers expanded content after a user toggle, preventing large tool input/output payloads from mounting during the initial chat render.
 - The rich tool diff preview lives in `ToolPartDiffPreview.tsx` and is lazy-loaded from `ToolPart`. It is the only tool-card piece that imports the `@pierre/diffs` + Shiki rendering stack, keeping that stack out of the eager chat startup graph. While its chunk loads (first rendered diff only) the plain-text patch from `PlainDiffFallback.tsx` renders as the Suspense fallback, mirroring the preview's error fallback. Patches over 256 KiB or 2,000 lines skip rich parsing and use a bounded plain-text preview; navigation keeps the original patch. `ToolPart` itself must not statically import `@pierre/diffs` runtime modules or `@/lib/shiki/appThemeRegistry`.
 - The `@pierre/diffs` stack is knowingly unprotected against the JS/TS `template-call` backtracking that OOM'd the renderer in openchamber/openchamber#2587. Our own markdown Shiki worker sanitizes every grammar it loads (`@/lib/shiki/sanitizeTemplateCallGrammar`), but the diff worker pool runs `preferredHighlighter: 'shiki-wasm'` (`DiffWorkerProvider.tsx`) and resolves its languages by id through `@pierre/diffs`' own registry — `langs` accepts `SupportedLanguages` strings only, so there is no seam to hand it a pre-sanitized `LanguageRegistration`. A pathological template literal inside a rendered diff can therefore still hang that pool's Oniguruma engine. The available levers are upstream (a `langs` overload accepting grammar objects) or switching that pool to the JS regex engine; neither is done.
@@ -218,9 +220,16 @@ finished with `stop`, so no tool patch is parsed while the turn streams.
   `@/lib/opencode/tools`; while the script is running, or if it called nothing,
   the row falls back to the script's first line, capped like a shell command.
   The expanded body replaces the generic input preview with the script as
-  highlighted JavaScript, then the call list (tool name, its arguments as
-  one-line JSON, error calls in the error colour), then the normal output
-  section. `metadata.truncated` adds a plain note with `metadata.outputPath` as
+  highlighted JavaScript, then complete child tool cards, then the normal output
+  section. `lib/opencode/script.ts` projects those cards from the parent's metadata;
+  they are not independent transcript parts or model calls. Results, attachments,
+  failures and command previews use the normal tool renderer. Older records without
+  child IDs or timing keep their compact name/argument rows. Each mounted Script
+  retains only its current child projections, reusing unchanged child references
+  during preview updates. Child expansion uses the message owner's existing expansion
+  memory in live and sorted rendering. Default-expanded Shell/edit settings open both
+  matching children and their parent Script; manual collapse remains authoritative.
+  `metadata.truncated` adds a plain note with `metadata.outputPath` as
   text: the app has no open-file affordance for a path outside the project.
   The status pill says `running a script`, or `calling <tool>` once
   `metadata.toolCalls` names one (`hooks/useAssistantStatus.ts`).

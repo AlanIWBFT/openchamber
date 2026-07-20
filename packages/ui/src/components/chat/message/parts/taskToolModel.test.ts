@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Message, Part, Session } from '@/lib/opencode/model';
+import type { Message, Metadata, Part, Session, ToolInput } from '@/lib/opencode/model';
 
 import {
     buildTaskSummaryEntriesFromSession,
@@ -26,6 +26,18 @@ describe('taskToolModel', () => {
             summaryEntries: [{ id: 'tool-1', tool: 'read', state: { status: undefined, title: 'a.ts', input: undefined } }],
         });
         expect(readTaskSessionIdFromOutput(output)).toBe('child-1');
+    });
+
+    test('filters and redacts Unified Exec controls in authoritative task summary metadata', () => {
+        expect(parseTaskMetadataBlock(`result
+<task_metadata>{"calls":[
+  {"id":"poll","tool":"write_stdin","state":{"status":"completed","input":{"session_id":1}}},
+  {"id":"failed","tool":"write_stdin","state":{"status":"completed","input":{"session_id":1,"chars":"secret"},"metadata":{"execError":"stdin unavailable"}}}
+        ]}</task_metadata>`).summaryEntries).toEqual([{
+            id: 'failed',
+            tool: 'write_stdin',
+            state: { status: 'error', title: undefined, input: { session_id: 1 }, error: 'stdin unavailable' },
+        }]);
     });
 
     test('projects tool calls while excluding nested subagent calls', () => {
@@ -130,6 +142,34 @@ describe('taskToolModel', () => {
         expect(prepareTaskToolOutput(output)).toBe('## Verdict');
         expect(readTaskSessionIdFromOutput(output)).toBe('child-1');
         expect(parseTaskMetadataBlock(output).sessionId).toBe('child-1');
+    });
+
+    test('omits successful exec follow-ups while preserving failed controls', () => {
+        const completed = (id: string, tool: string, input: ToolInput, metadata?: Metadata): Part => ({
+            id, type: 'tool', tool, callID: id, sessionID: 'session-1', messageID: 'message-1',
+            state: { status: 'completed', input, metadata, output: '', time: { start: 1, end: 2 } },
+        });
+        const message = {
+            info: { id: 'message-1', role: 'assistant', sessionID: 'session-1', agent: 'build', providerID: 'test', modelID: 'test', time: { created: 1 } } satisfies Message,
+            parts: [
+                completed('exec-1', 'exec_command', { cmd: 'npm test' }),
+                completed('poll-1', 'write_stdin', { session_id: 1 }),
+                completed('stdin-error', 'write_stdin', { session_id: 1, chars: 'secret' }, { execError: 'stdin unavailable' }),
+            ],
+        };
+
+        expect(buildTaskSummaryEntriesFromSession([message])).toEqual([
+            {
+                id: 'exec-1',
+                tool: 'exec_command',
+                state: { status: 'completed', title: undefined, input: { cmd: 'npm test' } },
+            },
+            {
+                id: 'stdin-error',
+                tool: 'write_stdin',
+                state: { status: 'error', title: undefined, input: { session_id: 1 }, error: 'stdin unavailable' },
+            },
+        ]);
     });
 });
 
