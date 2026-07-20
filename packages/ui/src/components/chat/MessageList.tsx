@@ -11,7 +11,7 @@ import { areOptionalRenderRelevantMessagesEqual, areRelevantTurnGroupingContexts
 import TurnItem from './components/TurnItem';
 import { LiveTurnActivity } from './components/LiveTurnActivity';
 import { getTurnsWithLaterAssistant, hasLiveActivity } from './lib/turns/liveActivity';
-import type { ChatMessageEntry, TurnRecord, TurnGroupingContext } from './lib/turns/types';
+import type { ChatMessageEntry, TurnExplorationGroup, TurnRecord, TurnGroupingContext } from './lib/turns/types';
 import { useTurnRecords } from './hooks/useTurnRecords';
 import { buildHistoryEntries, findFirstVisibleMessageId, type TimelineEntry } from './lib/turns/timelineEntries';
 import { applyRetryOverlay } from './lib/turns/applyRetryOverlay';
@@ -40,6 +40,8 @@ import {
 const EMPTY_STATIC_ENTRY_MESSAGES: ChatMessageEntry[] = [];
 const EMPTY_UNGROUPED_MESSAGE_IDS = new Set<string>();
 const EMPTY_ROW_MESSAGE_IDS: readonly string[] = [];
+const EMPTY_EXPLORATION_GROUPS: TurnExplorationGroup[] = [];
+const EMPTY_PART_IDS: string[] = [];
 
 // --- Timeline virtualization (@legendapp/list) -----------------------------
 // The timeline is a single virtualized list on every surface: history turns
@@ -356,6 +358,22 @@ const TurnBlock = React.memo(({
         };
     }, [turn.activityParts, turn.changedFiles, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summaryText, turn.turnId, turn.assistantMessages, turn.userMessage.info]);
 
+    const explorationByMessage = React.useMemo(() => {
+        const anchored = new Map<string, TurnExplorationGroup[]>();
+        const memberIds = new Map<string, string[]>();
+        for (const group of turn.explorationGroups) {
+            const groups = anchored.get(group.anchorMessageId) ?? [];
+            groups.push(group);
+            anchored.set(group.anchorMessageId, groups);
+            for (const activity of group.parts) {
+                const ids = memberIds.get(activity.messageId) ?? [];
+                ids.push(activity.id);
+                memberIds.set(activity.messageId, ids);
+            }
+        }
+        return { anchored, memberIds };
+    }, [turn.explorationGroups]);
+
     const renderMessage = React.useCallback(
         (message: ChatMessageEntry) => {
             const assistantIndex = assistantIndexById.get(message.info.id) ?? -1;
@@ -363,6 +381,8 @@ const TurnBlock = React.memo(({
             const isFirstAssistant = assistantIndex === 0;
             const isLastAssistant = assistantIndex === turn.assistantMessages.length - 1;
             const isActivityOwner = Boolean(activityOwnerMessageId) && message.info.id === activityOwnerMessageId;
+            const explorationGroups = explorationByMessage.anchored.get(message.info.id) ?? EMPTY_EXPLORATION_GROUPS;
+            const explorationPartIds = explorationByMessage.memberIds.get(message.info.id) ?? EMPTY_PART_IDS;
             const shouldAttachFullTurnContext = isActivityOwner || isFirstAssistant || isLastAssistant;
             const assistantHeaderMessageId = turn.assistantMessages[0]?.info.id ?? turn.headerMessageId;
 
@@ -375,7 +395,9 @@ const TurnBlock = React.memo(({
                     isLastAssistantInTurn: isLastAssistant,
                     earlierAssistantText: isLastAssistant && turnEarlierAssistantText.length > 0 ? turnEarlierAssistantText : undefined,
                     isLatestTurn: isLastTurn,
-                    isWorking: isLastTurn && sessionIsWorking && message.info.id === streamingAssistantMessageId,
+                    isWorking: isLastTurn && sessionIsWorking && (message.info.id === streamingAssistantMessageId || explorationGroups.some((group) => group.isTail)),
+                    explorationGroups,
+                    explorationPartIds,
                     hasTools: turn.hasTools,
                     hasReasoning: turn.hasReasoning,
                     ...(shouldAttachFullTurnContext ? {
@@ -421,6 +443,7 @@ const TurnBlock = React.memo(({
             reviewTransferDirection,
             assistantIndexById,
             turnEarlierAssistantText,
+            explorationByMessage,
             activityOwnerMessageId,
             shouldAnimateUserMessage,
             onUserAnimationConsumed,
@@ -767,6 +790,7 @@ const TimelineRowContent: React.FC<{
     // part store, and rendering it from that stale snapshot briefly unmounts
     // its completed tool parts when the stream hands off to the next message.
     // A history row subscribes to nothing.
+    const showReasoningTraces = useUIStore((state) => state.showReasoningTraces);
     const tailMessageIds = React.useMemo(() => {
         if (!live) return EMPTY_ROW_MESSAGE_IDS;
         if (entry.kind === 'turn') return entry.turn.assistantMessageIds;
@@ -777,7 +801,8 @@ const TimelineRowContent: React.FC<{
         livePartsByMessageId,
         showTurnChangedFiles,
         mergeHiddenUserTurns: true,
-    }) : entry), [entry, live, livePartsByMessageId, showTurnChangedFiles]);
+        showReasoningTraces,
+    }) : entry), [entry, live, livePartsByMessageId, showTurnChangedFiles, showReasoningTraces]);
 
     return (
         <MessageListEntry
@@ -821,6 +846,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     streamPerfCount('ui.message_list.render');
     const activityRenderMode = useUIStore((state) => state.activityRenderMode);
     const showTurnChangedFiles = useUIStore((state) => state.showTurnChangedFiles);
+    const showReasoningTraces = useUIStore((state) => state.showReasoningTraces);
     const defaultActivityExpanded = activityRenderMode === 'summary';
     const reviewTransferDirection = useGlobalSessionsStore((state) => {
         return state.reviewTransferBySessionId.get(sessionKey) ?? null;
@@ -904,6 +930,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const { projection, staticTurns, streamingTurn } = useTurnRecords(displayMessages, {
         sessionKey,
         showTurnChangedFiles,
+        showReasoningTraces,
     });
     const hasUngroupedStaticEntries = projection.ungroupedMessageIds.size > 0;
     const tailHasAssistant = Boolean(streamingTurn?.assistantMessages.length);
