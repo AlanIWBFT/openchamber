@@ -50,6 +50,13 @@ export interface TurnActivityGroup {
     parts: TurnActivityRecord[];
 }
 
+export interface TurnExplorationGroup {
+    id: string;
+    anchorMessageId: string;
+    parts: TurnActivityRecord[];
+    isTail: boolean;
+}
+
 export interface TurnSummaryRecord {
     text?: string;
     sourceMessageId?: string;
@@ -74,6 +81,7 @@ export interface TurnRecord {
     assistantMessages: ChatMessageEntry[];
     activityParts: TurnActivityRecord[];
     activitySegments: TurnActivityGroup[];
+    explorationGroups: TurnExplorationGroup[];
     summary: TurnSummaryRecord;
     summaryText?: string;
     hasTools: boolean;
@@ -123,6 +131,8 @@ export interface TurnGroupingContext {
     summaryBody?: string;
     activityParts?: TurnActivityRecord[];
     activityGroupSegments?: TurnActivityGroup[];
+    explorationGroups?: TurnExplorationGroup[];
+    explorationPartIds?: string[];
     headerMessageId?: string;
     hasTools: boolean;
     hasReasoning: boolean;

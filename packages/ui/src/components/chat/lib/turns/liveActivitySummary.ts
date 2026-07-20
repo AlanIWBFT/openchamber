@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { getRelativeFilePath, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
+import { getExecProcessRunning, getUnifiedExecMetadata } from '../../message/unifiedExec';
 import type { ChatMessageEntry } from './types';
 
 const patchTextSchema = z.string().regex(/\S/);
@@ -27,6 +28,7 @@ const metadataSchema = z.object({
     diff: patchSchema.optional().catch(undefined),
     sessionId: optionalText,
     exit: z.number().optional().catch(undefined),
+    exitCode: z.number().optional().catch(undefined),
 });
 const inputSchema = z.object({
     filePath: optionalText,
@@ -37,7 +39,7 @@ const inputSchema = z.object({
 const changeTools = new Set(['edit', 'multiedit', 'write', 'apply_patch']);
 const explorationTools = new Set(['read', 'list', 'grep', 'glob', 'lsp', 'skill']);
 const webTools = new Set(['websearch', 'perplexity', 'codesearch', 'webfetch']);
-const commandTools = new Set(['bash', 'shell', 'cmd', 'terminal']);
+const commandTools = new Set(['bash', 'shell', 'cmd', 'terminal', 'exec_command']);
 
 interface TurnFileChange {
     /** Path relative to the message's project root, as the turn diff lists it. */
@@ -56,6 +58,7 @@ export interface LiveActivitySummary {
     hasCompleteDiff: boolean;
     explored: boolean;
     commands: number;
+    runningCommands: number;
     researched: boolean;
     subagents: number;
 }
@@ -104,7 +107,7 @@ interface FileChangeRecord {
 export function summarizeLiveActivity(messages: readonly ChatMessageEntry[]): LiveActivitySummary {
     const summary: LiveActivitySummary = {
         files: 0, changedFiles: [], additions: 0, deletions: 0, hasCompleteDiff: true,
-        explored: false, commands: 0, researched: false, subagents: 0,
+        explored: false, commands: 0, runningCommands: 0, researched: false, subagents: 0,
     };
     // Keyed by comparable absolute path; insertion order is first-touch order.
     const changedFiles = new Map<string, FileChangeRecord>();
@@ -132,10 +135,13 @@ export function summarizeLiveActivity(messages: readonly ChatMessageEntry[]): Li
             if (seenCalls.has(callKey)) continue;
             seenCalls.add(callKey);
             const state = part.state;
+            if (getExecProcessRunning(part.tool, getUnifiedExecMetadata(part), state.status) === true) {
+                summary.runningCommands++;
+            }
             if (state.status !== 'completed' && state.status !== 'error') continue;
             const tool = part.tool.trim().toLowerCase();
             const metadata = metadataSchema.safeParse(state.metadata).data;
-            if (commandTools.has(tool) && (state.status === 'completed' || metadata?.exit !== undefined)) {
+            if (commandTools.has(tool) && (state.status === 'completed' || metadata?.exit !== undefined || metadata?.exitCode !== undefined)) {
                 summary.commands++;
             }
             if (state.status !== 'completed') continue;

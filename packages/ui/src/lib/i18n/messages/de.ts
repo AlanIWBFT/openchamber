@@ -19,6 +19,7 @@ export const dict = {
   'commitComparison.noCommits': 'Keine Commits gefunden',
   'commitComparison.emptyDiff': 'Keine Änderungen in diesem Commit',
   'chat.liveActivity.title': 'Aktivität',
+  'chat.liveActivity.runningCommands': 'Laufende Befehle: {count}',
   'chat.liveActivity.changedFile': '{count} Datei geändert',
   'chat.liveActivity.changedFiles': '{count} Dateien geändert',
   'chat.liveActivity.explored': 'Codebasis untersucht',
@@ -3416,4 +3417,9 @@ export const dict = {
   'chat.assistantStatus.unifiedExec.pollingProcessOutput': 'Prozessausgabe wird abgefragt',
   'chat.assistantStatus.unifiedExec.sendingProcessInput': 'Prozesseingabe wird gesendet',
   'chat.assistantStatus.unifiedExec.terminatingProcess': 'Prozess wird beendet',
+  'chat.activity.exploration': 'Erkundung',
+  'chat.activity.exploration.summary.searchesAndReads': 'Suchen: {searchCount} · Gelesen: {readCount}',
+  'chat.activity.exploration.summary.searches': 'Suchen: {searchCount}',
+  'chat.activity.exploration.summary.reads': 'Gelesen: {readCount}',
+  'chat.toolPart.readDirectory': 'Verzeichnis lesen',
 };

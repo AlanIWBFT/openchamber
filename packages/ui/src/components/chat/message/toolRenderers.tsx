@@ -173,7 +173,8 @@ export const parseReadToolOutput = (output: string): ParsedReadToolOutput => {
     const detectedType = (typeMatch?.[1]?.toLowerCase() ?? 'unknown') as ParsedReadToolOutput['type'];
 
     const contentMatch = output.match(/<content>([\s\S]*?)<\/content>/i);
-    const rawContent = contentMatch?.[1] ?? output;
+    const entriesMatch = output.match(/<entries>\s*([\s\S]*?)\s*<\/entries>/i);
+    const rawContent = contentMatch?.[1] ?? entriesMatch?.[1] ?? output;
     const normalizedContent = rawContent.replace(/\r\n/g, '\n');
     const rawLines = normalizedContent.split('\n');
 
