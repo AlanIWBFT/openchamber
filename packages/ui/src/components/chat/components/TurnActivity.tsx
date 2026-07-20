@@ -1,7 +1,7 @@
 import React from 'react';
 
 import ProgressiveGroup from '../message/parts/ProgressiveGroup';
-import type { TurnActivityRecord } from '../lib/turns/types';
+import type { TurnActivityRecord, TurnExplorationGroup } from '../lib/turns/types';
 import type { ToolPopupContent } from '../message/types';
 import type { StreamPhase } from '../message/types';
 
@@ -24,6 +24,7 @@ interface TurnActivityProps {
     showHeader: boolean;
     animateRows?: boolean;
     animatedToolIds?: Set<string>;
+    explorationGroups?: TurnExplorationGroup[];
     diffStats?: DiffStats;
     renderJustificationActions?: (activity: TurnActivityRecord) => React.ReactNode;
 }
