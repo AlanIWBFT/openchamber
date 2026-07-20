@@ -55,6 +55,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Icon } from "@/components/icon/Icon";
 import { formatTimestampForDisplay } from './timeFormat';
 import { StaticToolRow } from './parts/ProgressiveGroup';
+import { ExplorationToolGroup } from './parts/ExplorationToolGroup';
 import { isExpandableTool } from './parts/toolRenderUtils';
 import { ShownPartCard, ShownToolCard } from './parts/ShownToolCard';
 import { isShownInPlace } from '@/lib/opencode/tools';
@@ -1669,6 +1670,11 @@ const AssistantMessageBody = React.memo(({
     const shouldRenderStandaloneActionsAfterContent = shouldShowStandaloneMessageActions && lastRenderableTextPartIndex < 0;
 
     const renderedParts = React.useMemo(() => {
+        const explorationGroups = new Map((turnGroupingContext?.explorationGroups ?? []).flatMap((group) => {
+            const first = group.parts[0];
+            return first ? [[first.id, group] as const] : [];
+        }));
+        const explorationPartIds = new Set(turnGroupingContext?.explorationPartIds ?? []);
         const answerRendered: React.ReactNode[] = [];
         const activityRendered: React.ReactNode[] = [];
         let rendered = answerRendered;
@@ -1816,6 +1822,19 @@ const AssistantMessageBody = React.memo(({
                             <SessionNoticeBlock notice={notice} blockId={toolPart.id} />
                         </FadeInOnReveal>
                     );
+                    i++;
+                    continue;
+                }
+
+                const explorationGroup = explorationGroups.get(toolPart.id);
+                if (explorationGroup) {
+                    rendered.push(<ExplorationToolGroup key={explorationGroup.id} id={explorationGroup.id} activities={explorationGroup.parts}
+                        isExpanded={expandedTools.has(explorationGroup.id)} isMobile={isMobile} expandedTools={expandedTools}
+                        onToggleTool={onToggleTool} onShowPopup={onShowPopup} />);
+                    i++;
+                    continue;
+                }
+                if (explorationPartIds.has(toolPart.id)) {
                     i++;
                     continue;
                 }

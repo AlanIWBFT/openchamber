@@ -36,6 +36,13 @@ export interface TurnChangedFile {
     inTurnDiff?: boolean;
 }
 
+export interface TurnExplorationGroup {
+    id: string;
+    anchorMessageId: string;
+    parts: TurnActivityRecord[];
+    isTail: boolean;
+}
+
 export interface TurnSummaryRecord {
     text?: string;
     sourceMessageId?: string;
@@ -65,6 +72,7 @@ export interface TurnRecord {
      */
     waitingNotices?: ChatMessageEntry[];
     activityParts: TurnActivityRecord[];
+    explorationGroups: TurnExplorationGroup[];
     summary: TurnSummaryRecord;
     summaryText?: string;
     hasTools: boolean;
@@ -116,6 +124,8 @@ export interface TurnGroupingContext {
     isLatestTurn: boolean;
     summaryBody?: string;
     activityParts?: TurnActivityRecord[];
+    explorationGroups?: TurnExplorationGroup[];
+    explorationPartIds?: string[];
     headerMessageId?: string;
     hasTools: boolean;
     hasReasoning: boolean;
