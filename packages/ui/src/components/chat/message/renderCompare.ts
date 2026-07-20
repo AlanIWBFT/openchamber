@@ -1,5 +1,11 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2';
-import type { TurnActivityGroup, TurnActivityRecord, TurnChangedFile, TurnDiffStats, TurnGroupingContext } from '../lib/turns/types';
+import type { TurnActivityGroup, TurnActivityRecord, TurnChangedFile, TurnDiffStats, TurnExplorationGroup, TurnGroupingContext } from '../lib/turns/types';
+
+const sameStringLists = (left: string[] | undefined, right: string[] | undefined): boolean => {
+  if (left === right) return true;
+  if (!left || !right) return !left && !right;
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+};
 
 type MessageRecord = {
   info: Message;
@@ -235,6 +241,33 @@ const areTurnActivityGroupsEqual = (left: TurnActivityGroup, right: TurnActivity
   return true;
 };
 
+const areTurnExplorationGroupsEqual = (
+  left: TurnExplorationGroup[] | undefined,
+  right: TurnExplorationGroup[] | undefined,
+): boolean => {
+  if (left === right) return true;
+  if (!left || !right) return !left && !right;
+  if (left.length !== right.length) return false;
+  for (let groupIndex = 0; groupIndex < left.length; groupIndex += 1) {
+    const leftGroup = left[groupIndex];
+    const rightGroup = right[groupIndex];
+    if (
+      leftGroup.id !== rightGroup.id
+      || leftGroup.anchorMessageId !== rightGroup.anchorMessageId
+      || leftGroup.isTail !== rightGroup.isTail
+      || leftGroup.parts.length !== rightGroup.parts.length
+    ) {
+      return false;
+    }
+    for (let partIndex = 0; partIndex < leftGroup.parts.length; partIndex += 1) {
+      if (!areTurnActivityRecordsEqual(leftGroup.parts[partIndex], rightGroup.parts[partIndex])) {
+        return false;
+      }
+    }
+  }
+  return true;
+};
+
 const hasRelevantActivitySegments = (segments: TurnActivityGroup[] | undefined, messageId: string): boolean => {
   return Boolean(segments?.some((segment) => segment.anchorMessageId === messageId));
 };
@@ -314,6 +347,14 @@ export const areRelevantTurnGroupingContextsEqual = (
   }
 
   if (!areRelevantActivitySegmentsEqual(left.activityGroupSegments, right.activityGroupSegments, messageId)) {
+    return false;
+  }
+
+  if (!areTurnExplorationGroupsEqual(left.explorationGroups, right.explorationGroups)) {
+    return false;
+  }
+
+  if (!sameStringLists(left.explorationPartIds, right.explorationPartIds)) {
     return false;
   }
 

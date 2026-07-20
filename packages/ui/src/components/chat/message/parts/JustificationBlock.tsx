@@ -24,6 +24,7 @@ interface JustificationBlockProps {
     messageId: string;
     onContentChange?: (reason?: ContentChangeReason) => void;
     actions?: React.ReactNode;
+    defaultExpanded?: boolean;
 }
 
 const JustificationBlock: React.FC<JustificationBlockProps> = ({
@@ -31,6 +32,7 @@ const JustificationBlock: React.FC<JustificationBlockProps> = ({
     messageId,
     onContentChange,
     actions,
+    defaultExpanded,
 }) => {
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const partWithText = part as PartWithText;
@@ -52,6 +54,7 @@ const JustificationBlock: React.FC<JustificationBlockProps> = ({
             time={time}
             showDuration={chatRenderMode !== 'sorted'}
             actions={actions}
+            defaultExpanded={defaultExpanded}
         />
     );
 };

@@ -50,6 +50,7 @@ const turnEntry = (assistant: ChatMessageEntry): StreamingTailEntry => {
             assistantMessages: [assistant],
             activityParts: [],
             activitySegments: [],
+            explorationGroups: [],
             summary: {},
             hasTools: false,
             hasReasoning: false,
@@ -68,6 +69,7 @@ describe('buildLiveStreamingEntry', () => {
             liveParts: [textPart('part_live', 'live')],
             showTextJustificationActivity: true,
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next).toBe(entry);
@@ -83,6 +85,7 @@ describe('buildLiveStreamingEntry', () => {
             liveParts,
             showTextJustificationActivity: true,
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next).not.toBe(entry);
@@ -106,6 +109,7 @@ describe('buildLiveStreamingEntry', () => {
             liveParts,
             showTextJustificationActivity: false,
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next).not.toBe(entry);
@@ -125,6 +129,7 @@ describe('buildLiveStreamingEntry', () => {
             liveParts: [synthetic, visible],
             showTextJustificationActivity: true,
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next.kind).toBe('turn');
