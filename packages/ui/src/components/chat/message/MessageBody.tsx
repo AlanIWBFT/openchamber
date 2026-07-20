@@ -37,8 +37,8 @@ import { toast } from '@/components/ui';
 import { Icon } from "@/components/icon/Icon";
 import { formatTimestampForDisplay } from './timeFormat';
 import { ToolRevealOnMount } from './parts/ToolRevealOnMount';
-import { StaticToolRow } from './parts/ProgressiveGroup';
-import { isExpandableTool, isStandaloneTool } from './parts/toolRenderUtils';
+import { ExplorationToolGroup, StaticToolRow } from './parts/ProgressiveGroup';
+import { isExpandableTool, isHiddenSessionTool, isStandaloneTool } from './parts/toolRenderUtils';
 import TurnActivity from '../components/TurnActivity';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
@@ -1150,7 +1150,8 @@ const AssistantMessageBody = React.memo(({
                 const rawPart = part as Record<string, unknown>;
                 return rawPart.type !== 'compaction';
             })
-            .filter((part) => part.type !== 'tool' || !shouldHideExecFollowUp(part));
+            .filter((part) => part.type !== 'tool' || !shouldHideExecFollowUp(part))
+            .filter((part) => part.type !== 'tool' || !isHiddenSessionTool(part.tool, part.state?.status));
     }, [parts]);
 
     const toolParts = React.useMemo(() => {
@@ -1203,8 +1204,17 @@ const AssistantMessageBody = React.memo(({
             }
         }
 
+        const explorationGroups = turnGroupingContext?.explorationGroups;
+        if (Array.isArray(explorationGroups)) {
+            for (const group of explorationGroups) {
+                for (const activity of group.parts) {
+                    ids.add(activity.id);
+                }
+            }
+        }
+
         return Array.from(ids);
-    }, [messageId, toolParts, turnGroupingContext?.activityGroupSegments]);
+    }, [messageId, toolParts, turnGroupingContext?.activityGroupSegments, turnGroupingContext?.explorationGroups]);
     const shouldAnimateNewToolMount = Boolean(turnGroupingContext?.isWorking && toolRevealReadyRef.current);
     const persistedToolIds = toolRevealStateRef.current.persistedToolIds;
     const animatedToolIds = toolRevealStateRef.current.animatedToolIds;
@@ -1648,6 +1658,21 @@ const AssistantMessageBody = React.memo(({
         };
     }, [activityPartsForTurn]);
 
+    const liveExplorationGroups = React.useMemo(() => {
+        if (isSortedRenderMode) return new Map<string, NonNullable<TurnGroupingContext['explorationGroups']>[number]>();
+        return new Map(
+            (turnGroupingContext?.explorationGroups ?? []).flatMap((group) => {
+                const first = group.parts[0];
+                return first ? [[first.id, group] as const] : [];
+            })
+        );
+    }, [isSortedRenderMode, turnGroupingContext?.explorationGroups]);
+
+    const liveExplorationPartIds = React.useMemo(() => {
+        if (isSortedRenderMode) return new Set<string>();
+        return new Set(turnGroupingContext?.explorationPartIds ?? []);
+    }, [isSortedRenderMode, turnGroupingContext?.explorationPartIds]);
+
     const toggleActivityGroup = turnGroupingContext?.toggleGroup;
     const isActivityOwnerMessage = !isSortedRenderMode
         || !turnGroupingContext?.activityOwnerMessageId
@@ -1814,8 +1839,7 @@ const AssistantMessageBody = React.memo(({
         };
 
         // Flat rendering: iterate parts in natural order.
-        // Group consecutive static tools (read, grep, glob, etc.) into compact rows.
-        // Expandable tools (bash, edit, task) get individual rows.
+        // Static tools use compact rows; expandable tools get individual cards.
         // Text renders inline at its natural position.
         let i = 0;
         while (i < visibleParts.length) {
@@ -1896,6 +1920,31 @@ const AssistantMessageBody = React.memo(({
                 const toolPart = part as ToolPartType;
                 const toolName = toolPart.tool?.toLowerCase() ?? '';
                 const toolPartId = toolPart.id ?? `${messageId}-part-${i}-${part.type}`;
+
+                if (!isSortedRenderMode) {
+                    const explorationGroup = liveExplorationGroups.get(toolPart.id);
+                    if (explorationGroup) {
+                        rendered.push(
+                            <ExplorationToolGroup
+                                key={explorationGroup.id}
+                                id={explorationGroup.id}
+                                activities={explorationGroup.parts}
+                                isExpanded={expandedTools.has(explorationGroup.id)}
+                                isMobile={isMobile}
+                                expandedTools={expandedTools}
+                                onToggleTool={onToggleTool}
+                                onShowPopup={onShowPopup}
+                                animatedToolIds={animatedToolIdsLookup}
+                            />
+                        );
+                        i += 1;
+                        continue;
+                    }
+                    if (liveExplorationPartIds.has(toolPart.id)) {
+                        i += 1;
+                        continue;
+                    }
+                }
 
                 if (isSortedRenderMode && !isActivityOwnerMessage) {
                     flushSegmentsAfterTool(toolPartId);
@@ -1993,6 +2042,8 @@ const AssistantMessageBody = React.memo(({
         isMobile,
         isActivityOwnerMessage,
         isSortedRenderMode,
+        liveExplorationGroups,
+        liveExplorationPartIds,
         lastRenderableTextPartIndex,
         messageId,
         messageActionButtons,
