@@ -1,10 +1,12 @@
 import type { MessageRecord } from '@/lib/messageCompletion';
 import type { Part, Session, ToolInput } from '@/lib/opencode/model';
+import { z } from 'zod';
 
 import { isSubagentTool, normalizeToolName } from '@/lib/opencode/tools';
 
 import { capToolOutputText } from '../toolRenderers';
 import { readTaskTagSessionIdFromOutput } from './taskSessionIdParser';
+import { getUnifiedExecMetadata, redactExecFollowUpInput, shouldHideExecFollowUp, shouldHideExecFollowUpState } from '../unifiedExec';
 
 export type TaskToolSummaryEntry = {
     id?: string;
@@ -13,8 +15,13 @@ export type TaskToolSummaryEntry = {
         status?: string;
         title?: string;
         input?: ToolInput;
+        error?: string;
     };
 };
+
+const legacyErrorSchema = z.string().optional().catch(undefined);
+const legacyExecMetadataSchema = z.object({ execError: legacyErrorSchema }).catch({});
+const legacyInputSchema = z.record(z.string(), z.json()).optional().catch(undefined);
 
 const normalizeSessionIdCandidate = (value: unknown): string | undefined => {
     if (typeof value !== 'string') return undefined;
@@ -94,25 +101,33 @@ export const normalizeTaskSummaryEntries = (value: unknown): TaskToolSummaryEntr
             tool?: unknown;
             title?: unknown;
             status?: unknown;
-            state?: { status?: unknown; title?: unknown; input?: unknown };
+            metadata?: unknown;
+            state?: { status?: unknown; title?: unknown; input?: unknown; metadata?: unknown; error?: unknown };
         };
-        normalized.push({
+        const tool = typeof record.tool === 'string' ? record.tool : 'tool';
+        const status = typeof record.state?.status === 'string'
+            ? record.state.status
+            : typeof record.status === 'string' ? record.status : undefined;
+        const metadataCandidate = record.state?.metadata ?? record.metadata;
+        const metadata = legacyExecMetadataSchema.parse(metadataCandidate);
+        if (shouldHideExecFollowUpState(tool, status, metadata)) continue;
+        const error = legacyErrorSchema.parse(record.state?.error) || metadata.execError;
+        const summary: TaskToolSummaryEntry = {
             id: typeof record.id === 'string' ? record.id : undefined,
-            tool: typeof record.tool === 'string' ? record.tool : 'tool',
+            tool,
             state: {
-                status: typeof record.state?.status === 'string'
-                    ? record.state.status
-                    : typeof record.status === 'string' ? record.status : undefined,
+                status: error ? 'error' : status,
                 title: typeof record.state?.title === 'string'
                     ? record.state.title
                     : typeof record.title === 'string' ? record.title : undefined,
-                // SAFETY: the legacy <task_metadata> block is JSON, so an
-                // object value here is already a JSON record.
-                input: record.state?.input && typeof record.state.input === 'object'
-                    ? record.state.input as ToolInput
-                    : undefined,
+                input: redactExecFollowUpInput(
+                    tool,
+                    legacyInputSchema.parse(record.state?.input),
+                ),
             },
-        });
+        };
+        if (error && summary.state) summary.state.error = error;
+        normalized.push(summary);
     }
     return normalized;
 };
@@ -160,15 +175,22 @@ const projectMessageSummaryEntries = (message: MessageRecord): TaskToolSummaryEn
             if (part.type !== 'tool') continue;
             const toolName = normalizeToolName(part.tool);
             if (!toolName || isSubagentTool(toolName)) continue;
-            const state = part.state as { status?: string; input?: ToolInput } | undefined;
-            entries.push({
+            if (shouldHideExecFollowUp(part)) continue;
+            const state = part.state;
+            const metadata = getUnifiedExecMetadata(part);
+            const error = state.status === 'error' && state.error.length > 0
+                ? state.error
+                : metadata.execError || undefined;
+            const summary: TaskToolSummaryEntry = {
                 id: part.id,
                 tool: part.tool,
                 state: {
-                    status: state?.status,
-                    input: state?.input,
+                    status: error ? 'error' : state.status,
+                    input: redactExecFollowUpInput(part.tool, state.input),
                 },
-            });
+            };
+            if (error && summary.state) summary.state.error = error;
+            entries.push(summary);
         }
     }
     messageSummaryCache.set(message, entries);

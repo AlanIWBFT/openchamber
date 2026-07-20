@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import type { AssistantMessage, SyntheticMessage, UserMessage } from '@/lib/opencode/model';
+import type { AssistantMessage, SyntheticMessage, ToolInput, ToolPart, UserMessage } from '@/lib/opencode/model';
 
-import { getActiveAssistantContext } from './useAssistantStatus';
+import {
+    createAssistantStatusSignature,
+    getActiveAssistantContext,
+    parseAssistantStatusSignature,
+} from './useAssistantStatus';
 
 const userMessage = (id: string): UserMessage => ({
     id,
@@ -108,5 +112,36 @@ describe('getActiveAssistantContext', () => {
             assistantId: running.id,
             model: { providerId: 'anthropic', modelId: 'claude-opus-4-1' },
         });
+    });
+});
+
+const writeStdinPart = (status: 'pending' | 'running', input: ToolInput): ToolPart => ({
+    id: `write-stdin-${status}`,
+    sessionID: 'session-1',
+    messageID: 'message-1',
+    callID: 'call-1',
+    type: 'tool',
+    tool: 'write_stdin',
+    state: status === 'pending'
+        ? { status, input, raw: '' }
+        : { status, input, time: { start: 1 } },
+});
+
+describe('assistant status signature', () => {
+    test('preserves write_stdin operations through encoding', () => {
+        const cases = [
+            [writeStdinPart('pending', {}), 'preparing'],
+            [writeStdinPart('running', { session_id: 1 }), 'polling'],
+            [writeStdinPart('running', { session_id: 1, chars: '\n' }), 'sending'],
+            [writeStdinPart('running', { session_id: 1, close_stdin: true }), 'sending'],
+        ] as const;
+
+        for (const [part, expectedOperation] of cases) {
+            const signature = createAssistantStatusSignature([part], 'session-1:message-1');
+            const parsed = parseAssistantStatusSignature(signature);
+
+            expect(parsed.activeToolName).toBe('write_stdin');
+            expect(parsed.writeStdinOperation).toBe(expectedOperation);
+        }
     });
 });

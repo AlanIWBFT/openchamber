@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Message, Part } from '@/lib/opencode/model';
+import type { Message, Metadata, Part, ToolPart } from '@/lib/opencode/model';
 import { projectTurnRecords } from './projectTurnRecords';
 import type { ChatMessageEntry } from './types';
 
@@ -21,6 +21,11 @@ function createMessageEntry({
         parts: [] as Part[],
     };
 }
+
+const execPart = (id: string, tool: string, metadata: Metadata): ToolPart => ({
+    id, type: 'tool', tool, sessionID: 'session-1', messageID: 'a1', callID: id,
+    state: { status: 'completed', input: {}, output: '', time: { start: 2, end: 3 }, metadata },
+});
 
 describe('projectTurnRecords', () => {
     test('groups assistant replies under their parent user turn', () => {
@@ -147,6 +152,42 @@ describe('projectTurnRecords', () => {
         expect(next.turns[0]?.activityParts).toHaveLength(1);
         expect(next.turns[0]?.stream.isStreaming).toBe(true);
         expect(next.turns[0]?.stream.isRetrying).toBe(false);
+    });
+
+    test('omits successful exec follow-ups from Activity without hiding failures', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', createdAt: 2 }),
+            parts: [
+                execPart('exec-1', 'exec_command', { processRunning: true }),
+                execPart('poll-1', 'write_stdin', { execDisplay: 'poll' }),
+                execPart('terminate-1', 'terminate_exec', { execError: 'not found' }),
+            ],
+        };
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.hasTools).toBe(true);
+        expect(projection.turns[0]?.activityParts.map((record) => record.id)).toEqual(['exec-1', 'terminate-1']);
+        expect(projection.turns[0]?.activitySegments.flatMap((group) => group.parts.map((record) => record.id)))
+            .toEqual(['exec-1', 'terminate-1']);
+    });
+
+    test('does not create tool Activity for a message containing only successful exec follow-ups', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = {
+            ...createMessageEntry({ id: 'a1', role: 'assistant', createdAt: 2 }),
+            parts: [
+                execPart('poll-1', 'write_stdin', { execDisplay: 'poll' }),
+                execPart('terminate-1', 'terminate_exec', { execDisplay: 'terminate' }),
+            ],
+        };
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.hasTools).toBe(false);
+        expect(projection.turns[0]?.activityParts).toEqual([]);
+        expect(projection.turns[0]?.activitySegments).toEqual([]);
     });
 
     test('reuses the whole turns array when every turn is unchanged', () => {

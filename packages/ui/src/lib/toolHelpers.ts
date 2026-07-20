@@ -89,6 +89,28 @@ const TOOL_METADATA: Record<string, ToolMetadata> = {
       { key: 'background', label: 'Background', type: 'text' }
     ]
   },
+  exec_command: {
+    displayName: 'Shell Command',
+    category: 'system',
+    outputLanguage: 'text',
+    inputFields: [
+      { key: 'cmd', label: 'Command', type: 'command', language: 'bash' },
+      { key: 'workdir', label: 'Working Directory', type: 'file' },
+      { key: 'yield_time_ms', label: 'Yield Time (ms)', type: 'text' }
+    ]
+  },
+  write_stdin: {
+    displayName: 'Process Input',
+    category: 'system',
+    outputLanguage: 'text',
+    inputFields: []
+  },
+  terminate_exec: {
+    displayName: 'Process Termination',
+    category: 'system',
+    outputLanguage: 'text',
+    inputFields: []
+  },
 
   grep: {
     displayName: 'Search Files',
@@ -876,7 +898,7 @@ export function formatToolInput(input: Record<string, unknown>, toolName: string
   };
 
   if (isShellTool(toolName)) {
-    const cmd = getString('command');
+    const cmd = getString(toolName === 'exec_command' ? 'cmd' : 'command');
     if (cmd) return cmd;
   }
 
