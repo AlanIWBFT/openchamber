@@ -9,6 +9,7 @@ interface UseTurnRecordsOptions {
     showTextJustificationActivity: boolean;
     showTurnChangedFiles: boolean;
     planModeEnabled: boolean;
+    showReasoningTraces: boolean;
 }
 
 export interface TurnRecordsResult {
@@ -28,17 +29,20 @@ export const useTurnRecords = (
     const previousShowTextJustificationActivityRef = React.useRef(options.showTextJustificationActivity);
     const previousShowTurnChangedFilesRef = React.useRef(options.showTurnChangedFiles);
     const previousPlanModeEnabledRef = React.useRef(options.planModeEnabled);
+    const previousShowReasoningTracesRef = React.useRef(options.showReasoningTraces);
 
     if (
         previousSessionKeyRef.current !== options.sessionKey
         || previousShowTextJustificationActivityRef.current !== options.showTextJustificationActivity
         || previousShowTurnChangedFilesRef.current !== options.showTurnChangedFiles
         || previousPlanModeEnabledRef.current !== options.planModeEnabled
+        || previousShowReasoningTracesRef.current !== options.showReasoningTraces
     ) {
         previousSessionKeyRef.current = options.sessionKey;
         previousShowTextJustificationActivityRef.current = options.showTextJustificationActivity;
         previousShowTurnChangedFilesRef.current = options.showTurnChangedFiles;
         previousPlanModeEnabledRef.current = options.planModeEnabled;
+        previousShowReasoningTracesRef.current = options.showReasoningTraces;
         previousProjectionRef.current = null;
         staticTurnsRef.current = [];
         streamingTurnRef.current = undefined;
@@ -48,7 +52,7 @@ export const useTurnRecords = (
         previousProjectionRef.current = null;
         staticTurnsRef.current = [];
         streamingTurnRef.current = undefined;
-    }, [options.sessionKey, options.showTextJustificationActivity, options.showTurnChangedFiles, options.planModeEnabled]);
+    }, [options.sessionKey, options.showReasoningTraces, options.showTextJustificationActivity, options.showTurnChangedFiles, options.planModeEnabled]);
 
     const projection = React.useMemo(() => {
         const sessionKey = options.sessionKey ?? '';
@@ -58,6 +62,7 @@ export const useTurnRecords = (
             messages,
             options.showTextJustificationActivity,
             options.showTurnChangedFiles,
+            options.showReasoningTraces,
             mergeKey,
         );
         const cached = getCachedProjection(cacheKey);
@@ -72,14 +77,14 @@ export const useTurnRecords = (
                 showTextJustificationActivity: options.showTextJustificationActivity,
                 showTurnChangedFiles: options.showTurnChangedFiles,
                 mergeHiddenUserTurns: { planModeEnabled: options.planModeEnabled },
+                showReasoningTraces: options.showReasoningTraces,
             });
             previousProjectionRef.current = nextProjection;
-
             setCachedProjection(cacheKey, nextProjection);
 
             return nextProjection;
         });
-    }, [messages, options.showTextJustificationActivity, options.showTurnChangedFiles, options.sessionKey, options.planModeEnabled]);
+    }, [messages, options.showReasoningTraces, options.showTextJustificationActivity, options.showTurnChangedFiles, options.sessionKey, options.planModeEnabled]);
 
     const staticTurns = React.useMemo(() => {
         const nextStatic = projection.turns.length <= 1
