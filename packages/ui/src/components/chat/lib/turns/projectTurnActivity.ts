@@ -3,6 +3,7 @@ import type {
     TurnActivityRecord,
     TurnPartRecord,
 } from './types';
+import { shouldHideExecFollowUp } from '../../message/unifiedExec';
 
 const getPartEndTime = (part: unknown): number | undefined => {
     const stateEnd = (part as { state?: { time?: { end?: unknown } } }).state?.time?.end;
@@ -60,6 +61,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
 
     input.assistantMessages.forEach((message) => {
         message.parts.forEach((part, partIndex) => {
+            if (part.type === 'tool' && shouldHideExecFollowUp(part)) return;
             let kind: TurnActivityRecord['kind'];
             if (part.type === 'tool') {
                 hasTools = true;
