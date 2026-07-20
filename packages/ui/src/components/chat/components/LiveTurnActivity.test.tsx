@@ -169,6 +169,24 @@ describe('live Activity with the real message body', () => {
         expect(container.textContent).toContain('Public answer');
     });
 
+    test('shows background commands in the collapsed header until the root reports exit', async () => {
+        const command = (running: boolean): Part => ({
+            type: 'tool', tool: 'exec_command', id: 'exec', callID: 'exec', sessionID: 'session', messageID: 'progress',
+            state: {
+                status: 'completed', input: { cmd: 'long-running-command' }, output: '', title: 'Command',
+                metadata: { execID: 7, execDisplay: 'root', processRunning: running }, time: { start: 1, end: 2 },
+            },
+        });
+        const final = assistant('final', [text('final-text', 'The final answer')], 'stop');
+        await act(async () => root.render(<Harness record={turn([assistant('progress', [command(true)], 'tool-calls'), final])} />));
+        expect(container.querySelector('button[aria-controls]')?.getAttribute('aria-expanded')).toBe('false');
+        expect(container.querySelector('[role="status"]')?.textContent).toBe('Commands running: 1');
+        expect(container.textContent).toContain('The final answer');
+        await act(async () => root.render(<Harness record={turn([assistant('progress', [command(false)], 'tool-calls'), final])} />));
+        expect(container.querySelector('[role="status"]')).toBeNull();
+        expect(container.querySelector('button[aria-controls]')?.getAttribute('aria-expanded')).toBe('false');
+    });
+
     test('an interrupted turn folds all prose without fabricating a final answer', async () => {
         const record = turn([assistant('progress', [text('progress-text', 'Still working'), readPart], 'tool-calls')]);
         await act(async () => root.render(<Harness record={record} />));

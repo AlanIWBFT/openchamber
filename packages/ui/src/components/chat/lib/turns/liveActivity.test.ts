@@ -92,6 +92,23 @@ describe('live turn boundaries', () => {
 });
 
 describe('live activity report', () => {
+    test('counts exec roots once and keeps background state independent of a final answer', () => {
+        const root = tool('exec', 'exec_command', { metadata: { execID: 7, execDisplay: 'root', processRunning: true } });
+        const final = assistant('final', [text('Done')], { finish: 'stop' });
+        const followUps = ['poll_exec', 'write_stdin', 'terminate_exec'].map((name) => tool(name, name, {
+            metadata: { execID: 7, processRunning: true },
+        }));
+        expect(summarizeLiveActivity([assistant('a', [root, root, ...followUps]), final]))
+            .toMatchObject({ commands: 1, runningCommands: 1 });
+        const exited = tool('exec', 'exec_command', { metadata: { execID: 7, execDisplay: 'root', processRunning: false, exitCode: 0 } });
+        expect(summarizeLiveActivity([assistant('a', [exited, ...followUps]), final]))
+            .toMatchObject({ commands: 1, runningCommands: 0 });
+        expect(summarizeLiveActivity([assistant('a', [
+            tool('failed', 'exec_command', { status: 'error', metadata: { exitCode: 1 } }),
+            tool('denied', 'exec_command', { status: 'error' }),
+        ])])).toMatchObject({ commands: 1, runningCommands: 0 });
+    });
+
     test('groups exploration and web calls without pretending their counts are file counts', () => {
         const result = summarizeLiveActivity([assistant('a', [
             ...['read', 'list', 'glob', 'grep', 'lsp', 'skill', 'webfetch', 'websearch', 'codesearch', 'perplexity'].map((name) => tool(name, name)),

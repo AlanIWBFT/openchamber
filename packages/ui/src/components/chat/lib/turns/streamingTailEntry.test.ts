@@ -50,6 +50,7 @@ const turnEntry = (assistant: ChatMessageEntry): StreamingTailEntry => {
             assistantMessages: [assistant],
             activityParts: [],
             activitySegments: [],
+            explorationGroups: [],
             summary: {},
             hasTools: false,
             hasReasoning: false,
@@ -67,6 +68,7 @@ describe('buildLiveStreamingEntry', () => {
             livePartsByMessageId: { assistant_other: [textPart('part_live', 'live')] },
             showTextJustificationActivity: true,
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next).toBe(entry);
@@ -81,6 +83,7 @@ describe('buildLiveStreamingEntry', () => {
             livePartsByMessageId: { assistant_1: liveParts },
             showTextJustificationActivity: true,
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next).not.toBe(entry);
@@ -103,6 +106,7 @@ describe('buildLiveStreamingEntry', () => {
             livePartsByMessageId: { assistant_1: liveParts },
             showTextJustificationActivity: false,
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next).not.toBe(entry);
@@ -121,6 +125,7 @@ describe('buildLiveStreamingEntry', () => {
             livePartsByMessageId: { assistant_1: [synthetic, visible] },
             showTextJustificationActivity: true,
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next.kind).toBe('turn');
@@ -142,6 +147,7 @@ describe('buildLiveStreamingEntry', () => {
             livePartsByMessageId: { assistant_1: finishedLive, assistant_2: streamingLive },
             showTextJustificationActivity: true,
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next.kind).toBe('turn');
@@ -158,6 +164,7 @@ describe('buildLiveStreamingEntry', () => {
             livePartsByMessageId: { assistant_1: [] },
             showTextJustificationActivity: true,
             showTurnChangedFiles: false,
+            showReasoningTraces: true,
         });
 
         expect(next).toBe(entry);

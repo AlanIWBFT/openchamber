@@ -47,6 +47,11 @@ export function LiveTurnActivity({ turn, hasLaterAssistant, expanded, onToggle, 
             <Icon name="stack" className="size-3.5 shrink-0 text-[var(--tools-icon)]" />
             <span className="shrink-0 font-semibold text-[var(--tools-title)]">{t('chat.liveActivity.title')}</span>
             {settled ? <Icon name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'} className="size-3 shrink-0" /> : null}
+            {summary && summary.runningCommands > 0 ? (
+                <span className="shrink-0 typography-meta text-[var(--tools-description)]" role="status">
+                    {t('chat.liveActivity.runningCommands', { count: summary.runningCommands })}
+                </span>
+            ) : null}
             {fileLabel ? (
                 <span className="flex min-w-0 items-center gap-1 typography-meta @min-[560px]:shrink-0">
                     <span className="truncate">{fileLabel}</span>
