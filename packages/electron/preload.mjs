@@ -12,6 +12,7 @@ const readArgValue = (name) => {
 };
 
 const localOrigin = readArgValue('--openchamber-local-origin');
+const localUiOrigin = readArgValue('--openchamber-local-ui-origin');
 const apiBaseUrl = readArgValue('--openchamber-api-base-url');
 const clientToken = readArgValue('--openchamber-client-token');
 const runtimeHeadersRaw = readArgValue('--openchamber-runtime-headers');
@@ -28,8 +29,8 @@ const trayEnabled = process.platform !== 'darwin' || readArgValue('--openchamber
 //    title bar offsets, etc.). Expose unconditionally.
 //  - __OPENCHAMBER_DESKTOP__ is the IPC channel to the main process. It is
 //    exposed broadly, but privileged commands are gated in main.mjs.
-//    Local-only globals below stay limited to packaged UI / exact localOrigin.
-// Everything driven by localOrigin (home dir, macOS hints) also stays
+//    Local-only globals below stay limited to packaged UI / exact local API or UI origins.
+// Everything driven by local origins (home dir, macOS hints) also stays
 // local-only since it leaks info about the Electron host machine.
 const currentOrigin = (() => {
   try {
@@ -40,7 +41,8 @@ const currentOrigin = (() => {
 })();
 const isLocalPage = currentOrigin !== 'null'
   && (currentOrigin === 'openchamber-ui://app'
-  || (localOrigin && currentOrigin === localOrigin));
+  || (localOrigin && currentOrigin === localOrigin)
+  || (localUiOrigin && currentOrigin === localUiOrigin));
 
 // Remote pages need __OPENCHAMBER_LOCAL_ORIGIN__ so the HostSwitcher knows
 // the URL of the Local entry (isDesktopLocalOriginActive() falls back to

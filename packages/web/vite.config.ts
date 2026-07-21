@@ -36,8 +36,10 @@ const themeJsonHmrPlugin = () => ({
     }
   },
 });
+const hmrCacheScope = (process.env.OPENCHAMBER_HMR_UI_PORT || '').replace(/[^0-9A-Za-z_-]/g, '_');
 
 export default defineConfig({
+  cacheDir: hmrCacheScope ? path.resolve(__dirname, `node_modules/.vite-${hmrCacheScope}`) : undefined,
   root: path.resolve(__dirname, '.'),
   plugins: [
     react({
@@ -86,6 +88,7 @@ export default defineConfig({
     }),
   ],
   resolve: {
+    dedupe: ['react', 'react-dom'],
     alias: [
       { find: '@opencode-ai/sdk/v2', replacement: path.resolve(__dirname, '../../node_modules/@opencode-ai/sdk/dist/v2/client.js') },
       { find: '@openchamber/ui', replacement: path.resolve(__dirname, '../ui/src') },
@@ -102,7 +105,15 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },
   optimizeDeps: {
-    include: ['@opencode-ai/sdk/v2'],
+    include: [
+      '@opencode-ai/sdk/v2',
+      'react',
+      'react-dom',
+      'react-dom/client',
+      'react/jsx-dev-runtime',
+      'react/jsx-runtime',
+      'react/compiler-runtime',
+    ],
   },
   server: {
     port: 5173,
