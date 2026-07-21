@@ -24,6 +24,8 @@ const WARMUP_DIRECTORY_LIMIT = 4;
 const WARMUP_REQUEST_TIMEOUT_MS = 30000;
 const MANAGED_STDERR_TAIL_MAX_BYTES = 32 * 1024;
 const HEALTH_FAILURE_DETAIL_MAX_LENGTH = 256;
+const MANAGED_SHUTDOWN_TIMEOUT_MS = 15000;
+const MANAGED_DISPOSE_TIMEOUT_MS = 2000;
 
 const getBoundedTextTail = (value, maxBytes) => {
   const buffer = Buffer.from(String(value ?? ''));
@@ -110,19 +112,29 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     getWarmupDirectories = async () => [],
     onOpenCodeRestarted = null,
     now = Date.now,
+    fetch: fetchImpl = fetch,
   } = deps;
 
-  const killProcessOnPort = (port) => {
+  const killProcessOnPort = (port, timeoutMs = 5000) => {
     if (!port || process.platform === 'win32') return;
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    const remaining = () => Math.max(0, deadline - Date.now());
+    if (remaining() === 0) return;
     try {
-      const result = spawnSync('lsof', ['-ti', `:${port}`], { encoding: 'utf8', timeout: 5000, windowsHide: true });
+      const result = spawnSync('lsof', ['-ti', `:${port}`], {
+        encoding: 'utf8',
+        timeout: remaining(),
+        windowsHide: true,
+      });
       const output = result.stdout || '';
       const myPid = process.pid;
       for (const pidStr of output.split(/\s+/)) {
         const pid = parseInt(pidStr.trim(), 10);
         if (pid && pid !== myPid) {
+          const killTimeout = remaining();
+          if (killTimeout === 0) return;
           try {
-            spawnSync('kill', ['-9', String(pid)], { stdio: 'ignore', timeout: 2000 });
+            spawnSync('kill', ['-9', String(pid)], { stdio: 'ignore', timeout: killTimeout });
           } catch {
           }
         }
@@ -205,6 +217,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     if (!port) {
       return Promise.resolve(true);
     }
+    if (timeoutMs <= 0) return Promise.resolve(false);
 
     const probeHost = !hostname || hostname === '0.0.0.0' || hostname === '::' || hostname === '[::]'
       ? '127.0.0.1'
@@ -213,6 +226,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
     return new Promise((resolve) => {
       const attempt = () => {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          resolve(false);
+          return;
+        }
         const socket = net.connect({ port, host: probeHost });
         let settled = false;
 
@@ -225,7 +243,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
             resolve(released);
             return;
           }
-          setTimeout(attempt, 150);
+          setTimeout(attempt, Math.min(150, deadline - Date.now()));
         };
 
         socket.once('connect', () => finish(false));
@@ -237,21 +255,23 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           }
           finish(false);
         });
-        socket.setTimeout(500);
+        socket.setTimeout(Math.min(500, remaining));
       };
 
       attempt();
     });
   };
 
-  const terminateChildProcess = async (child) => {
+  const terminateChildProcess = async (child, timeoutMs) => {
     if (!child) {
       return;
     }
 
     const pid = child.pid;
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    const remaining = () => Math.max(0, deadline - Date.now());
     if (!pid || hasChildProcessExited(child)) {
-      await waitForChildProcessClose(child, 250);
+      await waitForChildProcessClose(child, Math.min(250, remaining()));
       return;
     }
 
@@ -269,57 +289,116 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       }
     };
 
-    if (process.platform === 'win32') {
-      try {
-        child.kill();
-      } catch {
-      }
-
-      if (await waitForChildProcessClose(child, 800)) {
+    const forceProcessTree = () => {
+      if (process.platform !== 'win32') {
+        signalProcessTree('SIGKILL');
         return;
       }
 
+      try {
+        const killer = spawn('taskkill', ['/pid', String(pid), '/f', '/t'], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+        killer.on('error', () => {
+          try {
+            child.kill();
+          } catch {
+          }
+        });
+        killer.unref();
+      } catch {
+        try {
+          child.kill();
+        } catch {
+        }
+      }
+    };
+
+    if (remaining() === 0) {
+      forceProcessTree();
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      const taskkillTimeout = remaining();
+      if (taskkillTimeout === 0) {
+        forceProcessTree();
+        return;
+      }
       try {
         spawnSync('taskkill', ['/pid', String(pid), '/t'], {
           stdio: 'ignore',
-          timeout: 3000,
+          timeout: taskkillTimeout,
           windowsHide: true,
         });
       } catch {
+        try {
+          child.kill();
+        } catch {
+        }
       }
 
-      if (await waitForChildProcessClose(child, 1500)) {
+      if (await waitForChildProcessClose(child, Math.min(1500, remaining()))) {
         return;
       }
 
-      try {
-        spawnSync('taskkill', ['/pid', String(pid), '/f', '/t'], {
-          stdio: 'ignore',
-          timeout: 5000,
-          windowsHide: true,
-        });
-      } catch {
-      }
-
-      await waitForChildProcessClose(child, 3000);
+      forceProcessTree();
+      await waitForChildProcessClose(child, remaining());
       return;
     }
 
     signalProcessTree('SIGTERM');
 
-    if (await waitForChildProcessClose(child, 2500)) {
+    if (await waitForChildProcessClose(child, Math.min(2500, remaining()))) {
       return;
     }
 
-    signalProcessTree('SIGKILL');
-
-    await waitForChildProcessClose(child, 1000);
+    forceProcessTree();
+    await waitForChildProcessClose(child, remaining());
   };
 
-  const closeManagedOpenCodeChild = async (child) => {
+  const closeManagedOpenCodeChild = async (child, options = {}) => {
     const pid = child?.pid;
+    const deadline = typeof options.deadline === 'number' && Number.isFinite(options.deadline)
+      ? options.deadline
+      : Date.now() + MANAGED_SHUTDOWN_TIMEOUT_MS;
+    const remaining = () => Math.max(0, deadline - Date.now());
     try {
-      await terminateChildProcess(child);
+      if (!hasChildProcessExited(child)) {
+        state.isOpenCodeReady = false;
+        state.openCodeNotReadySince = Date.now();
+        syncToHmrState();
+        const disposeTimeout = Math.min(MANAGED_DISPOSE_TIMEOUT_MS, remaining());
+        if (disposeTimeout > 0) {
+          try {
+            const response = await fetchImpl(buildOpenCodeUrl('/global/dispose', ''), {
+              method: 'POST',
+              headers: {
+                Accept: 'application/json',
+                ...getOpenCodeAuthHeaders(),
+              },
+              signal: AbortSignal.timeout(disposeTimeout),
+            });
+            if (!response.ok) {
+              console.warn(`OpenCode graceful disposal returned HTTP ${response.status}`);
+            }
+          } catch (error) {
+            console.warn(`OpenCode graceful disposal failed: ${error?.message || error}`);
+          }
+        }
+        if (child.stdin?.writable) {
+          child.stdin.once?.('error', () => {});
+          try {
+            child.stdin.end();
+            if (await waitForChildProcessClose(child, remaining())) return;
+          } catch (error) {
+            console.warn(`OpenCode control pipe shutdown failed: ${error?.message || error}`);
+          }
+        }
+      }
+      await terminateChildProcess(child, remaining());
     } finally {
       // Drop it from the registry only once it has actually exited, so a child
       // that survived teardown stays eligible for the next run's reaper.
@@ -381,10 +460,10 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
     const child = spawn(binary, args, {
       cwd,
-      env: processEnv,
+      env: { ...processEnv, OPENCODE_MANAGED_SHUTDOWN: '1' },
       detached: process.platform !== 'win32',
       windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
     let runtimeStderrTail = '';
     let runtimeStderrAttached = false;
@@ -497,8 +576,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       get stderrTail() {
         return getManagedProcessSnapshot().stderrTail;
       },
-      async close() {
-        await closeManagedOpenCodeChild(child);
+      async close(options) {
+        await closeManagedOpenCodeChild(child, options);
       },
     };
   };
