@@ -255,6 +255,7 @@ const INSTALLED_APPS_CACHE_FILE = 'discovered-apps.json';
 const INSTALLED_APPS_CACHE_VERSION = 2;
 const LINUX_DESKTOP_ENTRIES_CACHE_TTL_MS = 30_000;
 const OPENCODE_SHUTDOWN_GRACE_MS = 100;
+const OPENCHAMBER_SHUTDOWN_TIMEOUT_MS = 15000;
 const { autoUpdater } = updaterPkg;
 
 const state = {
@@ -262,6 +263,7 @@ const state = {
   sidecarUrl: null,
   localUiUrl: null,
   localOrigin: null,
+  localUiUrl: null,
   apiBaseUrl: null,
   clientToken: null,
   requestHeaders: {},
@@ -1431,7 +1433,11 @@ const spawnLocalServer = async () => {
   // Probe before starting the server — main() in the server module sets up a
   // lot of global state before binding, and calling it twice after a listen
   // failure would double-wire runtimes. Pick a known-free port in one shot.
-  const candidates = [storedPort, DEFAULT_DESKTOP_PORT].filter((v) => Number.isFinite(v) && v > 0);
+  const configuredHmrApiPort = Number.parseInt(process.env.OPENCHAMBER_HMR_API_PORT || '', 10);
+  const hmrApiPort = isDev && Number.isInteger(configuredHmrApiPort) && configuredHmrApiPort > 0 && configuredHmrApiPort <= 65535
+    ? configuredHmrApiPort
+    : null;
+  const candidates = [hmrApiPort, storedPort, DEFAULT_DESKTOP_PORT].filter((v) => Number.isFinite(v) && v > 0);
   let chosenPort = 0;
   for (const candidate of candidates) {
     if (await isPortFree(candidate, bindHost)) {
@@ -1441,6 +1447,9 @@ const spawnLocalServer = async () => {
   }
   if (chosenPort === 0) {
     chosenPort = await pickUnusedPort(bindHost);
+  }
+  if (hmrApiPort && chosenPort !== hmrApiPort) {
+    throw new Error(`HMR API port ${hmrApiPort} is unavailable`);
   }
 
   // The server module reads ENV_DESKTOP_NOTIFY / OPENCHAMBER_DIST_DIR /
@@ -2111,7 +2120,7 @@ const switchToHostById = async (rawId) => {
   let clientToken = '';
   let requestHeaders = {};
   if (id === LOCAL_HOST_ID) {
-    targetUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.sidecarUrl || state.localOrigin);
+    targetUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.localUiUrl || state.sidecarUrl || state.localOrigin);
     apiBaseUrl = state.sidecarUrl;
     clientToken = readDesktopLocalClientToken();
     requestHeaders = {};
@@ -2369,6 +2378,13 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
   const useSaved = saved && typeof saved.width === 'number' && typeof saved.height === 'number';
   const restoredBounds = useSaved ? clampWindowBoundsToVisibleWorkArea(saved) : null;
   const desktopLocalOrigin = state.localOrigin || state.sidecarUrl || '';
+  const desktopLocalUiOrigin = (() => {
+    try {
+      return state.localUiUrl ? new URL(state.localUiUrl).origin : '';
+    } catch {
+      return '';
+    }
+  })();
   const rendererRuntimeConfig = buildRendererRuntimeConfig(url, runtimeConfig);
   const desktopApiBaseUrl = rendererRuntimeConfig.apiBaseUrl;
   const desktopClientToken = rendererRuntimeConfig.clientToken;
@@ -2403,6 +2419,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     webPreferences: {
       additionalArguments: [
         `--openchamber-local-origin=${desktopLocalOrigin}`,
+        `--openchamber-local-ui-origin=${desktopLocalUiOrigin}`,
         `--openchamber-api-base-url=${desktopApiBaseUrl}`,
         `--openchamber-client-token=${desktopClientToken}`,
         `--openchamber-runtime-headers=${JSON.stringify(desktopRequestHeaders)}`,
@@ -2536,7 +2553,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     try {
       const url = new URL(raw);
       if (url.protocol === 'devtools:') return true;
-      if (url.protocol === `${UI_PROTOCOL}:`) return true;
+      if (url.protocol === `${UI_PROTOCOL}:` && url.hostname === 'app') return true;
       if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
       // In development the renderer is served by Vite while state.localOrigin
       // remains the separate local API server. Permit same-origin reloads from
@@ -2554,6 +2571,12 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
       if (state.sidecarUrl) {
         try {
           if (new URL(state.sidecarUrl).origin === url.origin) return true;
+        } catch {
+        }
+      }
+      if (state.localUiUrl) {
+        try {
+          if (new URL(state.localUiUrl).origin === url.origin) return true;
         } catch {
         }
       }
@@ -2686,7 +2709,7 @@ const openMainWindow = async () => {
   }
 
   const config = readDesktopHostsConfig();
-  const localUiUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.sidecarUrl || state.localOrigin);
+  const localUiUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.localUiUrl || state.sidecarUrl || state.localOrigin);
   const host = config.defaultHostId && config.defaultHostId !== LOCAL_HOST_ID
     ? config.hosts.find((entry) => entry.id === config.defaultHostId)
     : null;
@@ -2894,7 +2917,7 @@ const setMiniChatPinned = (browserWindow, pinned) => {
   const nextPinned = pinned === true;
   browserWindow.__ocPinned = nextPinned;
   if (nextPinned) {
-    browserWindow.setAlwaysOnTop(true, 'floating');
+    browserWindow.setAlwaysOnTop(true, 'normal');
   } else {
     browserWindow.setAlwaysOnTop(false);
     if (process.platform === 'darwin') {
@@ -2920,9 +2943,7 @@ const resolveMiniChatRuntimeConfig = (browserWindow, args = {}) => {
 };
 
 const resolveInitialUrl = async () => {
-  const hmrApiPort = process.env.OPENCHAMBER_HMR_API_PORT || '3901';
   const hmrUiPort = process.env.OPENCHAMBER_HMR_UI_PORT || '5173';
-  const hmrApiUrl = `http://127.0.0.1:${hmrApiPort}`;
   const hmrUiUrl = `http://127.0.0.1:${hmrUiPort}`;
   const usePackagedUi = shouldUsePackagedUi();
   const skipLocalServer = await shouldSkipLocalServer();
@@ -2933,15 +2954,14 @@ const resolveInitialUrl = async () => {
   });
   const localUrl = skipLocalServer
     ? null
-    : startupProbePlan.probeHmrApi && await waitForHealth(hmrApiUrl, 5_000, 100)
-      ? hmrApiUrl
-      : await spawnLocalServer();
+    : await spawnLocalServer();
 
   const localUiUrl = usePackagedUi
     ? buildPackagedUiUrl('/index.html')
     : startupProbePlan.probeHmrUi && await waitForHealth(hmrUiUrl, 8_000, 100)
     ? hmrUiUrl
     : localUrl;
+  state.localUiUrl = localUiUrl;
 
   state.sidecarUrl = localUrl;
   state.localUiUrl = localUiUrl;
@@ -4574,6 +4594,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
           } catch {
           }
         }
+        await stopSidecar();
         return await installDownloadedUpdate();
       }
       // Defer so the IPC reply flushes before the app starts shutting down.
@@ -4590,7 +4611,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
 
     case 'desktop_new_window': {
       const config = readDesktopHostsConfig();
-      const localUiUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.sidecarUrl || state.localOrigin);
+      const localUiUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.localUiUrl || state.sidecarUrl || state.localOrigin);
       let targetUrl = localUiUrl;
       let runtimeConfig = {
         apiBaseUrl: state.sidecarUrl || state.localOrigin || '',
@@ -4623,7 +4644,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       const host = config.hosts.find((entry) => entry.id === hostId);
       if (!host) throw new Error('Host not found');
       if (host.relay) {
-        const windowUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.sidecarUrl || state.localOrigin);
+        const windowUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.localUiUrl || state.sidecarUrl || state.localOrigin);
         await createAdditionalWindow(windowUrl, {
           apiBaseUrl: '',
           clientToken: host.clientToken || '',
@@ -5080,6 +5101,13 @@ const isLocalSender = (webContents) => {
     if (state.sidecarUrl) {
       try {
         const allowed = new URL(state.sidecarUrl);
+        if (allowed.origin === url.origin) return true;
+      } catch {
+      }
+    }
+    if (state.localUiUrl) {
+      try {
+        const allowed = new URL(state.localUiUrl);
         if (allowed.origin === url.origin) return true;
       } catch {
       }
@@ -5554,5 +5582,5 @@ app.whenReady().then(async () => {
 }).catch((error) => {
   if (state.quitInProgress) return;
   log.error('[electron] startup failed:', error);
-  app.exit(1);
+  void shutdownBackgroundServices().finally(() => app.exit(1));
 });

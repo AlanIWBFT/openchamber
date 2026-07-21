@@ -3,7 +3,7 @@ import http from 'node:http';
 
 import { createGracefulShutdownRuntime } from './shutdown-runtime.js';
 
-const createRuntime = (server) => createGracefulShutdownRuntime({
+const createRuntime = (server, overrides = {}) => createGracefulShutdownRuntime({
   process: { exit: vi.fn() },
   shutdownTimeoutMs: 1000,
   getExitOnShutdown: () => false,
@@ -31,6 +31,7 @@ const createRuntime = (server) => createGracefulShutdownRuntime({
   getActiveTunnelController: () => null,
   setActiveTunnelController: vi.fn(),
   tunnelAuthController: { clearActiveTunnel: vi.fn() },
+  ...overrides,
 });
 
 describe('graceful shutdown runtime', () => {
@@ -78,5 +79,50 @@ describe('graceful shutdown runtime', () => {
       server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
     }
+  });
+
+  it('reserves time after managed OpenCode shutdown for final fallback cleanup', async () => {
+    const openCodeProcess = { close: vi.fn(async () => {}) };
+    const deadline = Date.now() + 15000;
+    const runtime = createRuntime(null, {
+      shouldSkipOpenCodeStop: () => false,
+      getOpenCodeProcess: () => openCodeProcess,
+    });
+
+    await runtime.gracefulShutdown({ exitProcess: false, deadline });
+
+    expect(openCodeProcess.close).toHaveBeenCalledWith({ deadline: deadline - 500 });
+  });
+
+  it('stops input sources before closing managed OpenCode', async () => {
+    const order = [];
+    const runtime = createRuntime(null, {
+      shouldSkipOpenCodeStop: () => false,
+      getTerminalRuntime: () => ({ shutdown: vi.fn(async () => order.push('terminal')) }),
+      getMessageStreamRuntime: () => ({ close: vi.fn(async () => order.push('stream')) }),
+      getOpenCodeProcess: () => ({ close: vi.fn(async () => order.push('opencode')) }),
+    });
+
+    await runtime.gracefulShutdown({ exitProcess: false });
+
+    expect(order.slice(0, 2).sort()).toEqual(['stream', 'terminal']);
+    expect(order[2]).toBe('opencode');
+  });
+
+  it('still closes managed OpenCode when an input source throws synchronously', async () => {
+    const openCodeProcess = { close: vi.fn(async () => {}) };
+    const runtime = createRuntime(null, {
+      shouldSkipOpenCodeStop: () => false,
+      getTerminalRuntime: () => ({
+        shutdown: vi.fn(() => {
+          throw new Error('terminal shutdown failed');
+        }),
+      }),
+      getOpenCodeProcess: () => openCodeProcess,
+    });
+
+    await runtime.gracefulShutdown({ exitProcess: false });
+
+    expect(openCodeProcess.close).toHaveBeenCalledTimes(1);
   });
 });
