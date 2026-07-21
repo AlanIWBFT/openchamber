@@ -125,7 +125,7 @@ const uiNotificationClients = new Set();
 const uiNotificationWsClients = new Set();
 const uiOpenChamberEventClients = new Set();
 const HEALTH_CHECK_INTERVAL = 15000;
-const SHUTDOWN_TIMEOUT = 10000;
+const SHUTDOWN_TIMEOUT = 15000;
 const MODELS_DEV_API_URL = 'https://models.dev/api.json';
 const MODELS_METADATA_CACHE_TTL = 5 * 60 * 1000;
 const CLIENT_RELOAD_DELAY_MS = 800;
@@ -2031,7 +2031,10 @@ async function main(options = {}) {
       } catch {
         // best-effort shutdown of the dictation worker
       }
-      return gracefulShutdown({ exitProcess: shutdownOptions.exitProcess ?? false });
+      return gracefulShutdown({
+        ...shutdownOptions,
+        exitProcess: shutdownOptions.exitProcess ?? false,
+      });
     }
   };
 }

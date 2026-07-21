@@ -269,6 +269,10 @@ Managed health failures are classified as `timeout`, `connection_refused`, `conn
   - `isOpenCodeConnectionSecure()`
   - `ensureLocalOpenCodeServerPassword(options?)`
 
+## Public exports (lifecycle.js)
+- `createOpenCodeLifecycleRuntime(dependencies)`: manages owned OpenCode server startup, health, restart, and shutdown.
+- Managed OpenCode shutdown uses one 15-second deadline. It gives the authenticated `POST /global/dispose` at most two seconds, then closes the child stdin control pipe and spends the remaining budget waiting for `opencode serve` to close SQLite and exit. Process termination remains the fallback after the shared deadline expires.
+
 ## Public exports (core-routes.js)
 - `registerServerStatusRoutes(app, dependencies)`: registers status/system endpoints:
   - `GET /health`
