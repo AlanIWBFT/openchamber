@@ -6,7 +6,7 @@ export async function stopEmbeddedServer(handle, { launchFallback, warn, timeout
   let timer;
   try {
     await Promise.race([
-      handle.stop({ exitProcess: false }),
+      handle.stop({ exitProcess: false, deadline: Date.now() + timeoutMs }),
       new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error('Embedded server shutdown timed out')), timeoutMs);
       }),
