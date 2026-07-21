@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +13,7 @@ const electronDir = path.join(repoRoot, 'packages/electron');
 const bundledOpenCodeCliDir = path.join(electronDir, 'resources', 'opencode-cli');
 const preferredHmrUiPort = Number(process.env.OPENCHAMBER_HMR_UI_PORT || '5173');
 const preferredHmrApiPort = Number(process.env.OPENCHAMBER_HMR_API_PORT || '3901');
+const WINDOWS_CONTROL_C_EXIT = 0xC000013A;
 
 const quoteWindowsCommandArg = (value) => `"${String(value).replace(/"/g, '""')}"`;
 
@@ -195,13 +197,14 @@ async function stopChildTree(child) {
     return;
   }
 
-  signalChild(child, 'SIGINT');
-  await waitForExit(child, 2500);
-
-  if (process.platform === 'win32' && child.exitCode === null && child.signalCode === null) {
+  if (process.platform === 'win32') {
     killWindowsProcessTree(child.pid);
     await waitForExit(child, 1000);
+    return;
   }
+
+  signalChild(child, 'SIGINT');
+  await waitForExit(child, 2500);
 
   if (child.exitCode === null && child.signalCode === null) {
     signalChild(child, 'SIGTERM');
@@ -221,6 +224,7 @@ async function main() {
   let hmrUiPort = '';
 
   ensureElectronInstalled();
+  const electronBinary = createRequire(import.meta.url)('electron');
   const bundledOpenCodeCliEnv = resolveBundledOpenCodeCliEnv();
 
   if (useBundledUi) {
@@ -235,12 +239,13 @@ async function main() {
         OPENCHAMBER_ELECTRON_DEV: '1',
         OPENCHAMBER_HMR_UI_PORT: hmrUiPort,
         OPENCHAMBER_HMR_API_PORT: hmrApiPort,
+        OPENCHAMBER_HMR_VITE_ONLY: '1',
         OPENCHAMBER_DISABLE_PWA_DEV: '1',
       },
     });
   }
 
-  const electron = spawnProcess('bun', ['x', 'electron', './entry.mjs'], {
+  const electron = spawnProcess(electronBinary, ['./entry.mjs'], {
     cwd: electronDir,
     env: {
       ...process.env,
@@ -265,6 +270,13 @@ async function main() {
   };
 
   const onChildExit = (label) => (code, signal) => {
+    if (cleaning) {
+      return;
+    }
+    if (code === 130 || code === WINDOWS_CONTROL_C_EXIT || signal === 'SIGINT') {
+      void teardown(0);
+      return;
+    }
     if (code !== 0 || signal) {
       console.warn(`[electron:dev] ${label} exited with code ${code ?? 'null'} signal ${signal ?? 'none'}.`);
     }
@@ -282,7 +294,7 @@ async function main() {
     void teardown(1);
   });
 
-  for (const [signal, exitCode] of Object.entries({ SIGINT: 130, SIGTERM: 143, SIGQUIT: 131, SIGHUP: 129 })) {
+  for (const [signal, exitCode] of Object.entries({ SIGINT: 0, SIGTERM: 143, SIGQUIT: 131, SIGHUP: 129 })) {
     process.on(signal, () => {
       void teardown(exitCode);
     });
