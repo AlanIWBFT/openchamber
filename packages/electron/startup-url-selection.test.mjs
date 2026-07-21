@@ -9,29 +9,26 @@ test('bundled development never probes HMR endpoints', () => {
     packagedUi: true,
     skipLocalServer: false,
   }), {
-    probeHmrApi: false,
     probeHmrUi: false,
   });
 });
 
-test('HMR development probes both API and UI endpoints', () => {
+test('HMR development probes only the external UI endpoint', () => {
   assert.deepEqual(resolveStartupUrlProbePlan({
     development: true,
     packagedUi: false,
     skipLocalServer: false,
   }), {
-    probeHmrApi: true,
     probeHmrUi: true,
   });
 });
 
-test('serverless HMR development skips only the local API probe', () => {
+test('serverless HMR development still probes the UI endpoint', () => {
   assert.deepEqual(resolveStartupUrlProbePlan({
     development: true,
     packagedUi: false,
     skipLocalServer: true,
   }), {
-    probeHmrApi: false,
     probeHmrUi: true,
   });
 });
@@ -42,7 +39,6 @@ test('production does not probe HMR endpoints', () => {
     packagedUi: false,
     skipLocalServer: false,
   }), {
-    probeHmrApi: false,
     probeHmrUi: false,
   });
 });
