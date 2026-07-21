@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,8 +61,25 @@ function signalChild(child, signal) {
   }
 }
 
+function killWindowsProcessTree(pid) {
+  if (!pid) return;
+  try {
+    spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+  } catch {
+  }
+}
+
 async function stopChildTree(child) {
   if (!child || child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    killWindowsProcessTree(child.pid);
+    await waitForExit(child, 1000);
     return;
   }
 
@@ -84,6 +100,32 @@ async function stopChildTree(child) {
 const uiPort = process.env.OPENCHAMBER_HMR_UI_PORT || '5180';
 const backendPort = process.env.OPENCHAMBER_HMR_API_PORT || '3902';
 const hmrHost = process.env.OPENCHAMBER_HMR_HOST || '127.0.0.1';
+const viteOnly = process.env.OPENCHAMBER_HMR_VITE_ONLY === '1';
+
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function waitForElectronApi() {
+  const healthUrl = `http://127.0.0.1:${backendPort}/health`;
+  const deadline = Date.now() + 30_000;
+
+  console.log(`[dev:web:hmr] Waiting for Electron API: ${healthUrl}`);
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(healthUrl, { signal: AbortSignal.timeout(1_000) });
+      if (response.ok) {
+        const health = await response.json();
+        if (health?.runtime === 'desktop') {
+          console.log('[dev:web:hmr] Electron API ready; starting Vite');
+          return;
+        }
+      }
+    } catch {
+    }
+    await wait(100);
+  }
+
+  throw new Error(`Electron API did not become ready at ${healthUrl}`);
+}
 
 function getLanAddresses() {
   const addresses = [];
@@ -98,23 +140,15 @@ function getLanAddresses() {
   return addresses;
 }
 
-function clearViteCache() {
-  const cacheDirs = [
-    path.join(webRoot, 'node_modules/.vite'),
-    path.join(webRoot, 'node_modules/.vite-temp'),
-  ];
-
-  for (const cacheDir of cacheDirs) {
-    if (!existsSync(cacheDir)) continue;
-    rmSync(cacheDir, { recursive: true, force: true });
-  }
+if (viteOnly) {
+  await waitForElectronApi();
 }
 
-clearViteCache();
-
-const api = run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], {
-  OPENCHAMBER_PORT: backendPort,
-});
+const api = viteOnly
+  ? null
+  : run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], {
+      OPENCHAMBER_PORT: backendPort,
+    });
 const vite = run(
   'vite',
   'bun',
@@ -137,7 +171,7 @@ if (hmrHost === '0.0.0.0' || hmrHost === '::') {
     console.log('[dev:web:hmr] LAN/mobile UI: no LAN IPv4 address found');
   }
 }
-console.log(`[dev:web:hmr] API: http://127.0.0.1:${backendPort}`);
+console.log(`[dev:web:hmr] API${viteOnly ? ' target (provided by Electron)' : ''}: http://127.0.0.1:${backendPort}`);
 console.log('[dev:web:hmr] IMPORTANT: open UI URL above for HMR; backend URL has no HMR');
 
 let shuttingDown = false;
@@ -163,7 +197,7 @@ function onChildExit(label) {
   };
 }
 
-api.on('exit', onChildExit('api'));
+api?.on('exit', onChildExit('api'));
 vite.on('exit', onChildExit('vite'));
 
 process.on('SIGINT', () => {
