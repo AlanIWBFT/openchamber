@@ -4,8 +4,9 @@ import { accessSync, constants as fsConstants, statSync } from 'node:fs';
 import net from 'node:net';
 import { stripAppImageArgv0Leak, stripAppImageLauncherEnv } from '../inherited-env.js';
 import { assignInjectedEnv } from '../injected-env.js';
+import { z } from 'zod';
 import { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses } from './managed-process-registry.js';
-import { hasChildProcessExited, stopOpenCodeByClosingStdin, waitForChildProcessClose } from './managed-process-stop.js';
+import { hasChildProcessExited, waitForChildProcessClose } from './managed-process-stop.js';
 import { applyProviderEnvAliases } from './provider-env-aliases.js';
 import { overlayEnvironment } from '../environment/variables.js';
 import { recordStartupPerformance } from './startup-performance.js';
@@ -60,6 +61,9 @@ const WARMUP_DIRECTORY_LIMIT = 1;
 const WARMUP_REQUEST_TIMEOUT_MS = 30000;
 const MANAGED_STDERR_TAIL_MAX_BYTES = 32 * 1024;
 const HEALTH_FAILURE_DETAIL_MAX_LENGTH = 256;
+const MANAGED_SHUTDOWN_TIMEOUT_MS = 15000;
+const MANAGED_FORCE_TERMINATION_RESERVE_MS = 2000;
+const managedStartupInfo = z.object({ url: z.url({ protocol: /^https?$/ }) });
 
 const getBoundedTextTail = (value, maxBytes) => {
   const buffer = Buffer.from(String(value ?? ''));
@@ -164,54 +168,26 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   // only place their values can be read back (see auth.js).
   let managedProcessEnv = null;
 
-  const killProcessOnPortWin32 = (port) => {
+  const killProcessOnPort = (port, timeoutMs = 5000) => {
+    if (!port || process.platform === 'win32') return;
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    const remaining = () => Math.max(0, deadline - Date.now());
+    if (remaining() === 0) return;
     try {
-      // Get-NetTCPConnection reads the same locale-independent WinNT API
-      // netstat's display layer translates (e.g. "LISTENING" renders as
-      // "ABHÖREN"/"ÉCOUTE"/"ESCUTANDO" on non-English Windows), so this
-      // works regardless of the OS display language.
-      const result = spawnSync(
-        'powershell',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `Get-NetTCPConnection -State Listen -LocalPort ${Number.parseInt(port, 10)} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess`,
-        ],
-        { encoding: 'utf8', timeout: 5000, windowsHide: true }
-      );
-      const output = result.stdout || '';
-      const myPid = process.pid;
-      const pids = new Set();
-      for (const line of output.split(/\r?\n/)) {
-        const pid = Number.parseInt(line.trim(), 10);
-        if (pid && pid !== myPid) pids.add(pid);
-      }
-      for (const pid of pids) {
-        try {
-          spawnSync('taskkill', ['/PID', String(pid), '/F'], { stdio: 'ignore', timeout: 3000, windowsHide: true });
-        } catch {
-        }
-      }
-    } catch {
-    }
-  };
-
-  const killProcessOnPort = (port) => {
-    if (!port) return;
-    if (process.platform === 'win32') {
-      killProcessOnPortWin32(port);
-      return;
-    }
-    try {
-      const result = spawnSync('lsof', ['-ti', `:${port}`], { encoding: 'utf8', timeout: 5000, windowsHide: true });
+      const result = spawnSync('lsof', ['-ti', `:${port}`], {
+        encoding: 'utf8',
+        timeout: remaining(),
+        windowsHide: true,
+      });
       const output = result.stdout || '';
       const myPid = process.pid;
       for (const pidStr of output.split(/\s+/)) {
         const pid = parseInt(pidStr.trim(), 10);
         if (pid && pid !== myPid) {
+          const killTimeout = remaining();
+          if (killTimeout === 0) return;
           try {
-            spawnSync('kill', ['-9', String(pid)], { stdio: 'ignore', timeout: 2000 });
+            spawnSync('kill', ['-9', String(pid)], { stdio: 'ignore', timeout: killTimeout });
           } catch {
           }
         }
@@ -266,6 +242,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     if (!port) {
       return Promise.resolve(true);
     }
+    if (timeoutMs <= 0) return Promise.resolve(false);
 
     const probeHost = !hostname || hostname === '0.0.0.0' || hostname === '::' || hostname === '[::]'
       ? '127.0.0.1'
@@ -274,6 +251,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
     return new Promise((resolve) => {
       const attempt = () => {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          resolve(false);
+          return;
+        }
         const socket = net.connect({ port, host: probeHost });
         let settled = false;
 
@@ -286,7 +268,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
             resolve(released);
             return;
           }
-          setTimeout(attempt, 150);
+          setTimeout(attempt, Math.min(150, deadline - Date.now()));
         };
 
         socket.once('connect', () => finish(false));
@@ -298,22 +280,23 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           }
           finish(false);
         });
-        socket.setTimeout(500);
+        socket.setTimeout(Math.min(500, remaining));
       };
 
       attempt();
     });
   };
 
-  const terminateChildProcess = async (child) => {
+  const terminateChildProcess = async (child, timeoutMs) => {
     if (!child) {
-      return;
+      return true;
     }
 
     const pid = child.pid;
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    const remaining = () => Math.max(0, deadline - Date.now());
     if (!pid || (process.platform === 'win32' && hasChildProcessExited(child))) {
-      await waitForChildProcessClose(child, 250);
-      return;
+      return await waitForChildProcessClose(child, Math.min(250, remaining()));
     }
 
     const signalProcessTree = (signal) => {
@@ -330,38 +313,71 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       }
     };
 
+    const forceProcessTree = () => {
+      if (process.platform !== 'win32') {
+        signalProcessTree('SIGKILL');
+        return;
+      }
+
+      try {
+        spawnSync('taskkill', ['/pid', String(pid), '/f', '/t'], {
+          stdio: 'ignore',
+          windowsHide: true,
+          timeout: Math.max(1, remaining()),
+        });
+      } catch {
+      }
+      try { if (!hasChildProcessExited(child)) child.kill('SIGKILL'); } catch {}
+    };
+
+    if (remaining() === 0) {
+      forceProcessTree();
+      return await waitForChildProcessClose(child, 0);
+    }
+
     if (process.platform === 'win32') {
-      // Windows child.kill() terminates only the parent, and nothing on
-      // Windows lets OpenCode close its running turns first. Closing the stdin
-      // lease does; the tree kill is the fallback (see managed-process-stop.js).
-      await stopOpenCodeByClosingStdin(child, {
-        forceKillTree: (treePid) => {
-          try {
-            spawnSync('taskkill', ['/pid', String(treePid), '/f', '/t'], {
-              stdio: 'ignore',
-              timeout: 5000,
-              windowsHide: true,
-            });
-          } catch {
-          }
-        },
-      });
-      return;
+      // EOF already supplied the graceful phase. Terminate the owned tree
+      // before its root exits, while Windows can still identify descendants.
+      forceProcessTree();
+      return await waitForChildProcessClose(child, remaining());
     }
 
     signalProcessTree('SIGTERM');
-    await waitForChildProcessClose(child, 2500);
+    await waitForChildProcessClose(child, Math.min(2500, remaining()));
     // Parent exit does not prove group exit. Tools can ignore SIGTERM and keep
     // running after their server has exited and closed its own stdio.
     signalProcessTree('SIGKILL');
 
-    await waitForChildProcessClose(child, 1000);
+    return await waitForChildProcessClose(child, remaining());
   };
 
-  const closeManagedOpenCodeChild = async (child) => {
+  const closeManagedOpenCodeChild = async (child, options = {}) => {
     const pid = child?.pid;
+    const deadline = Number.isFinite(options.deadline)
+      ? options.deadline
+      : Date.now() + MANAGED_SHUTDOWN_TIMEOUT_MS;
+    const remaining = () => Math.max(0, deadline - Date.now());
     try {
-      await terminateChildProcess(child);
+      if (!hasChildProcessExited(child)) {
+        state.isOpenCodeReady = false;
+        state.openCodeNotReadySince = Date.now();
+        syncToHmrState();
+        if (child.stdin?.writable) {
+          child.stdin.once?.('error', () => {});
+          try {
+            child.stdin.end();
+            const exited = await waitForChildProcessClose(child, Math.max(0, remaining() - MANAGED_FORCE_TERMINATION_RESERVE_MS));
+            if (exited && process.platform === 'win32') return;
+          } catch (error) {
+            console.warn(`OpenCode control pipe shutdown failed: ${error?.message || error}`);
+          }
+        }
+      }
+      if (!(await terminateChildProcess(child, remaining()))) {
+        const error = new Error(`OpenCode process ${pid || '(unknown)'} did not exit before the shutdown deadline`);
+        error.code = 'OPENCHAMBER_OPENCODE_EXIT_UNCONFIRMED';
+        throw error;
+      }
     } finally {
       // Drop it from the registry only once it has actually exited, so a child
       // that survived teardown stays eligible for the next run's reaper.
@@ -385,10 +401,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   const createManagedOpenCodeServerProcess = async ({ resolvedBinary, hostname, port, timeout, cwd, env: processEnv, shellEnvKeysCount = 0, attempt }) => {
     let binary = (resolvedBinary || process.env.OPENCODE_BINARY || 'opencode').trim() || 'opencode';
     const sourceBinary = binary;
-    // Windows teardown stops OpenCode by closing its stdin lease, which only
-    // `serve --stdio` holds (see managed-process-stop.js).
-    const stdinLease = process.platform === 'win32';
-    let args = ['serve', ...(stdinLease ? ['--stdio'] : []), '--hostname', hostname, '--port', String(port)];
+    let args = ['serve', '--stdio', '--hostname', hostname, '--port', String(port)];
     let launchWrapperType = null;
 
     if (process.platform === 'win32' && state.useWslForOpencode) {
@@ -429,7 +442,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       env: processEnv,
       detached: process.platform !== 'win32',
       windowsHide: true,
-      stdio: [stdinLease ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
     // Closing the lease after OpenCode already exited must not throw EPIPE.
     child.stdin?.on('error', () => {});
@@ -484,14 +497,15 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       get exitCode() { return observedExitCode ?? child.exitCode; },
       get signalCode() { return observedSignalCode ?? child.signalCode; },
       get stderrTail() { return getManagedProcessSnapshot().stderrTail; },
-      close() {
-        if (!closePromise) closePromise = registration.then(() => closeManagedOpenCodeChild(child));
+      close(options) {
+        if (!closePromise) closePromise = registration.then(() => closeManagedOpenCodeChild(child, options));
         return closePromise;
       },
     };
 
     const readiness = new Promise((resolve, reject) => {
       let stdout = '';
+      let stdoutCursor = 0;
       let stderr = '';
       let done = false;
       const finish = (handler, value) => {
@@ -507,15 +521,19 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
       const onStdout = (chunk) => {
         stdout += chunk.toString();
-        const lines = stdout.split('\n');
-        for (const line of lines) {
-          // OpenCode 2.x prints `server listening on http://host:port` with no
-          // "opencode" prefix, and `{"url":"http://host:port"}` under --stdio.
-          const match = line.match(/server listening on\s+(https?:\/\/\S+)/)
-            ?? line.match(/^\s*\{"url":"(https?:\/\/[^"\s]+)"\}\s*$/);
-          if (!match) continue;
+        let newline;
+        while ((newline = stdout.indexOf('\n', stdoutCursor)) !== -1) {
+          const line = stdout.slice(stdoutCursor, newline).trim();
+          stdoutCursor = newline + 1;
+          let announcement;
+          try {
+            announcement = managedStartupInfo.safeParse(JSON.parse(line));
+          } catch {
+            continue;
+          }
+          if (!announcement.success) continue;
           attachRuntimeStderrCapture();
-          finish(resolve, match[1]);
+          finish(resolve, announcement.data.url);
           return;
         }
       };
@@ -860,7 +878,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         return await startOpenCodeOnce(attempt);
       } catch (error) {
         lastError = error;
-        if (state.isShuttingDown || error instanceof UnsupportedOpenCodeVersionError || error?.code === 'OPENCODE_BINARY_INVALID') {
+        if (state.isShuttingDown || error instanceof UnsupportedOpenCodeVersionError || error?.code === 'OPENCODE_BINARY_INVALID'
+          || error?.code === 'OPENCHAMBER_OPENCODE_EXIT_UNCONFIRMED') {
           break;
         }
         if (attempt >= START_OPEN_CODE_MAX_ATTEMPTS) {
@@ -932,6 +951,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           await state.openCodeProcess.close();
         } catch (error) {
           console.warn('Error closing OpenCode process:', error);
+          if (error?.code === 'OPENCHAMBER_OPENCODE_EXIT_UNCONFIRMED') throw error;
         }
         state.openCodeProcess = null;
         syncToHmrState();
