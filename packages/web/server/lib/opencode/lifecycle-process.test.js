@@ -21,30 +21,38 @@ const createRuntime = (waitForReady, state) => createOpenCodeLifecycleRuntime({
   setOpenCodePort() {}, setDetectedOpenCodeApiPrefix() {},
   waitForReady,
   managedStartupTimeoutMs: 1500,
+  topUpV1SessionMigration: () => ({ status: 'skipped', missing: 0, revisited: 0, reason: 'fixture' }),
 });
 
 describe('managed process lifecycle with real children', () => {
-  for (const failure of ['invalid-readiness', 'health-error', 'startup-timeout', 'shutdown-during-startup', 'none']) {
+  for (const failure of ['invalid-readiness', 'health-error', 'startup-timeout', 'shutdown-during-startup', 'ignored-eof', 'none']) {
     it(`reaps the server and its child after ${failure}`, async () => {
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'oc-process-'));
       const previousRegistry = process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY;
       process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY = path.join(root, 'registry');
       const marker = path.join(root, 'pids');
       const childScript = `process.on('SIGTERM', () => {}); require('node:fs').appendFileSync(${JSON.stringify(marker)}, process.pid + '\\n'); process.stdout.write('ready\\n'); setInterval(() => {}, 1000);`;
-      let readinessMessage = 'server listening on http://127.0.0.1:45678\n';
-      // A line that looks like the readiness line but carries no URL is noise,
-      // not readiness: the start must time out rather than connect to nothing.
-      if (failure === 'invalid-readiness') readinessMessage = 'server listening without a URL\n';
+      let readinessMessage = '{"url":"http://127.0.0.1:45678"}\n';
+      // Other JSON records cannot announce a server endpoint.
+      if (failure === 'invalid-readiness') readinessMessage = '{"message":"not a URL"}\n';
       if (failure === 'startup-timeout' || failure === 'shutdown-during-startup') readinessMessage = '';
       // Node is an isolated stand-in for the native OpenCode binary. Lifecycle
-      // still launches its real `serve --hostname ... --port ...` command.
+      // still launches its real `serve --stdio --hostname ... --port ...` command.
       await fs.writeFile(path.join(root, 'serve'), `
         const fs = require('node:fs');
+        if (!process.argv.includes('--stdio')) process.exit(2);
         fs.appendFileSync(${JSON.stringify(marker)}, process.pid + '\\n');
         const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(childScript)}], { stdio: ['ignore', 'pipe', 'ignore'] });
         child.stdout.once('data', () => {
           process.stdout.write(${JSON.stringify(readinessMessage)});
         });
+        if (${JSON.stringify(failure)} !== 'ignored-eof') {
+          process.stdin.on('end', () => {
+            child.once('exit', () => process.exit(0));
+            child.kill('SIGKILL');
+          });
+          process.stdin.resume();
+        }
         setInterval(() => {}, 1000);
       `);
       try {
@@ -53,9 +61,11 @@ describe('managed process lifecycle with real children', () => {
           if (failure === 'health-error') throw new Error('fixture health failure');
           return true;
         }, state);
-        if (failure === 'none') {
+        if (failure === 'none' || failure === 'ignored-eof') {
           const server = await runtime.startOpenCode();
-          await Promise.all([server.close(), server.close()]);
+          const closing = server.close({ deadline: Date.now() + 2500 });
+          expect(server.close()).toBe(closing);
+          await closing;
         } else if (failure === 'shutdown-during-startup') {
           const starting = runtime.startOpenCode();
           const rejected = expect(starting).rejects.toThrow('exited before serving');
@@ -69,7 +79,7 @@ describe('managed process lifecycle with real children', () => {
           await expect(runtime.startOpenCode()).rejects.toThrow('fixture health failure');
         }
         const pids = (await fs.readFile(marker, 'utf8')).trim().split('\n').map(Number);
-        expect(pids).toHaveLength(failure === 'none' || failure === 'shutdown-during-startup' ? 2 : 4);
+        expect(pids).toHaveLength(failure === 'none' || failure === 'ignored-eof' || failure === 'shutdown-during-startup' ? 2 : 4);
         await expect.poll(() => pids.filter(alive), { timeout: 3000 }).toEqual([]);
         expect(await fs.readdir(path.join(root, 'registry')).catch(() => [])).toEqual([]);
       } finally {
