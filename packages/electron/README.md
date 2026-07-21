@@ -130,7 +130,9 @@ bun install
 bun run electron:dev
 ```
 
-`bun run electron:dev` starts the web dev server with HMR, then launches Electron against `packages/electron/entry.mjs`. On Windows, the HMR launcher resolves npm's `bun.cmd` shim to the underlying `bun.exe` before spawning Bun child processes.
+`bun run electron:dev` launches Electron directly against `packages/electron/entry.mjs` after checking its installation. Electron keeps the OpenChamber API server in-process while Vite starts independently and proxies API requests to it. Electron waits for its API before opening the HMR application; remote-only development can skip that API without blocking Vite. An external browser opened on Vite earlier may briefly see an unavailable API. On Windows, the HMR launcher resolves npm's `bun.cmd` shim to the underlying `bun.exe` before spawning Bun child processes.
+
+Exiting Electron stops the development launcher and its Vite process. Closing to the tray keeps them running; use **Quit** from the tray menu to exit. `Ctrl+C` in the launcher terminal stops the complete Electron/Vite process tree.
 
 The Electron workspace package trusts Electron's install script so `bun install` downloads the platform runtime in fresh checkouts and worktrees.
 

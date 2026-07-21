@@ -1,3 +1,5 @@
+const SHUTDOWN_FINALIZATION_RESERVE_MS = 500;
+
 export const createGracefulShutdownRuntime = (dependencies) => {
   const {
     process,
@@ -71,6 +73,10 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     syncToHmrState();
     console.log('Starting graceful shutdown...');
     const exitProcess = typeof options.exitProcess === 'boolean' ? options.exitProcess : getExitOnShutdown();
+    const deadline = Number.isFinite(options.deadline)
+      ? options.deadline
+      : Date.now() + shutdownTimeoutMs;
+    const remaining = () => Math.max(0, deadline - Date.now());
 
     // Both embedded stop() and daemon exits use this sequence. Close admission
     // synchronously above, then stop viewers before draining their services.
@@ -108,24 +114,14 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     }
 
     const terminalRuntime = getTerminalRuntime();
-    if (terminalRuntime) {
-      try {
-        await terminalRuntime.shutdown();
-      } catch {
-      } finally {
-        setTerminalRuntime(null);
-      }
-    }
-
     const messageStreamRuntime = getMessageStreamRuntime();
-    if (messageStreamRuntime) {
-      try {
-        await messageStreamRuntime.close();
-      } catch {
-      } finally {
-        setMessageStreamRuntime(null);
-      }
-    }
+    await Promise.allSettled([
+      Promise.resolve().then(() => terminalRuntime?.shutdown()),
+      Promise.resolve().then(() => messageStreamRuntime?.close()),
+    ]).finally(() => {
+      if (terminalRuntime) setTerminalRuntime(null);
+      if (messageStreamRuntime) setMessageStreamRuntime(null);
+    });
 
     if (!shouldSkipOpenCodeStop()) {
       const portToKill = getOpenCodePort();
@@ -134,15 +130,17 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       if (openCodeProcess) {
         console.log('Stopping OpenCode process...');
         try {
-          await openCodeProcess.close();
+          await openCodeProcess.close({
+            deadline: Math.max(Date.now(), deadline - SHUTDOWN_FINALIZATION_RESERVE_MS),
+          });
         } catch (error) {
           console.warn('Error closing OpenCode process:', error);
         }
         setOpenCodeProcess(null);
       }
 
-      killProcessOnPort(portToKill);
-      if (!(await waitForPortRelease(portToKill, 5000))) {
+      killProcessOnPort(portToKill, remaining());
+      if (!(await waitForPortRelease(portToKill, Math.min(5000, remaining())))) {
         console.warn(`Timed out waiting for OpenCode port ${portToKill} to be released during shutdown`);
       }
     } else {
@@ -171,7 +169,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
             closeTimeout = setTimeout(() => {
               console.warn('Server close timeout reached, forcing shutdown');
               resolve();
-            }, shutdownTimeoutMs);
+            }, remaining());
           }),
         ]);
       } finally {

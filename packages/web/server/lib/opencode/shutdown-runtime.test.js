@@ -273,4 +273,67 @@ describe('graceful shutdown runtime', () => {
     expect(stopAllGuestServices).toHaveBeenCalledTimes(1);
     expect(process.exit).toHaveBeenCalledWith(0);
   });
+
+  it('reserves time after managed OpenCode shutdown for final fallback cleanup', async () => {
+    const openCodeProcess = { close: vi.fn(async () => {}) };
+    const deadline = Date.now() + 15000;
+    const runtime = createRuntime(null, {
+      shouldSkipOpenCodeStop: () => false,
+      getOpenCodeProcess: () => openCodeProcess,
+    });
+
+    await runtime.gracefulShutdown({ exitProcess: false, deadline });
+
+    expect(openCodeProcess.close).toHaveBeenCalledWith({ deadline: deadline - 500 });
+  });
+
+  it('stops input sources before closing managed OpenCode', async () => {
+    const order = [];
+    const runtime = createRuntime(null, {
+      shouldSkipOpenCodeStop: () => false,
+      getTerminalRuntime: () => ({ shutdown: vi.fn(async () => order.push('terminal')) }),
+      getMessageStreamRuntime: () => ({ close: vi.fn(async () => order.push('stream')) }),
+      getOpenCodeProcess: () => ({ close: vi.fn(async () => order.push('opencode')) }),
+    });
+
+    await runtime.gracefulShutdown({ exitProcess: false });
+
+    expect(order.slice(0, 2).sort()).toEqual(['stream', 'terminal']);
+    expect(order[2]).toBe('opencode');
+  });
+
+  it('still closes managed OpenCode when an input source throws synchronously', async () => {
+    const openCodeProcess = { close: vi.fn(async () => {}) };
+    const runtime = createRuntime(null, {
+      shouldSkipOpenCodeStop: () => false,
+      getTerminalRuntime: () => ({
+        shutdown: vi.fn(() => {
+          throw new Error('terminal shutdown failed');
+        }),
+      }),
+      getOpenCodeProcess: () => openCodeProcess,
+    });
+
+    await runtime.gracefulShutdown({ exitProcess: false });
+
+    expect(openCodeProcess.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the terminal grace period within the longer shared deadline', async () => {
+    vi.useFakeTimers();
+    const deadline = Date.now() + 35_000;
+    const openCodeProcess = { close: vi.fn(async () => {}) };
+    const runtime = createRuntime(null, {
+      shouldSkipOpenCodeStop: () => false,
+      getTerminalRuntime: () => ({ shutdown: () => new Promise((resolve) => setTimeout(resolve, 20_000)) }),
+      getOpenCodeProcess: () => openCodeProcess,
+    });
+    const shutdown = runtime.gracefulShutdown({ exitProcess: false, deadline });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(openCodeProcess.close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(18_000);
+    await shutdown;
+    expect(openCodeProcess.close).toHaveBeenCalledWith({ deadline: deadline - 500 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

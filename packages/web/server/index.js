@@ -164,7 +164,7 @@ const uiNotificationClients = new Set();
 const uiNotificationWsClients = new Set();
 const uiOpenChamberEventClients = new Set();
 const HEALTH_CHECK_INTERVAL = 15000;
-const SHUTDOWN_TIMEOUT = 10000;
+const SHUTDOWN_TIMEOUT = 35000;
 const MODELS_DEV_API_URL = 'https://models.dev/api.json';
 const MODELS_METADATA_CACHE_TTL = 5 * 60 * 1000;
 const CLIENT_RELOAD_DELAY_MS = 800;
@@ -2575,7 +2575,10 @@ async function main(options = {}) {
         port: managed ? openCodePort : null,
       };
     },
-    stop: (shutdownOptions = {}) => gracefulShutdown({ exitProcess: shutdownOptions.exitProcess ?? false }),
+    stop: (shutdownOptions = {}) => gracefulShutdown({
+      ...shutdownOptions,
+      exitProcess: shutdownOptions.exitProcess ?? false,
+    }),
   };
 }
 

@@ -25,6 +25,7 @@ const originalPath = process.env.PATH;
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
+  vi.useRealTimers();
   spawnMock.mockReset();
   spawnSyncMock.mockReset();
   recordStartupPerformanceMock.mockReset();
@@ -42,10 +43,18 @@ afterEach(() => {
   }
 });
 
-const createMockChild = () => {
+const createMockChild = ({ exitOnStdinEnd = true } = {}) => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
+  child.stdin = {
+    writable: true,
+    end: vi.fn(() => {
+      if (!exitOnStdinEnd) return;
+      child.exitCode = 0;
+      queueMicrotask(() => child.emit('close', 0, null));
+    }),
+  };
   child.exitCode = null;
   child.signalCode = null;
   child.pid = 12345;
@@ -85,6 +94,7 @@ const createRuntime = (overrides = {}, stateOverrides = {}, envOverrides = {}) =
     ...stateOverrides,
   };
 
+  const syncToHmrState = vi.fn();
   const runtime = createOpenCodeLifecycleRuntime({
     state,
     env: {
@@ -95,7 +105,7 @@ const createRuntime = (overrides = {}, stateOverrides = {}, envOverrides = {}) =
       ENV_SKIP_OPENCODE_START: false,
       ...envOverrides,
     },
-    syncToHmrState: vi.fn(),
+    syncToHmrState,
     syncFromHmrState: vi.fn(),
     getOpenCodeAuthHeaders: () => ({}),
     buildOpenCodeUrl: (route) => `http://127.0.0.1:45678${route}`,
@@ -103,7 +113,7 @@ const createRuntime = (overrides = {}, stateOverrides = {}, envOverrides = {}) =
     normalizeApiPrefix: vi.fn(() => ''),
     applyOpencodeBinaryFromSettings: vi.fn(async () => null),
     checkOpenCodeBinary: async () => '2.0.19',
-  ensureOpencodeCliEnv: vi.fn(),
+    ensureOpencodeCliEnv: vi.fn(),
     ensureLocalOpenCodeServerPassword: vi.fn(async () => 'password'),
     resolveManagedOpenCodeLaunchSpec: vi.fn((binary) => ({ binary, args: [], wrapperType: null })),
     setOpenCodePort: vi.fn((port) => {
@@ -126,10 +136,60 @@ const createRuntime = (overrides = {}, stateOverrides = {}, envOverrides = {}) =
     ...overrides,
   });
   runtime.testState = state;
+  runtime.state = state;
+  runtime.syncToHmrState = syncToHmrState;
   return runtime;
 };
 
 describe('OpenCode lifecycle', () => {
+  it('accepts a complete stdio JSON announcement across chunks and ignores unrelated output', async () => {
+    const child = createMockChild();
+    const waitForReady = vi.fn(async () => true);
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'startup log\n{"url":"file:///not-a-server"}\n{"other":true}\n{"url":"http://127.0.0.1:');
+        expect(waitForReady).not.toHaveBeenCalled();
+        child.stdout.emit('data', '45678"}');
+        expect(waitForReady).not.toHaveBeenCalled();
+        child.stdout.emit('data', '\n');
+      });
+      return child;
+    });
+    const server = await createRuntime({ waitForReady }).startOpenCode();
+    expect(server.url).toBe('http://127.0.0.1:45678');
+    expect(waitForReady).toHaveBeenCalledOnce();
+    await server.close();
+  });
+
+  it('keeps ownership and refuses replacement when the old process exit is unconfirmed', async () => {
+    const error = Object.assign(new Error('exit not confirmed'), { code: 'OPENCHAMBER_OPENCODE_EXIT_UNCONFIRMED' });
+    const owned = { pid: 12345, exitCode: null, signalCode: null, close: vi.fn(async () => { throw error; }) };
+    const runtime = createRuntime({}, { openCodeProcess: owned, openCodePort: 45678 });
+    await expect(runtime.restartOpenCode()).rejects.toBe(error);
+    expect(runtime.state.openCodeProcess).toBe(owned);
+    expect(runtime.state.isOpenCodeReady).toBe(false);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('does not retry startup after failing to confirm cleanup of the first attempt', async () => {
+    vi.useFakeTimers();
+    const child = createMockChild({ exitOnStdinEnd: false });
+    const leaseClosed = Promise.withResolvers();
+    child.stdin.end.mockImplementation(() => leaseClosed.resolve());
+    child.kill = vi.fn(() => false);
+    spawnMock.mockImplementation(() => {
+      queueMicrotask(() => child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n'));
+      return child;
+    });
+    const runtime = createRuntime({ waitForReady: async () => { throw new Error('health failed'); } });
+    const failed = expect(runtime.startOpenCode()).rejects.toMatchObject({ code: 'OPENCHAMBER_OPENCODE_EXIT_UNCONFIRMED' });
+    await leaseClosed.promise;
+    await vi.advanceTimersByTimeAsync(15_000);
+    await failed;
+    expect(spawnMock).toHaveBeenCalledOnce();
+    expect(runtime.state.openCodeProcess.pid).toBe(child.pid);
+  });
+
   it('uses the resolved binary directly on startup and managed restart without an env override', async () => {
     delete process.env.OPENCODE_BINARY;
     const binaries = ['/bundle one/opencode-cli/opencode', '/bundle two/opencode-cli/opencode'];
@@ -138,7 +198,7 @@ describe('OpenCode lifecycle', () => {
       .mockReturnValueOnce(binaries[1]);
     spawnMock.mockImplementation(() => {
       const child = createMockChild();
-      queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
+      queueMicrotask(() => child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n'));
       return child;
     });
     globalThis.fetch = vi.fn(async () => ({ ok: false }));
@@ -147,7 +207,7 @@ describe('OpenCode lifecycle', () => {
     runtime.testState.openCodeProcess = firstServer;
     try {
       await runtime.restartOpenCode();
-      expect(firstServer.signalCode).toBe('SIGTERM');
+      expect(firstServer.exitCode).toBe(0);
       expect(spawnMock.mock.calls.map(([binary]) => binary)).toEqual(binaries);
       expect(runtime.testState.lastOpenCodeLaunchDiagnostics.sourceBinary).toBe(binaries[1]);
       expect(process.env.OPENCODE_BINARY).toBeUndefined();
@@ -330,6 +390,32 @@ describe('OpenCode lifecycle', () => {
     expect(terminalEvents).toHaveLength(1);
   });
 
+  it('closes the official stdio lease without an HTTP disposal request', async () => {
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
+      });
+      return child;
+    });
+    const fetch = vi.fn(async () => new Response(JSON.stringify(true), { status: 200 }));
+    globalThis.fetch = fetch;
+    const runtime = createRuntime({
+      getOpenCodeAuthHeaders: () => ({ Authorization: 'Basic test' }),
+    });
+
+    const server = await runtime.startOpenCode();
+    runtime.state.isOpenCodeReady = true;
+    await server.close();
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(child.stdin.end).toHaveBeenCalled();
+    expect(child.kill).not.toHaveBeenCalled();
+    expect(runtime.state.isOpenCodeReady).toBe(false);
+    expect(runtime.state.openCodeNotReadySince).toBeGreaterThan(0);
+    expect(runtime.syncToHmrState).toHaveBeenCalled();
+  });
+
   it('does not count rapid transport-triggered checks as independent health failures', async () => {
     const close = vi.fn(async () => {});
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -452,7 +538,7 @@ describe('OpenCode lifecycle', () => {
     }));
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        replacement.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        replacement.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return replacement;
     });
@@ -482,7 +568,7 @@ describe('OpenCode lifecycle', () => {
     }));
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        replacement.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        replacement.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return replacement;
     });
@@ -516,13 +602,13 @@ describe('OpenCode lifecycle', () => {
     }));
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        firstChild.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        firstChild.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return firstChild;
     });
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        replacement.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        replacement.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return replacement;
     });
@@ -579,13 +665,13 @@ describe('OpenCode lifecycle', () => {
     }));
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        firstChild.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        firstChild.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return firstChild;
     });
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        replacement.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        replacement.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return replacement;
     });
@@ -654,12 +740,55 @@ describe('OpenCode lifecycle', () => {
     expect(onOpenCodeRestarted).not.toHaveBeenCalled();
   });
 
+  it('reserves time within the shared shutdown deadline to confirm forced termination', async () => {
+    vi.useFakeTimers();
+    const child = createMockChild({ exitOnStdinEnd: false });
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
+      });
+      return child;
+    });
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+    const closing = server.close({ deadline: Date.now() + 3500 });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.advanceTimersByTime(1499);
+    expect(child.kill).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    await closing;
+    expect(child.kill).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('falls back to process termination when the control pipe cannot close', async () => {
+    const child = createMockChild();
+    child.stdin.end = vi.fn(() => {
+      throw new Error('pipe closed');
+    });
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
+      });
+      return child;
+    });
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+
+    await server.close({ deadline: Date.now() });
+
+    expect(child.kill).toHaveBeenCalledTimes(1);
+  });
+
   it('launches managed OpenCode with the managed PATH', async () => {
     delete process.env.OPENCODE_BINARY;
     const child = createMockChild();
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return child;
     });
@@ -669,16 +798,19 @@ describe('OpenCode lifecycle', () => {
     const [binary, args, options] = spawnMock.mock.calls[0];
 
     expect(binary).toBe('opencode');
-    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678']);
+    expect(args).toEqual(['serve', '--stdio', '--hostname', '127.0.0.1', '--port', '45678']);
     expect(options.env.PATH).toBe('/home/user/.bun/bin:/usr/local/bin:/usr/bin');
     expect(options.env.SHELL_ONLY).toBe('yes');
     expect(options.env.OPENCODE_PASSWORD).toBe('password');
     expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
     expect(server.exitCode).toBeNull();
     expect(server.signalCode).toBeNull();
+    expect(options.env.OPENCODE_MANAGED_SHUTDOWN).toBeUndefined();
+    expect(options.stdio).toEqual(['pipe', 'pipe', 'pipe']);
 
     await server.close();
-    expect(server.signalCode).toBe('SIGTERM');
+    expect(server.exitCode).toBe(0);
+    expect(server.signalCode).toBeNull();
   });
 
   it('launches managed OpenCode on the configured bind hostname', async () => {
@@ -686,7 +818,7 @@ describe('OpenCode lifecycle', () => {
     const child = createMockChild();
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://0.0.0.0:45678\n');
+        child.stdout.emit('data', '{"url":"http://0.0.0.0:45678"}\n');
       });
       return child;
     });
@@ -696,10 +828,11 @@ describe('OpenCode lifecycle', () => {
     const [binary, args] = spawnMock.mock.calls[0];
 
     expect(binary).toBe('opencode');
-    expect(args).toEqual(['serve', '--hostname', '0.0.0.0', '--port', '45678']);
+    expect(args).toEqual(['serve', '--stdio', '--hostname', '0.0.0.0', '--port', '45678']);
 
     await server.close();
-    expect(server.signalCode).toBe('SIGTERM');
+    expect(server.exitCode).toBe(0);
+    expect(server.signalCode).toBeNull();
   });
 
   it('removes AppImage launcher entries from the managed OpenCode launch env', async () => {
@@ -710,7 +843,7 @@ describe('OpenCode lifecycle', () => {
     const child = createMockChild();
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return child;
     });
@@ -738,7 +871,7 @@ describe('OpenCode lifecycle', () => {
     const child = createMockChild();
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return child;
     });
@@ -769,7 +902,7 @@ describe('OpenCode lifecycle', () => {
     const child = createMockChild();
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return child;
     });
@@ -807,7 +940,7 @@ describe('OpenCode lifecycle', () => {
       const child = createMockChild();
       spawnMock.mockImplementationOnce(() => {
         queueMicrotask(() => {
-          child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+          child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
         });
         return child;
       });
@@ -845,7 +978,7 @@ describe('OpenCode lifecycle', () => {
     const child = createMockChild();
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return child;
     });
@@ -868,7 +1001,7 @@ describe('OpenCode lifecycle', () => {
     const child = createMockChild();
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return child;
     });
@@ -891,12 +1024,14 @@ describe('OpenCode lifecycle', () => {
     const secondChild = createMockChild();
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
+        firstChild.signalCode = 'SIGTERM';
         firstChild.emit('exit', null, 'SIGTERM');
       });
       return firstChild;
     });
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
+        secondChild.signalCode = 'SIGTERM';
         secondChild.emit('exit', null, 'SIGTERM');
       });
       return secondChild;
@@ -930,13 +1065,14 @@ describe('OpenCode lifecycle', () => {
     const secondChild = createMockChild();
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
+        firstChild.signalCode = 'SIGTERM';
         firstChild.emit('exit', null, 'SIGTERM');
       });
       return firstChild;
     });
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        secondChild.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        secondChild.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return secondChild;
     });
@@ -957,7 +1093,7 @@ describe('OpenCode lifecycle', () => {
     spawnMock.mockImplementation(() => {
       calls.push('spawn');
       const child = createMockChild();
-      queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
+      queueMicrotask(() => child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n'));
       return child;
     });
     globalThis.fetch = vi.fn(async () => ({ ok: false }));
@@ -982,59 +1118,13 @@ describe('killProcessOnPort on Windows', () => {
     Object.defineProperty(process, 'platform', { value: platform, configurable: true });
   };
 
-  it('force-kills the process listening on the target port via taskkill', () => {
+  it('does not terminate an unrelated process that owns the target port', () => {
     setPlatform('win32');
-    const orphanPid = 54321;
-    spawnSyncMock.mockImplementation((cmd) => {
-      if (cmd === 'powershell') {
-        return { stdout: `${orphanPid}\r\n` };
-      }
-      return { stdout: '' };
-    });
 
     const runtime = createRuntime();
     runtime.killProcessOnPort(45678);
 
-    expect(spawnSyncMock).toHaveBeenCalledWith(
-      'powershell',
-      expect.arrayContaining([expect.stringContaining('-LocalPort 45678')]),
-      expect.objectContaining({ windowsHide: true })
-    );
-    expect(spawnSyncMock).toHaveBeenCalledWith(
-      'taskkill',
-      ['/PID', String(orphanPid), '/F'],
-      expect.objectContaining({ windowsHide: true })
-    );
-  });
-
-  it('never force-kills its own process id', () => {
-    setPlatform('win32');
-    spawnSyncMock.mockImplementation((cmd) => {
-      if (cmd === 'powershell') {
-        return { stdout: `${process.pid}\r\n` };
-      }
-      return { stdout: '' };
-    });
-
-    const runtime = createRuntime();
-    runtime.killProcessOnPort(45678);
-
-    expect(spawnSyncMock).not.toHaveBeenCalledWith('taskkill', expect.anything(), expect.anything());
-  });
-
-  it('does nothing when no process is listening on the target port', () => {
-    setPlatform('win32');
-    spawnSyncMock.mockImplementation((cmd) => {
-      if (cmd === 'powershell') {
-        return { stdout: '' };
-      }
-      return { stdout: '' };
-    });
-
-    const runtime = createRuntime();
-    runtime.killProcessOnPort(45678);
-
-    expect(spawnSyncMock).not.toHaveBeenCalledWith('taskkill', expect.anything(), expect.anything());
+    expect(spawnSyncMock).not.toHaveBeenCalled();
   });
 });
 
@@ -1050,7 +1140,7 @@ it('shares the managed CLI preflight with desktop while startup is pending', asy
   });
   spawnMock.mockImplementation(() => {
     const child = createMockChild();
-    queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
+    queueMicrotask(() => child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n'));
     return child;
   });
   expect(await runtime.getManagedOpenCodePreflight()).toBe(false);
