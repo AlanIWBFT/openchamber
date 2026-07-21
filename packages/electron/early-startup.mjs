@@ -367,6 +367,7 @@ export const resolvePreloadPath = () => (
 // carries empty runtime values and receives them through the init script.
 export const buildRendererAdditionalArguments = ({
   localOrigin = '',
+  localUiOrigin = '',
   apiBaseUrl = '',
   clientToken = '',
   requestHeaders = {},
@@ -375,6 +376,7 @@ export const buildRendererAdditionalArguments = ({
   trayEnabled = isMacMenuBarEnabled(),
 } = {}) => [
   `--openchamber-local-origin=${localOrigin}`,
+  `--openchamber-local-ui-origin=${localUiOrigin}`,
   `--openchamber-api-base-url=${apiBaseUrl}`,
   `--openchamber-client-token=${clientToken}`,
   `--openchamber-runtime-headers=${JSON.stringify(requestHeaders)}`,
@@ -489,7 +491,11 @@ export const createEarlyWindow = () => {
   const browserWindow = new BrowserWindow(buildMainWindowOptions({
     bounds,
     backgroundColor: resolveSplashBackgroundColor(),
-    additionalArguments: buildRendererAdditionalArguments(),
+    additionalArguments: buildRendererAdditionalArguments({
+      localUiOrigin: isDev && !shouldUsePackagedUi()
+        ? `http://127.0.0.1:${process.env.OPENCHAMBER_HMR_UI_PORT || '5173'}`
+        : '',
+    }),
   }));
   recordEarlyStartupMark('electron.window.created');
   if (maximized) browserWindow.maximize();
