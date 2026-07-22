@@ -3,6 +3,7 @@ import { getLastConversationMessage, isIncompleteAssistantTurn } from "@/lib/ope
 
 type SessionCache = {
   session_status: Record<string, SessionStatus | undefined>
+  sessionStatusReady?: boolean
   message: Record<string, Message[] | undefined>
   part: Record<string, Part[] | undefined>
   permission: Record<string, PermissionRequest[] | undefined>
@@ -35,7 +36,8 @@ export function getProtectedSessionCacheIds(store: SessionCache): Set<string> {
     // streaming, so protection follows the last conversation message. An idle
     // session is settled even when its last assistant step never completed.
     if (
-      store.session_status[sessionID]?.type !== "idle"
+      !store.sessionStatusReady
+      && store.session_status[sessionID]?.type !== "idle"
       && isIncompleteAssistantTurn(getLastConversationMessage(messages))
     ) {
       protectedIds.add(sessionID)

@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import { getProviderSources, getStoredProviderConfig, readConfig, upsertProviderConfig } from './opencodeConfig';
 import { getProviderAuth } from './opencodeAuth';
 import { OpenCode } from '@opencode/client';
-import { asSessionId, asSessionIdList, asSessionMetadata, asTimestamp, parseJson, type JsonValue, type SessionMetadataOnOpenCode, type SessionStateStore } from './openchamberSessionState';
+import { asSessionId, asSessionIdList, asSessionMetadata, asTimestamp, parseJson, type JsonValue, type SessionArchiveOnOpenCode, type SessionMetadataOnOpenCode, type SessionStateStore } from './openchamberSessionState';
 import type { OpenCodeManager } from './opencode';
 import { activateQuotaGiftReset, fetchQuotaForProvider, listConfiguredQuotaProviders, type QuotaGiftResetType } from './quotaProviders';
 import { credentialStatus, deleteCredential, importCursorCredential, normalizeCredential, readCredential, validateCredential, writeCredential, type ManagedProvider } from './quotaCredentials';
@@ -30,11 +30,20 @@ const readStoredProviderBaseURL = (providerID: string): string | undefined => {
 
 const isSessionNotFound = (error: Error): boolean => error.name === 'SessionNotFoundError';
 
-/** Session metadata on the OpenCode instance this window manages. */
-const sessionMetadataOnOpenCode = (manager: OpenCodeManager | undefined): SessionMetadataOnOpenCode => {
+const sessionClient = (manager: OpenCodeManager | undefined) => {
   const apiUrl = manager?.getApiUrl();
   if (!manager || !apiUrl) throw new Error('OpenCode is not available');
-  const client = OpenCode.make({ baseUrl: apiUrl.replace(/\/+$/, ''), headers: manager.getOpenCodeAuthHeaders() });
+  return OpenCode.make({ baseUrl: apiUrl.replace(/\/+$/, ''), headers: manager.getOpenCodeAuthHeaders() });
+};
+
+const sessionArchiveOnOpenCode = (manager: OpenCodeManager | undefined): SessionArchiveOnOpenCode => {
+  const client = sessionClient(manager);
+  return (sessionID, archivedAt) => client.session.update({ sessionID, archivedAt });
+};
+
+/** Session metadata on the OpenCode instance this window manages. */
+const sessionMetadataOnOpenCode = (manager: OpenCodeManager | undefined): SessionMetadataOnOpenCode => {
+  const client = sessionClient(manager);
   return {
     read: async (sessionID) => {
       try {
@@ -396,23 +405,20 @@ export async function handleSystemBridgeMessage(
       }
     }
 
-    // OpenChamber-owned session state. OpenCode 2.x has no route that sets
-    // `time.archived` or rewrites metadata after creation; the web server keeps
-    // both in files, and the extension host keeps the same files (see
-    // openchamberSessionState.ts). The proxy runtime folds them back onto
-    // session reads.
+    // OpenCode owns archive state and command cleanup. The proxy only overlays
+    // legacy metadata that has not yet been migrated to OpenCode.
     case 'api:sessions/archive': {
       const { ids, archivedAt } = (payload || {}) as { ids?: JsonValue; archivedAt?: JsonValue };
       const targets = asSessionIdList(ids);
       if (targets.length === 0) return { id, type, success: false, error: 'ids must be a non-empty array of session ids' };
-      return { id, type, success: true, data: await deps.sessionState.archive(targets, asTimestamp(archivedAt)) };
+      return { id, type, success: true, data: await deps.sessionState.archive(targets, asTimestamp(archivedAt), sessionArchiveOnOpenCode(ctx?.manager)) };
     }
 
     case 'api:sessions/unarchive': {
       const { ids } = (payload || {}) as { ids?: JsonValue };
       const targets = asSessionIdList(ids);
       if (targets.length === 0) return { id, type, success: false, error: 'ids must be a non-empty array of session ids' };
-      return { id, type, success: true, data: await deps.sessionState.unarchive(targets) };
+      return { id, type, success: true, data: await deps.sessionState.unarchive(targets, sessionArchiveOnOpenCode(ctx?.manager)) };
     }
 
     case 'api:sessions/metadata:get': {

@@ -2047,9 +2047,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // revertToMessage — delegates to session-actions (single implementation)
   // ---------------------------------------------------------------------------
   revertToMessage: async (sessionId, messageId) => {
-    // Ensure the complete message range is present before applying the revert
-    // marker. Reverted UI is derived from session.revert + stored messages.
-    await refetchSessionMessages(sessionId)
     await revertToMessageAction(sessionId, messageId)
   },
 
@@ -2057,6 +2054,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // handleSlashUndo — reads from sync, records history for redo
   // ---------------------------------------------------------------------------
   handleSlashUndo: async (sessionId) => {
+    await refetchSessionMessages(sessionId, true)
     const messages = getSyncMessages(sessionId)
     const sessions = getSyncSessions()
     const currentSession = sessions.find((s) => s.id === sessionId)
@@ -2075,9 +2073,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     if (!targetMessage) return
 
-    // Read target message parts BEFORE calling revertToMessage.
-    // revertToMessage optimistically deletes messages from the sync store
-    // before the API call, so getSyncParts must run first.
+    // Read target message parts before the async revert refreshes the store.
     const targetParts = getSyncParts(targetMessage.id)
     const textPart = targetParts.find((p: Part) => p.type === "text") as TextPart | undefined
     const preview = textPart?.text
@@ -2102,7 +2098,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const revertToId = currentSession?.revert?.messageID
     if (!revertToId) return
 
-    await refetchSessionMessages(sessionId)
+    await refetchSessionMessages(sessionId, true)
     const messages = getSyncMessages(sessionId)
     const userMessages = messages.filter((m) => m.role === "user")
     const revertIndex = revertedUserMessageIndex(messages, userMessages, revertToId)

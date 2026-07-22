@@ -7,6 +7,7 @@
  * id and every tool-state conversion lives here and nowhere else.
  */
 
+import { z } from "zod"
 import type {
   ConfigEntry,
   JsonValue,
@@ -17,6 +18,7 @@ import type {
   SessionInfo,
   SessionMessageAssistant,
   SessionMessageInfo,
+  SessionMessageStoredInfo,
   SessionStructuredError,
   ToolContent,
   AgentInfo,
@@ -30,6 +32,7 @@ import {
   type ConfigDocument,
   type FilePart,
   type Message,
+  type StoredMessage,
   type Part,
   type Project,
   type Session,
@@ -466,8 +469,15 @@ function finiteExit(exit: number | "Infinity" | "-Infinity" | "NaN" | undefined)
   return exit === "Infinity" || exit === "-Infinity" || exit === "NaN" ? undefined : exit
 }
 
-export function projectMessages(items: readonly SessionMessageInfo[], sessionID: string): ProjectedMessage[] {
-  return items.map((item) => projectMessage(item, sessionID))
+export const messageSequenceSchema = z.number().int().nonnegative()
+
+export function projectMessages(items: readonly SessionMessageStoredInfo[], sessionID: string): Array<{ message: StoredMessage; parts: Part[] }> {
+  return items.map((item) => {
+    // The promise client checks JSON transport, not response field schemas.
+    const seq = messageSequenceSchema.parse(item.seq)
+    const projected = projectMessage(item, sessionID)
+    return { ...projected, message: { ...projected.message, seq } }
+  })
 }
 
 // ---------------------------------------------------------------------------

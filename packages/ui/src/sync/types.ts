@@ -52,6 +52,7 @@ export type State = {
   sessionStatusReady?: boolean
   /** Archive evicts a session's status; the earlier snapshot no longer covers it. */
   sessionStatusInvalidated?: Record<string, true>
+  session_status_fallback_until: number
   permission: Record<string, PermissionRequest[]>
   /** Pending forms (the agent asking the user for input), keyed by session. */
   form: Record<string, FormRequest[]>
@@ -116,6 +117,7 @@ export const MAX_DIR_STORES = 30
 export const EVICTION_GRACE_MS = 30 * 1000
 export const DIR_IDLE_TTL_MS = 20 * 60 * 1000
 export const SESSION_CACHE_LIMIT = 20
+export const SESSION_STATUS_FALLBACK_TTL_MS = 15_000
 
 export const EMPTY_PATH: Path = { directory: "", worktree: "", home: "" }
 export const EMPTY_PROVIDER_CATALOG: ProviderCatalog = { providers: [], models: [] }
@@ -134,6 +136,8 @@ export const INITIAL_STATE: State = {
   sessionEventRevision: {},
   sessionDeletedRevision: {},
   session_status: {},
+  sessionStatusReady: false,
+  session_status_fallback_until: 0,
   permission: {},
   form: {},
   vcs: undefined,

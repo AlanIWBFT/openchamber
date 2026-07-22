@@ -160,9 +160,6 @@ export const createOpenChamberControlService = (dependencies) => {
     // Delivers a dispatched session's result back to the session that asked
     // (`returnResult`); absent means the server cannot offer it.
     dispatchResults = null,
-    // Archive lives in OpenChamber's own store now — v2 has no route that sets
-    // Session.time.archived — so an unwired store simply means nothing is archived.
-    archiveStore = null,
     createClient = OpenCode.make,
     sleep = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
     now = Date.now,
@@ -199,12 +196,6 @@ export const createOpenChamberControlService = (dependencies) => {
       },
       fetch,
     });
-  };
-
-  // The store answers asynchronously; its archive timestamp, or null.
-  const archivedAt = async (sessionID) => {
-    if (!archiveStore) return null;
-    return (await archiveStore.archivedAt(sessionID)) ?? null;
   };
 
   const projects = async () => {
@@ -687,12 +678,7 @@ export const createOpenChamberControlService = (dependencies) => {
         if (action === 'session.list') {
           const limit = positiveInteger(input.limit, 10, 'limit');
           const response = await client.session.list(directory ? { directory } : {});
-          // Archive is OpenChamber state; overlay it so callers keep reading
-          // it off the session the way OpenCode used to report it.
-          let sessions = await Promise.all((Array.isArray(response?.data) ? response.data : []).map(async (session) => {
-            const archived = await archivedAt(session?.id);
-            return archived ? { ...session, time: { ...session.time, archived } } : session;
-          }));
+          let sessions = Array.isArray(response?.data) ? response.data : [];
           if (input.all !== true) sessions = sessions.filter((session) => !session?.time?.archived);
           sessions = sessions.slice(0, limit);
           if (input.withStatus === true) {

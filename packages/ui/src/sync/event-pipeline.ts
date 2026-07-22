@@ -304,12 +304,26 @@ type AttemptAbortReason =
   | `${"ws" | "sse"}_${string}`
   | null
 
+function clearPartDeltaCoalescing(queue: DirectoryQueue, messageID: string, partID?: string) {
+  const prefix = partID ? `message.part.delta:${messageID}:${partID}:` : `message.part.delta:${messageID}:`
+  for (const key of queue.coalesced.keys()) {
+    if (key.startsWith(prefix)) queue.coalesced.delete(key)
+  }
+}
+
+function clearSessionCoalescing(queue: DirectoryQueue, sessionID: string) {
+  for (const [key, index] of queue.coalesced) {
+    if (syncEventSessionID(queue.queue[index]) === sessionID) queue.coalesced.delete(key)
+  }
+}
+
 /** Key under which repeated events for the same entity collapse into one. */
 function coalesceKey(event: SyncEvent): string | undefined {
   switch (event.type) {
     case "session.status":
       return `session.status:${event.properties.sessionID}`
     case "session.patched":
+      if (event.properties.patch.time?.archived !== undefined) return undefined
       return `session.patched:${event.properties.sessionID}`
     case "message.patched":
       return `message.patched:${event.properties.sessionID}:${event.properties.messageID}`
@@ -551,31 +565,26 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     const routedDirectory = routeDirectory?.(directory, event) || directory
     const d = getOrCreateDir(routedDirectory)
 
-    // A full part snapshot is a coalescing barrier for that part's deltas:
-    // drop its pending delta coalescing keys so a delta arriving after the
-    // snapshot starts a fresh queue entry instead of merging into a delta
-    // queued before the snapshot, which the snapshot would then overwrite and
-    // drop the later delta's text. The already-queued delta event stays.
+    // A snapshot or removal ends the preceding delta group. Already queued
+    // events stay in place; later deltas cannot jump ahead of the barrier.
     if (event.type === "message.part.updated") {
-      const deltaPrefix = `message.part.delta:${event.properties.part.messageID}:${event.properties.part.id}:`
-      for (const key of d.coalesced.keys()) {
-        if (key.startsWith(deltaPrefix)) d.coalesced.delete(key)
-      }
+      clearPartDeltaCoalescing(d, event.properties.part.messageID, event.properties.part.id)
+    } else if (event.type === "message.parts.replaced" || event.type === "message.removed") {
+      clearPartDeltaCoalescing(d, event.properties.messageID)
+      if (event.type === "message.removed") d.coalesced.delete(`message.patched:${event.properties.sessionID}:${event.properties.messageID}`)
+    } else if (event.type === "message.updated") {
+      // A retry can restart the same assistant ID. Its later completion must
+      // not merge into a patch queued before the restart.
+      d.coalesced.delete(`message.patched:${event.properties.info.sessionID}:${event.properties.info.id}`)
     }
 
-    if (
-      event.type === "session.idle"
-      || event.type === "session.error"
-      || event.type === "session.created"
-      || event.type === "session.deleted"
-    ) {
+    const archiveChanged = event.type === "session.patched" && event.properties.patch.time?.archived !== undefined
+    if (event.type === "session.created" || event.type === "session.deleted" || event.type === "session.revert.committed" || archiveChanged) {
+      // Session lifetime changes are barriers only for that session's work.
       const sessionID = syncEventSessionID(event)
-      if (sessionID) {
-        d.coalesced.delete(`session.status:${sessionID}`)
-        if (event.type === "session.created" || event.type === "session.deleted") {
-          d.coalesced.delete(`session.patched:${sessionID}`)
-        }
-      }
+      if (sessionID) clearSessionCoalescing(d, sessionID)
+    } else if (event.type === "session.idle" || event.type === "session.error") {
+      d.coalesced.delete(`session.status:${event.properties.sessionID}`)
     }
 
     const key = coalesceKey(event)

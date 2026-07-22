@@ -40,14 +40,14 @@ describe('shouldFetchSessionForRenderableSync', () => {
 //      already-committed messages (no re-render churn, no reference breaks).
 //   3. mergeOptimisticPage + clearOptimistic is idempotent across commits.
 
-function assistantMessage(id: string, created = 1): Message {
-  return { id, sessionID: 'ses_1', role: 'assistant', time: { created } } as Message
+function assistantMessage(id: string): Message {
+  return { id, sessionID: 'ses_1', role: 'assistant', time: { created: 1 }, agent: 'build', providerID: 'test', modelID: 'test' }
 }
-function userMessage(id: string, created = 1): Message {
-  return { id, sessionID: 'ses_1', role: 'user', time: { created } } as Message
+function userMessage(id: string): Message {
+  return { id, sessionID: 'ses_1', role: 'user', time: { created: 1 } }
 }
 function textPart(id: string, messageID: string): Part {
-  return { id, messageID, sessionID: 'ses_1', type: 'text', text: id } as Part
+  return { id, messageID, sessionID: 'ses_1', type: 'text', text: id }
 }
 
 describe('hasUserMessage', () => {
@@ -69,9 +69,7 @@ describe('hasUserMessage', () => {
 })
 
 describe('incremental materialization of superset pages (#2084)', () => {
-  const SKIP_PARTS = new Set(['patch', 'step-start', 'step-finish'])
-
-  test('preserves authoritative part order across the part ID rollover', () => {
+  test('preserves inline part order across the part ID rollover', () => {
     const msg = assistantMessage('msg_1')
     const legacy = textPart('prt_ffffffffffffLegacy', msg.id)
     const current = textPart('prt_000000000000Current', msg.id)
@@ -80,7 +78,6 @@ describe('incremental materialization of superset pages (#2084)', () => {
       { message: {}, part: {} },
       'ses_1',
       [{ info: msg, parts: [legacy, current] }],
-      { skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.part[msg.id]).toEqual([legacy, current])
@@ -90,8 +87,8 @@ describe('incremental materialization of superset pages (#2084)', () => {
     // Simulate expansion: commit 50 (assistant-only), then 100 (with user), then 150.
     // Pages are supersets: the 100-page includes all 50 from the first page,
     // the 150-page includes all 100 from the second.
-    // Messages are chronological in the store,
-    // so look them up by id rather than positional index.
+    // Look up by identity so the reference assertions stay independent of the
+    // authoritative sequence values used by the fixture.
     const a1 = assistantMessage('a_1')
     const a2 = assistantMessage('a_2')
     const u1 = userMessage('u_1')
@@ -111,14 +108,14 @@ describe('incremental materialization of superset pages (#2084)', () => {
 
     // Commit 1: assistant-only page (skeleton stays — no user message).
     // But materialization itself is valid; we test the reference property here.
-    const m1 = materializeSessionSnapshots(state, 'ses_1', partsFor(page50), { skipPartTypes: SKIP_PARTS })
+    const m1 = materializeSessionSnapshots(state, 'ses_1', partsFor(page50))
     state = { message: m1.message, part: m1.part }
     const afterFirst = state.message.ses_1
     expect(afterFirst.find((m) => m.id === 'a_1')).toBe(a1)
     expect(afterFirst.find((m) => m.id === 'a_2')).toBe(a2)
 
     // Commit 2: 100-message superset.
-    const m2 = materializeSessionSnapshots(state, 'ses_1', partsFor(page100), { skipPartTypes: SKIP_PARTS })
+    const m2 = materializeSessionSnapshots(state, 'ses_1', partsFor(page100))
     state = { message: m2.message, part: m2.part }
     const afterSecond = state.message.ses_1
     expect(afterSecond.find((m) => m.id === 'a_1')).toBe(a1)
@@ -126,7 +123,7 @@ describe('incremental materialization of superset pages (#2084)', () => {
     expect(afterSecond.find((m) => m.id === 'u_1')).toBe(u1)
 
     // Commit 3: 150-message superset.
-    const m3 = materializeSessionSnapshots(state, 'ses_1', partsFor(page150), { skipPartTypes: SKIP_PARTS })
+    const m3 = materializeSessionSnapshots(state, 'ses_1', partsFor(page150))
     const afterThird = m3.message.ses_1
     // All previously-committed messages keep their references.
     expect(afterThird.find((m) => m.id === 'a_1')).toBe(a1)
@@ -149,7 +146,7 @@ describe('incremental materialization of superset pages (#2084)', () => {
     const m = materializeSessionSnapshots(state, 'ses_1', [
       { info: msg, parts: [prt] },
       { info: userMessage('u_1'), parts: [] },
-    ], { skipPartTypes: new Set(['patch', 'step-start', 'step-finish']) })
+    ])
 
     // The existing part array reference is preserved (equivalent snapshot).
     expect(m.part.a_1).toBe(state.part.a_1)
@@ -165,7 +162,7 @@ describe('incremental materialization of superset pages (#2084)', () => {
 
     const m = materializeSessionSnapshots(state, 'ses_1', [
       { info: msg, parts: [] },
-    ], { skipPartTypes: new Set(['patch', 'step-start', 'step-finish']) })
+    ])
 
     expect(m.messagesChanged).toBe(false)
     expect(m.partsChanged).toBe(false)
@@ -175,9 +172,9 @@ describe('incremental materialization of superset pages (#2084)', () => {
 })
 
 describe('mergeOptimisticPage idempotency across commits (#2084)', () => {
-  test('places a post-rollover optimistic message at the chronological tail', () => {
-    const legacy = userMessage('msg_ffffffffffffLegacy', 100)
-    const current = userMessage('msg_000000000000Current', 200)
+  test('keeps a post-rollover optimistic message after authoritative messages', () => {
+    const legacy = { ...userMessage('msg_ffffffffffffLegacy'), seq: 1 }
+    const current = userMessage('msg_000000000000Current')
     const page = { session: [legacy], part: [], cursor: undefined, complete: true }
 
     const merged = mergeOptimisticPage(page, [{ message: current, parts: [] }])
@@ -201,6 +198,21 @@ describe('mergeOptimisticPage idempotency across commits (#2084)', () => {
     expect(merged2.session).toEqual(page.session)
     expect(merged2.cursor).toBe('c1')
     expect(merged2.complete).toBe(false)
+  })
+
+  test('confirms by authoritative message identity without duplicating server parts', () => {
+    const page = {
+      session: [{ ...userMessage('u_1'), seq: 1 }],
+      part: [{ id: 'u_1', part: [textPart('p_server', 'u_1')] }],
+      cursor: undefined,
+      complete: true,
+    }
+    const optimisticItem = { message: userMessage('u_1'), parts: [textPart('p_optimistic', 'u_1')] }
+
+    const merged = mergeOptimisticPage(page, [optimisticItem])
+
+    expect(merged.confirmed).toEqual(['u_1'])
+    expect(merged.part[0].part.map((item) => item.id)).toEqual(['p_server'])
   })
 
   test('mergeOptimisticPage with empty items is a fast no-op path', () => {

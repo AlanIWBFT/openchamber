@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { MessagePage } from "@/lib/opencode/client"
-import type { Message, Part } from "@/lib/opencode/model"
+import type { TextPart } from "@/lib/opencode/model"
+import { recordDirectoryRecoveryEvent } from "./directory-recovery-snapshots"
 import { ChildStoreManager } from "./child-store"
 import { SessionMessageLoader } from "./session-message-loader"
 import {
@@ -8,9 +9,9 @@ import {
   startSessionLoadPerformanceEvent,
 } from "./session-load-performance"
 
-const createRecord = (sessionID: string, id = "msg_1", created = 1) => ({
-  info: { id, sessionID, role: "user", time: { created } } as Message,
-  parts: [{ id: `part_${id}`, messageID: id, sessionID, type: "text", text: "hello" }] as Part[],
+const createRecord = (sessionID: string, id = "msg_1", seq = Number(id.match(/\d+$/)?.[0] ?? 1), created = 1): MessagePage["items"][number] => ({
+  info: { id, sessionID, role: "user", time: { created }, seq },
+  parts: [{ id: `part_${id}`, messageID: id, sessionID, type: "text", text: "hello" }],
 })
 
 const deferred = <T>() => {
@@ -49,6 +50,24 @@ const createLoader = (getPage: (input: PageRequest) => Promise<MessagePage>) => 
 }
 
 describe("SessionMessageLoader", () => {
+  test("confirmed optimism is not resurrected when a later complete history omits it", async () => {
+    const target = { directory: "/confirmed-input", sessionID: "session" }
+    const older = createRecord(target.sessionID, "older", 1)
+    const confirmed = createRecord(target.sessionID, "confirmed", 2)
+    const { childStores, loader } = createLoader(async () => response([older]))
+    try {
+      loader.initializeCreatedSession(target)
+      loader.optimisticAdd({ ...target, message: { ...confirmed.info, seq: undefined }, parts: confirmed.parts })
+      const store = childStores.getChild(target.directory)!
+      store.setState({ message: { [target.sessionID]: [confirmed.info] } })
+      await loader.refreshComplete(target)
+      expect(store.getState().message[target.sessionID]).toEqual([older.info])
+      expect(store.getState().part[confirmed.info.id]).toBeUndefined()
+    } finally {
+      loader.dispose()
+      childStores.disposeAll()
+    }
+  })
   test("opens a confirmed new session without fetching history", async () => {
     let calls = 0
     const { childStores, loader } = createLoader(async () => {
@@ -166,14 +185,13 @@ describe("SessionMessageLoader", () => {
     childStores.disposeAll()
   })
 
-  test("keeps a post-rollover tail after legacy messages for shared runtime identities", async () => {
-    const runtimes = ["web", "desktop", "vscode", "mobile"]
-    for (const runtimeKey of runtimes) {
+  test("keeps a post-rollover tail ordered by sequence for every shared runtime", async () => {
+    for (const runtimeKey of ["web", "desktop", "vscode", "mobile"]) {
       const childStores = new ChildStoreManager()
       const sdk = {
         getSessionMessages: async (sessionID: string) => response([
-          createRecord(sessionID, "msg_000000000000Current", 200),
-          createRecord(sessionID, "msg_ffffffffffffLegacy", 100),
+          createRecord(sessionID, "msg_000000000000Current", 200, 100),
+          createRecord(sessionID, "msg_ffffffffffffLegacy", 100, 200),
         ]),
       }
       const loader = new SessionMessageLoader(childStores, { sdk, runtimeKey })
@@ -192,9 +210,9 @@ describe("SessionMessageLoader", () => {
     const calls: Array<{ cursor?: string }> = []
     const { childStores, loader } = createLoader(async ({ sessionID, cursor }) => {
       calls.push({ cursor })
-      if (!cursor) return response([createRecord(sessionID, "msg_latest")], "cursor-2")
-      if (cursor === "cursor-2") return response([createRecord(sessionID, "msg_middle")], "cursor-1")
-      return response([createRecord(sessionID, "msg_oldest")])
+      if (!cursor) return response([createRecord(sessionID, "msg_latest", 3)], "cursor-2")
+      if (cursor === "cursor-2") return response([createRecord(sessionID, "msg_middle", 2)], "cursor-1")
+      return response([createRecord(sessionID, "msg_oldest", 1)])
     })
     const target = { directory: "/repo", sessionID: "session-a" }
 
@@ -209,6 +227,69 @@ describe("SessionMessageLoader", () => {
     expect(childStores.getChild(target.directory)?.getState().message[target.sessionID]).toHaveLength(3)
     loader.dispose()
     childStores.disposeAll()
+  })
+
+  test("keeps streaming changes while the initial window waits for an older page", async () => {
+    const older = deferred<MessagePage>()
+    const olderRequested = deferred<void>()
+    const target = { directory: "/window-race", sessionID: "session-window" }
+    const latest = createRecord(target.sessionID, "msg_latest", 9)
+    latest.info = { ...latest.info, role: "assistant", agent: "build", providerID: "test", modelID: "test" }
+    const { childStores, loader } = createLoader(async ({ cursor }) => {
+      if (!cursor) return response([latest], "older")
+      olderRequested.resolve()
+      return older.promise
+    })
+    const loading = loader.ensure(target)
+    try {
+      await olderRequested.promise
+      const store = childStores.getChild(target.directory)!
+      const provisional = { ...latest.info, seq: undefined }
+      const live: TextPart = { id: latest.parts[0].id, sessionID: target.sessionID, messageID: latest.info.id, type: "text", text: "new live output" }
+      recordDirectoryRecoveryEvent(store, { type: "message.updated", properties: { info: provisional } })
+      recordDirectoryRecoveryEvent(store, { type: "message.part.updated", properties: { sessionID: target.sessionID, part: live } })
+      store.setState({ message: { [target.sessionID]: [provisional] }, part: { [latest.info.id]: [live] } })
+      older.resolve(response([createRecord(target.sessionID, "msg_older", 1)]))
+      await loading
+      expect(store.getState().message[target.sessionID].map((message) => message.seq)).toEqual([1, 9])
+      expect(store.getState().part[latest.info.id][0]).toBe(live)
+    } finally {
+      older.resolve(response([]))
+      await loading
+      loader.dispose()
+      childStores.disposeAll()
+    }
+  })
+
+  test("complete refresh pages atomically and removes stale history only after every page succeeds", async () => {
+    let failOlder = true
+    const calls: PageRequest[] = []
+    const { childStores, loader } = createLoader(async (input) => {
+      calls.push(input)
+      if (!input.cursor) return response([createRecord(input.sessionID, "latest", 9)], "older")
+      if (failOlder) return failure(400, "older rejected")
+      return response([createRecord(input.sessionID, "oldest", 1)])
+    })
+    const target = { directory: "/complete-refresh", sessionID: "session-complete" }
+    const store = childStores.ensureChild(target.directory, { bootstrap: false })
+    const stale = createRecord(target.sessionID, "stale", 3)
+    store.setState({ message: { [target.sessionID]: [stale.info] }, part: { [stale.info.id]: stale.parts } })
+    const before = store.getState().message
+    try {
+      await loader.refreshComplete(target)
+      expect(loader.getSnapshot(target).status).toBe("error")
+      expect(store.getState().message).toBe(before)
+      failOlder = false
+      await loader.refreshComplete(target)
+      expect(loader.getSnapshot(target)).toMatchObject({ status: "ready", complete: true })
+      expect(store.getState().message[target.sessionID].map((message) => message.id)).toEqual(["oldest", "latest"])
+      expect(store.getState().part.stale).toBeUndefined()
+      expect(calls.map((call) => call.cursor)).toEqual([undefined, "older", undefined, "older"])
+      expect(calls.every((call) => call.limit === 100)).toBe(true)
+    } finally {
+      loader.dispose()
+      childStores.disposeAll()
+    }
   })
 
   test("rejects a complete-history request when its initial load fails", async () => {
@@ -257,9 +338,9 @@ describe("SessionMessageLoader", () => {
     let calls = 0
     const { childStores, loader } = createLoader(async ({ sessionID, cursor }) => {
       calls += 1
-      if (!cursor) return response([createRecord(sessionID, "latest")], "cursor-a")
-      if (cursor === "cursor-a") return response([createRecord(sessionID, "middle")], "cursor-b")
-      return response([createRecord(sessionID, "older")], "cursor-a")
+      if (!cursor) return response([createRecord(sessionID, "latest", 3)], "cursor-a")
+      if (cursor === "cursor-a") return response([createRecord(sessionID, "middle", 2)], "cursor-b")
+      return response([createRecord(sessionID, "older", 1)], "cursor-a")
     })
     const target = { directory: "/repo", sessionID: "session-a" }
 
@@ -350,8 +431,8 @@ describe("SessionMessageLoader", () => {
     const { childStores, loader } = createLoader(async ({ directory, cursor }) => {
       calls.push({ directory, cursor })
       return cursor
-        ? response([createRecord(sessionID, `older-${directory}`)])
-        : response([createRecord(sessionID, `latest-${directory}`)], `${directory}-cursor`)
+        ? response([createRecord(sessionID, `older-${directory}`, 1)])
+        : response([createRecord(sessionID, `latest-${directory}`, 2)], `${directory}-cursor`)
     })
 
     await Promise.all([
@@ -380,7 +461,7 @@ describe("SessionMessageLoader", () => {
     })
     const target = { directory: "/repo", sessionID: "session-a" }
     const store = childStores.ensureChild(target.directory, { bootstrap: false })
-    store.setState({ message: { [target.sessionID]: [{ id: "cached", sessionID: target.sessionID, role: "user", time: { created: 0 } } as Message] } })
+    store.setState({ message: { [target.sessionID]: [{ id: "cached", sessionID: target.sessionID, seq: 0, role: "user", time: { created: 0 } }] } })
 
     await loader.ensure(target, { force: true })
     expect(loader.getSnapshot(target).status).toBe("error")
@@ -468,7 +549,7 @@ describe("SessionMessageLoader", () => {
       if (calls === 1) return failure(503, "unavailable")
       if (calls === 2) {
         const assistant = createRecord(target.sessionID, "msg_assistant")
-        assistant.info = { ...assistant.info, role: "assistant" } as Message
+        assistant.info = { ...assistant.info, role: "assistant", agent: "build", providerID: "test", modelID: "test" }
         return response([assistant], "older")
       }
       return response([createRecord(target.sessionID, "msg_user")])

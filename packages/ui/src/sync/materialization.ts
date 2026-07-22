@@ -21,7 +21,8 @@ export type MaterializedState = {
 
 export type MaterializeSessionSnapshotsOptions = {
   skipPartTypes?: ReadonlySet<string>
-  mode?: "merge" | "prepend"
+  mode?: "recent" | "merge" | "prepend" | "complete"
+  recentBoundary?: number
 }
 
 export type MaterializeSessionSnapshotsResult = {
@@ -42,19 +43,17 @@ export type SessionMaterializationRequest = {
   reason: SessionMaterializationReason
   messageID?: string
   partID?: string
+  compactionEventSeq?: number
 }
-
-export const getSessionMaterializationRequestKey = (
-  runtimeKey: string,
-  directory: string,
-  sessionID: string,
-): string => JSON.stringify([runtimeKey, directory, sessionID])
 
 export function isSessionMaterializationStillNeeded(
   state: MaterializedState,
   sessionID: string,
   request: SessionMaterializationRequest,
 ): boolean {
+  if (request.reason === "missing-message-sequence" || request.reason === "missing-compaction-record") {
+    return (state.message[sessionID] ?? []).some((message) => message.id === request.messageID && message.seq === undefined)
+  }
   if (request.reason === "empty-assistant-message") {
     return !request.messageID || !Object.prototype.hasOwnProperty.call(state.part, request.messageID)
   }
@@ -95,9 +94,8 @@ export function getStaleRunningToolMessageID(
   return undefined
 }
 
-function filterMaterializedParts(parts: Part[], skipPartTypes: ReadonlySet<string>): Part[] {
-  return parts
-    .filter((part) => !!part?.id && !skipPartTypes.has(part.type))
+function filterParts(parts: Part[], skipPartTypes: ReadonlySet<string>) {
+  return parts.filter((part) => !!part?.id && !skipPartTypes.has(part.type))
 }
 
 function finalizeActiveToolsInCompletedMessage(message: Message, parts: Part[]): Part[] {
@@ -184,17 +182,8 @@ function getPartStateTime(part: Part): { start?: number; end?: number } | undefi
 }
 
 function mergeMaterializedPart(existing: Part | undefined, next: Part): Part {
-  if (!existing) return next
-
-  if (existing.type === "tool" && next.type === "tool") {
-    const existingStatus = (existing as { state?: { status?: unknown } }).state?.status
-    const nextStatus = (next as { state?: { status?: unknown } }).state?.status
-    if (
-      typeof existingStatus === "string"
-      && FINAL_TOOL_STATUSES.has(existingStatus)
-      && typeof nextStatus === "string"
-      && ACTIVE_TOOL_STATUSES.has(nextStatus)
-    ) {
+  if (existing?.type === "tool" && next.type === "tool") {
+    if (FINAL_TOOL_STATUSES.has(existing.state.status) && !FINAL_TOOL_STATUSES.has(next.state.status)) {
       return existing
     }
     // A snapshot fetched just before a call started can land after the live
@@ -217,6 +206,7 @@ function mergeMaterializedPart(existing: Part | undefined, next: Part): Part {
       next = { ...next, state: { ...next.state, metadata: existing.state.metadata } }
     }
   }
+  if (!existing) return next
 
   if (getPartEndTime(next) !== undefined) {
     const existingAttachments = getPartStateAttachments(existing)
@@ -307,38 +297,66 @@ export function materializeSessionSnapshots(
   options: MaterializeSessionSnapshotsOptions = {},
 ): MaterializeSessionSnapshotsResult {
   const skipPartTypes = options.skipPartTypes ?? new Set<string>()
-  const recordsByMessageID = new Map(
-    records
-      .filter((record) => !!record?.info?.id)
-      .map((record) => [record.info.id, record] as const),
-  )
-  const nextMessages = sortMessagesChronologically([...recordsByMessageID.values()].map((record) => record.info))
-  const snapshots = nextMessages.map((message) => recordsByMessageID.get(message.id)!)
   const existingMessages = state.message[sessionID]
   const currentMessages = existingMessages ?? []
-  const incomingByID = new Map(nextMessages.map((message) => [message.id, message] as const))
-  let reconciledCurrentMessages = currentMessages
-  for (let index = 0; index < currentMessages.length; index += 1) {
-    const existing = currentMessages[index]
-    const incoming = incomingByID.get(existing.id)
-    // A completion the server reports supersedes a turn this client still
-    // holds open, and the local interruption mark (`interruptedTurnToolParts`)
-    // it may have put on it. Any other existing record wins over the snapshot.
-    if (
-      existing.role !== "assistant"
-      || incoming?.role !== "assistant"
-      || incoming.time.completed === undefined
-      || (existing.time.completed !== undefined && existing.error?.type !== "aborted")
-    ) continue
-    if (reconciledCurrentMessages === currentMessages) reconciledCurrentMessages = [...currentMessages]
-    reconciledCurrentMessages[index] = incoming
-  }
-  const messages = mergeMessages(reconciledCurrentMessages, nextMessages)
+  const currentByID = new Map(currentMessages.map((message) => [message.id, message]))
+  const snapshots = records.filter((record) => !!record?.info?.id).map((record) => {
+    const existing = currentByID.get(record.info.id)
+    // Compaction deltas are live progress; a running database snapshot may
+    // still contain only the prefix that was persisted before streaming.
+    if (existing?.role === "compaction" && existing.status === "running"
+      && record.info.role === "compaction" && record.info.status === "running"
+      && existing.summary.length > record.info.summary.length && existing.summary.startsWith(record.info.summary)) {
+      return { ...record, info: { ...record.info, summary: existing.summary } }
+    }
+    // An idle-status interruption remains settled until a real step-start or
+    // completed server snapshot replaces it. A stale unfinished read cannot
+    // reopen it; still adopt the stored creation seq when it was unknown.
+    if (existing?.role !== "assistant" || existing.error?.type !== "aborted"
+      || record.info.role !== "assistant" || record.info.time.completed !== undefined) return record
+    const info = record.info.seq !== undefined && existing.seq !== record.info.seq
+      ? { ...existing, seq: record.info.seq }
+      : existing
+    return { ...record, info }
+  })
+  const nextMessages = sortMessagesChronologically(snapshots.map((record) => record.info))
+  const isComplete = options.mode === "complete"
+  const isRecent = options.mode === "recent"
+  const recentBoundary = isRecent ? options.recentBoundary : undefined
+  const recentIDs = new Set(nextMessages.map((message) => message.id))
+  const retainedMessages = recentBoundary === undefined
+    ? currentMessages
+    : currentMessages.filter((message) => {
+      if (recentIDs.has(message.id)) return true
+      const seq = message.seq
+      return seq === undefined || seq < recentBoundary
+    })
+  const messages = isComplete
+    ? nextMessages
+    : mergeMessages(isRecent ? retainedMessages : currentMessages, nextMessages)
   const messagesChanged = messages !== currentMessages || (existingMessages === undefined && snapshots.length === 0)
 
   let partsChanged = false
   let nextPartState = state.part
   const isPrepend = options.mode === "prepend"
+  if (isComplete || isRecent) {
+    const snapshotIDs = new Set(nextMessages.map((message) => message.id))
+    for (const message of currentMessages) {
+      const seq = message.seq
+      const removedByRecent = isRecent
+        && recentBoundary !== undefined
+        && seq !== undefined
+        && seq >= recentBoundary
+        && !snapshotIDs.has(message.id)
+      if (!isComplete && !removedByRecent) continue
+      if (isComplete && snapshotIDs.has(message.id)) continue
+      if (Object.hasOwn(nextPartState, message.id)) {
+        if (nextPartState === state.part) nextPartState = { ...state.part }
+        delete nextPartState[message.id]
+        partsChanged = true
+      }
+    }
+  }
 
   for (const record of snapshots) {
     const messageID = record.info.id
@@ -348,7 +366,7 @@ export function materializeSessionSnapshots(
     const existing = nextPartState[messageID]
     const mergedParts = mergeMaterializedParts(
       existing,
-      filterMaterializedParts(record.parts ?? [], skipPartTypes),
+      filterParts(record.parts ?? [], skipPartTypes),
       skipPartTypes,
       isAssistant,
     )

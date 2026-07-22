@@ -334,14 +334,13 @@ Bridge surface (`bridge-config-runtime.ts`), matching the web routes:
 
 ## Session archive and metadata
 
-OpenCode 2.x has no route that archives a session, so archive flags are
-OpenChamber-owned state. `openchamberSessionState.ts` keeps the same
-`sessions-archive.json` the OpenChamber server keeps, in the shared OpenChamber
-config directory (`~/.config/openchamber`, `%APPDATA%\openchamber` on
-Windows), which is also the web server's default data directory: a session
-archived from VS Code is archived in the desktop app on the same machine, and
-the other way round. Nothing is cached between calls because two processes can
-write the file; every write re-reads first and replaces the file atomically.
+The local OpenCode API owns archive state. `openchamberSessionState.ts` sends
+each archive timestamp, or `null` for restore, through the bridge's authenticated
+`session.update` client. Batches use at most four concurrent requests and return
+successful and failed IDs separately, in input order. OpenCode closes persistent
+command slots on archive and rejects new commands until restore; archiving does
+not blanket-cancel model execution. Reads use OpenCode's `time.archived` directly.
+The former `sessions-archive.json` is neither read nor rewritten.
 
 Session metadata lives on the OpenCode record (`PATCH /api/session/{id}`,
 OpenCode 2.0.15+). OpenCode replaces the whole object, so a write reads the
@@ -354,9 +353,9 @@ the file; the web server sweeps the rest.
 The webview answers `POST /api/openchamber/sessions/archive|unarchive` and
 `GET|POST /api/openchamber/sessions/:id/metadata` through the
 `api:sessions/*` bridge cases in `bridge-system-runtime.ts`, and
-`bridge-proxy-runtime.ts` folds `time.archived` and not-yet-migrated metadata
-onto every proxied `GET /api/session` and `GET /api/session/:id` response, the
-same overlay the web proxy applies.
+`bridge-proxy-runtime.ts` folds only not-yet-migrated metadata onto proxied
+`GET /api/session` and `GET /api/session/:id` responses, preserving backend
+archive timestamps.
 
 ## Extension localization
 

@@ -28,6 +28,17 @@ const session: Session = {
 }
 
 describe("directory recovery snapshots", () => {
+  test("a failed status read stays null even when live events arrive during the request", async () => {
+    const store = source()
+    const response = deferred<State["session_status"] | null>()
+    const snapshot = readDirectoryStatusSnapshot(store, () => response.promise)
+    recordDirectoryRecoveryEvent(store, { type: "session.status", properties: { sessionID: "session", status: { type: "busy" } } })
+    response.resolve(null)
+    expect(await snapshot).toBeNull()
+    expect(store.getState().sessionStatusReady).toBe(false)
+    expect(await readDirectoryStatusSnapshot(store, async () => ({}))).toEqual({})
+  })
+
   test("the event pipeline preserves repeated busy events without publishing a redundant store update", async () => {
     const manager = new ChildStoreManager()
     const store = manager.ensureChild("/repo", { bootstrap: false })

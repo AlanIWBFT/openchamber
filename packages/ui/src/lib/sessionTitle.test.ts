@@ -10,6 +10,7 @@ import { SessionMessageLoader, type SessionMessagePageSource } from '@/sync/sess
 import { loadSessionTitleTurns } from '@/sync/session-title-context';
 import { cancelSessionTitleGeneration, generateAndSaveSessionTitle, runSessionTitleGeneration } from '@/sync/session-title-generation';
 import { getRuntimeKey } from './runtime-switch';
+import type { MessagePage } from './opencode/client';
 
 type RecordEntry = { info: Message; parts: Part[] };
 const textPart = (text: string): TextPart => ({
@@ -173,15 +174,15 @@ describe('bounded history loading', () => {
   test('uses the real shared loader and stops paging as soon as three pairs are available', async () => {
     let requests = 0;
     const childStores = new ChildStoreManager();
-    // Records that go through a child store come back ordered by creation
-    // time, so this fixture stamps each pair with its own slot.
-    const orderedPair = (ordinal: number, id: string): RecordEntry[] => {
+    // Stored creation seq orders each pair independently of IDs and clocks.
+    const orderedPair = (ordinal: number, id: string): MessagePage['items'] => {
       const created = ordinal * 10;
       const prompt = user(id);
-      return [
+      const records: RecordEntry[] = [
         { ...prompt, info: { id: `msg_${ordinal}_1`, sessionID: 'session', role: 'user', time: { created } } },
         assistant(id, { id: `msg_${ordinal}_2`, time: { created: created + 1, completed: created + 2 } }),
       ];
+      return records.map((record, index) => ({ ...record, info: { ...record.info, seq: created + index } }));
     };
     // v2 pages messages newest-first through the loader's page source rather
     // than through an HTTP client, so the fake returns pages directly.
@@ -205,7 +206,7 @@ describe('bounded history loading', () => {
           return (state?.message.session ?? []).map((info) => ({ info, parts: state?.part[info.id] ?? [] }));
         },
       });
-      expect(turns).toHaveLength(3);
+      expect(turns.map((turn) => turn.user.info.id)).toEqual(['msg_1_1', 'msg_2_1', 'msg_3_1']);
       expect(requests).toBe(2);
       expect(loader.getSnapshot(target).complete).toBe(false);
     } finally { release(); loader.dispose(); childStores.disposeAll(); }
