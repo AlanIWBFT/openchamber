@@ -1,9 +1,5 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { sortMessagesChronologically } from "./message-ordering"
-
-function filterIdentifiedParts(parts: Part[]): Part[] {
-  return parts.filter((part) => !!part?.id)
-}
+import { mergeOrdered, sortMessages, sortParts, type MessageOrderState } from "./message-order"
 
 export type OptimisticItem = {
   message: Message
@@ -13,76 +9,61 @@ export type OptimisticItem = {
 export type MessagePage = {
   session: Message[]
   part: { id: string; part: Part[] }[]
+  messageSeq?: Map<string, number>
+  partSeq?: Map<string, number>
+  recentBoundary?: number
   cursor?: string
   complete: boolean
 }
 
-const containsAllPartsByID = (currentParts: Part[] | undefined, requiredParts: Part[]) => {
-  if (!currentParts) return requiredParts.length === 0
-  const currentPartIDs = new Set(currentParts.map((part) => part.id))
-  return requiredParts.every((part) => currentPartIDs.has(part.id))
+const mergeParts = (parts: Part[] | undefined, want: Part[], order: MessageOrderState) => {
+  if (!parts) return sortParts(want, order)
+  return mergeOrdered(parts, want, order.part)
 }
 
-const mergeParts = (currentParts: Part[] | undefined, optimisticParts: Part[]) => {
-  if (!currentParts) return filterIdentifiedParts(optimisticParts)
-  const next = [...currentParts]
-  const partIDs = new Set(currentParts.map((part) => part.id))
-  let changed = false
-  for (const part of optimisticParts) {
-    if (partIDs.has(part.id)) continue
-    partIDs.add(part.id)
-    next.push(part)
-    changed = true
-  }
-  if (!changed) return currentParts
-  return next
-}
-
-export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) {
+export function mergeOptimisticPage(
+  page: MessagePage,
+  items: OptimisticItem[],
+  order: MessageOrderState,
+) {
   if (items.length === 0) return { ...page, confirmed: [] as string[] }
 
   const session = [...page.session]
-  const messageIDs = new Set(session.map((message) => message.id))
-  const partsByMessageID = new Map(page.part.map((item) => [item.id, filterIdentifiedParts(item.part)]))
+  const part = new Map(page.part.map((item) => [item.id, sortParts(item.part, order)]))
   const confirmed: string[] = []
 
   for (const item of items) {
-    const messageExists = messageIDs.has(item.message.id)
-    if (!messageExists) {
-      messageIDs.add(item.message.id)
-      session.push(item.message)
-    }
-
-    const currentParts = partsByMessageID.get(item.message.id)
-    if (messageExists && containsAllPartsByID(currentParts, item.parts)) {
+    if (order.message.has(item.message.id)) {
       confirmed.push(item.message.id)
       continue
     }
+    const found = session.some((message) => message.id === item.message.id)
+    if (!found) session.push(item.message)
 
-    partsByMessageID.set(item.message.id, mergeParts(currentParts, item.parts))
+    const current = part.get(item.message.id)
+    part.set(item.message.id, mergeParts(current, item.parts, order))
   }
 
   return {
     cursor: page.cursor,
     complete: page.complete,
-    session: sortMessagesChronologically(session),
-    part: [...partsByMessageID].map(([id, part]) => ({ id, part })),
+    messageSeq: page.messageSeq,
+    partSeq: page.partSeq,
+    recentBoundary: page.recentBoundary,
+    session: sortMessages(session, order),
+    part: [...part.entries()]
+      .map(([id, part]) => ({ id, part })),
     confirmed,
   }
 }
 
-/** Merge two chronologically sorted message arrays by identity, deduplicating.
- *  Preserves existing references for items that already exist — avoids
+/** Merge two sorted message arrays by id, deduplicating.
+ *  Preserves references from `a` for items that already exist — avoids
  *  unnecessary React re-renders when prepending older history. */
-export function mergeMessages<T extends Message>(existingMessages: readonly T[], incomingMessages: readonly T[]) {
-  const messagesByID = new Map(existingMessages.map((item) => [item.id, item] as const))
-  let changed = false
-  for (const item of incomingMessages) {
-    if (!messagesByID.has(item.id)) {
-      messagesByID.set(item.id, item)
-      changed = true
-    }
-  }
-  if (!changed) return existingMessages as T[]
-  return sortMessagesChronologically([...messagesByID.values()])
+export function mergeMessages<T extends { id: string }>(
+  a: readonly T[],
+  b: readonly T[],
+  order: MessageOrderState,
+) {
+  return mergeOrdered(a, b, order.message)
 }
