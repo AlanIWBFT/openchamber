@@ -2,7 +2,6 @@ import type { Message, OpencodeClient, Part } from "@opencode-ai/sdk/v2/client"
 import type { ChildStoreManager, DirectoryStore } from "./child-store"
 import { retry } from "./retry"
 import { mergeOptimisticPage, type OptimisticItem } from "./optimistic"
-import { findMessageIndex, insertMessageChronologically, sortMessagesChronologically } from "./message-ordering"
 import { stripMessageDiffSnapshots } from "./sanitize"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
 import {
@@ -16,6 +15,25 @@ import { isVSCodeRuntime } from "@/lib/desktop"
 import { isMobileSurfaceRuntime } from "@/lib/runtimeSurface"
 import { normalizePath } from "@/lib/pathNormalization"
 import { startSessionLoadPerformanceEvent } from "./session-load-performance"
+import {
+  appendConcurrentMessagesMissingFromSnapshot,
+  applyDecodedSequences,
+  assertCurrentMessageOrderState,
+  assertCurrentMessageSnapshot,
+  beginMessageSnapshot,
+  decodeStoredMessageRecords,
+  dropMessageOrder,
+  dropSessionOrder,
+  getMessageSequenceBoundary,
+  getMessageOrderState,
+  preserveConcurrentMessageChanges,
+  sortMessages,
+  sortParts as sortOrderedParts,
+  touchMessageOrder,
+  touchPartOrder,
+  type DecodedMessageRecords,
+  type MessageSnapshot,
+} from "./message-order"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const INITIAL_MESSAGE_PAGE_SIZE = 50
@@ -56,6 +74,9 @@ type LoaderEntry = {
 type FetchedPage = {
   session: Message[]
   partsByMessageID: Map<string, Part[]>
+  decoded: DecodedMessageRecords
+  revision: MessageSnapshot
+  recentBoundary: number | undefined
   cursor: string | undefined
   complete: boolean
 }
@@ -107,9 +128,6 @@ const assertSdkSuccess = (result: {
   if (status !== undefined) error.status = status
   throw error
 }
-
-const filterIdentifiedParts = (parts: Part[]): Part[] => parts
-  .filter((part) => Boolean(part?.id))
 
 const createDefaultState = (generation = 0): SessionMessageLoadState => ({
   status: "idle",
@@ -222,7 +240,7 @@ export class SessionMessageLoader {
     const store = this.childStores.ensureChild(normalized.directory, { bootstrap: false })
     const cursor = entry.snapshot.cursor
     return this.startLoad(normalized, entry, store, "older", async (isCurrent, performance) => {
-      const page = await this.fetchPage(normalized, HISTORY_MESSAGE_PAGE_SIZE, cursor, "older", performance)
+      const page = await this.fetchPage(normalized, store, HISTORY_MESSAGE_PAGE_SIZE, cursor, "older", performance)
       if (!isCurrent()) return
       const committed = this.commitPage(normalized, entry, store, page, "prepend", isCurrent)
       if (!committed || !isCurrent()) return
@@ -300,7 +318,7 @@ export class SessionMessageLoader {
       const previousCoverage = entry.snapshot.resolved
         ? { cursor: entry.snapshot.cursor, complete: entry.snapshot.complete }
         : null
-      const page = await this.fetchPage(normalized, Math.max(1, limit), undefined, "refresh", performance)
+      const page = await this.fetchPage(normalized, store, Math.max(1, limit), undefined, "refresh", performance)
       if (!isCurrent()) return
       const committed = this.commitPage(normalized, entry, store, page, "merge", isCurrent)
       if (!committed || !isCurrent()) return
@@ -316,6 +334,32 @@ export class SessionMessageLoader {
         // history coverage and spuriously expose "load older".
         cursor: coverage.cursor,
         complete: coverage.complete,
+        updatedAt: Date.now(),
+      })
+      this.persistCoverage(normalized, entry.snapshot)
+    })
+  }
+
+  refreshComplete(target: SessionMessageTarget): Promise<void> {
+    const normalized = this.normalizeTarget(target)
+    if (!normalized || this.disposed) return Promise.resolve()
+    const entry = this.getEntry(normalized)
+    if (entry.inflight) return entry.inflight.then(() => this.refreshComplete(normalized))
+    const store = this.childStores.ensureChild(normalized.directory, { bootstrap: false })
+    this.bumpGeneration(entry)
+    return this.startLoad(normalized, entry, store, "refresh", async (isCurrent, performance) => {
+      const page = await this.fetchPage(normalized, store, 0, undefined, "refresh", performance)
+      if (!isCurrent()) return
+      const committed = this.commitPage(normalized, entry, store, page, "complete", isCurrent)
+      if (!committed || !isCurrent()) return
+      this.patchEntry(entry, {
+        status: "ready",
+        loadingKind: null,
+        error: null,
+        resolved: true,
+        limit: committed.messages.length,
+        cursor: page.cursor,
+        complete: page.complete,
         updatedAt: Date.now(),
       })
       this.persistCoverage(normalized, entry.snapshot)
@@ -339,16 +383,22 @@ export class SessionMessageLoader {
     const target = this.normalizeTarget(input)
     if (!target) return
     const entry = this.getEntry(target)
-    entry.optimistic.set(input.message.id, { message: input.message, parts: filterIdentifiedParts(input.parts) })
     const store = this.childStores.ensureChild(target.directory, { bootstrap: false })
+    const order = getMessageOrderState(store)
+    entry.optimistic.set(input.message.id, { message: input.message, parts: sortOrderedParts(input.parts, order) })
     const current = store.getState()
     const messages = current.message[target.sessionID] ? [...current.message[target.sessionID]] : []
-    if (findMessageIndex(messages, input.message.id) < 0) {
-      insertMessageChronologically(messages, input.message)
+    if (!messages.some((message) => message.id === input.message.id)) messages.push(input.message)
+    order.messageSession.set(input.message.id, target.sessionID)
+    touchMessageOrder(order, input.message.id)
+    for (const part of input.parts) {
+      order.partSession.set(part.id, target.sessionID)
+      order.partMessage.set(part.id, input.message.id)
+      touchPartOrder(order, part.id)
     }
     store.setState({
-      message: { ...current.message, [target.sessionID]: messages },
-      part: { ...current.part, [input.message.id]: filterIdentifiedParts(input.parts) },
+      message: { ...current.message, [target.sessionID]: sortMessages(messages, order) },
+      part: { ...current.part, [input.message.id]: sortOrderedParts(input.parts, order) },
     })
   }
 
@@ -362,6 +412,7 @@ export class SessionMessageLoader {
     const existing = current.message[target.sessionID]
     const messages = existing ? existing.filter((message) => message.id !== input.messageID) : undefined
     const part = { ...current.part }
+    dropMessageOrder(getMessageOrderState(store), input.messageID, part[input.messageID])
     delete part[input.messageID]
     store.setState({
       ...(messages ? { message: { ...current.message, [target.sessionID]: messages } } : {}),
@@ -383,6 +434,11 @@ export class SessionMessageLoader {
     this.bumpGeneration(entry)
     entry.inflight = null
     entry.optimistic.clear()
+    const store = this.childStores.getChild(normalized.directory)
+    if (store) {
+      const state = store.getState()
+      dropSessionOrder(getMessageOrderState(store), normalized.sessionID, state.message[normalized.sessionID], state.part)
+    }
     entry.snapshot = createDefaultState(entry.snapshot.generation)
     clearSessionPrefetch(normalized.directory, [normalized.sessionID], this.runtimeKey)
     this.notify(entry)
@@ -525,24 +581,24 @@ export class SessionMessageLoader {
   ): Promise<void> {
     const storeMessageCount = store.getState().message[target.sessionID]?.length ?? 0
     const firstLimit = Math.max(entry.snapshot.limit, storeMessageCount, getInitialPageSize())
-    const firstPage = await this.fetchPage(target, firstLimit, undefined, "initial-page", performance)
+    const firstPage = await this.fetchPage(target, store, firstLimit, undefined, "initial-page", performance)
     if (!isCurrent()) return
     const deferFirstCommit = !firstPage.complete && !hasUserMessage(firstPage.session)
     let committed = deferFirstCommit
       ? { messages: firstPage.session }
-      : this.commitPage(target, entry, store, firstPage, "merge", isCurrent)
+      : this.commitPage(target, entry, store, firstPage, "initial", isCurrent)
     let acceptedPage = firstPage
 
     if (deferFirstCommit) {
       for (const limit of getInitialExpansionLimits()) {
         if (limit <= firstLimit || !isCurrent()) continue
-        const expandedPage = await this.fetchPage(target, limit, undefined, "initial-page", performance)
+        const expandedPage = await this.fetchPage(target, store, limit, undefined, "initial-page", performance)
         if (!isCurrent()) return
         acceptedPage = expandedPage
         const boundaryFound = hasUserMessage(expandedPage.session)
         const isLast = limit === getInitialExpansionLimits()[getInitialExpansionLimits().length - 1]
         if (expandedPage.complete || boundaryFound || isLast) {
-          committed = this.commitPage(target, entry, store, expandedPage, "merge", isCurrent)
+          committed = this.commitPage(target, entry, store, expandedPage, "initial", isCurrent)
         } else {
           committed = { messages: expandedPage.session }
         }
@@ -566,6 +622,7 @@ export class SessionMessageLoader {
 
   private async fetchPage(
     target: SessionMessageTarget,
+    store: { getState: () => DirectoryStore },
     limit: number,
     before?: string,
     caller: "initial-page" | "older" | "refresh" = "initial-page",
@@ -577,11 +634,14 @@ export class SessionMessageLoader {
       requestLimit: limit,
       cursorPresent: before !== undefined,
     })
+    const order = getMessageOrderState(store)
+    let revision = beginMessageSnapshot(order, target.sessionID)
     let attempts = 0
     let recordCount = 0
     try {
       const result = await retry(async () => {
         attempts += 1
+        revision = beginMessageSnapshot(order, target.sessionID)
         const response = await this.sdk.session.messages({
           sessionID: target.sessionID,
           directory: target.directory,
@@ -589,32 +649,53 @@ export class SessionMessageLoader {
           before,
         })
         assertSdkSuccess(response, "session.messages")
-        const data = response.data
-        if (!Array.isArray(data)) {
+        if (!Array.isArray(response.data)) {
           const error = new Error("session.messages returned no data") as Error & { status?: number }
           error.status = 503
           throw error
         }
-        return { data, response: response.response }
+        return { data: response.data, response: response.response }
       })
-      const records = result.data.filter((record: { info?: { id?: string } }) => Boolean(record?.info?.id))
-      recordCount = records.length
-      if (performance) performance.recordCount += recordCount
-      const session = sortMessagesChronologically(
-        records.map((record: { info: Message }) => stripMessageDiffSnapshots(record.info)),
+      recordCount = result.data.filter((record: { info?: { id?: string } }) => Boolean(record?.info?.id)).length
+      assertCurrentMessageOrderState(store, order)
+      assertCurrentMessageSnapshot(order, target.sessionID, revision)
+      const snapshot = decodeStoredMessageRecords(result.data, SKIP_PARTS, target.sessionID)
+      const decoded = appendConcurrentMessagesMissingFromSnapshot(
+        order,
+        preserveConcurrentMessageChanges(order, snapshot, store.getState(), target.sessionID, revision),
+        store.getState(),
+        target.sessionID,
+        revision,
       )
+      const session = decoded.records.map((record) => stripMessageDiffSnapshots(record.info))
       const partsByMessageID = new Map<string, Part[]>()
-      for (const record of records as Array<{ info: { id: string }; parts?: Part[] }>) {
-        partsByMessageID.set(record.info.id, filterIdentifiedParts(record.parts ?? []))
+      const pageOrder = {
+        ...order,
+        message: new Map([...order.message, ...decoded.messageSeq]),
+        part: new Map([...order.part, ...decoded.partSeq]),
+      }
+      for (const record of decoded.records) {
+        partsByMessageID.set(record.info.id, sortOrderedParts(record.parts, pageOrder))
       }
       const cursor = result.response?.headers?.get?.("x-next-cursor") ?? undefined
       finishPagePerformance("complete", { retryCount: Math.max(0, attempts - 1), recordCount })
-      return { session, partsByMessageID, cursor, complete: !cursor }
+      return {
+        session,
+        partsByMessageID,
+        decoded,
+        revision,
+        recentBoundary: getMessageSequenceBoundary(snapshot),
+        cursor,
+        complete: !cursor,
+      }
     } catch (error) {
       finishPagePerformance("error", { retryCount: Math.max(0, attempts - 1), recordCount })
       throw error
     } finally {
-      if (performance) performance.retryCount += Math.max(0, attempts - 1)
+      if (performance) {
+        performance.retryCount += Math.max(0, attempts - 1)
+        performance.recordCount += recordCount
+      }
     }
   }
 
@@ -623,16 +704,23 @@ export class SessionMessageLoader {
     entry: LoaderEntry,
     store: { getState: () => DirectoryStore; setState: DirectoryStoreSetter },
     page: FetchedPage,
-    mode: "merge" | "prepend",
+    mode: "initial" | "merge" | "prepend" | "complete",
     isCurrent: () => boolean,
   ): { messages: Message[] } | null {
     if (!isCurrent()) return null
+    const order = getMessageOrderState(store)
+    assertCurrentMessageOrderState(store, order)
+    assertCurrentMessageSnapshot(order, target.sessionID, page.revision)
+    applyDecodedSequences(order, page.decoded)
     const merged = mergeOptimisticPage({
       session: page.session,
       part: [...page.partsByMessageID].map(([id, part]) => ({ id, part })),
       cursor: page.cursor,
       complete: page.complete,
-    }, [...entry.optimistic.values()])
+      messageSeq: page.decoded.messageSeq,
+      partSeq: page.decoded.partSeq,
+      recentBoundary: page.recentBoundary,
+    }, [...entry.optimistic.values()], order)
     for (const messageID of merged.confirmed) entry.optimistic.delete(messageID)
     const mergedPartsByMessageID = new Map(merged.part.map((candidate) => [candidate.id, candidate.part] as const))
     const materialized = materializeSessionSnapshots(
@@ -644,7 +732,18 @@ export class SessionMessageLoader {
           ?? mergedPartsByMessageID.get(info.id)
           ?? [],
       })),
-      { skipPartTypes: SKIP_PARTS, mode },
+      {
+        skipPartTypes: SKIP_PARTS,
+        mode: mode === "prepend"
+          ? "prepend"
+          : mode === "complete" || (mode === "initial" && page.complete)
+            ? "complete"
+            : mode === "initial"
+              ? "recent"
+              : "merge",
+        recentBoundary: page.recentBoundary,
+        order,
+      },
     )
     if (!isCurrent()) return null
     if (materialized.messagesChanged || materialized.partsChanged) {

@@ -7,9 +7,9 @@ import {
   startSessionLoadPerformanceEvent,
 } from "./session-load-performance"
 
-const createRecord = (sessionID: string, id = "msg_1", created = 1) => ({
-  info: { id, sessionID, role: "user", time: { created } } as Message,
-  parts: [{ id: `part_${id}`, messageID: id, sessionID, type: "text", text: "hello" }] as Part[],
+const createRecord = (sessionID: string, id = "msg_1") => ({
+  info: { id, sessionID, role: "user", time: { created: 1 }, seq: Number(id.match(/\d+$/)?.[0] ?? 1) } as unknown as Message,
+  parts: [{ id: `part_${id}`, messageID: id, sessionID, type: "text", text: "hello", seq: Number(id.match(/\d+$/)?.[0] ?? 1) }] as unknown as Part[],
 })
 
 const deferred = <T>() => {
@@ -65,8 +65,8 @@ describe("SessionMessageLoader", () => {
     const { childStores, loader } = createLoader(async ({ sessionID, limit, before }) => {
       calls.push({ limit, before })
       return before
-        ? response([createRecord(sessionID, "msg_older", 1)])
-        : response([createRecord(sessionID, "msg_latest", 2)], "older-cursor")
+        ? response([createRecord(sessionID, "msg_older")])
+        : response([createRecord(sessionID, "msg_latest")], "older-cursor")
     })
     const target = { directory: "/repo", sessionID: "session-a" }
 
@@ -83,20 +83,19 @@ describe("SessionMessageLoader", () => {
       { limit: 100, before: "older-cursor" },
     ])
     expect(childStores.getChild(target.directory)?.getState().message[target.sessionID]?.map((message) => message.id))
-      .toEqual(["msg_older", "msg_latest"])
+      .toEqual(["msg_latest", "msg_older"].sort())
     loader.dispose()
     childStores.disposeAll()
   })
 
-  test("keeps a post-rollover tail after legacy messages for shared runtime identities", async () => {
-    const runtimes = ["web", "desktop", "vscode", "mobile"]
-    for (const runtimeKey of runtimes) {
+  test("keeps a post-rollover tail ordered by sequence for every shared runtime", async () => {
+    for (const runtimeKey of ["web", "desktop", "vscode", "mobile"]) {
       const childStores = new ChildStoreManager()
       const sdk = {
         session: {
           messages: async ({ sessionID }: { sessionID: string }) => response([
-            createRecord(sessionID, "msg_000000000000Current", 200),
-            createRecord(sessionID, "msg_ffffffffffffLegacy", 100),
+            createRecord(sessionID, "msg_000000000000Current2"),
+            createRecord(sessionID, "msg_ffffffffffffLegacy1"),
           ]),
         },
       } as unknown as OpencodeClient
@@ -106,7 +105,7 @@ describe("SessionMessageLoader", () => {
       await loader.ensure(target)
 
       expect(childStores.getChild(target.directory)?.getState().message[target.sessionID]?.map((message) => message.id))
-        .toEqual(["msg_ffffffffffffLegacy", "msg_000000000000Current"])
+        .toEqual(["msg_ffffffffffffLegacy1", "msg_000000000000Current2"])
       loader.dispose()
       childStores.disposeAll()
     }

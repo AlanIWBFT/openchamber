@@ -734,7 +734,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     const handleRevert = React.useCallback(() => {
         if (!sessionId || !message.info.id) return;
-        useSessionUIStore.getState().revertToMessage(sessionId, message.info.id);
+        void useSessionUIStore.getState().revertToMessage(sessionId, message.info.id).catch((error) => {
+            console.error('[chat-message] revert failed', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to revert message');
+        });
     }, [sessionId, message.info.id]);
 
     // NEW: Fork handler

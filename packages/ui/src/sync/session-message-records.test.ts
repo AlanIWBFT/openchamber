@@ -34,10 +34,10 @@ const state = (partial: Partial<State>): State => ({
 });
 
 describe('buildSessionMessageRecordsSnapshot', () => {
-  test('renders and reverts a rollover-spanning transcript by array chronology', () => {
-    const before = message('msg_ffffffffffffBefore', 'user', undefined, 100);
-    const marker = message('msg_000000000000Marker', 'user', undefined, 200);
-    const after = message('msg_000000000001After', 'assistant', marker.id, 300);
+  test('renders and reverts a rollover-spanning sequence-ordered transcript', () => {
+    const before = message('msg_ffffffffffffBefore', 'user', undefined, 300);
+    const marker = message('msg_000000000000Marker', 'user', undefined, 100);
+    const after = message('msg_000000000001After', 'assistant', marker.id, 200);
 
     const snapshot = buildSessionMessageRecordsSnapshot(
       state({

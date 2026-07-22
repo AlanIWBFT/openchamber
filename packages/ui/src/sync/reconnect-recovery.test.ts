@@ -72,6 +72,16 @@ describe("getReconnectCandidateSessionIds", () => {
     })).toEqual(["blank"])
   })
 
+  test("does not keep an explicitly idle session active from incomplete history", () => {
+    expect(getReconnectCandidateSessionIds({
+      session: [createSession("idle")],
+      session_status: { idle: { type: "idle" } as SessionStatus },
+      message: {
+        idle: [createAssistantMessage("m-1", "idle")],
+      },
+    })).toEqual([])
+  })
+
   test("does not include a viewed session from another directory", () => {
     expect(getReconnectCandidateSessionIds({
       session: [createSession("active")],

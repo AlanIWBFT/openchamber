@@ -10,6 +10,7 @@ import type { FileDiff } from "./types"
 
 type SessionCache = {
   session_status: Record<string, SessionStatus | undefined>
+  session_status_ready?: boolean
   session_diff: Record<string, FileDiff[] | undefined>
   todo: Record<string, Todo[] | undefined>
   message: Record<string, Message[] | undefined>
@@ -44,6 +45,8 @@ export function getProtectedSessionCacheIds(store: SessionCache): Set<string> {
     if (
       lastMessage?.role === "assistant"
       && typeof (lastMessage as { time?: { completed?: number } }).time?.completed !== "number"
+      && !store.session_status_ready
+      && store.session_status?.[sessionID]?.type !== "idle"
     ) {
       protectedIds.add(sessionID)
     }
