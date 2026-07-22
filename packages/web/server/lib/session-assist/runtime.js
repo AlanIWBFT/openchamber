@@ -93,9 +93,6 @@ export const createSessionAssistRuntime = ({
   getTargets = getSessionAssistTargets,
   quietMs = IDLE_QUIET_MS,
   persistSessionAssist = null,
-  // Archive state is OpenChamber's own in v2 (no OpenCode route sets it), so
-  // the runtime asks rather than reading `time.archived` off the record.
-  isSessionArchived = async () => false,
   // Asked once when a turn ends, before the quiet window is armed: which of
   // the enabled fields are worth the Small Model (`{ recap, suggestion }`), or
   // null for "unknown", which keeps every enabled field. See session-work.
@@ -166,7 +163,7 @@ export const createSessionAssistRuntime = ({
     if (session?.id === sessionId) lineage?.remember(sessionId, session.parentID ?? null);
     if (session?.id !== sessionId || session.parentID || session.revert?.messageID) return;
     // An archived session is put away: no recap or suggestion is generated for it.
-    if (await isSessionArchived(sessionId)) return;
+    if (session.time?.archived) return;
     const context = await loadAssistContext({
       signal,
       readPage: ({ limit, cursor }) => client.message.list(
@@ -223,7 +220,7 @@ export const createSessionAssistRuntime = ({
     const freshSession = await client.session.get({ sessionID: sessionId }, requestOptions());
     checkCurrent();
     if (freshSession?.id !== sessionId || freshSession.revert?.messageID || freshSession.location?.directory !== session.location?.directory) return;
-    if (await isSessionArchived(sessionId)) return;
+    if (freshSession.time?.archived) return;
     const enabled = getTargets();
     if (!enabled.recap || !allowed.recap) recap = '';
     if (!enabled.suggestion || !allowed.suggestion) suggestion = '';

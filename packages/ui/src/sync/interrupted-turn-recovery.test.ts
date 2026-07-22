@@ -28,7 +28,7 @@ function setup(serverRecords: () => Array<{ info: Message; parts: Part[] }>) {
   const sdk = {
     getSessionMessages: async (): Promise<MessagePage> => {
       reads += 1
-      return { items: serverRecords(), cursor: {} }
+      return { items: serverRecords().map((record, index) => ({ ...record, info: { ...record.info, seq: record.info.seq ?? index + 1 } })), cursor: {} }
     },
   }
   const loader = new SessionMessageLoader(childStores, { sdk, runtimeKey: "recovery-test" })

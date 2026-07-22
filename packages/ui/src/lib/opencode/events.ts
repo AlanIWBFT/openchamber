@@ -32,7 +32,7 @@ import {
   type StructuredError,
   type TokenUsageInfo,
 } from "./model"
-import { projectUserParts, structuredErrorText, toolAttachments, toolOutputText } from "./projection"
+import { messageSequenceSchema, projectUserParts, structuredErrorText, toolAttachments, toolOutputText } from "./projection"
 
 // ---------------------------------------------------------------------------
 // Event vocabulary
@@ -59,6 +59,8 @@ export type SessionPatch = {
 
 /** Fields of a message that change after it appeared. */
 export type MessagePatch = {
+  /** Inbox delivery confirms the persisted creation order of a provisional message. */
+  seq?: number
   time?: { created?: number; streamed?: number; completed?: number }
   finish?: Extract<Message, { role: "assistant" }>["finish"]
   error?: StructuredError
@@ -120,7 +122,7 @@ export type SyncEvent =
   | { type: "session.status"; properties: { sessionID: string; status: SessionStatus } }
   | { type: "session.idle"; properties: { sessionID: string } }
   | { type: "session.error"; properties: { sessionID: string; error: StructuredError } }
-  | { type: "message.updated"; properties: { info: Message } }
+  | { type: "message.updated"; properties: { info: Message; compactionEventSeq?: number } }
   | { type: "message.patched"; properties: { sessionID: string; messageID: string; patch: MessagePatch } }
   | { type: "message.removed"; properties: { sessionID: string; messageID: string } }
   | { type: "message.part.updated"; properties: { sessionID: string; part: Part } }
@@ -267,6 +269,7 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
               id: messageIdFromEvent(event.id),
               sessionID: event.data.sessionID,
               role: "location-switched",
+              seq: messageSequenceSchema.parse(event.durable.seq),
               time: { created: event.created },
               directory: event.data.location.directory,
             },
@@ -283,6 +286,7 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
               id: messageIdFromEvent(event.id),
               sessionID: event.data.sessionID,
               role: "agent-switched",
+              seq: messageSequenceSchema.parse(event.durable.seq),
               time: { created: event.created },
               agent: event.data.agent,
               previous: event.data.previous,
@@ -300,6 +304,7 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
               id: messageIdFromEvent(event.id),
               sessionID: event.data.sessionID,
               role: "model-switched",
+              seq: messageSequenceSchema.parse(event.durable.seq),
               time: { created: event.created },
               model: event.data.model,
               previous: event.data.previous,
@@ -406,7 +411,10 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
       return []
     }
     case "session.inbox.delivered":
-      return [messagePatch(event.data.sessionID, event.data.inboxID, { time: { created: event.created } })]
+      return [messagePatch(event.data.sessionID, event.data.inboxID, {
+        seq: messageSequenceSchema.parse(event.durable.seq),
+        time: { created: event.created },
+      })]
     case "session.inbox.cancelled":
       return [{ type: "message.removed", properties: { sessionID: event.data.sessionID, messageID: event.data.inboxID } }]
     case "session.synthetic":
@@ -418,6 +426,7 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
               id: messageIdFromEvent(event.id),
               sessionID: event.data.sessionID,
               role: "synthetic",
+              seq: messageSequenceSchema.parse(event.durable.seq),
               time: { created: event.created },
               text: event.data.text,
               description: event.data.description,
@@ -434,6 +443,7 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
               id: messageIdFromEvent(event.id),
               sessionID: event.data.sessionID,
               role: "skill",
+              seq: messageSequenceSchema.parse(event.durable.seq),
               time: { created: event.created },
               skill: event.data.id,
               name: event.data.name,
@@ -452,6 +462,7 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
               id: messageIdFromEvent(event.id),
               sessionID: event.data.sessionID,
               role: "system",
+              seq: messageSequenceSchema.parse(event.durable.seq),
               time: { created: event.created },
               text: event.data.text,
               description: `Instructions updated: ${Object.keys(event.data.delta ?? {}).join(", ")}`,
@@ -464,6 +475,8 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
     // --- assistant steps ----------------------------------------------------
 
     case "session.step.started":
+      // Retries reuse the message ID but not the event sequence. The reducer
+      // retains a known creation seq or recovers it from the stored message.
       return [
         {
           type: "message.updated",
@@ -716,6 +729,7 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
               id: messageIdFromEvent(event.id),
               sessionID: event.data.sessionID,
               role: "shell",
+              seq: messageSequenceSchema.parse(event.durable.seq),
               time: { created: event.created },
               shellID: event.data.shell.id,
               command: event.data.shell.command,
@@ -752,6 +766,7 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
               role: "compaction",
               time: { created: event.created },
               status: "running",
+              seq: messageSequenceSchema.parse(event.durable.seq),
               reason: event.data.reason,
               summary: "",
             },
@@ -767,6 +782,7 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
         {
           type: "message.updated",
           properties: {
+            compactionEventSeq: messageSequenceSchema.parse(event.durable.seq),
             info: compact({
               id: messageIdFromEvent(event.id),
               sessionID: event.data.sessionID,
@@ -786,6 +802,7 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
         {
           type: "message.updated",
           properties: {
+            compactionEventSeq: messageSequenceSchema.parse(event.durable.seq),
             info: compact({
               id: event.data.inputID ?? messageIdFromEvent(event.id),
               sessionID: event.data.sessionID,

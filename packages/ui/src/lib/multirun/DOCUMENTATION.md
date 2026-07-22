@@ -95,6 +95,10 @@ Sources are revalidated and their latest replies read; a read failure stops the
 fusion instead of silently dropping a source, an unanswered lane is left out,
 and no answer at all is `NoFusionOutputsError`.
 
+`laneData.ts` orders stored messages by their official creation `seq`, not IDs,
+timestamps, or incoming page order. Text parts retain the official parts-array
+order. It selects the latest nonempty reply, skipping tool-only assistant steps.
+
 - **Answers mode** (a source shares a directory, or nothing changed): the
   fusion session runs in the project directory and receives the task prompts
   and final answers.

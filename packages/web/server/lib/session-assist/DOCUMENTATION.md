@@ -36,6 +36,8 @@ write, so an ordinary v2 transcript still ends in its answer. An `idle` whose
 outcome is `failed` or `interrupted` is not skipped: it disqualifies the turn.
 Child, archived, and reverted sessions are skipped. A new prompt clears the
 revert boundary before its next idle event.
+Archive authority comes from the backend session record, checked both before
+generation and in the fresh session read before publishing the result.
 
 Human turns follow chronological message intervals. OpenCode can insert
 synthetic continuation users during compaction, so a final answer's `parentID`
