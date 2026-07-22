@@ -141,23 +141,24 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
 
   // Helper to get answer display for a question index
   const getAnswerDisplay = React.useCallback((index: number): string => {
-    const isCustom = Boolean(customMode[index]);
+    const isCustom = questions[index]?.custom !== false && Boolean(customMode[index]);
     if (isCustom) {
       const value = (customTextRef.current[index] ?? '').trim();
       return value || t('chat.questionCard.noAnswer');
     }
     const answers = selectedOptions[index] ?? [];
     return answers.length > 0 ? answers.join(', ') : t('chat.questionCard.noAnswer');
-  }, [customMode, selectedOptions, t]);
+  }, [customMode, questions, selectedOptions, t]);
 
   const isMultiple = Boolean(activeQuestion?.multiple);
   const selectedForActive = selectedOptions[activeIndex] ?? [];
-  const isCustomActive = Boolean(customMode[activeIndex]);
+  const allowsCustomAnswer = activeQuestion?.custom !== false;
+  const isCustomActive = allowsCustomAnswer && Boolean(customMode[activeIndex]);
 
   const unansweredIndexes = React.useMemo(() => {
     const pending: number[] = [];
     for (let index = 0; index < questions.length; index += 1) {
-      const isCustom = Boolean(customMode[index]);
+      const isCustom = questions[index]?.custom !== false && Boolean(customMode[index]);
       if (isCustom) {
         if (!customTextFilled[index]) pending.push(index);
         continue;
@@ -169,7 +170,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
       }
     }
     return pending;
-  }, [customMode, customTextFilled, questions.length, selectedOptions]);
+  }, [customMode, customTextFilled, questions, selectedOptions]);
 
   const requiredSatisfied = React.useMemo(() => {
     if (questions.length === 0) return false;
@@ -195,7 +196,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     const answers: string[][] = [];
 
     for (let index = 0; index < questions.length; index += 1) {
-      const isCustom = Boolean(customMode[index]);
+      const isCustom = questions[index]?.custom !== false && Boolean(customMode[index]);
       if (isCustom) {
         const value = (customTextRef.current[index] ?? '').trim();
         answers.push(value ? [value] : []);
@@ -206,7 +207,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     }
 
     return answers;
-  }, [customMode, questions.length, selectedOptions]);
+  }, [customMode, questions, selectedOptions]);
 
   const handleToggleOption = React.useCallback(
     (label: string) => {
@@ -229,11 +230,12 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
   );
 
   const handleSelectCustom = React.useCallback(() => {
+    if (!allowsCustomAnswer) return;
     setCustomMode((prev) => ({ ...prev, [activeIndex]: true }));
     setSelectedOptions((prev) => ({ ...prev, [activeIndex]: [] }));
     const hasValue = (customTextRef.current[activeIndex] ?? '').trim().length > 0;
     setCustomTextFilled((prev) => (prev[activeIndex] === hasValue ? prev : { ...prev, [activeIndex]: hasValue }));
-  }, [activeIndex]);
+  }, [activeIndex, allowsCustomAnswer]);
 
   const handleCustomValueChange = React.useCallback((value: string) => {
     customTextRef.current[activeIndex] = value;
@@ -485,42 +487,46 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
                     );
                   })}
 
-                  {/* Custom answer option */}
-                  <button
-                    type="button"
-                    onClick={handleSelectCustom}
-                    disabled={isResponding}
-                    className={cn(
-                      'w-full px-1.5 py-1 text-left rounded transition-colors',
-                      'hover:bg-interactive-hover/30',
-                      isCustomActive ? 'bg-interactive-selection/20' : null,
-                      isResponding ? 'opacity-60 cursor-not-allowed' : null
-                    )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Icon name="edit" className={cn(
-                        'h-3.5 w-3.5',
-                        isCustomActive ? 'text-primary' : 'text-muted-foreground/50'
-                      )} />
-                      <span className={cn(
-                        'typography-meta',
-                        isCustomActive ? 'text-foreground font-medium' : 'text-muted-foreground'
-                      )}>
-                        {t('chat.questionCard.other')}
-                      </span>
-                    </div>
-                  </button>
-
-                  {isCustomActive ? (
-                    <div className="pl-6 pr-1 pt-0.5">
-                      <CustomAnswerTextarea
-                        value={customTextRef.current[activeIndex] ?? ''}
-                        onValueChange={handleCustomValueChange}
-                        placeholder={t('chat.questionCard.yourAnswer')}
+                  {allowsCustomAnswer ? (
+                    <>
+                      {/* Custom answer option */}
+                      <button
+                        type="button"
+                        onClick={handleSelectCustom}
                         disabled={isResponding}
-                        onKeyDown={handleKeyDown}
-                      />
-                    </div>
+                        className={cn(
+                          'w-full px-1.5 py-1 text-left rounded transition-colors',
+                          'hover:bg-interactive-hover/30',
+                          isCustomActive ? 'bg-interactive-selection/20' : null,
+                          isResponding ? 'opacity-60 cursor-not-allowed' : null
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Icon name="edit" className={cn(
+                            'h-3.5 w-3.5',
+                            isCustomActive ? 'text-primary' : 'text-muted-foreground/50'
+                          )} />
+                          <span className={cn(
+                            'typography-meta',
+                            isCustomActive ? 'text-foreground font-medium' : 'text-muted-foreground'
+                          )}>
+                            {t('chat.questionCard.other')}
+                          </span>
+                        </div>
+                      </button>
+
+                      {isCustomActive ? (
+                        <div className="pl-6 pr-1 pt-0.5">
+                          <CustomAnswerTextarea
+                            value={customTextRef.current[activeIndex] ?? ''}
+                            onValueChange={handleCustomValueChange}
+                            placeholder={t('chat.questionCard.yourAnswer')}
+                            disabled={isResponding}
+                            onKeyDown={handleKeyDown}
+                          />
+                        </div>
+                      ) : null}
+                    </>
                   ) : null}
                 </div>
               </>
