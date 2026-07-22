@@ -1,6 +1,7 @@
 import { opencodeClient } from "@/lib/opencode/client"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import { materializeSessionSnapshots } from "./materialization"
+import { beginMessageSnapshot } from "./message-snapshot"
 import { getSyncChildStores } from "./sync-refs"
 
 type CompletionTarget = { directory: string; sessionID: string }
@@ -20,19 +21,23 @@ export function completeToolContent(target: CompletionTarget, messageID: string)
   const key = `${runtimeKey}\u0000${target.directory}\u0000${target.sessionID}\u0000${messageID}`
   const pending = completions.get(key)
   if (pending) return pending
+  const store = getSyncChildStores().ensureChild(target.directory, { bootstrap: false })
+  const snapshot = beginMessageSnapshot(store, target.sessionID)
   const completion = opencodeClient.getSessionMessage(target.sessionID, messageID, target.directory)
     .then((record) => {
-      if (getRuntimeKey() !== runtimeKey) return
-      const store = getSyncChildStores().ensureChild(target.directory, { bootstrap: false })
+      if (getRuntimeKey() !== runtimeKey || !snapshot.isCurrent()) return
       const state = store.getState()
       if (!state.message[target.sessionID]?.some((message) => message.id === messageID)) return
-      const materialized = materializeSessionSnapshots(state, target.sessionID, [record], { mode: "merge" })
+      const materialized = materializeSessionSnapshots(state, target.sessionID, snapshot.reconcile([record]), { mode: "merge" })
       // Unchanged containers keep their references, so setting both is safe.
       if (materialized.messagesChanged || materialized.partsChanged) {
         store.setState({ message: materialized.message, part: materialized.part })
       }
     })
-    .finally(() => completions.delete(key))
+    .finally(() => {
+      snapshot.dispose()
+      completions.delete(key)
+    })
   completions.set(key, completion)
   return completion
 }

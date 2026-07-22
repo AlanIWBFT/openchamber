@@ -2,13 +2,8 @@
  * OpenChamber session state for the VS Code runtime: archive flags and
  * per-session metadata.
  *
- * OpenCode 2.x has no archive route, so archive flags are OpenChamber's own. The
- * OpenChamber server keeps them in a JSON file beside its OpenCode instance
- * (`packages/web/server/lib/openchamber-sessions/`); the extension host has no
- * server process, so it keeps the same file itself, in the shared OpenChamber
- * config directory, which is also the web server's default data directory: a
- * session archived from VS Code stays archived in the desktop app on the same
- * machine and the other way round.
+ * Archive writes go to OpenCode, which owns the archive timestamp and command
+ * cleanup. Session reads keep its authoritative `time.archived` unchanged.
  *
  * Metadata lives on the OpenCode session record (`PATCH /api/session/{id}`,
  * OpenCode 2.0.15+). Before that it lived in `sessions-metadata.json` in the
@@ -33,7 +28,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-const ARCHIVE_FILE_NAME = 'sessions-archive.json';
 const METADATA_FILE_NAME = 'sessions-metadata.json';
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
@@ -41,12 +35,7 @@ type JsonObject = { [key: string]: JsonValue };
 /** Free-form JSON attached to a session; the same shape the shared UI's `Metadata` has. */
 export type SessionMetadata = JsonObject;
 
-/**
- * Archive state per session: a number archives, `null` is an explicit
- * unarchive that drops the stamp OpenCode still carries (sessions migrated
- * from v1), and a session that is absent keeps whatever OpenCode says.
- */
-type ArchivedSessions = Record<string, number | null>;
+export type SessionArchiveOnOpenCode = (sessionID: string, archivedAt: number | null) => Promise<void>;
 type StoredSessionMetadata = Record<string, SessionMetadata>;
 
 export type SessionStateFs = {
@@ -152,7 +141,6 @@ export const createSessionStateStore = ({
   fsPromises = fs.promises,
   now = Date.now,
 }: SessionStateStoreOptions) => {
-  const archivePath = path.join(dataDir, ARCHIVE_FILE_NAME);
   const metadataPath = path.join(dataDir, METADATA_FILE_NAME);
   let writeChain: Promise<unknown> = Promise.resolve();
 
@@ -192,19 +180,6 @@ export const createSessionStateStore = ({
     return next;
   };
 
-  const readArchived = async (): Promise<ArchivedSessions | null> => {
-    const parsed = await readJsonObjectFile(archivePath);
-    if (!parsed) return null;
-    const result: ArchivedSessions = {};
-    for (const [sessionID, value] of Object.entries(parsed)) {
-      const id = asSessionId(sessionID);
-      if (!id) continue;
-      if (value === null) result[id] = null;
-      else if (isTimestamp(value)) result[id] = value;
-    }
-    return result;
-  };
-
   const readMetadata = async (): Promise<StoredSessionMetadata | null> => {
     const parsed = await readJsonObjectFile(metadataPath);
     if (!parsed) return null;
@@ -217,36 +192,35 @@ export const createSessionStateStore = ({
   };
 
   /** Sets or clears the archive flag for a batch; `null` clears. */
-  const applyArchive = async (ids: string[], archivedAt: number | null) => {
+  const applyArchive = async (ids: string[], archivedAt: number | null, write: SessionArchiveOnOpenCode) => {
     const targets = asSessionIdList(ids);
-    if (targets.length === 0) return { applied: [] as string[], failedIds: [] as string[] };
-    const current = await readArchived();
-    if (!current) return { applied: [] as string[], failedIds: targets };
-    const next: ArchivedSessions = { ...current };
-    for (const id of targets) next[id] = archivedAt;
-    try {
-      await writeJsonObjectFile(archivePath, next);
-    } catch (error) {
-      console.warn('[openchamber-sessions] failed to persist archive state:', describeError(error));
-      return { applied: [] as string[], failedIds: targets };
-    }
-    return { applied: targets, failedIds: [] as string[] };
+    const applied = new Set<string>();
+    let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(4, targets.length) }, async () => {
+      while (cursor < targets.length) {
+        const id = targets[cursor++];
+        try {
+          await write(id, archivedAt);
+          applied.add(id);
+        } catch (error) {
+          console.warn('[openchamber-sessions] failed to update archive state:', describeError(error));
+        }
+      }
+    }));
+    return { applied: targets.filter((id) => applied.has(id)), failedIds: targets.filter((id) => !applied.has(id)) };
   };
 
   return {
-    archivePath,
     metadataPath,
-    /** `{ [sessionID]: archivedAt }`, or `null` when the file could not be read. */
-    readArchived,
     /** `{ [sessionID]: metadata }`, or `null` when the file could not be read. */
     readMetadata,
-    archive: async (ids: string[], archivedAt: number | null = null) => {
+    archive: async (ids: string[], archivedAt: number | null, write: SessionArchiveOnOpenCode) => {
       const stamp = archivedAt ?? now();
-      const { applied, failedIds } = await applyArchive(ids, stamp);
+      const { applied, failedIds } = await applyArchive(ids, stamp, write);
       return { archived: applied.map((id) => ({ id, archivedAt: stamp })), failedIds };
     },
-    unarchive: async (ids: string[]) => {
-      const { applied, failedIds } = await applyArchive(ids, null);
+    unarchive: async (ids: string[], write: SessionArchiveOnOpenCode) => {
+      const { applied, failedIds } = await applyArchive(ids, null, write);
       return { restored: applied.map((id) => ({ id, archivedAt: null })), failedIds };
     },
     /** The session's full metadata: a legacy entry laid over OpenCode's record. `{}` for an unknown session. */
@@ -290,31 +264,17 @@ export const createSessionStateStore = ({
 export type SessionStateStore = ReturnType<typeof createSessionStateStore>;
 
 /**
- * Folds owned state onto one OpenCode session record: `time.archived` from the
- * archive file (dropped when the file says the session is not archived) and
- * legacy metadata not yet migrated merged over OpenCode's record. A value
+ * Folds legacy metadata not yet migrated over OpenCode's record. A value
  * that is not a session record passes through untouched.
  */
 const overlaySessionRecord = (
   value: JsonValue,
-  archived: ArchivedSessions | null,
   stored: StoredSessionMetadata | null,
 ): JsonValue => {
   if (!isJsonObject(value)) return value;
   const id = asSessionId(value.id);
   if (!id) return value;
   let result: JsonObject = value;
-  if (archived && Object.prototype.hasOwnProperty.call(archived, id)) {
-    const time = isJsonObject(result.time) ? result.time : {};
-    const archivedAt = archived[id];
-    if (typeof archivedAt === 'number') {
-      result = { ...result, time: { ...time, archived: archivedAt } };
-    } else if ('archived' in time) {
-      const rest = { ...time };
-      delete rest.archived;
-      result = { ...result, time: rest };
-    }
-  }
   if (stored) {
     const ours = stored[id];
     if (ours) {
@@ -332,20 +292,19 @@ const overlaySessionRecord = (
  */
 export const overlaySessionResponseBody = (
   body: JsonValue,
-  archived: ArchivedSessions | null,
   stored: StoredSessionMetadata | null,
 ): JsonValue => {
-  if (!archived && !stored) return body;
-  if (Array.isArray(body)) return body.map((entry) => overlaySessionRecord(entry, archived, stored));
+  if (!stored) return body;
+  if (Array.isArray(body)) return body.map((entry) => overlaySessionRecord(entry, stored));
   if (!isJsonObject(body)) return body;
   const data = body.data;
   if (Array.isArray(data)) {
-    return { ...body, data: data.map((entry) => overlaySessionRecord(entry, archived, stored)) };
+    return { ...body, data: data.map((entry) => overlaySessionRecord(entry, stored)) };
   }
   if (isJsonObject(data)) {
-    return { ...body, data: overlaySessionRecord(data, archived, stored) };
+    return { ...body, data: overlaySessionRecord(data, stored) };
   }
-  return overlaySessionRecord(body, archived, stored);
+  return overlaySessionRecord(body, stored);
 };
 
 /** `GET /api/session` (list) and `GET /api/session/:id` (one record) carry session records to overlay. */
