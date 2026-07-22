@@ -1,6 +1,6 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import type { State } from './types';
-import { messagesBefore } from './message-ordering';
+import { selectVisibleMessages } from './message-boundary';
 
 type UserMessageHistoryRecord = {
   message: Message;
@@ -70,7 +70,7 @@ export const buildUserMessageHistorySnapshot = (
   const session = state.session.find((candidate) => candidate.id === sessionID);
   const revertMessageID = session?.revert?.messageID;
   const records: UserMessageHistoryRecord[] = [];
-  for (const message of messagesBefore(messages, revertMessageID)) {
+  for (const message of selectVisibleMessages(messages, revertMessageID)) {
     if (message.role !== 'user') {
       continue;
     }
