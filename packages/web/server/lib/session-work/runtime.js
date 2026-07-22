@@ -107,7 +107,6 @@ export function createSessionWorkRuntime({
   readMetadata,
   /** `(sessionID, decide, { directory }) => { metadata, changed }`, decided against the record at write time. */
   updateMetadata,
-  isSessionArchived = async () => false,
   /** Whether a folder is inside a worktree the user pinned: its sessions are never in work. */
   isWorktreePinned = async () => false,
   /** Roots of managed Chats: plain conversations, never work. */
@@ -185,7 +184,7 @@ export function createSessionWorkRuntime({
   /** `workSession`, and only while it is not archived. */
   const eligibleSession = async (client, sessionId, signal) => {
     const session = await workSession(client, sessionId, signal);
-    return session && !(await isSessionArchived(sessionId)) ? session : null;
+    return session && !session.time?.archived ? session : null;
   };
 
   const markSuggested = (sessionId, directory) => {
@@ -217,7 +216,7 @@ export function createSessionWorkRuntime({
     // A pinned worktree's sessions are never in work; a pinned session's own
     // pin is checked by `openPatch`, against the record at write time.
     if (await isWorktreePinned(session.location?.directory ?? session.directory ?? directory)) return 'settled';
-    if (await isSessionArchived(sessionId)) return 'archived';
+    if (session.time?.archived) return 'archived';
     if (stopped) return 'settled';
     await updateMetadata(sessionId, (metadata) => openPatch(metadata, { requestAt: createdAt, now: now() }), { directory });
     return 'settled';

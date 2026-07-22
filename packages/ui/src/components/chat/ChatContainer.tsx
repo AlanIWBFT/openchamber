@@ -3,7 +3,7 @@ import { SessionRecapNote } from '@/components/chat/SessionRecapSpacer';
 import { DraftProjectName } from '@/components/chat/DraftProjectName';
 import { createPortal } from 'react-dom';
 import type { Message, Part, Session } from '@/lib/opencode/model';
-import { getLastConversationRecord, isIncompleteAssistantTurn } from '@/lib/opencode/model';
+import { getLastConversationRecord } from '@/lib/opencode/model';
 import { keepCommandSubagentReports } from '@/lib/opencode/subagent-run';
 import { dropReplyCommandRows } from '@/lib/opencode/reply-command';
 import { isOpencodeNotFound, opencodeClient } from '@/lib/opencode/client';
@@ -95,6 +95,7 @@ import {
     useSessionMessageRecords,
     useSessionMessageLoadState,
     useSessionMessageLoader,
+    useDirectorySync,
     useSyncDirectory,
     useSessionRenderable,
     useSessionStatus,
@@ -107,6 +108,8 @@ import {
 } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useResolvedSessionActivity } from '@/hooks/useSessionActivity';
+import { isIncompleteAssistantTurn } from '@/lib/opencode/model';
 import { useI18n } from '@/lib/i18n';
 import { useDraftHeading } from './useDraftHeading';
 import { isVSCodeRuntime } from '@/lib/desktop';
@@ -1017,8 +1020,13 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     }, [active, currentSessionKey, firstVisiblePerformance, hasRenderableSessionSnapshot, sessionMessages.length]);
 
     // Session status from sync system
-    const sessionStatusForCurrent = useSessionStatus(currentSessionId ?? '', effectiveSessionDirectory) ?? IDLE_SESSION_STATUS;
-    const statusSnapshotReady = useSessionStatusSnapshotReady(effectiveSessionDirectory, currentSessionId ?? '');
+    const currentSessionStatus = useSessionStatus(currentSessionId ?? '', effectiveSessionDirectory);
+    const sessionStatusForCurrent = currentSessionStatus ?? IDLE_SESSION_STATUS;
+    const sessionStatusSnapshotReady = useSessionStatusSnapshotReady(effectiveSessionDirectory, currentSessionId ?? '');
+    const sessionStatusFallbackUntil = useDirectorySync(
+        React.useCallback((state) => state.session_status_fallback_until, []),
+        effectiveSessionDirectory,
+    );
 
     // Scoped blocking requests — only subscribe to permissions/forms for
     // the current session + descendant subagent sessions, not all sessions in
@@ -1046,26 +1054,14 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         };
     }, [active, currentSessionId, effectiveSessionDirectory, hasUnreconciledFormTool, sync]);
 
-    const sessionIsWorking = React.useMemo(() => {
-        if (!currentSessionId || sessionPermissions.length > 0 || sessionForms.length > 0) {
-            return false;
-        }
-
-        const statusType = sessionStatusForCurrent.type ?? 'idle';
-        if (statusType === 'busy' || statusType === 'retry') {
-            return true;
-        }
-
-        // No status once the directory's snapshot has landed is idle, as in
-        // `useSessionActivity`: a turn OpenCode was stopped under stays incomplete.
-        if (sessionStatusForCurrent === IDLE_SESSION_STATUS && statusSnapshotReady) {
-            return false;
-        }
-
-        // The last record can be a synthetic/skill/shell/switch message; the
-        // turn is still running only per the last conversation message.
-        return isIncompleteAssistantTurn(getLastConversationRecord(sessionMessages)?.info);
-    }, [currentSessionId, sessionMessages, sessionPermissions.length, sessionForms.length, sessionStatusForCurrent, statusSnapshotReady]);
+    const sessionIsWorking = useResolvedSessionActivity({
+        sessionId: currentSessionId,
+        status: currentSessionStatus,
+        statusSnapshotReady: sessionStatusSnapshotReady,
+        fallbackUntil: sessionStatusFallbackUntil,
+        hasPendingAssistant: isIncompleteAssistantTurn(getLastConversationRecord(sessionMessages)?.info),
+        hasBlockingRequest: !currentSessionId || sessionPermissions.length > 0 || sessionForms.length > 0,
+    }).isWorking;
 
     const latestCompletedReply = React.useMemo(
         () => findLatestCompletedReply(sessionMessages),

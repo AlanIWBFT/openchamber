@@ -724,17 +724,11 @@ describe('OpenChamber control service', () => {
     expect(client.session.active).toHaveBeenCalledTimes(2);
   });
 
-  it('filters archived sessions, with the archive file over OpenCode, and adds global statuses', async () => {
-    const entries = { ses_archived: 100, ses_restored: null };
-    const { service, client } = createService({
-      // Async like the real store (`openchamber-sessions/archive-store.js`).
-      archiveStore: { entry: async (id) => entries[id] },
-    });
+  it('filters sessions archived by the backend and adds global statuses', async () => {
+    const { service, client } = createService();
     client.session.list.mockResolvedValue({ data: [
       { id: 'ses_active', location: { directory: '/repo' }, time: {} },
-      { id: 'ses_archived', location: { directory: '/repo' }, time: {} },
-      { id: 'ses_upstream', location: { directory: '/repo' }, time: { archived: 50 } },
-      { id: 'ses_restored', location: { directory: '/repo' }, time: { archived: 70 } },
+      { id: 'ses_archived', location: { directory: '/repo' }, time: { archived: 100 } },
       { id: 'ses_other', location: { directory: '/other' }, time: {} },
     ] });
     client.session.active.mockResolvedValue({ ses_active: { type: 'running' } });
@@ -742,7 +736,6 @@ describe('OpenChamber control service', () => {
     await expect(service.execute('session.list', { limit: 10, withStatus: true })).resolves.toEqual({
       sessions: [
         { id: 'ses_active', directory: '/repo', ...NOT_IN_WORK, status: { type: 'busy' } },
-        { id: 'ses_restored', directory: '/repo', ...NOT_IN_WORK, status: { type: 'idle' } },
         { id: 'ses_other', directory: '/other', ...NOT_IN_WORK, status: { type: 'idle' } },
       ],
       limit: 10,
@@ -910,7 +903,6 @@ describe('OpenChamber control service', () => {
     it('lists what the sidebar block shows, across every project and page', async () => {
       const { service, client } = createService({
         chatRoots: ['/chats'],
-        archiveStore: { entry: async (id) => (id === 'archived' ? 100 : undefined) },
       });
       client.session.list
         .mockResolvedValueOnce({ data: [
@@ -921,7 +913,7 @@ describe('OpenChamber control service', () => {
         ], cursor: { next: 'page-2' } })
         .mockResolvedValueOnce({ data: [
           session('child', { parentID: 'working', metadata: open() }),
-          session('archived', { metadata: open() }),
+          session('archived', { metadata: open(), time: { updated: 10, idle: 50, archived: 100 } }),
           session('chat', { location: { directory: '/chats/one' }, metadata: open() }),
           session('elsewhere', { location: { directory: '/other' }, metadata: open() }),
           session('plain'),
@@ -1041,9 +1033,9 @@ describe('OpenChamber control service', () => {
       const { service, client } = createService({
         updateSessionMetadata,
         now: () => 700,
-        archiveStore: { entry: async (id) => (id === 'archived' ? 100 : undefined) },
       });
-      client.session.get.mockImplementation(async ({ sessionID }) => session(sessionID, sessionID === 'child' ? { parentID: 'p' } : {}));
+      client.session.get.mockImplementation(async ({ sessionID }) => session(sessionID,
+        sessionID === 'child' ? { parentID: 'p' } : sessionID === 'archived' ? { time: { archived: 100 } } : {}));
 
       await expect(service.execute('session.track', { sessionId: 'child' })).rejects.toMatchObject({ statusCode: 400 });
       await expect(service.execute('session.track', { sessionId: 'archived' })).rejects.toMatchObject({ statusCode: 409 });
@@ -1121,13 +1113,13 @@ describe('OpenChamber control service', () => {
     client.message.list.mockImplementation(async (input) => {
       if (!input.cursor) {
         return page([
-          { id: 'msg_new_user', type: 'user', time: { created: 40 }, text: 'Recent question' },
-          { id: 'msg_new_assistant', type: 'assistant', time: { created: 50, completed: 55 }, content: [{ type: 'text', text: 'Recent answer' }] },
+          { id: 'msg_new_user', type: 'user', seq: 4, time: { created: 40 }, text: 'Recent question' },
+          { id: 'msg_new_assistant', type: 'assistant', seq: 5, time: { created: 50, completed: 55 }, content: [{ type: 'text', text: 'Recent answer' }] },
         ], 'cursor-page-2');
       }
       if (input.cursor === 'cursor-page-2') {
         return page([
-          { id: 'msg_old_user', type: 'user', time: { created: 10 }, text: 'Older requirement' },
+          { id: 'msg_old_user', type: 'user', seq: 1, time: { created: 10 }, text: 'Older requirement' },
         ], undefined);
       }
       throw new Error(`unexpected cursor ${input.cursor}`);
@@ -1153,14 +1145,14 @@ describe('OpenChamber control service', () => {
     client.message.list.mockImplementation(async (input) => {
       if (!input.cursor) {
         return page([
-          { id: 'msg_new_assistant', type: 'assistant', time: { created: 50, completed: 55 }, content: [{ type: 'text', text: 'Recent answer' }] },
-          { id: 'msg_new_user', type: 'user', time: { created: 40 }, text: 'Recent question' },
+          { id: 'msg_new_assistant', type: 'assistant', seq: 5, time: { created: 50, completed: 55 }, content: [{ type: 'text', text: 'Recent answer' }] },
+          { id: 'msg_new_user', type: 'user', seq: 4, time: { created: 40 }, text: 'Recent question' },
         ], 'cursor-page-2');
       }
       if (input.cursor === 'cursor-page-2') {
         return page([
-          { id: 'msg_mid_user', type: 'user', time: { created: 20 }, text: 'Earlier question' },
-          { id: 'msg_old_user', type: 'user', time: { created: 10 }, text: 'First question' },
+          { id: 'msg_mid_user', type: 'user', seq: 2, time: { created: 20 }, text: 'Earlier question' },
+          { id: 'msg_old_user', type: 'user', seq: 1, time: { created: 10 }, text: 'First question' },
         ], 'cursor-page-3');
       }
       throw new Error(`unexpected cursor ${input.cursor}`);

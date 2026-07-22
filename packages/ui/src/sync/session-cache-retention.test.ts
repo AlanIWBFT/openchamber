@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import type { MessagePage } from "@/lib/opencode/client"
-import type { FormRequest, Message, Part } from "@/lib/opencode/model"
+import type { FormRequest, Message, Part, StoredMessage } from "@/lib/opencode/model"
 import { ChildStoreManager } from "./child-store"
 import { SessionMessageLoader, type SessionMessageTarget } from "./session-message-loader"
 import { SessionCacheRetention } from "./session-cache-retention"
@@ -17,16 +17,16 @@ const COUNT_ONLY_TTL_MS = 60 * 60 * 1000
 const waitIdle = async () => { await new Promise((resolve) => setTimeout(resolve, IDLE_TTL_MS * 2)); await flush() }
 
 function transcript(sessionID: string, turns = 8, steps = 12) {
-  const records: Array<{ info: Message; parts: Part[] }> = []
+  const records: MessagePage["items"] = []
   for (let turn = 0; turn < turns; turn += 1) {
     const parentID = `msg_${sessionID}_${turn}_user`
     for (let step = 0; step <= steps; step += 1) {
       const created = turn * (steps + 1) + step
       const id = step === 0 ? parentID : `msg_${sessionID}_${turn}_${step}`
-      const info: Message = step === 0
-        ? { id, sessionID, role: "user", time: { created } }
+      const info: StoredMessage = step === 0
+        ? { id, sessionID, role: "user", time: { created }, seq: created }
         : {
-          id, sessionID, role: "assistant", time: { created, completed: created + 0.5 },
+          id, sessionID, role: "assistant", time: { created, completed: created + 0.5 }, seq: created,
           modelID: "test", providerID: "test", agent: "build",
         }
       const part: Part = step > 0 && step < steps
