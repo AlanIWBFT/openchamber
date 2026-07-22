@@ -5,21 +5,18 @@ const getCreatedAt = (message: Message): number => {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
 }
 
-/**
- * Within one millisecond a synthetic record goes first. Context attached to a
- * prompt is written right before it and often shares its millisecond, while
- * the prompt's id is minted earlier on the client, so the ID alone would put
- * that context after the prompt it belongs to.
- */
+/** Provisional context precedes its prompt when they share a timestamp. */
 const equalTimeRank = (message: Message): number => (message.role === "synthetic" ? 0 : 1)
 
 /**
- * Message IDs identify records; they are not chronology. OpenCode's sortable
- * ID timestamp rolls over, so a newly created `msg_000...` can follow a legacy
- * `msg_fff...`. Creation time is the authoritative transcript order, with ID
- * used only to make equal timestamps deterministic.
+ * Persisted messages follow OpenCode's creation sequence, including across
+ * clock changes and ID rollover. Optimistic and queued inbox messages stay
+ * after persisted history until delivery confirms their sequence. Only those
+ * provisional records use creation time, context rank and ID among themselves.
  */
 export const compareMessagesChronologically = (left: Message, right: Message): number => {
+  if (left.seq !== undefined) return right.seq === undefined ? -1 : left.seq - right.seq
+  if (right.seq !== undefined) return 1
   const createdAtDifference = getCreatedAt(left) - getCreatedAt(right)
   if (createdAtDifference !== 0) return createdAtDifference
   const rankDifference = equalTimeRank(left) - equalTimeRank(right)
