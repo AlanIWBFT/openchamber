@@ -79,7 +79,9 @@ const makeSession = (id: string, directory?: string): Session => ({
   version: 1,
 }) as unknown as Session;
 
-const page = (items: Array<{ info: Message; parts: Part[] }>): MessagePage => ({ items, cursor: {} });
+const page = (items: Array<{ info: Message; parts: Part[] }>): MessagePage => ({
+  items: items.map((record, index) => ({ ...record, info: { ...record.info, seq: index + 1 } })), cursor: {},
+});
 
 const record = (id: string, created = 1): { info: Message; parts: Part[] } => ({
   info: { id, sessionID: 'fork-1', role: 'user', time: { created } },

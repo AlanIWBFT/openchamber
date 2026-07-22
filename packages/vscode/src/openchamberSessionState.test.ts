@@ -10,6 +10,7 @@ import {
   overlaySessionResponseBody,
   type SessionMetadata,
   type SessionMetadataOnOpenCode,
+  type SessionArchiveOnOpenCode,
   type SessionStateFs,
 } from './openchamberSessionState';
 
@@ -59,52 +60,69 @@ const createMemoryFs = (initial: Record<string, string> = {}) => {
 };
 
 describe('openchamber session state store', () => {
-  it('archives and unarchives a batch and reads the flags back from disk', async () => {
-    const memory = createMemoryFs();
+  it('archives and restores through OpenCode without reading or rewriting legacy flags', async () => {
+    const legacy = '{not json';
+    const memory = createMemoryFs({ [dataFile('sessions-archive.json')]: legacy });
+    memory.fsPromises.readFile = async () => { throw new Error('archive must not read files'); };
     const store = createSessionStateStore({ dataDir: '/data', fsPromises: memory.fsPromises, now: () => 1000 });
+    const flags = new Map<string, number | null>();
+    const write: SessionArchiveOnOpenCode = async (id, stamp) => { flags.set(id, stamp); };
 
-    assert.deepEqual(await store.archive(['ses_a', 'ses_b', 'ses_a'], null), {
+    assert.deepEqual(await store.archive(['ses_a', 'ses_b', 'ses_a'], null, write), {
       archived: [{ id: 'ses_a', archivedAt: 1000 }, { id: 'ses_b', archivedAt: 1000 }],
       failedIds: [],
     });
-    assert.deepEqual(await store.readArchived(), { ses_a: 1000, ses_b: 1000 });
-    assert.equal(memory.files.has(store.archivePath), true);
-    // Every write went through a temp file that was renamed into place.
-    assert.equal(memory.writes.every((filePath) => filePath.endsWith('.tmp')), true);
-
-    assert.deepEqual(await store.unarchive(['ses_a']), { restored: [{ id: 'ses_a', archivedAt: null }], failedIds: [] });
-    // The unarchive stays on file: it overrides an archived stamp OpenCode may still carry.
-    assert.deepEqual(await store.readArchived(), { ses_a: null, ses_b: 1000 });
+    assert.deepEqual(Object.fromEntries(flags), { ses_a: 1000, ses_b: 1000 });
+    assert.deepEqual(await store.unarchive(['ses_a'], write), { restored: [{ id: 'ses_a', archivedAt: null }], failedIds: [] });
+    assert.deepEqual(Object.fromEntries(flags), { ses_a: null, ses_b: 1000 });
+    assert.equal(memory.files.get(dataFile('sessions-archive.json')), legacy);
+    assert.deepEqual(memory.writes, []);
   });
 
-  it('keeps a change another process made between two of its own writes', async () => {
+  it('limits backend writes to four and preserves input order when they finish out of order', async () => {
     const memory = createMemoryFs();
     const store = createSessionStateStore({ dataDir: '/data', fsPromises: memory.fsPromises, now: () => 1000 });
-    await store.archive(['ses_a']);
-    // The desktop app archives ses_c in the same file.
-    memory.files.set(store.archivePath, JSON.stringify({ ses_a: 1000, ses_c: 2000 }));
-
-    await store.archive(['ses_b']);
-
-    assert.deepEqual(await store.readArchived(), { ses_a: 1000, ses_b: 1000, ses_c: 2000 });
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let active = 0;
+    let peak = 0;
+    const completed: string[] = [];
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
+    const pending = store.archive(ids, 2000, async (id) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      if (id === 'a') await gate;
+      else await Promise.resolve();
+      completed.push(id);
+      active -= 1;
+    });
+    assert.equal(active, 4);
+    await Promise.resolve();
+    release();
+    assert.deepEqual(await pending, { archived: ids.map((id) => ({ id, archivedAt: 2000 })), failedIds: [] });
+    assert.equal(peak, 4);
+    assert.notEqual(completed[0], 'a');
   });
 
-  it('reports every id as failed when the archive file cannot be read', async () => {
+  it('reports backend failures separately without undoing other successful writes', async () => {
     const memory = createMemoryFs();
-    memory.fsPromises.readFile = async () => { throw new Error('EACCES'); };
     const store = createSessionStateStore({ dataDir: '/data', fsPromises: memory.fsPromises });
-
-    assert.deepEqual(await store.archive(['ses_a']), { archived: [], failedIds: ['ses_a'] });
-    assert.equal(await store.readArchived(), null);
+    const write: SessionArchiveOnOpenCode = async (id) => { if (id === 'ses_a') throw new Error('backend rejected'); };
+    assert.deepEqual(await store.archive(['ses_a', 'ses_b'], 1000, write), {
+      archived: [{ id: 'ses_b', archivedAt: 1000 }], failedIds: ['ses_a'],
+    });
+    assert.deepEqual(await store.unarchive(['ses_a', 'ses_b'], write), {
+      restored: [{ id: 'ses_b', archivedAt: null }], failedIds: ['ses_a'],
+    });
     assert.deepEqual(memory.writes, []);
   });
 
   it('moves an unreadable file aside instead of overwriting it', async () => {
-    const memory = createMemoryFs({ [dataFile('sessions-archive.json')]: '{not json' });
+    const memory = createMemoryFs({ [dataFile('sessions-metadata.json')]: '{not json' });
     const store = createSessionStateStore({ dataDir: '/data', fsPromises: memory.fsPromises, now: () => 5 });
 
-    assert.deepEqual(await store.readArchived(), {});
-    assert.equal(memory.files.get(dataFile('sessions-archive.json.corrupt-5')), '{not json');
+    assert.deepEqual(await store.readMetadata(), {});
+    assert.equal(memory.files.get(dataFile('sessions-metadata.json.corrupt-5')), '{not json');
   });
 
   it('merges metadata patches on OpenCode per key and deletes on null', async () => {
@@ -149,10 +167,9 @@ describe('mergeMetadataPatch', () => {
 });
 
 describe('overlaySessionResponseBody', () => {
-  const archived = { ses_a: 1234 };
   const stored = { ses_a: { openchamber: { pinned: true } } };
 
-  it('folds archive time and stored metadata onto list and detail envelopes', () => {
+  it('folds legacy metadata into list and detail envelopes while preserving backend archive state', () => {
     const list: JsonValue = {
       data: [
         { id: 'ses_a', time: { created: 1 }, metadata: { seed: 1 } },
@@ -161,25 +178,23 @@ describe('overlaySessionResponseBody', () => {
       ],
       cursor: {},
     };
-    assert.deepEqual(overlaySessionResponseBody(list, { ...archived, ses_b: null }, stored), {
+    assert.deepEqual(overlaySessionResponseBody(list, stored), {
       data: [
-        { id: 'ses_a', time: { created: 1, archived: 1234 }, metadata: { seed: 1, openchamber: { pinned: true } } },
-        // An explicit unarchive drops the stamp OpenCode still carries.
-        { id: 'ses_b', time: { created: 2 } },
-        // A session the file does not mention keeps what OpenCode says (migrated v1 archive).
+        { id: 'ses_a', time: { created: 1 }, metadata: { seed: 1, openchamber: { pinned: true } } },
+        { id: 'ses_b', time: { created: 2, archived: 99 } },
         { id: 'ses_c', time: { created: 3, archived: 77 } },
       ],
       cursor: {},
     });
-    assert.deepEqual(overlaySessionResponseBody({ data: { id: 'ses_a', time: {} } }, archived, null), {
-      data: { id: 'ses_a', time: { archived: 1234 } },
+    assert.deepEqual(overlaySessionResponseBody({ data: { id: 'ses_a', time: { archived: 1234 } } }, stored), {
+      data: { id: 'ses_a', time: { archived: 1234 }, metadata: { openchamber: { pinned: true } } },
     });
   });
 
   it('leaves the body alone when nothing is known', () => {
     const body = { data: [{ id: 'ses_a', time: { archived: 7 } }] };
-    assert.equal(overlaySessionResponseBody(body, null, null), body);
-    assert.equal(overlaySessionResponseBody('not json', archived, stored), 'not json');
+    assert.equal(overlaySessionResponseBody(body, null), body);
+    assert.equal(overlaySessionResponseBody('not json', stored), 'not json');
   });
 
   it('matches only the list and single-record session paths', () => {

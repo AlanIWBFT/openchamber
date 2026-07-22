@@ -116,11 +116,6 @@ vi.mock('../git/index.js', () => ({
   resolvePrimaryWorktreeRoot: async (directory) => ({ root: directory === '/repo/worktrees/side-task' ? '/repo/app' : directory }),
 }));
 
-/**
- * Archive state is OpenChamber's own now, so the routes take a store rather
- * than talking to OpenCode. The tests use an in-memory one with the same
- * contract as `archive-store.js`.
- */
 const createMemorySessionMetadataStore = () => {
   const entries = new Map();
   const merge = (current, patch) => {
@@ -147,51 +142,15 @@ const createMemorySessionMetadataStore = () => {
   };
 };
 
-const createMemoryArchiveStore = () => {
-  const entries = new Map();
-  let failFor = new Set();
-  return {
-    failIds: (ids) => { failFor = new Set(ids); },
-    entries,
-    getAll: async () => Object.fromEntries(entries),
-    list: async () => Object.fromEntries(entries),
-    isArchived: async (id) => entries.has(id),
-    archivedAt: async (id) => entries.get(id) ?? null,
-    archive: async (ids, archivedAt) => {
-      const stamp = Number.isSafeInteger(archivedAt) && archivedAt > 0 ? archivedAt : 1;
-      const archived = [];
-      const failedIds = [];
-      for (const id of ids) {
-        if (failFor.has(id)) { failedIds.push(id); continue; }
-        entries.set(id, stamp);
-        archived.push({ id, archivedAt: stamp });
-      }
-      return { archived, failedIds };
-    },
-    unarchive: async (ids) => {
-      const restored = [];
-      const failedIds = [];
-      for (const id of ids) {
-        if (failFor.has(id)) { failedIds.push(id); continue; }
-        entries.delete(id);
-        restored.push({ id, archivedAt: null });
-      }
-      return { restored, failedIds };
-    },
-  };
-};
-
 const createApp = (overrides = {}, options = {}) => {
   const app = express();
   if (options.globalJson !== false) {
     app.use(express.json());
   }
   const calls = [];
-  const archiveStore = overrides.archiveStore ?? createMemoryArchiveStore();
   const sessionMetadataStore = overrides.sessionMetadataStore ?? createMemorySessionMetadataStore();
   const broadcastGlobalUiEvent = overrides.broadcastGlobalUiEvent ?? vi.fn();
   registerOpenChamberSessionRoutes(app, {
-    archiveStore,
     sessionMetadataStore,
     broadcastGlobalUiEvent,
     readSettingsFromDiskMigrated: async () => ({ projects: [{ id: 'proj_1', path: '/repo/app' }] }),
@@ -202,7 +161,7 @@ const createApp = (overrides = {}, options = {}) => {
     waitForOpenCodeReady: vi.fn(async () => undefined),
     ...overrides,
   });
-  return { app, calls, archiveStore, sessionMetadataStore, broadcastGlobalUiEvent };
+  return { app, calls, sessionMetadataStore, broadcastGlobalUiEvent };
 };
 
 describe('openchamber session routes', () => {
@@ -221,7 +180,8 @@ describe('openchamber session routes', () => {
       updatedAt: Date.now(),
     }));
     sessionCreateMock.mockClear();
-    sessionUpdateMock.mockClear();
+    sessionUpdateMock.mockReset();
+    sessionUpdateMock.mockResolvedValue(undefined);
     sessionForkMock.mockClear();
     existingSessionMessages = [];
     dispatchedUserMessageSeq = 0;
@@ -251,8 +211,39 @@ describe('openchamber session routes', () => {
   });
 
   describe('archiving a batch of sessions', () => {
+    it('uses bounded backend concurrency without resolving a missing worktree directory', async () => {
+      let release;
+      let ready;
+      const gate = new Promise((resolve) => { release = resolve; });
+      const started = new Promise((resolve) => { ready = resolve; });
+      let active = 0;
+      let peak = 0;
+      sessionUpdateMock.mockImplementation(async () => {
+        active += 1;
+        peak = Math.max(peak, active);
+        if (active === 4) ready();
+        await gate;
+        active -= 1;
+      });
+      const validateDirectoryPath = vi.fn(async () => ({ ok: false }));
+      const { app } = createApp({ validateDirectoryPath });
+      const ids = Array.from({ length: 9 }, (_, index) => `ses_${index}`);
+      const response = request(app).post('/api/openchamber/sessions/archive')
+        .send({ ids, directory: '/missing/worktree', archivedAt: 1700 }).then((result) => result);
+      try {
+        await started;
+        expect(sessionUpdateMock).toHaveBeenCalledTimes(4);
+      } finally { release(); }
+      const result = await response;
+      expect(result.status).toBe(200);
+      expect(result.body.archived.map((entry) => entry.id)).toEqual(ids);
+      expect(peak).toBe(4);
+      expect(validateDirectoryPath).not.toHaveBeenCalled();
+      expect(clientOptions[0].headers['x-opencode-directory']).toBeUndefined();
+    });
+
     it('archives every id and reports what it stored', async () => {
-      const { app, archiveStore, broadcastGlobalUiEvent } = createApp();
+      const { app, broadcastGlobalUiEvent } = createApp();
       const response = await request(app)
         .post('/api/openchamber/sessions/archive')
         .send({ ids: ['ses_a', 'ses_b'], archivedAt: 1700 })
@@ -263,7 +254,9 @@ describe('openchamber session routes', () => {
         { id: 'ses_b', archivedAt: 1700 },
       ]);
       expect(response.body.failedIds).toEqual([]);
-      await expect(archiveStore.getAll()).resolves.toEqual({ ses_a: 1700, ses_b: 1700 });
+      expect(sessionUpdateMock.mock.calls.map(([input]) => input)).toEqual([
+        { sessionID: 'ses_a', archivedAt: 1700 }, { sessionID: 'ses_b', archivedAt: 1700 },
+      ]);
       expect(broadcastGlobalUiEvent).toHaveBeenCalledWith({
         type: 'openchamber:session-archived',
         properties: { sessionID: 'ses_a', archivedAt: 1700 },
@@ -271,9 +264,8 @@ describe('openchamber session routes', () => {
     });
 
     it('keeps archiving after a failed session and reports it as failed', async () => {
-      const archiveStore = createMemoryArchiveStore();
-      archiveStore.failIds(['ses_b']);
-      const { app } = createApp({ archiveStore });
+      sessionUpdateMock.mockImplementation(async ({ sessionID }) => { if (sessionID === 'ses_b') throw new Error('backend rejected'); });
+      const { app } = createApp();
 
       const response = await request(app)
         .post('/api/openchamber/sessions/archive')
@@ -285,9 +277,8 @@ describe('openchamber session routes', () => {
     });
 
     it('does not announce a session it failed to store', async () => {
-      const archiveStore = createMemoryArchiveStore();
-      archiveStore.failIds(['ses_b']);
-      const { app, broadcastGlobalUiEvent } = createApp({ archiveStore });
+      sessionUpdateMock.mockImplementation(async ({ sessionID }) => { if (sessionID === 'ses_b') throw new Error('backend rejected'); });
+      const { app, broadcastGlobalUiEvent } = createApp();
 
       await request(app)
         .post('/api/openchamber/sessions/archive')
@@ -299,7 +290,7 @@ describe('openchamber session routes', () => {
     });
 
     it('restores a batch and announces the cleared state', async () => {
-      const { app, archiveStore, broadcastGlobalUiEvent } = createApp();
+      const { app, broadcastGlobalUiEvent } = createApp();
       await request(app).post('/api/openchamber/sessions/archive').send({ ids: ['ses_a'] }).expect(200);
       broadcastGlobalUiEvent.mockClear();
 
@@ -310,7 +301,7 @@ describe('openchamber session routes', () => {
 
       expect(response.body.restored).toEqual([{ id: 'ses_a', archivedAt: null }]);
       expect(response.body.failedIds).toEqual([]);
-      await expect(archiveStore.getAll()).resolves.toEqual({});
+      expect(sessionUpdateMock).toHaveBeenLastCalledWith({ sessionID: 'ses_a', archivedAt: null });
       expect(broadcastGlobalUiEvent).toHaveBeenCalledWith({
         type: 'openchamber:session-archived',
         properties: { sessionID: 'ses_a', archivedAt: null },
@@ -318,7 +309,7 @@ describe('openchamber session routes', () => {
     });
 
     it('rejects an empty batch, an oversized batch, and non-string ids', async () => {
-      const { app, archiveStore } = createApp();
+      const { app } = createApp();
 
       await request(app).post('/api/openchamber/sessions/archive').send({ ids: [] }).expect(400);
       await request(app)
@@ -335,7 +326,7 @@ describe('openchamber session routes', () => {
         .expect(400);
       await request(app).post('/api/openchamber/sessions/unarchive').send({ ids: [] }).expect(400);
 
-      await expect(archiveStore.getAll()).resolves.toEqual({});
+      expect(sessionUpdateMock).not.toHaveBeenCalled();
     });
   });
 

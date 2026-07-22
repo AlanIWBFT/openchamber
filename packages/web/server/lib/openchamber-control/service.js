@@ -156,9 +156,6 @@ export const createOpenChamberControlService = (dependencies) => {
     fileOpen = null,
     notifyUser = null,
     agentMemoryActions = null,
-    // Archive lives in OpenChamber's own store now — v2 has no route that sets
-    // Session.time.archived — so an unwired store simply means nothing is archived.
-    archiveStore = null,
     createClient = OpenCode.make,
     sleep = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
     now = Date.now,
@@ -195,11 +192,6 @@ export const createOpenChamberControlService = (dependencies) => {
       },
       fetch,
     });
-  };
-
-  const archivedAt = (sessionID) => {
-    if (!archiveStore || typeof archiveStore.isArchived !== 'function') return null;
-    return archiveStore.isArchived(sessionID) || null;
   };
 
   const projects = async () => {
@@ -611,12 +603,7 @@ export const createOpenChamberControlService = (dependencies) => {
         if (action === 'session.list') {
           const limit = positiveInteger(input.limit, 10, 'limit');
           const response = await client.session.list(directory ? { directory } : {});
-          // Archive is OpenChamber state; overlay it so callers keep reading
-          // it off the session the way OpenCode used to report it.
-          let sessions = (Array.isArray(response?.data) ? response.data : []).map((session) => {
-            const archived = archivedAt(session?.id);
-            return archived ? { ...session, time: { ...session.time, archived } } : session;
-          });
+          let sessions = Array.isArray(response?.data) ? response.data : [];
           if (input.all !== true) sessions = sessions.filter((session) => !session?.time?.archived);
           sessions = sessions.slice(0, limit);
           if (input.withStatus === true) {

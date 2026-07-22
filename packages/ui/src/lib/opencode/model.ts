@@ -147,6 +147,8 @@ export type StructuredError = SessionStructuredError
 type MessageBase = {
   id: string
   sessionID: string
+  /** Persisted creation order; absent while optimistic, queued, or awaiting authoritative recovery. */
+  seq?: number
   metadata?: Metadata
 }
 
@@ -267,6 +269,9 @@ export type Message =
   | IdleMessage
 
 export type MessageRole = Message["role"]
+
+/** A message read from persisted transcript history, rather than a provisional live projection. */
+export type StoredMessage = Message & { seq: number }
 
 // ---------------------------------------------------------------------------
 // Parts
