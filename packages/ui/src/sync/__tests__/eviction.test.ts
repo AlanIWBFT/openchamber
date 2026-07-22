@@ -138,6 +138,7 @@ describe("canDisposeDirectory", () => {
 describe("session cache eviction", () => {
   test("protects live and blocking sessions from per-directory cache eviction", () => {
     const protectedIds = getProtectedSessionCacheIds({
+      sessionStatusReady: false,
       session_status: {
         ses_busy: { type: "busy" },
         ses_idle: { type: "idle" },
@@ -169,6 +170,21 @@ describe("session cache eviction", () => {
     expect(seen.has("ses_permission")).toBe(true)
     expect(seen.has("ses_form")).toBe(true)
     expect(seen.has("ses_streaming")).toBe(true)
+  })
+
+  test("does not protect incomplete history after an authoritative idle snapshot", () => {
+    const protectedIds = getProtectedSessionCacheIds({
+      sessionStatusReady: true,
+      session_status: {},
+      message: {
+        ses_stale: [{ id: "msg_stale", sessionID: "ses_stale", role: "assistant", time: { created: 1 }, agent: "build", providerID: "test", modelID: "test" }],
+      },
+      part: {},
+      permission: {},
+      form: {},
+    })
+
+    expect(protectedIds.has("ses_stale")).toBe(false)
   })
 
   test("drops parts for evicted messages without part session ids", () => {

@@ -370,14 +370,11 @@ describe('OpenChamber control service', () => {
     expect(client.session.active).toHaveBeenCalledTimes(2);
   });
 
-  it('filters sessions archived in OpenChamber state and adds global statuses', async () => {
-    const { service, client } = createService({
-      // Async like the real store (`openchamber-sessions/archive-store.js`).
-      archiveStore: { archivedAt: async (id) => (id === 'ses_archived' ? 100 : null) },
-    });
+  it('filters sessions archived by the backend and adds global statuses', async () => {
+    const { service, client } = createService();
     client.session.list.mockResolvedValue({ data: [
       { id: 'ses_active', location: { directory: '/repo' }, time: {} },
-      { id: 'ses_archived', location: { directory: '/repo' }, time: {} },
+      { id: 'ses_archived', location: { directory: '/repo' }, time: { archived: 100 } },
       { id: 'ses_other', location: { directory: '/other' }, time: {} },
     ] });
     client.session.active.mockResolvedValue({ ses_active: { type: 'running' } });
@@ -493,13 +490,13 @@ describe('OpenChamber control service', () => {
     client.message.list.mockImplementation(async (input) => {
       if (!input.cursor) {
         return page([
-          { id: 'msg_new_user', type: 'user', time: { created: 40 }, text: 'Recent question' },
-          { id: 'msg_new_assistant', type: 'assistant', time: { created: 50, completed: 55 }, content: [{ type: 'text', text: 'Recent answer' }] },
+          { id: 'msg_new_user', type: 'user', seq: 4, time: { created: 40 }, text: 'Recent question' },
+          { id: 'msg_new_assistant', type: 'assistant', seq: 5, time: { created: 50, completed: 55 }, content: [{ type: 'text', text: 'Recent answer' }] },
         ], 'cursor-page-2');
       }
       if (input.cursor === 'cursor-page-2') {
         return page([
-          { id: 'msg_old_user', type: 'user', time: { created: 10 }, text: 'Older requirement' },
+          { id: 'msg_old_user', type: 'user', seq: 1, time: { created: 10 }, text: 'Older requirement' },
         ], undefined);
       }
       throw new Error(`unexpected cursor ${input.cursor}`);
@@ -525,14 +522,14 @@ describe('OpenChamber control service', () => {
     client.message.list.mockImplementation(async (input) => {
       if (!input.cursor) {
         return page([
-          { id: 'msg_new_assistant', type: 'assistant', time: { created: 50, completed: 55 }, content: [{ type: 'text', text: 'Recent answer' }] },
-          { id: 'msg_new_user', type: 'user', time: { created: 40 }, text: 'Recent question' },
+          { id: 'msg_new_assistant', type: 'assistant', seq: 5, time: { created: 50, completed: 55 }, content: [{ type: 'text', text: 'Recent answer' }] },
+          { id: 'msg_new_user', type: 'user', seq: 4, time: { created: 40 }, text: 'Recent question' },
         ], 'cursor-page-2');
       }
       if (input.cursor === 'cursor-page-2') {
         return page([
-          { id: 'msg_mid_user', type: 'user', time: { created: 20 }, text: 'Earlier question' },
-          { id: 'msg_old_user', type: 'user', time: { created: 10 }, text: 'First question' },
+          { id: 'msg_mid_user', type: 'user', seq: 2, time: { created: 20 }, text: 'Earlier question' },
+          { id: 'msg_old_user', type: 'user', seq: 1, time: { created: 10 }, text: 'First question' },
         ], 'cursor-page-3');
       }
       throw new Error(`unexpected cursor ${input.cursor}`);
