@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import { getProviderSources, getStoredProviderConfig, readConfig, upsertProviderConfig } from './opencodeConfig';
 import { getProviderAuth } from './opencodeAuth';
 import { OpenCode } from '@opencode/client';
-import { asSessionId, asSessionIdList, asSessionMetadata, asTimestamp, parseJson, type JsonValue, type SessionArchiveOnOpenCode, type SessionMetadataOnOpenCode, type SessionStateStore } from './openchamberSessionState';
+import { asSessionId, asSessionIdList, asSessionMetadata, parseJson, type JsonValue, type SessionArchiveOnOpenCode, type SessionMetadataOnOpenCode, type SessionStateStore } from './openchamberSessionState';
 import type { OpenCodeManager } from './opencode';
 import { activateQuotaGiftReset, fetchQuotaForProvider, listConfiguredQuotaProviders, type QuotaGiftResetType } from './quotaProviders';
 import { credentialStatus, deleteCredential, importCursorCredential, normalizeCredential, readCredential, validateCredential, writeCredential, type ManagedProvider } from './quotaCredentials';
@@ -45,33 +45,14 @@ const openCodeClientFor = (manager: OpenCodeManager | undefined, directory?: str
   return OpenCode.make({ baseUrl: apiUrl.replace(/\/+$/, ''), headers });
 };
 
-/** OpenCode's project for sessions outside any repository; its folder is no home for a session. */
-const GLOBAL_PROJECT_ID = 'global';
-
-/**
- * Archive state on the OpenCode instance this window manages. A session whose
- * directory is gone moves to its project's main folder, read from the project
- * list in the workspace folder OpenCode already runs (see
- * `packages/web/server/lib/openchamber-sessions/session-archive.js`).
- */
+/** ID-scoped archive writes use the backend's confirmed timestamp. */
 const sessionArchiveOnOpenCode = (manager: OpenCodeManager | undefined): SessionArchiveOnOpenCode => {
   const client = openCodeClientFor(manager);
-  let projectFolders: Promise<Map<string, string>> | null = null;
-  const readProjectFolders = () => {
-    projectFolders ??= openCodeClientFor(manager, manager?.getWorkingDirectory() || undefined).project.list({ archived: true })
-      .then((projects) => new Map(projects.map((project) => [project.id, project.canonical])));
-    return projectFolders;
-  };
   return {
-    setArchived: (sessionID, archived) => client.session.update({ sessionID, archived }),
-    relocate: async (sessionID, archived) => {
-      const session = await client.session.get({ sessionID });
-      if (session.projectID === GLOBAL_PROJECT_ID) return false;
-      const folder = (await readProjectFolders()).get(session.projectID);
-      if (!folder || folder === session.location.directory) return false;
-      await client.session.move({ sessionID, directory: folder });
+    setArchived: async (sessionID, archived) => {
       await client.session.update({ sessionID, archived });
-      return true;
+      const session = await client.session.get({ sessionID });
+      return session.time.archived ?? null;
     },
   };
 };
@@ -421,16 +402,14 @@ export async function handleSystemBridgeMessage(
       }
     }
 
-    // Archive state goes to OpenCode, with the archive file for sessions whose
-    // directory is gone; metadata is merge-patched onto OpenCode's record (see
-    // openchamberSessionState.ts). The proxy runtime folds the files back onto
-    // session reads.
+    // Archive state and persistent-command cleanup belong to OpenCode.
+    // Metadata keeps its existing merge-patch and legacy migration behavior.
     case 'api:sessions/archive': {
-      const { ids, archivedAt } = (payload || {}) as { ids?: JsonValue; archivedAt?: JsonValue };
+      const { ids } = (payload || {}) as { ids?: JsonValue };
       const targets = asSessionIdList(ids);
       if (targets.length === 0) return { id, type, success: false, error: 'ids must be a non-empty array of session ids' };
       try {
-        return { id, type, success: true, data: await deps.sessionState.archive(targets, asTimestamp(archivedAt), sessionArchiveOnOpenCode(ctx?.manager)) };
+        return { id, type, success: true, data: await deps.sessionState.archive(targets, sessionArchiveOnOpenCode(ctx?.manager)) };
       } catch (error) {
         return { id, type, success: false, error: error instanceof Error ? error.message : String(error) };
       }

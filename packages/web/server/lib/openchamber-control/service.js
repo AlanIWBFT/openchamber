@@ -240,9 +240,6 @@ export const createOpenChamberControlService = (dependencies) => {
     // Agent workflows (../workflows/runtime.js); absent where they are not
     // available, which is every build without OPENCHAMBER_WORKFLOWS_ENABLE.
     workflowRuntime = null,
-    // Archive lives in OpenChamber's own store now — v2 has no route that sets
-    // Session.time.archived — so an unwired store simply means nothing is archived.
-    archiveStore = null,
     // Whether OpenCode may open a folder (../opencode-trust); absent opens every folder.
     isOpenCodeDirectoryTrusted = null,
     createClient = OpenCode.make,
@@ -303,17 +300,6 @@ export const createOpenChamberControlService = (dependencies) => {
     },
     createError: (message, status) => new OpenChamberControlError(message, status),
   }) : null;
-
-  // OpenCode holds archive state; the archive file holds it for sessions whose
-  // directory is gone, and its entry wins: a timestamp archives, null restores.
-  const withArchiveEntry = async (session) => {
-    if (!archiveStore || !session?.id) return session;
-    const entry = await archiveStore.entry(session.id);
-    if (entry === undefined) return session;
-    if (entry !== null) return { ...session, time: { ...session.time, archived: entry } };
-    const { archived: _archived, ...time } = session.time ?? {};
-    return { ...session, time };
-  };
 
   const projects = async () => {
     const settings = await readSettingsFromDiskMigrated();
@@ -1007,7 +993,7 @@ export const createOpenChamberControlService = (dependencies) => {
             if (directory) listInput.directory = directory;
             if (cursor) listInput.cursor = cursor;
             const response = await client.session.list(listInput);
-            const page = await Promise.all((Array.isArray(response?.data) ? response.data : []).map(withArchiveEntry));
+            const page = Array.isArray(response?.data) ? response.data : [];
             for (const session of page) {
               const id = asNonEmptyString(session?.id);
               if (id) {

@@ -413,20 +413,15 @@ offers, so the shared UI needs no VS Code branch.
 ## Session archive and metadata
 
 OpenCode holds archive state since 2.1, and `openchamberSessionState.ts` sends
-every archive and restore there first (`PATCH /api/session/{id}` with
+every archive and restore there (`PATCH /api/session/{id}` with
 `archived`), so VS Code, the desktop app and the TUI share one archive.
-OpenCode answers `LocationNotFoundError` for a session whose directory was
-deleted, so that session moves to its project's main folder and is archived
-there, the same as on the web server
-(`packages/web/server/lib/openchamber-sessions/session-archive.js`). While it
-moves, and for good when it has no folder to move to, its state is in the
-`sessions-archive.json` the OpenChamber server keeps, in the shared OpenChamber config directory
-(`~/.config/openchamber`, `%APPDATA%\openchamber` on Windows), which is also
-the web server's default data directory. The file's entries win over
-OpenCode's record, so a session OpenCode took leaves the file, and the web
-server pushes entries an older version wrote. Nothing is cached between calls
-because two processes can write the file; every write re-reads first and
-replaces the file atomically.
+The local backend updates ordinary session properties without loading a location,
+so deleted directories retain their original session placement. Batches run at
+most four requests concurrently and return confirmed backend timestamps and
+failed IDs separately in input order. OpenCode closes persistent command slots
+on archive and rejects new commands until restore. Legacy archive entries are
+retired after successful writes and never overlaid on reads; the web server
+migrates remaining old entries.
 
 The unread baseline (`sessions-unread.json`, `{ since }`) is shared the same
 way: whichever of the server and the extension reads it first creates it, and
@@ -444,9 +439,9 @@ the file; the web server sweeps the rest.
 The webview answers `POST /api/openchamber/sessions/archive|unarchive` and
 `GET|POST /api/openchamber/sessions/:id/metadata` through the
 `api:sessions/*` bridge cases in `bridge-system-runtime.ts`, and
-`bridge-proxy-runtime.ts` folds `time.archived` and not-yet-migrated metadata
-onto every proxied `GET /api/session` and `GET /api/session/:id` response, the
-same overlay the web proxy applies.
+`bridge-proxy-runtime.ts` folds only not-yet-migrated metadata onto proxied
+`GET /api/session` and `GET /api/session/:id` responses, preserving backend
+archive timestamps.
 
 ## Extension localization
 
