@@ -16,6 +16,7 @@ import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { getFullText, getMessagePreview } from './lib/messagePreview';
 import { useDeviceInfo } from '@/lib/device';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface TimelineDialogProps {
     open: boolean;
@@ -332,11 +333,16 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
                                                         <button
                                                             type="button"
                                                             className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                                                            onClick={async (e) => {
-                                                                e.stopPropagation();
-                                                                await revertToMessage(currentSessionId, message.info.id);
-                                                                onOpenChange(false);
-                                                            }}
+                                                             onClick={async (e) => {
+                                                                 e.stopPropagation();
+                                                                 try {
+                                                                     await revertToMessage(currentSessionId, message.info.id);
+                                                                     onOpenChange(false);
+                                                                 } catch (error) {
+                                                                     console.error('[timeline] revert failed', error);
+                                                                     toast.error(error instanceof Error ? error.message : 'Failed to revert message');
+                                                                 }
+                                                             }}
                                                         >
                                                             <Icon name="arrow-go-back" className="h-4 w-4" />
                                                         </button>

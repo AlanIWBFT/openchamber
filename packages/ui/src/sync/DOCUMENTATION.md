@@ -178,6 +178,10 @@ This keeps cold/global lists responsive without requiring a refetch after every 
 
 Live activity/status indicators must not depend on this cache. They must use the event/snapshot-reconciled global live status index.
 
+`session_status_ready` records whether the directory has received a successful live status snapshot. Once ready, an omitted session is authoritatively idle. Before then, incomplete message metadata may provide only a bounded startup fallback ending at the directory's `session_status_fallback_until`; navigation and remounting must not extend it. Fetch failure preserves the unresolved state.
+
+Status snapshot requests are ordered by successfully applied generation per directory: a newer successful snapshot supersedes older responses, while a newer failed request does not discard an earlier usable response. A completed snapshot also preserves newer SSE or optimistic transitions that landed while it was in flight. Real reconnect and transport-switch recovery always refreshes the full directory snapshot; existing candidates only scope follow-up message materialization. Once status is ready, incomplete historical messages no longer protect an idle session from cache eviction.
+
 ## Session message loading
 
 `SessionMessageLoader` is the shared authority for session message requests. Navigation, reactive chat loading, sidebar prefetch, pagination, reconnect/recovery, and optimistic reconciliation must delegate to it rather than issuing parallel initial requests.
@@ -192,10 +196,10 @@ Rules:
 6. Message and part materialization preserves references for unchanged records and maintains direct message-to-parts lookup. Consumers subscribe to the selected session's records rather than broad message/part containers.
 7. Pagination demand must carry the selected session's effective directory. It must not fall back to the sync provider directory because the visible session may belong to another worktree.
 8. The ref-stable loader is disposed only after the current task when its provider unmounts. This lets React Strict Mode's development setup → cleanup → setup probe retain a usable loader for child effects, while real disposal still invalidates the preceding lifecycle's work.
-9. Transcript arrays are chronological by `message.time.created`, with message ID used only as a deterministic equal-time tie-breaker. Message IDs are identity and reconciliation keys, not chronology: OpenCode's fixed-width sortable timestamp prefix rolls over, so a newer `msg_000...` can follow an older `msg_fff...`. Fetch, pagination, materialization, optimistic insertion, events, reconnect inspection, rendering, and revert/undo/redo must preserve this contract.
-10. Part arrays preserve authoritative response/event order. Part IDs are identity keys and have the same rollover limitation; identity lookup/removal must not require a part array to be lexically ID-sorted.
+9. Persisted transcript arrays are ordered only by the backend's integer message `seq`. Message IDs and `time.created` are metadata, not chronology; optimistic messages without a sequence remain after authoritative messages until confirmation. Fetch, pagination, materialization, events, reconnect inspection, rendering, and revert/undo/redo must preserve this contract.
+10. Persisted part arrays are ordered only by part/event `seq`. Part IDs are identity keys and have the same rollover limitation; identity lookup/removal must not require a part array to be lexically ID-sorted.
 
-Initial loads use smaller pages on constrained VS Code/mobile surfaces. Prefetch resolves only the initial renderable page; it does not eagerly download older history. The mounted chat timeline requests older pages when its viewport is underfilled or the user scrolls toward history, while mobile uses its explicit load-older action. Timeline caches, pending work, prepend snapshots, and stale checks use runtime + directory + session identity so equal session IDs in different worktrees cannot share lifecycle state. Older pages are fetched through the same loader and merged with optimistic records before publication. The same chronology contract applies in the VS Code webview because it consumes this shared loader and sync store; the extension bridge must transport OpenCode records without introducing its own ID-based ordering.
+Initial loads use smaller pages on constrained VS Code/mobile surfaces. Prefetch resolves only the initial renderable page; it does not eagerly download older history. The mounted chat timeline requests older pages when its viewport is underfilled or the user scrolls toward history, while mobile uses its explicit load-older action. Timeline caches, pending work, prepend snapshots, and stale checks use runtime + directory + session identity so equal session IDs in different worktrees cannot share lifecycle state. Older pages are fetched through the same loader and merged with optimistic records before publication. The same sequence contract applies in the VS Code webview because it consumes this shared loader and sync store; the extension bridge must transport OpenCode records without introducing its own ID- or timestamp-based ordering.
 
 ## Loading diagnostics
 
@@ -263,6 +267,7 @@ Rules:
 6. After session creation, the directory returned by the server is authoritative over the requested draft directory. The server may canonicalize a worktree path, and the first prompt must use the same directory identity as the created session.
 7. Regular new-chat drafts that inherit the persisted current/last directory must not create a session against a confirmed-missing path. Fall back to the active project only when OpenCode reports the directory missing; keep explicit worktree targets, in-flight worktree creation, and unknown/offline probes unchanged, and do not persist the fallback until session creation succeeds. A concurrent draft rewrite to that same active-project fallback must not abort session creation.
 8. A prompt send that fails **after** the request left the client is ambiguous, never a definite failure: the server may already be answering it. Transports tag those errors (`markAmbiguousTransportFailure` in `@/lib/relay/transport-error`; the relay tunnel tags every stream that dies with a request in flight), and `isAmbiguousSendFailure` reads the tag before falling back to status/text heuristics. An ambiguous failure waits for the connection to return, refetches recent messages, and confirms the optimistic message in place instead of rolling it back — rolling it back lets the message queue re-send a prompt the engine is already running, producing two independent AI responses for one user message.
+9. Explicit user Stop actions call `session.stop`; transport failures, reconnects, refreshes, and session navigation do not.
 
 Examples of global-store updates performed in `session-actions.ts`:
 
@@ -272,6 +277,7 @@ Examples of global-store updates performed in `session-actions.ts`:
 - `archiveSession()` / `archiveSessions()` -> wait for server confirmation, then upsert each archived session
 - `unarchiveSession()` / `unarchiveSessions()` -> wait for server confirmation, then upsert each restored session
 - `deleteSession()` / `deleteSessions()` -> wait for server confirmation or `404`, then remove the session and its persisted state
+- `stopSessionExecution()` -> terminates matching exec processes in the requested session scope and rejects partial failures
 - `moveSessionToDirectory()` -> move the session between directory stores and update the global directory index
 
 ### Blocking-request (question/permission) reply routing
@@ -331,6 +337,19 @@ the previous runtime or one this session never belonged to, so the action
 reports failure instead of committing. The deletion already accepted by the
 server stays deleted there; its persisted state is left as harmless stale
 metadata and the next authoritative load reconciles it.
+## Message and part ordering
+
+Message and part IDs are identities only. Persisted timeline order comes from the matching OpenCode backend's integer `seq` fields:
+
+- Stored `session.messages` records require `seq` on every message and part.
+- `message.updated` and `message.part.updated` require top-level `seq`.
+- Missing or invalid sequence is a protocol error; do not fall back to ID, timestamps, or arrival order.
+- Only optimistic messages and parts may temporarily lack sequence, and they sort after authoritative entities in stable insertion order.
+- Sequence state lives in the non-reactive per-directory-store sidecar in `message-order.ts`; UI message/part objects do not retain `seq`.
+
+HTTP materialization must declare whether a result is recent, prepend, sparse merge, or complete. A finite page without `X-Next-Cursor` is complete, including a successful empty page. In-flight snapshots preserve newer events, HTTP commits, optimistic state, removals, and session eviction tombstones. Directory or server instance replacement invalidates the entire sidecar so old requests cannot write into the replacement instance.
+
+Revert boundaries are resolved by identity in the sequence-ordered message array. If a boundary is absent from a partial cache, load complete history with `limit: 0`; never infer its position from message IDs.
 
 ## The golden rule
 
@@ -393,6 +412,8 @@ Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
 ### Directory-less session events
 
 The global stream can omit a directory for a session-addressed event. Resolve it through the session routing index first. If the index is briefly stale during a session transition, route only when the event session matches the active session and that directory store exists; otherwise leave it un-routed rather than updating another directory.
+
+Within one event-pipeline batch, native `session.idle` and `session.error` events are ordering barriers for `session.status` coalescing. Status transitions before and after a terminal event must remain separate queue entries.
 
 ## Adding a new event type
 

@@ -74,10 +74,10 @@ import {
     getUnifiedExecCommand,
     getUnifiedExecMetadata,
     getUnifiedExecOutput,
+    getExecProcessRunning,
     getUnifiedExecStatus,
     formatUnifiedExecDuration,
     isExecCommandTool,
-    isExecProcessRunning,
     isUnifiedExecTool,
     type UnifiedExecMetadata,
 } from '../unifiedExec';
@@ -1883,9 +1883,11 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const time = stateWithData.time;
     const unifiedExecMetadata = getUnifiedExecMetadata(part);
     const status = state?.status as string | undefined;
-    const execProcessRunning = isExecProcessRunning(normalizedPartTool, unifiedExecMetadata, status);
+    const execProcessState = getExecProcessRunning(normalizedPartTool, unifiedExecMetadata, status);
+    const execProcessRunning = execProcessState === true;
 
-    const isFinalized = !execProcessRunning && (status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled');
+    const isFinalized = execProcessState === false
+        || (!execProcessRunning && (status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled'));
     const isSuccessfullyFinalized = isFinalized && status === 'completed';
     const isError = status === 'error' || status === 'failed' || (typeof unifiedExecMetadata.execError === 'string' && unifiedExecMetadata.execError.length > 0);
 

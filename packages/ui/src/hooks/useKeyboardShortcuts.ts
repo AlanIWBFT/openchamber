@@ -27,13 +27,14 @@ import { getCycledPrimaryAgentName } from '@/components/chat/mobileControlsUtils
 import { focusChatInput } from '@/components/chat/composer/editor/dom';
 import { addSelectionToChat } from '@/lib/addSelectionToChat';
 import { hasOpenDropdown } from './keyboard-shortcut-dom';
+import { toast } from '@/components/ui';
 
 export const useKeyboardShortcuts = () => {
   const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
   const armAbortPrompt = useSessionUIStore((s) => s.armAbortPrompt);
   const clearAbortPrompt = useSessionUIStore((s) => s.clearAbortPrompt);
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
-  const abortCurrentOperation = sessionActions.abortCurrentOperation;
+  const stopCurrentOperation = sessionActions.stopSessionExecution;
   const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
   const toggleHelpDialog = useUIStore((s) => s.toggleHelpDialog);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
@@ -72,6 +73,7 @@ export const useKeyboardShortcuts = () => {
   const { themeMode, setThemeMode } = useThemeSystem();
   const { phase: sessionPhase } = useCurrentSessionActivity();
   const abortPrimedUntilRef = React.useRef<number | null>(null);
+  const abortPrimedSessionIdRef = React.useRef<string | null>(null);
   const abortPrimedTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const themeModeRef = React.useRef(themeMode);
   // Currently held physical keys (lowercased), used to match chord prefixes
@@ -88,8 +90,15 @@ export const useKeyboardShortcuts = () => {
       abortPrimedTimeoutRef.current = null;
     }
     abortPrimedUntilRef.current = null;
+    abortPrimedSessionIdRef.current = null;
     clearAbortPrompt();
   }, [clearAbortPrompt]);
+
+  React.useEffect(() => {
+    if (abortPrimedSessionIdRef.current && abortPrimedSessionIdRef.current !== currentSessionId) {
+      resetAbortPriming();
+    }
+  }, [currentSessionId, resetAbortPriming]);
 
   React.useEffect(() => {
     const combo = (actionId: string) => getEffectiveShortcutCombo(actionId, shortcutOverrides);
@@ -199,16 +208,20 @@ export const useKeyboardShortcuts = () => {
       const now = Date.now();
       const primedUntil = abortPrimedUntilRef.current;
 
-      if (primedUntil && now < primedUntil) {
+      if (primedUntil && abortPrimedSessionIdRef.current === sessionId && now < primedUntil) {
         e.preventDefault();
         resetAbortPriming();
-        void abortCurrentOperation(sessionId);
+        void stopCurrentOperation(sessionId).catch((error) => {
+          console.error('[keyboard-shortcuts] stop failed', error);
+          toast.error(error instanceof Error ? error.message : 'Failed to stop session');
+        });
         return;
       }
 
       e.preventDefault();
       const expiresAt = armAbortPrompt(3000) ?? now + 3000;
       abortPrimedUntilRef.current = expiresAt;
+      abortPrimedSessionIdRef.current = sessionId;
 
       if (abortPrimedTimeoutRef.current) {
         clearTimeout(abortPrimedTimeoutRef.current);
@@ -687,7 +700,7 @@ export const useKeyboardShortcuts = () => {
     };
   }, [
     openNewSessionDraft,
-    abortCurrentOperation,
+    stopCurrentOperation,
     toggleCommandPalette,
     toggleHelpDialog,
     toggleSidebar,

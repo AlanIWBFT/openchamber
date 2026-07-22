@@ -38,6 +38,7 @@ import {
     useSessionMessageCount,
     useSessionMessageRecords,
     useSessionMessageLoadState,
+    useDirectorySync,
     useSyncDirectory,
     useSessionRenderable,
     useSessionStatus,
@@ -48,6 +49,7 @@ import {
 } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { usePlanDetection } from '@/hooks/usePlanDetection';
+import { useResolvedSessionActivity } from '@/hooks/useSessionActivity';
 import { useI18n } from '@/lib/i18n';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { isVSCodeRuntime } from '@/lib/desktop';
@@ -640,7 +642,16 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     usePlanDetection(currentSessionId ?? '', sessionMessages);
 
     // Session status from sync system
-    const sessionStatusForCurrent = useSessionStatus(currentSessionId ?? '', effectiveSessionDirectory) ?? IDLE_SESSION_STATUS;
+    const currentSessionStatus = useSessionStatus(currentSessionId ?? '', effectiveSessionDirectory);
+    const sessionStatusForCurrent = currentSessionStatus ?? IDLE_SESSION_STATUS;
+    const sessionStatusSnapshotReady = useDirectorySync(
+        React.useCallback((state) => state.session_status_ready, []),
+        effectiveSessionDirectory,
+    );
+    const sessionStatusFallbackUntil = useDirectorySync(
+        React.useCallback((state) => state.session_status_fallback_until, []),
+        effectiveSessionDirectory,
+    );
 
     // Scoped blocking requests — only subscribe to permissions/questions for
     // the current session + descendant subagent sessions, not all sessions in
@@ -668,23 +679,14 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         };
     }, [active, currentSessionId, effectiveSessionDirectory, hasUnreconciledQuestionTool, sync]);
 
-    const sessionIsWorking = React.useMemo(() => {
-        if (!currentSessionId || sessionPermissions.length > 0 || sessionQuestions.length > 0) {
-            return false;
-        }
-
-        const statusType = sessionStatusForCurrent.type ?? 'idle';
-        if (statusType === 'busy' || statusType === 'retry') {
-            return true;
-        }
-
-        const lastMessage = sessionMessages[sessionMessages.length - 1]?.info as Message | undefined;
-        return Boolean(
-            lastMessage
-            && lastMessage.role === 'assistant'
-            && typeof (lastMessage as { time?: { completed?: number } }).time?.completed !== 'number',
-        );
-    }, [currentSessionId, sessionMessages, sessionPermissions.length, sessionQuestions.length, sessionStatusForCurrent.type]);
+    const sessionIsWorking = useResolvedSessionActivity({
+        sessionId: currentSessionId,
+        status: currentSessionStatus,
+        statusSnapshotReady: sessionStatusSnapshotReady,
+        fallbackUntil: sessionStatusFallbackUntil,
+        lastMessage: sessionMessages[sessionMessages.length - 1]?.info,
+        hasBlockingRequest: !currentSessionId || sessionPermissions.length > 0 || sessionQuestions.length > 0,
+    }).isWorking;
     const activeRetryStatus = React.useMemo(() => {
         if (!currentSessionId || sessionStatusForCurrent.type !== 'retry') {
             return null;
