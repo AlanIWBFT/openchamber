@@ -13,7 +13,7 @@ import {
   getSyncPerformanceDiagnostics,
   setSyncPerformanceDiagnosticsEnabled,
 } from './performance-diagnostics';
-import { DIR_IDLE_TTL_MS } from './types';
+import { DIR_IDLE_TTL_MS, SESSION_STATUS_FALLBACK_TTL_MS } from './types';
 import { FilesystemError } from '@/lib/api/files-errors';
 
 const deferred = () => {
@@ -28,6 +28,19 @@ const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
 };
+
+describe('ChildStoreManager status fallback', () => {
+  test('uses one absolute deadline for the lifetime of a directory store', () => {
+    const manager = new ChildStoreManager();
+    const startedAt = Date.now();
+    const child = manager.ensureChild('/workspace', { bootstrap: false });
+    const deadline = child.getState().session_status_fallback_until;
+
+    expect(deadline >= startedAt + SESSION_STATUS_FALLBACK_TTL_MS).toBe(true);
+    expect(manager.ensureChild('/workspace', { bootstrap: false }).getState().session_status_fallback_until).toBe(deadline);
+    manager.disposeAll();
+  });
+});
 
 describe('ChildStoreManager.subscribeAllSelected', () => {
   test('ignores unrelated child-store updates', () => {

@@ -16,10 +16,20 @@ import { stripSessionDiffSnapshots } from "./sanitize"
 import { syncDebug } from "./debug"
 import { shouldSkipStaleSessionEvent } from "./session-event-freshness"
 import {
-  compareMessagesChronologically,
-  findMessageIndex,
-  insertMessageChronologically,
-} from "./message-ordering"
+  dropMessageOrder,
+  dropPartOrder,
+  dropSessionOrder,
+  invalidateSessionOrder,
+  compareOrdered,
+  recordMessageSequence,
+  recordPartSequence,
+  requireEventSequence,
+  SequenceProtocolError,
+  touchMessageOrder,
+  touchPartOrder,
+  upsertOrdered,
+  type MessageOrderState,
+} from "./message-order"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const DELTA_OVERLAP_FIELDS = ["text", "output"] as const
@@ -55,6 +65,20 @@ function getUpdatedDeltaFields(previous: Part, next: Part) {
     }
   }
   return dedupeFields
+}
+
+function preserveLongerDeltaFields(previous: Part, next: Part, fields: readonly string[]): Part {
+  let merged = next
+  for (const field of fields) {
+    const previousValue = (previous as Record<string, unknown>)[field]
+    const nextValue = (next as Record<string, unknown>)[field]
+    if (typeof previousValue !== "string" || typeof nextValue !== "string") continue
+    if (previousValue.length <= nextValue.length || !previousValue.startsWith(nextValue)) continue
+    if (merged === next) merged = { ...next }
+    const mergedRecord = merged as Record<string, unknown>
+    mergedRecord[field] = previousValue
+  }
+  return merged
 }
 
 function getPartEndTime(part: Part): number | undefined {
@@ -146,6 +170,16 @@ function areMessageUpdateFieldsEqual(existing: Message, next: Message): boolean 
   return true
 }
 
+function shouldPreserveCompletedMessage(existing: Message, next: Message): boolean {
+  const existingCompleted = (existing.time as { completed?: unknown }).completed
+  const nextCompleted = (next.time as { completed?: unknown }).completed
+  return existing.role === "assistant"
+    && next.role === "assistant"
+    && typeof existingCompleted === "number"
+    && existingCompleted > 0
+    && typeof nextCompleted !== "number"
+}
+
 // ---------------------------------------------------------------------------
 // Global events
 // ---------------------------------------------------------------------------
@@ -169,6 +203,7 @@ export type SessionMaterializationReason =
   | "transport-switch"
   | "stale-status-resync"
   | "settled-running-tool"
+  | "sequence-protocol-mismatch"
 
 export type DirectoryEventResult = boolean | {
   changed: boolean
@@ -221,6 +256,7 @@ export function applyDirectoryEvent(
     onRefresh?: (directory: string) => void
     onLoadLsp?: () => void
     onSetSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void
+    order?: MessageOrderState
   },
 ): DirectoryEventResult {
   const markSessionEvent = (sessionID: string, deleted: boolean) => {
@@ -276,7 +312,7 @@ export function applyDirectoryEvent(
 
       if (info.time.archived) {
         if (result.found) sessions.splice(result.index, 1)
-        cleanupSessionCaches(draft, info.id, callbacks?.onSetSessionTodo)
+        cleanupSessionCaches(draft, info.id, callbacks?.onSetSessionTodo, callbacks?.order)
         if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
         markSessionEvent(info.id, true)
         return true
@@ -300,9 +336,9 @@ export function applyDirectoryEvent(
       const result = Binary.search(sessions, sessionID, (s) => s.id)
       const info = props.info ?? (result.found ? sessions[result.index] : undefined)
       if (result.found) sessions.splice(result.index, 1)
-      cleanupSessionCaches(draft, sessionID, callbacks?.onSetSessionTodo)
       if (!info?.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
       markSessionEvent(sessionID, true)
+      cleanupSessionCaches(draft, sessionID, callbacks?.onSetSessionTodo, callbacks?.order)
       return true
     }
 
@@ -353,61 +389,140 @@ export function applyDirectoryEvent(
 
     case "message.updated": {
       const info = (event.properties as { info: Message }).info
+      const order = callbacks?.order
+      if (!order) throw new Error("Message order state is required")
+      if (!info || typeof info.id !== "string" || info.id.length === 0) {
+        throw new SequenceProtocolError("Message identity is missing or invalid")
+      }
+      if (typeof info.sessionID !== "string" || info.sessionID.length === 0) {
+        throw new SequenceProtocolError(`Message ${info.id} session identity is missing or invalid`)
+      }
+      const owner = order.messageSession.get(info.id)
+      if (owner && owner !== info.sessionID) {
+        throw new SequenceProtocolError(`Message ${info.id} belongs to Session ${info.sessionID}, already owned by ${owner}`)
+      }
+      const seq = requireEventSequence(event, `Message ${info.id}`)
+      const previousSeq = order.message.get(info.id)
+      if (previousSeq !== undefined && seq < previousSeq) return false
+      recordMessageSequence(order, info.id, info.sessionID, seq)
+      touchMessageOrder(order, info.id)
       const messages = draft.message[info.sessionID]
       if (!messages) {
         draft.message[info.sessionID] = [info]
         return true
       }
-      const messageIndex = findMessageIndex(messages, info.id)
-      if (messageIndex >= 0) {
+      const index = messages.findIndex((message) => message.id === info.id)
+      if (index >= 0) {
         // Skip message replacement if unchanged — preserves reference, avoids re-render
-        const existing = messages[messageIndex]
-        const unchanged = areMessageUpdateFieldsEqual(existing, info)
-        if (unchanged) {
+        const existing = messages[index]
+        if (shouldPreserveCompletedMessage(existing, info)) {
+          const reordered = upsertOrdered(messages, existing, order.message)
+          const changed = reordered.some((candidate, candidateIndex) => candidate !== messages[candidateIndex])
+          if (changed) draft.message[info.sessionID] = reordered
+          return changed
+        }
+        const unchanged = previousSeq !== undefined && areMessageUpdateFieldsEqual(existing, info)
+        const reordered = index > 0 && compareOrdered(messages[index - 1].id, info.id, order.message) > 0
+          || index + 1 < messages.length && compareOrdered(info.id, messages[index + 1].id, order.message) > 0
+        if (unchanged && !reordered) {
           syncDebug.reducer.messageUpdatedUnchanged(info.sessionID, info.id, info.role, (info as { finish?: unknown }).finish, (info.time as { completed?: number })?.completed)
           return false
         }
-        const next = [...messages]
-        if (compareMessagesChronologically(existing, info) === 0) {
-          next[messageIndex] = info
-        } else {
-          next.splice(messageIndex, 1)
-          insertMessageChronologically(next, info)
-        }
-        draft.message[info.sessionID] = next
+        draft.message[info.sessionID] = upsertOrdered(messages, info, order.message)
       } else {
-        const next = [...messages]
-        insertMessageChronologically(next, info)
-        draft.message[info.sessionID] = next
+        draft.message[info.sessionID] = upsertOrdered(messages, info, order.message)
       }
       return true
     }
 
     case "message.removed": {
       const props = event.properties as { sessionID: string; messageID: string }
+      const order = callbacks?.order
+      const owner = order?.messageSession.get(props.messageID)
+      if (owner && owner !== props.sessionID) {
+        throw new SequenceProtocolError(`Message ${props.messageID} belongs to Session ${props.sessionID}, already owned by ${owner}`)
+      }
+      const removedParts = draft.part[props.messageID]
       const messages = draft.message[props.sessionID]
+      let removed = false
       if (messages) {
         const next = [...messages]
-        const messageIndex = findMessageIndex(next, props.messageID)
-        if (messageIndex >= 0) {
-          next.splice(messageIndex, 1)
+        const index = next.findIndex((message) => message.id === props.messageID)
+        if (index >= 0) {
+          next.splice(index, 1)
           draft.message[props.sessionID] = next
+          removed = true
         }
       }
+      const hasOwnedPart = order ? [...order.partMessage.values()].some((messageID) => messageID === props.messageID) : false
+      const hasOrder = Boolean(order && (
+        order.message.has(props.messageID)
+        || order.messageSession.has(props.messageID)
+        || order.messageRevision.has(props.messageID)
+      )) || hasOwnedPart
+      if (!removed && removedParts === undefined && !hasOrder) {
+        if (order) invalidateSessionOrder(order, props.sessionID)
+        return false
+      }
+      if (order) dropMessageOrder(order, props.messageID, removedParts)
       delete draft.part[props.messageID]
-      return true
+      return removed || removedParts !== undefined || hasOrder
     }
 
     case "message.part.updated": {
-      const props = event.properties as { sessionID?: string; part: Part }
+      const props = event.properties as { sessionID?: unknown; part: Part }
       const part = props.part
-      if (SKIP_PARTS.has(part.type)) {
-        syncDebug.reducer.partSkipped((part as { messageID: string }).messageID, part.id, part.type)
-        return false
+      const order = callbacks?.order
+      if (!order) throw new Error("Message order state is required")
+      if (!part || typeof part.id !== "string" || part.id.length === 0) {
+        throw new SequenceProtocolError("Part identity is missing or invalid")
       }
-      const messageID = (part as { messageID?: string }).messageID
-      const sessionID = props.sessionID ?? (part as { sessionID?: string }).sessionID
-      if (!messageID) return false
+      const topLevelSessionID = props.sessionID
+      if (topLevelSessionID !== undefined && (typeof topLevelSessionID !== "string" || topLevelSessionID.length === 0)) {
+        throw new SequenceProtocolError(`Part ${part.id} session identity is missing or invalid`)
+      }
+      const partSessionID = (part as { sessionID?: unknown }).sessionID
+      if (partSessionID !== undefined && (typeof partSessionID !== "string" || partSessionID.length === 0)) {
+        throw new SequenceProtocolError(`Part ${part.id} session identity is missing or invalid`)
+      }
+      if (topLevelSessionID && partSessionID && topLevelSessionID !== partSessionID) {
+        throw new SequenceProtocolError(`Part ${part.id} has conflicting Session identities`)
+      }
+      const sessionID = topLevelSessionID ?? partSessionID
+      const messageID = (part as { messageID?: unknown }).messageID
+      if (typeof messageID !== "string" || messageID.length === 0) {
+        throw new SequenceProtocolError(`Part ${part.id} message identity is missing or invalid`)
+      }
+      if (typeof sessionID !== "string" || sessionID.length === 0) {
+        throw new SequenceProtocolError(`Part ${part.id} session identity is missing or invalid`)
+      }
+      const ownedMessageID = order.partMessage.get(part.id)
+      const ownedSessionID = order.partSession.get(part.id)
+      if (ownedMessageID && ownedMessageID !== messageID) {
+        throw new SequenceProtocolError(`Part ${part.id} belongs to Message ${messageID}, already owned by ${ownedMessageID}`)
+      }
+      if (ownedSessionID && ownedSessionID !== sessionID) {
+        throw new SequenceProtocolError(`Part ${part.id} belongs to Session ${sessionID}, already owned by ${ownedSessionID}`)
+      }
+      const seq = requireEventSequence(event, `Part ${part.id}`)
+      const previousSeq = order.part.get(part.id)
+      if (previousSeq !== undefined && seq < previousSeq) return false
+      if (SKIP_PARTS.has(part.type)) {
+        syncDebug.reducer.partSkipped(messageID, part.id, part.type)
+        const current = draft.part[messageID]
+        const hasPart = current?.some((candidate) => candidate.id === part.id) ?? false
+        if (hasPart || order.part.has(part.id) || order.partSession.has(part.id) || order.partMessage.has(part.id)) {
+          dropPartOrder(order, part.id)
+        }
+        if (!current) return false
+        const next = current.filter((candidate) => candidate.id !== part.id)
+        if (next.length === current.length) return false
+        if (next.length === 0) delete draft.part[messageID]
+        else draft.part[messageID] = next
+        return true
+      }
+      recordPartSequence(order, part.id, sessionID, messageID, seq)
+      touchPartOrder(order, part.id)
       const missingOwningMessage = !hasMessage(draft, sessionID, messageID)
       const parts = draft.part[messageID]
       if (!parts) {
@@ -421,34 +536,40 @@ export function applyDirectoryEvent(
           : true
       }
       const next = [...parts]
-      const partIndex = next.findIndex((candidate) => candidate.id === part.id)
-      if (partIndex >= 0) {
-        const previous = next[partIndex]
+      const index = next.findIndex((candidate) => candidate.id === part.id)
+      if (index >= 0) {
+        const previous = next[index]
         if (shouldPreserveExistingPart(previous, part)) {
-          return false
+          const reordered = upsertOrdered(next, previous, order.part)
+          const changed = reordered.some((candidate, candidateIndex) => candidate !== next[candidateIndex])
+          if (changed) draft.part[messageID] = reordered
+          return missingOwningMessage
+            ? {
+              changed,
+              materialization: { type: "incomplete-session-snapshot", reason: "missing-owning-message", sessionID, messageID, partID: part.id },
+            }
+            : changed
         }
         const dedupeFields = getUpdatedDeltaFields(previous, part)
-        next[partIndex] = dedupeFields.length > 0
-          ? { ...part, __dedupeNextDeltaFields: dedupeFields } as unknown as Part
-          : part
+        const mergedPart = preserveLongerDeltaFields(previous, part, dedupeFields)
+        const updated = dedupeFields.length > 0
+          ? { ...mergedPart, __dedupeNextDeltaFields: dedupeFields } as unknown as Part
+          : mergedPart
+        draft.part[messageID] = upsertOrdered(next, updated, order.part)
       } else {
-        // Replace optimistic part (no sessionID) with server part of same type.
-        // Gate: only scan if the first part lacks sessionID (optimistic parts are
-        // always inserted first). Assistant messages never have optimistic parts,
-        // so this check is effectively free during streaming.
-        const hasOptimistic = next.length > 0 && !(next[0] as { sessionID?: string }).sessionID
-        const optimisticIndex = hasOptimistic && (part.type === "text" || part.type === "file")
-          ? next.findIndex((p) => p.type === part.type && !(p as { sessionID?: string }).sessionID)
+        // Optimistic parts are the only parts without authoritative sequence.
+        const optimisticIdx = part.type === "text" || part.type === "file"
+          ? next.findIndex((candidate) => candidate.type === part.type && !order.part.has(candidate.id))
           : -1
-        if (optimisticIndex >= 0) {
-          // Replace in place: pushing to the end reorders text/file parts of a
-          // just-sent message and remounts its rendered subtree.
-          next[optimisticIndex] = part
-        } else {
-          next.push(part)
+        if (optimisticIdx >= 0) {
+          const optimisticPart = next[optimisticIdx]
+          if (optimisticPart) dropPartOrder(order, optimisticPart.id)
+          // Replace before sorting so the common optimistic case does not
+          // transiently append and remount at the end of the message.
+          next[optimisticIdx] = part
         }
+        draft.part[messageID] = upsertOrdered(next, part, order.part)
       }
-      draft.part[messageID] = next
       return missingOwningMessage
         ? {
           changed: true,
@@ -458,13 +579,32 @@ export function applyDirectoryEvent(
     }
 
     case "message.part.removed": {
-      const props = event.properties as { messageID: string; partID: string }
+      const props = event.properties as { sessionID?: string; messageID: string; partID: string }
+      const order = callbacks?.order
+      const ownerMessage = order?.partMessage.get(props.partID)
+      const ownerSession = order?.partSession.get(props.partID)
+      if (ownerMessage && ownerMessage !== props.messageID) {
+        throw new SequenceProtocolError(`Part ${props.partID} belongs to Message ${props.messageID}, already owned by ${ownerMessage}`)
+      }
+      if (props.sessionID && ownerSession && ownerSession !== props.sessionID) {
+        throw new SequenceProtocolError(`Part ${props.partID} belongs to Session ${props.sessionID}, already owned by ${ownerSession}`)
+      }
       const parts = draft.part[props.messageID]
-      if (!parts) return false
-      const partIndex = parts.findIndex((part) => part.id === props.partID)
-      if (partIndex >= 0) {
-        const next = [...parts]
-        next.splice(partIndex, 1)
+      const index = parts?.findIndex((part) => part.id === props.partID) ?? -1
+      const hasOrder = Boolean(order && (
+        order.part.has(props.partID)
+        || order.partSession.has(props.partID)
+        || order.partMessage.has(props.partID)
+        || order.partRevision.has(props.partID)
+      ))
+      if (index < 0 && !hasOrder) {
+        if (order && props.sessionID) invalidateSessionOrder(order, props.sessionID)
+        return false
+      }
+      if (order) dropPartOrder(order, props.partID)
+      if (index >= 0) {
+        const next = [...parts!]
+        next.splice(index, 1)
         if (next.length === 0) {
           delete draft.part[props.messageID]
         } else {
@@ -483,6 +623,15 @@ export function applyDirectoryEvent(
         field: string
         delta: string
       }
+      const order = callbacks?.order
+      const ownerMessage = order?.partMessage.get(props.partID)
+      const ownerSession = order?.partSession.get(props.partID)
+      if (ownerMessage && ownerMessage !== props.messageID) {
+        throw new SequenceProtocolError(`Part ${props.partID} belongs to Message ${props.messageID}, already owned by ${ownerMessage}`)
+      }
+      if (props.sessionID && ownerSession && ownerSession !== props.sessionID) {
+        throw new SequenceProtocolError(`Part ${props.partID} belongs to Session ${props.sessionID}, already owned by ${ownerSession}`)
+      }
       const parts = draft.part[props.messageID]
       if (!parts) {
         syncDebug.reducer.partDeltaNoParts(props.messageID, props.partID)
@@ -491,21 +640,22 @@ export function applyDirectoryEvent(
           materialization: { type: "incomplete-session-snapshot", reason: "orphan-delta", sessionID: props.sessionID, messageID: props.messageID, partID: props.partID },
         }
       }
-      const partIndex = parts.findIndex((part) => part.id === props.partID)
-      if (partIndex < 0) {
+      const index = parts.findIndex((part) => part.id === props.partID)
+      if (index < 0) {
         syncDebug.reducer.partDeltaNotFound(props.messageID, props.partID)
         return {
           changed: false,
           materialization: { type: "incomplete-session-snapshot", reason: "missing-delta-part", sessionID: props.sessionID, messageID: props.messageID, partID: props.partID },
         }
       }
-      const existing = parts[partIndex] as Record<string, unknown>
+      if (order) touchPartOrder(order, props.partID)
+      const existing = parts[index] as Record<string, unknown>
       const existingValue = existing[props.field] as string | undefined
       const dedupeFields = (existing as DedupeMetadata).__dedupeNextDeltaFields ?? []
       const shouldDedupe = dedupeFields.includes(props.field)
       // Create new Part object + new array so React detects the change
       const next = [...parts]
-      next[partIndex] = {
+      next[index] = {
         ...existing,
         [props.field]: shouldDedupe ? appendNonOverlappingDelta(existingValue, props.delta) : (existingValue ?? "") + props.delta,
         __dedupeNextDeltaFields: dedupeFields.filter((field) => field !== props.field),
@@ -612,8 +762,10 @@ function cleanupSessionCaches(
   draft: State,
   sessionID: string,
   setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void,
+  order?: MessageOrderState,
 ) {
   if (!sessionID) return
   setSessionTodo?.(sessionID, undefined)
+  if (order) dropSessionOrder(order, sessionID, draft.message[sessionID], draft.part)
   dropSessionCaches(draft, [sessionID])
 }

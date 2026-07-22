@@ -20,6 +20,9 @@ let afterUnrevertCall: ((sessionId: string) => void) | null = null
 let sessionDeleteError: unknown | null = null
 let beforeSessionUpdateResolve: ((sessionId: string) => void) | null = null
 let beforeSessionDeleteResolve: ((sessionId: string) => void) | null = null
+let sessionStopResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {
+  data: { sessions: 1, matched: 0, terminated: 0, failed: 0 },
+}
 const globalUpsertedSessions: unknown[] = []
 const globalUpsertedSessionBatches: Session[][] = []
 const globalRemovedSessionIds: string[] = []
@@ -92,6 +95,10 @@ const mockSdk = {
     abort: mock((params: Record<string, unknown>) => {
       replyCalls.push({ method: "session.abort", params })
       return Promise.resolve({ data: true })
+    }),
+    stop: mock((params: Record<string, unknown>) => {
+      replyCalls.push({ method: "session.stop", params })
+      return Promise.resolve(sessionStopResult)
     }),
     updateSession: mock((sessionId: string, changes: Record<string, unknown>, directory?: string | null) => {
       replyCalls.push({ method: "session.update", params: { sessionID: sessionId, ...changes, directory } })
@@ -418,6 +425,7 @@ describe("confirmed session removal", () => {
     globalRemovedSessionIds.length = 0
     deletedCleanupIdentities.length = 0
     sessionDeleteError = null
+    sessionStopResult = { data: { sessions: 1, matched: 0, terminated: 0, failed: 0 } }
     sessionUpdateResult = {}
     beforeSessionUpdateResolve = null
     beforeSessionDeleteResolve = null
@@ -436,6 +444,11 @@ describe("confirmed session removal", () => {
     setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", source]]), () => "/test/project")
 
     expect(await deleteSession("session-a")).toBe(false)
+    expect(replyCalls.find((call) => call.method === "session.stop")?.params).toEqual({
+      sessionID: "session-a",
+      directory: "/test/project",
+      body: { scope: "session-tree" },
+    })
     expect(source.getState().session.map((item) => item.id)).toEqual(["session-a"])
     expect(globalRemovedSessionIds).toEqual([])
     expect(deletedCleanupIdentities).toEqual([])
@@ -567,6 +580,7 @@ describe("confirmed session removal", () => {
     setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", source]]), () => "/test/project")
 
     expect(await archiveSession("session-a")).toBe(false)
+    expect(replyCalls.find((call) => call.method === "session.stop")?.params.body).toEqual({ scope: "session-tree" })
     expect(source.getState().session.map((item) => item.id)).toEqual(["session-a"])
     expect(globalUpsertedSessions).toEqual([])
   })
@@ -927,6 +941,101 @@ describe("session restore (unarchive)", () => {
     // session-c must not reach the SDK after the runtime changed.
     expect(replyCalls.filter((call) => call.method === "session.update").map((call) => call.params.sessionID))
       .toEqual(["session-a", "session-b"])
+  })
+})
+
+describe("confirmed session removal stop requirements", () => {
+  beforeEach(() => {
+    replyCalls.length = 0
+    globalRemovedSessionIds.length = 0
+    sessionDeleteError = null
+    sessionStopResult = { data: { sessions: 1, matched: 0, terminated: 0, failed: 0 } }
+  })
+
+  test("does not delete when an exec process cannot be terminated", async () => {
+    sessionStopResult = { data: { sessions: 1, matched: 1, terminated: 0, failed: 1 } }
+    const source = createStore({}, {
+      session: [{ id: "session-a", directory: "/test/project", time: { created: 1 } } as Session],
+    })
+    const { deleteSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", source]]), () => "/test/project")
+
+    expect(await deleteSession("session-a")).toBe(false)
+    expect(replyCalls.some((call) => call.method === "session.delete")).toBe(false)
+    expect(source.getState().session.map((item) => item.id)).toEqual(["session-a"])
+  })
+
+  test("does not treat a stop 404 as confirmation that the session was deleted", async () => {
+    sessionStopResult = { error: { message: "not found" }, response: { status: 404 } }
+    const source = createStore({}, {
+      session: [{ id: "session-a", directory: "/test/project", time: { created: 1 } } as Session],
+    })
+    const { deleteSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", source]]), () => "/test/project")
+
+    expect(await deleteSession("session-a")).toBe(false)
+    expect(replyCalls.some((call) => call.method === "session.delete")).toBe(false)
+    expect(source.getState().session.map((item) => item.id)).toEqual(["session-a"])
+    expect(globalRemovedSessionIds).toEqual([])
+  })
+})
+
+describe("explicit session stop", () => {
+  beforeEach(() => {
+    replyCalls.length = 0
+    sessionStopResult = { data: { sessions: 1, matched: 0, terminated: 0, failed: 0 } }
+  })
+
+  test("rejects an inconsistent stop summary", async () => {
+    sessionStopResult = { data: { sessions: 1, matched: 2, terminated: 1, failed: 0 } }
+    const { setActionRefs, stopSessionExecution } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/test/project")
+
+    await expect(stopSessionExecution("session-a")).rejects.toThrow("invalid response summary")
+  })
+
+  test("rejects a stop summary with a missing required counter", async () => {
+    sessionStopResult = { data: { matched: 0, terminated: 0, failed: 0 } }
+    const { setActionRefs, stopSessionExecution } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/test/project")
+
+    await expect(stopSessionExecution("session-a")).rejects.toThrow("invalid response summary")
+  })
+
+  test("rejects a zero-session success summary", async () => {
+    sessionStopResult = { data: { sessions: 0, matched: 0, terminated: 0, failed: 0 } }
+    const { setActionRefs, stopSessionExecution } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/test/project")
+
+    await expect(stopSessionExecution("session-a")).rejects.toThrow("invalid response summary")
+  })
+
+  test("stops a busy session before unreverting it", async () => {
+    const source = createStore({}, {
+      session: [{ id: "session-a", directory: "/test/project", time: { created: 1 } } as Session],
+      session_status: { "session-a": { type: "busy" } },
+    })
+    const { setActionRefs, unrevertSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", source]]), () => "/test/project")
+
+    await unrevertSession("session-a")
+
+    expect(replyCalls.findIndex((call) => call.method === "session.stop"))
+      .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.unrevert"))
+    expect(replyCalls.some((call) => call.method === "session.abort")).toBe(false)
+  })
+
+  test("does not unrevert a busy session when explicit stop fails", async () => {
+    sessionStopResult = { data: { sessions: 1, matched: 1, terminated: 0, failed: 1 } }
+    const source = createStore({}, {
+      session: [{ id: "session-a", directory: "/test/project", time: { created: 1 } } as Session],
+      session_status: { "session-a": { type: "busy" } },
+    })
+    const { setActionRefs, unrevertSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", source]]), () => "/test/project")
+
+    await expect(unrevertSession("session-a")).rejects.toThrow("Failed to terminate")
+    expect(replyCalls.some((call) => call.method === "session.unrevert")).toBe(false)
   })
 })
 
@@ -1308,8 +1417,8 @@ describe("optimisticSend target directory", () => {
         sentMessageID = messageID
         sessionMessagesResult = {
           data: [{
-            info: { id: messageID, role: "user", sessionID: "session-confirmed", time: { created: 1 } } as Message,
-            parts: [{ id: "server-part", type: "text", text: "hello" } as Part],
+            info: { id: messageID, role: "user", sessionID: "session-confirmed", time: { created: 1 }, seq: 1 } as Message & { seq: number },
+            parts: [{ id: "server-part", messageID, sessionID: "session-confirmed", type: "text", text: "hello", seq: 1 } as Part & { seq: number }],
           }],
         }
         const error = new Error("Failed to send message (504): gateway timeout") as Error & { status?: number }
@@ -1359,8 +1468,8 @@ describe("optimisticSend target directory", () => {
         sentMessageID = messageID
         sessionMessagesResult = {
           data: [{
-            info: { id: messageID, role: "user", sessionID: "session-tunnel", time: { created: 1 } } as Message,
-            parts: [{ id: "server-part", type: "text", text: "hello" } as Part],
+            info: { id: messageID, role: "user", sessionID: "session-tunnel", time: { created: 1 }, seq: 1 } as Message & { seq: number },
+            parts: [{ id: "server-part", messageID, sessionID: "session-tunnel", type: "text", text: "hello", seq: 1 } as Part & { seq: number }],
           }],
         }
         throw markAmbiguousTransportFailure(new Error("stream aborted by host"))
@@ -1421,6 +1530,7 @@ describe("respondToPermission passes directory", () => {
     replyCalls.length = 0
     scopedClientDirectories.length = 0
     sessionRevertResult = {}
+    sessionStopResult = { data: { sessions: 1, matched: 0, terminated: 0, failed: 0 } }
   })
 
   test("passes directory from child store when permission is found", async () => {
@@ -1505,7 +1615,8 @@ describe("revertToMessage passes session directory", () => {
   test("routes revert through the session directory instead of the current directory", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
-    const targetPart = { id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part
+    const targetPart = { id: "prt_2", messageID: "msg_2", sessionID: "session-a", type: "text", text: "edit this" } as Part
+    sessionMessagesResult = { data: [{ info: { ...targetMessage, seq: 2 }, parts: [{ ...targetPart, seq: 1 }] }] }
     const sessionStore = createStore({}, {
       session: [session],
       message: { "session-a": [targetMessage] },
@@ -1523,16 +1634,24 @@ describe("revertToMessage passes session directory", () => {
 
     await revertToMessage("session-a", "msg_2")
 
+    expect(replyCalls.find((call) => call.method === "session.stop")?.params).toEqual({
+      sessionID: "session-a",
+      directory: "/test/project",
+      body: { scope: "reverted-branch", messageID: "msg_2" },
+    })
     expect(replyCalls.find((call) => call.method === "session.revert")?.params.directory).toBe("/test/project")
     expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_2")
     expect(currentStore.getState().session).toHaveLength(0)
     expect(inputState.pendingInputText).toBe("edit this")
+    expect(replyCalls.findIndex((call) => call.method === "session.stop"))
+      .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.revert"))
   })
 
   test("rolls back optimistic revert when the SDK returns an error", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
-    const targetPart = { id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part
+    const targetPart = { id: "prt_2", messageID: "msg_2", sessionID: "session-a", type: "text", text: "edit this" } as Part
+    sessionMessagesResult = { data: [{ info: { ...targetMessage, seq: 2 }, parts: [{ ...targetPart, seq: 1 }] }] }
     const sessionStore = createStore({}, {
       session: [session],
       message: { "session-a": [targetMessage] },
@@ -1559,6 +1678,7 @@ describe("revertToMessage passes session directory", () => {
 
   test("reverts recursive descendants at their first user message on or after the parent cutoff", async () => {
     const rootMessage = { id: "root-cutoff", sessionID: "root", role: "user", time: { created: 20 } } as Message
+    sessionMessagesResult = { data: [{ info: { ...rootMessage, seq: 1 }, parts: [] }] }
     const sessions = [
       { id: "root", directory: "/tree", time: { created: 1 } },
       { id: "child", parentID: "root", directory: "/tree", time: { created: 2 } },
@@ -1596,6 +1716,7 @@ describe("revertToMessage passes session directory", () => {
 
   test("continues reverting other descendants and the parent when one child fails", async () => {
     const rootMessage = { id: "root-cutoff", sessionID: "root", role: "user", time: { created: 20 } } as Message
+    sessionMessagesResult = { data: [{ info: { ...rootMessage, seq: 1 }, parts: [] }] }
     const sessions = [
       { id: "root", directory: "/tree", time: { created: 1 } },
       { id: "failing-child", parentID: "root", directory: "/tree", time: { created: 2 } },
@@ -1624,6 +1745,7 @@ describe("revertToMessage passes session directory", () => {
 
   test("aborts a busy descendant before reverting it", async () => {
     const rootMessage = { id: "root-cutoff", sessionID: "root", role: "user", time: { created: 20 } } as Message
+    sessionMessagesResult = { data: [{ info: { ...rootMessage, seq: 1 }, parts: [] }] }
     const sessions = [
       { id: "root", directory: "/tree", time: { created: 1 } },
       { id: "busy-child", parentID: "root", directory: "/tree", time: { created: 2 } },
@@ -1658,6 +1780,22 @@ describe("revertToMessage passes session directory", () => {
       "idle-child",
       "root",
     ])
+  })
+
+  test("does not call revert when the target is absent from complete history", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const sessionStore = createStore({}, { session: [session] })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    sessionMessagesResult = { data: [] }
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await revertToMessage("session-a", "msg_missing")
+
+    expect(replyCalls.some((call) => call.method === "session.revert")).toBe(false)
+    expect(replyCalls.some((call) => call.method === "session.stop")).toBe(false)
+    expect(inputState.pendingInputText).toBe("previous draft")
   })
 })
 

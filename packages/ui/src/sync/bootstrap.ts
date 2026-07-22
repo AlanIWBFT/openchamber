@@ -1,4 +1,4 @@
-import type { OpencodeClient, PermissionRequest, Project, QuestionRequest } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeClient, PermissionRequest, Project, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { retry } from "./retry"
 import type { GlobalState, State } from "./types"
 import { runtimeFetch } from "../lib/runtime-fetch"
@@ -127,6 +127,7 @@ export async function bootstrapDirectory(input: {
     config: Record<string, unknown>
     projects: Project[]
   }
+  beginSessionStatusRequest?: () => () => boolean
   loadSessions: (directory: string) => Promise<void> | void
 }): Promise<"complete" | "failed" | "stale"> {
   const { directory, sdk, getState, set, global: g } = input
@@ -168,7 +169,24 @@ export async function bootstrapDirectory(input: {
         if (next) commit({ project: next })
       }),
     ),
-    retry(() => sdk.session.status().then((x) => commit({ session_status: unwrap(x, "session.status") }))),
+    retry(async () => {
+      const isCurrentRequest = input.beginSessionStatusRequest?.() ?? (() => true)
+      const baseline = getState().session_status
+      const snapshot = unwrap(await sdk.session.status(), "session.status")
+      if (!isCurrentRequest() || input.isStale?.()) return
+      const current = getState().session_status
+      const next = { ...snapshot } as Record<string, SessionStatus>
+
+      // Do not let a snapshot that started earlier overwrite newer SSE or
+      // optimistic status transitions that landed while the request was in flight.
+      for (const sessionID of new Set([...Object.keys(baseline), ...Object.keys(current)])) {
+        if (current[sessionID] === baseline[sessionID]) continue
+        if (current[sessionID]) next[sessionID] = current[sessionID]
+        else delete next[sessionID]
+      }
+
+      commit({ session_status: next, session_status_ready: true })
+    }),
   ])
 
   if (input.isStale?.()) return "stale"
