@@ -83,7 +83,6 @@ export function createSessionWorkRuntime({
   readMetadata,
   /** `(sessionID, decide, { directory }) => { metadata, changed }`, decided against the record at write time. */
   updateMetadata,
-  isSessionArchived = async () => false,
   /** Roots of managed Chats: plain conversations, never work. */
   chatRoots = [],
   /** `../session-lineage.js`: known subsessions are skipped without reading them. */
@@ -141,7 +140,7 @@ export function createSessionWorkRuntime({
     if (session?.id !== sessionId || session.parentID) return null;
     if (isChatDirectory(session.location?.directory ?? session.directory)) return null;
     if (reviewSessionSchema.safeParse(session.metadata).success) return null;
-    if (await isSessionArchived(sessionId)) return null;
+    if (session.time?.archived) return null;
     return session;
   };
 

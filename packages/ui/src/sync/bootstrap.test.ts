@@ -109,7 +109,7 @@ describe("bootstrapDirectory", () => {
     expect(await bootstrap.sessions).toBe("complete")
     expect(await bootstrap.environment).toBe("failed")
     expect(input.store.getState().session_status).toBe(previous)
-    expect(input.store.getState().sessionStatusReady).toBeUndefined()
+    expect(input.store.getState().sessionStatusReady).toBe(false)
   })
 
   test("optional VCS failure preserves its previous state without failing core initialization", async () => {

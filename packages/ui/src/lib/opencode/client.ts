@@ -47,7 +47,7 @@ import {
   type Command,
   type Config,
   type McpServerStatus,
-  type Message,
+  type StoredMessage,
   type Metadata,
   type Model,
   type ModelRef,
@@ -73,6 +73,11 @@ const DEFAULT_BASE_URL = import.meta.env.VITE_OPENCODE_URL || "/api"
 const CONFIG_CACHE_TTL_MS = 10_000
 const OPENCODE_HEALTH_TIMEOUT_MS = 4_000
 const DEFAULT_SESSION_PAGE_LIMIT = 100
+const sessionStopResultSchema = z.object({
+  matched: z.number().int().nonnegative(),
+  terminated: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+}).refine((result) => result.matched === result.terminated + result.failed)
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -393,7 +398,7 @@ type DirectorySwitchResult = {
 }
 
 export type MessagePage = {
-  items: Array<{ info: Message; parts: Part[] }>
+  items: Array<{ info: StoredMessage; parts: Part[] }>
   cursor: { previous?: string; next?: string }
 }
 
@@ -892,7 +897,7 @@ class OpencodeService {
     }
   }
 
-  async getSessionMessage(id: string, messageID: string, directory?: string | null): Promise<{ info: Message; parts: Part[] }> {
+  async getSessionMessage(id: string, messageID: string, directory?: string | null): Promise<{ info: StoredMessage; parts: Part[] }> {
     const info = await call("session.message.get", () => this.clientFor(directory).session.message.get({ sessionID: id, messageID }))
     const [projected] = projectMessages([info], id)
     return { info: projected.message, parts: projected.parts }
@@ -1224,6 +1229,16 @@ class OpencodeService {
   async abortSession(id: string, directory?: string | null): Promise<boolean> {
     const result = await call("session.interrupt", () => this.clientFor(directory).session.interrupt({ sessionID: id }))
     return result.interrupted
+  }
+
+  /** Stops this session's turn and persistent commands; background children retain their own ownership. */
+  async stopSession(id: string, directory?: string | null): Promise<void> {
+    await call("session.stop", async () => {
+      const result = await this.clientFor(directory).session.stop({ sessionID: id })
+      const parsed = sessionStopResultSchema.safeParse(result)
+      if (!parsed.success) throw new Error("session.stop failed: invalid response summary")
+      if (parsed.data.failed > 0) throw new Error(`Failed to terminate ${parsed.data.failed} exec command session${parsed.data.failed === 1 ? "" : "s"}`)
+    })
   }
 
   /** Runs a shell command inside the session transcript. Returns the shell message id. */

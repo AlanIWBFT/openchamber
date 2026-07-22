@@ -67,6 +67,14 @@ function withStreamedStart(previous: Part, next: Part): Part {
   return { ...next, time: { ...next.time, start: previous.time.start } }
 }
 
+function preserveLongerDeltaFields(previous: Part, next: Part, fields: readonly string[]): Part {
+  if (!fields.includes("text") || previous.type !== next.type) return next
+  if (previous.type !== "text" && previous.type !== "reasoning") return next
+  if (next.type !== "text" && next.type !== "reasoning") return next
+  if (previous.text.length <= next.text.length || !previous.text.startsWith(next.text)) return next
+  return { ...next, text: previous.text }
+}
+
 function getPartEndTime(part: Part): number | undefined {
   if (part.type === "tool") {
     return part.state.status === "completed" || part.state.status === "error" ? part.state.time.end : undefined
@@ -138,6 +146,8 @@ export type SessionMaterializationReason =
   | "transport-switch"
   | "stale-status-resync"
   | "settled-running-tool"
+  | "missing-message-sequence"
+  | "missing-compaction-record"
 
 export type DirectoryEventResult = boolean | {
   changed: boolean
@@ -147,6 +157,7 @@ export type DirectoryEventResult = boolean | {
     sessionID?: string
     messageID: string
     partID?: string
+    compactionEventSeq?: number
   }
 }
 
@@ -161,7 +172,11 @@ function hasMessage(draft: State, sessionID: string | undefined, messageID: stri
 const findRunningCompactionIndex = (messages: readonly Message[]): number => {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
-    if (message?.role === "compaction") return message.status === "running" ? index : -1
+    if (message?.role !== "compaction") continue
+    if (message.status === "running") return index
+    // An unconfirmed terminal alias at the provisional tail may describe an
+    // older compaction; it cannot hide the real running record while recovering.
+    if (message.seq !== undefined) return -1
   }
   return -1
 }
@@ -204,6 +219,7 @@ function applySessionPatch(session: Session, patch: SessionPatch): Session {
 }
 
 function applyMessagePatch(message: Message, patch: MessagePatch): Message {
+  if (patch.seq !== undefined) message = { ...message, seq: patch.seq }
   if (message.role === "assistant") {
     const next = { ...message }
     if (patch.time) next.time = compact({ ...message.time, ...patch.time })
@@ -412,13 +428,13 @@ export function applyDirectoryEvent(
       const result = Binary.search(sessions, sessionID, (s) => s.id)
       const info = result.found ? sessions[result.index] : undefined
       if (result.found) sessions.splice(result.index, 1)
-      cleanupSessionCaches(draft, sessionID)
       if (draft.sessionStatusInvalidated?.[sessionID]) {
         draft.sessionStatusInvalidated = { ...draft.sessionStatusInvalidated }
         delete draft.sessionStatusInvalidated[sessionID]
       }
       if (!info?.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
       markSessionEvent(sessionID, true)
+      cleanupSessionCaches(draft, sessionID)
       return true
     }
 
@@ -455,43 +471,51 @@ export function applyDirectoryEvent(
 
     case "message.updated": {
       let info = event.properties.info
-      const messages = draft.message[info.sessionID]
-      if (!messages) {
-        draft.message[info.sessionID] = [info]
-        return true
-      }
+      const messages = draft.message[info.sessionID] ?? []
       // A compaction settles the record that has been running, the way
       // OpenCode's own message store does: `session.compaction.ended` carries
       // no input id, so the settled record keeps the running one's identity.
-      const runningCompaction = info.role === "compaction" && info.status !== "running"
+      const originalIndex = findMessageIndex(messages, info.id)
+      let runningCompaction = info.role === "compaction" && info.status !== "running" && originalIndex < 0
         ? findRunningCompactionIndex(messages)
         : -1
+      const compactionEventSeq = event.properties.compactionEventSeq
+      if (runningCompaction >= 0 && compactionEventSeq !== undefined) {
+        const seq = messages[runningCompaction].seq
+        if (seq === undefined || seq > compactionEventSeq) runningCompaction = -1
+      }
       if (runningCompaction >= 0) {
         const running = messages[runningCompaction]
-        info = { ...info, id: running.id, time: { ...running.time } }
+        info = { ...info, id: running.id, seq: running.seq, time: { ...running.time } }
       }
       const messageIndex = findMessageIndex(messages, info.id)
-      if (messageIndex >= 0) {
-        // Skip message replacement if unchanged — preserves reference, avoids re-render
-        const existing = messages[messageIndex]
-        if (areJsonEquivalent(existing, info)) {
-          syncDebug.reducer.messageUpdatedUnchanged(info.sessionID, info.id, info.role, undefined, undefined)
-          return false
-        }
+      const existing = messageIndex >= 0 ? messages[messageIndex] : undefined
+      // The runner reuses an ID only for retries before terminal settlement.
+      // A replayed start must not reopen a row already known to be completed.
+      if (existing?.role === "assistant" && info.role === "assistant"
+        && existing.time.completed !== undefined && info.time.completed === undefined) info = existing
+      if (existing?.role === "compaction" && info.role === "compaction") {
+        if (existing.status !== "running" && info.status === "running") info = existing
+        else if (info.status !== "running") info = { ...info, time: existing.time }
+      }
+      if (existing?.seq !== undefined) info = { ...info, seq: existing.seq }
+      const changed = !areJsonEquivalent(existing, info)
+      if (changed) {
         const next = [...messages]
-        if (compareMessagesChronologically(existing, info) === 0) {
-          next[messageIndex] = info
-        } else {
-          next.splice(messageIndex, 1)
-          insertMessageChronologically(next, info)
-        }
-        draft.message[info.sessionID] = next
-      } else {
-        const next = [...messages]
+        if (messageIndex >= 0) next.splice(messageIndex, 1)
         insertMessageChronologically(next, info)
         draft.message[info.sessionID] = next
+      } else {
+        syncDebug.reducer.messageUpdatedUnchanged(info.sessionID, info.id, info.role, undefined, undefined)
       }
-      return true
+      const reason = info.seq !== undefined ? undefined
+        : info.role === "assistant" ? "missing-message-sequence"
+        : info.role === "compaction" && info.status !== "running" ? "missing-compaction-record"
+        : undefined
+      return reason ? {
+        changed,
+        materialization: compact({ type: "incomplete-session-snapshot", reason, sessionID: info.sessionID, messageID: info.id, compactionEventSeq }),
+      } : changed
     }
 
     case "message.patched": {
@@ -543,16 +567,18 @@ export function applyDirectoryEvent(
     case "message.removed": {
       const { sessionID, messageID } = event.properties
       const messages = draft.message[sessionID]
+      let changed = draft.part[messageID] !== undefined
       if (messages) {
         const next = [...messages]
         const messageIndex = findMessageIndex(next, messageID)
         if (messageIndex >= 0) {
           next.splice(messageIndex, 1)
           draft.message[sessionID] = next
+          changed = true
         }
       }
       delete draft.part[messageID]
-      return true
+      return changed
     }
 
     case "message.part.updated": {
@@ -571,17 +597,22 @@ export function applyDirectoryEvent(
           : true
       }
       const next = [...parts]
-      const partIndex = next.findIndex((candidate) => candidate.id === part.id)
-      if (partIndex >= 0) {
-        const previous = next[partIndex]
+      const index = next.findIndex((candidate) => candidate.id === part.id)
+      if (index >= 0) {
+        const previous = next[index]
         if (shouldPreserveExistingPart(previous, part)) {
-          return false
+          return missingOwningMessage
+            ? {
+              changed: false,
+              materialization: { type: "incomplete-session-snapshot", reason: "missing-owning-message", sessionID, messageID, partID: part.id },
+            }
+            : false
         }
         const dedupeFields = getUpdatedDeltaFields(previous, part)
-        const settled = withStreamedStart(previous, part)
+        const settled = withStreamedStart(previous, preserveLongerDeltaFields(previous, part, dedupeFields))
         // SAFETY: the dedupe marker is a private annotation the delta reducer
         // strips again; the part itself is unchanged.
-        next[partIndex] = dedupeFields.length > 0
+        next[index] = dedupeFields.length > 0
           ? ({ ...settled, __dedupeNextDeltaFields: dedupeFields } as Part & DedupeMetadata)
           : settled
       } else {

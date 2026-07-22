@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import type { SyncEvent } from "@/lib/opencode/events"
-import type { Message, Part, PermissionRequest, Session } from "@/lib/opencode/model"
+import type { Message, Part, PermissionRequest, Session, ToolPart } from "@/lib/opencode/model"
 import { applyDirectoryEvent, reduceGlobalEvent } from "./event-reducer"
 import { INITIAL_STATE, type State } from "./types"
 
@@ -66,6 +66,15 @@ describe("session events", () => {
   test("a patch for an unknown session is ignored", () => {
     const draft = state()
     expect(apply(draft, { type: "session.patched", properties: { sessionID: "ses_x", patch: { title: "x" } } })).toBe(false)
+  })
+
+  test("a stale session patch cannot replace a newer title", () => {
+    const current = session({ title: "new", time: { created: 1, updated: 20 } })
+    const draft = state({ session: [current] })
+    expect(apply(draft, { type: "session.patched", properties: {
+      sessionID: current.id, patch: { title: "old", time: { updated: 10 } },
+    } })).toBe(false)
+    expect(draft.session[0]).toBe(current)
   })
 
   test("clearing the revert removes the marker", () => {
@@ -158,8 +167,8 @@ describe("session events", () => {
 })
 
 describe("compaction events", () => {
-  const running = (): Message => ({
-    id: "msg_compact", sessionID: "ses_1", role: "compaction", time: { created: 5 }, status: "running", reason: "auto", summary: "",
+  const running = (): Extract<Message, { role: "compaction" }> => ({
+    id: "msg_compact", sessionID: "ses_1", seq: 5, role: "compaction", time: { created: 5 }, status: "running", reason: "auto", summary: "",
   })
 
   test("summary deltas grow the running compaction", () => {
@@ -185,6 +194,31 @@ describe("compaction events", () => {
     const compactions = draft.message.ses_1.filter((message) => message.role === "compaction")
     expect(compactions).toHaveLength(1)
     expect(compactions[0]).toMatchObject({ id: "msg_compact", time: { created: 5 }, status: "completed", summary: "Done." })
+  })
+
+  test("an old terminal replay cannot settle or hide a newer running compaction", () => {
+    const newer = { ...running(), id: "newer", seq: 20 }
+    const draft = state({ message: { ses_1: [newer] } })
+    const result = apply(draft, { type: "message.updated", properties: {
+      compactionEventSeq: 10,
+      info: { ...running(), id: "old-terminal-alias", seq: undefined, status: "completed", summary: "old" },
+    } })
+    expect(result).toMatchObject({ materialization: { reason: "missing-compaction-record", compactionEventSeq: 10 } })
+    expect(draft.message.ses_1[0]).toBe(newer)
+    apply(draft, { type: "message.compaction.delta", properties: { sessionID: "ses_1", delta: "new progress" } })
+    expect(draft.message.ses_1[0]).toMatchObject({ id: "newer", status: "running", summary: "new progress" })
+  })
+
+  test("an identified failure preserves its original time and a replayed start cannot reopen it", () => {
+    const draft = state({ message: { ses_1: [running()] } })
+    apply(draft, { type: "message.updated", properties: {
+      compactionEventSeq: 10,
+      info: { ...running(), seq: undefined, time: { created: 10 }, status: "failed", error: { type: "compaction.interrupted", message: "interrupted" } },
+    } })
+    const failed = draft.message.ses_1[0]
+    expect(failed).toMatchObject({ id: "msg_compact", seq: 5, time: { created: 5 }, status: "failed" })
+    expect(apply(draft, { type: "message.updated", properties: { info: running() } })).toBe(false)
+    expect(draft.message.ses_1[0]).toBe(failed)
   })
 })
 
@@ -289,6 +323,38 @@ describe("streaming parts", () => {
     type: "text",
     text,
     time: end === undefined ? { start } : { start, end },
+  })
+
+  for (const [initial, updated, delta, expected] of [
+    ["hello", "hello world", " world", "hello world"],
+    ["hello", "hel", "lo world", "hello world"],
+  ]) {
+    test(`reconciles text snapshots and overlapping deltas: ${initial} / ${updated}`, () => {
+      const draft = state()
+      apply(draft, { type: "message.part.updated", properties: { sessionID: "ses_1", part: textPart(initial) } })
+      apply(draft, { type: "message.part.updated", properties: { sessionID: "ses_1", part: textPart(updated) } })
+      apply(draft, { type: "message.part.delta", properties: { sessionID: "ses_1", messageID: "msg_a", partID: "msg_a:text:0", field: "text", delta } })
+      expect(draft.part.msg_a[0]).toMatchObject({ text: expected })
+    })
+  }
+
+  test("preserves legitimate repeated text without a replacement snapshot", () => {
+    const draft = state()
+    apply(draft, { type: "message.part.updated", properties: { sessionID: "ses_1", part: textPart("ha") } })
+    apply(draft, { type: "message.part.delta", properties: { sessionID: "ses_1", messageID: "msg_a", partID: "msg_a:text:0", field: "text", delta: "ha" } })
+    expect(draft.part.msg_a[0]).toMatchObject({ text: "haha" })
+  })
+
+  test("a stale running tool snapshot cannot reopen a completed tool", () => {
+    const completed: ToolPart = {
+      id: "call", callID: "call", messageID: "msg_a", sessionID: "ses_1", type: "tool", tool: "read",
+      state: { status: "completed", input: {}, output: "done", metadata: {}, time: { start: 1, end: 2 } },
+    }
+    const draft = state({ part: { msg_a: [completed] } })
+    apply(draft, { type: "message.part.updated", properties: { sessionID: "ses_1", part: {
+      ...completed, state: { status: "running", input: {}, time: { start: 1 } },
+    } } })
+    expect(draft.part.msg_a[0]).toEqual(completed)
   })
 
   test("deltas grow a text part and a final snapshot dedupes an overlapping delta", () => {
@@ -402,15 +468,48 @@ describe("requests and notices", () => {
 })
 
 describe("ordering and trimming", () => {
-  test("inserts a message by creation time rather than by id", () => {
-    // Message ids wrapped around, so a newer message can sort below an older
-    // one; only `time.created` decides the position.
-    const legacy = assistant({ id: "msg_ffffffffffffLegacy", time: { created: 100 } })
-    const current = assistant({ id: "msg_000000000000Current", time: { created: 200 } })
+  test("inserts a persisted message by sequence despite clock reversal and id rollover", () => {
+    const legacy = assistant({ id: "msg_ffffffffffffLegacy", seq: 1, time: { created: 200 } })
+    const current = assistant({ id: "msg_000000000000Current", seq: 9, time: { created: 100 } })
     const draft = state({ message: { ses_1: [legacy] } })
 
     expect(apply(draft, { type: "message.updated", properties: { info: current } })).toBe(true)
     expect(draft.message.ses_1).toEqual([legacy, current])
+  })
+
+  test("an unseen assistant start stays provisional and requests creation-order recovery", () => {
+    const known = assistant({ id: "known", seq: 8 })
+    const provisional = assistant({ id: "unconfirmed", time: { created: 1 } })
+    const draft = state({ message: { ses_1: [known] } })
+    expect(apply(draft, { type: "message.updated", properties: { info: provisional } })).toEqual({
+      changed: true,
+      materialization: { type: "incomplete-session-snapshot", reason: "missing-message-sequence", sessionID: "ses_1", messageID: "unconfirmed" },
+    })
+    expect(draft.message.ses_1).toEqual([known, provisional])
+  })
+
+  test("a retry restarts the incomplete assistant without changing its confirmed creation order", () => {
+    const existing = assistant({ seq: 3, time: { created: 10 }, retry: { attempt: 2, at: 20, error: { type: "provider", message: "retry" } } })
+    const later = assistant({ id: "later", seq: 8, time: { created: 30 } })
+    const restarted = assistant({ time: { created: 100 } })
+    const draft = state({ message: { ses_1: [existing, later] } })
+    expect(apply(draft, { type: "message.updated", properties: { info: restarted } })).toBe(true)
+    expect(draft.message.ses_1).toEqual([{ ...restarted, seq: 3 }, later])
+  })
+
+  test("a replayed start cannot reopen an already completed assistant", () => {
+    const completed = assistant({ seq: 3, time: { created: 10, completed: 20 }, finish: "stop" })
+    const draft = state({ message: { ses_1: [completed] } })
+    expect(apply(draft, { type: "message.updated", properties: { info: assistant() } })).toBe(false)
+    expect(draft.message.ses_1[0]).toBe(completed)
+  })
+
+  test("inbox delivery moves a provisional user message to its stored creation position", () => {
+    const pending: Message = { id: "pending", sessionID: "ses_1", role: "user", time: { created: 1 } }
+    const known = assistant({ seq: 8 })
+    const draft = state({ message: { ses_1: [known, pending] } })
+    apply(draft, { type: "message.patched", properties: { sessionID: "ses_1", messageID: "pending", patch: { seq: 3, time: { created: 100 } } } })
+    expect(draft.message.ses_1).toEqual([{ ...pending, seq: 3, time: { created: 100 } }, known])
   })
 
   test("keeps parts of one message in arrival order across the part id rollover", () => {

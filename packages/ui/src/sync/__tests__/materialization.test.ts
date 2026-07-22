@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, Part, PartType, ToolPart } from "@/lib/opencode/model"
+import type { CompactionMessage, Message, Part, PartType, StoredMessage, ToolPart } from "@/lib/opencode/model"
 import {
-  getSessionMaterializationRequestKey,
   getSessionMaterializationStatus,
   getStaleRunningToolMessageID,
   isSessionMaterializationStillNeeded,
@@ -15,6 +14,8 @@ function message(id: string, sessionID = "ses_1"): Message {
 function userMessage(id: string, sessionID = "ses_1"): Message {
   return { id, sessionID, role: "user", time: { created: 1 } }
 }
+
+const storedMessage = (id: string, seq: number): StoredMessage => ({ ...message(id), seq })
 
 function completedAssistantMessage(id: string, sessionID = "ses_1"): Message {
   return {
@@ -40,14 +41,34 @@ function part(id: string, messageID: string, type: PartType = "text", text = id)
   return { id, messageID, sessionID: "ses_1", type: "text", text }
 }
 
-describe("getSessionMaterializationRequestKey", () => {
-  test("isolates the same directory and session identity across runtimes", () => {
-    expect(getSessionMaterializationRequestKey("runtime-a", "/repo", "ses_1"))
-      .not.toBe(getSessionMaterializationRequestKey("runtime-b", "/repo", "ses_1"))
-  })
-})
-
 describe("materializeSessionSnapshots", () => {
+  test("a running database snapshot preserves live compaction text, but completion replaces it", () => {
+    const live: CompactionMessage = {
+      id: "compaction", sessionID: "ses_1", role: "compaction", seq: 3,
+      time: { created: 1 }, status: "running", reason: "manual", summary: "live progress",
+    }
+    const state = { message: { ses_1: [live] }, part: {} }
+    const running = materializeSessionSnapshots(state, "ses_1", [{ info: { ...live, summary: "live" }, parts: [] }])
+    expect(running.messages[0]).toEqual(live)
+    const completed: CompactionMessage = { ...live, status: "completed", summary: "final" }
+    expect(materializeSessionSnapshots(state, "ses_1", [{ info: completed, parts: [] }]).messages[0]).toEqual(completed)
+  })
+  test("removes a completed snapshot's missing messages without mutating the previous parts map", () => {
+    const removed = part("prt_removed", "msg_removed")
+    const unrelated = part("prt_other", "msg_other")
+    const state = {
+      message: { ses_1: [message("msg_removed")], ses_2: [message("msg_other", "ses_2")] },
+      part: Object.freeze({ msg_removed: [removed], msg_other: [unrelated] }),
+    }
+    const result = materializeSessionSnapshots(state, "ses_1", [], { mode: "complete" })
+    expect(result.part).not.toBe(state.part)
+    expect(result.part.msg_removed).toBeUndefined()
+    expect(state.part.msg_removed).toEqual([removed])
+    expect(result.part.msg_other).toBe(state.part.msg_other)
+    expect(result.message.ses_2).toBe(state.message.ses_2)
+    expect(result.partsChanged).toBe(true)
+  })
+
   test("finalizes an active tool under a completed assistant message", () => {
     const completedMessage = completedAssistantMessage("msg_1")
     const staleRunningTool = {
@@ -255,6 +276,19 @@ describe("materializeSessionSnapshots", () => {
     if (reconciled?.role !== "assistant") throw new Error("Expected assistant result")
     expect("error" in reconciled).toBe(false)
     expect(reconciled.time.completed).toBe(4000)
+  })
+
+  test("confirming seq does not reopen an interrupted message or its newly fetched pending tool", () => {
+    const unfinished = message("msg_1")
+    if (unfinished.role !== "assistant") throw new Error("Expected assistant fixture")
+    const aborted: Message = { ...unfinished, time: { created: 1, completed: 5000 }, error: { type: "aborted", message: "aborted" } }
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [aborted] }, part: {} },
+      "ses_1",
+      [{ info: { ...unfinished, seq: 12 }, parts: [part("tool_1", "msg_1", "tool", "read")] }],
+    )
+    expect(result.messages[0]).toEqual({ ...aborted, seq: 12 })
+    expect(result.part.msg_1[0]).toMatchObject({ state: { status: "error", error: "Interrupted", time: { end: 5000 } } })
   })
 
   test("does not preserve omitted optimistic user text parts beside server snapshot parts", () => {
@@ -639,6 +673,151 @@ describe("materializeSessionSnapshots", () => {
 
     const mergedPart = result.part.msg_1[0] as { state?: { attachments?: Array<unknown> } }
     expect(mergedPart.state?.attachments).toEqual([])
+  })
+
+  test("preserves a final tool state over a stale running snapshot", () => {
+    const finalPart: ToolPart = {
+      id: "prt_1",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      callID: "call", tool: "read",
+      state: { status: "completed", input: {}, output: "done", metadata: {}, time: { start: 1, end: 2 } },
+    }
+    const stalePart: ToolPart = {
+      ...finalPart,
+      state: { status: "running", input: {}, time: { start: 1 } },
+    }
+
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [message("msg_1")] }, part: { msg_1: [finalPart] } },
+      "ses_1",
+      [{ info: message("msg_1"), parts: [stalePart] }],
+    )
+
+    expect(result.part.msg_1[0]).toBe(finalPart)
+  })
+
+  test("complete mode removes messages and parts omitted by the authoritative snapshot", () => {
+    const kept = storedMessage("msg_kept", 2)
+    const result = materializeSessionSnapshots(
+      {
+        message: { ses_1: [storedMessage("msg_old", 1), kept] },
+        part: {
+          msg_old: [part("prt_old", "msg_old")],
+          msg_kept: [part("prt_kept", "msg_kept")],
+        },
+      },
+      "ses_1",
+      [{ info: kept, parts: [part("prt_kept", "msg_kept")] }],
+      { mode: "complete" },
+    )
+
+    expect(result.message.ses_1.map((item) => item.id)).toEqual(["msg_kept"])
+    expect(result.part.msg_old).toBe(undefined)
+  })
+
+  test("recent mode removes stale recent messages but preserves older history", () => {
+    const latest = storedMessage("msg_latest", 9)
+    const result = materializeSessionSnapshots(
+      {
+        message: { ses_1: [storedMessage("msg_old", 1), storedMessage("msg_stale", 4), latest] },
+        part: { msg_stale: [part("prt_stale", "msg_stale")] },
+      },
+      "ses_1",
+      [{ info: latest, parts: [] }],
+      { mode: "recent", recentBoundary: 9 },
+    )
+
+    expect(result.message.ses_1.map((item) => item.id)).toEqual(["msg_old", "msg_stale", "msg_latest"])
+
+    const boundary = storedMessage("msg_boundary", 3)
+    const refreshed = materializeSessionSnapshots(
+      {
+        message: result.message,
+        part: result.part,
+      },
+      "ses_1",
+      [{ info: boundary, parts: [] }, { info: latest, parts: [] }],
+      { mode: "recent", recentBoundary: 3 },
+    )
+    expect(refreshed.message.ses_1.map((item) => item.id)).toEqual(["msg_old", "msg_boundary", "msg_latest"])
+    expect(refreshed.part.msg_stale).toBe(undefined)
+  })
+
+  test("recent boundary ignores optimistic messages without a sequence", () => {
+    const optimistic = userMessage("msg_optimistic")
+
+    const result = materializeSessionSnapshots(
+      {
+        message: { ses_1: [storedMessage("msg_old", 1), storedMessage("msg_boundary", 2), storedMessage("msg_stale", 3), storedMessage("msg_latest", 4), optimistic] },
+        part: {},
+      },
+      "ses_1",
+      [
+        { info: storedMessage("msg_boundary", 2), parts: [] },
+        { info: storedMessage("msg_latest", 4), parts: [] },
+        { info: optimistic, parts: [] },
+      ],
+      { mode: "recent", recentBoundary: 2 },
+    )
+
+    expect(result.messages.map((item) => item.id)).toEqual(["msg_old", "msg_boundary", "msg_latest", "msg_optimistic"])
+  })
+
+  test("recent boundary is not lowered by a concurrently retained message", () => {
+
+    const result = materializeSessionSnapshots(
+      {
+        message: { ses_1: [storedMessage("msg_old", 1), storedMessage("msg_concurrent", 2), storedMessage("msg_stale", 5), storedMessage("msg_boundary", 6), storedMessage("msg_latest", 7)] },
+        part: {},
+      },
+      "ses_1",
+      [
+        { info: storedMessage("msg_concurrent", 2), parts: [] },
+        { info: storedMessage("msg_boundary", 6), parts: [] },
+        { info: storedMessage("msg_latest", 7), parts: [] },
+      ],
+      { mode: "recent", recentBoundary: 6 },
+    )
+
+    expect(result.messages.map((item) => item.id)).toEqual(["msg_old", "msg_concurrent", "msg_stale", "msg_boundary", "msg_latest"])
+  })
+
+  test("prepend does not overwrite parts for an overlapping cached message", () => {
+    const livePart = part("prt_live", "msg_overlap", "text", "live")
+
+    const result = materializeSessionSnapshots(
+      {
+        message: { ses_1: [storedMessage("msg_overlap", 2)] },
+        part: { msg_overlap: [livePart] },
+      },
+      "ses_1",
+      [
+        { info: storedMessage("msg_old", 1), parts: [part("prt_old", "msg_old")] },
+        { info: storedMessage("msg_overlap", 2), parts: [part("prt_live", "msg_overlap", "text", "stale")] },
+      ],
+      { mode: "prepend" },
+    )
+
+    expect(result.messages.map((item) => item.id)).toEqual(["msg_old", "msg_overlap"])
+    expect(result.part.msg_overlap).toEqual([livePart])
+  })
+
+  test("complete empty snapshot clears cached messages and parts", () => {
+
+    const result = materializeSessionSnapshots(
+      {
+        message: { ses_1: [message("msg_old")] },
+        part: { msg_old: [part("prt_old", "msg_old")] },
+      },
+      "ses_1",
+      [],
+      { mode: "complete" },
+    )
+
+    expect(result.messages).toEqual([])
+    expect(result.part.msg_old).toBe(undefined)
   })
 })
 

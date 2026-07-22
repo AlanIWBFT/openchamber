@@ -109,7 +109,7 @@ export function getReconnectCandidateSessionIds(state: ReconnectMaterializationS
     // conversation message rather than the last record.
     const lastMessage = getLastConversationMessage(messages)
     if (isIncompleteAssistantTurn(lastMessage)) {
-      ids.add(sessionId)
+      if (state.session_status?.[sessionId]?.type !== "idle") ids.add(sessionId)
     } else if (!getSessionMaterializationStatus({ message: state.message ?? {}, part: state.part ?? {} }, sessionId).renderable) {
       ids.add(sessionId)
     } else if (lastMessage && state.part?.[lastMessage.id]?.some((part) => (
