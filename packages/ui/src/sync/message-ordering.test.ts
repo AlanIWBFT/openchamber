@@ -23,6 +23,24 @@ const context = (id: string, created: number): Message => ({
 })
 
 describe("message chronology", () => {
+  test("persisted sequence wins over clock reversal and ID rollover, without requiring contiguous values", () => {
+    const first = { ...message("msg_ffffffff", 200), seq: 0 }
+    const second = { ...message("msg_00000000", 100), seq: 17 }
+    expect(sortMessagesChronologically([second, first])).toEqual([first, second])
+    const messages = [first]
+    insertMessageChronologically(messages, second)
+    expect(messages).toEqual([first, second])
+  })
+
+  test("provisional messages stay at the tail until their persisted sequence is confirmed", () => {
+    const first = { ...message("first", 200), seq: 3 }
+    const last = { ...message("last", 300), seq: 9 }
+    const pending = message("pending", 100)
+    expect(sortMessagesChronologically([pending, last, first])).toEqual([first, last, pending])
+    const delivered = { ...pending, seq: 7 }
+    expect(sortMessagesChronologically([first, last, delivered])).toEqual([first, delivered, last])
+  })
+
   test("orders post-rollover IDs after legacy IDs by creation time", () => {
     const legacy = message("msg_ffffffffffffLegacy", 100)
     const current = message("msg_000000000000Current", 200)

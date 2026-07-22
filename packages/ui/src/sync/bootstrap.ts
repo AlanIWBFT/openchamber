@@ -92,6 +92,7 @@ type DirectoryBootstrapInput = {
     projects: Project[]
     path: GlobalState["path"]
   }
+  beginSessionStatusRequest?: () => () => boolean
   loadSessions: (directory: string) => Promise<void> | void
 }
 
@@ -146,11 +147,13 @@ async function initializeDirectory(input: DirectoryBootstrapInput, sessions: Pro
     sessions.then(async (listed) => {
       if (listed !== "complete") return
       await read(async () => {
+        const isCurrentRequest = input.beginSessionStatusRequest?.() ?? (() => true)
         const session_status = await readDirectoryStatusSnapshot(store, async () => {
           const statuses = await opencodeClient.getActiveSessionStatuses(directory)
           if (statuses === null) throw new Error("session.active failed")
           return selectHeldSessionStatuses(statuses, store.getState().session)
         })
+        if (input.isStale?.() || !isCurrentRequest()) return
         commit({ session_status, sessionStatusReady: true })
       }, "active-session")
     }),

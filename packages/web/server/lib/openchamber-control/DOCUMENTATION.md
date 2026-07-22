@@ -191,6 +191,7 @@ other.
   child waits stays `busy`. The pending list comes from this server's event
   stream, so a request opened before this server connected to OpenCode reads as
   `busy`. `session.list` with `withStatus` uses the same rule.
+- Session lists use the backend's `time.archived` field for archive filtering.
 - Wait (CLI only; the agent tool refuses it) never treats an initial idle
   response as completion after dispatch. It requires observed activity or a
   newly completed assistant message. A `waiting` session ends the wait at once

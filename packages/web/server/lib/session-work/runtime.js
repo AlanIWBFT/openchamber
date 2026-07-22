@@ -101,7 +101,6 @@ export function createSessionWorkRuntime({
   readMetadata,
   /** `(sessionID, decide, { directory }) => { metadata, changed }`, decided against the record at write time. */
   updateMetadata,
-  isSessionArchived = async () => false,
   /** Roots of managed Chats: plain conversations, never work. */
   chatRoots = [],
   /** `../session-lineage.js`: known subsessions are skipped without reading them. */
@@ -173,7 +172,7 @@ export function createSessionWorkRuntime({
   /** `workSession`, and only while it is not archived. */
   const eligibleSession = async (client, sessionId, signal) => {
     const session = await workSession(client, sessionId, signal);
-    return session && !(await isSessionArchived(sessionId)) ? session : null;
+    return session && !session.time?.archived ? session : null;
   };
 
   const markSuggested = (sessionId, directory) => {
@@ -202,7 +201,7 @@ export function createSessionWorkRuntime({
     if (readWork(await readMetadata(sessionId, directory))?.state === 'open') return 'settled';
     const session = await workSession(openCodeClient(directory), sessionId, AbortSignal.timeout(READ_TIMEOUT_MS));
     if (!session) return 'settled';
-    if (await isSessionArchived(sessionId)) return 'archived';
+    if (session.time?.archived) return 'archived';
     if (stopped) return 'settled';
     await updateMetadata(sessionId, (metadata) => openPatch(metadata, { requestAt: createdAt, now: now() }), { directory });
     return 'settled';

@@ -56,12 +56,11 @@ describe("getReconnectCandidateSessionIds", () => {
     expect(parentReads).toBe(0)
   })
 
-  test("still recovers an incomplete turn when a plumbing message trails it", () => {
+  test("recovers an incomplete turn behind plumbing records when no authoritative idle status is known", () => {
     const synthetic = { id: "s-1", sessionID: "incomplete", role: "synthetic", time: { created: 2 }, text: "plugin prompt" } as unknown as Message
 
     expect(getReconnectCandidateSessionIds({
       session: [createSession("incomplete")],
-      session_status: { incomplete: { type: "idle" } as SessionStatus },
       message: {
         incomplete: [createAssistantMessage("m-1", "incomplete"), synthetic],
       },
@@ -93,6 +92,16 @@ describe("getReconnectCandidateSessionIds", () => {
       },
       part: {},
     })).toEqual(["blank"])
+  })
+
+  test("does not keep an explicitly idle session active from incomplete history", () => {
+    expect(getReconnectCandidateSessionIds({
+      session: [createSession("idle")],
+      session_status: { idle: { type: "idle" } },
+      message: {
+        idle: [createAssistantMessage("m-1", "idle")],
+      },
+    })).toEqual([])
   })
 
   test("does not include a viewed session from another directory", () => {
