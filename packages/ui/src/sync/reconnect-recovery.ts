@@ -107,12 +107,13 @@ export function getReconnectCandidateSessionIds(state: ReconnectMaterializationS
 
   for (const [sessionId, messages] of Object.entries(state.message ?? {})) {
     const lastMessage = messages[messages.length - 1]
-    if (
+    const hasIncompleteAssistant = Boolean(
       lastMessage
       && lastMessage.role === "assistant"
       && typeof (lastMessage as { time?: { completed?: number } }).time?.completed !== "number"
-    ) {
-      ids.add(sessionId)
+    )
+    if (hasIncompleteAssistant) {
+      if (state.session_status?.[sessionId]?.type !== "idle") ids.add(sessionId)
     } else if (!getSessionMaterializationStatus({ message: state.message ?? {}, part: state.part ?? {} }, sessionId).renderable) {
       ids.add(sessionId)
     }

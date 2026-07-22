@@ -72,12 +72,15 @@ export const shouldHideExecFollowUpState = (
     return typeof error !== 'string' || error.length === 0;
 };
 
-export const isExecProcessRunning = (tool: unknown, metadata: UnifiedExecMetadata, stateStatus?: unknown): boolean => (
-    isExecCommandTool(tool)
-    && stateStatus !== 'error'
-    && metadata.processRunning === true
-    && !(typeof metadata.execError === 'string' && metadata.execError.length > 0)
-);
+export const getExecProcessRunning = (
+    tool: unknown,
+    metadata: UnifiedExecMetadata,
+    stateStatus?: unknown,
+): boolean | undefined => {
+    if (!isExecCommandTool(tool)) return undefined;
+    if (stateStatus === 'error' || (typeof metadata.execError === 'string' && metadata.execError.length > 0)) return false;
+    return metadata.processRunning;
+};
 
 export const redactExecFollowUpInput = (
     tool: unknown,

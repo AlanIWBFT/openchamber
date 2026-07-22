@@ -125,7 +125,7 @@ describe("bootstrapDirectory", () => {
       loadSessions: async () => undefined,
     })
     expect(result).toBe('complete')
-    expect(state.sessionStatusReady).toBe(undefined)
+    expect(state.sessionStatusReady).toBe(false)
   })
 
   test("deferred phase merges fetched questions by session, replacing the pre-fetch record", async () => {

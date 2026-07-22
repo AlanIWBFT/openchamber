@@ -1,12 +1,13 @@
 import { create, type StoreApi } from "zustand"
 import type { DirState, State } from "./types"
-import { INITIAL_STATE, MAX_DIR_STORES, DIR_IDLE_TTL_MS, EVICTION_GRACE_MS } from "./types"
+import { INITIAL_STATE, MAX_DIR_STORES, DIR_IDLE_TTL_MS, EVICTION_GRACE_MS, SESSION_STATUS_FALLBACK_TTL_MS } from "./types"
 import { pickDirectoriesToEvict, canDisposeDirectory, hasPendingBlockingRequests } from "./eviction"
 import { readDirCache, persistVcs, persistProjectMeta, persistIcon, persistSessions } from "./persist-cache"
 import { normalizePath } from "@/lib/pathNormalization"
 import { startSessionLoadPerformanceEvent } from "./session-load-performance"
 import { countSyncPerformance } from "./performance-diagnostics"
 import { isFilesystemError } from "@/lib/api/files-errors"
+import { clearMessageOrderState } from "./message-order"
 
 export type DirectoryStore = State & {
   /** Apply a partial state update */
@@ -266,6 +267,7 @@ function createDirectoryStore(directory: string): StoreApi<DirectoryStore> {
     session: cachedSessions,
     sessionTotal: cachedSessions.length,
     sessionListSource: cachedSessions.length > 0 ? "persisted" : "empty",
+    session_status_fallback_until: Date.now() + SESSION_STATUS_FALLBACK_TTL_MS,
     limit: Math.max(cachedSessions.length, INITIAL_STATE.limit),
     patch: (partial) => set(partial),
     replace: (next) => set(next),
@@ -689,6 +691,8 @@ export class ChildStoreManager {
     this.bootstrapFailures.delete(directory)
     this.directoryBootstrapRuns.delete(directory)
     for (const demands of this.bootstrapDemandsByOwner.values()) demands.delete(directory)
+    const store = this.children.get(directory)
+    if (store) clearMessageOrderState(store)
     this.children.delete(directory)
     this.notifyRegistrySubscribers()
     const dispose = this.disposers.get(directory)
@@ -740,6 +744,8 @@ export class ChildStoreManager {
     this.disposed = true
     this.bootstrapGeneration += 1
     for (const directory of [...this.children.keys()]) {
+      const store = this.children.get(directory)
+      if (store) clearMessageOrderState(store)
       this.children.delete(directory)
     }
     this.notifyRegistrySubscribers()

@@ -287,7 +287,8 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       return `session.status:${props.sessionID}`
     }
     if (payload.type === "session.updated") {
-      const props = payload.properties as { info?: { id?: string } }
+      const props = payload.properties as { info?: { id?: string; time?: { archived?: unknown } } }
+      if (props.info?.time?.archived) return undefined
       return props.info?.id ? `session.updated:${props.info.id}` : undefined
     }
     if (payload.type === "lsp.updated") {
@@ -469,7 +470,28 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     const routedDirectory = routeDirectory?.(directory, normalizedPayload) || directory
     const d = getOrCreateDir(routedDirectory)
 
-    // A full part snapshot is a coalescing barrier for that part's deltas:
+    const clearPartDeltaCoalescing = (messageID: string, partID?: string) => {
+      const deltaPrefix = partID
+        ? `message.part.delta:${messageID}:${partID}:`
+        : `message.part.delta:${messageID}:`
+      for (const coalesceKey of d.coalesced.keys()) {
+        if (coalesceKey.startsWith(deltaPrefix)) d.coalesced.delete(coalesceKey)
+      }
+    }
+
+    const clearSessionCoalescing = (sessionID: string) => {
+      d.coalesced.delete(`session.updated:${sessionID}`)
+      d.coalesced.delete(`session.status:${sessionID}`)
+    }
+
+    const clearAllPartDeltaCoalescing = () => {
+      for (const coalesceKey of d.coalesced.keys()) {
+        if (coalesceKey.startsWith("message.part.delta:")) d.coalesced.delete(coalesceKey)
+      }
+    }
+
+    // Full snapshots and removals are coalescing barriers for deltas. A delta
+    // after a removal must remain after it so the reducer can request recovery.
     // drop its pending delta coalescing keys so a delta arriving after the
     // snapshot starts a fresh queue entry instead of merging into a delta
     // queued before the snapshot, which the snapshot would then overwrite and
@@ -478,14 +500,31 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       const part = (normalizedPayload.properties as { part?: { id?: unknown; messageID?: unknown } }).part
       const messageID = typeof part?.messageID === "string" ? part.messageID : undefined
       const partID = typeof part?.id === "string" ? part.id : undefined
-      if (messageID && partID) {
-        const deltaPrefix = `message.part.delta:${messageID}:${partID}:`
-        for (const coalesceKey of d.coalesced.keys()) {
-          if (coalesceKey.startsWith(deltaPrefix)) {
-            d.coalesced.delete(coalesceKey)
-          }
-        }
+      if (messageID && partID) clearPartDeltaCoalescing(messageID, partID)
+    } else if (normalizedPayload.type === "message.part.removed") {
+      const props = normalizedPayload.properties as { messageID?: unknown; partID?: unknown }
+      if (typeof props.messageID === "string" && typeof props.partID === "string") {
+        clearPartDeltaCoalescing(props.messageID, props.partID)
       }
+    } else if (normalizedPayload.type === "message.removed") {
+      const messageID = (normalizedPayload.properties as { messageID?: unknown }).messageID
+      if (typeof messageID === "string") clearPartDeltaCoalescing(messageID)
+    }
+
+    // Deletion and creation split distinct lifetimes of the same identity.
+    // Later updates must remain after the lifecycle event instead of replacing
+    // an earlier coalesced update in front of it.
+    const archivedSessionUpdate = normalizedPayload.type === "session.updated"
+      && Boolean((normalizedPayload.properties as { info?: { time?: { archived?: unknown } } }).info?.time?.archived)
+    if (normalizedPayload.type === "session.created" || normalizedPayload.type === "session.deleted" || archivedSessionUpdate) {
+      const props = normalizedPayload.properties as { sessionID?: unknown; info?: { id?: unknown } }
+      const sessionID = typeof props.sessionID === "string"
+        ? props.sessionID
+        : typeof props.info?.id === "string"
+          ? props.info.id
+          : undefined
+      if (sessionID) clearSessionCoalescing(sessionID)
+      clearAllPartDeltaCoalescing()
     }
 
     if (
