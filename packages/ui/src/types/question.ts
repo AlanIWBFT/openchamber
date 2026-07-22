@@ -8,6 +8,7 @@ export interface QuestionInfo {
   header: string;
   options: QuestionOption[];
   multiple?: boolean;
+  custom?: boolean;
 }
 
 export interface QuestionRequest {
