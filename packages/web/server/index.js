@@ -1007,8 +1007,6 @@ const sessionAssistRuntime = createSessionAssistRuntime({
   persistSessionAssist: (sessionID, directory, assist) =>
     persistSessionMetadataPatch(sessionID, { openchamber: { assist } }, { directory }),
   // Declared further down; only ever called after startup.
-  isSessionArchived: (sessionID) => openChamberSessionService.sessionArchive.isArchived(sessionID),
-  // Declared further down; only ever called after startup.
   evaluateTurn: (input) => sessionWorkRuntime.evaluateTurnEnd(input),
   lineage: sessionLineage,
   // Clients hold a left chat's OpenCode location until its assist is done.
@@ -1164,7 +1162,6 @@ const sessionWorkRuntime = createSessionWorkRuntime({
   jev: createJevClient(),
   readMetadata: (sessionID, directory) => sessionMetadataStore.get(sessionID, { directory }),
   updateMetadata: updateSessionMetadataWith,
-  isSessionArchived: (sessionID) => openChamberSessionService.sessionArchive.isArchived(sessionID),
   chatRoots: [path.join(OPENCHAMBER_USER_CONFIG_ROOT, 'chats'), OPENCHAMBER_CHATS_DIR],
   lineage: sessionLineage,
 });
@@ -1353,9 +1350,6 @@ const processForwardedServerEvent = (payload, emitSyntheticEvent, spaceId = null
 
 
 const serverUtilsRuntime = createServerUtilsRuntime({
-  // Read lazily: the archive store is created with the session service further
-  // down, while the proxy is registered later still.
-  getArchivedSessions: () => openChamberSessionService.archiveStore.getAll(),
   getUnreadBaseline: () => unreadBaseline.get(),
   getStoredSessionMetadata: () => sessionMetadataStore.listUnmigrated(),
   // Isolated spaces: with the switch on, the session list carries every space's sessions and
@@ -1792,9 +1786,8 @@ const openChamberSessionService = createOpenChamberSessionService({
   worktreeBootstrapStore,
   hydrateWorktreeCheckout: featureRoutesRuntime.hydrateBoundCheckout,
   createChangeRequestWorktree: featureRoutesRuntime.createChangeRequestWorktree,
-  // Holds the archive file (`session-archive.js`) beside the instance it describes.
+  // Holds legacy migration inputs beside the instance they describe.
   dataDir: OPENCHAMBER_DATA_DIR,
-  getDefaultOpenCodeDirectory: () => openCodeLifecycleRuntime.getDefaultOpenCodeDirectory(),
   sessionMetadataStore,
   persistSessionMetadata: persistSessionMetadataPatch,
   updateSessionMetadata: updateSessionMetadataWith,
@@ -1970,7 +1963,6 @@ const openChamberControlService = createOpenChamberControlService({
     createError: (message, status) => new OpenChamberControlError(message, status),
   }),
   dispatchResults: dispatchResultsRuntime,
-  archiveStore: openChamberSessionService.archiveStore,
 });
 
 const ensureGlobalWatcherStarted = async () => {

@@ -22,7 +22,6 @@ export const createServerUtilsRuntime = (dependencies) => {
     setOpenCodeNotReadySince,
     clearLastOpenCodeError,
     getLoginShellPath,
-    getArchivedSessions = null,
     getUnreadBaseline = null,
     getMergeSpaceSessionList = null,
     getSpaceEventHub = null,
@@ -195,7 +194,6 @@ export const createServerUtilsRuntime = (dependencies) => {
       ensureOpenCodeApiPrefix,
       getSseUpstreamStallTimeoutMs: getUpstreamStallTimeoutMs,
       getUiNotificationClients,
-      getArchivedSessions,
       getUnreadBaseline,
       getStoredSessionMetadata,
       // Read when the proxy is set up, after `main` decided whether the spaces host exists.

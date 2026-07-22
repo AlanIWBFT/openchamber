@@ -126,6 +126,75 @@ describe("createEventPipeline", () => {
     expect(last.type === "session.status" && last.properties.status.type).toBe("retry")
   })
 
+  test("does not merge deltas across cancellation of their message", async () => {
+    const { events } = await collect([
+      textDelta("a"),
+      { ...base, type: "session.inbox.cancelled", durable, data: { sessionID: "ses_1", inboxID: "msg_1" } },
+      textDelta("b"),
+    ], 3)
+    expect(events.map(describeEvent)).toEqual(["delta:a", "message.removed", "delta:b"])
+  })
+
+  test("does not merge deltas across session deletion", async () => {
+    const { events } = await collect([
+      textDelta("a"),
+      { ...base, type: "session.deleted", durable: { ...durable, version: 2 }, data: { sessionID: "ses_1" } },
+      textDelta("b"),
+    ], 3)
+    expect(events.map(describeEvent)).toEqual(["delta:a", "session.deleted", "delta:b"])
+  })
+
+  test("preserves status order across failure", async () => {
+    const { events } = await collect([
+      statusEvent("busy"),
+      { ...base, type: "session.execution.failed", durable, data: { sessionID: "ses_1", error: { type: "provider", message: "failed" } } },
+      statusEvent("retry"),
+    ], 4)
+    expect(events.map((event) => event.type)).toEqual(["session.status", "session.patched", "session.error", "session.status"])
+  })
+
+  for (const type of ["session.created", "session.deleted"] as const) {
+    test(`preserves updates and statuses across ${type}`, async () => {
+      const lifecycle: OpenCodeEvent = type === "session.deleted"
+        ? { ...base, type, durable: { ...durable, version: 2 }, data: { sessionID: "ses_1" } }
+        : { ...base, type, durable, data: { sessionID: "ses_1", projectID: "project", slug: "one", location: { directory: "/repo" }, version: "2.0.15" } }
+      const { events } = await collect([
+        { ...base, type: "session.renamed", durable, data: { sessionID: "ses_1", title: "before" } },
+        statusEvent("busy"), lifecycle,
+        { ...base, type: "session.renamed", durable, data: { sessionID: "ses_1", title: "after" } },
+        statusEvent("retry"),
+      ], 5)
+      expect(events.map((event) => event.type)).toEqual(["session.patched", "session.status", type, "session.patched", "session.status"])
+    })
+  }
+
+  test("preserves archive and restore as separate lifecycle transitions", async () => {
+    const { events } = await collect([
+      { ...base, type: "session.renamed", durable, data: { sessionID: "ses_1", title: "before" } },
+      statusEvent("busy"),
+      { ...base, type: "session.archive.updated", durable, data: { sessionID: "ses_1", archivedAt: 1 } },
+      { ...base, type: "session.archive.updated", durable, data: { sessionID: "ses_1", archivedAt: null } },
+      { ...base, type: "session.renamed", durable, data: { sessionID: "ses_1", title: "after" } },
+      statusEvent("retry"),
+    ], 6)
+    expect(events[2]).toMatchObject({ type: "session.patched", properties: { patch: { time: { archived: 1 } } } })
+    expect(events[3]).toMatchObject({ type: "session.patched", properties: { patch: { time: { archived: null } } } })
+    expect(events[4]).toMatchObject({ type: "session.patched", properties: { patch: { title: "after" } } })
+  })
+
+  test("does not move a retried step's completion before its new start", async () => {
+    const ended: OpenCodeEvent = {
+      ...base, type: "session.step.ended", durable,
+      data: { sessionID: "ses_1", assistantMessageID: "msg_1", finish: "stop", cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } },
+    }
+    const { events } = await collect([
+      ended,
+      { ...base, type: "session.step.started", durable, data: { sessionID: "ses_1", assistantMessageID: "msg_1", agent: "build", model: { providerID: "test", id: "test" }, started: 1000 } },
+      ended,
+    ], 3)
+    expect(events.map((event) => event.type)).toEqual(["message.patched", "message.updated", "message.patched"])
+  })
+
   test("folds successive session patches into one", async () => {
     const { events } = await collect(
       [

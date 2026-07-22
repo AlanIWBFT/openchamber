@@ -485,8 +485,6 @@ export const createOpenChamberSessionService = (dependencies) => {
     archiveStore: injectedArchiveStore = null,
     // Archive state on OpenCode; module tests pass a fake.
     openCodeArchive: injectedOpenCodeArchive = null,
-    // A directory OpenCode already runs, for reads that have none of their own.
-    getDefaultOpenCodeDirectory = () => null,
     sessionMetadataStore: injectedSessionMetadataStore = null,
     // Injected by the server so every metadata write takes the same path:
     // store, broadcast, and tell the goal loop. Falls back to store+broadcast
@@ -541,16 +539,9 @@ export const createOpenChamberSessionService = (dependencies) => {
     directory,
   });
 
-  const broadcastArchived = (sessionID, archivedAt) => {
-    broadcastGlobalUiEvent?.({
-      type: 'openchamber:session-archived',
-      properties: { sessionID, archivedAt },
-    });
-  };
   const sessionArchive = createSessionArchive({
     store: archiveStore,
-    openCode: injectedOpenCodeArchive || createOpenCodeSessionArchive({ clientFor, getDefaultDirectory: getDefaultOpenCodeDirectory }),
-    announce: broadcastArchived,
+    openCode: injectedOpenCodeArchive || createOpenCodeSessionArchive({ clientFor }),
   });
 
   const resolveStartDirectory = createStartDirectoryResolver({ resolveWorktreeTopLevel, validateWorktreeDirectory });
@@ -969,8 +960,7 @@ export const createOpenChamberSessionService = (dependencies) => {
 
   /**
    * Archive a batch of sessions in one request. OpenCode holds the state
-   * (`session-archive.js`); a session whose directory is gone keeps it in the
-   * archive file. Batching matters because the UI archives every session
+   * (`session-archive.js`) even when the directory is gone. Batching matters because the UI archives every session
    * linked to a worktree before removing it, and one request per session is
    * what made removing a busy worktree take tens of seconds.
    */
@@ -979,7 +969,8 @@ export const createOpenChamberSessionService = (dependencies) => {
     if (!parsed.ok) {
       throw new OpenChamberControlError(parsed.error, 400);
     }
-    return sessionArchive.archive(parsed.ids, parsed.archivedAt);
+    if (typeof waitForOpenCodeReady === 'function') await waitForOpenCodeReady(10_000, 250);
+    return sessionArchive.archive(parsed.ids);
   };
 
   /** Clears the archive flag for a batch. Mirrors `archive`. */
@@ -988,6 +979,7 @@ export const createOpenChamberSessionService = (dependencies) => {
     if (!parsed.ok) {
       throw new OpenChamberControlError(parsed.error, 400);
     }
+    if (typeof waitForOpenCodeReady === 'function') await waitForOpenCodeReady(10_000, 250);
     return sessionArchive.unarchive(parsed.ids);
   };
 

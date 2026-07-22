@@ -86,7 +86,7 @@ const createRecordingApp = () => {
   };
 };
 
-const createStubDeps = (baseUrl, { realpath, getArchivedSessions, getStoredSessionMetadata } = {}) => ({
+const createStubDeps = (baseUrl, { realpath, getStoredSessionMetadata } = {}) => ({
   fs: { promises: { realpath: realpath ?? (async (value) => value) } },
   os: {},
   path: {},
@@ -98,7 +98,6 @@ const createStubDeps = (baseUrl, { realpath, getArchivedSessions, getStoredSessi
   getOpenCodeAuthHeaders: () => ({}),
   buildOpenCodeUrl: (pathname) => `${baseUrl}${pathname}`,
   ensureOpenCodeApiPrefix: (pathname) => pathname,
-  getArchivedSessions,
   getStoredSessionMetadata,
 });
 
@@ -201,7 +200,7 @@ describe('session routes bound their upstream read', () => {
       // The detail route only intercepts when an overlay reader is present.
       registerOpenCodeProxy(
         app,
-        createStubDeps(baseUrl, { getArchivedSessions: async () => null, getStoredSessionMetadata: async () => null }),
+        createStubDeps(baseUrl, { getStoredSessionMetadata: async () => null }),
       );
       const handler = app.routes.get('/api/session/:sessionID');
       expect(handler).toBeTypeOf('function');

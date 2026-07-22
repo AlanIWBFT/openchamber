@@ -1,10 +1,11 @@
-import type { Message, Part } from "@/lib/opencode/model"
+import type { Message, Part, StoredMessage } from "@/lib/opencode/model"
 import type { MessagePage, PendingInboxMessage } from "@/lib/opencode/client"
 import { olderMessagesCursor } from "@/lib/opencode/messageCursor"
 import type { ChildStoreManager, DirectoryStore } from "./child-store"
 import { retry } from "./retry"
 import { mergeOptimisticPage, type OptimisticItem } from "./optimistic"
 import { findMessageIndex, insertMessageChronologically, sortMessagesChronologically } from "./message-ordering"
+import { beginMessageSnapshot, type MessageSnapshot } from "./message-snapshot"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
 import {
   clearDirectorySessionPrefetch,
@@ -96,8 +97,9 @@ type LoaderEntry = {
 }
 
 type FetchedPage = {
-  session: Message[]
-  partsByMessageID: Map<string, Part[]>
+  session: StoredMessage[]
+  records: MessagePage["items"]
+  recentBoundary: number | undefined
   cursor: string | undefined
   complete: boolean
 }
@@ -190,35 +192,6 @@ const findHistoryTrimIndex = (messages: Message[]): number => {
 }
 
 /**
- * Drops the cached records a replacing window no longer covers, so older
- * cached history cannot sit behind a hole. Kept: records the window carries,
- * optimistic records, and records newer than the window, which arrived live
- * while it was read.
- */
-const withoutHistoryOutsideWindow = (
-  state: DirectoryStore,
-  sessionID: string,
-  page: FetchedPage,
-  optimistic: ReadonlyMap<string, OptimisticItem>,
-  preserved: ReadonlySet<string>,
-): DirectoryStore => {
-  const messages = state.message[sessionID]
-  if (!messages) return state
-  const pageIDs = new Set(page.session.map((message) => message.id))
-  const newestWindowTime = page.session.at(-1)?.time.created ?? Number.NEGATIVE_INFINITY
-  const dropped: string[] = []
-  const kept = messages.filter((message) => {
-    if (pageIDs.has(message.id) || optimistic.has(message.id) || preserved.has(message.id) || message.time.created > newestWindowTime) return true
-    dropped.push(message.id)
-    return false
-  })
-  if (dropped.length === 0) return state
-  const part = { ...state.part }
-  for (const messageID of dropped) delete part[messageID]
-  return { ...state, message: { ...state.message, [sessionID]: kept }, part }
-}
-
-/**
  * Drops the client's own copies of records the page now carries, so the
  * server's version replaces them instead of losing to them as an existing
  * record. An optimistic prompt is stamped with the browser's clock, the reply
@@ -244,8 +217,7 @@ const withoutEchoedOptimisticRecords = (
 const toLoadError = (error: unknown): Error =>
   error instanceof Error ? error : new Error("Session messages could not be loaded")
 
-const filterIdentifiedParts = (parts: Part[]): Part[] => parts
-  .filter((part) => Boolean(part?.id))
+const filterIdentifiedParts = (parts: Part[]): Part[] => parts.filter((part) => Boolean(part?.id))
 
 const createDefaultState = (generation = 0): SessionMessageLoadState => ({
   status: "idle",
@@ -534,14 +506,14 @@ export class SessionMessageLoader {
     // failure after that, or OpenCode not starting at all, becomes an error.
     // A prefetch does not wait, unless a foreground caller joined it since.
     const startedBeforeOpenCode = this.openCodeStartup.isStarting()
-    return this.startLoad(normalized, entry, store, kind, async (isCurrent, performance) => {
+    return this.startLoad(normalized, entry, store, kind, async (isCurrent, performance, snapshot) => {
       try {
-        await this.loadInitial(normalized, entry, store, isCurrent, performance, kind !== "prefetch")
+        await this.loadInitial(normalized, entry, store, isCurrent, snapshot, performance, kind !== "prefetch")
       } catch (error) {
         if (!startedBeforeOpenCode || entry.snapshot.loadingKind === "prefetch" || !isCurrent()) throw error
         await this.openCodeStartup.waitForConnection()
         if (!isCurrent()) return
-        await this.loadInitial(normalized, entry, store, isCurrent, performance, kind !== "prefetch")
+        await this.loadInitial(normalized, entry, store, isCurrent, snapshot, performance, kind !== "prefetch")
       }
     })
   }
@@ -599,7 +571,7 @@ export class SessionMessageLoader {
     if (entry.snapshot.complete || !entry.snapshot.cursor) return Promise.resolve()
     const store = this.childStores.ensureChild(normalized.directory, { bootstrap: false })
     const cursor = entry.snapshot.cursor
-    return this.startLoad(normalized, entry, store, "older", async (isCurrent, performance) => {
+    return this.startLoad(normalized, entry, store, "older", async (isCurrent, performance, snapshot) => {
       let page = await this.fetchPage(normalized, HISTORY_MESSAGE_PAGE_SIZE, cursor, "older", performance)
       if (!isCurrent()) return
       const visited = new Set([cursor])
@@ -618,14 +590,15 @@ export class SessionMessageLoader {
         if (older.session.length === 0 && !older.complete) throw new Error("Session history pagination made no progress")
         page = {
           session: [...older.session, ...page.session],
-          partsByMessageID: new Map([...page.partsByMessageID, ...older.partsByMessageID]),
+          records: [...older.records, ...page.records],
+          recentBoundary: older.recentBoundary ?? page.recentBoundary,
           cursor: older.cursor,
           complete: older.complete,
         }
       }
       // Commit the whole batch atomically. A failed follow-up read keeps the
       // previous visible history and its retry cursor intact.
-      const committed = this.commitPage(normalized, entry, store, page, "prepend", isCurrent)
+      const committed = this.commitPage(normalized, entry, store, page, "prepend", isCurrent, snapshot)
       if (!committed || !isCurrent()) return
       this.patchEntry(entry, {
         status: "ready",
@@ -702,7 +675,7 @@ export class SessionMessageLoader {
     }
     const store = this.childStores.ensureChild(normalized.directory, { bootstrap: false })
     this.bumpGeneration(entry)
-    return this.startLoad(normalized, entry, store, "refresh", async (isCurrent, performance) => {
+    return this.startLoad(normalized, entry, store, "refresh", async (isCurrent, performance, snapshot) => {
       const epoch = this.historyEpoch
       const previousCoverage = entry.snapshot.resolved
         ? { cursor: entry.snapshot.cursor, complete: entry.snapshot.complete }
@@ -732,7 +705,7 @@ export class SessionMessageLoader {
         page = window
         replacesCache = !page.complete && !joinsCache(page)
       }
-      const committed = this.commitPage(normalized, entry, store, page, replacesCache ? "replace" : "merge", isCurrent)
+      const committed = this.commitPage(normalized, entry, store, page, replacesCache ? "complete" : "merge", isCurrent, snapshot)
       if (!committed || !isCurrent()) return
       entry.verifiedEpoch = Math.max(entry.verifiedEpoch, epoch)
       // A tail that joins the cache uses a deliberately small window: its
@@ -754,6 +727,55 @@ export class SessionMessageLoader {
     })
   }
 
+  refreshComplete(target: SessionMessageTarget): Promise<void> {
+    const normalized = this.normalizeTarget(target)
+    if (!normalized || this.disposed) return Promise.resolve()
+    const entry = this.getEntry(normalized)
+    if (entry.inflight) {
+      const generation = entry.snapshot.generation
+      const sdkEpoch = this.sdkEpoch
+      return entry.inflight.then(() => {
+        if (this.disposed || this.sdkEpoch !== sdkEpoch || entry.snapshot.generation !== generation
+          || this.entries.get(this.keyFor(normalized)) !== entry) return
+        return this.refreshComplete(normalized)
+      })
+    }
+    const store = this.childStores.ensureChild(normalized.directory, { bootstrap: false })
+    this.bumpGeneration(entry)
+    return this.startLoad(normalized, entry, store, "refresh", async (isCurrent, performance, snapshot) => {
+      let page = await this.fetchPage(normalized, HISTORY_MESSAGE_PAGE_SIZE, undefined, "refresh", performance)
+      if (!isCurrent()) return
+      const visited = new Set<string>()
+      while (!page.complete) {
+        if (!page.cursor || visited.has(page.cursor)) throw new Error("Session history pagination made no progress")
+        visited.add(page.cursor)
+        const older = await this.fetchPage(normalized, HISTORY_MESSAGE_PAGE_SIZE, page.cursor, "refresh", performance)
+        if (!isCurrent()) return
+        if (older.session.length === 0 && !older.complete) throw new Error("Session history pagination made no progress")
+        page = {
+          session: [...older.session, ...page.session],
+          records: [...older.records, ...page.records],
+          recentBoundary: older.recentBoundary ?? page.recentBoundary,
+          cursor: older.cursor,
+          complete: older.complete,
+        }
+      }
+      const committed = this.commitPage(normalized, entry, store, page, "complete", isCurrent, snapshot)
+      if (!committed || !isCurrent()) return
+      this.patchEntry(entry, {
+        status: "ready",
+        loadingKind: null,
+        error: null,
+        resolved: true,
+        limit: committed.messages.length,
+        cursor: page.cursor,
+        complete: page.complete,
+        updatedAt: Date.now(),
+      })
+      this.persistCoverage(normalized, entry.snapshot)
+    })
+  }
+
   getSnapshot(target: SessionMessageTarget): SessionMessageLoadState {
     const normalized = this.normalizeTarget(target)
     return normalized ? this.getEntry(normalized).snapshot : EMPTY_SESSION_MESSAGE_LOAD_STATE
@@ -771,13 +793,11 @@ export class SessionMessageLoader {
     const target = this.normalizeTarget(input)
     if (!target) return
     const entry = this.getEntry(target)
-    entry.optimistic.set(input.message.id, { message: input.message, parts: filterIdentifiedParts(input.parts) })
     const store = this.childStores.ensureChild(target.directory, { bootstrap: false })
+    entry.optimistic.set(input.message.id, { message: input.message, parts: filterIdentifiedParts(input.parts) })
     const current = store.getState()
     const messages = current.message[target.sessionID] ? [...current.message[target.sessionID]] : []
-    if (findMessageIndex(messages, input.message.id) < 0) {
-      insertMessageChronologically(messages, input.message)
-    }
+    if (findMessageIndex(messages, input.message.id) < 0) insertMessageChronologically(messages, input.message)
     store.setState({
       message: { ...current.message, [target.sessionID]: messages },
       part: { ...current.part, [input.message.id]: filterIdentifiedParts(input.parts) },
@@ -929,7 +949,7 @@ export class SessionMessageLoader {
     entry: LoaderEntry,
     store: { getState: () => DirectoryStore; setState: DirectoryStoreSetter },
     kind: SessionMessageLoadKind,
-    run: (isCurrent: () => boolean, performance: LoadPerformanceDetails) => Promise<void>,
+    run: (isCurrent: () => boolean, performance: LoadPerformanceDetails, snapshot: MessageSnapshot) => Promise<void>,
   ): Promise<void> {
     const generation = entry.snapshot.generation
     const sdkEpoch = this.sdkEpoch
@@ -937,17 +957,19 @@ export class SessionMessageLoader {
       operation: kind === "prefetch" ? "session-prefetch" : `session-messages.${kind}`,
       caller: kind,
     })
+    const snapshot = beginMessageSnapshot(store, target.sessionID)
     const isCurrent = () => (
       !this.disposed
       && this.sdkEpoch === sdkEpoch
       && entry.snapshot.generation === generation
       && this.childStores.getChild(target.directory) === store
+      && snapshot.isCurrent()
     )
     const performance = { retryCount: 0, recordCount: 0 }
     this.patchEntry(entry, { status: "loading", loadingKind: kind, error: null })
     let loadPromise: Promise<void>
     try {
-      loadPromise = run(isCurrent, performance)
+      loadPromise = run(isCurrent, performance, snapshot)
     } catch (error) {
       loadPromise = Promise.reject(error)
     }
@@ -966,6 +988,7 @@ export class SessionMessageLoader {
         })
       })
       .finally(() => {
+        snapshot.dispose()
         if (entry.inflight === promise) entry.inflight = null
         this.scheduleCacheRetention(target.directory)
       })
@@ -978,6 +1001,7 @@ export class SessionMessageLoader {
     entry: LoaderEntry,
     store: { getState: () => DirectoryStore; setState: DirectoryStoreSetter },
     isCurrent: () => boolean,
+    snapshot: MessageSnapshot,
     performance?: LoadPerformanceDetails,
     seedInbox = true,
   ): Promise<void> {
@@ -995,7 +1019,7 @@ export class SessionMessageLoader {
     if (!acceptedPage) return
 
     // Publish the chosen window once.
-    const committed = this.commitPage(target, entry, store, acceptedPage, "merge", isCurrent)
+    const committed = this.commitPage(target, entry, store, acceptedPage, "initial", isCurrent, snapshot)
     if (!committed || !isCurrent()) return
     entry.evicted = false
     entry.verifiedEpoch = Math.max(entry.verifiedEpoch, epoch)
@@ -1047,7 +1071,8 @@ export class SessionMessageLoader {
       if (older.session.length === 0 && !older.complete) break
       window = {
         session: [...older.session, ...window.session],
-        partsByMessageID: new Map([...window.partsByMessageID, ...older.partsByMessageID]),
+        records: [...older.records, ...window.records],
+        recentBoundary: older.recentBoundary ?? window.recentBoundary,
         cursor: older.cursor,
         complete: older.complete,
       }
@@ -1138,20 +1163,18 @@ export class SessionMessageLoader {
       })
       const records = page.items.filter((record) => Boolean(record?.info?.id))
       recordCount = records.length
-      if (performance) performance.recordCount += recordCount
       const session = sortMessagesChronologically(records.map((record) => record.info))
-      const partsByMessageID = new Map<string, Part[]>()
-      for (const record of records) {
-        partsByMessageID.set(record.info.id, filterIdentifiedParts(record.parts ?? []))
-      }
       const nextCursor = page.cursor?.next
       finishPagePerformance("complete", { retryCount: Math.max(0, attempts - 1), recordCount })
-      return { session, partsByMessageID, cursor: nextCursor, complete: !nextCursor }
+      return { session, records, recentBoundary: session[0]?.seq, cursor: nextCursor, complete: !nextCursor }
     } catch (error) {
       finishPagePerformance("error", { retryCount: Math.max(0, attempts - 1), recordCount })
       throw error
     } finally {
-      if (performance) performance.retryCount += Math.max(0, attempts - 1)
+      if (performance) {
+        performance.retryCount += Math.max(0, attempts - 1)
+        performance.recordCount += recordCount
+      }
     }
   }
 
@@ -1160,18 +1183,26 @@ export class SessionMessageLoader {
     entry: LoaderEntry,
     store: { getState: () => DirectoryStore; setState: DirectoryStoreSetter },
     page: FetchedPage,
-    mode: "merge" | "prepend" | "replace",
+    mode: "initial" | "merge" | "prepend" | "complete",
     isCurrent: () => boolean,
+    snapshot: MessageSnapshot,
   ): { messages: Message[] } | null {
     if (!isCurrent()) return null
     const current = store.getState()
-    const echoed = withoutEchoedOptimisticRecords(current, target.sessionID, page, entry.optimistic)
-    const state = mode === "replace" ? withoutHistoryOutsideWindow(echoed, target.sessionID, page, entry.optimistic, entry.inboxSeededIDs) : echoed
+    const state = withoutEchoedOptimisticRecords(current, target.sessionID, page, entry.optimistic)
+    const materializationMode = mode === "initial" ? page.complete ? "complete" : "recent" : mode
+    const records = snapshot.reconcile(page.records, materializationMode === "complete" || materializationMode === "recent")
+    // Delivery or another stored read can confirm input outside this page.
+    // Its optimistic shadow must not resurrect it in a later history window.
+    for (const message of store.getState().message[target.sessionID] ?? []) {
+      if (message.seq !== undefined) entry.optimistic.delete(message.id)
+    }
     const merged = mergeOptimisticPage({
-      session: page.session,
-      part: [...page.partsByMessageID].map(([id, part]) => ({ id, part })),
+      session: records.map((record) => record.info),
+      part: records.map((record) => ({ id: record.info.id, part: record.parts })),
       cursor: page.cursor,
       complete: page.complete,
+      recentBoundary: page.recentBoundary,
     }, [...entry.optimistic.values()])
     for (const messageID of merged.confirmed) entry.optimistic.delete(messageID)
     const mergedPartsByMessageID = new Map(merged.part.map((candidate) => [candidate.id, candidate.part] as const))
@@ -1180,11 +1211,12 @@ export class SessionMessageLoader {
       target.sessionID,
       merged.session.map((info) => ({
         info,
-        parts: page.partsByMessageID.get(info.id)
-          ?? mergedPartsByMessageID.get(info.id)
-          ?? [],
+        parts: mergedPartsByMessageID.get(info.id) ?? [],
       })),
-      { mode: mode === "prepend" ? "prepend" : "merge" },
+      {
+        mode: materializationMode,
+        recentBoundary: page.recentBoundary,
+      },
     )
     if (!isCurrent()) return null
     // Records the page made redundant were removed before materializing;

@@ -255,7 +255,7 @@ describe('OpenCode proxy SSE forwarding', () => {
       getOpenCodeAuthHeaders: () => ({}),
       buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:${upstreamPort}${requestPath}`,
       ensureOpenCodeApiPrefix: () => {},
-      getArchivedSessions: async () => ({}),
+      getStoredSessionMetadata: async () => ({}),
     });
     proxyServer = await listen(app);
     const base = `http://127.0.0.1:${proxyServer.address().port}`;
@@ -886,7 +886,7 @@ describe('OpenCode proxy SSE forwarding', () => {
     expect(single).toEqual(message);
   });
 
-  it('folds OpenChamber-owned archive state and metadata onto sessions it serves', async () => {
+  it('preserves backend archive state while overlaying pending legacy metadata', async () => {
     const upstream = express();
     upstream.get('/api/session', (_req, res) => {
       res.json({
@@ -924,7 +924,6 @@ describe('OpenCode proxy SSE forwarding', () => {
       getOpenCodeAuthHeaders: () => ({}),
       buildOpenCodeUrl: (requestPath) => `${externalBaseUrl}${requestPath}`,
       ensureOpenCodeApiPrefix: () => {},
-      getArchivedSessions: async () => ({ ses_1: 4242 }),
       getStoredSessionMetadata: async () => ({
         ses_1: { fromOpenCode: true, openchamber: { goal: { status: 'active' } }, shared: 'ours' },
         ses_2: {},
@@ -938,23 +937,23 @@ describe('OpenCode proxy SSE forwarding', () => {
     // deleted keys. Empty metadata is authoritative too.
     expect(list.data[0]).toMatchObject({
       id: 'ses_1',
-      time: { created: 1, updated: 2, archived: 4242 },
+      time: { created: 1, updated: 2 },
       metadata: { fromOpenCode: true, shared: 'ours', openchamber: { goal: { status: 'active' } } },
     });
     expect(list.data[0].metadata).not.toHaveProperty('removed');
     expect(list.data[1].metadata).toEqual({});
     expect(list.data[2].metadata).toEqual({ untouched: true });
-    // The archive file does not mention ses_2, so the stamp OpenCode carries
-    // (a session migrated from v1) stays as it is.
+    expect(list.data[0].time).not.toHaveProperty('archived');
+    // Archive stamps always remain the backend's facts.
     expect(list.data[1].time).toEqual({ created: 1, updated: 3, archived: 999 });
 
     const detail = await (await fetch(`http://127.0.0.1:${proxyPort}/api/session/ses_1`)).json();
     expect(detail).toMatchObject({
       id: 'ses_1',
-      time: { archived: 4242 },
       metadata: { fromOpenCode: true, shared: 'ours', openchamber: { goal: { status: 'active' } } },
     });
     expect(detail.metadata).not.toHaveProperty('removed');
+    expect(detail).not.toHaveProperty('time.archived');
     const cleared = await (await fetch(`http://127.0.0.1:${proxyPort}/api/session/ses_2`)).json();
     expect(cleared.metadata).toEqual({});
   });

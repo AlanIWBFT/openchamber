@@ -391,13 +391,8 @@ export const registerOpenCodeProxy = (app, deps) => {
     WORKTREE_READY_TIMEOUT_MS = 5 * 60 * 1000,
     waitForWorktreeRemovalToSettle = waitForWorktreeRemoval,
     WORKTREE_REMOVAL_HOLD_MS = 60 * 1000,
-    // OpenCode holds archive state since 2.1; the archive file keeps it for
-    // sessions OpenCode cannot archive (deleted directories) and for entries not
-    // migrated yet, and the proxy folds those onto the sessions it serves
-    // (`time.archived`). Session metadata lives on OpenCode's record; the proxy lays over only
-    // the entries an older OpenChamber left in the legacy file until they are
-    // migrated.
-    getArchivedSessions = null,
+    // Archive state belongs to OpenCode. Only legacy session metadata is laid
+    // over the record until its migration completes.
     getStoredSessionMetadata = null,
     // OpenCode's unread state predates OpenChamber reading it; turns that ended
     // before the baseline are served as seen (`unread-baseline.js`).
@@ -408,22 +403,6 @@ export const registerOpenCodeProxy = (app, deps) => {
     mergeSpaceSessionList = null,
     spaceEventHub = null,
   } = deps;
-
-  /**
-   * `{ [sessionID]: archivedAt }` for the current instance, or `null` when the
-   * store cannot answer. `null` means "unknown", and an unknown answer leaves
-   * the upstream record untouched — never rewrites a session as un-archived.
-   */
-  const readArchivedSessions = async () => {
-    if (typeof getArchivedSessions !== 'function') return null;
-    try {
-      const archived = await getArchivedSessions();
-      return archived && typeof archived === 'object' ? archived : null;
-    } catch (error) {
-      console.warn('[proxy] archive state unavailable:', error?.message ?? error);
-      return null;
-    }
-  };
 
   /**
    * `{ [sessionID]: metadata }` still waiting to be migrated to OpenCode, or
@@ -454,22 +433,6 @@ export const registerOpenCodeProxy = (app, deps) => {
     }
   };
 
-  // A number archives, `null` is an explicit unarchive (drops the stamp OpenCode
-  // carries), and a session the file does not mention keeps whatever OpenCode
-  // says.
-  const withArchivedAt = (session, archived) => {
-    if (!session || typeof session !== 'object' || typeof session.id !== 'string') return session;
-    if (!Object.prototype.hasOwnProperty.call(archived, session.id)) return session;
-    const archivedAt = archived[session.id];
-    const time = session.time && typeof session.time === 'object' ? session.time : {};
-    if (typeof archivedAt === 'number') {
-      return { ...session, time: { ...time, archived: archivedAt } };
-    }
-    if (!('archived' in time)) return session;
-    const { archived: _dropped, ...rest } = time;
-    return { ...session, time: rest };
-  };
-
   /**
    * A legacy entry is the newest metadata its session has, including {}, so it
    * replaces the upstream record until migration pushes it there.
@@ -481,24 +444,22 @@ export const registerOpenCodeProxy = (app, deps) => {
     return { ...session, metadata: ours };
   };
 
-  const overlaySession = (session, { archived, stored, unreadSince }) => {
+  const overlaySession = (session, { stored, unreadSince }) => {
     let result = session;
-    if (archived) result = withArchivedAt(result, archived);
     if (stored) result = withStoredMetadata(result, stored);
     if (unreadSince !== null) result = withUnreadBaseline(result, unreadSince);
     return result;
   };
 
   const readOwnedState = async () => {
-    const [archived, stored, unreadSince] = await Promise.all([
-      readArchivedSessions(),
+    const [stored, unreadSince] = await Promise.all([
       readStoredSessionMetadata(),
       readUnreadBaseline(),
     ]);
-    return { archived, stored, unreadSince };
+    return { stored, unreadSince };
   };
 
-  const hasOwnedState = ({ archived, stored, unreadSince }) => Boolean(archived || stored || unreadSince !== null);
+  const hasOwnedState = ({ stored, unreadSince }) => Boolean(stored || unreadSince !== null);
 
   const overlayOwnedStateOnList = async (payload) => {
     const records = sessionListRecords(payload);
@@ -1108,8 +1069,7 @@ export const registerOpenCodeProxy = (app, deps) => {
   // came from. Everything else about the record is forwarded untouched.
   app.get('/api/session/:sessionID', async function forwardSessionGetRequest(req, res, next) {
     if (
-      typeof getArchivedSessions !== 'function'
-      && typeof getStoredSessionMetadata !== 'function'
+      typeof getStoredSessionMetadata !== 'function'
       && !getUnreadBaseline
     ) return next();
     try {
