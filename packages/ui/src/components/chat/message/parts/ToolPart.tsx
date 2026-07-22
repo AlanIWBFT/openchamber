@@ -113,10 +113,10 @@ import {
     getUnifiedExecCommand,
     getUnifiedExecMetadata,
     getUnifiedExecOutput,
+    getExecProcessRunning,
     getUnifiedExecStatus,
     formatUnifiedExecDuration,
     isExecCommandTool,
-    isExecProcessRunning,
     isUnifiedExecTool,
     type UnifiedExecMetadata,
 } from '../unifiedExec';
@@ -1767,7 +1767,8 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
     const time = stateWithData.time;
     const unifiedExecMetadata = getUnifiedExecMetadata(part);
     const status = state?.status as string | undefined;
-    const execProcessRunning = isExecProcessRunning(normalizedPartTool, unifiedExecMetadata, part.state.status);
+    const execProcessState = getExecProcessRunning(normalizedPartTool, unifiedExecMetadata, part.state.status);
+    const execProcessRunning = execProcessState === true;
     const [expandedScriptTools, setExpandedScriptTools] = React.useState<ReadonlySet<string>>(() => new Set());
     const nestedToolsRef = React.useRef(nestedTools);
     React.useLayoutEffect(() => { nestedToolsRef.current = nestedTools; }, [nestedTools]);
@@ -1784,7 +1785,8 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
         });
     }, []);
 
-    const isFinalized = !execProcessRunning && (status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled');
+    const isFinalized = execProcessState === false
+        || (!execProcessRunning && (status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled'));
     const isError = status === 'error' || status === 'failed' || Boolean(unifiedExecMetadata.execError);
 
     const [activeLatched, setActiveLatched] = React.useState<boolean>(!isFinalized);

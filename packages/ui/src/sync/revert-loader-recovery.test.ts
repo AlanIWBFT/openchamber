@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
 import type { MessagePage } from "@/lib/opencode/client"
-import type { Message } from "@/lib/opencode/model"
+import type { Message, StoredMessage } from "@/lib/opencode/model"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import { ChildStoreManager } from "./child-store"
 import { SessionMessageLoader, setImperativeSessionMessageLoader } from "./session-message-loader"
@@ -11,7 +11,7 @@ const cleanups: Array<() => void> = []
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
 
 const target = { directory: "/revert-loader-test", sessionID: "ses_revert" }
-const message: Message = { id: "msg_deleted", sessionID: target.sessionID, role: "user", time: { created: 1 } }
+const message: StoredMessage = { id: "msg_deleted", sessionID: target.sessionID, role: "user", time: { created: 1 }, seq: 1 }
 const emptyPage: MessagePage = { items: [], cursor: {} }
 const oldPage: MessagePage = { items: [{ info: message, parts: [] }], cursor: {} }
 
@@ -55,7 +55,7 @@ test("a response started before commit cannot restore its deleted messages", asy
 
 test("commit preserves optimistic messages before the boundary and resolves an unindexed directory", async () => {
   const { loader, store, commit } = setup(async () => emptyPage)
-  const survivor: Message = { ...message, id: "msg_survivor", time: { created: 0 } }
+  const survivor: Message = { ...message, id: "msg_survivor", seq: 0, time: { created: 0 } }
   loader.optimisticAdd({ ...target, message: survivor, parts: [] })
   loader.optimisticAdd({ ...target, message, parts: [] })
   commit("/unindexed-revert-directory")

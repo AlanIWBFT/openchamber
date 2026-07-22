@@ -87,7 +87,7 @@ describe('session assist runtime', () => {
     const fetchMock = vi.fn(async (input) => {
       const url = new URL(String(input));
       const body = url.pathname === '/api/session/ses_1'
-        ? { location: { directory: '/repo' }, data: { id: 'ses_1', location: { directory: '/repo' } } }
+        ? { data: { id: 'ses_1', location: { directory: '/repo' }, time: { archived: 1700 } } }
         : { location: { directory: '/repo' }, data: { data: [], cursor: null } };
       return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
     });
@@ -96,7 +96,6 @@ describe('session assist runtime', () => {
       persistSessionAssist,
       getSmallModelService,
       buildOpenCodeUrl: (fetchPath) => `http://opencode.test${fetchPath}`,
-      isSessionArchived: async (sessionId) => sessionId === 'ses_1',
     });
 
     runtime.processPayload(idle());
@@ -110,10 +109,11 @@ describe('session assist runtime', () => {
     vi.unstubAllGlobals();
   });
 
-  it('generates and saves an assist for a turn that v2 closed with an idle marker', async () => {
+  it.each([false, true])('rechecks backend archive state before saving an assist (archived during generation: %s)', async (archiveDuringGeneration) => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const persistSessionAssist = vi.fn(async () => undefined);
     const listLimits = [];
+    let archived = false;
     // Newest first, the way OpenCode serves it: the idle marker sits above
     // the answer, and a model switch the user made afterwards above that.
     const records = [
@@ -127,7 +127,7 @@ describe('session assist runtime', () => {
       let body;
       // `session.get` answers `{ data }`, which the client unwraps; the message
       // page is `{ data, cursor }` and reaches the reader as is.
-      if (url.pathname === '/api/session/ses_1') body = { data: { id: 'ses_1', location: { directory: '/repo' } } };
+      if (url.pathname === '/api/session/ses_1') body = { data: { id: 'ses_1', location: { directory: '/repo' }, time: archived ? { archived: 1700 } : {} } };
       else if (url.pathname === '/api/session/ses_1/message') {
         listLimits.push(Number(url.searchParams.get('limit')));
         body = { data: records.slice(0, Number(url.searchParams.get('limit'))), cursor: {} };
@@ -138,10 +138,12 @@ describe('session assist runtime', () => {
     const { runtime } = makeRuntime({
       persistSessionAssist,
       buildOpenCodeUrl: (fetchPath) => `http://opencode.test${fetchPath}`,
-      isSessionArchived: async () => false,
       getSmallModelService: async () => ({
         describeSmallModel: async () => ({ inputCharBudget: 20_000 }),
-        generateSmallModelText: async () => ({ text: '{"recap":"Did the thing.","suggestion":"Verify it."}' }),
+        generateSmallModelText: async () => {
+          archived = archiveDuringGeneration;
+          return { text: '{"recap":"Did the thing.","suggestion":"Verify it."}' };
+        },
       }),
     });
 
@@ -150,18 +152,18 @@ describe('session assist runtime', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
-    expect(persistSessionAssist).toHaveBeenCalledTimes(1);
-    expect(persistSessionAssist.mock.calls[0][2]).toMatchObject({ recap: 'Did the thing.', suggestion: 'Verify it.', forMessageID: 'msg_a' });
+    expect(persistSessionAssist).toHaveBeenCalledTimes(archiveDuringGeneration ? 0 : 1);
+    if (!archiveDuringGeneration) expect(persistSessionAssist.mock.calls[0][2]).toMatchObject({ recap: 'Did the thing.', suggestion: 'Verify it.', forMessageID: 'msg_a' });
     // The pre-write re-check must see past the idle marker as well.
     expect(listLimits.at(-1)).toBeGreaterThan(2);
 
-    // A new turn deletes the stored assist, once.
+    // A new turn deletes a stored assist once; an archived result was never stored.
     const busy = { type: 'session.status', properties: { sessionID: 'ses_1', status: { type: 'busy' } } };
     runtime.processPayload(busy);
     runtime.processPayload(busy);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(persistSessionAssist).toHaveBeenCalledTimes(2);
-    expect(persistSessionAssist.mock.calls[1][2]).toBeNull();
+    expect(persistSessionAssist).toHaveBeenCalledTimes(archiveDuringGeneration ? 0 : 2);
+    if (!archiveDuringGeneration) expect(persistSessionAssist.mock.calls[1][2]).toBeNull();
     vi.unstubAllGlobals();
   });
 

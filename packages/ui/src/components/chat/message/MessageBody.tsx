@@ -69,7 +69,7 @@ import { isCapacitorMobileApp } from '@/apps/mobileNativeChrome';
 import { shareFileFromNativeApp } from '@/lib/nativeFileShare';
 import { WorktreeRequiresGitRepositoryError } from '@/lib/worktrees/worktreeCreate';
 import { cloneMessageImageExportSource } from './imageExport';
-import { getUnifiedExecMetadata, isExecProcessRunning, shouldHideExecFollowUp } from './unifiedExec';
+import { getExecProcessRunning, getUnifiedExecMetadata, shouldHideExecFollowUp } from './unifiedExec';
 import { toolPreviewOutputs } from '@/lib/opencode/script';
 
 
@@ -1394,16 +1394,16 @@ const AssistantMessageBody = React.memo(({
     const isActiveTool = React.useCallback((toolPart: ToolPartType): boolean => {
         const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
         const status = state?.status;
+        const execRunning = getExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), toolPart.state.status);
+        if (execRunning !== undefined) return execRunning;
         return status === 'pending'
             || status === 'running'
-            || status === 'started'
-            || isExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), toolPart.state.status);
+            || status === 'started';
     }, []);
 
     const isToolFinalized = React.useCallback((toolPart: ToolPartType) => {
-        if (isExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), toolPart.state?.status)) {
-            return false;
-        }
+        const execRunning = getExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), toolPart.state?.status);
+        if (execRunning !== undefined) return !execRunning;
         const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
         const status = state?.status;
         if (status === 'pending' || status === 'running' || status === 'started') {

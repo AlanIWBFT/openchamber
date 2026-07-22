@@ -12,7 +12,6 @@ import { parseScheduledCommandPrompt } from '../scheduled-tasks/runtime.js';
 import { buildGoalIntroText, createSessionGoal } from '../session-goal/create.js';
 import { OpenChamberControlError, asControlError } from '../openchamber-control/error.js';
 import { readObjective, writeObjective } from '../session-goal/objectives.js';
-import { createArchiveStore } from './archive-store.js';
 import { applyForkInheritance } from './fork-inheritance.js';
 import { createOpenCodeClient as defaultCreateOpenCodeClient } from './opencode-client.js';
 import { createSessionMetadataStore, createOpenCodeSessionMetadata } from './session-metadata-store.js';
@@ -413,7 +412,6 @@ export const createOpenChamberSessionService = (dependencies) => {
     worktreeBootstrapStore,
     hydrateWorktreeCheckout,
     dataDir = null,
-    archiveStore: injectedArchiveStore = null,
     sessionMetadataStore: injectedSessionMetadataStore = null,
     // Injected by the server so every metadata write takes the same path:
     // store, broadcast, and tell the goal loop. Falls back to store+broadcast
@@ -432,10 +430,9 @@ export const createOpenChamberSessionService = (dependencies) => {
     isAutoReady = null,
   } = dependencies;
 
-  if ((!injectedArchiveStore || !injectedSessionMetadataStore) && !dataDir) {
-    throw new Error('openchamber session routes need either both stores or a dataDir');
+  if (!injectedSessionMetadataStore && !dataDir) {
+    throw new Error('openchamber session routes need a metadata store or a dataDir');
   }
-  const archiveStore = injectedArchiveStore || createArchiveStore({ dataDir });
   const sessionMetadataStore = injectedSessionMetadataStore || createSessionMetadataStore({
     dataDir,
     openCode: createOpenCodeSessionMetadata({
@@ -755,27 +752,39 @@ export const createOpenChamberSessionService = (dependencies) => {
     });
   };
 
-  /**
-   * Archive a batch of sessions in one request.
-   *
-   * OpenCode 2.x has no route that sets `time.archived`, so the state is
-   * OpenChamber's own: a JSON file beside the OpenCode instance, folded back
-   * onto the session records the proxy serves. Batching matters for the same
-   * reason it did before — the UI archives every session linked to a worktree
-   * before removing it, and doing that one request at a time is what made
-   * removing a busy worktree take tens of seconds.
-   *
-   * No directory is needed: archive state is keyed by session id per data dir.
-   */
+  // The backend owns archive state and persistent-command cleanup. Use a
+  // bounded worker pool so worktree batches stay responsive without flooding
+  // the backend. These ID-scoped writes need no filesystem/directory lookup.
+  const updateArchiveBatch = async (ids, archivedAt) => {
+    if (typeof waitForOpenCodeReady === 'function') await waitForOpenCodeReady(10_000, 250);
+    const client = clientFor();
+    const succeeded = new Set();
+    let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(4, ids.length) }, async () => {
+      while (cursor < ids.length) {
+        const id = ids[cursor++];
+        try {
+          await client.session.update({ sessionID: id, archivedAt });
+          succeeded.add(id);
+        } catch {
+          // A failed entity must not hide successful writes to other sessions.
+        }
+      }
+    }));
+    const applied = ids.filter((id) => succeeded.has(id));
+    for (const id of applied) broadcastArchived(id, archivedAt);
+    return { applied, failedIds: ids.filter((id) => !succeeded.has(id)) };
+  };
+
+  /** Archive a batch through the backend; model execution is not blanket-cancelled. */
   const archive = async (payload = {}) => {
     const parsed = parseArchiveRequest(payload);
     if (!parsed.ok) {
       throw new OpenChamberControlError(parsed.error, 400);
     }
 
-    const { archived, failedIds } = await archiveStore.archive(parsed.ids, parsed.archivedAt);
-    for (const entry of archived) broadcastArchived(entry.id, entry.archivedAt);
-    return { archived, failedIds };
+    const { applied, failedIds } = await updateArchiveBatch(parsed.ids, parsed.archivedAt);
+    return { archived: applied.map((id) => ({ id, archivedAt: parsed.archivedAt })), failedIds };
   };
 
   /** Clears the archive flag for a batch. Mirrors `archive`. */
@@ -785,9 +794,8 @@ export const createOpenChamberSessionService = (dependencies) => {
       throw new OpenChamberControlError(parsed.error, 400);
     }
 
-    const { restored, failedIds } = await archiveStore.unarchive(parsed.ids);
-    for (const entry of restored) broadcastArchived(entry.id, null);
-    return { restored, failedIds };
+    const { applied, failedIds } = await updateArchiveBatch(parsed.ids, null);
+    return { restored: applied.map((id) => ({ id, archivedAt: null })), failedIds };
   };
 
   const create = async (payload = {}) => {
@@ -1066,7 +1074,6 @@ export const createOpenChamberSessionService = (dependencies) => {
     resolveDirectory,
     archive,
     unarchive,
-    archiveStore,
     sessionMetadataStore,
     setMetadata,
     getMetadata,

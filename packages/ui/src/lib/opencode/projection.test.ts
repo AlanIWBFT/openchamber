@@ -10,6 +10,7 @@ import {
   projectAgent,
   projectAssistantContent,
   projectMessage,
+  projectMessages,
   projectSession,
   projectToolPart,
   projectUserParts,
@@ -76,6 +77,21 @@ const assistant: SessionMessageAssistant = {
 }
 
 describe("projectMessage (assistant)", () => {
+  test("stored reads retain creation sequence without inventing part sequences", () => {
+    const [stored] = projectMessages([{ ...assistant, seq: 17 }], "ses_1")
+    expect(stored.message.seq).toBe(17)
+    expect(stored.parts).toEqual(projectMessage(assistant, "ses_1").parts)
+    expect(stored.parts.every((part) => !("seq" in part))).toBe(true)
+  })
+
+  test("stored reads reject missing or invalid sequence rather than treating them as optimistic", () => {
+    const missing = { ...assistant, seq: 0 }
+    Reflect.deleteProperty(missing, "seq") // Simulate JSON returned by a backend missing the required contract.
+    expect(() => projectMessages([missing], "ses_1")).toThrow()
+    expect(() => projectMessages([{ ...assistant, seq: -1 }], "ses_1")).toThrow()
+    expect(() => projectMessages([{ ...assistant, seq: 1.5 }], "ses_1")).toThrow()
+  })
+
   test("flattens the model ref and maps content to ordered parts with deterministic ids", () => {
     const { message, parts } = projectMessage(assistant, "ses_1")
     expect(message.role).toBe("assistant")

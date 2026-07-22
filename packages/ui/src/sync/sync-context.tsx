@@ -44,8 +44,8 @@ import { retry } from "./retry"
 import { touchStreamingSession, updateChangedStreamingSessions, updateStreamingState } from "./streaming"
 import { countSyncPerformance } from "./performance-diagnostics"
 import { runBackgroundNetworkTask } from "@/lib/background-network"
-import { recordDirectoryRecoveryEvent } from "./directory-recovery-snapshots"
 import { adoptSessionMove, setActionRefs } from "./session-actions"
+import { readDirectoryStatusSnapshot, recordDirectoryRecoveryEvent } from "./directory-recovery-snapshots"
 import { setSyncRefs, getAllSyncSessions, emitSyncConfigChanged, getDirectoryState } from "./sync-refs"
 import { useSessionUIStore } from "./session-ui-store"
 import { stripSessionDiffSnapshots } from "./sanitize"
@@ -61,7 +61,6 @@ import { useBtwStore } from "@/stores/useBtwStore"
 import { selectNewChildSessions } from "./child-session-discovery"
 import { syncDebug } from "./debug"
 import { getReconnectCandidateSessionIds, mergeBootstrapSessions } from "./reconnect-recovery"
-import { messagesBefore } from "./message-ordering"
 import { opencodeClient } from "@/lib/opencode/client"
 import { usePermissionStore } from "@/stores/permissionStore"
 import { policySnapshotFromWire } from "@/stores/utils/permissionAutoAccept"
@@ -103,7 +102,6 @@ import {
 import { isChatDirectoryPath } from "@/lib/chatDirectories"
 import type { State } from "./types"
 import {
-  getSessionMaterializationRequestKey,
   getSessionMaterializationStatus,
   getStaleRunningToolMessageID,
   isSessionMaterializationStillNeeded,
@@ -129,6 +127,8 @@ import {
   setImperativeSessionMessageLoader,
   type SessionMessageLoadState,
 } from "./session-message-loader"
+import { selectVisibleMessages } from "./message-boundary"
+import { recoverMessageOrder } from "./message-order-recovery"
 
 // ---------------------------------------------------------------------------
 // Context
@@ -348,6 +348,25 @@ const CHILD_SESSION_DISCOVERY_INTERVAL_MS = 15_000
 // requests, which would otherwise queue interactive traffic (opening a
 // session) behind them on the browser's ~6 sockets per origin. Later ticks
 // still cover every directory via the per-directory timestamps.
+export function createSessionStatusRequestCoordinator() {
+  const states = new WeakMap<StoreApi<DirectoryStore>, { next: number; applied: number }>()
+
+  return (owner: StoreApi<DirectoryStore>): (() => boolean) => {
+    const state = states.get(owner) ?? { next: 0, applied: 0 }
+    const generation = state.next + 1
+    state.next = generation
+    states.set(owner, state)
+
+    return () => {
+      const current = states.get(owner)
+      if (!current || generation < current.applied) return false
+      current.applied = generation
+      return true
+    }
+  }
+}
+
+const beginSessionStatusRequest = createSessionStatusRequestCoordinator()
 
 const requestSignature = (items: Array<{ id: string }> | undefined): string => {
   if (!items || items.length === 0) return ""
@@ -372,7 +391,6 @@ function haveEquivalentSyncSnapshots(left: unknown, right: unknown): boolean {
 // ---------------------------------------------------------------------------
 
 type PendingSessionMaterialization = {
-  runtimeKey: string
   sessionID: string
   directory: string
   enqueuedAt: number
@@ -380,7 +398,15 @@ type PendingSessionMaterialization = {
 }
 
 const SESSION_MATERIALIZATION_COOLDOWN_MS = 5_000
-const pendingSessionMaterializations = new Map<string, PendingSessionMaterialization>()
+const pendingSessionMaterializationsByStore = new WeakMap<StoreApi<DirectoryStore>, Map<string, PendingSessionMaterialization>>()
+
+const getPendingSessionMaterializations = (store: StoreApi<DirectoryStore>) => {
+  const existing = pendingSessionMaterializationsByStore.get(store)
+  if (existing) return existing
+  const created = new Map<string, PendingSessionMaterialization>()
+  pendingSessionMaterializationsByStore.set(store, created)
+  return created
+}
 
 // One in-flight directory status fetch at a time, shared by the active-session
 // watchdog poll and the deferred completion poll so the two cannot overlap on
@@ -407,17 +433,24 @@ function enqueueSessionMaterialization(
   request: SessionMaterializationRequest,
 ) {
   if (!directory || directory === "global" || !sessionID) return
-  const runtimeKey = getRuntimeKey()
-  const k = getSessionMaterializationRequestKey(runtimeKey, directory, sessionID)
-  const existing = pendingSessionMaterializations.get(k)
-  if (existing && Date.now() - existing.enqueuedAt < SESSION_MATERIALIZATION_COOLDOWN_MS) {
+  const store = childStores.getChild(directory)
+  if (!store) return
+  const pending = getPendingSessionMaterializations(store)
+  const orderRecovery = request.reason === "missing-message-sequence" || request.reason === "missing-compaction-record"
+  const requestKey = orderRecovery ? JSON.stringify([sessionID, request.messageID]) : sessionID
+  const existing = pending.get(requestKey)
+  if (existing && (orderRecovery || Date.now() - existing.enqueuedAt < SESSION_MATERIALIZATION_COOLDOWN_MS)) {
     const settlementMustFollowEarlierRecovery = request.reason === "settled-running-tool"
       && existing.request.reason !== "settled-running-tool"
     if (!settlementMustFollowEarlierRecovery) return
   }
 
-  const pending = { runtimeKey, sessionID, directory, enqueuedAt: Date.now(), request }
-  pendingSessionMaterializations.set(k, pending)
+  const entry = { sessionID, directory, enqueuedAt: Date.now(), request }
+  pending.set(requestKey, entry)
+  const runtimeKey = getRuntimeKey()
+  const sdk = opencodeClient.getSdkClient()
+  const isStale = () => pending.get(requestKey) !== entry || childStores.getChild(directory) !== store
+    || getRuntimeKey() !== runtimeKey || opencodeClient.getSdkClient() !== sdk
   countSyncPerformance("materializationEnqueues")
   if (request.reason === "empty-assistant-message") {
     countSyncPerformance("materializationEmptyAssistantEnqueues")
@@ -430,17 +463,8 @@ function enqueueSessionMaterialization(
   }
 
   const run = async () => {
-    if (pending.runtimeKey !== getRuntimeKey()) {
-      if (pendingSessionMaterializations.get(k) === pending) {
-        pendingSessionMaterializations.delete(k)
-      }
-      return
-    }
-    const store = childStores.getChild(directory)
-    if (!store) {
-      if (pendingSessionMaterializations.get(k) === pending) {
-        pendingSessionMaterializations.delete(k)
-      }
+    if (isStale()) {
+      if (pending.get(requestKey) === entry) pending.delete(requestKey)
       return
     }
     try {
@@ -451,22 +475,17 @@ function enqueueSessionMaterialization(
       countSyncPerformance("materializationRequests")
       await materializeSessionFromServer(directory, sessionID, store, {
         ...request,
-        isStale: () => childStores.children.get(directory) !== store
-          || pendingSessionMaterializations.get(k) !== pending,
+        isStale,
       })
     } catch {
       // Transient failure — next SSE event or reconnect will catch up.
     } finally {
-      const remainingCooldown = SESSION_MATERIALIZATION_COOLDOWN_MS - (Date.now() - pending.enqueuedAt)
-      if (remainingCooldown <= 0) {
-        if (pendingSessionMaterializations.get(k) === pending) {
-          pendingSessionMaterializations.delete(k)
-        }
+      const remainingCooldown = SESSION_MATERIALIZATION_COOLDOWN_MS - (Date.now() - entry.enqueuedAt)
+      if (orderRecovery || remainingCooldown <= 0) {
+        if (pending.get(requestKey) === entry) pending.delete(requestKey)
       } else {
         setTimeout(() => {
-          if (pendingSessionMaterializations.get(k) === pending) {
-            pendingSessionMaterializations.delete(k)
-          }
+          if (pending.get(requestKey) === entry) pending.delete(requestKey)
         }, remainingCooldown)
       }
     }
@@ -497,6 +516,20 @@ async function materializeSessionFromServer(
   })
   const loader = getImperativeSessionMessageLoader()
   if (!loader || isStale()) return
+  if (options?.messageID && (options.reason === "missing-message-sequence" || options.reason === "missing-compaction-record")) {
+    const target = { directory, sessionID }
+    const generation = loader.getSnapshot(target).generation
+    await recoverMessageOrder({
+      source: store,
+      reader: opencodeClient,
+      directory,
+      sessionID,
+      messageID: options.messageID,
+      compactionEventSeq: options.compactionEventSeq,
+      isCurrent: () => !isStale() && getImperativeSessionMessageLoader() === loader && loader.getSnapshot(target).generation === generation,
+    })
+    return
+  }
   await loader.refreshTail({ directory, sessionID }, SESSION_MATERIALIZATION_MESSAGE_LIMIT)
   if (isStale()) return
   if (loader.getSnapshot({ directory, sessionID }).status === "error") {
@@ -750,15 +783,31 @@ export function applySessionStatusSnapshot(
   snapshot: DirectorySessionStatusSnapshot,
   candidateSessionIds: string[],
   mode: StatusSnapshotMode,
+  requestBaseline?: Record<string, SessionStatus>,
 ): boolean {
-  if (candidateSessionIds.length === 0) return false
-
+  const baseline = requestBaseline ?? store.getState().session_status
   let changed = false
   store.setState((state: DirectoryStore) => {
     const current = state.session_status ?? {}
     let next: Record<string, SessionStatus> | undefined
     let nextInvalidated: Record<string, true> | undefined
     const draft = () => (next ??= { ...current })
+    const changedDuringRequest = (sessionId: string) => current[sessionId] !== baseline[sessionId]
+
+    if (!state.sessionStatusReady) {
+      changed = true
+    }
+
+    // A status snapshot covers the full directory. Ingest every reported
+    // active session; candidates only limit which absent entries may be lowered.
+    for (const [sessionId, rawStatus] of Object.entries(snapshot)) {
+      const incoming = toSessionStatus(rawStatus)
+      if (!incoming || incoming.type === "idle" || changedDuringRequest(sessionId)) continue
+      if (!haveEquivalentSyncSnapshots(current[sessionId], incoming)) {
+        draft()[sessionId] = incoming
+        changed = true
+      }
+    }
 
     for (const sessionId of candidateSessionIds) {
       const incoming = toSessionStatus(snapshot[sessionId])
@@ -770,29 +819,27 @@ export function applySessionStatusSnapshot(
       }
 
       if (incoming && incoming.type !== "idle") {
-        // Confirm or raise active status (catches a busy event the SSE missed).
-        if (!haveEquivalentSyncSnapshots(current[sessionId], incoming)) {
-          draft()[sessionId] = incoming
-          changed = true
-        }
+        // Active entries were merged from the full snapshot above.
         continue
       }
 
-      // Snapshot reports this candidate idle (absent, or explicit idle).
-      // Monotonic never lowers; authoritative trusts the snapshot as truth.
-      if (mode === "monotonic") continue
+      if (changedDuringRequest(sessionId)) continue
 
+      // Snapshot reports this candidate idle (absent, or explicit idle).
       const existing = current[sessionId]
-      // Keep the successful snapshot distinguishable from "status has never
-      // been observed".
-      if (!existing || existing.type !== "idle") {
+      if (mode === "monotonic" && existing) continue
+
+      // Monotonic snapshots may establish idle for an unknown heuristic
+      // candidate, but never lower an existing status. Authoritative snapshots
+      // establish idle for every absent candidate.
+      if (existing?.type !== "idle") {
         draft()[sessionId] = { type: "idle" }
         changed = true
       }
     }
 
-    if (!next && !nextInvalidated) return state
-    const patch: Partial<DirectoryStore> = {}
+    if (!next && !nextInvalidated && state.sessionStatusReady) return state
+    const patch: Partial<DirectoryStore> = { sessionStatusReady: true }
     if (next) patch.session_status = next
     if (nextInvalidated) patch.sessionStatusInvalidated = nextInvalidated
     return patch
@@ -809,15 +856,18 @@ async function resyncDirectorySessionStatuses(
   isStale?: () => boolean,
 ): Promise<DirectorySessionStatusSnapshot | null> {
   const invalidatedAtStart = store.getState().sessionStatusInvalidated
-  const nextStatuses = await opencodeClient.getActiveSessionStatuses(directory)
+  const isCurrentRequest = beginSessionStatusRequest(store)
+  const baseline = store.getState().session_status
+  const nextStatuses = await readDirectoryStatusSnapshot(store, () => opencodeClient.getActiveSessionStatuses())
   // null = fetch failed; preserve existing state. {} or populated = a snapshot
   // of active sessions — reconciled per `mode` (absence ≠ idle under monotonic).
   if (nextStatuses === null || isStale?.()) return null
+  if (!isCurrentRequest()) return null
   const currentInvalidated = store.getState().sessionStatusInvalidated
   const eligibleIds = candidateSessionIds.filter((id) => (
     !currentInvalidated?.[id] || currentInvalidated === invalidatedAtStart
   ))
-  applySessionStatusSnapshot(store, nextStatuses, eligibleIds, mode)
+  applySessionStatusSnapshot(store, nextStatuses, eligibleIds, mode, baseline)
   if (mode === "authoritative") {
     store.setState({ sessionStatusReady: true })
     applyGlobalSessionStatusSnapshot(directory, nextStatuses, getDirectoryOwnedSessionIds(directory, store.getState().session))
@@ -1253,11 +1303,11 @@ const resolveMaterializationSessionID = (
   resolvedDirectory: string,
   routingIndex: EventRoutingIndex,
 ): string | undefined => {
-  if (materializationSessionID) return materializationSessionID
   if (messageID) {
     const indexedSessionID = routingIndex.messageSessionById.get(messageID)
     if (indexedSessionID) return indexedSessionID
   }
+  if (materializationSessionID) return materializationSessionID
   if (resolvedDirectory && resolvedDirectory === _activeDirectory && _activeSession) {
     return _activeSession
   }
@@ -1281,6 +1331,10 @@ const updateRoutingIndexFromEvent = (
   switch (payload.type) {
     case "session.created":
       setIndexedSessionDirectory(routingIndex, payload.properties.info.id, directory)
+      return
+
+    case "session.patched":
+      if (payload.properties.patch.time?.archived != null) removeIndexedSession(routingIndex, payload.properties.sessionID)
       return
 
     case "session.deleted":
@@ -1490,11 +1544,15 @@ async function resyncDirectoryAfterReconnect(
 ) {
   if (isStale()) return
   const current = store.getState()
-  const candidateSessionIds = getActiveSessionCandidateIds(directory, current)
-  if (candidateSessionIds.length === 0) return
+  const recoveryCandidateSessionIds = getActiveSessionCandidateIds(directory, current)
 
-  await resyncDirectorySessionStatuses(directory, store, candidateSessionIds, "authoritative", isStale)
+  await resyncDirectorySessionStatuses(directory, store, recoveryCandidateSessionIds, "authoritative", isStale)
   if (isStale()) return
+  const candidateSessionIds = Array.from(new Set([
+    ...recoveryCandidateSessionIds,
+    ...getActiveSessionCandidateIds(directory, store.getState()),
+  ]))
+  if (candidateSessionIds.length === 0) return
 
   await Promise.all(candidateSessionIds.map(async (sessionId) => {
     syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })
@@ -1846,6 +1904,11 @@ export function handleEvent(
   // just evicted and turn every idle directory into an hourly refresh loop;
   // they are re-read when selected or on the next reconnect.
   if (payload.type === "location.shutdown") {
+    const store = childStores.getChild(directory)
+    if (store && expectedRuntimeKey === getRuntimeKey()) {
+      recordDirectoryRecoveryEvent(store, payload)
+      getImperativeSessionMessageLoader()?.invalidateDirectory(directory)
+    }
     if (
       directory
       && directory !== "global"
@@ -2120,11 +2183,23 @@ export function handleEvent(
   switch (payload.type) {
     case "session.created":
     case "session.patched":
-    case "session.deleted":
       cloneField("session", (value) => [...value])
+      cloneField("sessionEventRevision", (value) => ({ ...(value ?? {}) }))
+      cloneField("sessionDeletedRevision", (value) => ({ ...(value ?? {}) }))
+      if (payload.type !== "session.patched" || payload.properties.patch.time?.archived == null) break
+      cloneField("message", (value) => ({ ...value }))
       cloneField("permission", (value) => ({ ...value }))
       cloneField("form", (value) => ({ ...value }))
       cloneField("part", (value) => ({ ...value }))
+      cloneField("session_status", (value) => ({ ...value }))
+      break
+    case "session.deleted":
+      cloneField("session", (value) => [...value])
+      cloneField("message", (value) => ({ ...value }))
+      cloneField("permission", (value) => ({ ...value }))
+      cloneField("form", (value) => ({ ...value }))
+      cloneField("part", (value) => ({ ...value }))
+      cloneField("session_status", (value) => ({ ...value }))
       cloneField("sessionEventRevision", (value) => ({ ...(value ?? {}) }))
       cloneField("sessionDeletedRevision", (value) => ({ ...(value ?? {}) }))
       break
@@ -2137,13 +2212,16 @@ export function handleEvent(
     case "message.updated":
     case "message.patched":
     case "message.compaction.delta":
+      recordDirectoryRecoveryEvent(store, payload)
       cloneField("message", (value) => ({ ...value }))
       break
     case "message.removed":
+      recordDirectoryRecoveryEvent(store, payload)
       cloneField("message", (value) => ({ ...value }))
       cloneField("part", (value) => ({ ...value }))
       break
     case "session.revert.committed":
+      recordDirectoryRecoveryEvent(store, payload)
       cloneField("session", (value) => [...value])
       cloneField("message", (value) => ({ ...value }))
       cloneField("part", (value) => ({ ...value }))
@@ -2152,6 +2230,7 @@ export function handleEvent(
     case "message.part.delta":
     case "message.tool.transition":
     case "message.parts.replaced":
+      recordDirectoryRecoveryEvent(store, payload)
       cloneField("part", (value) => ({ ...value }))
       break
     case "vcs.branch.updated":
@@ -2295,6 +2374,7 @@ export function handleEvent(
         reason: materializationResult.reason,
         messageID: materializationResult.messageID,
         partID: materializationResult.partID,
+        compactionEventSeq: materializationResult.compactionEventSeq,
       })
     }
   }
@@ -2683,6 +2763,7 @@ export function SyncProvider(props: {
               projects: globalState.projects,
               path: globalState.path,
             },
+            beginSessionStatusRequest: () => beginSessionStatusRequest(store),
             // Each page owns its bounded retry. Replaying the whole list here
             // multiplies attempts and holds a bootstrap slot behind failures.
             loadSessions: async (dir) => {
@@ -3014,7 +3095,7 @@ export function SyncProvider(props: {
           for (const [directory, store] of childStores.children.entries()) {
             const state = store.getState()
             const candidateSessionIds = getActiveSessionCandidateIds(directory, state)
-            if (candidateSessionIds.length === 0) {
+            if (candidateSessionIds.length === 0 && state.sessionStatusReady) {
               lastStatusPollAtByDirectoryRef.current.delete(directory)
               lastFullResyncAtByDirectoryRef.current.delete(directory)
               continue
@@ -3025,6 +3106,10 @@ export function SyncProvider(props: {
               lastStatusPollAtByDirectoryRef.current.set(directory, now)
               void pollDirectoryStatuses(directory, store, candidateSessionIds).catch(() => undefined)
             }
+
+            // An unresolved directory still needs the full status poll above,
+            // but has no session-specific recovery or discovery work yet.
+            if (candidateSessionIds.length === 0) continue
 
             const lastFullResyncAt = lastFullResyncAtByDirectoryRef.current.get(directory) ?? 0
             if (shouldTriggerStaleResync(lastStreamActivityAtRef.current, lastFullResyncAt, now)) {
@@ -3240,20 +3325,31 @@ export function useDirectorySync<T>(selector: (state: State) => T, directory?: s
   return useStore(store, selector)
 }
 
-/** Get session messages for a specific session */
-export function useSessionMessages(sessionID: string, directory?: string) {
+function useSessionRecordValue<T>(
+  sessionID: string,
+  directory: string | undefined,
+  select: (state: State, id: string) => T,
+  empty: T,
+): T {
   const store = useDirectoryStore(directory)
-  const getSnapshot = useCallback(() => {
-    if (!sessionID) return EMPTY_MESSAGES
-    return store.getState().message[sessionID] ?? EMPTY_MESSAGES
-  }, [sessionID, store])
+  const getSnapshot = useCallback(
+    () => sessionID ? select(store.getState(), sessionID) : empty,
+    [empty, select, sessionID, store],
+  )
   const subscribe = useCallback((notify: () => void) => {
     if (!sessionID) return () => undefined
     return store.subscribe((state, previous) => {
-      if (state.message[sessionID] !== previous.message[sessionID]) notify()
+      if (!Object.is(select(state, sessionID), select(previous, sessionID))) notify()
     })
-  }, [sessionID, store])
+  }, [select, sessionID, store])
   return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+const selectSessionMessages = (state: State, sessionID: string) => state.message[sessionID] ?? EMPTY_MESSAGES
+
+/** Get session messages for a specific session */
+export function useSessionMessages(sessionID: string, directory?: string) {
+  return useSessionRecordValue(sessionID, directory, selectSessionMessages, EMPTY_MESSAGES)
 }
 
 /** Check whether the message list for a session has been loaded into sync state. */
@@ -3781,7 +3877,7 @@ function getVisibleMessagesForSession(state: State, sessionID: string, previous?
 
   return {
     sourceMessages,
-    visibleMessages: messagesBefore(sourceMessages, revertMessageID),
+    visibleMessages: selectVisibleMessages(sourceMessages, revertMessageID),
     revertMessageID,
   }
 }

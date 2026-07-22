@@ -13,6 +13,25 @@ afterEach(() => {
 })
 
 describe("v2 status and cancellation HTTP boundary", () => {
+  test("explicit stop targets one session in its owning directory and validates command cleanup", async () => {
+    const requests: Array<{ path: string; directory: string | null }> = []
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString())
+      const headers = new Headers(input instanceof Request ? input.headers : init?.headers)
+      requests.push({ path: url.pathname, directory: headers.get("x-opencode-directory") })
+      return Response.json({ matched: 2, terminated: 2, failed: 0 })
+    })
+    try {
+      await opencodeClient.stopSession("session", "C:/Other project")
+      expect(requests).toEqual([{ path: "/api/session/session/stop", directory: encodeURIComponent("C:/Other project") }])
+      for (const body of [null, {}, { matched: 2, terminated: 1, failed: 0 }, { matched: -1, terminated: -1, failed: 0 }]) {
+        fetch.mockImplementation(async () => Response.json(body))
+        await expect(opencodeClient.stopSession("session")).rejects.toThrow("invalid response summary")
+      }
+      fetch.mockImplementation(async () => Response.json({ matched: 2, terminated: 1, failed: 1 }))
+      await expect(opencodeClient.stopSession("session")).rejects.toThrow("Failed to terminate 1 exec command session")
+    } finally { fetch.mockRestore() }
+  })
   test("directory bootstrap blocking reads each spend one HTTP request", async () => {
     const requests: Array<{ path: string; directory: string | null }> = []
     const fetch = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {

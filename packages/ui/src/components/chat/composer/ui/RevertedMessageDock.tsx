@@ -13,6 +13,7 @@ import React from 'react';
 import type { Part } from '@/lib/opencode/model';
 
 import { Icon } from '@/components/icon/Icon';
+import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -84,20 +85,24 @@ export const RevertedMessageDock: React.FC<RevertedMessageDockProps> = React.mem
         setSettling('commit');
         try {
             await commitStagedRevert(sessionId);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : t('errorBoundary.title'));
         } finally {
             setSettling(null);
         }
-    }, [sessionId, settling]);
+    }, [sessionId, settling, t]);
 
     const handleClear = React.useCallback(async () => {
         if (!sessionId || settling) return;
         setSettling('clear');
         try {
             await clearStagedRevert(sessionId);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : t('errorBoundary.title'));
         } finally {
             setSettling(null);
         }
-    }, [sessionId, settling]);
+    }, [sessionId, settling, t]);
 
     const handleFork = React.useCallback(async (messageId: string) => {
         if (!sessionId || forkingId || settling) return;

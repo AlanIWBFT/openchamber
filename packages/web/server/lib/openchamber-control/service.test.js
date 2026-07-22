@@ -257,14 +257,11 @@ describe('OpenChamber control service', () => {
     expect(client.session.active).toHaveBeenCalledTimes(2);
   });
 
-  it('filters sessions archived in OpenChamber state and adds global statuses', async () => {
-    const { service, client } = createService({
-      // Async like the real store (`openchamber-sessions/archive-store.js`).
-      archiveStore: { archivedAt: async (id) => (id === 'ses_archived' ? 100 : null) },
-    });
+  it('filters sessions archived by the backend and adds global statuses', async () => {
+    const { service, client } = createService();
     client.session.list.mockResolvedValue({ data: [
       { id: 'ses_active', location: { directory: '/repo' }, time: {} },
-      { id: 'ses_archived', location: { directory: '/repo' }, time: {} },
+      { id: 'ses_archived', location: { directory: '/repo' }, time: { archived: 100 } },
       { id: 'ses_other', location: { directory: '/other' }, time: {} },
     ] });
     client.session.active.mockResolvedValue({ ses_active: { type: 'running' } });
