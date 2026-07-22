@@ -581,6 +581,7 @@ describe('createEventPipeline', () => {
       eventId: 'evt-1',
       directory: '/tmp/project',
       payload: {
+        seq: 0,
         type: 'session.status',
         properties: {
           sessionID: 'session-1',
@@ -594,6 +595,7 @@ describe('createEventPipeline', () => {
       {
         directory: '/tmp/project',
         payload: {
+          seq: 0,
           type: 'session.status',
           properties: {
             sessionID: 'session-1',
@@ -764,6 +766,7 @@ describe('createEventPipeline', () => {
         eventId: 'evt-1',
         directory: '/tmp/project',
         payload: {
+          seq: 0,
           type: 'session.status',
           properties: {
             sessionID: 'session-1',
@@ -777,6 +780,7 @@ describe('createEventPipeline', () => {
 
       expect(eventOptions[0]?.headers?.['Last-Event-ID']).toBe('evt-1');
       expect(received.some((entry) => entry.payload.type === 'server.connected')).toBe(true);
+      expect(received.find((entry) => entry.payload.type === 'session.status')?.payload.seq).toBe(0);
     } finally {
       console.error = originalConsoleError;
     }

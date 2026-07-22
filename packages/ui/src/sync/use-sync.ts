@@ -17,6 +17,10 @@ import {
   buildSessionMessageRecordsSnapshot,
 } from "./sync-context"
 import { stripSessionDiffSnapshots } from "./sanitize"
+import {
+  dropSessionOrder,
+  getMessageOrderState,
+} from "./message-order"
 import { isVSCodeRuntime } from "@/lib/desktop"
 import { isMobileSurfaceRuntime } from "@/lib/runtimeSurface"
 import { clearSessionPrefetch } from "./session-prefetch-cache"
@@ -39,15 +43,34 @@ type SeenDirectoryEntry = {
 }
 const seenByDirectory = new Map<string, SeenDirectoryEntry>()
 
-// Shared across useSync() hook instances. Chat, model controls, and sidebar can
-// all request the same session during startup; coalesce them into one HTTP load.
-const syncSessionInflightByKey = new Map<string, Promise<void>>()
+// Shared across useSync() hook instances for the same live store. Weak store
+// ownership prevents a disposed directory's request from blocking a replacement
+// store created for the same directory and session.
+type SyncSessionInflight = {
+  promise: Promise<void>
+}
 
-// Per-session generation counter. When a newer syncSession request starts for
-// the same session, older in-flight requests become stale and must not write
-// to the store. This prevents rapid session switches (e.g. 1→2→3 in the
-// sidebar) from having each completed fetch fight for focus.
-const syncSessionGenerationByKey = new Map<string, number>()
+const syncSessionInflightByStore = new WeakMap<object, Map<string, SyncSessionInflight>>()
+
+// Per-store request tokens make older syncSession calls stale without retaining
+// directory/session string keys after their store is disposed.
+const syncSessionTokenByStore = new WeakMap<object, Map<string, object>>()
+
+function getSyncSessionTokens(store: object): Map<string, object> {
+  const existing = syncSessionTokenByStore.get(store)
+  if (existing) return existing
+  const created = new Map<string, object>()
+  syncSessionTokenByStore.set(store, created)
+  return created
+}
+
+function getSyncSessionInflight(store: object): Map<string, SyncSessionInflight> {
+  const existing = syncSessionInflightByStore.get(store)
+  if (existing) return existing
+  const created = new Map<string, SyncSessionInflight>()
+  syncSessionInflightByStore.set(store, created)
+  return created
+}
 type SdkResult<T> = {
   data?: T
   error?: unknown
@@ -122,6 +145,10 @@ function useSessionCacheTouch() {
       if (!store) return
 
       const current = store.getState()
+      const order = getMessageOrderState(store)
+      for (const sessionID of sessionIDs) dropSessionOrder(order, sessionID, current.message[sessionID], current.part)
+      const syncTokens = syncSessionTokenByStore.get(store)
+      const inflight = syncSessionInflightByStore.get(store)
       const draft = {
         message: { ...current.message },
         part: { ...current.part },
@@ -134,7 +161,11 @@ function useSessionCacheTouch() {
       dropSessionCaches(draft, sessionIDs)
       dropCachedSessionMessageRecordsSnapshots(store, sessionIDs)
       store.setState(draft)
-      for (const sessionID of sessionIDs) messageLoader.invalidateSession({ directory, sessionID })
+      for (const sessionID of sessionIDs) {
+        messageLoader.invalidateSession({ directory, sessionID })
+        syncTokens?.delete(sessionID)
+        inflight?.delete(sessionID)
+      }
       clearSessionPrefetch(directory, sessionIDs)
     },
     [childStores, messageLoader, runtimeKey],
@@ -212,34 +243,27 @@ export function useSync() {
     },
     [childStores, directory, runtimeKey],
   )
-
-  const keyFor = useCallback(
-    (sessionID: string, directoryOverride = directory) => `${runtimeKey}\n${directoryOverride}\n${sessionID}`,
-    [directory, runtimeKey],
-  )
-
   // Sync a session (load if not cached)
   const syncSession = useCallback(
     async (sessionID: string, force?: boolean, directoryOverride?: string) => {
       if (getRuntimeKey() !== runtimeKey) return
       const targetDirectory = directoryOverride || directory
       touch(sessionID, targetDirectory)
-      const key = keyFor(sessionID, targetDirectory)
-
-      // Dedup inflight requests
-      const existing = syncSessionInflightByKey.get(key)
-      if (existing) return existing
-
-      // This is a new request. Bump generation so any older request that
-      // might still be finishing (e.g. from a previous component lifecycle)
-      // knows it is stale and should not write to the store.
-      const generation = (syncSessionGenerationByKey.get(key) ?? 0) + 1
-      syncSessionGenerationByKey.set(key, generation)
-      const isStale = () => syncSessionGenerationByKey.get(key) !== generation
-
       const targetStore = targetDirectory === directory
         ? store
         : childStores.ensureChild(targetDirectory, { bootstrap: false })
+      const inflight = getSyncSessionInflight(targetStore)
+      // Dedup inflight requests
+      const existing = inflight.get(sessionID)
+      if (existing) return existing.promise
+
+      // This is a new request. Replace the token so any older request that
+      // might still be finishing cannot write to this store.
+      const syncTokens = getSyncSessionTokens(targetStore)
+      const token = {}
+      syncTokens.set(sessionID, token)
+      const isStale = () => syncTokens.get(sessionID) !== token
+
       const current = targetStore.getState()
       const materialization = getSessionMaterializationStatus(current, sessionID)
       const cachedReady = materialization.hasMessages && materialization.renderable
@@ -279,19 +303,16 @@ export function useSync() {
         ])
       })()
 
-      syncSessionInflightByKey.set(key, promise)
-      const clearInflightRequest = () => {
-        if (syncSessionInflightByKey.get(key) === promise) {
-          syncSessionInflightByKey.delete(key)
-          if (syncSessionGenerationByKey.get(key) === generation) {
-            syncSessionGenerationByKey.delete(key)
-          }
+      const entry = { promise }
+      inflight.set(sessionID, entry)
+      promise.finally(() => {
+        if (inflight.get(sessionID) === entry) {
+          inflight.delete(sessionID)
         }
-      }
-      void promise.then(clearInflightRequest, clearInflightRequest)
+      })
       return promise
     },
-    [childStores, directory, keyFor, messageLoader, runtimeKey, sdk, store, touch],
+    [childStores, directory, messageLoader, runtimeKey, sdk, store, touch],
   )
 
   // Load more (pagination)
