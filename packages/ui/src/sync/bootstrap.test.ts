@@ -90,7 +90,7 @@ describe("bootstrapDirectory", () => {
     const bootstrap = bootstrapDirectory(input)
     expect(await bootstrap.sessions).toBe("complete")
     expect(await bootstrap.environment).toBe("failed")
-    expect(input.store.getState().sessionStatusReady).toBeUndefined()
+    expect(input.store.getState().sessionStatusReady).toBe(false)
   })
 
   test("malformed status success does not clear live state or grant idle authority", async () => {
@@ -101,7 +101,7 @@ describe("bootstrapDirectory", () => {
     const bootstrap = bootstrapDirectory(input)
     expect(await bootstrap.sessions).toBe("complete")
     expect(await bootstrap.environment).toBe("failed")
-    expect(input.store.getState().sessionStatusReady).toBeUndefined()
+    expect(input.store.getState().sessionStatusReady).toBe(false)
     expect(input.store.getState().session_status).toBe(statuses)
   })
 

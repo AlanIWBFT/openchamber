@@ -516,8 +516,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     }, [message, newSessionDraft.target, newSessionDraftOpen, prepareChatDraftDirectory]);
     const consumePendingSyntheticParts = useInputStore((s) => s.consumePendingSyntheticParts);
     const acknowledgeSessionAbort = useSessionUIStore((s) => s.acknowledgeSessionAbort);
-    const abortCurrentOperation = React.useCallback(
-        (sessionIdOverride?: string) => sessionActions.abortCurrentOperation(sessionIdOverride ?? currentSessionId ?? ''),
+    const stopCurrentOperation = React.useCallback(
+        (sessionIdOverride?: string) => sessionActions.stopSessionExecution(sessionIdOverride ?? currentSessionId ?? ''),
         [currentSessionId],
     );
     const currentManagementSessionId = currentSessionId;
@@ -1654,6 +1654,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 }
             } catch (error) {
                 restoreComposerText();
+                if (actionName === 'undo' || actionName === 'redo') {
+                    console.error(`[chat-input] ${actionName} failed`, error);
+                    toast.error(error instanceof Error ? error.message : actionName === 'undo' ? 'Failed to revert message' : 'Failed to restore message');
+                    return;
+                }
                 if (actionName !== 'compact') throw error;
                 toast.error(getSubmitErrorMessage(error, t('chat.chatInput.toast.compactFailed')));
             }
@@ -2327,12 +2332,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
 
     const handleAbort = React.useCallback(() => {
         clearAbortPrompt();
-
-        // btw mode: the stop button stops the fork's turn, not the main
-        // session's.
-        const abortTarget = isBtwActive && btwSessionId ? btwSessionId : currentSessionId;
-        void abortCurrentOperation(abortTarget || undefined);
-    }, [abortCurrentOperation, btwSessionId, clearAbortPrompt, currentSessionId, isBtwActive]);
+        const targetSessionId = (isBtwActive && btwSessionId ? btwSessionId : currentSessionId) || undefined;
+        void stopCurrentOperation(targetSessionId)
+            .catch((error) => {
+                console.error('[chat-input] stop failed', error);
+                toast.error(error instanceof Error ? error.message : 'Failed to stop session');
+            });
+    }, [btwSessionId, clearAbortPrompt, currentSessionId, isBtwActive, stopCurrentOperation]);
 
     const handleCycleAgent = React.useCallback((direction: 1 | -1 = 1) => {
         const nextAgentName = getCycledPrimaryAgentName(agents, currentAgentName, direction);

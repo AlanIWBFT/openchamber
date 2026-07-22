@@ -8,6 +8,7 @@ import { Icon } from '@/components/icon/Icon';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { useI18n } from '@/lib/i18n';
 import { opencodeClient } from '@/lib/opencode/client';
+import { createMessageOrderState, decodeStoredMessageRecords, sortMessages, sortParts } from '@/sync/message-order';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -47,11 +48,23 @@ const getLastAssistantText = async (source: FusionSource): Promise<string> => {
         limit: 50,
       })
     );
-    const records = result.data ?? [];
-    for (let index = records.length - 1; index >= 0; index -= 1) {
-      const record = records[index] as { info?: { role?: string }; parts?: unknown[] };
+    if (result.error) {
+      throw new Error(`session.messages failed${result.response?.status ? ` (${result.response.status})` : ''}`);
+    }
+    if (!Array.isArray(result.data)) {
+      throw new Error('session.messages returned no stored records');
+    }
+    const decoded = decodeStoredMessageRecords(result.data, new Set(), source.session.id);
+    const order = createMessageOrderState();
+    for (const [id, seq] of decoded.messageSeq) order.message.set(id, seq);
+    for (const [id, seq] of decoded.partSeq) order.part.set(id, seq);
+    const byID = new Map(decoded.records.map((record) => [record.info.id, record]));
+    const orderedMessages = sortMessages(decoded.records.map((record) => record.info), order);
+    for (let index = orderedMessages.length - 1; index >= 0; index -= 1) {
+      const record = byID.get(orderedMessages[index].id);
+      if (!record) continue;
       if (record.info?.role !== 'assistant') continue;
-      return flattenAssistantTextParts((record.parts ?? []) as Parameters<typeof flattenAssistantTextParts>[0]).trim();
+      return flattenAssistantTextParts(sortParts(record.parts, order)).trim();
     }
     return '';
   }

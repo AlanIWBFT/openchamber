@@ -8,7 +8,6 @@ import {
     getUnifiedExecOutput,
     getUnifiedExecStatus,
     getWriteStdinOperation,
-    isExecProcessRunning,
     isWriteStdinPoll,
     redactExecFollowUpInput,
     shouldHideExecFollowUp,
@@ -78,8 +77,8 @@ describe('Unified Exec presentation', () => {
             .toEqual({ kind: 'error', error: true });
         expect(getUnifiedExecStatus({ execDisplay: 'root', processRunning: false }, 0, 'error'))
             .toEqual({ kind: 'error', error: true });
-        expect(isExecProcessRunning('exec_command', { processRunning: true }, 'error')).toBe(false);
-        expect(isExecProcessRunning('exec_command', { execError: 'failed', processRunning: true })).toBe(false);
+        expect(getExecProcessRunning('exec_command', { processRunning: true }, 'error')).toBe(false);
+        expect(getExecProcessRunning('exec_command', { execError: 'failed', processRunning: true })).toBe(false);
         expect(getExecProcessRunning('exec_command', { processRunning: false }, 'running')).toBe(false);
         expect(getExecProcessRunning('exec_command', {}, 'running')).toBe(undefined);
         expect(getUnifiedExecStatus({ execDisplay: 'root', processRunning: true, sessionID: 1, startedAt: 1_000 }, 13_400))

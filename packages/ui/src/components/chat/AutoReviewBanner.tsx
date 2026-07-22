@@ -8,6 +8,8 @@ import { getRuntimeKey } from '@/lib/runtime-switch';
 import { useAutoReviewStore } from '@/stores/useAutoReviewStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { stopSessionExecution } from '@/sync/session-actions';
+import { toast } from '@/components/ui';
 
 export const AutoReviewBanner = memo(() => {
   const { t } = useI18n();
@@ -19,6 +21,7 @@ export const AutoReviewBanner = memo(() => {
   }, [currentSessionId]));
   const stopRun = useAutoReviewStore((state) => state.stopRun);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
+  const [stopping, setStopping] = React.useState(false);
 
   if (!currentSessionId || !run || run.status !== 'running') {
     return null;
@@ -35,6 +38,23 @@ export const AutoReviewBanner = memo(() => {
       label: t('chat.autoReview.reviewSessionLabel'),
       readOnly: true,
     });
+  };
+
+  const handleStop = async () => {
+    if (stopping) return;
+    setStopping(true);
+    stopRun(run.originalSessionID);
+    try {
+      await Promise.all([
+        stopSessionExecution(run.originalSessionID, { scope: 'session-tree' }, run.directory),
+        stopSessionExecution(run.reviewSessionID, { scope: 'session-tree' }, run.directory),
+      ]);
+    } catch (error) {
+      console.error('[auto-review] stop failed', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to stop auto review');
+    } finally {
+      setStopping(false);
+    }
   };
 
   return (
@@ -63,7 +83,8 @@ export const AutoReviewBanner = memo(() => {
             type="button"
             variant="secondary"
             size="xs"
-            onClick={() => stopRun(currentSessionId)}
+            disabled={stopping}
+            onClick={() => void handleStop()}
           >
             {t('chat.autoReview.actions.stop')}
           </Button>
