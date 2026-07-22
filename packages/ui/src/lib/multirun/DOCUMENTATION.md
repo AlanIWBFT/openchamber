@@ -41,7 +41,9 @@ runtime. A pending record left behind is not an eligible member.
 - `fusion.ts` revalidates selected IDs and reads current output before creating
   the result. Read failures stop fusion rather than silently dropping a source.
   A successful empty output is omitted; no nonempty output means no new session.
-  v2 pages messages newest first, so the first assistant record is the last reply.
+  Stored messages carry their official creation `seq`; the reader selects the
+  latest assistant by that sequence, not by ID, timestamp, or incoming array order.
+  Text parts retain the official parts-array order, without a local part sequence.
 - Fusion results keep the group identity and role `fusion`, so another fusion
   can be started from the result without using it as a source.
 - `groups.ts` and Agent Manager use group keys for selection, rendering and bulk

@@ -886,8 +886,6 @@ const sessionAssistRuntime = createSessionAssistRuntime({
   getSmallModelService: async () => import('./lib/small-model/index.js'),
   persistSessionAssist: (sessionID, directory, assist) =>
     persistSessionMetadataPatch(sessionID, { openchamber: { assist } }, { directory }),
-  // Declared further down; only ever called after startup.
-  isSessionArchived: (sessionID) => openChamberSessionService.archiveStore.isArchived(sessionID),
 });
 
 const sessionGoalRuntime = createSessionGoalRuntime({
@@ -1109,9 +1107,6 @@ const processForwardedServerEvent = (payload, emitSyntheticEvent) => {
 
 
 const serverUtilsRuntime = createServerUtilsRuntime({
-  // Read lazily: the archive store is created with the session service further
-  // down, while the proxy is registered later still.
-  getArchivedSessions: () => openChamberSessionService.archiveStore.getAll(),
   getStoredSessionMetadata: () => sessionMetadataStore.listUnmigrated(),
   // Isolated spaces: with the switch on, the session list carries every space's sessions and
   // the global SSE stream their events. Called, not captured: the host is made in `main`.

@@ -27,8 +27,7 @@ export async function loadFusionOutputs(
     const page = await opencodeClient.getSessionMessages(source.session.id, { limit: 50 }, directory);
     assertCurrent();
     let text = '';
-    // v2 pages messages newest first, so the first assistant record is the last reply.
-    for (const record of page.items) {
+    for (const record of [...page.items].sort((a, b) => b.info.seq - a.info.seq)) {
       if (record.info.role !== 'assistant') continue;
       text = flattenAssistantTextParts(record.parts).trim();
       break;

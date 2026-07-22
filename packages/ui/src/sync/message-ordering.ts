@@ -6,12 +6,14 @@ const getCreatedAt = (message: Message): number => {
 }
 
 /**
- * Message IDs identify records; they are not chronology. OpenCode's sortable
- * ID timestamp rolls over, so a newly created `msg_000...` can follow a legacy
- * `msg_fff...`. Creation time is the authoritative transcript order, with ID
- * used only to make equal timestamps deterministic.
+ * Persisted messages follow OpenCode's creation sequence, including across
+ * clock changes and ID rollover. Optimistic and queued inbox messages stay
+ * after persisted history until delivery confirms their sequence. Only those
+ * provisional records use creation time and ID to order among themselves.
  */
 export const compareMessagesChronologically = (left: Message, right: Message): number => {
+  if (left.seq !== undefined) return right.seq === undefined ? -1 : left.seq - right.seq
+  if (right.seq !== undefined) return 1
   const createdAtDifference = getCreatedAt(left) - getCreatedAt(right)
   if (createdAtDifference !== 0) return createdAtDifference
   if (left.id < right.id) return -1

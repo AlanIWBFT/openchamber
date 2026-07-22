@@ -1,11 +1,14 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { create, type StoreApi } from "zustand"
 import type { SessionStatus } from "@/lib/opencode/model"
+import { opencodeClient } from "@/lib/opencode/client"
 
 import { INITIAL_STATE, type State } from "../types"
 import type { DirectoryStore } from "../child-store"
+import { bootstrapDirectory } from "../bootstrap"
 import {
   applySessionStatusSnapshot,
+  createSessionStatusRequestCoordinator,
   needsSnapshotAfterStatusPoll,
   shouldTriggerStaleResync,
 } from "../sync-context"
@@ -17,6 +20,7 @@ function createDirectoryStore(initial: Partial<State>): StoreApi<DirectoryStore>
     ...INITIAL_STATE,
     ...initial,
     session: initial.session ?? [],
+    sessionStatusReady: initial.sessionStatusReady ?? true,
     patch: (partial) => set(partial),
     replace: (next) => set(next),
   }))
@@ -33,7 +37,59 @@ function completedMessage() {
 
 const BUSY: SessionStatus = { type: "busy" }
 
+describe("session status request coordinator", () => {
+  test("rejects only responses older than an already applied response", () => {
+    const begin = createSessionStatusRequestCoordinator()
+    const store = createDirectoryStore({})
+
+    const first = begin(store)
+    const second = begin(store)
+    expect(first()).toBe(true)
+    expect(second()).toBe(true)
+
+    const older = begin(store)
+    const newer = begin(store)
+    expect(newer()).toBe(true)
+    expect(older()).toBe(false)
+
+    const successfulBeforeFailure = begin(store)
+    begin(store) // The newer request fails and never attempts to apply.
+    expect(successfulBeforeFailure()).toBe(true)
+  })
+})
+
 describe("applySessionStatusSnapshot", () => {
+  test("marks even an empty successful snapshot as resolved", () => {
+    const store = createDirectoryStore({ sessionStatusReady: false })
+    const changed = applySessionStatusSnapshot(store, {}, [], "monotonic")
+    expect(changed).toBe(true)
+    expect(store.getState().sessionStatusReady).toBe(true)
+  })
+
+  test("ingests active sessions outside the recovery candidate set", () => {
+    const store = createDirectoryStore({ session_status: {}, sessionStatusReady: false })
+    applySessionStatusSnapshot(store, { ses_active: { type: "busy" } }, [], "monotonic")
+    expect(store.getState().session_status.ses_active).toEqual(BUSY)
+    expect(store.getState().sessionStatusReady).toBe(true)
+  })
+
+  test("preserves a newer status transition that lands during the request", () => {
+    const original = { type: "busy" } satisfies SessionStatus
+    const store = createDirectoryStore({ session_status: { ses_a: original } })
+    const baseline = store.getState().session_status
+    store.setState({ session_status: { ses_a: { type: "idle" } } })
+
+    applySessionStatusSnapshot(
+      store,
+      { ses_a: { type: "retry", attempt: 2, message: "old", next: 30 } },
+      ["ses_a"],
+      "authoritative",
+      baseline,
+    )
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
+  })
+
   describe("monotonic mode (periodic poll)", () => {
     test("does NOT lower a busy session to idle when the snapshot omits it", () => {
       const store = createDirectoryStore({ session_status: { ses_a: BUSY } })
@@ -53,6 +109,12 @@ describe("applySessionStatusSnapshot", () => {
       const changed = applySessionStatusSnapshot(store, { ses_a: { type: "busy" } }, ["ses_a"], "monotonic")
       expect(changed).toBe(true)
       expect(store.getState().session_status.ses_a).toEqual(BUSY)
+    })
+
+    test("establishes idle for an unknown heuristic candidate without lowering active state", () => {
+      const store = createDirectoryStore({ session_status: {} })
+      applySessionStatusSnapshot(store, {}, ["ses_a"], "monotonic")
+      expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
     })
 
     test("updates busy → retry from the snapshot", () => {
@@ -103,6 +165,92 @@ describe("applySessionStatusSnapshot", () => {
       expect(changed).toBe(true)
       expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
     })
+  })
+})
+
+type BootstrapStatusResult = StatusSnapshot | null
+const restoreSpies: Array<() => void> = []
+afterEach(() => { for (const restore of restoreSpies.splice(0).reverse()) restore() })
+
+function startBootstrap(
+  statusResult: BootstrapStatusResult | Promise<BootstrapStatusResult>,
+  beginSessionStatusRequest?: () => () => boolean,
+) {
+  let started!: () => void
+  const requestStarted = new Promise<void>((resolve) => { started = resolve })
+  const spies = [
+    spyOn(opencodeClient, "getActiveSessionStatuses").mockImplementation(async () => { started(); return statusResult }),
+    spyOn(opencodeClient, "getConfig").mockResolvedValue({}),
+    spyOn(opencodeClient, "getLocation").mockResolvedValue({ directory: "C:/repo", project: { id: "project", directory: "C:/repo", canonical: "C:/repo" } }),
+    spyOn(opencodeClient, "getVcs").mockResolvedValue({ branch: "main" }),
+    spyOn(opencodeClient, "listPendingForms").mockResolvedValue([]),
+    spyOn(opencodeClient, "listPendingPermissions").mockResolvedValue([]),
+  ]
+  for (const spy of spies) restoreSpies.push(() => spy.mockRestore())
+  const store = createDirectoryStore({ sessionStatusReady: false })
+  const tasks = bootstrapDirectory({
+    directory: "C:/repo",
+    store,
+    set: (patch) => store.setState(patch),
+    global: {
+      config: {},
+      projects: [],
+      path: { directory: "C:/repo", worktree: "C:/repo", home: "C:/home" },
+    },
+    beginSessionStatusRequest,
+    loadSessions: () => undefined,
+  })
+  return {
+    requestStarted,
+    promise: Promise.all([tasks.sessions, tasks.environment]),
+    getState: store.getState,
+    setState: store.setState,
+  }
+}
+
+async function bootstrapWithStatus(statusResult: BootstrapStatusResult) {
+  const bootstrap = startBootstrap(statusResult)
+  await bootstrap.promise
+  return bootstrap.getState()
+}
+
+describe("bootstrapDirectory session status", () => {
+  test("marks a successful empty status snapshot as resolved", async () => {
+    const state = await bootstrapWithStatus({})
+    expect(state.sessionStatusReady).toBe(true)
+    expect(state.session_status).toEqual({})
+  })
+
+  test("preserves unresolved status when the status request fails", async () => {
+    const state = await bootstrapWithStatus(null)
+    expect(state.status).toBe("partial")
+    expect(state.sessionStatusReady).toBe(false)
+  })
+
+  test("does not overwrite a newer status while the snapshot is in flight", async () => {
+    let resolveStatus!: (result: BootstrapStatusResult) => void
+    const statusResult = new Promise<BootstrapStatusResult>((resolve) => {
+      resolveStatus = resolve
+    })
+    const bootstrap = startBootstrap(statusResult)
+    await bootstrap.requestStarted
+    bootstrap.setState({ session_status: { ses_a: { type: "busy" } } })
+    resolveStatus({ ses_a: { type: "retry", attempt: 1, message: "older", next: 10 } })
+    await bootstrap.promise
+
+    expect(bootstrap.getState().session_status.ses_a).toEqual({ type: "busy" })
+    expect(bootstrap.getState().sessionStatusReady).toBe(true)
+  })
+
+  test("ignores a snapshot superseded by a newer directory request", async () => {
+    const bootstrap = startBootstrap(
+      { ses_a: { type: "busy" } },
+      () => () => false,
+    )
+    await bootstrap.promise
+
+    expect(bootstrap.getState().session_status).toEqual({})
+    expect(bootstrap.getState().sessionStatusReady).toBe(false)
   })
 })
 

@@ -5,7 +5,7 @@ import { getMultiRunIdentity, withMultiRunMembership } from './identity';
 const calls: string[] = [];
 let getSessionImpl: (id: string, directory?: string | null) => Promise<Session>;
 let getSessionMessagesImpl: (id: string, options?: { limit?: number }, directory?: string | null) => Promise<{
-  items: Array<{ info: { role: string }; parts: Array<{ type: string; text: string }> }>;
+  items: Array<{ info: { id: string; seq: number; role: string; time: { created: number } }; parts: Array<{ id: string; type: string; text: string }> }>;
 }>;
 
 mock.module('@/lib/opencode/client', () => ({
@@ -46,16 +46,19 @@ const reset = () => {
 test('fusion loads the selected session by ID and uses its current last assistant output', async () => {
   reset();
   getSessionImpl = async () => ({ ...session, title: 'renamed again' });
-  // v2 pages messages newest first.
+  // Creation sequence wins over IDs, timestamps, and incoming array order.
   getSessionMessagesImpl = async () => ({
     items: [
-      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'latest result' }] },
-      { info: { role: 'user' }, parts: [{ type: 'text', text: 'question' }] },
-      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'older' }] },
+      { info: { id: 'z', seq: 1, role: 'assistant', time: { created: 300 } }, parts: [{ id: 'old', type: 'text', text: 'older' }] },
+      { info: { id: 'a', seq: 3, role: 'assistant', time: { created: 100 } }, parts: [
+        { id: 'p_z', type: 'text', text: 'latest' },
+        { id: 'p_a', type: 'text', text: 'result' },
+      ] },
+      { info: { id: 'm', seq: 2, role: 'user', time: { created: 200 } }, parts: [{ id: 'question', type: 'text', text: 'question' }] },
     ],
   });
   const result = await loadFusionOutputs([source], source.identity, () => {});
-  expect(result.map((item) => item.text)).toEqual(['latest result']);
+  expect(result.map((item) => item.text)).toEqual(['latest\n\nresult']);
   expect(result[0].source.session.title).toBe('renamed again');
   expect(calls).toEqual(['session:run:/repo', 'messages:run:/repo']);
 });
