@@ -7,6 +7,8 @@ import { getRuntimeKey } from '@/lib/runtime-switch';
 import { useAutoReviewStore } from '@/stores/useAutoReviewStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useChatSessionSelection } from './chatColumnSession';
+import { stopSessionExecution } from '@/sync/session-actions';
+import { toast } from '@/components/ui';
 
 /**
  * A running review loop, as a top row of the composer next to the background
@@ -22,6 +24,7 @@ export const AutoReviewStrip = memo(() => {
   }, [currentSessionId]));
   const stopRun = useAutoReviewStore((state) => state.stopRun);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
+  const [stopping, setStopping] = React.useState(false);
 
   if (!currentSessionId || !run || run.status !== 'running') {
     return null;
@@ -38,6 +41,23 @@ export const AutoReviewStrip = memo(() => {
       label: t('chat.autoReview.reviewSessionLabel'),
       readOnly: true,
     });
+  };
+
+  const handleStop = async () => {
+    if (stopping) return;
+    setStopping(true);
+    stopRun(run.originalSessionID);
+    try {
+      await Promise.all([
+        stopSessionExecution(run.originalSessionID, run.directory),
+        stopSessionExecution(run.reviewSessionID, run.directory),
+      ]);
+    } catch (error) {
+      console.error('[auto-review] stop failed', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to stop auto review');
+    } finally {
+      setStopping(false);
+    }
   };
 
   return (
@@ -61,7 +81,8 @@ export const AutoReviewStrip = memo(() => {
         type="button"
         variant="ghost"
         size="sm"
-        onClick={() => stopRun(currentSessionId)}
+        disabled={stopping}
+        onClick={() => void handleStop()}
         onMouseDown={(event) => event.preventDefault()}
         className="shrink-0 text-status-error/80 hover:bg-transparent hover:text-status-error"
       >

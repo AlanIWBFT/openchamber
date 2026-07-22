@@ -69,7 +69,7 @@ type ProxyRuntimeDeps = {
   /** Resolves once no worktree holding the directory is being removed (gitService). */
   waitForWorktreeRemoval: (directory: string) => Promise<void>;
   /** Archive flags and stored metadata to fold onto session reads; optional for callers without owned state. */
-  sessionState?: Pick<SessionStateStore, 'readArchived' | 'readMetadata'>;
+  sessionState?: Pick<SessionStateStore, 'readMetadata'>;
   buildUnavailableApiResponse: () => ApiProxyResponsePayload;
   sanitizeForwardHeaders: (input: Record<string, string> | undefined) => Record<string, string>;
   collectHeaders: (headers: Headers) => Record<string, string>;
@@ -150,9 +150,8 @@ const performApiProxyFetch = async (
 
 /**
  * `GET /api/session` and `GET /api/session/:id` come back with OpenChamber's
- * own archive flag and metadata folded in, the same as the web proxy does, so
- * the shared UI keeps reading `time.archived` and `metadata` where it always
- * did. A file that cannot be read leaves the upstream record untouched.
+ * legacy metadata folded in. Archive state comes directly from OpenCode.
+ * A file that cannot be read leaves the upstream record untouched.
  */
 const overlayOwnedSessionState = async (
   method: string,
@@ -170,9 +169,9 @@ const overlayOwnedSessionState = async (
   if (!isSessionRecordPath(pathname)) return data;
   const body = parseJson(data.bodyText);
   if (body === null) return data;
-  const [archived, stored] = await Promise.all([sessionState.readArchived(), sessionState.readMetadata()]);
-  if (!archived && !stored) return data;
-  return { ...data, bodyText: JSON.stringify(overlaySessionResponseBody(body, archived, stored)) };
+  const stored = await sessionState.readMetadata();
+  if (!stored) return data;
+  return { ...data, bodyText: JSON.stringify(overlaySessionResponseBody(body, stored)) };
 };
 
 const RESOLVE_PROBE_BASE = 'http://opencode.invalid/';
