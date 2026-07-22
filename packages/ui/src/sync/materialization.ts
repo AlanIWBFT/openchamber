@@ -1,7 +1,14 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { mergeMessages } from "./optimistic"
 import type { SessionMaterializationReason } from "./event-reducer"
-import { sortMessagesChronologically } from "./message-ordering"
+import {
+  createMessageOrderState,
+  dropMessageOrder,
+  dropPartOrder,
+  sortMessages as sortOrderedMessages,
+  sortParts as sortOrderedParts,
+  type MessageOrderState,
+} from "./message-order"
 
 const STREAMING_PART_FIELDS = ["text", "output"] as const
 const ACTIVE_TOOL_STATUSES = new Set(["pending", "running"])
@@ -19,7 +26,9 @@ export type MaterializedState = {
 
 export type MaterializeSessionSnapshotsOptions = {
   skipPartTypes?: ReadonlySet<string>
-  mode?: "merge" | "prepend"
+  mode?: "recent" | "merge" | "prepend" | "complete"
+  recentBoundary?: number
+  order?: MessageOrderState
 }
 
 export type MaterializeSessionSnapshotsResult = {
@@ -41,12 +50,6 @@ export type SessionMaterializationRequest = {
   messageID?: string
   partID?: string
 }
-
-export const getSessionMaterializationRequestKey = (
-  runtimeKey: string,
-  directory: string,
-  sessionID: string,
-): string => JSON.stringify([runtimeKey, directory, sessionID])
 
 export function isSessionMaterializationStillNeeded(
   state: MaterializedState,
@@ -93,9 +96,8 @@ export function getStaleRunningToolMessageID(
   return undefined
 }
 
-function filterMaterializedParts(parts: Part[], skipPartTypes: ReadonlySet<string>): Part[] {
-  return parts
-    .filter((part) => !!part?.id && !skipPartTypes.has(part.type))
+function sortParts(parts: Part[], skipPartTypes: ReadonlySet<string>, order: MessageOrderState) {
+  return sortOrderedParts(parts.filter((part) => !!part?.id && !skipPartTypes.has(part.type)), order)
 }
 
 function haveEquivalentPartSnapshots(left: Part[] | undefined, right: Part[]): boolean {
@@ -157,20 +159,18 @@ function getPartStateTime(part: Part): { start?: number; end?: number } | undefi
 }
 
 function mergeMaterializedPart(existing: Part | undefined, next: Part): Part {
-  if (!existing) return next
-
-  if (existing.type === "tool" && next.type === "tool") {
+  if (existing?.type === "tool" && next.type === "tool") {
     const existingStatus = (existing as { state?: { status?: unknown } }).state?.status
     const nextStatus = (next as { state?: { status?: unknown } }).state?.status
     if (
       typeof existingStatus === "string"
       && FINAL_TOOL_STATUSES.has(existingStatus)
-      && typeof nextStatus === "string"
-      && ACTIVE_TOOL_STATUSES.has(nextStatus)
+      && (typeof nextStatus !== "string" || !FINAL_TOOL_STATUSES.has(nextStatus))
     ) {
       return existing
     }
   }
+  if (!existing) return next
 
   if (getPartEndTime(next) !== undefined) {
     const existingAttachments = getPartStateAttachments(existing)
@@ -228,6 +228,7 @@ function mergeMaterializedParts(
   nextParts: Part[],
   skipPartTypes: ReadonlySet<string>,
   preserveLiveStreamingParts: boolean,
+  order: MessageOrderState,
 ): Part[] {
   if (!existing || existing.length === 0) return nextParts
   if (!preserveLiveStreamingParts) return nextParts
@@ -251,7 +252,7 @@ function mergeMaterializedParts(
   )
   if (missingLiveParts.length === 0) return mergedParts
 
-  return [...mergedParts, ...missingLiveParts]
+  return sortOrderedParts([...mergedParts, ...missingLiveParts], order)
 }
 
 export function materializeSessionSnapshots(
@@ -260,22 +261,50 @@ export function materializeSessionSnapshots(
   records: MaterializedMessageRecord[],
   options: MaterializeSessionSnapshotsOptions = {},
 ): MaterializeSessionSnapshotsResult {
+  const order = options.order ?? createMessageOrderState()
   const skipPartTypes = options.skipPartTypes ?? new Set<string>()
-  const recordsByMessageID = new Map(
-    records
-      .filter((record) => !!record?.info?.id)
-      .map((record) => [record.info.id, record] as const),
-  )
-  const nextMessages = sortMessagesChronologically([...recordsByMessageID.values()].map((record) => record.info))
-  const snapshots = nextMessages.map((message) => recordsByMessageID.get(message.id)!)
+  const snapshots = records.filter((record) => !!record?.info?.id)
+  const nextMessages = sortOrderedMessages(snapshots.map((record) => record.info), order)
   const existingMessages = state.message[sessionID]
   const currentMessages = existingMessages ?? []
-  const messages = mergeMessages(currentMessages, nextMessages)
+  const isComplete = options.mode === "complete"
+  const isRecent = options.mode === "recent"
+  const recentBoundary = isRecent ? options.recentBoundary : undefined
+  const recentIDs = new Set(nextMessages.map((message) => message.id))
+  const retainedMessages = recentBoundary === undefined
+    ? currentMessages
+    : currentMessages.filter((message) => {
+      if (recentIDs.has(message.id)) return true
+      const seq = order.message.get(message.id)
+      return seq === undefined || seq < recentBoundary
+    })
+  const messages = isComplete
+    ? nextMessages
+    : mergeMessages(isRecent ? retainedMessages : currentMessages, nextMessages, order)
   const messagesChanged = messages !== currentMessages || (existingMessages === undefined && snapshots.length === 0)
 
   let partsChanged = false
   let nextPartState = state.part
   const isPrepend = options.mode === "prepend"
+  if (isComplete || isRecent) {
+    const snapshotIDs = new Set(nextMessages.map((message) => message.id))
+    for (const message of currentMessages) {
+      const seq = order.message.get(message.id)
+      const removedByRecent = isRecent
+        && recentBoundary !== undefined
+        && seq !== undefined
+        && seq >= recentBoundary
+        && !snapshotIDs.has(message.id)
+      if (!isComplete && !removedByRecent) continue
+      if (isComplete && snapshotIDs.has(message.id)) continue
+      const removedParts = nextPartState[message.id]
+      dropMessageOrder(order, message.id, removedParts)
+      if (Object.hasOwn(nextPartState, message.id)) {
+        delete nextPartState[message.id]
+        partsChanged = true
+      }
+    }
+  }
 
   for (const record of snapshots) {
     const messageID = record.info.id
@@ -285,10 +314,18 @@ export function materializeSessionSnapshots(
     const existing = nextPartState[messageID]
     const nextParts = mergeMaterializedParts(
       existing,
-      filterMaterializedParts(record.parts ?? [], skipPartTypes),
+      sortParts(record.parts ?? [], skipPartTypes, order),
       skipPartTypes,
       isAssistant,
+      order,
     )
+    if (!isPrepend && existing) {
+      const nextIDs = new Set(nextParts.map((part) => part.id))
+      for (const part of existing) {
+        if (nextIDs.has(part.id)) continue
+        dropPartOrder(order, part.id)
+      }
+    }
     // For non-assistant messages an empty snapshot keeps the old "absent"
     // representation; only assistant messages need the explicit [] marker
     // (getSessionMaterializationStatus checks only assistant messages).

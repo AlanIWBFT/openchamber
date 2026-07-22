@@ -1,4 +1,4 @@
-import { abortCurrentOperation, patchSessionMetadata } from '@/sync/session-actions';
+import { patchSessionMetadata, stopSessionExecution } from '@/sync/session-actions';
 import { distillGoalObjective } from '@/lib/smallModel';
 import { formatMessage, useI18nStore } from '@/lib/i18n';
 import { toast } from '@/components/ui';
@@ -152,12 +152,6 @@ export async function setSessionGoalStatus(
   directory: string | undefined,
   status: Extract<SessionGoalStatus, 'active' | 'paused' | 'complete'>,
 ): Promise<void> {
-  // Pausing a goal also stops the agent's current turn — same mental model
-  // as the stop button, expressed through goal control. A no-op when the
-  // session is already idle.
-  if (status === 'paused') {
-    void abortCurrentOperation(sessionId);
-  }
   await writeGoal(sessionId, directory, (currentGoal) => {
     if (!currentGoal) return null;
     return {
@@ -173,18 +167,18 @@ export async function setSessionGoalStatus(
       updatedAt: Date.now(),
     };
   });
+  // Persist the pause first so a metadata failure cannot leave an active goal
+  // that restarts after its current execution has been stopped.
+  if (status === 'paused') {
+    await stopSessionExecution(sessionId, { scope: 'session-tree' }, directory);
+  }
 }
 
 export async function clearSessionGoal(sessionId: string, directory: string | undefined): Promise<void> {
-  let wasActive = false;
-  await writeGoal(sessionId, directory, (currentGoal) => {
-    wasActive = currentGoal?.status === 'active';
-    return null;
-  });
+  await writeGoal(sessionId, directory, (currentGoal) => currentGoal
+    ? { ...currentGoal, status: 'paused', statusReason: '', updatedAt: Date.now() }
+    : null);
+  await stopSessionExecution(sessionId, { scope: 'session-tree' }, directory);
+  await writeGoal(sessionId, directory, () => null);
   deleteObjectiveFile(sessionId);
-  // Removing a running goal is a "stop" too — abort the current turn like
-  // pause does. A no-op when the session is idle.
-  if (wasActive) {
-    void abortCurrentOperation(sessionId);
-  }
 }

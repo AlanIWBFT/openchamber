@@ -57,7 +57,7 @@ import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedC
 import { useProviderLogo } from '@/hooks/useProviderLogo';
 import { getAgentColor } from '@/lib/agentColors';
 import { isCapacitorMobileApp } from '@/apps/mobileNativeChrome';
-import { getUnifiedExecMetadata, isExecProcessRunning, shouldHideExecFollowUp } from './unifiedExec';
+import { getExecProcessRunning, getUnifiedExecMetadata, shouldHideExecFollowUp } from './unifiedExec';
 
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const, transform: 'translateZ(0)' };
@@ -1343,26 +1343,27 @@ const AssistantMessageBody = React.memo(({
         return toolParts.some((toolPart) => {
             const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
             const status = state?.status;
+            const execRunning = getExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), status);
+            if (execRunning !== undefined) return execRunning;
             return status === 'pending'
                 || status === 'running'
                 || status === 'started'
-                || isExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), status);
         });
     }, [toolParts]);
 
     const isActiveTool = React.useCallback((toolPart: ToolPartType): boolean => {
         const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
         const status = state?.status;
+        const execRunning = getExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), status);
+        if (execRunning !== undefined) return execRunning;
         return status === 'pending'
             || status === 'running'
             || status === 'started'
-            || isExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), status);
     }, []);
 
     const isToolFinalized = React.useCallback((toolPart: ToolPartType) => {
-        if (isExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), toolPart.state?.status)) {
-            return false;
-        }
+        const execRunning = getExecProcessRunning(toolPart.tool, getUnifiedExecMetadata(toolPart), toolPart.state?.status);
+        if (execRunning !== undefined) return !execRunning;
         const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
         const status = state?.status;
         if (status === 'pending' || status === 'running' || status === 'started') {

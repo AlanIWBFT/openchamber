@@ -1,6 +1,6 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import type { State } from '@/sync/types';
-import { findMessageIndex } from '@/sync/message-ordering';
+import { selectRevertedMessages } from '@/sync/message-boundary';
 
 type RevertedMessageRecord = {
     message: Message & { role: 'user' };
@@ -50,14 +50,9 @@ export const buildRevertedMessageDockState = (
         return EMPTY_REVERTED_MESSAGE_DOCK_STATE;
     }
 
-    const messages = state.message[sessionId] ?? [];
-    const revertIndex = findMessageIndex(messages, revertMessageID);
-    if (revertIndex < 0) {
-        return EMPTY_REVERTED_MESSAGE_DOCK_STATE;
-    }
+    const messages = selectRevertedMessages(state.message[sessionId] ?? [], revertMessageID);
     const records: RevertedMessageRecord[] = [];
-    for (let index = revertIndex; index < messages.length; index += 1) {
-        const message = messages[index];
+    for (const message of messages) {
         if (!isUserMessage(message)) {
             continue;
         }

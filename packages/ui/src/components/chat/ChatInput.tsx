@@ -338,8 +338,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const pendingInputText = useInputStore((s) => s.pendingInputText);
     const consumePendingSyntheticParts = useInputStore((s) => s.consumePendingSyntheticParts);
     const acknowledgeSessionAbort = useSessionUIStore((s) => s.acknowledgeSessionAbort);
-    const abortCurrentOperation = React.useCallback(
-        (sessionIdOverride?: string) => sessionActions.abortCurrentOperation(sessionIdOverride ?? currentSessionId ?? ''),
+    const stopCurrentOperation = React.useCallback(
+        (sessionIdOverride?: string) => sessionActions.stopSessionExecution(sessionIdOverride ?? currentSessionId ?? ''),
         [currentSessionId],
     );
     const currentManagementSessionId = currentSessionId;
@@ -1169,13 +1169,23 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             // Commands that manipulate session state or open UI rather than
             // sending a message.
             if (commandName === 'undo' && currentSessionId) {
-                await useSessionUIStore.getState().handleSlashUndo(currentSessionId);
-                scrollToBottom?.();
+                try {
+                    await useSessionUIStore.getState().handleSlashUndo(currentSessionId);
+                    scrollToBottom?.();
+                } catch (error) {
+                    console.error('[chat-input] undo failed', error);
+                    toast.error(error instanceof Error ? error.message : 'Failed to revert message');
+                }
                 return;
             }
             if (commandName === 'redo' && currentSessionId) {
-                await useSessionUIStore.getState().handleSlashRedo(currentSessionId);
-                scrollToBottom?.();
+                try {
+                    await useSessionUIStore.getState().handleSlashRedo(currentSessionId);
+                    scrollToBottom?.();
+                } catch (error) {
+                    console.error('[chat-input] redo failed', error);
+                    toast.error(error instanceof Error ? error.message : 'Failed to restore message');
+                }
                 return;
             }
             if (commandName === 'timeline' && currentSessionId) {
@@ -1669,10 +1679,16 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const handleAbort = React.useCallback(() => {
         clearAbortPrompt();
-        startAbortIndicator();
-
-        void abortCurrentOperation(currentSessionId || undefined);
-    }, [abortCurrentOperation, clearAbortPrompt, currentSessionId, startAbortIndicator]);
+        const targetSessionId = currentSessionId || undefined;
+        void stopCurrentOperation(targetSessionId)
+            .then(() => {
+                if (useSessionUIStore.getState().currentSessionId === targetSessionId) startAbortIndicator();
+            })
+            .catch((error) => {
+                console.error('[chat-input] stop failed', error);
+                toast.error(error instanceof Error ? error.message : 'Failed to stop session');
+            });
+    }, [clearAbortPrompt, currentSessionId, startAbortIndicator, stopCurrentOperation]);
 
     const handleCycleAgent = React.useCallback((direction: 1 | -1 = 1) => {
         const nextAgentName = getCycledPrimaryAgentName(agents, currentAgentName, direction);

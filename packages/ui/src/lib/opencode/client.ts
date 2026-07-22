@@ -1,5 +1,5 @@
 import { createOpencodeClient, OpencodeClient } from "@opencode-ai/sdk/v2";
-import type { PermissionV2Request, PermissionV2Effect, PermissionV2Source } from "@opencode-ai/sdk/v2/client";
+import type { PermissionV2Request, PermissionV2Effect, PermissionV2Source, StoredMessageWithParts } from "@opencode-ai/sdk/v2/client";
 import type { FilesAPI } from "../api/types";
 import { getDesktopHomeDirectory } from "../desktop";
 import type {
@@ -602,7 +602,7 @@ class OpencodeService {
     return unwrapSdkData(response, 'session.update');
   }
 
-  async getSessionMessages(id: string, limit?: number): Promise<{ info: Message; parts: Part[] }[]> {
+  async getSessionMessages(id: string, limit?: number): Promise<StoredMessageWithParts[]> {
     const response = await this.client.session.messages({
       sessionID: id,
       ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),

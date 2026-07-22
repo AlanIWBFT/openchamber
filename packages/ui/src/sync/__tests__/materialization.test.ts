@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import {
-  getSessionMaterializationRequestKey,
   getSessionMaterializationStatus,
   getStaleRunningToolMessageID,
   isSessionMaterializationStillNeeded,
   materializeSessionSnapshots,
 } from "../materialization"
+import { createMessageOrderState } from "../message-order"
 
 function message(id: string, sessionID = "ses_1"): Message {
   return { id, sessionID, role: "assistant", time: { created: 1 } } as Message
@@ -20,19 +20,13 @@ function part(id: string, messageID: string, type = "text", text = id): Part {
   return { id, messageID, sessionID: "ses_1", type, text } as Part
 }
 
-describe("getSessionMaterializationRequestKey", () => {
-  test("isolates the same directory and session identity across runtimes", () => {
-    expect(getSessionMaterializationRequestKey("runtime-a", "/repo", "ses_1"))
-      .not.toBe(getSessionMaterializationRequestKey("runtime-b", "/repo", "ses_1"))
-  })
-})
-
 describe("materializeSessionSnapshots", () => {
   test("marks an empty successful page as materialized", () => {
     const result = materializeSessionSnapshots(
       { message: {}, part: {} },
       "ses_1",
       [],
+      { order: createMessageOrderState() },
     )
 
     expect(result.message.ses_1).toEqual([])
@@ -49,6 +43,7 @@ describe("materializeSessionSnapshots", () => {
       { message: {}, part: {} },
       "ses_1",
       [{ info: message("msg_1"), parts: [part("prt_1", "msg_1")] }],
+      { order: createMessageOrderState() },
     )
 
     expect(result.message.ses_1.map((item) => item.id)).toEqual(["msg_1"])
@@ -66,6 +61,7 @@ describe("materializeSessionSnapshots", () => {
       state,
       "ses_1",
       [{ info: existingMessage, parts: [existingPart] }],
+      { order: createMessageOrderState() },
     )
 
     expect(result.message).toBe(state.message)
@@ -79,7 +75,7 @@ describe("materializeSessionSnapshots", () => {
       { message: {}, part: {} },
       "ses_1",
       [{ info: message("msg_1"), parts: [part("prt_patch", "msg_1", "patch"), part("prt_text", "msg_1")] }],
-      { skipPartTypes: new Set(["patch"]) },
+      { skipPartTypes: new Set(["patch"]), order: createMessageOrderState() },
     )
 
     expect(result.part.msg_1.map((item) => item.id)).toEqual(["prt_text"])
@@ -97,6 +93,7 @@ describe("materializeSessionSnapshots", () => {
       state,
       "ses_1",
       [{ info: message("msg_1"), parts: [stalePart] }],
+      { order: createMessageOrderState() },
     )
 
     expect(result.part.msg_1[0]).toBe(livePart)
@@ -114,6 +111,7 @@ describe("materializeSessionSnapshots", () => {
       state,
       "ses_1",
       [{ info: message("msg_1"), parts: [] }],
+      { order: createMessageOrderState() },
     )
 
     expect(result.part.msg_1[0]).toBe(livePart)
@@ -131,6 +129,7 @@ describe("materializeSessionSnapshots", () => {
       state,
       "ses_1",
       [{ info: userMessage("msg_1"), parts: [serverPart] }],
+      { order: createMessageOrderState() },
     )
 
     expect(result.part.msg_1).toEqual([serverPart])
@@ -160,6 +159,7 @@ describe("materializeSessionSnapshots", () => {
       state,
       "ses_1",
       [{ info: message("msg_1"), parts: [snapshotPart] }],
+      { order: createMessageOrderState() },
     )
 
     const mergedPart = result.part.msg_1[0] as { state?: { time?: { start?: number; end?: number } } }
@@ -451,6 +451,183 @@ describe("materializeSessionSnapshots", () => {
 
     const mergedPart = result.part.msg_1[0] as { state?: { attachments?: Array<unknown> } }
     expect(mergedPart.state?.attachments).toEqual([])
+  })
+
+  test("preserves a final tool state over a stale running snapshot", () => {
+    const finalPart = {
+      id: "prt_1",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      state: { status: "completed", input: {}, output: "done", title: "read", metadata: {}, time: { start: 1, end: 2 } },
+    } as Part
+    const stalePart = {
+      ...finalPart,
+      state: { status: "running", input: {}, time: { start: 1 } },
+    } as Part
+
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [message("msg_1")] }, part: { msg_1: [finalPart] } },
+      "ses_1",
+      [{ info: message("msg_1"), parts: [stalePart] }],
+      { order: createMessageOrderState() },
+    )
+
+    expect(result.part.msg_1[0]).toBe(finalPart)
+  })
+
+  test("complete mode removes messages and parts omitted by the authoritative snapshot", () => {
+    const order = createMessageOrderState()
+    order.message.set("msg_old", 1)
+    order.message.set("msg_kept", 2)
+    order.part.set("prt_old", 1)
+    order.part.set("prt_kept", 2)
+    const kept = message("msg_kept")
+    const result = materializeSessionSnapshots(
+      {
+        message: { ses_1: [message("msg_old"), kept] },
+        part: {
+          msg_old: [part("prt_old", "msg_old")],
+          msg_kept: [part("prt_kept", "msg_kept")],
+        },
+      },
+      "ses_1",
+      [{ info: kept, parts: [part("prt_kept", "msg_kept")] }],
+      { order, mode: "complete" },
+    )
+
+    expect(result.message.ses_1.map((item) => item.id)).toEqual(["msg_kept"])
+    expect(result.part.msg_old).toBe(undefined)
+  })
+
+  test("recent mode removes stale recent messages but preserves older history", () => {
+    const order = createMessageOrderState()
+    order.message.set("msg_old", 1)
+    order.message.set("msg_stale", 2)
+    order.message.set("msg_latest", 3)
+    const latest = message("msg_latest")
+    const result = materializeSessionSnapshots(
+      {
+        message: { ses_1: [message("msg_old"), message("msg_stale"), latest] },
+        part: { msg_stale: [part("prt_stale", "msg_stale")] },
+      },
+      "ses_1",
+      [{ info: latest, parts: [] }],
+      { order, mode: "recent", recentBoundary: 3 },
+    )
+
+    expect(result.message.ses_1.map((item) => item.id)).toEqual(["msg_old", "msg_stale", "msg_latest"])
+
+    order.message.set("msg_boundary", 2)
+    const boundary = message("msg_boundary")
+    const refreshed = materializeSessionSnapshots(
+      {
+        message: result.message,
+        part: result.part,
+      },
+      "ses_1",
+      [{ info: boundary, parts: [] }, { info: latest, parts: [] }],
+      { order, mode: "recent", recentBoundary: 2 },
+    )
+    expect(refreshed.message.ses_1.map((item) => item.id)).toEqual(["msg_old", "msg_boundary", "msg_latest"])
+    expect(refreshed.part.msg_stale).toBe(undefined)
+    expect(order.message.has("msg_stale")).toBe(false)
+    expect(order.messageRevision.has("msg_stale")).toBe(false)
+    expect(order.messageSession.has("msg_stale")).toBe(false)
+  })
+
+  test("recent boundary ignores optimistic messages without a sequence", () => {
+    const order = createMessageOrderState()
+    order.message.set("msg_old", 1)
+    order.message.set("msg_boundary", 2)
+    order.message.set("msg_stale", 3)
+    order.message.set("msg_latest", 4)
+    const optimistic = userMessage("msg_optimistic")
+
+    const result = materializeSessionSnapshots(
+      {
+        message: { ses_1: [message("msg_old"), message("msg_boundary"), message("msg_stale"), message("msg_latest"), optimistic] },
+        part: {},
+      },
+      "ses_1",
+      [
+        { info: message("msg_boundary"), parts: [] },
+        { info: message("msg_latest"), parts: [] },
+        { info: optimistic, parts: [] },
+      ],
+      { order, mode: "recent", recentBoundary: 2 },
+    )
+
+    expect(result.messages.map((item) => item.id)).toEqual(["msg_old", "msg_boundary", "msg_latest", "msg_optimistic"])
+  })
+
+  test("recent boundary is not lowered by a concurrently retained message", () => {
+    const order = createMessageOrderState()
+    order.message.set("msg_old", 1)
+    order.message.set("msg_stale", 5)
+    order.message.set("msg_boundary", 6)
+    order.message.set("msg_latest", 7)
+    order.message.set("msg_concurrent", 2)
+
+    const result = materializeSessionSnapshots(
+      {
+        message: { ses_1: [message("msg_old"), message("msg_concurrent"), message("msg_stale"), message("msg_boundary"), message("msg_latest")] },
+        part: {},
+      },
+      "ses_1",
+      [
+        { info: message("msg_concurrent"), parts: [] },
+        { info: message("msg_boundary"), parts: [] },
+        { info: message("msg_latest"), parts: [] },
+      ],
+      { order, mode: "recent", recentBoundary: 6 },
+    )
+
+    expect(result.messages.map((item) => item.id)).toEqual(["msg_old", "msg_concurrent", "msg_stale", "msg_boundary", "msg_latest"])
+  })
+
+  test("prepend does not overwrite parts for an overlapping cached message", () => {
+    const order = createMessageOrderState()
+    order.message.set("msg_old", 1)
+    order.message.set("msg_overlap", 2)
+    order.part.set("prt_old", 1)
+    order.part.set("prt_live", 2)
+    const livePart = part("prt_live", "msg_overlap", "text", "live")
+
+    const result = materializeSessionSnapshots(
+      {
+        message: { ses_1: [message("msg_overlap")] },
+        part: { msg_overlap: [livePart] },
+      },
+      "ses_1",
+      [
+        { info: message("msg_old"), parts: [part("prt_old", "msg_old")] },
+        { info: message("msg_overlap"), parts: [part("prt_live", "msg_overlap", "text", "stale")] },
+      ],
+      { order, mode: "prepend" },
+    )
+
+    expect(result.messages.map((item) => item.id)).toEqual(["msg_old", "msg_overlap"])
+    expect(result.part.msg_overlap).toEqual([livePart])
+  })
+
+  test("complete empty snapshot clears cached messages and parts", () => {
+    const order = createMessageOrderState()
+    order.message.set("msg_old", 1)
+    order.part.set("prt_old", 1)
+
+    const result = materializeSessionSnapshots(
+      {
+        message: { ses_1: [message("msg_old")] },
+        part: { msg_old: [part("prt_old", "msg_old")] },
+      },
+      "ses_1",
+      [],
+      { order, mode: "complete" },
+    )
+
+    expect(result.messages).toEqual([])
+    expect(result.part.msg_old).toBe(undefined)
   })
 })
 
