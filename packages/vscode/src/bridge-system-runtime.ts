@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import { getProviderSources, getStoredProviderConfig, readConfig, upsertProviderConfig } from './opencodeConfig';
 import { getProviderAuth } from './opencodeAuth';
 import { OpenCode } from '@opencode/client';
-import { asSessionId, asSessionIdList, asSessionMetadata, asTimestamp, parseJson, type JsonValue, type SessionArchiveOnOpenCode, type SessionMetadataOnOpenCode, type SessionStateStore } from './openchamberSessionState';
+import { asSessionId, asSessionIdList, asSessionMetadata, parseJson, type JsonValue, type SessionArchiveOnOpenCode, type SessionMetadataOnOpenCode, type SessionStateStore } from './openchamberSessionState';
 import type { OpenCodeManager } from './opencode';
 import { activateQuotaGiftReset, fetchQuotaForProvider, listConfiguredQuotaProviders, type QuotaGiftResetType } from './quotaProviders';
 import { credentialStatus, deleteCredential, importCursorCredential, normalizeCredential, readCredential, validateCredential, writeCredential, type ManagedProvider } from './quotaCredentials';
@@ -39,11 +39,15 @@ const openCodeClientFor = (manager: OpenCodeManager | undefined, directory?: str
   return OpenCode.make({ baseUrl: apiUrl.replace(/\/+$/, ''), headers });
 };
 
-/** Archive state on the OpenCode instance this window manages. */
+/** ID-scoped archive writes use the backend's confirmed timestamp. */
 const sessionArchiveOnOpenCode = (manager: OpenCodeManager | undefined): SessionArchiveOnOpenCode => {
   const client = openCodeClientFor(manager);
   return {
-    setArchived: (sessionID, archived) => client.session.update({ sessionID, archived }),
+    setArchived: async (sessionID, archived) => {
+      await client.session.update({ sessionID, archived });
+      const session = await client.session.get({ sessionID });
+      return session.time.archived ?? null;
+    },
   };
 };
 
@@ -392,16 +396,14 @@ export async function handleSystemBridgeMessage(
       }
     }
 
-    // Archive state goes to OpenCode, with the archive file for sessions whose
-    // directory is gone; metadata is merge-patched onto OpenCode's record (see
-    // openchamberSessionState.ts). The proxy runtime folds the files back onto
-    // session reads.
+    // Archive state and persistent-command cleanup belong to OpenCode.
+    // Metadata keeps its existing merge-patch and legacy migration behavior.
     case 'api:sessions/archive': {
-      const { ids, archivedAt } = (payload || {}) as { ids?: JsonValue; archivedAt?: JsonValue };
+      const { ids } = (payload || {}) as { ids?: JsonValue };
       const targets = asSessionIdList(ids);
       if (targets.length === 0) return { id, type, success: false, error: 'ids must be a non-empty array of session ids' };
       try {
-        return { id, type, success: true, data: await deps.sessionState.archive(targets, asTimestamp(archivedAt), sessionArchiveOnOpenCode(ctx?.manager)) };
+        return { id, type, success: true, data: await deps.sessionState.archive(targets, sessionArchiveOnOpenCode(ctx?.manager)) };
       } catch (error) {
         return { id, type, success: false, error: error instanceof Error ? error.message : String(error) };
       }

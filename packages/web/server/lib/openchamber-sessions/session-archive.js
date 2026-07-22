@@ -6,18 +6,17 @@
  * that PATCH writes the record without building the session's location, so it
  * also works for a session whose directory is gone and starts no MCP servers.
  *
- * `archive-store.js` holds entries written before OpenCode could take them:
- * before 2.1, and for sessions of deleted directories before 2.2. An entry
- * wins over OpenCode's record (the proxy folds it in) until it leaves the
- * file: `migrateLegacy` pushes the entries to OpenCode at start, and the
- * user's own archive or restore of a session drops its entry.
+ * Deleted directories keep their original identity. The backend
+ * owns timestamps and persistent-command cleanup; reads never overlay a file.
+ * `archive-store.js` is only a migration source. Failed pushes retain entries
+ * for the next startup; successful user writes retire their legacy entry too.
  *
  * One operation per session at a time: a migration push decided from an old
  * entry cannot land after the user's own archive or unarchive of that session.
  */
 
 /** PATCHes in flight at once; one batch is a worktree's sessions or a sweep. */
-const CONCURRENCY = 6;
+const CONCURRENCY = 4;
 
 const errorTag = (error) => error?._tag;
 
@@ -43,28 +42,30 @@ const mapLimited = async (items, limit, work) => {
  * @param {object} options
  * @param {(directory?: string) => any} options.clientFor
  */
-export const createOpenCodeSessionArchive = ({ clientFor }) => ({
-  setArchived: (sessionID, archived) => clientFor().session.update({ sessionID, archived }),
-  readArchivedAt: async (sessionID) => {
+export const createOpenCodeSessionArchive = ({ clientFor }) => {
+  const readSession = async (sessionID) => {
     try {
-      const session = await clientFor().session.get({ sessionID });
-      return session.time?.archived ?? null;
+      return await clientFor().session.get({ sessionID });
     } catch (error) {
       if (errorTag(error) === 'SessionNotFoundError') return undefined;
       throw error;
     }
-  },
-});
+  };
+  return {
+    setArchived: (sessionID, archived) => clientFor().session.update({ sessionID, archived }),
+    readArchivedAt: async (sessionID) => {
+      const session = await readSession(sessionID);
+      return session ? session.time?.archived ?? null : undefined;
+    },
+  };
+};
 
 /**
  * @param {object} options
  * @param {ReturnType<typeof import('./archive-store.js').createArchiveStore>} options.store
  * @param {ReturnType<typeof createOpenCodeSessionArchive>} options.openCode
- * @param {(sessionID: string, archivedAt: number | null) => void} [options.announce]
- *   Tells clients a session's state when OpenCode may not: it announces only
- *   changes of its own record.
  */
-export const createSessionArchive = ({ store, openCode, announce = () => {} }) => {
+export const createSessionArchive = ({ store, openCode }) => {
   const sessionChains = new Map();
   const runForSession = (id, work) => {
     const previous = sessionChains.get(id) ?? Promise.resolve();
@@ -77,84 +78,67 @@ export const createSessionArchive = ({ store, openCode, announce = () => {} }) =
     return next;
   };
 
-  /** `'opencode'`, `'unknown-session'` or `'failed'` for one push. */
-  const pushToOpenCode = async (id, archived) => {
+  const warnFailure = (action, id, error) => {
+    if (errorTag(error) === 'SessionNotFoundError') return;
+    console.warn(`[openchamber-sessions] could not ${action} ${id}:`, error?.message ?? error);
+  };
+
+  // Unknown state stays a failure so background work cannot treat a failed
+  // read as permission to resume or deliver a result.
+  const archivedAt = async (sessionID) => {
+    const value = await openCode.readArchivedAt(sessionID);
+    if (value === undefined) throw new Error(`Session ${sessionID} was not found`);
+    return value;
+  };
+
+  const applyBatch = (ids, archived) => mapLimited(ids, CONCURRENCY, (id) => runForSession(id, async () => {
     try {
       await openCode.setArchived(id, archived);
-      return 'opencode';
+      const stamp = await archivedAt(id);
+      if ((stamp !== null) !== archived) throw new Error('Archive state changed before confirmation');
+      const { failedIds } = await store.forget([id]);
+      if (failedIds.length) throw new Error('Could not retire the legacy archive entry');
+      return { id, archivedAt: stamp };
     } catch (error) {
-      if (errorTag(error) === 'SessionNotFoundError') return 'unknown-session';
-      console.warn(`[openchamber-sessions] could not ${archived ? 'archive' : 'unarchive'} ${id}:`, error?.message ?? error);
-      return 'failed';
-    }
-  };
-
-  /**
-   * Sets one session's state on OpenCode and drops its file entry. True when
-   * both hold. Clients hear the state whenever the file changed, since
-   * OpenCode stays silent when its own record already matched.
-   */
-  const apply = (id, archivedAt) => runForSession(id, async () => {
-    if (await pushToOpenCode(id, archivedAt !== null) !== 'opencode') return false;
-    const hadEntry = (await store.entry(id)) !== undefined;
-    const { failedIds } = await store.forget([id]);
-    if (failedIds.length > 0) return false;
-    if (hadEntry) announce(id, archivedAt);
-    return true;
-  });
-
-  const applyBatch = async (ids, archivedAt) => {
-    const held = await mapLimited(ids, CONCURRENCY, (id) => apply(id, archivedAt));
-    return {
-      applied: ids.filter((_, index) => held[index]),
-      failedIds: ids.filter((_, index) => !held[index]),
-    };
-  };
-
-  /**
-   * Whether a session is archived: the file's entry when it has one, else
-   * OpenCode's record. A session OpenCode cannot be asked about counts as
-   * active, the same answer as for one nobody archived.
-   */
-  const archivedAt = async (sessionID) => {
-    const entry = await store.entry(sessionID);
-    if (entry !== undefined) return entry;
-    try {
-      return (await openCode.readArchivedAt(sessionID)) ?? null;
-    } catch (error) {
-      console.warn(`[openchamber-sessions] could not read the archive state of ${sessionID}:`, error?.message ?? error);
+      warnFailure(archived ? 'archive' : 'unarchive', id, error);
       return null;
     }
-  };
+  }));
 
   /**
-   * Pushes one legacy entry. It leaves the file when OpenCode took it or no
-   * longer knows the session; a failed push keeps it for the next start.
+   * Pushes legacy flags through the same per-session chain as user writes.
+   * Successful pushes (or confirmed missing sessions) retire their entry.
+   * Failed writes keep the source and are retried on the next startup.
    */
-  const migrateEntry = (id) => runForSession(id, async () => {
-    // Read again inside the chain: the user may have changed it meanwhile.
-    const entry = await store.entry(id);
-    if (entry === undefined) return;
-    if (await pushToOpenCode(id, entry !== null) === 'failed') return;
-    await store.forget([id]);
-  });
-
-  /** Pushes the file's entries to OpenCode. Resolves the number left for the next start. */
   const migrateLegacy = async () => {
     const pending = Object.keys(await store.getAll());
     if (pending.length === 0) return 0;
-    await mapLimited(pending, CONCURRENCY, migrateEntry);
+    await mapLimited(pending, CONCURRENCY, (id) => runForSession(id, async () => {
+      const entry = await store.entry(id);
+      if (entry === undefined) return;
+      try {
+        await openCode.setArchived(id, entry !== null);
+      } catch (error) {
+        if (errorTag(error) !== 'SessionNotFoundError') {
+          warnFailure('migrate archive state for', id, error);
+          return;
+        }
+      }
+      const { failedIds } = await store.forget([id]);
+      if (failedIds.length) warnFailure('retire legacy archive state for', id, new Error('Archive file write failed'));
+    }));
+
     return Object.keys(await store.getAll()).length;
   };
 
   return {
-    archive: async (ids, stamp) => {
-      const { applied, failedIds } = await applyBatch(ids, stamp);
-      return { archived: applied.map((id) => ({ id, archivedAt: stamp })), failedIds };
+    archive: async (ids) => {
+      const results = await applyBatch(ids, true);
+      return { archived: results.filter(Boolean), failedIds: ids.filter((_, index) => results[index] === null) };
     },
     unarchive: async (ids) => {
-      const { applied, failedIds } = await applyBatch(ids, null);
-      return { restored: applied.map((id) => ({ id, archivedAt: null })), failedIds };
+      const results = await applyBatch(ids, false);
+      return { restored: results.filter(Boolean), failedIds: ids.filter((_, index) => results[index] === null) };
     },
     archivedAt,
     isArchived: async (sessionID) => typeof (await archivedAt(sessionID)) === 'number',
