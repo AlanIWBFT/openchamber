@@ -56,6 +56,8 @@ export type State = {
   sessionEventRevision?: Record<string, number>
   sessionDeletedRevision?: Record<string, number>
   session_status: Record<string, SessionStatus>
+  session_status_ready: boolean
+  session_status_fallback_until: number
   session_diff: Record<string, FileDiff[]>
   todo: Record<string, Todo[]>
   permission: Record<string, PermissionRequest[]>
@@ -125,6 +127,7 @@ export const MAX_DIR_STORES = 30
 export const EVICTION_GRACE_MS = 30 * 1000
 export const DIR_IDLE_TTL_MS = 20 * 60 * 1000
 export const SESSION_CACHE_LIMIT = 40
+export const SESSION_STATUS_FALLBACK_TTL_MS = 15_000
 
 export const INITIAL_STATE: State = {
   project: "",
@@ -143,6 +146,8 @@ export const INITIAL_STATE: State = {
   sessionEventRevision: {},
   sessionDeletedRevision: {},
   session_status: {},
+  session_status_ready: false,
+  session_status_fallback_until: 0,
   session_diff: {},
   todo: {},
   permission: {},

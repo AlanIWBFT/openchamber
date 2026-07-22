@@ -41,6 +41,7 @@ import {
 } from '@/lib/addSelectionToChat';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { hasOpenDropdown, isEditableEventTarget, shouldStopDropdownImeEscape } from './keyboard-shortcut-dom';
+import { toast } from '@/components/ui';
 
 const dropdownTargetSelector = [
   '[data-slot="dropdown-menu-content"]', '[data-slot="select-content"]', '[role="combobox"]',
@@ -53,12 +54,14 @@ export const useKeyboardShortcuts = () => {
   const armAbortPrompt = useSessionUIStore((s) => s.armAbortPrompt);
   const clearAbortPrompt = useSessionUIStore((s) => s.clearAbortPrompt);
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
+  const stopCurrentOperation = sessionActions.stopSessionExecution;
   const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
   const effectiveDirectory = useEffectiveDirectory();
   const activeProject = useProjectsStore((s) => s.getActiveProject());
   const { themeMode, setThemeMode } = useThemeSystem();
   const { phase: sessionPhase } = useCurrentSessionActivity();
   const abortPrimedUntilRef = React.useRef<number | null>(null);
+  const abortPrimedSessionIdRef = React.useRef<string | null>(null);
   const abortPrimedTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const themeModeRef = React.useRef(themeMode);
   const dispatcherRef = React.useRef<ShortcutDispatcher | null>(null);
@@ -97,8 +100,15 @@ export const useKeyboardShortcuts = () => {
       abortPrimedTimeoutRef.current = null;
     }
     abortPrimedUntilRef.current = null;
+    abortPrimedSessionIdRef.current = null;
     clearAbortPrompt();
   }, [clearAbortPrompt]);
+
+  React.useEffect(() => {
+    if (abortPrimedSessionIdRef.current && abortPrimedSessionIdRef.current !== currentSessionId) {
+      resetAbortPriming();
+    }
+  }, [currentSessionId, resetAbortPriming]);
 
   const toggleTerminalSurface = () => {
     if (!currentDirectory) return;
@@ -306,7 +316,10 @@ export const useKeyboardShortcuts = () => {
     },
     abort_run: () => {
       if (sessionPhase === 'idle' || !currentSessionId) return false;
-      void sessionActions.abortCurrentOperation(currentSessionId);
+      void stopCurrentOperation(currentSessionId).catch((error) => {
+        console.error('[keyboard-shortcuts] stop failed', error);
+        toast.error(error instanceof Error ? error.message : 'Failed to stop session');
+      });
     },
   });
 
@@ -435,7 +448,11 @@ export const useKeyboardShortcuts = () => {
         return;
       }
       const now = Date.now();
-      if (abortPrimedUntilRef.current && now < abortPrimedUntilRef.current) {
+      if (
+        abortPrimedUntilRef.current
+        && abortPrimedSessionIdRef.current === currentSessionId
+        && now < abortPrimedUntilRef.current
+      ) {
         resetAbortPriming();
         if (invokeRegistered('abort_run', event)) event.preventDefault();
         return;
@@ -443,6 +460,7 @@ export const useKeyboardShortcuts = () => {
       event.preventDefault();
       const expiresAt = armAbortPrompt(3000) ?? now + 3000;
       abortPrimedUntilRef.current = expiresAt;
+      abortPrimedSessionIdRef.current = currentSessionId;
       if (abortPrimedTimeoutRef.current) clearTimeout(abortPrimedTimeoutRef.current);
       abortPrimedTimeoutRef.current = setTimeout(() => {
         if (abortPrimedUntilRef.current && Date.now() >= abortPrimedUntilRef.current) {
@@ -564,7 +582,7 @@ export const useKeyboardShortcuts = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [armAbortPrompt, currentSessionId, dispatcher, effectiveDirectory, resetAbortPriming, selectionToolbarDispatcher, sessionPhase]);
+  }, [armAbortPrompt, currentSessionId, dispatcher, effectiveDirectory, resetAbortPriming, selectionToolbarDispatcher, sessionPhase, stopCurrentOperation]);
 
   React.useEffect(() => () => resetAbortPriming(), [resetAbortPriming]);
 };
