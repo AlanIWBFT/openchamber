@@ -151,6 +151,17 @@ describe("translateWireEvent", () => {
       type: "message.parts.replaced",
       properties: { messageID: "msg_u", parts: [{ id: partIds.userText("msg_u"), type: "text", text: "hi" }] },
     })
+    const delivered = translateWireEvent({
+      ...base,
+      created: 900,
+      type: "session.inbox.delivered",
+      durable: { ...durable, seq: 9 },
+      data: { sessionID: "ses_1", inboxID: "msg_u" },
+    })
+    expect(delivered).toEqual([{
+      type: "message.patched",
+      properties: { sessionID: "ses_1", messageID: "msg_u", patch: { seq: 9, time: { created: 900 } } },
+    }])
   })
 
   test("a synthetic item entering the inbox is pending until it is delivered", () => {
@@ -188,7 +199,7 @@ describe("translateWireEvent", () => {
     const ended = translateWireEvent({
       ...base,
       type: "session.step.ended",
-      durable,
+      durable: { ...durable, seq: 10 },
       data: {
         sessionID: "ses_1",
         assistantMessageID: "msg_a",
@@ -388,6 +399,7 @@ describe("translateWireEvent", () => {
             id: "msg_1",
             sessionID: "ses_1",
             role: "skill",
+            seq: 1,
             time: { created: 1000 },
             skill: "skill_1",
             name: "research",

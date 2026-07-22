@@ -87,19 +87,22 @@ describe('buildRevertedMessageDockState', () => {
         expect(second.records).toHaveLength(1);
     });
 
-    test('collects a post-rollover reverted tail by marker position', () => {
-        const before = message('msg_ffffffffffffBefore', 'user');
-        const marker = message('msg_000000000000Marker', 'user');
-        const after = message('msg_000000000001After', 'user');
-
-        const snapshot = buildRevertedMessageDockState(
+    test('uses timeline position when message IDs are inverse ordered', () => {
+        const before = message('user_z', 'user');
+        const reverted = message('user_a', 'user');
+        const result = buildRevertedMessageDockState(
             state({
-                session: [{ id: 'ses_1', revert: { messageID: marker.id } } as State['session'][number]],
-                message: { ses_1: [before, marker, after] },
+                session: [{
+                    id: 'ses_1', projectID: 'project-1', directory: '/test/project', title: 'Test', cost: 0,
+                    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+                    time: { created: 1, updated: 1 }, revert: { messageID: 'user_a' },
+                }],
+                message: { ses_1: [before, reverted] },
+                part: { user_a: [textPart('part_user_a', 'reverted')] },
             }),
             'ses_1',
         );
 
-        expect(snapshot.records.map((record) => record.message.id)).toEqual([marker.id, after.id]);
+        expect(result.records.map((record) => record.message.id)).toEqual(['user_a']);
     });
 });

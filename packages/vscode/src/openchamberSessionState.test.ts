@@ -89,22 +89,35 @@ describe('openchamber session state store', () => {
       setArchived: async (sessionID, archived) => {
         calls.push([sessionID, archived]);
         if (refused.includes(sessionID)) throw Object.assign(new Error('missing'), { name: 'SessionNotFoundError' });
+        return archived ? 1700 : null;
       },
     };
     return { openCode, calls };
   };
 
-  it('archives and restores on OpenCode, reports what it refused, and writes no file', async () => {
+  it('uses backend timestamps and never writes a runtime archive overlay', async () => {
+    const memory = createMemoryFs();
+    const store = createSessionStateStore({ dataDir: '/data', fsPromises: memory.fsPromises, now: () => 1000 });
+    const fake = fakeArchive();
+
+    assert.deepEqual(await store.archive(['ses_wt', 'ses_orphan'], fake.openCode), {
+      archived: [{ id: 'ses_wt', archivedAt: 1700 }, { id: 'ses_orphan', archivedAt: 1700 }],
+      failedIds: [],
+    });
+    assert.deepEqual(await store.unarchive(['ses_orphan'], fake.openCode), { restored: [{ id: 'ses_orphan', archivedAt: null }], failedIds: [] });
+    assert.deepEqual(memory.writes, []);
+  });
+
+  it('keeps successful siblings when the backend refuses one session', async () => {
     const memory = createMemoryFs();
     const store = createSessionStateStore({ dataDir: '/data', fsPromises: memory.fsPromises, now: () => 1000 });
     const { openCode, calls } = fakeArchive({ refused: ['ses_missing'] });
 
-    assert.deepEqual(await store.archive(['ses_a', 'ses_missing', 'ses_a'], null, openCode), {
-      archived: [{ id: 'ses_a', archivedAt: 1000 }],
+    assert.deepEqual(await store.archive(['ses_a', 'ses_gone', 'ses_missing', 'ses_a'], openCode), {
+      archived: [{ id: 'ses_a', archivedAt: 1700 }, { id: 'ses_gone', archivedAt: 1700 }],
       failedIds: ['ses_missing'],
     });
-    assert.deepEqual(await store.unarchive(['ses_a'], openCode), { restored: [{ id: 'ses_a', archivedAt: null }], failedIds: [] });
-    assert.deepEqual(calls, [['ses_a', true], ['ses_missing', true], ['ses_a', false]]);
+    assert.deepEqual(calls, [['ses_a', true], ['ses_gone', true], ['ses_missing', true]]);
     assert.deepEqual(memory.writes, []);
   });
 
@@ -114,23 +127,23 @@ describe('openchamber session state store', () => {
     const { openCode } = fakeArchive();
 
     await store.unarchive(['ses_a'], openCode);
-    assert.deepEqual(await store.readArchived(), { ses_c: 2000 });
+    assert.equal(memory.files.get(dataFile('sessions-archive.json')), JSON.stringify({ ses_c: 2000 }));
     const writes = memory.writes.length;
-    await store.archive(['ses_b'], null, openCode);
+    await store.archive(['ses_b'], openCode);
     assert.equal(memory.writes.length, writes);
   });
 
-  it('keeps OpenCode changes when the archive file cannot be read', async () => {
+  it('reports failure when it cannot retire legacy state after the backend write', async () => {
     const memory = createMemoryFs();
     memory.fsPromises.readFile = async () => { throw new Error('EACCES'); };
     const store = createSessionStateStore({ dataDir: '/data', fsPromises: memory.fsPromises, now: () => 1000 });
-    const { openCode } = fakeArchive({ refused: ['ses_down'] });
+    const { openCode } = fakeArchive();
     const warn = console.warn;
     console.warn = () => undefined;
     try {
-      assert.deepEqual(await store.archive(['ses_a', 'ses_down'], null, openCode), {
-        archived: [{ id: 'ses_a', archivedAt: 1000 }],
-        failedIds: ['ses_down'],
+      assert.deepEqual(await store.archive(['ses_a', 'ses_gone'], openCode), {
+        archived: [],
+        failedIds: ['ses_a', 'ses_gone'],
       });
     } finally {
       console.warn = warn;
@@ -142,7 +155,7 @@ describe('openchamber session state store', () => {
     const memory = createMemoryFs({ [dataFile('sessions-archive.json')]: '{not json' });
     const store = createSessionStateStore({ dataDir: '/data', fsPromises: memory.fsPromises, now: () => 5 });
 
-    assert.deepEqual(await store.readArchived(), {});
+    await store.unarchive(['ses_a'], fakeArchive().openCode);
     assert.equal(memory.files.get(dataFile('sessions-archive.json.corrupt-5')), '{not json');
   });
 
@@ -188,10 +201,9 @@ describe('mergeMetadataPatch', () => {
 });
 
 describe('overlaySessionResponseBody', () => {
-  const archived = { ses_a: 1234 };
   const stored = { ses_a: { openchamber: { pinned: true } } };
 
-  it('folds archive time and stored metadata onto list and detail envelopes', () => {
+  it('preserves backend archive facts while overlaying legacy metadata', () => {
     const list: JsonValue = {
       data: [
         { id: 'ses_a', time: { created: 1 }, metadata: { seed: 1 } },
@@ -200,17 +212,15 @@ describe('overlaySessionResponseBody', () => {
       ],
       cursor: {},
     };
-    assert.deepEqual(overlaySessionResponseBody(list, { ...archived, ses_b: null }, stored), {
+    assert.deepEqual(overlaySessionResponseBody(list, stored), {
       data: [
-        { id: 'ses_a', time: { created: 1, archived: 1234 }, metadata: { seed: 1, openchamber: { pinned: true } } },
-        // An explicit unarchive drops the stamp OpenCode still carries.
-        { id: 'ses_b', time: { created: 2 } },
-        // A session the file does not mention keeps what OpenCode says (migrated v1 archive).
+        { id: 'ses_a', time: { created: 1 }, metadata: { seed: 1, openchamber: { pinned: true } } },
+        { id: 'ses_b', time: { created: 2, archived: 99 } },
         { id: 'ses_c', time: { created: 3, archived: 77 } },
       ],
       cursor: {},
     });
-    assert.deepEqual(overlaySessionResponseBody({ data: { id: 'ses_a', time: {} } }, archived, null), {
+    assert.deepEqual(overlaySessionResponseBody({ data: { id: 'ses_a', time: { archived: 1234 } } }, null), {
       data: { id: 'ses_a', time: { archived: 1234 } },
     });
   });
@@ -222,7 +232,7 @@ describe('overlaySessionResponseBody', () => {
         { id: 'ses_new', time: { created: 1, idle: 900, viewed: 50 } },
       ],
     };
-    assert.deepEqual(overlaySessionResponseBody(list, null, null, 500), {
+    assert.deepEqual(overlaySessionResponseBody(list, null, 500), {
       data: [
         { id: 'ses_old', time: { created: 1, idle: 100, viewed: 100 } },
         { id: 'ses_new', time: { created: 1, idle: 900, viewed: 50 } },
@@ -233,7 +243,7 @@ describe('overlaySessionResponseBody', () => {
   it('leaves the body alone when nothing is known', () => {
     const body = { data: [{ id: 'ses_a', time: { archived: 7 } }] };
     assert.equal(overlaySessionResponseBody(body, null, null), body);
-    assert.equal(overlaySessionResponseBody('not json', archived, stored), 'not json');
+    assert.equal(overlaySessionResponseBody('not json', stored), 'not json');
   });
 
   it('matches only the list and single-record session paths', () => {

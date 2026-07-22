@@ -44,9 +44,9 @@ export type LaneLastTurn = {
 /** The lane's latest reply text and the error its newest step recorded. */
 export async function loadLaneLastTurn(sessionId: string, directory: string): Promise<LaneLastTurn> {
   const page = await opencodeClient.getSessionMessages(sessionId, { limit: 50 }, directory);
-  // v2 pages messages newest first, so the first assistant record is the last reply.
+  // Creation sequence is authoritative even when a page arrives out of order.
   let error: string | null = null;
-  for (const record of page.items) {
+  for (const record of [...page.items].sort((a, b) => b.info.seq - a.info.seq)) {
     if (record.info.role !== 'assistant') continue;
     if (error === null && record.info.error) error = structuredErrorText(record.info.error).trim() || null;
     const text = flattenAssistantTextParts(record.parts).trim();

@@ -53,6 +53,7 @@ import { getNextFavoriteModel } from '@/lib/modelRefs';
 import { dispatchPromptHistorySearch } from '@/components/chat/composer/state/promptHistorySearchRoute';
 import { isLinuxPlatform } from '@/lib/platform';
 import { canUseDigitShortcut, hasActiveBtwComposer, hasOpenDropdown, isEditableEventTarget, shouldStopDropdownImeEscape } from './keyboard-shortcut-dom';
+import { toast } from '@/components/ui';
 
 const dropdownTargetSelector = [
   '[data-slot="dropdown-menu-content"]', '[data-slot="select-content"]', '[role="combobox"]',
@@ -77,6 +78,7 @@ export const useKeyboardShortcuts = () => {
   const armAbortPrompt = useSessionUIStore((s) => s.armAbortPrompt);
   const clearAbortPrompt = useSessionUIStore((s) => s.clearAbortPrompt);
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
+  const stopCurrentOperation = sessionActions.stopSessionExecution;
   const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
   const effectiveDirectory = useEffectiveDirectory();
   const activeProject = useProjectsStore((s) => s.getActiveProject());
@@ -128,6 +130,12 @@ export const useKeyboardShortcuts = () => {
     abortPrimedSessionRef.current = null;
     clearAbortPrompt();
   }, [clearAbortPrompt]);
+
+  React.useEffect(() => {
+    if (abortPrimedSessionRef.current && abortPrimedSessionRef.current !== currentSessionId) {
+      resetAbortPriming();
+    }
+  }, [currentSessionId, resetAbortPriming]);
 
   const toggleTerminalSurface = () => {
     if (!currentDirectory) return;
@@ -331,7 +339,10 @@ export const useKeyboardShortcuts = () => {
     },
     abort_run: () => {
       if (sessionPhase === 'idle' || !currentSessionId) return false;
-      void sessionActions.abortCurrentOperation(currentSessionId);
+      void stopCurrentOperation(currentSessionId).catch((error) => {
+        console.error('[keyboard-shortcuts] stop failed', error);
+        toast.error(error instanceof Error ? error.message : 'Failed to stop session');
+      });
     },
   });
 
@@ -667,7 +678,7 @@ export const useKeyboardShortcuts = () => {
       window.removeEventListener('keydown', handleAbortEscapeKeyDown);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [armAbortPrompt, currentSessionId, dispatcher, effectiveDirectory, inputRedirect, resetAbortPriming, selectionToolbarDispatcher, sessionPhase]);
+  }, [armAbortPrompt, currentSessionId, dispatcher, effectiveDirectory, inputRedirect, resetAbortPriming, selectionToolbarDispatcher, sessionPhase, stopCurrentOperation]);
 
   React.useEffect(() => () => resetAbortPriming(), [resetAbortPriming]);
 };
