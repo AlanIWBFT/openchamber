@@ -11,10 +11,12 @@ import React from 'react';
 import type { Part } from '@opencode-ai/sdk/v2/client';
 
 import { Icon } from '@/components/icon/Icon';
+import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
 import { isSyntheticPart } from '@/lib/messages/synthetic';
 import { cn } from '@/lib/utils';
+import { nextUserMessage } from '@/sync/message-boundary';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useDirectorySync } from '@/sync/sync-context';
 import {
@@ -93,13 +95,15 @@ export const RevertedMessageDock: React.FC<RevertedMessageDockProps> = React.mem
         if (!sessionId || restoringId) return;
         setRestoringId(messageId);
         try {
-            const messageIndex = userMessages.findIndex((message) => message.id === messageId);
-            const nextMessage = messageIndex >= 0 ? userMessages[messageIndex + 1] : undefined;
+            const nextMessage = nextUserMessage(userMessages, messageId);
             if (nextMessage) {
                 await revertToMessage(sessionId, nextMessage.id, { skipRedoPush: true });
             } else {
                 await handleSlashRedo(sessionId, { fullUnrevert: true });
             }
+        } catch (error) {
+            console.error('[reverted-message-dock] restore failed', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to restore message');
         } finally {
             setRestoringId(null);
         }
