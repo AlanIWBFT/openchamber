@@ -680,7 +680,6 @@ export const createOpenChamberSessionService = (dependencies: SessionServiceDepe
     waitForOpenCodeReady,
     emitSessionCreatedEvent,
     broadcastGlobalUiEvent,
-    onSessionArchived = null,
     createSessionGoal: createSessionGoalOverride,
     sessionKnowledgeRuntime = null,
     worktreeBootstrapStore,
@@ -731,17 +730,9 @@ export const createOpenChamberSessionService = (dependencies: SessionServiceDepe
     directory,
   });
 
-  const broadcastArchived = (sessionID: string, archivedAt: number | null) => {
-    broadcastGlobalUiEvent?.({
-      type: 'openchamber:session-archived',
-      properties: { sessionID, archivedAt },
-    });
-    onSessionArchived?.(sessionID, archivedAt);
-  };
   const sessionArchive = createSessionArchive({
     store: archiveStore,
     openCode: injectedOpenCodeArchive || createOpenCodeSessionArchive({ clientFor }),
-    announce: broadcastArchived,
   });
 
   const resolveStartDirectory = createStartDirectoryResolver({ resolveWorktreeTopLevel, validateWorktreeDirectory });
@@ -1170,7 +1161,8 @@ export const createOpenChamberSessionService = (dependencies: SessionServiceDepe
     if (!parsed.ok) {
       throw new OpenChamberControlError(parsed.error, 400);
     }
-    return sessionArchive.archive(parsed.ids, parsed.archivedAt);
+    if (typeof waitForOpenCodeReady === 'function') await waitForOpenCodeReady(10_000, 250);
+    return sessionArchive.archive(parsed.ids);
   };
 
   const unarchive = async (payload: SessionPayload = {}) => {
@@ -1178,6 +1170,7 @@ export const createOpenChamberSessionService = (dependencies: SessionServiceDepe
     if (!parsed.ok) {
       throw new OpenChamberControlError(parsed.error, 400);
     }
+    if (typeof waitForOpenCodeReady === 'function') await waitForOpenCodeReady(10_000, 250);
     return sessionArchive.unarchive(parsed.ids);
   };
 

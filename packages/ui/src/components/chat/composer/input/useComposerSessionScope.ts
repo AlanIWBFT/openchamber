@@ -210,8 +210,8 @@ export function useComposerSessionScope({
 
     const acknowledgeSessionAbort = useSessionUIStore((s) => s.acknowledgeSessionAbort);
 
-    const abortCurrentOperation = React.useCallback(
-        (sessionIdOverride?: string) => sessionActions.abortCurrentOperation(sessionIdOverride ?? currentSessionId ?? ''),
+    const stopCurrentOperation = React.useCallback(
+        (sessionIdOverride?: string) => sessionActions.stopSessionExecution(sessionIdOverride ?? currentSessionId ?? ''),
         [currentSessionId],
     );
 
@@ -233,7 +233,7 @@ export function useComposerSessionScope({
         consumePendingBtwComposerRequest, btwDirectory, btwPanel, sendHeldByMissingFolderRef,
         consumePendingSyntheticParts, projectActionsRef, clearAttachedFiles, sendHeldByMissingFolder,
         setReviewDialogOpen, isPromotedBtwSession, sessionFolder, pendingPresetSubmit, pendingDraftSubmit,
-        clearAbortPrompt, abortCurrentOperation, pickSessionAgent, addAttachedFile, setPendingInputText,
+        clearAbortPrompt, stopCurrentOperation, pickSessionAgent, addAttachedFile, setPendingInputText,
         pendingGuestIssue, consumePendingGuestIssue, pendingComposerReferenceCount, setNewSessionDraftTarget,
         hasPendingForm, trustPausedDirectory, currentManagementSessionId, draftPermissionMode,
         setDraftPermissionMode, abortPromptSessionId, acknowledgeSessionAbort, claimAttachmentSlot,

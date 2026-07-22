@@ -2,7 +2,7 @@ import { hasMessage, hasTag } from './contracts.js';
 import type { createArchiveStore } from './archive-store.js';
 import type { SessionClient } from './opencode-client-contract.js';
 
-const CONCURRENCY = 6;
+const CONCURRENCY = 4;
 
 const isArchiveTimestamp = (value: unknown): value is number => typeof value === 'number';
 
@@ -48,10 +48,9 @@ export const createOpenCodeSessionArchive = ({ clientFor }: { clientFor: () => S
 interface SessionArchiveOptions {
   store: ReturnType<typeof createArchiveStore>;
   openCode: OpenCodeSessionArchive;
-  announce?: (sessionID: string, archivedAt: number | null) => void;
 }
 
-export const createSessionArchive = ({ store, openCode, announce = () => {} }: SessionArchiveOptions) => {
+export const createSessionArchive = ({ store, openCode }: SessionArchiveOptions) => {
   const sessionChains = new Map<string, Promise<void>>();
   const runForSession = <Result>(id: string, work: () => Promise<Result>) => {
     const previous = sessionChains.get(id) ?? Promise.resolve();
@@ -75,38 +74,31 @@ export const createSessionArchive = ({ store, openCode, announce = () => {} }: S
     }
   };
 
-  const apply = (id: string, archivedAt: number | null) => runForSession(id, async () => {
-    if (await pushToOpenCode(id, archivedAt !== null) !== 'opencode') return false;
-    const hadEntry = (await store.entry(id)) !== undefined;
-    const { failedIds } = await store.forget([id]);
-    if (failedIds.length > 0) return false;
-    if (hadEntry) announce(id, archivedAt);
-    return true;
-  });
-
-  const applyBatch = async (ids: string[], archivedAt: number | null) => {
-    const held = await mapLimited(ids, CONCURRENCY, (id) => apply(id, archivedAt));
-    return {
-      applied: ids.filter((_, index) => held[index]),
-      failedIds: ids.filter((_, index) => !held[index]),
-    };
+  const archivedAt = async (sessionID: string) => {
+    const at = await openCode.readArchivedAt(sessionID);
+    if (at === undefined) throw new Error(`Session ${sessionID} was not found`);
+    return at;
   };
 
-  const archivedAt = async (sessionID: string) => {
-    const entry = await store.entry(sessionID);
-    if (entry !== undefined) return entry;
-    try {
-      return (await openCode.readArchivedAt(sessionID)) ?? null;
-    } catch (error) {
-      console.warn(`[openchamber-sessions] could not read the archive state of ${sessionID}:`, (hasMessage(error) ? error.message : undefined) ?? error);
-      return null;
-    }
+  const applyBatch = async (ids: string[], archived: boolean) => {
+    const result = await mapLimited(ids, CONCURRENCY, id => runForSession(id, async () => {
+      if (await pushToOpenCode(id, archived) !== 'opencode') return undefined;
+      try {
+        const at = await archivedAt(id);
+        if ((at !== null) !== archived) throw new Error('Archive state changed before confirmation');
+        return (await store.forget([id])).failedIds.length ? undefined : at;
+      } catch (error) {
+        console.warn(`[openchamber-sessions] could not confirm archive state for ${id}:`, error);
+        return undefined;
+      }
+    }));
+    return { result, failedIds: ids.filter((_, index) => result[index] === undefined) };
   };
 
   const archiveState = async (sessionID: string, { signal }: ArchiveReadOptions = {}) => {
     try {
-      const entry = await store.entry(sessionID);
-      const at = entry !== undefined ? entry : await openCode.readArchivedAt(sessionID, { signal });
+      const at = await openCode.readArchivedAt(sessionID, { signal });
+      if (at === undefined) return 'missing';
       return Number.isFinite(at) ? 'archived' : 'active';
     } catch {
       return 'unknown';
@@ -128,13 +120,13 @@ export const createSessionArchive = ({ store, openCode, announce = () => {} }: S
   };
 
   return {
-    archive: async (ids: string[], stamp: number) => {
-      const { applied, failedIds } = await applyBatch(ids, stamp);
-      return { archived: applied.map((id) => ({ id, archivedAt: stamp })), failedIds };
+    archive: async (ids: string[]) => {
+      const { result, failedIds } = await applyBatch(ids, true);
+      return { archived: ids.flatMap((id, i) => isArchiveTimestamp(result[i]) ? [{ id, archivedAt: result[i] }] : []), failedIds };
     },
     unarchive: async (ids: string[]) => {
-      const { applied, failedIds } = await applyBatch(ids, null);
-      return { restored: applied.map((id) => ({ id, archivedAt: null })), failedIds };
+      const { result, failedIds } = await applyBatch(ids, false);
+      return { restored: ids.flatMap((id, i) => result[i] === null ? [{ id, archivedAt: null }] : []), failedIds };
     },
     archivedAt,
     isArchived: async (sessionID: string) => isArchiveTimestamp(await archivedAt(sessionID)),

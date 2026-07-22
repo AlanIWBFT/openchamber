@@ -89,7 +89,7 @@ const createTracked = (read = async () => ({ status: 'ok', pulls: [pull()] })) =
   };
 };
 
-const createRuntime = async ({ dataDir, openCode = createOpenCode(), cleanupOnMerge = false, archived = false } = {}) => {
+const createRuntime = async ({ dataDir, openCode = createOpenCode(), cleanupOnMerge = false, archived = false, readArchived = async () => archived } = {}) => {
   let eventHandler = () => {};
   const broadcasts = [];
   const signal = createSignal();
@@ -99,7 +99,7 @@ const createRuntime = async ({ dataDir, openCode = createOpenCode(), cleanupOnMe
     broadcastUiEvent: (event) => { broadcasts.push(event); signal.notify(); },
     dataDir: dataDir ?? await makeDataDir(),
     readCleanupOnMerge: async () => cleanupOnMerge,
-    isSessionArchived: async () => archived,
+    isSessionArchived: readArchived,
     fetchImpl: openCode.fetchImpl,
     quietMs: 0,
     retryDelayMs: () => 5,
@@ -183,6 +183,26 @@ describe('registerPrWatchRoutes', () => {
 });
 
 describe('createPrWatchRuntime', () => {
+  it.each([false, true])('retains a wake through unreadable archive state, then handles archived=%s with a busy child', async (archived) => {
+    let state;
+    const readArchived = vi.fn(async () => {
+      if (state === undefined) throw new Error('archive unavailable');
+      return state;
+    });
+    const { runtime, openCode } = await createRuntime({ readArchived });
+    const { tracked, readers, move } = createTracked();
+    runtime.attach({ trackedItems: tracked, readers });
+    openCode.state.active = { ses_child: { type: 'busy' } };
+    await runtime.watch({ sessionID: SESSION, directory: DIRECTORY, url: URL_7 });
+    move(pull({ checks: { state: 'failure' } }));
+    expect(await until(() => readArchived.mock.calls.length >= 9)).toBe(true);
+    expect(openCode.state.admitted).toEqual([]);
+    expect(runtime.snapshot().watches[0].status).toBe('waking');
+    state = archived;
+    expect(await until(() => runtime.snapshot().watches.length === 0)).toBe(true);
+    expect(openCode.state.admitted).toHaveLength(archived ? 0 : 1);
+    expect(openCode.fetchImpl.mock.calls.some(([url]) => new URL(url).pathname === '/api/session')).toBe(false);
+  });
   it('follows the pull request and wakes the session once when it changes', async () => {
     const { tracked, readers, move } = createTracked();
     const { runtime, openCode, broadcasts, until } = await createRuntime();

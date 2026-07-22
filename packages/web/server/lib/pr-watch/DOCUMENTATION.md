@@ -93,7 +93,7 @@ A wake ends its watch: the item leaves the interest, and the agent calls
 session's own turn is over (a user may be talking to the agent), checked
 against OpenCode (`/api/session/active`, `../opencode/session-activity.js`);
 the session's next idle event re-arms it. An archived session is not woken,
-its watches end.
+its watches end. If the archive state cannot be read, the watch remains pending and checks again after backoff, even if the session's children are still running.
 
 A session's wakes are admitted one at a time: an attempt that comes up while
 another is in flight runs once that one is over, after the quiet delay

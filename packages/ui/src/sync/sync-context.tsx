@@ -65,7 +65,7 @@ import { type EventRoutingIndex, createEventRoutingIndex, ingestDirectoryStateIn
 import { type DirectoryReadBackoff, recordWatchdogReadFailure, CHILD_SESSION_DISCOVERY_RETRY_MS, ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS, ACTIVE_SESSION_STATUS_POLL_MAX_BACKOFF_MS, CHILD_SESSION_DISCOVERY_WAIT_MS, ACTIVE_SESSION_STALE_EVENT_MS, ACTIVE_SESSION_STATUS_POLL_HEALTHY_INTERVAL_MS, shouldTriggerStaleResync, ACTIVE_SESSION_WATCHDOG_INTERVAL_MS, ACTIVE_SESSION_FULL_RESYNC_COOLDOWN_MS } from "./sync-watchdog-policy"
 import { listSessionPage } from "./session-page-listing"
 import { enqueueSessionMaterialization } from "./session-materialization-recovery"
-import { statusPollingDirectories, resyncDirectorySessionStatuses, needsSnapshotAfterStatusPoll, getActiveSessionCandidateIds, getLiveSessionCandidateIds } from "./session-status-recovery"
+import { beginSessionStatusRequest, statusPollingDirectories, resyncDirectorySessionStatuses, needsSnapshotAfterStatusPoll, getActiveSessionCandidateIds, getLiveSessionCandidateIds } from "./session-status-recovery"
 import { isDirectoryExternallyViewed, isSessionCacheViewed } from "./viewed-sessions"
 import { resyncDirectoryAfterReconnect, reconcileActivityAfterGap } from "./session-reconnect-recovery"
 import { resyncBlockingRequestsForActiveDirectory } from "./blocking-request-recovery"
@@ -379,6 +379,7 @@ export function SyncProvider(props: {
               projects: globalState.projects,
               path: globalState.path,
             },
+            beginSessionStatusRequest: () => beginSessionStatusRequest(store),
             loadSessions: async (dir) => {
               if (!isCurrent()) return
               const baselineRevision = store.getState().sessionRevision ?? 0
@@ -777,7 +778,7 @@ export function SyncProvider(props: {
             if (isSpaceDirectoryStopped(directory)) continue
             const state = store.getState()
             const candidateSessionIds = getActiveSessionCandidateIds(directory, state)
-            if (candidateSessionIds.length === 0) {
+            if (candidateSessionIds.length === 0 && state.sessionStatusReady) {
               lastStatusPollAtByDirectoryRef.current.delete(directory)
               statusPollBackoff.delete(directory)
               lastFullResyncAtByDirectoryRef.current.delete(directory)
@@ -800,6 +801,7 @@ export function SyncProvider(props: {
               void pollDirectoryStatuses(directory, store, liveSessionIds).catch(() => undefined)
             }
 
+            if (!candidateSessionIds.length) continue
             const lastFullResyncAt = lastFullResyncAtByDirectoryRef.current.get(directory) ?? 0
             if (now >= (staleResyncBackoff.get(directory)?.retryAt ?? 0)
               && shouldTriggerStaleResync(lastStreamActivityAtRef.current, lastFullResyncAt, now)) {
@@ -948,7 +950,7 @@ export function SyncProvider(props: {
 
 export { useSyncRuntime } from "./sync-runtime-context"
 export { useAllSessionStatuses, useAllLiveSessions, useLiveSessionsExcluding, useSessions, useSessionStartTimes, useParentSession, useSession, useSessionSelector, useSessionDirectory } from "./live-session-hooks"
-export { MESSAGE_COMPLETION_STATUS_POLL_DELAY_MS, applySessionStatusSnapshot, maybePollStatusAfterMessageCompletion, needsSnapshotAfterStatusPoll } from "./session-status-recovery"
+export { createSessionStatusRequestCoordinator, MESSAGE_COMPLETION_STATUS_POLL_DELAY_MS, applySessionStatusSnapshot, maybePollStatusAfterMessageCompletion, needsSnapshotAfterStatusPoll } from "./session-status-recovery"
 export { setActiveSession, setExternallyViewedSession } from "./viewed-sessions"
 export { shouldTriggerStaleResync } from "./sync-watchdog-policy"
 export { createEventRoutingIndex } from "./event-routing-index"

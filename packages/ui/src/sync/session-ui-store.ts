@@ -2150,10 +2150,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   },
 
   revertToMessage: async (sessionId, messageId) => {
-    await revertToMessageAction(sessionId, messageId, { refresh: true })
+    await revertToMessageAction(sessionId, messageId)
   },
 
   handleSlashUndo: async (sessionId) => {
+    await refetchSessionMessages(sessionId, true)
     const messages = getSyncMessages(sessionId)
     const sessions = getSyncSessions()
     const currentSession = sessions.find((s) => s.id === sessionId)
@@ -2192,7 +2193,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const revertToId = currentSession?.revert?.messageID
     if (!revertToId) return
 
-    await refetchSessionMessages(sessionId)
+    await refetchSessionMessages(sessionId, true)
     const messages = getSyncMessages(sessionId)
     const userMessages = messages.filter((m) => m.role === "user")
     const revertIndex = revertedUserMessageIndex(messages, userMessages, revertToId)

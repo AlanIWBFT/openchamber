@@ -29,7 +29,6 @@ export interface SessionAssistOptions {
   getTargets?: () => AssistTargets;
   quietMs?: number;
   persistSessionAssist?: ((sessionId: string, directory: string | undefined, assist: SessionAssist | null) => void) | null;
-  isSessionArchived?: (sessionId: string) => Promise<boolean>;
   evaluateTurn?: ((input: TurnEndInput) => Promise<AssistTargets | null>) | null;
   lineage?: Pick<ReturnType<typeof createSessionLineage>, 'remember' | 'isChild'> | null;
   onPendingChange?: (change: { sessionId: string; directory: string | undefined; pending: boolean }) => void;
@@ -162,7 +161,6 @@ export const createSessionAssistRuntime = ({
   getTargets = getSessionAssistTargets,
   quietMs = IDLE_QUIET_MS,
   persistSessionAssist = null,
-  isSessionArchived = async () => false,
   evaluateTurn = null,
   lineage = null,
   onPendingChange = () => {},
@@ -240,7 +238,7 @@ export const createSessionAssistRuntime = ({
     checkCurrent();
     if (session?.id === sessionId) lineage?.remember(sessionId, sessionParentId(session));
     if (session?.id !== sessionId || sessionParentId(session) || session.revert?.messageID) return;
-    if (await isSessionArchived(sessionId)) return;
+    if (session.time?.archived) return;
     const context = await loadAssistContext({
       signal,
       readPage: ({ limit, cursor }: { limit: number; cursor: string | undefined }) => client.message.list(
@@ -297,8 +295,7 @@ export const createSessionAssistRuntime = ({
     const freshSession = await client.session.get({ sessionID: sessionId }, requestOptions());
     checkCurrent();
     if (freshSession?.id !== sessionId || freshSession.revert?.messageID || freshSession.location?.directory !== session.location?.directory) return;
-    if (await isSessionArchived(sessionId)) return;
-    checkCurrent();
+    if (freshSession.time?.archived) return;
     const enabled = getTargets();
     if (!enabled.recap || !allowed.recap) recap = '';
     if (!enabled.suggestion || !allowed.suggestion) suggestion = '';

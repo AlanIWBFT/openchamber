@@ -507,8 +507,9 @@ export function createPrWatchRuntime({
     if (!isCurrent(watch)) return undefined;
     if (!statuses) return retry(watch, 'OpenCode could not be asked');
     if (statuses[sessionID]) return undefined;
-    const archived = await Promise.resolve(isSessionArchived(sessionID)).catch(() => false) === true;
+    const archived = await Promise.resolve().then(() => isSessionArchived(sessionID)).catch(() => undefined);
     if (!isCurrent(watch)) return undefined;
+    if (archived !== true && archived !== false) return arm(sessionID, retryDelayMs(MAX_DELIVERY_FAILURES));
     if (archived) return drop(...watchesOf(sessionID));
     if (!watch.wake.messageID) {
       watch.wake.messageID = createMessageId(now());

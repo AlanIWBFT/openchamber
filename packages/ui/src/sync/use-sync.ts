@@ -1,4 +1,6 @@
 import { useCallback, useMemo } from "react"
+import type { StoreApi } from "zustand"
+import type { DirectoryStore } from "./child-store"
 import type { Message, Part } from "@/lib/opencode/model"
 import { opencodeClient } from "@/lib/opencode/client"
 import { Binary } from "./binary"
@@ -31,9 +33,35 @@ const sessionReadDirectorySources: SessionReadDirectorySources = {
   adopt: adoptSessionMove,
 }
 
-const syncSessionInflightByKey = new Map<string, Promise<void>>()
+// Shared across useSync() hook instances for the same live store. Weak store
+// ownership prevents a disposed directory's request from blocking a replacement
+// store created for the same directory and session.
+type SyncSessionInflight = {
+  promise: Promise<void>
+  isCurrent: () => boolean
+}
 
-const syncSessionGenerationByKey = new Map<string, number>()
+const syncSessionInflightByStore = new WeakMap<StoreApi<DirectoryStore>, Map<string, SyncSessionInflight>>()
+
+// Per-store request tokens make older syncSession calls stale without retaining
+// directory/session string keys after their store is disposed.
+const syncSessionTokenByStore = new WeakMap<StoreApi<DirectoryStore>, Map<string, symbol>>()
+
+function getSyncSessionTokens(store: StoreApi<DirectoryStore>): Map<string, symbol> {
+  const existing = syncSessionTokenByStore.get(store)
+  if (existing) return existing
+  const created = new Map<string, symbol>()
+  syncSessionTokenByStore.set(store, created)
+  return created
+}
+
+function getSyncSessionInflight(store: StoreApi<DirectoryStore>): Map<string, SyncSessionInflight> {
+  const existing = syncSessionInflightByStore.get(store)
+  if (existing) return existing
+  const created = new Map<string, SyncSessionInflight>()
+  syncSessionInflightByStore.set(store, created)
+  return created
+}
 
 const isUserMessage = (message: Message): boolean => message.role === "user"
 
@@ -83,12 +111,6 @@ export function useSync() {
     },
     [childStores, directory, runtimeKey],
   )
-
-  const keyFor = useCallback(
-    (sessionID: string, directoryOverride = directory) => `${runtimeKey}\n${directoryOverride}\n${sessionID}`,
-    [directory, runtimeKey],
-  )
-
   const syncSession = useCallback(
     async (sessionID: string, force?: boolean, directoryOverride?: string) => {
       if (getRuntimeKey() !== runtimeKey) return
@@ -97,19 +119,26 @@ export function useSync() {
       const targetDirectory = await resolveSessionReadDirectory(sessionID, selectedDirectory, captureRuntimeInstance(), sessionReadDirectorySources)
       if (!targetDirectory) return
       touch(sessionID, targetDirectory)
-      const key = keyFor(sessionID, targetDirectory)
-
-      const existing = syncSessionInflightByKey.get(key)
-      if (existing) return existing
-
-      const generation = (syncSessionGenerationByKey.get(key) ?? 0) + 1
-      syncSessionGenerationByKey.set(key, generation)
-
       const targetStore = targetDirectory === directory
         ? store
         : childStores.ensureChild(targetDirectory, { bootstrap: false })
+      const inflight = getSyncSessionInflight(targetStore)
+      // Dedup inflight requests
+      const existing = inflight.get(sessionID)
+      if (existing?.isCurrent()) return existing.promise
+
+      // This is a new request. Replace the token so any older request that
+      // might still be finishing cannot write to this store.
+      const syncTokens = getSyncSessionTokens(targetStore)
+      const token = Symbol(sessionID)
+      const sdk = opencodeClient.getSdkClient()
+      const target = { directory: targetDirectory, sessionID }
+      const generation = messageLoader.getSnapshot(target).generation
+      syncTokens.set(sessionID, token)
       const isStale = () => getRuntimeKey() !== runtimeKey
-        || syncSessionGenerationByKey.get(key) !== generation
+        || opencodeClient.getSdkClient() !== sdk
+        || messageLoader.getSnapshot(target).generation !== generation
+        || syncTokens.get(sessionID) !== token
         || childStores.children.get(targetDirectory) !== targetStore
       const current = targetStore.getState()
       const materialization = getSessionMaterializationStatus(current, sessionID, {
@@ -157,19 +186,16 @@ export function useSync() {
         ])
       })()
 
-      syncSessionInflightByKey.set(key, promise)
-      const clearInflightRequest = () => {
-        if (syncSessionInflightByKey.get(key) === promise) {
-          syncSessionInflightByKey.delete(key)
-          if (syncSessionGenerationByKey.get(key) === generation) {
-            syncSessionGenerationByKey.delete(key)
-          }
+      const entry = { promise, isCurrent: () => !isStale() }
+      inflight.set(sessionID, entry)
+      promise.finally(() => {
+        if (inflight.get(sessionID) === entry) {
+          inflight.delete(sessionID)
         }
-      }
-      void promise.then(clearInflightRequest, clearInflightRequest)
+      })
       return promise
     },
-    [childStores, directory, keyFor, messageLoader, runtimeKey, store, touch],
+    [childStores, directory, messageLoader, runtimeKey, store, touch],
   )
 
   const loadMore = useCallback(

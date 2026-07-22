@@ -47,7 +47,6 @@ export interface OpenCodeProxyDependencies {
   WORKTREE_READY_TIMEOUT_MS?: number;
   waitForWorktreeRemovalToSettle?: typeof waitForWorktreeRemoval;
   WORKTREE_REMOVAL_HOLD_MS?: number;
-  getArchivedSessions?: (() => Promise<Record<string, number | null>>) | null;
   getStoredSessionMetadata?: (() => Promise<Record<string, SessionMetadata>>) | null;
   getUnreadBaseline?: (() => Promise<number | null>) | null;
   mergeSpaceSessionList?: (<Payload>(payload: Payload) => Promise<ReturnType<typeof mergeSessionLists<Payload>>>) | null;
@@ -429,7 +428,6 @@ export const registerOpenCodeProxy = (app: Application, deps: OpenCodeProxyDepen
     WORKTREE_READY_TIMEOUT_MS = 5 * 60 * 1000,
     waitForWorktreeRemovalToSettle = waitForWorktreeRemoval,
     WORKTREE_REMOVAL_HOLD_MS = 60 * 1000,
-    getArchivedSessions = null,
     getStoredSessionMetadata = null,
     getUnreadBaseline = null,
     mergeSpaceSessionList = null,
@@ -438,17 +436,6 @@ export const registerOpenCodeProxy = (app: Application, deps: OpenCodeProxyDepen
     openCodeTrust = null,
     mcpOAuthSignIn = null,
   } = deps;
-
-  const readArchivedSessions = async () => {
-    if (!getArchivedSessions) return null;
-    try {
-      const archived = await getArchivedSessions();
-      return isObject(archived) ? archived : null;
-    } catch (error) {
-      console.warn('[proxy] archive state unavailable:', optionalErrorFields(error)?.message ?? error);
-      return null;
-    }
-  };
 
   const readStoredSessionMetadata = async () => {
     if (!getStoredSessionMetadata) return null;
@@ -480,24 +467,22 @@ export const registerOpenCodeProxy = (app: Application, deps: OpenCodeProxyDepen
   };
 
   type OwnedState = Awaited<ReturnType<typeof readOwnedState>>;
-  const overlaySession = <Session>(session: Session, { archived, stored, unreadSince }: OwnedState) => {
+  const overlaySession = <Session>(session: Session, { stored, unreadSince }: OwnedState) => {
     let result: Session | UnreadBaselineOverlay = session;
-    if (archived) result = applyOwnedArchiveState(result, archived);
     if (stored) result = withStoredMetadata(result, stored);
     if (unreadSince !== null) result = withUnreadBaseline(result, unreadSince);
     return result;
   };
 
   const readOwnedState = async () => {
-    const [archived, stored, unreadSince] = await Promise.all([
-      readArchivedSessions(),
+    const [stored, unreadSince] = await Promise.all([
       readStoredSessionMetadata(),
       readUnreadBaseline(),
     ]);
-    return { archived, stored, unreadSince };
+    return { stored, unreadSince };
   };
 
-  const hasOwnedState = ({ archived, stored, unreadSince }: OwnedState) => Boolean(archived || stored || unreadSince !== null);
+  const hasOwnedState = ({ stored, unreadSince }: OwnedState) => Boolean(stored || unreadSince !== null);
 
   const overlayOwnedStateOnList = async <Payload>(payload: Payload) => {
     const records = sessionListRecords(payload);
@@ -1138,8 +1123,7 @@ export const registerOpenCodeProxy = (app: Application, deps: OpenCodeProxyDepen
 
   app.get('/api/session/:sessionID', async function forwardSessionGetRequest(req, res, next) {
     if (
-      !getArchivedSessions
-      && !getStoredSessionMetadata
+      !getStoredSessionMetadata
       && !getUnreadBaseline
     ) return next();
     try {

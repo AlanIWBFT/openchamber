@@ -62,6 +62,7 @@ const collectProxyResponseHeaders = (headers: Headers, deps: Pick<ProxyRuntimeDe
   return result;
 };
 
+// OpenCode 2.x has one event stream, `GET /api/event`.
 const isSseProxyPath = (requestPath: string): boolean => {
   try {
     return new URL(requestPath, 'https://openchamber.invalid').pathname === '/api/event';
@@ -72,8 +73,11 @@ const isSseProxyPath = (requestPath: string): boolean => {
 
 type ProxyRuntimeDeps = {
   tryHandleLocalFsProxy: (method: string, requestPath: string) => Promise<ApiProxyResponsePayload | null>;
+  /** Resolves once no worktree holding the directory is being removed (gitService). */
   waitForWorktreeRemoval: (directory: string) => Promise<void>;
-  sessionState?: Pick<SessionStateStore, 'readArchived' | 'readMetadata' | 'readUnreadBaseline'>;
+  /** Legacy metadata and unread baseline; archive facts come from OpenCode. */
+  sessionState?: Pick<SessionStateStore, 'readMetadata' | 'readUnreadBaseline'>;
+  /** The folder trust check shared with the web server; absent opens every folder. */
   openCodeTrust?: OpenCodeTrust;
   buildUnavailableApiResponse: () => ApiProxyResponsePayload;
   sanitizeForwardHeaders: (input: Record<string, string> | undefined) => Record<string, string>;
@@ -83,9 +87,34 @@ type ProxyRuntimeDeps = {
 
 const proxyAbortControllers = new Map<string, AbortController>();
 
+// ---------------------------------------------------------------------------
+// In-flight read coalescing (parity with the web runtimeFetch coalescer)
+//
+// On cold start the webview's two data layers — the sync bootstrap and the
+// config store — fire the SAME idempotent reads (config, location, agent,
+// project, command, model, provider) concurrently through the bridge with no
+// shared dedup. That
+// saturates the single OpenCode process and delays everything queued behind it
+// (e.g. createSession). Coalesce genuinely-concurrent identical GETs to those
+// read endpoints so OpenCode does the work once; every caller gets its own
+// response payload copy.
+//
+// Scope is deliberately tight: GET only, an allowlist of read paths. The shared
+// fetch runs without a per-request AbortController, so one caller's
+// `api:proxy:abort` cannot cancel the read for the others (these reads are fast
+// and idempotent — losing abort for them is harmless). The entry is removed as
+// soon as the request settles, so this only ever shares overlapping in-flight
+// requests; it never serves a stale response.
+// ---------------------------------------------------------------------------
 const COALESCE_READ_PATH = /^\/api\/(config|location|agent|project|command|model|provider)(\b|\/|\?|$)/;
 const READ_COALESCE = new Map<string, Promise<ApiProxyResponsePayload>>();
 
+// Two reads are "identical" only when everything OpenCode sees is identical.
+// On OpenCode 2.x the project directory travels in the `x-opencode-directory`
+// header, not the URL, and the auth headers pick the upstream scope; keying on
+// the URL alone would answer project B's `/api/config` with project A's body.
+// Every forwarded header therefore joins the key, canonicalized so header-name
+// casing cannot split otherwise-identical reads.
 const buildReadCoalesceKey = (targetUrl: string, headers: Record<string, string>): string => {
   const canonicalHeaders = Object.entries(headers)
     .map(([name, value]) => `${name.toLowerCase()}=${value}`)
@@ -128,6 +157,11 @@ const performApiProxyFetch = async (
   }
 };
 
+/**
+ * `GET /api/session` and `GET /api/session/:id` come back with OpenChamber's
+ * legacy metadata and unread baseline folded in. Archive state comes directly from OpenCode.
+ * A file that cannot be read leaves the upstream record untouched.
+ */
 const overlayOwnedSessionState = async (
   method: string,
   requestPath: string,
@@ -144,17 +178,22 @@ const overlayOwnedSessionState = async (
   if (!isSessionRecordPath(pathname)) return data;
   const body = parseJson(data.bodyText);
   if (body === null) return data;
-  const [archived, stored, unreadSince] = await Promise.all([
-    sessionState.readArchived(),
+  const [stored, unreadSince] = await Promise.all([
     sessionState.readMetadata(),
     sessionState.readUnreadBaseline(),
   ]);
-  if (!archived && !stored && unreadSince === null) return data;
-  return { ...data, bodyText: JSON.stringify(overlaySessionResponseBody(body, archived, stored, unreadSince)) };
+  if (!stored && unreadSince === null) return data;
+  return { ...data, bodyText: JSON.stringify(overlaySessionResponseBody(body, stored, unreadSince)) };
 };
 
 const RESOLVE_PROBE_BASE = 'http://opencode.invalid/';
 
+// Mirrors the web proxy (packages/web/server/lib/opencode/proxy.js): a request
+// for a folder of a worktree being removed would start that folder again in
+// OpenCode, local MCP servers included, so it waits for the removal, at most
+// this long. OpenCode decodes a percent-encoded directory header with or
+// without the `uri` marker and also reads `location[directory]`, so a folder
+// is matched the way OpenCode will read it.
 const WORKTREE_REMOVAL_HOLD_MS = 60_000;
 const PERCENT_ESCAPE = /%[0-9a-fA-F]{2}/;
 
@@ -200,6 +239,7 @@ const trustAnswerResponse = (answer: OpenCodeTrustAnswer): ApiProxyResponsePaylo
 
 const trustRouteBodySchema = z.object({ directory: z.string().optional(), fingerprint: z.string().nullable().optional() });
 
+/** The body of a trust answer; anything else is no answer, which the route refuses. */
 const parseTrustRouteBody = (bodyBase64: string | undefined): OpenCodeTrustRouteRequest['body'] => {
   if (!bodyBase64) return undefined;
   try {
@@ -216,6 +256,7 @@ const sessionResponseSchema = z.union([
   sessionRecordSchema.transform((record) => record.location.directory),
 ]);
 
+/** The folder a session runs in, read from OpenCode's global session route. */
 const createSessionDirectoryResolver = (ctx: BridgeContext | undefined) => (
   async (sessionID: string): Promise<string | null> => {
     const apiUrl = await waitForApiUrl(ctx?.manager);
@@ -230,6 +271,10 @@ const createSessionDirectoryResolver = (ctx: BridgeContext | undefined) => (
   }
 );
 
+/**
+ * The path OpenCode receives for a webview path, resolved the same way the
+ * request URL is built below; null when it would leave the OpenCode origin.
+ */
 const resolveOpenCodePath = (normalizedPath: string): string | null => {
   let resolved: URL;
   try {
@@ -277,6 +322,9 @@ export async function handleProxyBridgeMessage(
         return { id, type, success: true, data };
       }
 
+      // The path is resolved as a URL before it goes out, so `/http:api/...`
+      // or `/http://host/...` would reach a path the checks below never saw.
+      // Check what OpenCode will receive, and refuse anything that leaves it.
       const resolvedPath = resolveOpenCodePath(normalizedPath);
       if (resolvedPath === null) {
         const data: ApiProxyResponsePayload = {
@@ -287,6 +335,7 @@ export async function handleProxyBridgeMessage(
         return { id, type, success: true, data };
       }
 
+      // Enterprise mode: the same provider-connect routes the web server refuses.
       if (isProviderConnectRequest(normalizedMethod, resolvedPath) && isEnterpriseMode()) {
         const data: ApiProxyResponsePayload = {
           status: 403,
@@ -296,6 +345,8 @@ export async function handleProxyBridgeMessage(
         return { id, type, success: true, data };
       }
 
+      // Every stored key, secrets included: the extension host reads it for
+      // itself, the webview never gets it.
       if (isCredentialListRequest(normalizedMethod, resolvedPath)) {
         const data: ApiProxyResponsePayload = {
           status: 403,
@@ -305,6 +356,7 @@ export async function handleProxyBridgeMessage(
         return { id, type, success: true, data };
       }
 
+      // Same refusal as the web server: no repository in home or at a disk root.
       const vcsInitRefused = vcsInitRefusal(normalizedMethod, resolvedPath, normalizeHeaderKeys(headers));
       if (vcsInitRefused) {
         const data: ApiProxyResponsePayload = {
@@ -315,6 +367,7 @@ export async function handleProxyBridgeMessage(
         return { id, type, success: true, data };
       }
 
+      // The trust answer is the extension's own, shared with the web server.
       const requestUrl = new URL(resolvedPath, RESOLVE_PROBE_BASE);
       if (deps.openCodeTrust && requestUrl.pathname === OPENCODE_TRUST_ROUTE) {
         const answer = await deps.openCodeTrust.handleRoute({
@@ -335,6 +388,8 @@ export async function handleProxyBridgeMessage(
         deps.waitForWorktreeRemoval,
       );
 
+      // Same check as the web proxy: a folder whose OpenCode configuration
+      // runs code stays closed until the user trusts it.
       const trustRefusal = await deps.openCodeTrust?.refusalFor({
         method: normalizedMethod,
         path: resolvedPath,
@@ -373,6 +428,10 @@ export async function handleProxyBridgeMessage(
           ? Buffer.from(bodyBase64, 'base64')
           : undefined;
 
+      // Coalesce concurrent identical GET reads to idempotent endpoints so the
+      // single OpenCode process serves them once. The shared fetch carries no
+      // AbortController (api:proxy:abort can't cancel these reads), so one
+      // caller aborting can't strand the others.
       const coalesceKey =
         normalizedMethod === 'GET' && COALESCE_READ_PATH.test(normalizedPath)
           ? buildReadCoalesceKey(targetUrl, requestHeaders)

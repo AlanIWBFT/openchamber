@@ -103,7 +103,6 @@ export interface ControlDependencies {
   laterPages?: ReturnType<typeof createLaterPages> | null;
   workflowRuntime?: Pick<ReturnType<typeof createWorkflowRuntime>, 'executeAction'> | null;
   sharePages?: Parameters<typeof createRenderPageAction>[0]['sharePages'];
-  archiveStore?: { entry: (sessionID: string) => Promise<number | null | undefined> } | null;
   isOpenCodeDirectoryTrusted?: ((directory: string) => Promise<boolean>) | null;
   createClient?: (options: Parameters<typeof OpenCode.make>[0]) => ControlClient;
   imageFsPromises?: ImageGenerationDependencies['fsPromises'];
@@ -482,7 +481,6 @@ export const createOpenChamberControlService = (dependencies: ControlDependencie
     laterPages = null,
     workflowRuntime = null,
     sharePages = null,
-    archiveStore = null,
     isOpenCodeDirectoryTrusted = null,
     createClient = OpenCode.make,
     imageFsPromises = nodeFsPromises,
@@ -537,15 +535,6 @@ export const createOpenChamberControlService = (dependencies: ControlDependencie
     },
     createError: (message, status) => new OpenChamberControlError(message, status),
   }) : null;
-
-  const withArchiveEntry = async (session: ControlSession): Promise<ControlSession> => {
-    if (!archiveStore || !session?.id) return session;
-    const entry = await archiveStore.entry(session.id);
-    if (entry === undefined) return session;
-    if (entry !== null) return { ...session, time: { ...session.time, archived: entry } };
-    const { archived: _archived, ...time } = session.time ?? {};
-    return { ...session, time };
-  };
 
   const projects = async () => {
     const settings = await readSettingsFromDiskMigrated();
@@ -751,7 +740,7 @@ export const createOpenChamberControlService = (dependencies: ControlDependencie
       if (inWork || busy || terms.length > 0) listInput.limit = FILTERED_PAGE_SIZE;
       if (cursor) listInput.cursor = cursor;
       const response = await client.session.list(listInput);
-      const page = await Promise.all((Array.isArray(response?.data) ? response.data : []).map(withArchiveEntry));
+      const page = Array.isArray(response?.data) ? response.data : [];
       for (const record of page) {
         const id = asNonEmptyString(record?.id);
         if (isHiddenSession(id, record)) continue;
@@ -794,7 +783,7 @@ export const createOpenChamberControlService = (dependencies: ControlDependencie
     if (!(await isSessionWorkEnabled())) throw new OpenChamberControlError('In work is turned off in Settings', 409);
     const sessionID = asNonEmptyString(input.sessionId) || asNonEmptyString(contextSessionId);
     if (!sessionID) throw new OpenChamberControlError('sessionId is required', 400);
-    const session = await withArchiveEntry(await assertSessionExists(await getClient(), sessionID));
+    const session = await assertSessionExists(await getClient(), sessionID);
     if (state === 'open' && !workMembership.canBeInWork(session)) {
       throw new OpenChamberControlError(`${sessionID} cannot be in work: subsessions, Chats, reviews, /btw questions and scheduled runs never are`, 400);
     }

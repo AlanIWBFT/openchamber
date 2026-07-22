@@ -56,6 +56,7 @@ import { getNextFavoriteModel } from '@/lib/modelRefs';
 import { dispatchPromptHistorySearch } from '@/components/chat/composer/state/promptHistorySearchRoute';
 import { isLinuxPlatform } from '@/lib/platform';
 import { canUseDigitShortcut, hasActiveBtwComposer, hasOpenDropdown, isEditableEventTarget, shouldStopDropdownImeEscape } from './keyboard-shortcut-dom';
+import { toast } from '@/components/ui';
 
 const dropdownTargetSelector = [
   '[data-slot="dropdown-menu-content"]', '[data-slot="select-content"]', '[role="combobox"]',
@@ -78,6 +79,7 @@ function hasOverlayOpen(): boolean {
 export const useKeyboardShortcuts = () => {
   const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
+  const stopCurrentOperation = sessionActions.stopSessionExecution;
   const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
   const effectiveDirectory = useEffectiveDirectory();
   const activeProject = useProjectsStore((s) => s.getActiveProject());
@@ -91,7 +93,11 @@ export const useKeyboardShortcuts = () => {
         ? { sessionId: pinnedColumn.dataset.chatSessionId ?? null, working: pinnedColumn.dataset.chatWorking === 'true' }
         : { sessionId: currentSessionId, working: sessionPhase !== 'idle' };
     },
-    abort: (sessionId) => { void sessionActions.abortCurrentOperation(sessionId); },
+    abort: (sessionId) => {
+      void stopCurrentOperation(sessionId).catch((error) => {
+        console.error('Failed to stop session:', error);
+      });
+    },
   });
   const themeModeRef = React.useRef(themeMode);
   const dispatcherRef = React.useRef<ShortcutDispatcher | null>(null);
@@ -127,6 +133,9 @@ export const useKeyboardShortcuts = () => {
 
   React.useEffect(() => { themeModeRef.current = themeMode; }, [themeMode]);
 
+  React.useEffect(() => {
+    resetAbortPriming();
+  }, [currentSessionId, resetAbortPriming]);
   const toggleTerminalSurface = () => {
     if (!currentDirectory) return;
     useUIStore.getState().openContextSurface(normalizeContextPanelDirectoryKey(currentDirectory), 'terminal');
@@ -319,7 +328,10 @@ export const useKeyboardShortcuts = () => {
     },
     abort_run: () => {
       if (sessionPhase === 'idle' || !currentSessionId) return false;
-      void sessionActions.abortCurrentOperation(currentSessionId);
+      void stopCurrentOperation(currentSessionId).catch((error) => {
+        console.error('[keyboard-shortcuts] stop failed', error);
+        toast.error(error instanceof Error ? error.message : 'Failed to stop session');
+      });
     },
   });
 
@@ -613,5 +625,5 @@ export const useKeyboardShortcuts = () => {
       window.removeEventListener('keydown', handleAbortEscapeKeyDown);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [currentSessionId, dispatcher, effectiveDirectory, handleAbortEscapeKeyDown, inputRedirect, resetAbortPriming, selectionToolbarDispatcher, sessionPhase]);
+  }, [currentSessionId, dispatcher, effectiveDirectory, handleAbortEscapeKeyDown, inputRedirect, resetAbortPriming, selectionToolbarDispatcher, sessionPhase, stopCurrentOperation]);
 };

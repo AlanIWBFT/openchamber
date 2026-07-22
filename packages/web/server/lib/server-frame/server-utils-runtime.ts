@@ -7,7 +7,7 @@ import { isString } from '../shared/object-guards.js';
 
 interface ServerUtilsDependencies extends Pick<OpenCodeProxyDependencies,
   'getRuntime' | 'getOpenCodeAuthHeaders' | 'buildOpenCodeUrl' | 'ensureOpenCodeApiPrefix'
-  | 'getArchivedSessions' | 'getUnreadBaseline' | 'hiddenSessions' | 'getStoredSessionMetadata'
+  | 'getUnreadBaseline' | 'hiddenSessions' | 'getStoredSessionMetadata'
   | 'openCodeTrust' | 'mcpOAuthSignIn'> {
   fs: NonNullable<OpenCodeProxyDependencies['fs']> & Pick<typeof import('node:fs'), 'existsSync'>;
   os: Pick<typeof import('node:os'), 'homedir'>;
@@ -59,7 +59,6 @@ export const createServerUtilsRuntime = (dependencies: ServerUtilsDependencies) 
     setOpenCodeNotReadySince,
     clearLastOpenCodeError,
     getLoginShellPath,
-    getArchivedSessions = null,
     getUnreadBaseline = null,
     getMergeSpaceSessionList = null,
     getSpaceEventHub = null,
@@ -236,7 +235,6 @@ export const createServerUtilsRuntime = (dependencies: ServerUtilsDependencies) 
       ensureOpenCodeApiPrefix,
       getSseUpstreamStallTimeoutMs: getUpstreamStallTimeoutMs,
       getUiNotificationClients,
-      getArchivedSessions,
       getUnreadBaseline,
       getStoredSessionMetadata,
       mergeSpaceSessionList: isCallback(getMergeSpaceSessionList) ? getMergeSpaceSessionList() : null,

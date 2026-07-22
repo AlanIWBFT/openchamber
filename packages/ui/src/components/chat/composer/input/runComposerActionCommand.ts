@@ -109,6 +109,10 @@ export async function runComposerActionCommand({
                     : getSubmitErrorMessage(error, t('chat.chatInput.toast.forkFailed')));
                 return;
             }
+            if (actionName === 'undo' || actionName === 'redo') {
+                toast.error(getSubmitErrorMessage(error, actionName === 'undo' ? 'Failed to revert message' : 'Failed to restore message'));
+                return;
+            }
             if (actionName !== 'compact') throw error;
             toast.error(getSubmitErrorMessage(error, t('chat.chatInput.toast.compactFailed')));
         }

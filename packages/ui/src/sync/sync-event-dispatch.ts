@@ -111,6 +111,11 @@ export function handleEvent(
 
   if (payload.type === "location.shutdown") {
     if (!directory || directory === "global" || expectedRuntimeKey !== getRuntimeKey()) return
+    const owner = childStores.getChild(directory)
+    if (owner) {
+      recordDirectoryRecoveryEvent(owner, payload)
+      getImperativeSessionMessageLoader()?.invalidateDirectory(directory)
+    }
     if (directory !== opencodeClient.getDirectory()) {
       forgetMcpStatus(directory)
       return
@@ -121,7 +126,7 @@ export function handleEvent(
       return
     }
     dormantLocations.delete(directory)
-    if (childStores.getChild(directory)) {
+    if (owner) {
       childStores.requestBootstrap({ directory, priority: "selected", reason: "location-shutdown", force: true })
     }
     return
@@ -370,6 +375,13 @@ export function handleEvent(
       cloneField("session", (value) => [...value])
       cloneField("sessionEventRevision", (value) => ({ ...(value ?? {}) }))
       cloneField("sessionDeletedRevision", (value) => ({ ...(value ?? {}) }))
+      if (payload.type === "session.deleted" || (payload.type === "session.patched" && payload.properties.patch.time?.archived != null)) {
+        cloneField("message", (value) => ({ ...value }))
+        cloneField("part", (value) => ({ ...value }))
+        cloneField("permission", (value) => ({ ...value }))
+        cloneField("form", (value) => ({ ...value }))
+        cloneField("session_status", (value) => ({ ...value }))
+      }
       break
     case "session.status":
     case "session.idle":
@@ -380,13 +392,16 @@ export function handleEvent(
     case "message.updated":
     case "message.patched":
     case "message.compaction.delta":
+      recordDirectoryRecoveryEvent(store, payload)
       cloneField("message", (value) => ({ ...value }))
       break
     case "message.removed":
+      recordDirectoryRecoveryEvent(store, payload)
       cloneField("message", (value) => ({ ...value }))
       cloneField("part", (value) => ({ ...value }))
       break
     case "session.revert.committed":
+      recordDirectoryRecoveryEvent(store, payload)
       cloneField("session", (value) => [...value])
       cloneField("message", (value) => ({ ...value }))
       cloneField("part", (value) => ({ ...value }))
@@ -395,6 +410,7 @@ export function handleEvent(
     case "message.part.delta":
     case "message.tool.transition":
     case "message.parts.replaced":
+      recordDirectoryRecoveryEvent(store, payload)
       cloneField("part", (value) => ({ ...value }))
       break
     case "vcs.branch.updated":
@@ -527,6 +543,7 @@ export function handleEvent(
         reason: materializationResult.reason,
         messageID: materializationResult.messageID,
         partID: materializationResult.partID,
+        compactionEventSeq: materializationResult.compactionEventSeq,
       })
     }
   }

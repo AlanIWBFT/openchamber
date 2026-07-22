@@ -116,7 +116,7 @@ describe("bootstrapDirectory", () => {
     expect(await bootstrap.sessions).toBe("complete")
     expect(await bootstrap.environment).toBe("failed")
     expect(input.store.getState().session_status).toBe(previous)
-    expect(input.store.getState().sessionStatusReady).toBeUndefined()
+    expect(input.store.getState().sessionStatusReady).toBe(false)
   })
 
   test("keeps only the host's active sessions that this directory lists, however late the list lands", async () => {
@@ -141,7 +141,7 @@ describe("bootstrapDirectory", () => {
     expect(await bootstrap.environment).toBe("complete")
     expect(statuses.mock.calls).toHaveLength(0)
     expect(input.store.getState().session_status).toBe(previous)
-    expect(input.store.getState().sessionStatusReady).toBeUndefined()
+    expect(input.store.getState().sessionStatusReady).toBe(false)
   })
 
   test("optional VCS failure preserves its previous state without failing core initialization", async () => {

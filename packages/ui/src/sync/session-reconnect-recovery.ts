@@ -29,12 +29,13 @@ export async function resyncDirectoryAfterReconnect(
 ) {
   if (isStale()) return
   const current = store.getState()
-  const candidateSessionIds = getActiveSessionCandidateIds(directory, current)
-  if (candidateSessionIds.length === 0) return true
+  const previous = getActiveSessionCandidateIds(directory, current)
 
-  const statuses = await resyncDirectorySessionStatuses(directory, store, candidateSessionIds, "authoritative", isStale)
+  const statuses = await resyncDirectorySessionStatuses(directory, store, previous, "authoritative", isStale)
   let succeeded = statuses !== null
   if (isStale()) return
+  const candidateSessionIds = [...new Set([...previous, ...getActiveSessionCandidateIds(directory, store.getState())])]
+  if (!candidateSessionIds.length) return succeeded
 
   if (reason !== "stream-replayed") await Promise.all(candidateSessionIds.map(async (sessionId) => {
     syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })

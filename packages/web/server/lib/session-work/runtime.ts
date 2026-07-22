@@ -33,7 +33,6 @@ export interface SessionWorkOptions {
     decide: (metadata: SessionMetadata | null | undefined) => WorkMetadataPatch | null,
     options: { directory: string | undefined },
   ) => Promise<{ changed: boolean }>;
-  isSessionArchived?: (sessionId: string) => Promise<boolean>;
   isWorktreePinned?: (directory: string) => Promise<boolean>;
   chatRoots?: string[];
   lineage?: Pick<ReturnType<typeof createSessionLineage>, 'remember' | 'isChild'> | null;
@@ -136,7 +135,6 @@ export function createSessionWorkRuntime({
   jev,
   readMetadata,
   updateMetadata,
-  isSessionArchived = async () => false,
   isWorktreePinned = async () => false,
   chatRoots = [],
   lineage = null,
@@ -188,7 +186,7 @@ export function createSessionWorkRuntime({
 
   const eligibleSession = async (client: Client, sessionId: string, signal: AbortSignal) => {
     const session = await workSession(client, sessionId, signal);
-    return session && !(await isSessionArchived(sessionId)) ? session : null;
+    return session && !session.time?.archived ? session : null;
   };
 
   const markSuggested = (sessionId: string, directory: string) => {
@@ -216,7 +214,7 @@ export function createSessionWorkRuntime({
     const session = await workSession(openCodeClient(directory), sessionId, AbortSignal.timeout(READ_TIMEOUT_MS));
     if (!session) return 'settled';
     if (await isWorktreePinned(session.location?.directory ?? session.directory ?? directory)) return 'settled';
-    if (await isSessionArchived(sessionId)) return 'archived';
+    if (session.time?.archived) return 'archived';
     if (stopped) return 'settled';
     await updateMetadata(sessionId, (metadata) => openPatch(metadata, { requestAt: createdAt, now: now() }), { directory });
     return 'settled';

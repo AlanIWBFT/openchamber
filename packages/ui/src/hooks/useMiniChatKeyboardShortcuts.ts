@@ -23,7 +23,7 @@ export const useMiniChatKeyboardShortcuts = () => {
   const { handleKeyDown: handleAbortEscapeKeyDown } = useComposerAbortEscape({
     isBlocked: () => hasOpenDropdown() || Boolean(document.querySelector('[role="dialog"], [role="alertdialog"]')),
     resolveTarget: () => ({ sessionId: currentSessionId, working: sessionPhase !== 'idle' }),
-    abort: (sessionId) => { void sessionActions.abortCurrentOperation(sessionId); },
+    abort: (sessionId) => { void sessionActions.stopSessionExecution(sessionId).catch((error) => console.error('[mini-chat] Stop failed', error)); },
   });
 
   if (!dispatcherRef.current) {

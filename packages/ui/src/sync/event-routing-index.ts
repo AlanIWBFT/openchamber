@@ -330,11 +330,11 @@ export const resolveMaterializationSessionID = (
   resolvedDirectory: string,
   routingIndex: EventRoutingIndex,
 ): string | undefined => {
-  if (materializationSessionID) return materializationSessionID
   if (messageID) {
     const indexedSessionID = routingIndex.messageSessionById.get(messageID)
     if (indexedSessionID) return indexedSessionID
   }
+  if (materializationSessionID) return materializationSessionID
   const { directory: _activeDirectory, sessionId: _activeSession } = getActiveSession()
   if (resolvedDirectory && resolvedDirectory === _activeDirectory && _activeSession) {
     return _activeSession
@@ -359,6 +359,10 @@ export const updateRoutingIndexFromEvent = (
   switch (payload.type) {
     case "session.created":
       setIndexedSessionDirectory(routingIndex, payload.properties.info.id, directory)
+      return
+
+    case "session.patched":
+      if (payload.properties.patch.time?.archived != null) removeIndexedSession(routingIndex, payload.properties.sessionID)
       return
 
     case "session.deleted":

@@ -14,6 +14,7 @@ import type { useComposerDraftText } from './useComposerDraftText';
 import type { useComposerColumn } from './useComposerColumn';
 import type { useComposerAutocompleteState } from './useComposerAutocompleteState';
 import React from 'react';
+import { toast } from '@/components/ui';
 import { useUIStore } from '@/stores/useUIStore';
 import { cycleThinkingVariant } from '@/lib/cycleThinkingVariant';
 import { isVSCodeRuntime } from '@/lib/desktop';
@@ -42,7 +43,7 @@ type Dependencies = {
     column: Pick<ReturnType<typeof useComposerColumn>, 'columnPinned'>;
     i18n: Pick<ReturnType<typeof useI18n>, 't'>;
     largePasteState: Pick<ReturnType<typeof useComposerLargePasteState>, 'largeTextPasteGesture'>;
-    sessionScope: Pick<ReturnType<typeof useComposerSessionScope>, 'clearAbortPrompt' | 'isBtwActive' | 'btwSessionId' | 'currentSessionId' | 'abortCurrentOperation' | 'pickSessionAgent' | 'inputMode'>;
+    sessionScope: Pick<ReturnType<typeof useComposerSessionScope>, 'clearAbortPrompt' | 'isBtwActive' | 'btwSessionId' | 'currentSessionId' | 'stopCurrentOperation' | 'pickSessionAgent' | 'inputMode'>;
     sessionLifecycle: Pick<ReturnType<typeof useComposerSessionLifecycle>, 'handleOpenMobilePanel'>;
     selection: Pick<ReturnType<typeof useComposerSelection>, 'currentProviderId' | 'currentModelId' | 'agents' | 'currentAgentName' | 'setAgent'>;
     language: Pick<ReturnType<typeof useComposerLanguage>, 'pastedSessionIds' | 'linkPastedSessionId' | 'setOpenSharedPageKey'>;
@@ -71,7 +72,7 @@ export function useComposerEditorActions({
     const { t } = i18n;
     const { largeTextPasteGesture } = largePasteState;
     const {
-        clearAbortPrompt, isBtwActive, btwSessionId, currentSessionId, abortCurrentOperation,
+        clearAbortPrompt, isBtwActive, btwSessionId, currentSessionId, stopCurrentOperation,
         pickSessionAgent, inputMode,
     } = sessionScope;
     const { handleOpenMobilePanel } = sessionLifecycle;
@@ -95,8 +96,11 @@ export function useComposerEditorActions({
         clearAbortPrompt();
 
         const abortTarget = isBtwActive && btwSessionId ? btwSessionId : currentSessionId;
-        void abortCurrentOperation(abortTarget || undefined);
-    }, [abortCurrentOperation, btwSessionId, clearAbortPrompt, currentSessionId, isBtwActive]);
+        void stopCurrentOperation(abortTarget || undefined).catch(error => {
+            console.error('[chat-input] stop failed', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to stop session');
+        });
+    }, [stopCurrentOperation, btwSessionId, clearAbortPrompt, currentSessionId, isBtwActive]);
 
     const handleCycleThinking = React.useCallback(() => {
         cycleThinkingVariant(currentSessionId);

@@ -6,7 +6,7 @@ import { isMobileSurfaceRuntime } from "@/lib/runtimeSurface"
 import { subscribeDirectorySessionMessages, type DirectoryStore } from "./child-store"
 import { countSyncPerformance } from "./performance-diagnostics"
 import { Binary } from "./binary"
-import { messagesBefore } from "./message-ordering"
+import { selectVisibleMessages } from "./message-boundary"
 import type { State } from "./types"
 import { EMPTY_PARTS, EMPTY_MESSAGES } from "./sync-empty-values"
 import { useDirectoryStore } from "./directory-sync-hooks"
@@ -222,7 +222,7 @@ function getVisibleMessagesForSession(state: State, sessionID: string, previous?
 
   return {
     sourceMessages,
-    visibleMessages: messagesBefore(sourceMessages, revertMessageID),
+    visibleMessages: selectVisibleMessages(sourceMessages, revertMessageID),
     revertMessageID,
   }
 }

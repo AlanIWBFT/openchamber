@@ -2,12 +2,14 @@ import React from 'react';
 import { getLastConversationRecord, isIncompleteAssistantTurn } from '@/lib/opencode/model';
 import type { Message, Part } from '@/lib/opencode/model';
 import {
+    useDirectorySync,
     useSessionStatus,
     useSessionStatusSnapshotReady,
     useScopedBlockingPermissions,
     useScopedBlockingForms,
 } from '@/sync/sync-context';
 import type { useSync } from '@/sync/use-sync';
+import { useResolvedSessionActivity } from '@/hooks/useSessionActivity';
 import { hasActiveFormToolInCurrentTurn, recoverPendingFormWithRetry } from '@/sync/form-recovery';
 
 const IDLE_SESSION_STATUS = { type: 'idle' as const };
@@ -26,8 +28,10 @@ export const useColumnSessionActivity = ({
     sessionMessages: Array<{ info: Message; parts: Part[] }>;
     sync: ReturnType<typeof useSync>;
 }) => {
-    const sessionStatusForCurrent = useSessionStatus(currentSessionId ?? '', effectiveSessionDirectory) ?? IDLE_SESSION_STATUS;
+    const status = useSessionStatus(currentSessionId ?? '', effectiveSessionDirectory);
+    const sessionStatusForCurrent = status ?? IDLE_SESSION_STATUS;
     const statusSnapshotReady = useSessionStatusSnapshotReady(effectiveSessionDirectory, currentSessionId ?? '');
+    const fallbackUntil = useDirectorySync(React.useCallback(state => state.session_status_fallback_until, []), effectiveSessionDirectory);
 
     const sessionPermissions = useScopedBlockingPermissions(currentSessionId, effectiveSessionDirectory);
     const sessionForms = useScopedBlockingForms(currentSessionId, effectiveSessionDirectory);
@@ -52,22 +56,12 @@ export const useColumnSessionActivity = ({
         };
     }, [active, currentSessionId, effectiveSessionDirectory, hasUnreconciledFormTool, sync]);
 
-    const sessionIsWorking = React.useMemo(() => {
-        if (!currentSessionId || sessionPermissions.length > 0 || sessionForms.length > 0) {
-            return false;
-        }
-
-        const statusType = sessionStatusForCurrent.type ?? 'idle';
-        if (statusType === 'busy' || statusType === 'retry') {
-            return true;
-        }
-
-        if (sessionStatusForCurrent === IDLE_SESSION_STATUS && statusSnapshotReady) {
-            return false;
-        }
-
-        return isIncompleteAssistantTurn(getLastConversationRecord(sessionMessages)?.info);
-    }, [currentSessionId, sessionMessages, sessionPermissions.length, sessionForms.length, sessionStatusForCurrent, statusSnapshotReady]);
+    const sessionIsWorking = useResolvedSessionActivity({
+        sessionId: currentSessionId,
+        status, statusSnapshotReady, fallbackUntil,
+        hasPendingAssistant: isIncompleteAssistantTurn(getLastConversationRecord(sessionMessages)?.info),
+        hasBlockingRequest: !currentSessionId || sessionPermissions.length > 0 || sessionForms.length > 0,
+    }).isWorking;
 
     return { sessionStatusForCurrent, sessionPermissions, sessionIsWorking };
 };

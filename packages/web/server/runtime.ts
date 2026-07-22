@@ -1118,7 +1118,6 @@ const sessionAssistRuntime = createSessionAssistRuntime({
   getSmallModelService: async () => import('./lib/small-model/index.js'),
   persistSessionAssist: (sessionID, directory, assist) =>
     persistSessionMetadataPatch(sessionID, { openchamber: { assist } }, { directory }),
-  isSessionArchived: (sessionID) => openChamberSessionService.sessionArchive.isArchived(sessionID),
   evaluateTurn: (input) => sessionWorkRuntime.evaluateTurnEnd(input),
   lineage: sessionLineage,
   onPendingChange: ({ sessionId, directory, pending }) => broadcastOpenChamberUiEvent({
@@ -1296,7 +1295,6 @@ const sessionWorkRuntime = createSessionWorkRuntime({
   jev: createJevClient({ timeoutMs: JEV_BACKGROUND_TIMEOUT_MS }),
   readMetadata: (sessionID, directory) => sessionMetadataStore.get(sessionID, { directory }),
   updateMetadata: updateSessionMetadataWith,
-  isSessionArchived: (sessionID) => openChamberSessionService.sessionArchive.isArchived(sessionID),
   isWorktreePinned: isWorktreeDirectoryPinned,
   chatRoots: [path.join(OPENCHAMBER_USER_CONFIG_ROOT, 'chats'), OPENCHAMBER_CHATS_DIR],
   lineage: sessionLineage,
@@ -1611,7 +1609,6 @@ const mcpOAuthSignIn = createMcpOAuthSignIn({
 });
 
 const serverUtilsRuntime = createServerUtilsRuntime({
-  getArchivedSessions: () => openChamberSessionService.archiveStore.getAll(),
   getUnreadBaseline: () => unreadBaseline.get(),
   getStoredSessionMetadata: () => sessionMetadataStore.listUnmigrated(),
   getMergeSpaceSessionList: () => (spacesHost ? (payload) => {
@@ -2062,10 +2059,6 @@ const scheduledTaskService = createScheduledTaskService({
   readModelCatalog,
 });
 const openChamberSessionService = createOpenChamberSessionService({
-  onSessionArchived: (sessionID, archivedAt) => extensionSessionEvents.processPayload({
-    type: 'openchamber:session-archived',
-    properties: { sessionID, archivedAt },
-  }),
   chatsScope: scheduledChatsScope,
   readSettingsFromDiskMigrated,
   sanitizeProjects: sanitizeProjectList,
@@ -2310,7 +2303,6 @@ const openChamberControlService = createOpenChamberControlService({
   laterPages: process.env.OPENCHAMBER_SPACE_IDLE_STOP_FILE ? null : laterPagesRuntime,
   workflowRuntime,
   sharePages: sharePagesRuntime,
-  archiveStore: openChamberSessionService.archiveStore,
   loadQuota: () => import('./lib/quota/index.js'),
   getTerminalRuntime: () => terminalRuntime,
 });

@@ -6,7 +6,8 @@ import { resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useProjectFolderMissing } from '@/components/session/sidebar/projects/useProjectFolderMissing';
 import { isSessionDirectoryAdmitted } from '@/sync/session-admission-rule';
-import { abortCurrentOperation } from '@/sync/session-actions';
+import { stopSessionExecution } from '@/sync/session-actions';
+import { toast } from '@/components/ui';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSession } from '@/sync/sync-context';
 import { registerFloatingPanelClearanceReader } from '@/components/chat/composer/state/composerInsetReaders';
@@ -91,7 +92,7 @@ const ReadOnlyComposer: React.FC<{
                     ? t('spaces.archive.readOnlyBanner', { name: spaceArchiveName })
                     : sessionText}
                 onStop={spaceArchiveName === null && sessionId && sessionStatusType !== 'idle'
-                    ? () => void abortCurrentOperation(sessionId)
+                    ? () => void stopSessionExecution(sessionId, directory).catch((error) => toast.error(error instanceof Error ? error.message : 'Failed to stop session'))
                     : undefined}
                 stopLabel={t('chat.chatInput.actions.stopGeneratingAria')}
             />

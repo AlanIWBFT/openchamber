@@ -127,6 +127,7 @@ export type StructuredError = SessionStructuredError
 type MessageBase = {
   id: string
   sessionID: string
+  seq?: number
   metadata?: Metadata
 }
 
@@ -248,6 +249,7 @@ export type Message =
 
 type MessageRole = Message["role"]
 
+export type StoredMessage = Message & { seq: number }
 
 type PartBase = {
   id: string

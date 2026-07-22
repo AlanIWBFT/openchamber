@@ -13,22 +13,32 @@ export function recordDirectoryRecoveryEvent(source: DirectoryRecoverySource, ev
   if (listeners) for (const listener of listeners) listener(event)
 }
 
-async function withRecoveryObserver<T>(
+export function observeDirectoryRecoveryEvents(
   source: DirectoryRecoverySource,
   observer: RecoveryObserver,
-  read: () => Promise<T>,
-): Promise<T> {
+): () => void {
   let listeners = observers.get(source)
   if (!listeners) {
     listeners = new Set()
     observers.set(source, listeners)
   }
   listeners.add(observer)
+  return () => {
+    listeners.delete(observer)
+    if (listeners.size === 0 && observers.get(source) === listeners) observers.delete(source)
+  }
+}
+
+async function withRecoveryObserver<T>(
+  source: DirectoryRecoverySource,
+  observer: RecoveryObserver,
+  read: () => Promise<T>,
+): Promise<T> {
+  const release = observeDirectoryRecoveryEvents(source, observer)
   try {
     return await read()
   } finally {
-    listeners.delete(observer)
-    if (listeners.size === 0) observers.delete(source)
+    release()
   }
 }
 
@@ -48,7 +58,15 @@ export function selectHeldSessionStatuses(
 export function readDirectoryStatusSnapshot(
   source: DirectoryRecoverySource,
   read: () => Promise<State["session_status"]>,
-): Promise<State["session_status"]> {
+): Promise<State["session_status"]>
+export function readDirectoryStatusSnapshot(
+  source: DirectoryRecoverySource,
+  read: () => Promise<State["session_status"] | null>,
+): Promise<State["session_status"] | null>
+export function readDirectoryStatusSnapshot(
+  source: DirectoryRecoverySource,
+  read: () => Promise<State["session_status"] | null>,
+): Promise<State["session_status"] | null> {
   const before = source.getState().session_status
   const changes = new Map<string, SessionStatus | null>()
   return withRecoveryObserver(source, (event) => {
@@ -60,6 +78,7 @@ export function readDirectoryStatusSnapshot(
     if (removed) changes.set(removed, null)
   }, async () => {
     const fetched = await read()
+    if (fetched === null) return null
     const current = source.getState().session_status
     const snapshot = { ...withPromptsInFlight(fetched, current) }
     for (const id of new Set([...Object.keys(before), ...Object.keys(current)])) {

@@ -25,7 +25,7 @@ import type { ToolStateWithMetadata, ToolPartProps, ToolRowHeader } from './type
 import { TOOL_ROW_TITLE_CLASS, TOOL_ROW_DESCRIPTION_CLASS, TOOL_ERROR_ICON_STYLE, TOOL_NORMAL_ICON_STYLE, TOOL_ERROR_TITLE_STYLE, TOOL_NORMAL_TITLE_STYLE } from './toolRowStyles';
 import { LiveDuration } from './LiveDuration';
 import { UnifiedExecDuration } from './UnifiedExecDuration';
-import { getUnifiedExecMetadata, isExecCommandTool, isExecProcessRunning } from '../../unifiedExec';
+import { getExecProcessRunning, getUnifiedExecMetadata, isExecCommandTool } from '../../unifiedExec';
 import { useDeferredExpandedContent } from './deferredExpandedContent';
 import { parseDiffStats, parseWriteLineCount } from './toolChangeSummary';
 import { getToolDescriptionPath, toolDisplayName, getToolDescription, describeOpenChamberRow, describeOpencodeRow } from './toolDescriptions';
@@ -66,8 +66,9 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
 
     const status = state?.status as string | undefined;
     const exec = getUnifiedExecMetadata(part);
-    const running = isExecProcessRunning(normalizedPartTool, exec, state.status);
-    const isFinalized = !running && (status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled');
+    const processState = getExecProcessRunning(normalizedPartTool, exec, state.status);
+    const running = processState === true;
+    const isFinalized = processState === false || (!running && (status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled'));
     const isError = status === 'error' || status === 'failed' || Boolean(exec.execError);
 
     const { isActive, effectiveTimeStart, effectiveTimeEnd } = useToolRowTiming(part.id, stateWithData.time, isFinalized);
