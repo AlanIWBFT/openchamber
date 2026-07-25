@@ -541,6 +541,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.showToolFileIcons === 'boolean') {
       result.showToolFileIcons = candidate.showToolFileIcons;
     }
+    if (typeof candidate.codeBlockLineWrap === 'boolean') {
+      result.codeBlockLineWrap = candidate.codeBlockLineWrap;
+    }
     if (typeof candidate.showTurnChangedFiles === 'boolean') {
       result.showTurnChangedFiles = candidate.showTurnChangedFiles;
     }
@@ -628,6 +631,9 @@ export const createSettingsHelpers = (dependencies) => {
         .filter((shell) => typeof shell === 'string')
         .map((shell) => shell.trim().toLowerCase())
         .filter((shell) => TERMINAL_SHELL_VALUES.has(shell)))];
+    }
+    if (typeof candidate.editorFontSize === 'number' && Number.isFinite(candidate.editorFontSize)) {
+      result.editorFontSize = Math.max(9, Math.min(32, Math.round(candidate.editorFontSize)));
     }
     if (typeof candidate.padding === 'number' && Number.isFinite(candidate.padding)) {
       result.padding = Math.max(50, Math.min(200, Math.round(candidate.padding)));
