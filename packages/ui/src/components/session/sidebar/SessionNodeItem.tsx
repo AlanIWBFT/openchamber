@@ -26,7 +26,12 @@ import { buildSessionMessageRecordsSnapshot, useDirectoryStore, useGlobalSession
 import { useSync } from '@/sync/use-sync';
 import { useViewportStore, viewportSessionKey } from '@/sync/viewport-store';
 import { DraggableSessionRow } from './sessionFolderDnd';
-import { nodeContainsSessionId, nodeHasPinnedMembershipChange, selectQuestionBadgeSessionScopes } from './sessionNodeItemUtils';
+import {
+  nodeContainsSessionId,
+  nodeHasPinnedMembershipChange,
+  selectQuestionBadgeSessionScopes,
+  shouldSaveSessionRenameOnMouseDown,
+} from './sessionNodeItemUtils';
 import type { SessionNodeChildRenderExtras, SessionNodeRenderExtras } from './sessionNodeItemUtils';
 import type { SessionNode } from './types';
 import { formatProjectLabel, formatSessionCompactDateLabel, formatSessionDateLabel, normalizePath, renderHighlightedText } from './utils';
@@ -595,17 +600,16 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     });
   }, [session.id, sessionDirectory]);
 
-  // Capture outside-clicks to save edits — immune to focus-race with onBlur.
+  // A session can render in Recent and the project tree at once. Treat either
+  // rename form as internal, and let only the focused copy save outside clicks.
   React.useEffect(() => {
     if (editingId !== session.id) return;
     const handleDocMouseDown = (e: MouseEvent) => {
-      // The same session can be rendered twice (recent + project), each with
-      // its own rename form. A click inside ANY rename form for this session
-      // must not count as "outside", or the sibling instance would save and
-      // exit the rename mid-edit.
-      const target = e.target as HTMLElement | null;
-      const withinRenameForm = target?.closest?.(`[data-session-rename-form="${CSS.escape(session.id)}"]`);
-      if (formRef.current && !withinRenameForm) {
+      const clickedRenameSessionId = e.target instanceof Element
+        ? e.target.closest<HTMLElement>('[data-session-rename-form]')?.dataset.sessionRenameForm
+        : undefined;
+      const ownsFocus = formRef.current?.contains(document.activeElement) ?? false;
+      if (shouldSaveSessionRenameOnMouseDown(clickedRenameSessionId, session.id, ownsFocus)) {
         handleSaveEditRef.current(renameDraftRef.current);
       }
     };
