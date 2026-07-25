@@ -23,6 +23,12 @@ export type SessionNodeRenderExtras<TNode = SessionNode> = SessionNodeChildRende
   childRenderExtrasFor?: (child: TNode) => SessionNodeChildRenderExtras;
 };
 
+export const shouldSaveSessionRenameOnMouseDown = (
+  clickedRenameSessionId: string | undefined,
+  editingSessionId: string,
+  ownsFocus: boolean,
+): boolean => clickedRenameSessionId !== editingSessionId && ownsFocus;
+
 /**
  * Walk `nodes` and add `node.session.id` to `result` for every node
  * whose subtree contains `targetId`. This is used to precompute, once

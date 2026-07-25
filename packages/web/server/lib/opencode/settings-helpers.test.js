@@ -319,6 +319,35 @@ describe('settings helpers', () => {
     expect(response.collapsibleThinkingBlocks).toBe(true);
   });
 
+  it('accepts shared UI settings that must survive restart', () => {
+    const helpers = createTestHelpers();
+    const settings = {
+      sessionRetentionAction: 'delete',
+      editorFontSize: 17,
+      collapsibleUserMessages: false,
+      codeBlockLineWrap: false,
+      wideChatLayoutEnabled: true,
+      draftStartersCraftGoalAdded: true,
+    };
+
+    expect(helpers.sanitizeSettingsUpdate(settings)).toEqual(settings);
+    expect(helpers.formatSettingsResponse(settings)).toMatchObject(settings);
+  });
+
+  it('rejects malformed shared UI settings and clamps editor font size', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({
+      sessionRetentionAction: 'remove',
+      editorFontSize: Number.POSITIVE_INFINITY,
+      collapsibleUserMessages: 'false',
+      codeBlockLineWrap: 0,
+      wideChatLayoutEnabled: 'true',
+      draftStartersCraftGoalAdded: 1,
+    })).toEqual({});
+    expect(helpers.sanitizeSettingsUpdate({ editorFontSize: 100 })).toEqual({ editorFontSize: 32 });
+  });
+
   it('includes transient desktop LAN access runtime status in desktop settings response', () => {
     const helpers = createTestHelpers();
     const previousRuntime = process.env.OPENCHAMBER_RUNTIME;
