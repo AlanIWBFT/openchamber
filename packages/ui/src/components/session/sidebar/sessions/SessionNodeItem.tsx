@@ -595,7 +595,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
     openSessionInSidePanel(session.id, sessionDirectory, sessionTitle);
   };
 
-  // Capture outside-clicks to save edits — immune to focus-race with onBlur.
+  // Capture outside-clicks to save edits. Rename ownership is row-instance keyed.
   React.useEffect(() => {
     if (!isEditing) return;
     const handleDocMouseDown = (e: MouseEvent) => {
