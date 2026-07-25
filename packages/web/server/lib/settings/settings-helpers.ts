@@ -1127,6 +1127,9 @@ export const createSettingsHelpers = (dependencies: SettingsHelpersDependencies)
     if (isBoolean(candidate.showToolFileIcons)) {
       result.showToolFileIcons = candidate.showToolFileIcons;
     }
+    if (isBoolean(candidate.codeBlockLineWrap)) {
+      result.codeBlockLineWrap = candidate.codeBlockLineWrap;
+    }
     if (isBoolean(candidate.showTurnChangedFiles)) {
       result.showTurnChangedFiles = candidate.showTurnChangedFiles;
     }
@@ -1211,6 +1214,9 @@ export const createSettingsHelpers = (dependencies: SettingsHelpersDependencies)
         .filter(isString)
         .map((shell) => shell.trim().toLowerCase())
         .filter((shell) => TERMINAL_SHELL_VALUES.has(shell)))];
+    }
+    if (isNumber(candidate.editorFontSize) && Number.isFinite(candidate.editorFontSize)) {
+      result.editorFontSize = Math.max(9, Math.min(32, Math.round(candidate.editorFontSize)));
     }
     if (isNumber(candidate.padding) && Number.isFinite(candidate.padding)) {
       result.padding = Math.max(50, Math.min(200, Math.round(candidate.padding)));
