@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { getPinnedSessionKey } from '@/stores/useSessionPinnedStore';
-import { computeNodeStructureKey, nodeHasPinnedMembershipChange, selectFolderRootNodes, selectQuestionBadgeSessionScopes } from './sessionNodeItemUtils';
+import {
+  computeNodeStructureKey,
+  nodeHasPinnedMembershipChange,
+  selectFolderRootNodes,
+  selectQuestionBadgeSessionScopes,
+  shouldSaveSessionRenameOnMouseDown,
+} from './sessionNodeItemUtils';
 import type { SessionNode } from '../types';
 
 const session = (id: string, title: string): Session => ({
@@ -15,6 +21,17 @@ const rootWithChild = (childSession: Session): SessionNode => ({
   session: session('root', 'Root'),
   children: [{ session: childSession, children: [], worktree: null }],
   worktree: null,
+});
+
+describe('shouldSaveSessionRenameOnMouseDown', () => {
+  test('keeps editing when another rendered copy of the same session is clicked', () => {
+    expect(shouldSaveSessionRenameOnMouseDown('session-1', 'session-1', true)).toBe(false);
+  });
+
+  test('saves an outside click only from the rendered copy that owns focus', () => {
+    expect(shouldSaveSessionRenameOnMouseDown(undefined, 'session-1', true)).toBe(true);
+    expect(shouldSaveSessionRenameOnMouseDown(undefined, 'session-1', false)).toBe(false);
+  });
 });
 
 describe('computeNodeStructureKey', () => {
