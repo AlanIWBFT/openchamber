@@ -37,6 +37,7 @@ type AppearanceSlice = {
   autoSaveEnabled: boolean;
   autoDeleteAfterDays: number;
   sessionRetentionAction: 'archive' | 'delete';
+  codeBlockLineWrap: boolean;
   fontSize: number;
   terminalFontSize: number;
   terminalShell: TerminalShell;
@@ -89,6 +90,7 @@ export const startAppearanceAutoSave = (): void => {
     autoSaveEnabled: useUIStore.getState().autoSaveEnabled,
     autoDeleteAfterDays: useUIStore.getState().autoDeleteAfterDays,
     sessionRetentionAction: useUIStore.getState().sessionRetentionAction,
+    codeBlockLineWrap: useUIStore.getState().codeBlockLineWrap,
     fontSize: useUIStore.getState().fontSize,
     terminalFontSize: useUIStore.getState().terminalFontSize,
     terminalShell: useUIStore.getState().terminalShell,
@@ -133,6 +135,7 @@ export const startAppearanceAutoSave = (): void => {
       autoSaveEnabled: state.autoSaveEnabled,
       autoDeleteAfterDays: state.autoDeleteAfterDays,
       sessionRetentionAction: state.sessionRetentionAction,
+      codeBlockLineWrap: state.codeBlockLineWrap,
       fontSize: state.fontSize,
       terminalFontSize: state.terminalFontSize,
       terminalShell: state.terminalShell,
@@ -230,6 +233,9 @@ export const startAppearanceAutoSave = (): void => {
     }
     if (current.sessionRetentionAction !== previous.sessionRetentionAction) {
       diff.sessionRetentionAction = current.sessionRetentionAction;
+    }
+    if (current.codeBlockLineWrap !== previous.codeBlockLineWrap) {
+      diff.codeBlockLineWrap = current.codeBlockLineWrap;
     }
     if (current.fontSize !== previous.fontSize) {
       diff.fontSize = current.fontSize;
