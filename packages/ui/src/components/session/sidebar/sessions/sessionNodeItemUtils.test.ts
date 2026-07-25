@@ -10,6 +10,7 @@ import {
   selectFolderRootNodes,
   selectQuestionBadgeSessionScopes,
   selectRowBadgeVisibilityClass,
+  shouldSaveSessionRenameOnMouseDown,
 } from './sessionNodeItemUtils';
 import type { SessionNode } from '../types';
 
@@ -23,6 +24,17 @@ const rootWithChild = (childSession: Session): SessionNode => ({
   session: session('root', 'Root'),
   children: [{ session: childSession, children: [], worktree: null }],
   worktree: null,
+});
+
+describe('shouldSaveSessionRenameOnMouseDown', () => {
+  test('keeps editing when another rendered copy of the same session is clicked', () => {
+    expect(shouldSaveSessionRenameOnMouseDown('session-1', 'session-1', true)).toBe(false);
+  });
+
+  test('saves an outside click only from the rendered copy that owns focus', () => {
+    expect(shouldSaveSessionRenameOnMouseDown(undefined, 'session-1', true)).toBe(true);
+    expect(shouldSaveSessionRenameOnMouseDown(undefined, 'session-1', false)).toBe(false);
+  });
 });
 
 describe('computeNodeStructureKey', () => {
