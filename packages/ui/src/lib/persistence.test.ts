@@ -806,6 +806,31 @@ describe('updateDesktopSettings', () => {
     expect(useUIStore.getState().terminalLoginShells).toEqual(['zsh', 'fish']);
   });
 
+  test('applies persisted shared UI settings from the authoritative snapshot', async () => {
+    getWindow();
+    invalidateSettingsCache();
+    registerSettingsApi(async () => ({}), async () => ({
+      settings: {
+        sessionRetentionAction: 'delete',
+        editorFontSize: 17,
+        collapsibleUserMessages: false,
+        codeBlockLineWrap: false,
+        wideChatLayoutEnabled: true,
+        draftStartersCraftGoalAdded: true,
+      },
+      source: 'web',
+    }));
+
+    await syncDesktopSettings();
+
+    const state = useUIStore.getState();
+    expect(state.sessionRetentionAction).toBe('delete');
+    expect(state.editorFontSize).toBe(17);
+    expect(state.collapsibleUserMessages).toBe(false);
+    expect(state.codeBlockLineWrap).toBe(false);
+    expect(state.wideChatLayoutEnabled).toBe(true);
+  });
+
   test('autosaves all model selector settings fields', async () => {
     getWindow();
     const saveCalls: Array<Partial<SettingsPayload>> = [];
@@ -873,6 +898,7 @@ describe('updateDesktopSettings', () => {
     useUIStore.getState().setTerminalShell('auto');
     useUIStore.getState().setTerminalLoginShells([]);
     useUIStore.getState().setToolJsonViewMode('summary');
+    useUIStore.getState().setCodeBlockLineWrap(true);
     const saveCalls: Array<Partial<SettingsPayload>> = [];
     registerSettingsSave(async (changes) => {
       saveCalls.push(changes);
@@ -883,11 +909,13 @@ describe('updateDesktopSettings', () => {
     useUIStore.getState().setTerminalShell('zsh');
     useUIStore.getState().setTerminalLoginShells(['zsh']);
     useUIStore.getState().setToolJsonViewMode('formatted');
+    useUIStore.getState().setCodeBlockLineWrap(false);
     await delay(500);
 
     expect(saveCalls.some((changes) => changes.terminalShell === 'zsh')).toBe(true);
     expect(saveCalls.some((changes) => changes.terminalLoginShells?.includes('zsh'))).toBe(true);
     expect(saveCalls.some((changes) => changes.toolJsonViewMode === 'formatted')).toBe(true);
+    expect(saveCalls.some((changes) => changes.codeBlockLineWrap === false)).toBe(true);
   });
 
   test('legacy server lists show telemetry, while explicit hiding survives hydration', async () => {
