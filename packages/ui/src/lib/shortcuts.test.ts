@@ -2,8 +2,16 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   eventMatchesShortcutPrefix,
+  formatShortcutForDisplay,
   getEffectiveShortcutPrefix,
+  getCustomizableShortcutActions,
+  getShortcutAction,
+  getShortcutCategory,
+  getShortcutConflict,
+  isRiskyBrowserShortcut,
   isShortcutPrefixHeld,
+  normalizeCombo,
+  parseShortcut,
   UNASSIGNED_SHORTCUT,
 } from './shortcuts';
 
@@ -76,5 +84,35 @@ describe('eventMatchesShortcutPrefix', () => {
 
   test('false for an unassigned prefix', () => {
     expect(eventMatchesShortcutPrefix(keydown('1', { ctrl: true }), UNASSIGNED_SHORTCUT)).toBe(false);
+  });
+});
+
+describe('shortcut sequences', () => {
+  test('normalizes, parses, and formats up to two chords', () => {
+    expect(normalizeCombo(' command + S   P ')).toBe('mod+s p');
+    expect(parseShortcut('mod+s p')?.chords).toHaveLength(2);
+    expect(formatShortcutForDisplay('mod+s p')).toBe('Ctrl + S, P');
+  });
+
+  test('rejects bindings with more than two chords', () => {
+    expect(normalizeCombo('mod+s p q')).toBe('');
+    expect(parseShortcut('mod+s p q')).toBe(undefined);
+  });
+
+  test('reports exact and prefix conflicts but allows sibling sequences', () => {
+    expect(getShortcutConflict('mod+s', 'mod+s')).toBe('exact');
+    expect(getShortcutConflict('mod+s', 'mod+s p')).toBe('prefix');
+    expect(getShortcutConflict('mod+s p', 'mod+s q')).toBe(undefined);
+  });
+
+  test('warns when a sequence leader conflicts with a browser shortcut', () => {
+    expect(isRiskyBrowserShortcut('mod+s p')).toBe(true);
+  });
+
+  test('categorizes customizable actions and includes draft picker sequences', () => {
+    expect(getCustomizableShortcutActions().every((action) => action.category !== undefined)).toBe(true);
+    expect(getShortcutAction('open_draft_project_picker')?.defaultCombo).toBe('mod+s p');
+    expect(getShortcutAction('open_draft_worktree_picker')?.defaultCombo).toBe('mod+s g');
+    expect(getShortcutCategory(getShortcutAction('focus_input')!)).toBe('session');
   });
 });

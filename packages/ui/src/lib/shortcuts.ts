@@ -4,21 +4,32 @@ import { isDesktopShell } from '@/lib/desktop';
 type ShortcutModifier = 'mod' | 'shift' | 'alt' | 'option' | 'ctrl';
 type ShortcutKey = string;
 export type ShortcutCombo = string;
+export type ShortcutCategory = 'session' | 'models' | 'panels' | 'navigation' | 'application';
 
 export const UNASSIGNED_SHORTCUT: ShortcutCombo = '__unassigned__';
 
-export interface ShortcutAction {
+interface ShortcutActionDefinition {
   id: string;
   defaultCombo: ShortcutCombo;
   label: string;
   description?: string;
   customizable?: boolean;
+  /** Metadata for shortcut browsers; omitted actions use the application category. */
+  category?: ShortcutCategory;
 }
 
-interface ParsedShortcut {
+interface ParsedShortcutChord {
   modifiers: Set<ShortcutModifier>;
   key: ShortcutKey;
 }
+
+export interface ParsedShortcut {
+  chords: ReadonlyArray<ParsedShortcutChord>;
+}
+
+export type ShortcutConflict = 'exact' | 'prefix';
+
+const DEFAULT_SHORTCUT_CATEGORY: ShortcutCategory = 'application';
 
 const MODIFIER_KEY_MAP: Record<string, ShortcutModifier> = {
   'mod': 'mod',
@@ -70,6 +81,7 @@ const KEY_LABEL_MAP: Record<string, string> = {
 };
 
 const MODIFIER_PRIORITY: ShortcutModifier[] = ['mod', 'ctrl', 'shift', 'alt'];
+const RISKY_BROWSER_SHORTCUT_KEYS = new Set(['w', 't', 'r', 'p', 's', 'f', 'l', 'n']);
 
 const SHIFTED_KEY_BASE_MAP: Record<string, string> = {
   '{': '[',
@@ -114,13 +126,26 @@ export function keyToShortcutToken(key: string): string {
   return SHIFTED_KEY_BASE_MAP[lowered] ?? lowered;
 }
 
-const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
+const SHORTCUT_ACTIONS = [
+  {
+    id: 'save_file',
+    defaultCombo: 'mod+s',
+    label: 'Save file',
+    description: 'Save the active file editor',
+  },
+  {
+    id: 'find_in_file',
+    defaultCombo: 'mod+f',
+    label: 'Find in file',
+    description: 'Search in the active file editor',
+  },
   {
     id: 'open_go_to_line',
     defaultCombo: 'alt+g',
     label: 'Go to line (files editor)',
     description: 'Open go to line in the files editor',
     customizable: true,
+    category: 'navigation',
   },
   {
     id: 'open_command_palette',
@@ -128,6 +153,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Open command palette',
     description: 'Open the command palette',
     customizable: true,
+    category: 'application',
   },
   {
     id: 'focus_input',
@@ -135,6 +161,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Focus input',
     description: 'Focus the chat input field',
     customizable: true,
+    category: 'session',
   },
   {
     id: 'open_status',
@@ -148,6 +175,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Open settings',
     description: 'Open the settings panel',
     customizable: true,
+    category: 'application',
   },
   {
     id: 'toggle_terminal',
@@ -155,6 +183,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Toggle terminal dock',
     description: 'Toggle the bottom terminal dock',
     customizable: true,
+    category: 'panels',
   },
   {
     id: 'toggle_terminal_expanded',
@@ -162,6 +191,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Toggle terminal expanded',
     description: 'Toggle terminal expanded or collapsed',
     customizable: true,
+    category: 'panels',
   },
   {
     id: 'toggle_files',
@@ -175,6 +205,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Add selection to chat',
     description: 'Add the selected text to the chat input',
     customizable: true,
+    category: 'session',
   },
   {
     id: 'toggle_sidebar',
@@ -182,6 +213,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Toggle sidebar',
     description: 'Toggle the session sidebar',
     customizable: true,
+    category: 'panels',
   },
   {
     id: 'open_timeline_dialog',
@@ -189,6 +221,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Open conversation timeline',
     description: 'Search and navigate within current conversation',
     customizable: true,
+    category: 'session',
   },
   {
     id: 'toggle_prompt_navigator',
@@ -196,6 +229,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Toggle prompt navigator',
     description: 'Show or hide the prompt navigator panel in chat',
     customizable: true,
+    category: 'panels',
   },
   {
     id: 'toggle_right_sidebar',
@@ -203,6 +237,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Toggle right sidebar',
     description: 'Toggle the right sidebar',
     customizable: true,
+    category: 'panels',
   },
   {
     id: 'open_right_sidebar_git',
@@ -210,6 +245,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Open right sidebar Git tab',
     description: 'Open right sidebar and select Git',
     customizable: true,
+    category: 'panels',
   },
   {
     id: 'open_right_sidebar_files',
@@ -217,6 +253,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Open right sidebar Files tab',
     description: 'Open right sidebar and select Files',
     customizable: true,
+    category: 'panels',
   },
   {
     id: 'switch_context_surface',
@@ -224,6 +261,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Switch context panel surface',
     description: 'Hold the modifier and press a number to open or close the matching rail icon',
     customizable: true,
+    category: 'panels',
   },
   {
     id: 'new_chat',
@@ -231,6 +269,23 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'New session',
     description: 'Start a new session',
     customizable: true,
+    category: 'session',
+  },
+  {
+    id: 'open_draft_project_picker',
+    defaultCombo: 'mod+s p',
+    label: 'Open draft project picker',
+    description: 'Choose a project for a new draft',
+    customizable: true,
+    category: 'session',
+  },
+  {
+    id: 'open_draft_worktree_picker',
+    defaultCombo: 'mod+s g',
+    label: 'Open draft worktree picker',
+    description: 'Choose a worktree for a new draft',
+    customizable: true,
+    category: 'session',
   },
   {
     id: 'new_chat_worktree',
@@ -238,6 +293,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'New worktree draft',
     description: 'Create a new worktree and open a draft in it',
     customizable: true,
+    category: 'session',
   },
   {
     id: 'new_mini_chat',
@@ -245,6 +301,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'New Mini Chat window',
     description: 'Open a new Mini Chat draft window',
     customizable: true,
+    category: 'session',
   },
   {
     id: 'submit_message',
@@ -264,6 +321,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Open keyboard shortcuts',
     description: 'Show the keyboard shortcuts help',
     customizable: true,
+    category: 'application',
   },
   {
     id: 'toggle_context_plan',
@@ -271,6 +329,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Toggle plan context panel',
     description: 'Open or close plan in the context panel',
     customizable: true,
+    category: 'panels',
   },
   {
     id: 'toggle_services_menu',
@@ -278,6 +337,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Toggle services menu',
     description: 'Open or close the services menu',
     customizable: true,
+    category: 'panels',
   },
   {
     id: 'cycle_services_tab',
@@ -285,6 +345,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Cycle services tab',
     description: 'Cycle through tabs in the services menu',
     customizable: true,
+    category: 'navigation',
   },
   {
     id: 'cycle_theme',
@@ -292,6 +353,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Cycle theme',
     description: 'Cycle between light, dark, and system theme',
     customizable: true,
+    category: 'application',
   },
   {
     id: 'open_model_selector',
@@ -299,6 +361,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Open model selector',
     description: 'Open model selector while in chat',
     customizable: true,
+    category: 'models',
   },
   {
     id: 'cycle_thinking_variant',
@@ -312,6 +375,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Cycle agent',
     description: 'Cycle agent while the model selector is open',
     customizable: true,
+    category: 'models',
   },
   {
     id: 'cycle_favorite_model_forward',
@@ -319,6 +383,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Cycle favorite model forward',
     description: 'Cycle forward through starred models without opening the picker',
     customizable: true,
+    category: 'models',
   },
   {
     id: 'cycle_favorite_model_backward',
@@ -326,6 +391,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Cycle favorite model backward',
     description: 'Cycle backward through starred models without opening the picker',
     customizable: true,
+    category: 'models',
   },
   {
     id: 'expand_input',
@@ -333,6 +399,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Expand input',
     description: 'Toggle focus mode for the chat input',
     customizable: true,
+    category: 'session',
   },
   {
     id: 'toggle_dictation',
@@ -340,6 +407,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Voice input',
     description: 'Start dictation; press again to confirm and insert the transcript',
     customizable: true,
+    category: 'session',
   },
   {
     id: 'abort_run',
@@ -347,13 +415,79 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Abort active run',
     description: 'Abort the currently running task (double press)',
   },
-] as const;
+  {
+    id: 'switch_tab_1',
+    defaultCombo: 'mod+1',
+    label: 'Switch to tab 1',
+    description: 'Switch to the first tab or project',
+  },
+  {
+    id: 'switch_tab_2',
+    defaultCombo: 'mod+2',
+    label: 'Switch to tab 2',
+    description: 'Switch to the second tab or project',
+  },
+  {
+    id: 'switch_tab_3',
+    defaultCombo: 'mod+3',
+    label: 'Switch to tab 3',
+    description: 'Switch to the third tab or project',
+  },
+  {
+    id: 'switch_tab_4',
+    defaultCombo: 'mod+4',
+    label: 'Switch to tab 4',
+    description: 'Switch to the fourth tab or project',
+  },
+  {
+    id: 'switch_tab_5',
+    defaultCombo: 'mod+5',
+    label: 'Switch to tab 5',
+    description: 'Switch to the fifth tab or project',
+  },
+  {
+    id: 'switch_tab_6',
+    defaultCombo: 'mod+6',
+    label: 'Switch to tab 6',
+    description: 'Switch to the sixth tab or project',
+  },
+  {
+    id: 'switch_tab_7',
+    defaultCombo: 'mod+7',
+    label: 'Switch to tab 7',
+    description: 'Switch to the seventh tab or project',
+  },
+  {
+    id: 'switch_tab_8',
+    defaultCombo: 'mod+8',
+    label: 'Switch to tab 8',
+    description: 'Switch to the eighth tab or project',
+  },
+  {
+    id: 'switch_tab_9',
+    defaultCombo: 'mod+9',
+    label: 'Switch to tab 9',
+    description: 'Switch to the ninth tab or project',
+  },
+] as const satisfies ReadonlyArray<ShortcutActionDefinition>;
+
+export type ShortcutActionId = (typeof SHORTCUT_ACTIONS)[number]['id'];
+export type ShortcutAction = Omit<ShortcutActionDefinition, 'id'> & { id: ShortcutActionId };
 
 export function normalizeCombo(combo: ShortcutCombo): ShortcutCombo {
   if (isUnassignedShortcut(combo)) {
     return UNASSIGNED_SHORTCUT;
   }
 
+  const chords = combo.trim().replace(/\s*\+\s*/g, '+').split(/\s+/).filter(Boolean);
+  if (chords.length === 0 || chords.length > 2) {
+    return '';
+  }
+
+  return chords.map(normalizeChord).join(' ');
+}
+
+function normalizeChord(combo: ShortcutCombo): ShortcutCombo {
   const rawParts = combo
     .toLowerCase()
     .trim()
@@ -384,42 +518,54 @@ function isValidShortcutCombo(combo: ShortcutCombo): boolean {
   }
 
   const parsed = parseShortcut(combo);
-  return parsed.key.trim().length > 0;
+  return parsed !== undefined && parsed.chords.every((chord) => chord.key.trim().length > 0);
 }
 
-function parseShortcut(combo: ShortcutCombo): ParsedShortcut {
+export function parseShortcut(combo: ShortcutCombo): ParsedShortcut | undefined {
   if (isUnassignedShortcut(combo)) {
-    return { modifiers: new Set<ShortcutModifier>(), key: UNASSIGNED_SHORTCUT };
+    return { chords: [{ modifiers: new Set<ShortcutModifier>(), key: UNASSIGNED_SHORTCUT }] };
   }
 
   const normalized = normalizeCombo(combo);
-  const parts = normalized.split('+');
-  const modifiers: Set<ShortcutModifier> = new Set();
-  let key: ShortcutKey = '';
-
-  for (const part of parts) {
-    const modifier = MODIFIER_KEY_MAP[part];
-    if (modifier) {
-      modifiers.add(modifier);
-    } else {
-      key = part;
-    }
+  if (!normalized) {
+    return undefined;
   }
 
-  return { modifiers, key };
+  const chords = normalized.split(' ').map((chord) => {
+    const parts = chord.split('+');
+    const modifiers: Set<ShortcutModifier> = new Set();
+    let key: ShortcutKey = '';
+
+    for (const part of parts) {
+      const modifier = MODIFIER_KEY_MAP[part];
+      if (modifier) {
+        modifiers.add(modifier);
+      } else {
+        key = part;
+      }
+    }
+
+    return { modifiers, key };
+  });
+
+  return { chords };
 }
 
-export function formatShortcutForDisplay(combo: ShortcutCombo): string {
+export function formatShortcutForDisplay(combo: ShortcutCombo, unassignedLabel = 'Unassigned'): string {
   if (isUnassignedShortcut(combo)) {
-    return 'Unassigned';
+    return unassignedLabel;
   }
 
   const parsed = parseShortcut(combo);
 
-  if (!parsed.key && parsed.modifiers.size === 0) {
-    return 'Unassigned';
+  if (!parsed || parsed.chords.some((chord) => !chord.key && chord.modifiers.size === 0)) {
+    return unassignedLabel;
   }
 
+  return parsed.chords.map(formatChordForDisplay).join(', ');
+}
+
+function formatChordForDisplay(parsed: ParsedShortcutChord): string {
   const parts: string[] = [];
 
   for (const modifier of MODIFIER_PRIORITY) {
@@ -441,7 +587,32 @@ export function getShortcutAction(id: string): ShortcutAction | undefined {
 }
 
 export function getCustomizableShortcutActions(): ReadonlyArray<ShortcutAction> {
-  return SHORTCUT_ACTIONS.filter((action) => action.customizable === true);
+  return SHORTCUT_ACTIONS.filter((action) => 'customizable' in action && action.customizable === true);
+}
+
+export function getShortcutCategory(action: ShortcutAction): ShortcutCategory {
+  return action.category ?? DEFAULT_SHORTCUT_CATEGORY;
+}
+
+export function getShortcutConflict(left: ShortcutCombo, right: ShortcutCombo): ShortcutConflict | undefined {
+  const normalizedLeft = normalizeCombo(left);
+  const normalizedRight = normalizeCombo(right);
+  const hasInvalidBinding = !isValidShortcutCombo(normalizedLeft)
+    || !isValidShortcutCombo(normalizedRight);
+  const hasUnassignedBinding = normalizedLeft === UNASSIGNED_SHORTCUT
+    || normalizedRight === UNASSIGNED_SHORTCUT;
+  if (hasInvalidBinding || hasUnassignedBinding) {
+    return undefined;
+  }
+
+  if (normalizedLeft === normalizedRight) {
+    return 'exact';
+  }
+
+  const leftChords = normalizedLeft.split(' ');
+  const rightChords = normalizedRight.split(' ');
+  const sharesLeader = leftChords[0] === rightChords[0];
+  return sharesLeader && leftChords.length !== rightChords.length ? 'prefix' : undefined;
 }
 
 export function getEffectiveShortcutCombo(
@@ -455,13 +626,9 @@ export function getEffectiveShortcutCombo(
 
   const override = overrides?.[actionId];
   if (typeof override === 'string') {
-    if (override.trim().toLowerCase() === UNASSIGNED_SHORTCUT) {
-      return '';
-    }
-
     const normalized = normalizeCombo(override);
     if (normalized === UNASSIGNED_SHORTCUT) {
-      return UNASSIGNED_SHORTCUT;
+      return '';
     }
 
     if (isValidShortcutCombo(normalized)) {
@@ -478,13 +645,18 @@ export function isRiskyBrowserShortcut(combo: ShortcutCombo): boolean {
   }
 
   const parsed = parseShortcut(combo);
-  if (!parsed.modifiers.has('mod')) {
+  if (!parsed) {
+    return false;
+  }
+  const chord = parsed.chords[0];
+  if (!chord.modifiers.has('mod')) {
     return false;
   }
 
-  const key = parsed.key.toLowerCase();
-  const dangerousPrimary = new Set(['w', 't', 'r', 'p', 's', 'f', 'l', 'n']);
-  return dangerousPrimary.has(key) && !parsed.modifiers.has('shift') && !parsed.modifiers.has('alt');
+  const key = chord.key.toLowerCase();
+  return RISKY_BROWSER_SHORTCUT_KEYS.has(key)
+    && !chord.modifiers.has('shift')
+    && !chord.modifiers.has('alt');
 }
 
 export function eventMatchesShortcut(
@@ -497,11 +669,15 @@ export function eventMatchesShortcut(
   }
 
   const parsed = parseShortcut(combo);
+  if (!parsed || parsed.chords.length !== 1) {
+    return false;
+  }
+  const chord = parsed.chords[0];
 
-  const expectedMod = parsed.modifiers.has('mod');
-  const expectedShift = parsed.modifiers.has('shift');
-  const expectedAlt = parsed.modifiers.has('alt');
-  const expectedCtrl = parsed.modifiers.has('ctrl');
+  const expectedMod = chord.modifiers.has('mod');
+  const expectedShift = chord.modifiers.has('shift');
+  const expectedAlt = chord.modifiers.has('alt');
+  const expectedCtrl = chord.modifiers.has('ctrl');
   const isDesktopMac = isMacOS() && isDesktopShell();
   const isMac = isMacOS();
 
@@ -548,7 +724,7 @@ export function eventMatchesShortcut(
   }
 
   const eventKey = keyToShortcutToken(eventKeyRaw);
-  const expectedKey = keyToShortcutToken(parsed.key);
+  const expectedKey = keyToShortcutToken(chord.key);
 
   return eventKey === expectedKey;
 }
@@ -581,7 +757,8 @@ export function getEffectiveShortcutPrefix(
     }
     if (normalized) {
       const parsed = parseShortcut(normalized);
-      if (parsed.modifiers.size > 0 || parsed.key) {
+      const chord = parsed?.chords[0];
+      if (chord && (chord.modifiers.size > 0 || chord.key)) {
         return normalized;
       }
     }
@@ -601,15 +778,19 @@ export function isShortcutPrefixHeld(prefixCombo: ShortcutCombo, heldKeys: Reado
   }
 
   const parsed = parseShortcut(prefixCombo);
+  if (!parsed || parsed.chords.length !== 1) {
+    return false;
+  }
+  const chord = parsed.chords[0];
 
-  for (const modifier of parsed.modifiers) {
+  for (const modifier of chord.modifiers) {
     const aliases = MODIFIER_KEY_ALIASES[modifier];
     if (!aliases.some((alias) => heldKeys.has(alias))) {
       return false;
     }
   }
 
-  if (parsed.key && !heldKeys.has(parsed.key.toLowerCase())) {
+  if (chord.key && !heldKeys.has(chord.key.toLowerCase())) {
     return false;
   }
 
@@ -632,11 +813,15 @@ export function eventMatchesShortcutPrefix(
   }
 
   const parsed = parseShortcut(prefixCombo);
+  if (!parsed || parsed.chords.length !== 1) {
+    return false;
+  }
+  const chord = parsed.chords[0];
 
-  const expectedMod = parsed.modifiers.has('mod');
-  const expectedShift = parsed.modifiers.has('shift');
-  const expectedAlt = parsed.modifiers.has('alt');
-  const expectedCtrl = parsed.modifiers.has('ctrl');
+  const expectedMod = chord.modifiers.has('mod');
+  const expectedShift = chord.modifiers.has('shift');
+  const expectedAlt = chord.modifiers.has('alt');
+  const expectedCtrl = chord.modifiers.has('ctrl');
   const isDesktopMac = isMacOS() && isDesktopShell();
   const isMac = isMacOS();
 
@@ -673,7 +858,7 @@ export function eventMatchesShortcutPrefix(
     }
   }
 
-  if (parsed.key && (!heldKeys || !heldKeys.has(parsed.key.toLowerCase()))) {
+  if (chord.key && (!heldKeys || !heldKeys.has(chord.key.toLowerCase()))) {
     return false;
   }
 
