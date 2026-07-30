@@ -43,7 +43,7 @@ import {
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useFileSearchStore } from '@/stores/useFileSearchStore';
 import { useDeviceInfo } from '@/lib/device';
-import { cn, getModifierLabel, getRevealLabelKey, hasModifier } from '@/lib/utils';
+import { cn, getModifierLabel, getRevealLabelKey } from '@/lib/utils';
 import { getLanguageFromExtension, getImageMimeType, isBinaryFile, isDrawioFile, isImageFile, isPdfFile, isSvgFile, looksLikeBinaryText } from '@/lib/toolHelpers';
 import { shouldAllowFileDraftSave, shouldScheduleFileAutosave } from '@/lib/fileEditorAutosave';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
@@ -52,6 +52,7 @@ import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 import { getOutsideFileGrant } from '@/lib/outsideFileGrants';
 import { DiagramEditor } from '@/components/diagram';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import { useKeybind, useKeybinds } from '@/hooks/useKeybind';
 import { EditorView } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
@@ -72,7 +73,6 @@ import { ensurePierreThemeRegistered } from '@/lib/shiki/appThemeRegistry';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import { isBrowserClientRuntime, openDesktopFileInApp, openDesktopPath } from '@/lib/desktop';
 import { useOpenInAppsStore } from '@/stores/useOpenInAppsStore';
-import { eventMatchesShortcut, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import { useI18n } from '@/lib/i18n';
 import { sessionEvents } from '@/lib/sessionEvents';
 
@@ -1022,7 +1022,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   const setPendingFileNavigation = useUIStore((state) => state.setPendingFileNavigation);
   const pendingFileFocusPath = useUIStore((state) => state.pendingFileFocusPath);
   const setPendingFileFocusPath = useUIStore((state) => state.setPendingFileFocusPath);
-  const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
   const fileEditorKeymap = useUIStore((state) => state.fileEditorKeymap);
   const settingsDefaultFileViewerPreview = useConfigStore((state) => state.settingsDefaultFileViewerPreview);
   const showMessageTTSButtons = useConfigStore((state) => state.showMessageTTSButtons);
@@ -1767,35 +1766,28 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     setAutoSaveStatus('idle');
   }, [selectedFile?.path]);
 
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!hasModifier(e)) {
-        return;
-      }
+  useKeybinds({
+    save_file: (event) => {
+      if (!(event.target instanceof Node) || !editorWrapperRef.current?.contains(event.target)) return false;
 
-      if (e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        // Cancel pending auto-save; user wants immediate save
-        if (autoSaveTimerRef.current) {
-          clearTimeout(autoSaveTimerRef.current);
-          autoSaveTimerRef.current = null;
-        }
-        if (!isSaving) {
-          void saveDraft().then((saved) => {
-            if (!saved) return;
-            setAutoSaveStatus('saved');
-            setTimeout(() => setAutoSaveStatus('idle'), 2000);
-          });
-        }
-      } else if (e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        setIsSearchOpen(true);
+      // Cancel pending auto-save because the explicit save should run immediately.
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
       }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSaving, saveDraft]);
+      if (!isSaving) {
+        void saveDraft().then((saved) => {
+          if (!saved) return;
+          setAutoSaveStatus('saved');
+          setTimeout(() => setAutoSaveStatus('idle'), 2000);
+        });
+      }
+    },
+    find_in_file: (event) => {
+      if (!(event.target instanceof Node) || !editorWrapperRef.current?.contains(event.target)) return false;
+      setIsSearchOpen(true);
+    },
+  });
 
   const loadSelectedFile = React.useCallback(async (node: FileNode) => {
     const loadId = activeFileLoadIdRef.current + 1;
@@ -2908,42 +2900,21 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     };
   }, [isMobile, nudgeEditorSelectionAboveKeyboard]);
 
-  React.useEffect(() => {
+  useKeybind('open_go_to_line', (event) => {
     if (!canEdit || textViewMode !== 'edit' || isMobile) {
-      return;
+      return false;
     }
 
-    const goToLineCombo = getEffectiveShortcutCombo('open_go_to_line', shortcutOverrides);
+    const target = event.target as Element | null;
+    if (target?.closest('[role="dialog"]')) return false;
+    if (!(target instanceof Node) || !editorWrapperRef.current?.contains(target)) return false;
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as Element | null;
-      if (target?.closest('[role="dialog"]')) {
-        return;
-      }
+    const isEditorTarget = Boolean(target?.closest('.cm-editor'));
+    const isTypingTarget = Boolean(target?.closest('input, textarea, [contenteditable="true"], [role="textbox"]'));
+    if (isTypingTarget && !isEditorTarget) return false;
 
-      const isEditorTarget = Boolean(target?.closest('.cm-editor'));
-      const isTypingTarget = Boolean(
-        target?.closest('input, textarea, [contenteditable="true"], [role="textbox"]')
-      );
-      if (isTypingTarget && !isEditorTarget) {
-        return;
-      }
-
-      const activeElement = document.activeElement as Element | null;
-      const editorHasFocus = Boolean(activeElement?.closest('.cm-editor'));
-      if (!editorHasFocus) {
-        return;
-      }
-
-      if (eventMatchesShortcut(event, goToLineCombo)) {
-        event.preventDefault();
-        setIsGoToLineOpen(true);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canEdit, isMobile, shortcutOverrides, textViewMode]);
+    setIsGoToLineOpen(true);
+  });
 
   const editorFontSize = useUIStore((state) => state.editorFontSize);
 
