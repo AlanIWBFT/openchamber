@@ -1109,6 +1109,7 @@ export const settingsDict = {
    "settings.openchamber.keyboardShortcuts.error.exactConflict": "Esta combinación ya la usa {action}.",
    "settings.openchamber.keyboardShortcuts.action.open_draft_project_picker.label": "Abrir selector de proyecto de borrador",
    "settings.openchamber.keyboardShortcuts.action.open_draft_worktree_picker.label": "Abrir selector de árbol de trabajo de borrador",
+   "settings.openchamber.keyboardShortcuts.action.open_session_list.label": "Abrir lista de sesiones",
    "settings.openchamber.keyboardShortcuts.action.toggle_dictation.label": "Entrada de voz",
    "settings.projects.sidebar.total": "Total {count}",
   "settings.projects.sidebar.actions.addProject": "Añadir proyecto",

@@ -27,7 +27,7 @@ Component interaction keys that are not application commands, such as list navig
 
 Bindings remain persisted as `Record<string, string>`. Each binding has one chord or at most two space-separated chords, such as `mod+s p`. `normalizeCombo`, `parseShortcut`, `formatShortcutForDisplay`, and `getShortcutConflict` provide the shared parsing and validation behavior. A single chord conflicts with a sequence sharing its first chord; sibling sequences are valid.
 
-Contextual internal commands may deliberately share a sequence leader. The single-chord handler gets the first chance to handle the event; returning `false` lets the dispatcher start the sequence. The active file editor therefore owns `mod+s` for saving, while a mounted but unfocused editor yields `mod+s p` and `mod+s g` to the draft target pickers.
+Contextual internal commands may deliberately share a sequence leader. The single-chord handler gets the first chance to handle the event; returning `false` lets the dispatcher start the sequence. The active file editor therefore owns `mod+s` for saving, while a mounted but unfocused editor yields `mod+s p`, `mod+s g`, and `mod+s l` to the draft target pickers and session list.
 
 Runtime-specific commands may also share an exact binding when their handlers are mutually exclusive. `open_diff_panel` handles `mod+2` on desktop, while `switch_tab_2` handles it on mobile; each returns `false` outside its runtime so the dispatcher can try the next registered action.
 

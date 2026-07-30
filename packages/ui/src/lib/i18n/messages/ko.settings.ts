@@ -1109,6 +1109,7 @@ export const settingsDict = {
    'settings.openchamber.keyboardShortcuts.error.exactConflict': '이 조합은 이미 {action}에서 사용합니다.',
    'settings.openchamber.keyboardShortcuts.action.open_draft_project_picker.label': '초안 프로젝트 선택기 열기',
    'settings.openchamber.keyboardShortcuts.action.open_draft_worktree_picker.label': '초안 워크트리 선택기 열기',
+   'settings.openchamber.keyboardShortcuts.action.open_session_list.label': '세션 목록 열기',
    'settings.openchamber.keyboardShortcuts.action.toggle_dictation.label': '음성 입력',
    'settings.projects.sidebar.total': '총 {count}개',
   'settings.projects.sidebar.actions.addProject': '프로젝트 추가',

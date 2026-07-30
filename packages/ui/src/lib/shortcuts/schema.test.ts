@@ -48,9 +48,10 @@ describe('shortcut schema', () => {
     ))).toBe(true);
   });
 
-  test('includes draft prefix bindings and session metadata', () => {
+  test('includes session prefix bindings and metadata', () => {
     expect(getShortcutAction('open_draft_project_picker')?.defaultBinding).toBe('mod+s p');
     expect(getShortcutAction('open_draft_worktree_picker')?.defaultBinding).toBe('mod+s g');
+    expect(getShortcutAction('open_session_list')?.defaultBinding).toBe('mod+s l');
     expect(getShortcutAction('focus_input')?.category).toBe('session');
   });
 

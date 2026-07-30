@@ -1142,6 +1142,7 @@ export const settingsDict = {
    'settings.openchamber.keyboardShortcuts.error.exactConflict': 'この組み合わせは {action} で使用されています。',
    'settings.openchamber.keyboardShortcuts.action.open_draft_project_picker.label': '下書きプロジェクト選択を開く',
    'settings.openchamber.keyboardShortcuts.action.open_draft_worktree_picker.label': '下書きワークツリー選択を開く',
+   'settings.openchamber.keyboardShortcuts.action.open_session_list.label': 'セッション一覧を開く',
    'settings.openchamber.keyboardShortcuts.action.toggle_dictation.label': '音声入力',
    'settings.projects.sidebar.total': '合計 {count}',
   'settings.projects.sidebar.actions.addProject': 'プロジェクトを追加',

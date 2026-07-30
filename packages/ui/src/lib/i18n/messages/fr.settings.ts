@@ -1030,6 +1030,7 @@ export const settingsDict = {
    'settings.openchamber.keyboardShortcuts.error.exactConflict': 'Cette combinaison est déjà utilisée par {action}.',
    'settings.openchamber.keyboardShortcuts.action.open_draft_project_picker.label': 'Ouvrir le sélecteur de projet de brouillon',
    'settings.openchamber.keyboardShortcuts.action.open_draft_worktree_picker.label': 'Ouvrir le sélecteur de worktree de brouillon',
+   'settings.openchamber.keyboardShortcuts.action.open_session_list.label': 'Ouvrir la liste des sessions',
    'settings.openchamber.keyboardShortcuts.action.toggle_dictation.label': 'Saisie vocale',
    'settings.projects.sidebar.total': 'Total {count}',
   'settings.projects.sidebar.actions.addProject': 'Ajouter un projet',

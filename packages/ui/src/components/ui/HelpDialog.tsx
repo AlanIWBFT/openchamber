@@ -135,6 +135,11 @@ export const HelpDialog: React.FC = () => {
           icon: 'git-branch',
           keys: '',
         },
+        {
+          id: 'open_session_list',
+          icon: 'list-unordered',
+          keys: '',
+        },
         { id: 'focus_input', descriptionKey: "helpDialog.item.focusChatInput", icon: "text", keys: '' },
         {
           id: 'toggle_prompt_navigator',

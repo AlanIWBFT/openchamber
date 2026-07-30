@@ -1109,6 +1109,7 @@ export const settingsDict = {
    "settings.openchamber.keyboardShortcuts.error.exactConflict": "Цю комбінацію вже використовує {action}.",
    "settings.openchamber.keyboardShortcuts.action.open_draft_project_picker.label": "Відкрити вибір проєкту чернетки",
    "settings.openchamber.keyboardShortcuts.action.open_draft_worktree_picker.label": "Відкрити вибір worktree чернетки",
+   "settings.openchamber.keyboardShortcuts.action.open_session_list.label": "Відкрити список сесій",
    "settings.openchamber.keyboardShortcuts.action.toggle_dictation.label": "Голосове введення",
    "settings.projects.sidebar.total": "Усього {count}",
   "settings.projects.sidebar.actions.addProject": "Додати проєкт",

@@ -1016,6 +1016,7 @@
    'settings.openchamber.keyboardShortcuts.error.exactConflict': '此組合已由 {action} 使用。',
    'settings.openchamber.keyboardShortcuts.action.open_draft_project_picker.label': '開啟草稿專案選擇器',
    'settings.openchamber.keyboardShortcuts.action.open_draft_worktree_picker.label': '開啟草稿 worktree 選擇器',
+   'settings.openchamber.keyboardShortcuts.action.open_session_list.label': '開啟工作階段列表',
    'settings.openchamber.keyboardShortcuts.action.toggle_dictation.label': '語音輸入',
    'settings.projects.sidebar.total': '總計 {count}',
   'settings.projects.sidebar.actions.addProject': '新增專案',

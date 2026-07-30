@@ -99,6 +99,11 @@ export const useKeyboardShortcuts = () => {
     open_timeline_dialog: () => {
       useUIStore.getState().setTimelineDialogOpen(true);
     },
+    open_session_list: () => {
+      const state = useUIStore.getState();
+      if (state.isMobile) state.setSessionSwitcherOpen(true);
+      else state.setSessionDropdownOpen(true);
+    },
     toggle_prompt_navigator: () => {
       const state = useUIStore.getState();
       const hasOverlay = state.isSettingsDialogOpen

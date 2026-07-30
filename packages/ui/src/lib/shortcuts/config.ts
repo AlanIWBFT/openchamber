@@ -56,6 +56,13 @@ const SHORTCUT_GROUPS = {
         'settings.openchamber.keyboardShortcuts.action.open_draft_worktree_picker.label',
     },
     {
+      id: 'open_session_list',
+      defaultBinding: 'mod+s l',
+      customizable: true,
+      settingsLabelKey:
+        'settings.openchamber.keyboardShortcuts.action.open_session_list.label',
+    },
+    {
       id: 'new_chat_worktree',
       defaultBinding: 'mod+shift+n',
       customizable: true,
