@@ -183,7 +183,7 @@ IPC results if its endpoint changes while the read is pending.
 | `scripts/electron-dev.mjs` | Desktop dev launcher with Vite HMR support |
 | `scripts/ensure-electron.mjs` | Verifies the installed Electron binary is complete and repairs it via the postinstall under Bun |
 | `scripts/build-web-assets.mjs` | Builds `packages/web` and stages UI assets into `resources/web-dist` |
-| `scripts/prepare-opencode-cli.mjs` | Downloads and stages the pinned OpenCode CLI into `resources/opencode-cli` |
+| `scripts/prepare-opencode-cli.mjs` | Stages the pinned OpenCode CLI from a release or local source into `resources/opencode-cli` |
 | `scripts/windows-executable.mjs` | Reads the CPU architecture of a Windows executable from its PE header |
 | `scripts/opencode-cli-version.mjs` | Reads the pinned OpenCode CLI version and parses `opencode --version` output |
 | `scripts/bundle-main.mjs` | Bundles Electron main code into `dist-bundle/{entry,main,early-startup}.mjs` for packaging |
@@ -277,7 +277,7 @@ bun run electron:build
 That runs, in order:
 
 1. `build:web-assets` to build the web UI and copy it into `packages/electron/resources/web-dist`.
-2. `prepare:opencode-cli` to download/cache the pinned OpenCode CLI and copy it into `packages/electron/resources/opencode-cli`.
+2. `prepare:opencode-cli` to stage the pinned OpenCode CLI in `packages/electron/resources/opencode-cli`.
 3. `prepare:ripgrep` to download/cache the target architecture's ripgrep and copy it into `packages/electron/resources/ripgrep`.
 4. `bundle:main` to create `packages/electron/dist-bundle/{entry,main,early-startup}.mjs`.
 5. `rebuild:native` to rebuild native modules for Electron.
@@ -329,7 +329,11 @@ The macOS menu bar item is enabled by default and can be disabled in General set
 
 ## Bundled OpenCode CLI
 
-Packaged Desktop builds include the official OpenCode CLI release pinned by `opencodeCli.version` in `packages/electron/package.json` (OpenChamber requires OpenCode 2.x). OpenCode 2.x ships on npm rather than as GitHub release assets, so `prepare:opencode-cli` downloads the platform package tarball (`@opencode/cli-<os>-<arch>`, the same one OpenCode's own installer uses), caches it under `packages/electron/.cache/opencode-cli`, stages `opencode` or `opencode.exe` into `resources/opencode-cli`, and verifies `opencode --version` before packaging. Re-running the step is fast when the staged binary already matches the pinned version. The target architecture comes from `OPENCHAMBER_TARGET_ARCH` or `ELECTRON_BUILDER_ARCH`, falling back to the build host. A Windows build for another architecture does not run the binary, because the arm64 release job runs on an x64 runner that cannot start it; there the step checks the version in the package's `package.json` instead; on Windows `verify:opencode-cli` and `verify:opencode-cli:packaged` also read the binary's PE header (`scripts/windows-executable.mjs`) and fail when it was built for another architecture.
+Packaged Desktop builds include an OpenCode CLI pinned by `opencodeCli.version` in `packages/electron/package.json` (OpenChamber requires OpenCode 2.x). By default, `prepare:opencode-cli` downloads the npm platform tarball (`@opencode/cli-<os>-<arch>`), caches it under `packages/electron/.cache/opencode-cli`, stages `opencode` or `opencode.exe` into `resources/opencode-cli`, and verifies `opencode --version` before packaging. Re-running the download path is fast when the staged binary already matches the pinned version.
+
+The target architecture comes from `OPENCHAMBER_TARGET_ARCH` or `ELECTRON_BUILDER_ARCH`, falling back to the build host. A Windows release download for another architecture is not run on the host; its package manifest supplies the version instead. Windows CLI verification also checks the PE header (`scripts/windows-executable.mjs`) against the target architecture.
+
+Set `OPENCHAMBER_OPENCODE_SOURCE_DIR` to build from a local OpenCode checkout instead. This path uses `packages/cli`, channel `dev`, one explicit `opencode-<platform>-<arch>[-baseline]` build target, and `--skip-web-ui` to omit OpenCode's unused Web UI. Build output lives under `packages/cli/dist/cli-<platform>-<arch>[-baseline]/bin`. Windows builds use the GUI subsystem for redirected child-process use. The local Windows fork supports the x64 packaging path; ARM64 local-fork packaging is unsupported and unvalidated. Official release downloads retain upstream's native architecture mapping.
 
 Managed local Desktop startup prefers OpenCode binaries in this order:
 
@@ -361,6 +365,7 @@ The server (`packages/web/server/lib/fs/ripgrep.js`) looks for ripgrep in this o
 | `OPENCHAMBER_ELECTRON_REMOTE_DEBUGGING_PORT` | Development only: opens Chromium's DevTools protocol on this loopback port so a debugger can attach to the dev window; ignored in packaged builds |
 | `OPENCHAMBER_RUNTIME=desktop` | Set by Electron before starting the web server |
 | `OPENCHAMBER_OPENCODE_CLI_VERSION` | Optional packaging override for the bundled OpenCode CLI version; defaults to `opencodeCli.version` in `packages/electron/package.json` |
+| `OPENCHAMBER_OPENCODE_SOURCE_DIR` | Build the bundled CLI from this local OpenCode checkout instead of downloading a release artifact |
 | `OPENCHAMBER_TARGET_ARCH` | Explicit desktop package architecture (`x64` or `arm64`); Linux requires it to match the native host |
 | `OPENCHAMBER_DESKTOP_NOTIFY=true` | Enables desktop notification flow in the web server |
 | `OPENCHAMBER_SKIP_API_COMPRESSION=true` | Defaulted by Desktop to reduce local CPU overhead |
