@@ -1,6 +1,6 @@
 # Registration boundary
 
-Application commands use `useKeybind(actionId, handler)` or `useKeybinds(bindings)`. Both register with the shared `shortcutRegistry`, so components never receive a registry. The first registration for an action ID wins until it unregisters, then the next mounted registration takes over. A component-local interaction, such as editor navigation or an open menu, remains local event handling rather than a registered application command.
+Application commands use `useKeybind(actionId, handler)` or `useKeybinds(bindings)`. Both accept only action IDs derived from `SHORTCUT_SCHEMA`. Batch registration also rejects undeclared keys in prebuilt objects, including objects that mix valid and misspelled IDs. Both hooks use the shared `shortcutRegistry`, so components never receive a registry. The first registration for an action ID wins until it unregisters, then the next mounted registration takes over. A component-local interaction, such as editor navigation or an open menu, remains local event handling rather than a registered application command.
 
 Do not add a component-level `window` or `document` keydown listener for an application command. Declare the action in `config.ts`, then register its handler near the state or UI it owns. This keeps definitions and dispatch centralized without lifting component state or passing callbacks through unrelated components.
 

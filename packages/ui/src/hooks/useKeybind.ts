@@ -8,9 +8,13 @@ export function useKeybind(actionId: ShortcutActionId, handler: ShortcutHandler)
   React.useEffect(() => shortcutRegistry.register(actionId, (event) => handlerRef.current(event)), [actionId]);
 }
 
-export function useKeybinds(
-  bindings: Partial<Record<ShortcutActionId, ShortcutHandler>>,
-): void {
+export type ShortcutBindings<
+  Bindings extends Partial<Record<ShortcutActionId, ShortcutHandler>>,
+> = Bindings & Record<Exclude<keyof Bindings, ShortcutActionId>, never>;
+
+export function useKeybinds<
+  const Bindings extends Partial<Record<ShortcutActionId, ShortcutHandler>>,
+>(bindings: ShortcutBindings<Bindings>): void {
   const handlersRef = React.useRef(bindings);
   handlersRef.current = bindings;
   const actionIdsKey = Object.keys(bindings).sort().join('\0');
