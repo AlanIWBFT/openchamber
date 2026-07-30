@@ -75,3 +75,22 @@ export const resolveTargetArchitecture = ({
   }
   return target;
 };
+
+export const resolveOpenCodeCliTarget = ({ platform = process.platform, targetArchitecture }) => {
+  const requestedArchitecture = normalizeTargetArchitecture(targetArchitecture?.opencode, 'OpenCode target architecture').opencode;
+  // Preserve the upstream Windows ARM64 workaround: run the x64 baseline CLI
+  // under emulation until the native Bun FFI issue is resolved.
+  const architecture = platform === 'win32' && requestedArchitecture === 'arm64' ? 'x64' : requestedArchitecture;
+  const buildPlatform = platform === 'win32' ? 'windows' : platform;
+  if (!['linux', 'darwin', 'windows'].includes(buildPlatform)) {
+    throw new Error(`No OpenCode CLI build target mapping for ${platform}/${architecture}`);
+  }
+  const baseline = architecture === 'x64';
+  const target = `${buildPlatform}-${architecture}${baseline ? '-baseline' : ''}`;
+  return {
+    architecture,
+    buildTarget: `opencode-${target}`,
+    packageDirectory: `cli-${target}`,
+    baseline,
+  };
+};
