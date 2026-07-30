@@ -1,6 +1,5 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveTargetArchitecture } from './target-architecture.mjs';
@@ -67,6 +66,14 @@ const artifactForPlatform = (platform, targetArchitecture) => {
   throw new Error(`No OpenCode CLI artifact mapping for ${platform}/${arch}`);
 };
 
+const localArtifactForPlatform = (platform, targetArchitecture) => {
+  const artifact = artifactForPlatform(platform, targetArchitecture);
+  return {
+    binary: artifact.binary,
+    directory: artifact.name.replace(/\.(?:zip|tar\.gz)$/, ''),
+  };
+};
+
 const outputBinaryPath = (binaryName) => path.join(outputDir, binaryName);
 
 const readBinaryVersion = (binaryPath) => {
@@ -85,6 +92,75 @@ const ensureExecutable = (filePath) => {
   if (process.platform !== 'win32') {
     fs.chmodSync(filePath, 0o755);
   }
+};
+
+const stageBinary = (source, destination, expectedVersion) => {
+  fs.mkdirSync(outputDir, { recursive: true });
+  const binaryName = path.basename(destination);
+  const temporary = path.join(outputDir, `.next-${process.pid}-${binaryName}`);
+  const backup = path.join(outputDir, `.previous-${process.pid}-${binaryName}`);
+  fs.rmSync(temporary, { force: true });
+  fs.rmSync(backup, { force: true });
+  fs.copyFileSync(source, temporary);
+  ensureExecutable(temporary);
+
+  const stagedVersion = readBinaryVersion(temporary);
+  if (stagedVersion !== expectedVersion) {
+    fs.rmSync(temporary, { force: true });
+    throw new Error(`Staged OpenCode CLI version mismatch: expected ${expectedVersion}, got ${stagedVersion || 'unknown'}`);
+  }
+
+  const hadDestination = fs.existsSync(destination);
+  try {
+    if (hadDestination) fs.renameSync(destination, backup);
+    fs.renameSync(temporary, destination);
+  } catch (error) {
+    fs.rmSync(temporary, { force: true });
+    if (hadDestination && fs.existsSync(backup) && !fs.existsSync(destination)) {
+      fs.renameSync(backup, destination);
+    }
+    throw error;
+  }
+  fs.rmSync(backup, { force: true });
+
+  for (const entry of fs.readdirSync(outputDir)) {
+    if (entry === '.gitkeep' || entry === binaryName) continue;
+    fs.rmSync(path.join(outputDir, entry), { recursive: true, force: true });
+  }
+};
+
+const prepareFromLocalSource = ({ sourceRoot, version, targetArchitecture, outputBinary }) => {
+  if (targetArchitecture.node !== process.arch) {
+    throw new Error(
+      `Local OpenCode source builds must target the native architecture: host is ${process.arch}, target is ${targetArchitecture.node}`,
+    );
+  }
+
+  const opencodePackageRoot = path.join(sourceRoot, 'packages', 'opencode');
+  const opencodePackagePath = path.join(opencodePackageRoot, 'package.json');
+  if (!fs.statSync(opencodePackagePath, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Local OpenCode package not found: ${opencodePackagePath}`);
+  }
+
+  const args = ['run', '--cwd', opencodePackageRoot, 'build', '--single', '--skip-embed-web-ui'];
+  if (targetArchitecture.node === 'x64') args.push('--baseline');
+  const channel = 'dev';
+
+  console.log(`[electron] building bundled OpenCode CLI from local source (${channel}): ${sourceRoot}`);
+  run(process.env.BUN?.trim() || (process.platform === 'win32' ? 'bun.exe' : 'bun'), args, {
+    cwd: sourceRoot,
+    env: {
+      ...process.env,
+      OPENCODE_CHANNEL: channel,
+      OPENCODE_VERSION: version,
+    },
+    stdio: 'inherit',
+  });
+
+  const artifact = localArtifactForPlatform(process.platform, targetArchitecture);
+  const builtBinary = path.join(sourceRoot, 'packages', 'opencode', 'dist', artifact.directory, 'bin', artifact.binary);
+  stageBinary(builtBinary, outputBinary, version);
+  console.log(`[electron] prepared local OpenCode CLI ${version}: ${outputBinary}`);
 };
 
 const download = async (url, destination) => {
@@ -148,6 +224,16 @@ const main = async () => {
   const targetArchitecture = resolveTargetArchitecture();
   const artifact = artifactForPlatform(process.platform, targetArchitecture);
   const outputBinary = outputBinaryPath(artifact.binary);
+  const localSourceDir = process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim();
+  if (localSourceDir) {
+    prepareFromLocalSource({
+      sourceRoot: path.resolve(localSourceDir),
+      version,
+      targetArchitecture,
+      outputBinary,
+    });
+    return;
+  }
   const existingVersion = readBinaryVersion(outputBinary);
   if (existingVersion === version) {
     console.log(`[electron] bundled OpenCode CLI already prepared: ${outputBinary} (${version})`);
@@ -171,13 +257,7 @@ const main = async () => {
     throw new Error(`Archive ${archivePath} did not contain ${artifact.binary}`);
   }
 
-  fs.mkdirSync(outputDir, { recursive: true });
-  for (const entry of fs.readdirSync(outputDir)) {
-    if (entry === '.gitkeep') continue;
-    fs.rmSync(path.join(outputDir, entry), { recursive: true, force: true });
-  }
-  fs.copyFileSync(extractedBinary, outputBinary);
-  ensureExecutable(outputBinary);
+  stageBinary(extractedBinary, outputBinary, version);
 
   const preparedVersion = readBinaryVersion(outputBinary);
   if (preparedVersion !== version) {
