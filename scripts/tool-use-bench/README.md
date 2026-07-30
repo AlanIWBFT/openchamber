@@ -13,7 +13,7 @@ node scripts/tool-use-bench/bench.mjs regrade ~/.cache/openchamber-tool-use-benc
 `regrade` grades the saved transcripts again with the current cases and grader, without model calls.
 
 - `--case <id,...>`, `--samples <n>` (default 2), `--timeout <seconds>` per run (default 300), `--out <dir>`, `--port <first API port>` (default 47300), `--keep` keeps the instance folders, without the copied credentials.
-- A model is `provider/model`, optionally `#variant`. Its provider must be signed in in your own OpenCode.
+- A model is `provider/model`, optionally `#variant`. Its provider must be signed in in your own OpenCode. The bench reads the selected providers from the fork's `opencode-dev.db` under `$XDG_DATA_HOME/opencode` (default `~/.local/share/opencode`); set `OPENCHAMBER_BENCH_LOGIN_DB` to choose another login database. The source opens read-only. The bench writes to its own isolated database.
 - One run takes 10 seconds to 3 minutes. Every model gets its own instance and they all run side by side; runs within one instance go one at a time.
 
 ## What a run is

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveTargetArchitecture } from './target-architecture.mjs';
+import { recordForkInputs } from '../../../scripts/lib/fork-server-inputs.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
@@ -22,7 +23,8 @@ const packageDir = (name, fromDir) => {
 
 const readManifest = (dir) => JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
 
-const serverDir = packageDir('@opencode/server', electronRoot);
+const source = process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR && fs.realpathSync(process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR);
+const serverDir = source ? path.join(source, 'packages/server') : packageDir('@opencode/server', electronRoot);
 const coreDir = packageDir('@opencode/core', serverDir);
 const pinnedVersion = readManifest(electronRoot).devDependencies['@opencode/server'];
 const serverVersion = readManifest(serverDir).version;
@@ -134,8 +136,10 @@ ${code.slice(start)}`,
     build.onLoad({ filter: /[/\\]photon-node[/\\]photon_rs\.js$/ }, async (args) => {
       const code = await Bun.file(args.path).text();
       const original = "const path = require('path').join(__dirname, 'photon_rs_bg.wasm');";
+      const staged = "const path = globalThis.__OPENCODE_PHOTON_WASM_PATH || require('path').join(__dirname, 'photon_rs_bg.wasm');";
+      if (code.includes(staged)) return { loader: 'js', contents: code };
       if (!code.includes(original)) throw new Error('Failed to rewrite the photon wasm loader');
-      return { loader: 'js', contents: code.replace(original, `const path = globalThis.__OPENCODE_PHOTON_WASM_PATH || require('path').join(__dirname, 'photon_rs_bg.wasm');`) };
+      return { loader: 'js', contents: code.replace(original, staged) };
     });
     build.onLoad({ filter: /[/\\]turndown[/\\]lib[/\\]turndown\.es\.js$/ }, async (args) => {
       const code = await Bun.file(args.path).text();
@@ -149,6 +153,16 @@ ${code.slice(start)}`,
 const main = async () => {
   const platform = process.env.OPENCHAMBER_OPENCODE_SERVER_PLATFORM || process.platform;
   const { node: arch } = resolveTargetArchitecture();
+  if (source && (arch !== 'x64' || !['linux', 'win32'].includes(platform))) throw new Error(`Unsupported local OpenCode target: ${platform}-${arch}`);
+  const extra = [];
+  const forkSourcePlugin = {
+    name: 'openchamber-local-opencode',
+    setup(build) {
+      build.onResolve({ filter: /^(?:@opencode\/|@effect\/|effect(?:\/|$))/ }, (args) =>
+        path.dirname(args.importer) === path.dirname(entry)
+          ? { path: Bun.resolveSync(args.path, path.join(source, 'packages/cli')) } : undefined);
+    },
+  };
 
   fs.rmSync(outputDir, { recursive: true, force: true });
   fs.mkdirSync(assetsDir, { recursive: true });
@@ -162,17 +176,20 @@ const main = async () => {
     entrypoints: [entry],
     outdir: outputDir,
     target: 'node',
+    throw: false,
     format: 'esm',
     splitting: true,
     minify: true,
     sourcemap: 'none',
     naming: { entry: '[name].mjs', chunk: 'chunks/[name]-[hash].mjs', asset: 'chunks/[name]-[hash].[ext]' },
     conditions: ['node'],
+    metafile: Boolean(source),
     define: {
       __OPENCODE_SERVER_VERSION__: JSON.stringify(serverVersion),
+      __OPENCHAMBER_SERVER_CHANNEL__: JSON.stringify(source ? 'dev' : 'latest'),
       'process.env.WS_NO_BUFFER_UTIL': JSON.stringify('1'),
     },
-    plugins: [claudeAgentSdkPlugin(claudeAgentSdkEntry), nativeLoaderPlugin],
+    plugins: [...(source ? [forkSourcePlugin] : []), claudeAgentSdkPlugin(claudeAgentSdkEntry), nativeLoaderPlugin],
   });
   if (!result.success) {
     for (const message of result.logs) console.error(message);
@@ -182,12 +199,18 @@ const main = async () => {
   const manifest = {};
   for (const [key, target] of Object.entries(nativeTargets(platform, arch))) {
     const source = await fetchPackage(target);
+    extra.push(path.join(source, 'package.json'));
     const destination = path.join(assetsDir, ...target.name.split('/'));
     if (target.whole) {
       copy(source, destination);
+      for (const name of fs.readdirSync(source, { recursive: true })) {
+        const file = path.join(source, name);
+        if (!file.endsWith('.pdb') && fs.statSync(file).isFile()) extra.push(file);
+      }
       manifest[key] = path.posix.join(target.name, target.entry);
     } else {
       for (const file of target.files) copy(path.join(source, file), path.join(destination, file), target.executable);
+      extra.push(...target.files.map(file => path.join(source, file)));
       manifest[key] = path.posix.join(target.name, target.files[0]);
     }
   }
@@ -197,6 +220,29 @@ const main = async () => {
   const photonDir = packageDir('@silvia-odwyer/photon-node', coreDir);
   copy(path.join(photonDir, 'photon_rs_bg.wasm'), path.join(assetsDir, 'photon_rs_bg.wasm'));
   manifest.photonWasm = 'photon_rs_bg.wasm';
+
+  if (source) {
+    if (platform === 'win32') {
+      for (const [key, relative] of [
+        ['processBroker', 'packages/util/src/windows-process-broker/bin/OpenCode.ProcessBroker.exe'],
+        ['recycleHelper', 'packages/core/src/windows-recycle/bin/Release/netstandard2.0/OpenCode.Windows.RecycleBin.dll'],
+      ]) {
+        const file = path.join(source, relative);
+        copy(file, path.join(assetsDir, path.basename(file)));
+        manifest[key] = path.basename(file);
+        extra.push(file);
+      }
+    }
+    const inputs = Object.keys(result.metafile.inputs);
+    for (const name of ['packages/server/src/process.ts', 'packages/core/src/tool/plugin/unified-exec.ts']) {
+      if (!inputs.some(input => path.resolve(input) === path.resolve(source, name))) throw new Error(`Bundle does not include local ${name}`);
+    }
+    const repo = path.resolve(electronRoot, '../..');
+    manifest.fork = recordForkInputs(electronRoot, source, inputs, [
+      ...extra, path.join(photonDir, 'photon_rs_bg.wasm'), path.join(source, 'bun.lock'), path.join(repo, 'bun.lock'),
+      fileURLToPath(import.meta.url), path.join(__dirname, 'target-architecture.mjs'), path.join(repo, 'scripts/lib/fork-server-inputs.mjs'),
+    ]);
+  }
 
   fs.writeFileSync(path.join(assetsDir, 'manifest.json'), `${JSON.stringify({ version: serverVersion, platform, arch, ...manifest }, null, 2)}\n`);
   console.log(`[electron] prepared OpenCode server ${serverVersion} for ${platform}-${arch}: ${path.relative(electronRoot, outputDir)}`);

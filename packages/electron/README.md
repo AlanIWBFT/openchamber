@@ -314,7 +314,7 @@ bun run lint:electron
 
 `electron:dev:bundled` builds and uses packaged web assets instead of the HMR server. Use it when testing behavior closer to a packaged app.
 
-Both dev variants run the staged OpenCode server from `resources/opencode-server` (the one `prepare:opencode-server` stages and packaged builds ship), not the `opencode` on PATH. `electron-dev.mjs` passes the directory to the backend as `OPENCHAMBER_BUNDLED_OPENCODE_SERVER_DIR`; the HMR backend runs it on the machine's Node. When it is missing, the launcher warns and falls back to PATH.
+Both desktop dev variants use `OPENCODE_BINARY` if set, then `OPENCHAMBER_BUNDLED_OPENCODE_SERVER_DIR`. With neither override the launcher prepares the service from the fork checkout and reuses it while the inputs match. Desktop HMR waits for the development data directory, then Electron starts and owns the API; the external dev process runs Vite only. Standalone web HMR runs its own API watcher. See `opencode-server/DOCUMENTATION.md` for source and packaging options.
 
 ## Packaging
 

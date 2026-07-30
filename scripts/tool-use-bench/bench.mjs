@@ -10,7 +10,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { bundledOpenCodeServerEnv, devOpenCodeEnv } from '../lib/bundled-opencode-server.mjs';
+import { devOpenCodeEnv } from '../lib/bundled-opencode-server.mjs';
+import { clearLogin, instanceDb, loginSource, seedLogin } from './database.mjs';
 
 if (!process.versions.bun) await import('../../packages/web/scripts/register-server-sources.mjs');
 const { withoutInjectedEnv } = await import('../../packages/web/server/lib/injected-env.js');
@@ -18,7 +19,6 @@ const { withoutInjectedEnv } = await import('../../packages/web/server/lib/injec
 const BENCH_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(BENCH_DIR, '../..');
 const CASES = JSON.parse(fs.readFileSync(path.join(BENCH_DIR, 'cases.json'), 'utf8'));
-const REAL_OPENCODE_DB = path.join(os.homedir(), '.local/share/opencode/opencode.db');
 const OPENCHAMBER_TOOL = /^openchamber(_|$)/;
 const STALL_MS = 120_000;
 
@@ -138,8 +138,9 @@ const createInstance = async ({ mode, apiPort, models, instances }) => {
     XDG_CACHE_HOME: dirs.cache,
     XDG_STATE_HOME: dirs.state,
     OPENCHAMBER_DATA_DIR: dirs.oc,
+    OPENCODE_DB: instanceDb(dirs),
     // A CLI the caller names, else this checkout's pinned OpenCode, the one the desktop app bundles.
-    ...devOpenCodeEnv(process.env, () => bundledOpenCodeServerEnv(REPO_ROOT)),
+    ...devOpenCodeEnv(REPO_ROOT),
     OPENCHAMBER_RELAY_HOST: 'off',
   });
   // The API server alone: the bench needs no UI, and `bun run dev` instances
@@ -221,11 +222,10 @@ const waitForApi = async (instance) => {
 // copies of the rows for the providers under test, and the whole folder is
 // deleted when the run ends.
 const copyCredentials = async (instance, providers) => {
-  const database = path.join(instance.dirs.data, 'opencode/opencode.db');
-  const list = providers.map((provider) => `'${provider.replaceAll("'", '')}'`).join(',');
+  const database = instanceDb(instance.dirs);
+  const source = loginSource();
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const result = spawnSync('sqlite3', [database, `attach '${REAL_OPENCODE_DB}' as real; insert or ignore into credential select * from real.credential where integration_id in (${list});`], { encoding: 'utf8' });
-    if (result.status === 0) return;
+    if (seedLogin(database, source, providers)) return;
     await sleep(2000);
   }
   throw new Error(`${instance.mode}: could not copy provider credentials`);
@@ -266,10 +266,10 @@ const stopAndWait = async (instance) => {
 
 // --keep leaves the folder for inspection, without the copied credentials.
 const scrubCredentials = (instance) => {
-  const database = path.join(instance.dirs.data, 'opencode/opencode.db');
+  const database = instanceDb(instance.dirs);
   if (!fs.existsSync(database)) return true;
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    if (spawnSync('sqlite3', [database, 'delete from credential;']).status === 0) return true;
+    if (clearLogin(database)) return true;
     spawnSync('sleep', ['1']);
   }
   return false;

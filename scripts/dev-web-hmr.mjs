@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolveBunExecutable } from './lib/bun-executable.mjs';
+import { devOpenCodeEnv } from './lib/bundled-opencode-server.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -140,6 +142,7 @@ const api = viteOnly
   ? null
   : run('api', bunExecutable, ['run', '--cwd', 'packages/web', 'dev:server:watch'], {
       OPENCHAMBER_PORT: backendPort,
+      ...devOpenCodeEnv(repoRoot),
       // Dev backends share the relay identity with the production instance; never
       // let them capture the machine's relay host on their own.
       OPENCHAMBER_RELAY_HOST: process.env.OPENCHAMBER_RELAY_HOST || 'off',

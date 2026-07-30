@@ -10,6 +10,8 @@ export const configureAssets = (assetsUrl) => {
   const root = path.dirname(manifestPath);
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const asset = (relative) => path.join(root, relative);
+  if (manifest.processBroker) process.env.OPENCODE_PROCESS_BROKER_PATH = asset(manifest.processBroker);
+  if (manifest.recycleHelper) process.env.OPENCODE_RECYCLE_HELPER_PATH = asset(manifest.recycleHelper);
   process.env.OPENCODE_NODE_PTY_PATH = asset(manifest.nodePty);
   process.env.OPENCODE_PARCEL_WATCHER_PATH = asset(manifest.parcelWatcher);
   process.env.OPENCODE_PHOTON_WASM_PATH = asset(manifest.photonWasm);

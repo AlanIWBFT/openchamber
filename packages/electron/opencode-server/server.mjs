@@ -13,13 +13,14 @@ import { LayerNode } from '@opencode/util/effect/layer-node';
 import { Observability } from '@opencode/util/observability';
 import { AppProcess } from '@opencode/util/process';
 
-const OPENCODE_CHANNEL = 'latest';
+const OPENCODE_CHANNEL = __OPENCHAMBER_SERVER_CHANNEL__;
 const OPENCODE_ARTIFACT = 'openchamber-desktop';
 
 const truthy = (value) => value === '1' || value?.toLowerCase() === 'true';
 
 const databasePath = (data) => {
-  const filename = process.env.OPENCODE_DB ?? 'opencode.db';
+  const separated = OPENCODE_CHANNEL === 'dev' && !['1', 'true'].includes(process.env.OPENCODE_DISABLE_CHANNEL_DB);
+  const filename = process.env.OPENCODE_DB ?? (separated ? 'opencode-dev.db' : 'opencode.db');
   return filename === ':memory:' ? filename : path.resolve(data, filename);
 };
 

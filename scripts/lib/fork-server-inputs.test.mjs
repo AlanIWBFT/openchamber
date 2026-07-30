@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { forkInputsCurrent, recordForkInputs } from './fork-server-inputs.mjs';
+
+test('cache freshness follows bundled working bytes including assets, not HEAD, mtimes or unrelated edits', (t) => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-inputs-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', args, { cwd: root, windowsHide: true, stdio: 'pipe' });
+  git('init', '-q');
+  git('-c', 'user.name=test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'fixture', '--allow-empty');
+  const input = path.join(root, '输入 file.ts');
+  const sidecar = path.join(root, 'asset');
+  fs.writeFileSync(input, 'one');
+  fs.writeFileSync(sidecar, 'data');
+  const manifest = { fork: recordForkInputs(root, root, [input], [sidecar]) };
+  const fresh = () => forkInputsCurrent(root, root, manifest);
+  fs.writeFileSync(path.join(root, 'unrelated'), 'ignore');
+  fs.utimesSync(input, 0, 0);
+  assert.equal(fresh(), true);
+  fs.writeFileSync(input, 'two');
+  assert.equal(fresh(), false);
+  fs.writeFileSync(input, 'one');
+  assert.equal(fresh(), true);
+  fs.writeFileSync(sidecar, 'changed');
+  assert.equal(fresh(), false);
+});
