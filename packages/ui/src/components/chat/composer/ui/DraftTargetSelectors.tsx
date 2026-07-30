@@ -25,6 +25,7 @@ import {
 import { useI18n } from '@/lib/i18n';
 import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, ProjectIconImage } from '@/lib/projectMeta';
 import { createWorktreeDraft } from '@/lib/worktreeSessionCreator';
+import { useKeybind } from '@/hooks/useKeybind';
 import type { Theme } from '@/types/theme';
 import { normalizePath } from '../attachments/filePaths';
 import { getProjectDisplayLabel, type DraftTargetProject } from '../state/useDraftTarget';
@@ -103,14 +104,40 @@ export function DraftTargetSelectors(props: DraftTargetProps) {
         onDirectoryChange,
         theme,
     } = props;
+    const [openPicker, setOpenPicker] = React.useState<'project' | 'worktree' | null>(null);
+    const projectTriggerRef = React.useRef<HTMLButtonElement>(null);
+    const worktreeTriggerRef = React.useRef<HTMLButtonElement>(null);
+
+    useKeybind('open_draft_project_picker', () => {
+        projectTriggerRef.current?.focus();
+        setOpenPicker('project');
+    });
+    useKeybind('open_draft_worktree_picker', () => {
+        if (!showBranchSelector) return false;
+        worktreeTriggerRef.current?.focus();
+        setOpenPicker('worktree');
+    });
+
+    const handleProjectChange = (projectId: string) => {
+        onProjectChange(projectId);
+        setOpenPicker(null);
+    };
+
+    const handleDirectoryChange = (directory: string) => {
+        onDirectoryChange(directory);
+        setOpenPicker(null);
+    };
 
     return (
         <div className="mb-1.5 flex min-w-0 items-center gap-1.5 px-0.5">
             <Select
                 value={selectedProject.id}
-                onValueChange={onProjectChange}
+                open={openPicker === 'project'}
+                onOpenChange={(open) => setOpenPicker(open ? 'project' : null)}
+                onValueChange={handleProjectChange}
             >
                 <SelectTrigger
+                    ref={projectTriggerRef}
                     size="sm"
                     className="h-7 min-w-0 w-fit max-w-[42vw] sm:max-w-[18rem] border-transparent bg-transparent px-1.5 hover:bg-transparent data-[popup-open]:bg-transparent"
                 >
@@ -130,9 +157,12 @@ export function DraftTargetSelectors(props: DraftTargetProps) {
             {showBranchSelector ? (
                 <Select
                     value={selectedDirectory ?? branchItems[0]?.value ?? normalizePath(selectedProject.path) ?? ''}
-                    onValueChange={onDirectoryChange}
+                    open={openPicker === 'worktree'}
+                    onOpenChange={(open) => setOpenPicker(open ? 'worktree' : null)}
+                    onValueChange={handleDirectoryChange}
                 >
                     <SelectTrigger
+                        ref={worktreeTriggerRef}
                         size="sm"
                         className="h-7 min-w-0 w-fit max-w-[48vw] sm:max-w-[20rem] border-transparent bg-transparent px-1.5 hover:bg-transparent data-[popup-open]:bg-transparent"
                     >
