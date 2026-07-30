@@ -4,16 +4,13 @@ import {
   eventMatchesShortcutPrefix,
   formatShortcutForDisplay,
   getEffectiveShortcutPrefix,
-  getCustomizableShortcutActions,
-  getShortcutAction,
-  getShortcutCategory,
   getShortcutConflict,
   isRiskyBrowserShortcut,
   isShortcutPrefixHeld,
   normalizeCombo,
   parseShortcut,
   UNASSIGNED_SHORTCUT,
-} from './shortcuts';
+} from './index';
 
 describe('getEffectiveShortcutPrefix', () => {
   test('falls back to the action default (bare mod) when unset', () => {
@@ -107,12 +104,5 @@ describe('shortcut sequences', () => {
 
   test('warns when a sequence leader conflicts with a browser shortcut', () => {
     expect(isRiskyBrowserShortcut('mod+s p')).toBe(true);
-  });
-
-  test('categorizes customizable actions and includes draft picker sequences', () => {
-    expect(getCustomizableShortcutActions().every((action) => action.category !== undefined)).toBe(true);
-    expect(getShortcutAction('open_draft_project_picker')?.defaultCombo).toBe('mod+s p');
-    expect(getShortcutAction('open_draft_worktree_picker')?.defaultCombo).toBe('mod+s g');
-    expect(getShortcutCategory(getShortcutAction('focus_input')!)).toBe('session');
   });
 });

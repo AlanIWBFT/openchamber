@@ -16,19 +16,18 @@ import {
   isRiskyBrowserShortcut,
   keyToShortcutToken,
   normalizeCombo,
-  type ShortcutAction,
   type ShortcutActionId,
   type ShortcutCombo,
+  type CustomizableShortcutAction,
 } from '@/lib/shortcuts';
 import { useI18n } from '@/lib/i18n';
 
 const MODIFIER_KEYS = new Set(['shift', 'control', 'alt', 'meta']);
 
 interface ShortcutRecordingDialogProps {
-  action: ShortcutAction | null;
-  actions: ReadonlyArray<ShortcutAction>;
+  action: CustomizableShortcutAction | null;
+  actions: ReadonlyArray<CustomizableShortcutAction>;
   overrides: Record<string, string>;
-  actionLabel: (action: ShortcutAction) => string;
   onSave: (
     actionId: ShortcutActionId,
     combo: ShortcutCombo,
@@ -66,11 +65,11 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
   action,
   actions,
   overrides,
-  actionLabel,
   onSave,
   onOpenChange,
 }) => {
   const { t } = useI18n();
+  const actionLabel = (shortcut: CustomizableShortcutAction) => t(shortcut.settingsLabelKey);
   const [chords, setChords] = React.useState<ShortcutCombo[]>([]);
   const recordingRef = React.useRef<HTMLDivElement>(null);
 
@@ -82,7 +81,7 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
   const combo = normalizeCombo(chords.join(' '));
   const conflicts = React.useMemo(() => {
     if (!action || !combo) return [];
-    const result: Array<{ action: ShortcutAction; kind: 'exact' | 'prefix' }> = [];
+    const result: Array<{ action: CustomizableShortcutAction; kind: 'exact' | 'prefix' }> = [];
     for (const candidate of actions) {
       if (candidate.id === action.id) continue;
       const candidateCombo = candidate.id === 'switch_context_surface'

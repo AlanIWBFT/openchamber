@@ -22,7 +22,7 @@ import type { IconName } from "@/components/icon/icons";
 type ShortcutItem = {
   id?: ShortcutActionId;
   keys: string | string[];
-  descriptionKey: I18nKey;
+  descriptionKey?: I18nKey;
   icon: IconName | null;
 };
 
@@ -33,12 +33,10 @@ type ShortcutSection = {
 
 const renderShortcut = (
   id: ShortcutActionId,
-  fallbackCombo: string,
   overrides: Record<string, string>,
   unassignedLabel: string,
 ) => {
-  const action = getShortcutAction(id);
-  return action ? formatShortcutForDisplay(getEffectiveShortcutCombo(id, overrides), unassignedLabel) : fallbackCombo;
+  return formatShortcutForDisplay(getEffectiveShortcutCombo(id, overrides), unassignedLabel);
 };
 
 export const HelpDialog: React.FC = () => {
@@ -129,13 +127,11 @@ export const HelpDialog: React.FC = () => {
         },
         {
           id: 'open_draft_project_picker',
-          descriptionKey: 'settings.openchamber.keyboardShortcuts.action.open_draft_project_picker.label',
           icon: 'folder',
           keys: '',
         },
         {
           id: 'open_draft_worktree_picker',
-          descriptionKey: 'settings.openchamber.keyboardShortcuts.action.open_draft_worktree_picker.label',
           icon: 'git-branch',
           keys: '',
         },
@@ -255,13 +251,13 @@ export const HelpDialog: React.FC = () => {
                   {section.items
                     .filter((shortcut) => !(isVSCode && shortcut.id === 'toggle_prompt_navigator'))
                     .map((shortcut) => {
-                      const fallbackKeys = Array.isArray(shortcut.keys)
-                        ? shortcut.keys[0]
-                        : shortcut.keys;
+                      const action = shortcut.id ? getShortcutAction(shortcut.id) : undefined;
+                      const descriptionKey = shortcut.descriptionKey
+                        ?? (action?.customizable ? action.settingsLabelKey : undefined);
+                      if (!descriptionKey) return null;
                       const displayKeys = shortcut.id
                         ? renderShortcut(
                             shortcut.id,
-                            fallbackKeys,
                             shortcutOverrides,
                             t('settings.openchamber.keyboardShortcuts.unassigned'),
                           )
@@ -269,7 +265,7 @@ export const HelpDialog: React.FC = () => {
 
                       return (
                         <div
-                          key={shortcut.id || shortcut.descriptionKey}
+                          key={shortcut.id || descriptionKey}
                           className="flex items-center justify-between py-1 px-2"
                         >
                           <div className="flex items-center gap-2">
@@ -277,7 +273,7 @@ export const HelpDialog: React.FC = () => {
                               <Icon name={shortcut.icon} className="h-3.5 w-3.5 text-muted-foreground" />
                             )}
                             <span className="typography-meta">
-                              {t(shortcut.descriptionKey)}
+                              {t(descriptionKey)}
                             </span>
                           </div>
                           <div className="flex items-center gap-1">
@@ -312,7 +308,6 @@ export const HelpDialog: React.FC = () => {
                     • {t('helpDialog.proTips.commandPalette', {
                       shortcut: renderShortcut(
                         'open_command_palette',
-                        `${mod} P`,
                         shortcutOverrides,
                         t('settings.openchamber.keyboardShortcuts.unassigned'),
                       ),

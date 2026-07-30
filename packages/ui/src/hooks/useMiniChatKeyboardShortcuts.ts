@@ -1,9 +1,7 @@
 import React from 'react';
 import { focusChatInput } from '@/components/chat/composer/editor/dom';
 import { canUseElectronDesktopIPC, invokeDesktop } from '@/lib/desktop';
-import { ShortcutDispatcher } from '@/lib/shortcutDispatcher';
-import { shortcutRegistry } from '@/lib/shortcutRegistry';
-import { getEffectiveShortcutCombo } from '@/lib/shortcuts';
+import { ShortcutDispatcher, getEffectiveShortcutCombo, shortcutRegistry } from '@/lib/shortcuts';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';

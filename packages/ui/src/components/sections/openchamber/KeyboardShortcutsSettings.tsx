@@ -9,12 +9,11 @@ import {
   getCustomizableShortcutActions,
   getEffectiveShortcutCombo,
   getEffectiveShortcutPrefix,
-  getShortcutCategory,
   UNASSIGNED_SHORTCUT,
-  type ShortcutAction,
   type ShortcutActionId,
   type ShortcutCategory,
   type ShortcutCombo,
+  type CustomizableShortcutAction,
 } from '@/lib/shortcuts';
 import { useI18n } from '@/lib/i18n';
 import { ShortcutRecordingDialog } from './ShortcutRecordingDialog';
@@ -23,22 +22,16 @@ const CATEGORIES: ShortcutCategory[] = ['session', 'models', 'panels', 'navigati
 
 export const KeyboardShortcutsSettings: React.FC = () => {
   const { t } = useI18n();
-  const tUnsafe = (key: string) => t(key as Parameters<typeof t>[0]);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
   const setShortcutOverride = useUIStore((state) => state.setShortcutOverride);
   const clearShortcutOverride = useUIStore((state) => state.clearShortcutOverride);
   const resetAllShortcutOverrides = useUIStore((state) => state.resetAllShortcutOverrides);
-  const [editingAction, setEditingAction] = React.useState<ShortcutAction | null>(null);
+  const [editingAction, setEditingAction] = React.useState<CustomizableShortcutAction | null>(null);
 
   const actions = React.useMemo(() => {
     const all = getCustomizableShortcutActions();
     return isVSCodeRuntime() ? all.filter((action) => action.id !== 'toggle_prompt_navigator') : all;
   }, []);
-  const actionLabel = (action: ShortcutAction): string => {
-    const key = `settings.openchamber.keyboardShortcuts.action.${action.id}.label`;
-    const translated = tUnsafe(key);
-    return translated === key ? action.label : translated;
-  };
   const persist = (nextOverrides: Record<string, ShortcutCombo>) => {
     void updateDesktopSettings({ shortcutOverrides: nextOverrides });
   };
@@ -59,7 +52,7 @@ export const KeyboardShortcutsSettings: React.FC = () => {
     clearShortcutOverride(actionId);
     persist(nextOverrides);
   };
-  const shortcutDisplay = (action: ShortcutAction): string => {
+  const shortcutDisplay = (action: CustomizableShortcutAction): string => {
     const isSurfaceSwitch = action.id === 'switch_context_surface';
     const combo = isSurfaceSwitch
       ? getEffectiveShortcutPrefix(action.id, shortcutOverrides)
@@ -76,7 +69,7 @@ export const KeyboardShortcutsSettings: React.FC = () => {
   return (
     <>
       {CATEGORIES.map((category, categoryIndex) => {
-        const categoryActions = actions.filter((action) => getShortcutCategory(action) === category);
+        const categoryActions = actions.filter((action) => action.category === category);
         if (categoryActions.length === 0) return null;
         return (
           <SettingsSection
@@ -96,7 +89,7 @@ export const KeyboardShortcutsSettings: React.FC = () => {
           >
             <div className="space-y-2">
               {categoryActions.map((action) => (
-                <SettingsFieldRow key={action.id} label={actionLabel(action)}>
+                <SettingsFieldRow key={action.id} label={t(action.settingsLabelKey)}>
                   <kbd
                     className="min-w-32 rounded-md border border-border bg-muted px-2 py-1 text-center typography-meta font-mono text-foreground"
                   >
@@ -130,7 +123,6 @@ export const KeyboardShortcutsSettings: React.FC = () => {
         action={editingAction}
         actions={actions}
         overrides={shortcutOverrides}
-        actionLabel={actionLabel}
         onSave={save}
         onOpenChange={(open) => {
           if (!open) setEditingAction(null);

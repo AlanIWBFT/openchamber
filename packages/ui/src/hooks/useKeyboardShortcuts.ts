@@ -17,10 +17,10 @@ import {
   getEffectiveShortcutCombo,
   getEffectiveShortcutPrefix,
   normalizeCombo,
+  ShortcutDispatcher,
+  shortcutRegistry,
   type ShortcutActionId,
 } from '@/lib/shortcuts';
-import { ShortcutDispatcher } from '@/lib/shortcutDispatcher';
-import { shortcutRegistry } from '@/lib/shortcutRegistry';
 import { getVisibleContextRailSurfaces } from '@/lib/surfaces/registry';
 import { readEmbeddedThemeSearchParams } from '@/contexts/theme-embedded-bootstrap';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -279,6 +279,10 @@ export const useKeyboardShortcuts = () => {
       }
       window.dispatchEvent(new CustomEvent('openchamber:dictation-toggle'));
     },
+    abort_run: () => {
+      if (sessionPhase === 'idle' || !currentSessionId) return false;
+      void sessionActions.abortCurrentOperation(currentSessionId);
+    },
   });
 
   function cycleFavoriteModel(delta: number): boolean | void {
@@ -376,9 +380,8 @@ export const useKeyboardShortcuts = () => {
       }
       const now = Date.now();
       if (abortPrimedUntilRef.current && now < abortPrimedUntilRef.current) {
-        event.preventDefault();
         resetAbortPriming();
-        void sessionActions.abortCurrentOperation(currentSessionId);
+        if (invokeRegistered('abort_run', event)) event.preventDefault();
         return;
       }
       event.preventDefault();
@@ -413,21 +416,23 @@ export const useKeyboardShortcuts = () => {
         && eventMatchesShortcutPrefix(event, switchSurfacePrefix, heldKeysRef.current)
       ) {
         const state = useUIStore.getState();
-        if (state.isMobile || !effectiveDirectory) return;
-        const directory = normalizeContextPanelDirectoryKey(effectiveDirectory);
-        const panel = state.contextPanelByDirectory[directory];
-        const visibleSurfaces = getVisibleContextRailSurfaces({
-          railOrder: state.contextRailOrder,
-          planModeEnabled: useFeatureFlagsStore.getState().planModeEnabled,
-          isVSCode: isVSCodeRuntime(),
-          screenWidth: window.innerWidth,
-          tabs: panel?.tabs ?? [],
-        });
-        const target = visibleSurfaces[switchSurfaceDigit - 1];
-        if (!target) return;
-        event.preventDefault();
-        state.openContextSurface(directory, target.mode);
-        return;
+        if (!state.isMobile && effectiveDirectory) {
+          const directory = normalizeContextPanelDirectoryKey(effectiveDirectory);
+          const panel = state.contextPanelByDirectory[directory];
+          const visibleSurfaces = getVisibleContextRailSurfaces({
+            railOrder: state.contextRailOrder,
+            planModeEnabled: useFeatureFlagsStore.getState().planModeEnabled,
+            isVSCode: isVSCodeRuntime(),
+            screenWidth: window.innerWidth,
+            tabs: panel?.tabs ?? [],
+          });
+          const target = visibleSurfaces[switchSurfaceDigit - 1];
+          if (target) {
+            event.preventDefault();
+            state.openContextSurface(directory, target.mode);
+            return;
+          }
+        }
       }
 
       if (dispatcher.dispatch(event)) event.preventDefault();

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { ShortcutDispatcher } from './shortcutDispatcher';
-import { ShortcutRegistry } from './shortcutRegistry';
+import { ShortcutDispatcher } from './dispatcher';
+import { ShortcutRegistry } from './registry';
 
 function key(key: string, options: Partial<KeyboardEvent> = {}): KeyboardEvent {
   return {

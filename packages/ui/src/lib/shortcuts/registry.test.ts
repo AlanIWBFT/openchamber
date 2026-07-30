@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { ShortcutRegistry } from './shortcutRegistry';
+import { ShortcutRegistry } from './registry';
 
 test('the first registration wins and a later unregister cannot remove it', () => {
   const registry = new ShortcutRegistry();

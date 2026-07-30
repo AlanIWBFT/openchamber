@@ -3,10 +3,10 @@ import {
   normalizeCombo,
   parseShortcut,
   UNASSIGNED_SHORTCUT,
-  type ShortcutActionId,
   type ShortcutCombo,
-} from './shortcuts';
-import { type ShortcutHandler, ShortcutRegistry } from './shortcutRegistry';
+} from './bindings';
+import { type ShortcutHandler, ShortcutRegistry } from './registry';
+import type { ShortcutActionId } from './schema';
 
 const SEQUENCE_TIMEOUT_MS = 1500;
 const MODIFIER_KEYS = new Set(['alt', 'control', 'meta', 'shift']);
@@ -106,13 +106,15 @@ export class ShortcutDispatcher {
     const matches: BindingMatch[] = [];
     for (const actionId of this.options.registry.actionIds()) {
       const handler = this.options.registry.get(actionId);
+      if (!handler) continue;
+
       const binding = normalizeCombo(this.options.getBinding(actionId));
       const parsed = parseShortcut(binding);
-      const isDispatchable = parsed
-        && parsed.chords.every((chord) => chord.key && chord.key !== UNASSIGNED_SHORTCUT);
-      if (handler && isDispatchable) {
-        matches.push({ chords: binding.split(' '), handler });
+      if (!parsed || parsed.chords.some((chord) => !chord.key || chord.key === UNASSIGNED_SHORTCUT)) {
+        continue;
       }
+
+      matches.push({ chords: binding.split(' '), handler });
     }
     return matches;
   }

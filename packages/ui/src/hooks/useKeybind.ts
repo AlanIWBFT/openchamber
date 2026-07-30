@@ -1,6 +1,5 @@
 import React from 'react';
-import { shortcutRegistry, type ShortcutHandler } from '@/lib/shortcutRegistry';
-import type { ShortcutActionId } from '@/lib/shortcuts';
+import { shortcutRegistry, type ShortcutActionId, type ShortcutHandler } from '@/lib/shortcuts';
 
 export function useKeybind(actionId: ShortcutActionId, handler: ShortcutHandler): void {
   const handlerRef = React.useRef(handler);
