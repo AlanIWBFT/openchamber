@@ -5,16 +5,39 @@ import {
   getShortcutAction,
   parseShortcut,
   SHORTCUT_SCHEMA,
+  type ShortcutCategory,
 } from './index';
 
 describe('shortcut schema', () => {
   test('declares unique IDs and valid bindings for every application shortcut', () => {
     const ids = SHORTCUT_SCHEMA.map((action) => action.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(SHORTCUT_SCHEMA.every((action) => {
+    const hasValidMetadata = SHORTCUT_SCHEMA.every((action) => {
       const chordCount = parseShortcut(action.defaultBinding)?.chords.length;
-      return Boolean(action.category) && chordCount !== undefined && chordCount >= 1 && chordCount <= 2;
-    })).toBe(true);
+      return Boolean(action.category)
+        && chordCount !== undefined
+        && chordCount >= 1
+        && chordCount <= 2;
+    });
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(hasValidMetadata).toBe(true);
+  });
+
+  test('keeps the flattened schema grouped in Settings order', () => {
+    const groupOrder: ShortcutCategory[] = [];
+    for (const action of SHORTCUT_SCHEMA) {
+      if (groupOrder.at(-1) !== action.category) {
+        groupOrder.push(action.category);
+      }
+    }
+
+    expect(groupOrder).toEqual([
+      'session',
+      'models',
+      'panels',
+      'navigation',
+      'application',
+    ]);
   });
 
   test('derives settings labels for every customizable shortcut', () => {
