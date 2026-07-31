@@ -313,12 +313,11 @@ export function useSync() {
 
   // Load more (pagination)
   const loadMore = useCallback(
-    async (sessionID: string, directoryOverride?: string) => {
-      const targetDirectory = directoryOverride || directory
+    async (sessionID: string, targetDirectory: string) => {
       touch(sessionID, targetDirectory)
       await messageLoader.loadOlder({ directory: targetDirectory, sessionID })
     },
-    [directory, messageLoader, touch],
+    [messageLoader, touch],
   )
 
   const prefetchSession = useCallback(
