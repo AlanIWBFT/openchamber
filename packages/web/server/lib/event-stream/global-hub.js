@@ -42,6 +42,7 @@ export function createGlobalMessageStreamHub({
   let connected = false;
   let everConnected = false;
   let buildUrlFailed = false;
+  let generation = 0;
 
   const notifySubscriber = (kind, subscriber, payload) => {
     try {
@@ -114,6 +115,7 @@ export function createGlobalMessageStreamHub({
       return;
     }
 
+    const active = ++generation;
     controller = new AbortController();
     reader = createUpstreamSseReader({
       signal: controller.signal,
@@ -131,20 +133,23 @@ export function createGlobalMessageStreamHub({
       },
       getHeaders: getOpenCodeAuthHeaders,
       onConnect() {
+        if (active !== generation) return;
         connected = true;
         const wasReady = everConnected;
         everConnected = true;
         notifyStatus({ type: 'connect', wasReady });
       },
       onDisconnect({ reason }) {
+        if (active !== generation) return;
         connected = false;
         notifyStatus({ type: 'disconnect', reason });
       },
       onEvent(event) {
+        if (active !== generation) return;
         coalescer.push(event);
       },
       onError(error) {
-        if (controller?.signal.aborted) {
+        if (active !== generation || controller?.signal.aborted) {
           return;
         }
 
@@ -160,6 +165,7 @@ export function createGlobalMessageStreamHub({
   };
 
   const stop = () => {
+    generation += 1;
     connected = false;
     // Text that already arrived belongs in the retained replay suffix.
     coalescer.flush();
