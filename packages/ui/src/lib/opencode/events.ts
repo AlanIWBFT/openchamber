@@ -128,7 +128,7 @@ export type SyncEvent =
    */
   | { type: "session.idle"; properties: { sessionID: string; outcome?: SessionOutcome } }
   | { type: "session.error"; properties: { sessionID: string; error: StructuredError } }
-  | { type: "message.updated"; properties: { info: Message; compactionEventSeq?: number } }
+  | { type: "message.updated"; properties: { info: Message; compactionEventSeq?: number; stepStartedSeq?: number } }
   | { type: "message.patched"; properties: { sessionID: string; messageID: string; patch: MessagePatch } }
   | { type: "message.removed"; properties: { sessionID: string; messageID: string } }
   | { type: "message.part.updated"; properties: { sessionID: string; part: Part } }
@@ -495,6 +495,7 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
         {
           type: "message.updated",
           properties: {
+            stepStartedSeq: event.durable.seq,
             info: compact({
               id: event.data.assistantMessageID,
               sessionID: event.data.sessionID,
