@@ -3,7 +3,7 @@ import type { OpenCodeClient, OpenCodeEvent } from "@opencode/client"
 import { z } from "zod"
 import { opencodeClient } from "@/lib/opencode/client"
 import { GLOBAL_EVENT_DIRECTORY, hostTurnStart, routeWireEvent, syncEventSessionID, type SyncEvent } from "@/lib/opencode/events"
-import type { Metadata } from "@/lib/opencode/model"
+import { compact, type Metadata, type SessionStatus } from "@/lib/opencode/model"
 import { getRuntimeUrlResolver } from "@/lib/runtime-url"
 import { clearRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken } from "@/lib/runtime-auth"
 import { useAuthSessionStore, waitForAuthSession } from "@/lib/runtime-auth-expiry"
@@ -77,9 +77,14 @@ const openchamberStatusSchema = z.object({
     sessionID: z.string().min(1).optional(),
     sessionId: z.string().min(1).optional(),
     status: z.enum(["idle", "busy", "retry"]),
-    metadata: z.object({ attempt: z.number(), message: z.string(), next: z.number() }).partial().optional(),
     timestamp: z.number().optional(),
     turnStartedAt: z.number().optional(),
+    metadata: z.object({
+      attempt: z.number(), message: z.string(), next: z.number(),
+      action: z.object({
+        reason: z.string(), provider: z.string(), title: z.string(), message: z.string(), label: z.string(), link: z.string().optional(),
+      }).optional().catch(undefined),
+    }).partial().optional(),
   }),
 })
 
@@ -223,7 +228,10 @@ function translateOpenchamberStatus(payload: unknown): SyncEvent | null {
     if (metadata?.attempt === undefined || metadata.message === undefined || metadata.next === undefined) return null
     return {
       type: "session.status",
-      properties: { sessionID: id, status: { type: "retry", attempt: metadata.attempt, message: metadata.message, next: metadata.next }, ...turnStart },
+      properties: { sessionID: id, status: compact<SessionStatus>({
+        type: "retry", attempt: metadata.attempt, message: metadata.message, next: metadata.next,
+        action: metadata.action,
+      }), ...turnStart },
     }
   }
   return { type: "session.status", properties: { sessionID: id, status: { type: status }, ...turnStart } }
@@ -522,6 +530,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   const isHidden = (): boolean =>
     typeof document !== "undefined" && document.visibilityState !== "visible"
 
+  let interruptRetryWait: (() => void) | undefined
   const extractStatus = (error: unknown): number | undefined => {
     if (!error || typeof error !== "object") return undefined
     const direct = (error as { status?: unknown }).status
@@ -558,6 +567,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       }
       abort.signal.removeEventListener("abort", onInterrupt)
       unsubscribeAuthSession()
+      if (interruptRetryWait === onInterrupt) interruptRetryWait = undefined
     }
     const onInterrupt = () => {
       cleanup()
@@ -570,6 +580,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     }
 
     let timer: ReturnType<typeof setTimeout> | undefined = setTimeout(onInterrupt, ms)
+    interruptRetryWait = onInterrupt
     if (typeof globalThis.window !== "undefined") {
       globalThis.window.addEventListener("online", onInterrupt, { once: true })
     }
@@ -722,6 +733,9 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       yielded = Date.now()
       await wait(0)
     }
+    // V2 propagates subscription errors and does not reconnect internally.
+    // A clean EOF still needs the pipeline's disconnect/backoff/recovery path.
+    if (!signal.aborted) throw Object.assign(new Error("Global message SSE stream closed"), { reason: "sse_closed" })
   }
 
   const wsOpenFailureFallsBack = (): boolean => {
@@ -974,7 +988,9 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       if (abort.signal.aborted) return
       if (attemptAbortReason && attemptAbortReason !== "pipeline_stopped") {
         notifyDisconnected(attemptAbortReason)
-        retryDelayMs = 0
+        retryDelayMs = attemptAbortReason === "ws_offline" || attemptAbortReason === "sse_offline"
+          ? RETRY_BACKOFF_CAP_HIDDEN_OR_OFFLINE_MS
+          : 0
         attemptAbortReason = null
       }
       if (retryDelayMs > 0) {
@@ -992,12 +1008,14 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
 
   const onPageShow = (event: PageTransitionEvent) => {
     if (!event.persisted) return
-    attempt?.abort()
+    if (attempt) attempt.abort()
+    else interruptRetryWait?.()
   }
 
   const onSystemResume = () => {
     attemptAbortReason = `${activeTransport}_system_resume`
-    attempt?.abort()
+    if (attempt) attempt.abort()
+    else interruptRetryWait?.()
   }
 
   const onOnline = () => {
@@ -1006,12 +1024,14 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   }
 
   const onOffline = () => {
+    attemptAbortReason = `${activeTransport}_offline`
     attempt?.abort()
   }
 
   const reconnect = (reason = "manual") => {
     attemptAbortReason = `${activeTransport}_${reason}`
-    attempt?.abort()
+    if (attempt) attempt.abort()
+    else interruptRetryWait?.()
   }
 
   if (typeof document !== "undefined") {

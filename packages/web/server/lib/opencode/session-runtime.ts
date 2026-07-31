@@ -13,6 +13,7 @@ interface EventFields {
   attempt?: JsonValue | undefined;
   message?: JsonValue | undefined;
   next?: JsonValue | undefined;
+  action?: JsonValue | undefined;
   form?: JsonValue | undefined;
   requestID?: JsonValue | undefined;
   formID?: JsonValue | undefined;
@@ -35,6 +36,7 @@ const hasResumeErrorFields = (value: unknown): value is { status?: unknown; mess
 const resumeErrorFields = <Value>(value: Value) => hasResumeErrorFields(value) ? value : undefined;
 
 export interface SessionStateMetadata {
+  action?: JsonValue | undefined;
   attempt?: number | undefined;
   message?: string | undefined;
   next?: number | undefined;
@@ -140,6 +142,7 @@ const extractSessionStatusUpdate = (input: JsonValue | undefined) => {
     next: isNumber(status.next)
       ? status.next
       : (isNumber(info.next) ? info.next : undefined),
+    action: status.action ?? info.action,
   };
 };
 
@@ -382,8 +385,10 @@ export const createSessionRuntime = <Client>({
 
     const now = Date.now();
     const existing = sessionStates.get(sessionId);
+    const nextMetadata = { ...existing?.metadata, ...metadata };
+    const metadataChanged = !existing || JSON.stringify(existing.metadata) !== JSON.stringify(nextMetadata);
     const isRestartInterruption = metadata.reason === 'opencode-restart';
-    if (existing && existing.lastUpdateAt > now - 5000 && status === existing.status && !isRestartInterruption) {
+    if (existing && existing.lastUpdateAt > now - 5000 && status === existing.status && !metadataChanged && !isRestartInterruption) {
       existing.lastEventAt = now;
       return;
     }
@@ -393,11 +398,11 @@ export const createSessionRuntime = <Client>({
       lastUpdateAt: now,
       lastEventAt: now,
       lastEventId: eventId || `server-${now}`,
-      metadata: { ...existing?.metadata, ...metadata },
+      metadata: nextMetadata,
     });
 
     if (status === 'busy' || status === 'retry') cancelRestartResume(sessionId);
-    if (!existing || existing.status !== status || isRestartInterruption) {
+    if (!existing || existing.status !== status || metadataChanged || isRestartInterruption) {
       const state = sessionStates.get(sessionId);
       if (!state) throw new Error('Missing session state after update');
       broadcastSessionStatus({
@@ -644,6 +649,7 @@ export const createSessionRuntime = <Client>({
       attempt: update.attempt,
       message: update.message,
       next: update.next,
+      action: update.action,
     });
 
     if ((update.type === 'busy' || update.type === 'retry') && !turnStarts.get(update.sessionId)?.running) {

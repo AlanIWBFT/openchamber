@@ -78,7 +78,9 @@ const opencodeClientStub = new Proxy(
     },
   },
 );
+const clientModule = await import('@/lib/opencode/client');
 mock.module('@/lib/opencode/client', () => ({
+  ...clientModule,
   isOpencodeNotFound: () => false,
   OpencodeApiError: Error,
   normalizeOpencodeError: (operation: string, error: unknown) => new Error(`${operation}: ${String(error)}`),

@@ -51,6 +51,7 @@ const areStatusesEquivalent = (left: SessionStatus | undefined, right: SessionSt
   if (left?.type !== right?.type) return false
   if (left?.type !== 'retry' || right?.type !== 'retry') return true
   return left.attempt === right.attempt && left.message === right.message && left.next === right.next
+    && JSON.stringify(left.action) === JSON.stringify(right.action)
 }
 
 type StatusCandidate = {

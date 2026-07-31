@@ -1584,6 +1584,7 @@ const processForwardedServerEvent = (payload: TranslatedEvent, emitSyntheticEven
         attempt: isNumber(statusInfo.attempt) ? statusInfo.attempt : undefined,
         message: isString(statusInfo.message) ? statusInfo.message : undefined,
         next: isNumber(statusInfo.next) ? statusInfo.next : undefined,
+        action: statusInfo.action,
       },
     },
   });
