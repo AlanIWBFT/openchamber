@@ -20,6 +20,10 @@ describe('summarizeOpenCodeError', () => {
 });
 
 describe('responseBodyOf', () => {
+  test('retains stored local bodies while preferring the current wire field', () => {
+    expect(responseBodyOf({ type: 'provider.api', message: 'Bad request', responseBody: ' legacy ' })).toBe('legacy');
+    expect(responseBodyOf({ type: 'provider.api', message: 'Bad request', responseBody: 'legacy', response: { body: 'current' } })).toBe('current');
+  });
   test('returns the provider body OpenCode attached, trimmed and bounded', () => {
     expect(responseBodyOf({ type: 'provider.api', message: 'Bad request', response: { body: ' {"error":"x"} ' } })).toBe('{"error":"x"}');
     expect(responseBodyOf({ type: 'provider.api', message: 'Bad request', response: { body: 'y'.repeat(20_000) } })?.length).toBe(16_000);

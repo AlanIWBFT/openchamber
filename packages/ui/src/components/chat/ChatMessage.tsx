@@ -28,7 +28,7 @@ import { normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { useSourceControlDescriptorOf } from '@/lib/source-control/providers/registry';
 import { isHiddenUserMessage } from './message/hiddenUserMessage';
 import { flattenAssistantTextParts, flattenUserTextParts } from '@/lib/messages/messageText';
-import { assistantErrorNotice } from '@/lib/messages/assistantError';
+import { getProviderErrorPresentation } from '@/lib/messages/providerErrorPresentation';
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { TurnGroupingContext } from './lib/turns/types';
@@ -144,6 +144,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     const providers = useConfigStore((state) => state.providers);
     const showReasoningTraces = useUIStore((state) => state.showReasoningTraces);
+    const setModelSelectorOpen = useUIStore((state) => state.setModelSelectorOpen);
 
     const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
     const [copiedMessage, setCopiedMessage] = React.useState(false);
@@ -475,14 +476,17 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         if (isFollowedByAssistant) {
             return undefined;
         }
-        return assistantErrorNotice(message.info);
-    }, [isFollowedByAssistant, isUser, message.info]);
+        return getProviderErrorPresentation(message.info, t);
+    }, [isFollowedByAssistant, isUser, message.info, t]);
 
     const assistantErrorText = assistantError?.text;
     // The provider's raw response behind the error, offered as expandable details.
     const assistantErrorResponseBody = assistantErrorText && message.info.role === 'assistant'
-        ? message.info.error?.response?.body.trim() || undefined
+        ? (message.info.error?.response?.body ?? message.info.error?.responseBody)?.trim() || undefined
         : undefined;
+    const assistantErrorAction = React.useMemo(() => assistantError?.switchModel
+        ? { label: t('chat.modelControls.selectModel'), onClick: () => setModelSelectorOpen(true) }
+        : undefined, [assistantError?.switchModel, setModelSelectorOpen, t]);
 
     const messageTextContent = React.useMemo(() => {
         if (isUser) {
@@ -681,6 +685,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 onToggleContextPin={canPinIntoContext && messageCreatedAt ? handleToggleContextPin : undefined}
                                                 errorMessage={assistantErrorText}
                                                 errorResponseBody={assistantErrorResponseBody}
+                                                errorVariant={assistantError?.variant}
+                                                errorAction={assistantErrorAction}
                                                 extraActions={guestMessageActions}
                                                 promptOrigin={promptOrigin}
                                             />
@@ -719,6 +725,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                         errorMessage={assistantErrorText}
                                         errorResponseBody={assistantErrorResponseBody}
                                         userMessagePart="actions"
+                                        errorVariant={assistantError?.variant}
+                                        errorAction={assistantErrorAction}
                                         extraActions={guestMessageActions}
                                     />
                                 </div>
@@ -760,6 +768,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 errorMessage={assistantErrorText}
                                 errorResponseBody={assistantErrorResponseBody}
                                 reviewTransferDirection={reviewTransferDirection}
+                                errorVariant={assistantError?.variant}
+                                errorAction={assistantErrorAction}
                                 footerProviderID={headerProviderID}
                                 footerModelName={headerModelName}
                                 footerAgentName={headerAgentName}
