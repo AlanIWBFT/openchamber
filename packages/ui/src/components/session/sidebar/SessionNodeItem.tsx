@@ -80,6 +80,7 @@ type Props = {
   handleShareSession: (session: Session) => void;
   copiedSessionId: string | null;
   handleCopyShareUrl: (url: string, sessionId: string) => void;
+  handleCopySessionId: (sessionId: string) => void;
   handleUnshareSession: (sessionId: string) => void;
   openSidebarMenuKey: string | null;
   setOpenSidebarMenuKey: (key: string | null) => void;
@@ -274,6 +275,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     handleShareSession,
     copiedSessionId,
     handleCopyShareUrl,
+    handleCopySessionId,
     handleUnshareSession,
     openSidebarMenuKey,
     setOpenSidebarMenuKey,
@@ -478,7 +480,8 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     let skipped = 0;
     for (const child of children) {
       try {
-        await sync.ensureSessionRenderable(child.session.id, false, sessionDirectory ?? undefined);
+        if (!sessionDirectory) throw new Error('Session directory is required for export');
+        await sync.loadCompleteHistory(child.session.id, sessionDirectory);
         const childRecords = buildSessionMessageRecordsSnapshot(directoryStore.getState(), child.session.id).list;
         const childTitle = child.session.title || t('sessions.sidebar.session.export.untitledSubagent');
         const childAgent = (child.session as Session & { agent?: string }).agent;
@@ -510,7 +513,12 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       return;
     }
 
-    await sync.ensureSessionRenderable(session.id, false, sessionDirectory);
+    try {
+      await sync.loadCompleteHistory(session.id, sessionDirectory);
+    } catch {
+      toast.error(t('sessions.sidebar.session.export.failedLoadHistory'));
+      return;
+    }
 
     const records = buildSessionMessageRecordsSnapshot(directoryStore.getState(), session.id).list;
     if (records.length === 0) {
@@ -899,6 +907,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       >
         <Icon name="pencil-ai" className="mr-1 h-4 w-4" />
         {t('sessions.sidebar.session.menu.rename')}
+      </Item>
+      <Item onClick={() => handleCopySessionId(session.id)} className="[&>svg]:mr-1">
+        <Icon name="file-copy" className="mr-1 h-4 w-4" />
+        {t('sessions.sidebar.session.menu.copyId')}
       </Item>
       <Item onClick={() => sessionDirectory && togglePinnedSession({ directory: sessionDirectory, sessionId: session.id })} className="[&>svg]:mr-1">
         {isPinnedSession ? <Icon name="unpin" className="mr-1 h-4 w-4" /> : <Icon name="pushpin" className="mr-1 h-4 w-4" />}
@@ -1585,6 +1597,7 @@ const areSessionNodeItemPropsEqual = (prev: Props, next: Props): boolean => {
     && prev.togglePinnedSession === next.togglePinnedSession
     && prev.handleShareSession === next.handleShareSession
     && prev.handleCopyShareUrl === next.handleCopyShareUrl
+    && prev.handleCopySessionId === next.handleCopySessionId
     && prev.handleUnshareSession === next.handleUnshareSession
     && prev.setOpenSidebarMenuKey === next.setOpenSidebarMenuKey
     && prev.getFoldersForScope === next.getFoldersForScope

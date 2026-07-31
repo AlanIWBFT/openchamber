@@ -467,11 +467,28 @@ describe("shareSession live state", () => {
 
     const result = await unshareSession("session-a")
 
-    expect(result).toBe(unsharedSession)
+    expect(result).toEqual({ ...unsharedSession, share: undefined })
     expect(replyCalls.find((call) => call.method === "session.unshare")?.params.directory).toBe("/test/project")
     expect(sessionStore.getState().session[0].share).toBe(undefined)
     expect(otherStore.getState().session[0].id).toBe("other")
-    expect(globalUpsertedSessions).toEqual([unsharedSession])
+    expect(globalUpsertedSessions).toEqual([{ ...unsharedSession, share: undefined }])
+  })
+
+  test("clears a stale share URL echoed by a successful unshare response", async () => {
+    const sharedSession = { id: "session-a", time: { created: 1 }, share: { url: "https://share.example/a" } } as Session
+    const staleResponse = { id: "session-a", time: { created: 1, updated: 2 }, share: { url: "https://share.example/a" } } as Session
+    const sessionStore = createStore({}, { session: [sharedSession] })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    sessionShareResult = { data: staleResponse }
+
+    const { setActionRefs, unshareSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    const result = await unshareSession("session-a")
+
+    expect(result?.share).toBe(undefined)
+    expect(sessionStore.getState().session[0].share).toBe(undefined)
+    expect((globalUpsertedSessions[0] as Session).share).toBe(undefined)
   })
 
   test("updates the directory live store after sharing", async () => {
@@ -492,7 +509,7 @@ describe("shareSession live state", () => {
     expect(globalUpsertedSessions).toEqual([sharedSession])
   })
 
-  test("preserves live directory metadata while clearing share from null response", async () => {
+  test("preserves live directory metadata while normalizing a null share response", async () => {
     const sharedSession = {
       id: "session-a",
       time: { created: 1 },
@@ -514,8 +531,8 @@ describe("shareSession live state", () => {
 
     await unshareSession("session-a")
 
-    const liveSession = sessionStore.getState().session[0] as SessionWithDirectory & { share?: null }
-    expect(liveSession.share).toBe(null)
+    const liveSession = sessionStore.getState().session[0] as SessionWithDirectory
+    expect(liveSession.share).toBe(undefined)
     expect(liveSession.directory).toBe("/test/project")
     expect(liveSession.project?.worktree).toBe("/test/project")
   })

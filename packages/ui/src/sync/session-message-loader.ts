@@ -242,6 +242,27 @@ export class SessionMessageLoader {
     })
   }
 
+  async loadComplete(target: SessionMessageTarget): Promise<void> {
+    const normalized = this.normalizeTarget(target)
+    if (!normalized || this.disposed) throw new Error("Session message loader is unavailable")
+    const initial = this.getSnapshot(normalized)
+    await this.ensure(normalized, { force: !initial.resolved })
+
+    const visitedCursors = new Set<string>()
+    while (true) {
+      const snapshot = this.getSnapshot(normalized)
+      if (snapshot.status === "error") throw snapshot.error ?? new Error("Session history could not be loaded")
+      if (snapshot.complete) return
+      if (!snapshot.cursor) throw new Error("Session history coverage is unresolved")
+      if (visitedCursors.has(snapshot.cursor)) {
+        throw new Error("Session history pagination made no progress")
+      }
+      visitedCursors.add(snapshot.cursor)
+
+      await this.loadOlder(normalized)
+    }
+  }
+
   refreshTail(target: SessionMessageTarget, limit: number): Promise<void> {
     const normalized = this.normalizeTarget(target)
     if (!normalized || this.disposed) return Promise.resolve()

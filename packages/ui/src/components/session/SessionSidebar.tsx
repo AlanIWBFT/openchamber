@@ -831,6 +831,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     handleCancelEdit,
     handleShareSession,
     handleCopyShareUrl,
+    handleCopySessionId,
     handleUnshareSession,
     handleDeleteSession,
     confirmDeleteSession,
@@ -907,6 +908,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   const stableHandleCancelEdit = useStableRenderCallback(handleCancelEdit);
   const stableHandleShareSession = useStableRenderCallback(handleShareSession);
   const stableHandleCopyShareUrl = useStableRenderCallback(handleCopyShareUrl);
+  const stableHandleCopySessionId = useStableRenderCallback(handleCopySessionId);
   const stableHandleUnshareSession = useStableRenderCallback(handleUnshareSession);
   const stableHandleDeleteSession = useStableRenderCallback(handleDeleteSession);
   const stableCreateFolderAndStartRename = useStableRenderCallback(createFolderAndStartRename);
@@ -1560,6 +1562,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         handleShareSession={stableHandleShareSession}
         copiedSessionId={copiedSessionId}
         handleCopyShareUrl={stableHandleCopyShareUrl}
+        handleCopySessionId={stableHandleCopySessionId}
         handleUnshareSession={stableHandleUnshareSession}
         openSidebarMenuKey={openSidebarMenuKey}
         setOpenSidebarMenuKey={setOpenSidebarMenuKey}

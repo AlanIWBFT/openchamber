@@ -88,6 +88,91 @@ describe("SessionMessageLoader", () => {
     childStores.disposeAll()
   })
 
+  test("loads every history page for an explicit complete-history request", async () => {
+    const calls: Array<{ before?: string }> = []
+    const { childStores, loader } = createLoader(async ({ sessionID, before }) => {
+      calls.push({ before })
+      if (!before) return response([createRecord(sessionID, "msg_latest")], "cursor-2")
+      if (before === "cursor-2") return response([createRecord(sessionID, "msg_middle")], "cursor-1")
+      return response([createRecord(sessionID, "msg_oldest")])
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+
+    await loader.loadComplete(target)
+
+    expect(calls).toEqual([
+      { before: undefined },
+      { before: "cursor-2" },
+      { before: "cursor-1" },
+    ])
+    expect(loader.getSnapshot(target).complete).toBe(true)
+    expect(childStores.getChild(target.directory)?.getState().message[target.sessionID]).toHaveLength(3)
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("rejects a complete-history request when its initial load fails", async () => {
+    const { childStores, loader } = createLoader(async () => ({
+      error: { message: "rejected" },
+      response: { status: 400 },
+    }))
+    const target = { directory: "/repo", sessionID: "session-a" }
+
+    await expect(loader.loadComplete(target)).rejects.toThrow("session.messages failed (400): rejected")
+
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("rejects a complete-history request when an older page fails", async () => {
+    const { childStores, loader } = createLoader(async ({ sessionID, before }) => before
+      ? { error: { message: "older rejected" }, response: { status: 400 } }
+      : response([createRecord(sessionID)], "older-cursor"))
+    const target = { directory: "/repo", sessionID: "session-a" }
+
+    await expect(loader.loadComplete(target)).rejects.toThrow("session.messages failed (400): older rejected")
+
+    expect(loader.getSnapshot(target).cursor).toBe("older-cursor")
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("fetches authoritative coverage when renderable messages have no loader metadata", async () => {
+    let calls = 0
+    const { childStores, loader } = createLoader(async ({ sessionID }) => {
+      calls += 1
+      return response([createRecord(sessionID)])
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+    childStores.ensureChild(target.directory, { bootstrap: false }).setState({
+      message: { [target.sessionID]: [createRecord(target.sessionID, "cached").info] },
+    })
+
+    await loader.loadComplete(target)
+
+    expect(calls).toBe(1)
+    expect(loader.getSnapshot(target).complete).toBe(true)
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("rejects repeated pagination cursors instead of looping forever", async () => {
+    let calls = 0
+    const { childStores, loader } = createLoader(async ({ sessionID, before }) => {
+      calls += 1
+      if (!before) return response([createRecord(sessionID, "latest")], "cursor-a")
+      if (before === "cursor-a") return response([createRecord(sessionID, "middle")], "cursor-b")
+      return response([createRecord(sessionID, "older")], "cursor-a")
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+
+    await expect(loader.loadComplete(target)).rejects.toThrow("Session history pagination made no progress")
+
+    expect(calls).toBe(3)
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
   test("runs a requested tail refresh after an older in-flight load", async () => {
     const initial = deferred<ReturnType<typeof response>>()
     const refresh = deferred<ReturnType<typeof response>>()
