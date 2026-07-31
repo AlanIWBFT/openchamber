@@ -45,7 +45,7 @@ export function summarizeOpenCodeError(error: StructuredError | null | undefined
  * diagnostics records: a body may echo request content.
  */
 export function responseBodyOf(error: StructuredError | null | undefined): string | null {
-  const body = error?.response?.body.trim()
+  const body = (error?.response?.body ?? error?.responseBody)?.trim()
   return body ? body.slice(0, MAX_RESPONSE_BODY_LENGTH) : null
 }
 
