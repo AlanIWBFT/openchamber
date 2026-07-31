@@ -521,6 +521,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         }
     }, [isModelSelectorOpen, isCompact]);
 
+    React.useEffect(() => {
+        if (!isCompact || !isModelSelectorOpen) return;
+        setActiveMobilePanel('model');
+        setModelSelectorOpen(false);
+    }, [isCompact, isModelSelectorOpen, setActiveMobilePanel, setModelSelectorOpen]);
+
     // Handle agent selector close behavior
     const [agentSearchQuery, setAgentSearchQuery] = React.useState('');
     React.useEffect(() => {

@@ -3324,4 +3324,13 @@ export const dict: Record<I18nKey, string> = {
   "chat.assistantStatus.unifiedExec.pollingProcessOutput": "перевірка виводу процесу",
   "chat.assistantStatus.unifiedExec.sendingProcessInput": "надсилання даних процесу",
   "chat.assistantStatus.unifiedExec.terminatingProcess": "завершення процесу",
+  "chat.providerError.rateLimited": "Для цієї моделі діє обмеження швидкості. OpenCode повторить спробу, щойно з’явиться доступна потужність.",
+  "chat.providerError.usageLimited": "Ви досягли ліміту використання цієї моделі. Виберіть іншу модель, щоб продовжити.",
+  "chat.providerError.planNotIncluded": "Ваш поточний план не включає цю модель. Виберіть іншу модель або оновіть свій план.",
+  "chat.providerError.quotaExceeded": "Квоту вичерпано. Перевірте свій план і платежі.",
+  "chat.providerError.policyBlocked": "Цей запит заблоковано політикою безпеки. Змініть його та повторіть спробу.",
+  "chat.providerError.authentication": "Автентифікація не вдалася. Увійдіть знову або перевірте облікові дані постачальника.",
+  "chat.providerError.invalidInput": "Не вдалося обробити цей запит. Скоригуйте його та повторіть спробу.",
+  "chat.providerError.network": "Запит до постачальника заблоковано мережею або регіоном. Перевірте підключення та доступ до постачальника.",
+  "chat.providerError.server": "Постачальник тимчасово недоступний. OpenCode повторить спробу автоматично.",
 };
