@@ -3292,4 +3292,13 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.unifiedExec.pollingProcessOutput': '프로세스 출력 확인 중',
   'chat.assistantStatus.unifiedExec.sendingProcessInput': '프로세스 입력 전송 중',
   'chat.assistantStatus.unifiedExec.terminatingProcess': '프로세스 종료 중',
+  'chat.providerError.rateLimited': '이 모델은 속도 제한에 걸려 있습니다. 용량이 확보되면 OpenCode가 다시 시도합니다.',
+  'chat.providerError.usageLimited': '이 모델의 사용 한도에 도달했습니다. 계속하려면 다른 모델을 선택하세요.',
+  'chat.providerError.planNotIncluded': '현재 요금제에는 이 모델이 포함되어 있지 않습니다. 다른 모델을 선택하거나 요금제를 업그레이드하세요.',
+  'chat.providerError.quotaExceeded': '할당량이 초과되었습니다. 요금제와 결제를 확인하세요.',
+  'chat.providerError.policyBlocked': '이 요청은 안전 정책에 의해 차단되었습니다. 내용을 수정한 후 다시 시도하세요.',
+  'chat.providerError.authentication': '인증에 실패했습니다. 다시 로그인하거나 공급자 자격 증명을 확인하세요.',
+  'chat.providerError.invalidInput': '이 요청을 처리할 수 없습니다. 내용을 조정한 후 다시 시도하세요.',
+  'chat.providerError.network': '공급자 요청이 네트워크 또는 지역에 의해 차단되었습니다. 연결 및 공급자 접근 권한을 확인하세요.',
+  'chat.providerError.server': '공급자를 일시적으로 사용할 수 없습니다. OpenCode가 자동으로 다시 시도합니다.',
 };

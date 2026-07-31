@@ -173,6 +173,7 @@ type ChatViewportProps = {
         sessionId: string;
         message: string;
         confirmedAt?: number;
+        resolution?: unknown;
         fallbackTimestamp?: number;
     } | null;
     scrollToBottom: () => void;
@@ -727,6 +728,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             sessionId: currentSessionId,
             message: rawMessage || DEFAULT_RETRY_MESSAGE,
             confirmedAt: (sessionStatusForCurrent as { confirmedAt?: number }).confirmedAt,
+            resolution: (sessionStatusForCurrent as { resolution?: unknown }).resolution,
         };
     }, [currentSessionId, sessionStatusForCurrent]);
     const [retryFallbackTimestamp, setRetryFallbackTimestamp] = React.useState<number>(0);
