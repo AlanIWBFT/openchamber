@@ -158,6 +158,7 @@ describe("translateWireEvent", () => {
         type: "message.updated",
         properties: {
           info: { id: "msg_a", sessionID: "ses_1", role: "assistant", time: { created: 1000 }, agent: "build", providerID: "p", modelID: "m" },
+          stepStartedSeq: durable.seq,
         },
       },
     ])
