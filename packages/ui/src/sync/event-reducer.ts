@@ -101,6 +101,25 @@ function shouldPreserveExistingPart(previous: Part, next: Part): boolean {
   return false
 }
 
+// Mirrors the backend's current-assistant retry cleanup without touching history
+// outside the loaded tail. A replayed older start cannot clear a newer message.
+function clearCurrentRetry(draft: State, sessionID: string, beforeSeq?: number): boolean {
+  const messages = draft.message[sessionID]
+  if (!messages) return false
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (message.role !== "assistant") continue
+    if (!message.retry || (beforeSeq !== undefined && message.seq !== undefined && message.seq > beforeSeq)) return false
+    const next = { ...message }
+    delete next.retry
+    const updated = [...messages]
+    updated[index] = next
+    draft.message[sessionID] = updated
+    return true
+  }
+  return false
+}
+
 function areSessionStatusesEqual(left: SessionStatus | undefined, right: SessionStatus): boolean {
   if (left === right) return true
   if (!left || left.type !== right.type) return false
@@ -441,13 +460,14 @@ export function applyDirectoryEvent(
 
     case "session.status": {
       const { sessionID, status } = event.properties
+      const retryCleared = status.type === "idle" && clearCurrentRetry(draft, sessionID)
       const wasInvalidated = draft.sessionStatusInvalidated?.[sessionID] === true
       if (wasInvalidated) {
         draft.sessionStatusInvalidated = { ...draft.sessionStatusInvalidated }
         delete draft.sessionStatusInvalidated[sessionID]
       }
       if (areSessionStatusesEqual(draft.session_status[sessionID], status)) {
-        return wasInvalidated
+        return wasInvalidated || retryCleared
       }
       draft.session_status[sessionID] = status
       return true
@@ -458,13 +478,14 @@ export function applyDirectoryEvent(
       // An error ends the turn; it is not a lasting status.
       const { sessionID } = event.properties
       const status = { type: "idle" } as const
+      const retryCleared = clearCurrentRetry(draft, sessionID)
       const wasInvalidated = draft.sessionStatusInvalidated?.[sessionID] === true
       if (wasInvalidated) {
         draft.sessionStatusInvalidated = { ...draft.sessionStatusInvalidated }
         delete draft.sessionStatusInvalidated[sessionID]
       }
       if (areSessionStatusesEqual(draft.session_status[sessionID], status)) {
-        return wasInvalidated
+        return wasInvalidated || retryCleared
       }
       draft.session_status[sessionID] = status
       return true
@@ -472,11 +493,15 @@ export function applyDirectoryEvent(
 
     case "message.updated": {
       let info = event.properties.info
-      const messages = draft.message[info.sessionID] ?? []
+      let messages = draft.message[info.sessionID] ?? []
       // A compaction settles the record that has been running, the way
       // OpenCode's own message store does: `session.compaction.ended` carries
       // no input id, so the settled record keeps the running one's identity.
       const originalIndex = findMessageIndex(messages, info.id)
+      if (info.role === "assistant" && originalIndex < 0 && event.properties.stepStartedSeq !== undefined) {
+        clearCurrentRetry(draft, info.sessionID, event.properties.stepStartedSeq)
+        messages = draft.message[info.sessionID] ?? []
+      }
       let runningCompaction = info.role === "compaction" && info.status !== "running" && originalIndex < 0
         ? findRunningCompactionIndex(messages)
         : -1

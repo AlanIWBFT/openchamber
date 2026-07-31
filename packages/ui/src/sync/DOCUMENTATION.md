@@ -536,6 +536,8 @@ Status snapshot requests are ordered by successfully applied generation per dire
 
 The event pipeline owns SSE reconnect and backoff. The V2 subscription propagates errors without retrying; a clean EOF also enters recovery. The client transport adapter preserves HTTP error statuses before SDK body decoding so permanent errors retain long backoff. Offline transitions wait for the offline cap or an interrupt; online, foreground, system-resume and explicit reconnect can interrupt a pending retry wait. Connection readiness requires a received event rather than construction of an iterator.
 
+Provider-error presentation reads the assistant's native `retry.error` while a retry is scheduled, or its settled `error` otherwise. Retry policy classification alone does not mean the runner will try again: its budget can be exhausted. Only pending retries receive information styling and retry wording; settled provider failures retain their category and model-switch action without promising another attempt. The status-only retry overlay cannot replace a native retry or terminal error. A new assistant step and idle/error transitions clear the current assistant's retry metadata, matching the backend projector. `stepStartedSeq` is a cleanup ordering guard, never a message creation sequence; an older replayed start cannot clear a newer persisted assistant's retry.
+
 ## Session message loading
 
 The event pipeline's reconnect callback carries `replayReset`. A global WS
