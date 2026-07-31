@@ -113,7 +113,7 @@ This module provides OpenCode server integration utilities for the web server ru
   - `resetAllSessionActivityToIdle()`
   - `dispose()`
 
-The runtime maintains active-session count incrementally from idempotent activity phase transitions. Upstream stall-timeout and lifecycle health checks read it in O(1); the hourly cleanup removes activity phases older than 24 hours without broadcasting synthetic state transitions. Snapshot generation remains reserved for the session-activity API.
+The runtime maintains active-session count incrementally from idempotent activity phase transitions. Repeated status events are suppressed only when both the status and recovery metadata are unchanged; advancing retry attempts must update snapshots and synthetic events immediately. Upstream stall-timeout and lifecycle health checks read the active count in O(1); the hourly cleanup removes activity phases older than 24 hours without broadcasting synthetic state transitions. Snapshot generation remains reserved for the session-activity API.
 
 ## Public exports (lifecycle.js)
 - `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration. The optional `onOpenCodeRestarted` dependency (default `null`) is fired after a successful managed restart; `index.js` wires it to `messageStreamRuntime.rebindUpstream()` so event-stream readers rebind to the possibly-new port (a restart can land on a new port while an orphaned process keeps the old one, which would otherwise leave the chat UI silent — issue #2638).

@@ -37,6 +37,57 @@ function createEventTarget(extras = {}) {
 }
 
 describe('createEventPipeline — online event', () => {
+  it('does not reconnect repeatedly after the browser reports offline', async () => {
+    globalThis.document = createEventTarget({ visibilityState: 'visible' });
+    globalThis.window = createEventTarget({
+      location: { href: 'http://127.0.0.1:3000/', origin: 'http://127.0.0.1:3000' },
+    });
+    globalThis.navigator = { onLine: true };
+
+    let sdkCalls = 0;
+    let connected;
+    const ready = new Promise((resolve) => {
+      connected = resolve;
+    });
+    const sdk = {
+      global: {
+        event: async ({ signal }) => {
+          sdkCalls += 1;
+          return {
+            stream: (async function* () {
+              yield {
+                payload: {
+                  type: 'session.status',
+                  properties: { sessionID: 's1', status: { type: 'idle' } },
+                },
+              };
+              await new Promise((resolve) => {
+                signal.addEventListener('abort', resolve, { once: true });
+              });
+            })(),
+          };
+        },
+      },
+    };
+    const pipeline = createEventPipeline({
+      sdk,
+      transport: 'sse',
+      heartbeatTimeoutMs: 60_000,
+      onEvent: () => {},
+      onReconnect: connected,
+    });
+
+    try {
+      await ready;
+      globalThis.navigator = { onLine: false };
+      globalThis.window.dispatch('offline');
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      expect(sdkCalls).toBe(1);
+    } finally {
+      pipeline.cleanup();
+    }
+  });
+
   it('cuts the inter-attempt wait short when `online` fires after disconnect', async () => {
     globalThis.document = createEventTarget({ visibilityState: 'visible' });
     globalThis.window = createEventTarget({
