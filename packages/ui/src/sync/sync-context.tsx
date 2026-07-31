@@ -692,6 +692,8 @@ function toSessionStatus(status: Awaited<ReturnType<typeof opencodeClient.getSes
       attempt: status.attempt,
       message: status.message,
       next: status.next,
+      ...(status.action === undefined ? {} : { action: status.action }),
+      ...(status.resolution === undefined ? {} : { resolution: status.resolution }),
     }
   }
   return undefined
@@ -2630,8 +2632,8 @@ export function SyncProvider(props: {
           // page retries inside loadSessions can't catch. Re-run a few times there.
           //
           // On web/desktop this retry is both redundant and harmful: loadSessions
-          // already retries transient failures (listGlobalSessionPages throws on
-          // 5xx and retries internally), so an empty result here is AUTHORITATIVE —
+          // already retries transient failures per page (listGlobalSessionPages
+          // throws on 5xx and retries internally), so an empty result here is AUTHORITATIVE —
           // the directory genuinely has no sessions (e.g. a deleted worktree only
           // referenced by archived sessions). Re-running the full bootstrap 6×2s
           // per such directory is the startup log storm.
