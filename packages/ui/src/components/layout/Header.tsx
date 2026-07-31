@@ -21,7 +21,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
 import { formatSessionWorktreeBadge } from '@/sync/session-worktree-contract';
-import { buildSessionMessageRecordsSnapshot, useDirectoryStore, useSessionMessagesResolved } from '@/sync/sync-context';
+import { buildSessionMessageRecordsSnapshot, useDirectoryStore, useGlobalSessionStatus, useSessionMessagesResolved } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
@@ -82,6 +82,7 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { buildExportFilename, downloadAsMarkdown, formatSessionAsMarkdown, saveAsMarkdownDesktop } from '@/lib/exportSession';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { startSessionTreeWorktreeMove, useIsSessionWorktreeMovePending } from '@/lib/worktrees/sessionWorktreeMove';
 
 const DESKTOP_HEADER_ICON_BUTTON_CLASS = 'app-region-no-drag inline-flex h-8 w-8 items-center justify-center gap-2 rounded-md typography-ui-label font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50 hover:bg-interactive-hover transition-colors';
 const MOBILE_HEADER_ICON_BUTTON_CLASS = 'app-region-no-drag inline-flex h-9 w-9 items-center justify-center gap-2 p-2 rounded-md typography-ui-label font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50 hover:text-foreground hover:bg-interactive-hover transition-colors';
@@ -715,6 +716,7 @@ type HeaderSessionSnapshot = {
   created: number | null;
   slug: string | null;
   shareUrl: string | null;
+  parentId: string | null;
 };
 
 export const Header: React.FC<HeaderProps> = ({
@@ -744,6 +746,8 @@ export const Header: React.FC<HeaderProps> = ({
   const isNewSessionDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const currentSessionMessagesResolved = useSessionMessagesResolved(currentSessionId ?? '');
+  const currentSessionStatus = useGlobalSessionStatus(currentSessionId ?? '');
+  const isCurrentSessionMovingToWorktree = useIsSessionWorktreeMovePending(currentSessionId ?? '');
   const currentGlobalSession = useGlobalSessionsStore(useShallow(React.useCallback(
     (state): HeaderSessionSnapshot | null => {
       if (!currentSessionId) return null;
@@ -756,6 +760,7 @@ export const Header: React.FC<HeaderProps> = ({
         created: session.time?.created ?? null,
         slug: record.slug ?? null,
         shareUrl: session.share?.url ?? null,
+        parentId: session.parentID ?? null,
       };
     },
     [currentSessionId],
@@ -1421,6 +1426,33 @@ export const Header: React.FC<HeaderProps> = ({
     if (!savedPath) downloadAsMarkdown(markdown, filename);
     toast.success(t('sessions.sidebar.session.export.success'));
   }, [currentSession?.title, currentSessionId, headerDirectoryStore, openDirectory, sync, t]);
+
+  const isCurrentSessionActive = currentSessionStatus?.type === 'busy' || currentSessionStatus?.type === 'retry';
+  const moveCurrentSessionToWorktree = React.useCallback(() => {
+    if (!currentSessionId || !sessionDirectory || isCurrentSessionActive || isCurrentSessionMovingToWorktree) return;
+    const sessions = useGlobalSessionsStore.getState().activeSessions;
+    const root = sessions.find((session) => session.id === currentSessionId);
+    if (!root) return;
+
+    const descendants: typeof sessions = [];
+    const pendingParentIds = [currentSessionId];
+    for (let index = 0; index < pendingParentIds.length; index += 1) {
+      const parentId = pendingParentIds[index];
+      for (const session of sessions) {
+        if (session.parentID !== parentId) continue;
+        descendants.push(session);
+        pendingParentIds.push(session.id);
+      }
+    }
+
+    startSessionTreeWorktreeMove({
+      root,
+      descendants,
+      sourceDirectory: sessionDirectory,
+      successMessage: t('sessions.sidebar.session.moveToWorktree.success'),
+      failureMessage: t('sessions.sidebar.session.moveToWorktree.failed'),
+    });
+  }, [currentSessionId, isCurrentSessionActive, isCurrentSessionMovingToWorktree, sessionDirectory, t]);
 
   const confirmHeaderRetentionAction = React.useCallback(async () => {
     if (!currentSessionId || !pendingHeaderRetentionAction) return;
@@ -2340,6 +2372,29 @@ export const Header: React.FC<HeaderProps> = ({
                       <DropdownMenuItem onClick={() => void shareCurrentSession()}><Icon name="share-2" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.share')}</DropdownMenuItem>
                     )}
                     <DropdownMenuItem onClick={() => void exportCurrentSession()}><Icon name="download" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.exportMarkdown')}</DropdownMenuItem>
+                    {!isVSCode && currentSession && !currentSession.parentId ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="block">
+                            <DropdownMenuItem
+                              disabled={!sessionDirectory || isCurrentSessionActive || isCurrentSessionMovingToWorktree}
+                              onClick={moveCurrentSessionToWorktree}
+                              className="w-full"
+                            >
+                              <Icon name="folder-shared" className="mr-2 size-4" />
+                              {t('sessions.sidebar.session.menu.moveToWorktree')}
+                            </DropdownMenuItem>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-72">
+                          {isCurrentSessionMovingToWorktree
+                            ? t('sessions.sidebar.session.moveToWorktree.tooltipMoving')
+                            : isCurrentSessionActive
+                              ? t('sessions.sidebar.session.moveToWorktree.tooltipBusy')
+                              : t('sessions.sidebar.session.moveToWorktree.tooltip')}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => setPendingHeaderRetentionAction('archive')}><Icon name="inbox-archive" className="mr-2 size-4" />{t('sessions.sidebar.bulkActions.archive')}</DropdownMenuItem>
                     <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setPendingHeaderRetentionAction('delete')}><Icon name="delete-bin" className="mr-2 size-4" />{t('sessions.sidebar.bulkActions.delete')}</DropdownMenuItem>
