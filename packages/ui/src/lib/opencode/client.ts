@@ -339,7 +339,17 @@ export const createRuntimeOpencodeClient = (config: RuntimeOpencodeClientConfig)
     fetch: async (input: string | URL | Request, init?: RequestInit) => {
       const url = input instanceof URL ? input : new URL(typeof input === "string" ? input : input.url)
       const method = String(init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase()
-      if (isEventStreamUrl(url) || method === "POST") {
+      if (isEventStreamUrl(url)) {
+        const response = validateRuntimeResponse(await runtimeFetch(input, init))
+        // The generated SSE decoder can discard declared HTTP statuses when
+        // decoding an error body. Reconnect policy needs the actual status.
+        if (!response.ok) {
+          await response.body?.cancel().catch(() => {})
+          throw new OpencodeApiError("event stream", "HTTP request rejected", { status: response.status })
+        }
+        return response
+      }
+      if (method === "POST") {
         return validateRuntimeResponse(await runtimeFetch(input, init))
       }
       const timeout = createTimeoutSignal(requestTimeoutMs)

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import type { OpenCodeClient, OpenCodeEvent } from "@opencode/client"
+import { OpenCode, type JsonValue, type OpenCodeClient, type OpenCodeEvent } from "@opencode/client"
 import type { SyncEvent } from "@/lib/opencode/events"
 import { adoptRelayTunnel, deactivateRelayTunnel } from "@/lib/relay/runtime-tunnel"
 import type { RelayTunnelClient, RelayTunnelWebSocket } from "@/lib/relay/tunnel-client"
@@ -34,7 +34,7 @@ function statusEvent(type: "busy" | "retry"): OpenCodeEvent {
 }
 
 /** A raw stream payload: wire events, or OpenChamber's own bridge events. */
-type StreamPayload = OpenCodeEvent | { type: string; properties: Record<string, string> }
+type StreamPayload = OpenCodeEvent | { type: string; properties: Record<string, JsonValue> }
 
 /** `keepalives` counts SSE comments sent before the events. They are activity without an event. */
 function createSdk(events: StreamPayload[], streamFinished: () => void, keepalives = 0): OpenCodeClient {
@@ -97,6 +97,62 @@ async function collect(events: StreamPayload[], expected: number): Promise<{ dir
 }
 
 describe("createEventPipeline", () => {
+  test("a clean V2 SSE EOF enters pipeline recovery without claiming a connection", async () => {
+    let resolveDisconnected!: (reason: string) => void
+    const disconnected = new Promise<string>((resolve) => { resolveDisconnected = resolve })
+    let connected = 0
+    let requests = 0
+    const sdk = OpenCode.make({ baseUrl: "http://localhost", fetch: async () => {
+      requests++
+      return new Response("", { headers: { "content-type": "text/event-stream" } })
+    } })
+    const pipeline = createEventPipeline({
+      sdk, transport: "sse", onEvent: () => {},
+      onDisconnect: resolveDisconnected, onReconnect: () => { connected++ },
+    })
+    try {
+      expect(await Promise.race([disconnected, failAfter(500)])).toBe("sse_closed")
+      expect(requests).toBe(1)
+      expect(connected).toBe(0)
+    } finally {
+      pipeline.cleanup()
+    }
+  })
+
+  test("preserves native retry error resolution on the assistant message", async () => {
+    const error = { type: "rate_limit", message: "Rate limited", resolution: { kind: "rate_limited", retry: "automatic", action: "wait" } } as const
+    const { events } = await collect([{
+      ...base, durable, type: "session.retry.scheduled",
+      data: { sessionID: "ses_1", assistantMessageID: "msg_1", attempt: 2, at: 2000, error },
+    }], 1)
+    expect(events).toEqual([{
+      type: "message.patched", properties: { sessionID: "ses_1", messageID: "msg_1", patch: { retry: { attempt: 2, at: 2000, error } } },
+    }])
+  })
+
+  test("preserves validated retry actions from the host bridge", async () => {
+    const action = { reason: "rate_limited", provider: "openai", title: "Rate limited", message: "Wait and retry", label: "Wait" }
+    const { events } = await collect([{
+      type: "openchamber:session-status", properties: {
+        sessionId: "ses_1", status: "retry", metadata: { attempt: 1, message: "retrying", next: 10, action },
+      },
+    }], 1)
+    expect(events).toEqual([{
+      type: "session.status", properties: { sessionID: "ses_1", status: { type: "retry", attempt: 1, message: "retrying", next: 10, action } },
+    }])
+  })
+
+  test("an invalid optional host action does not discard valid retry status", async () => {
+    const { events } = await collect([{
+      type: "openchamber:session-status", properties: {
+        sessionId: "ses_1", status: "retry", metadata: { attempt: 1, message: "retrying", next: 10, action: { title: 4 } },
+      },
+    }], 1)
+    expect(events).toEqual([{
+      type: "session.status", properties: { sessionID: "ses_1", status: { type: "retry", attempt: 1, message: "retrying", next: 10 } },
+    }])
+  })
+
   test("translates wire events, routes them by location, and delivers one ordered batch", async () => {
     const { directory, events } = await collect([textEnded("a"), textDelta("b"), textEnded("ab")], 3)
     expect(directory).toBe("/repo")

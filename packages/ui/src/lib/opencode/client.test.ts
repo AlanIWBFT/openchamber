@@ -630,9 +630,10 @@ describe("messages and config", () => {
     responses.push(
       json({
         data: [
-          { id: "msg_u", type: "user", time: { created: 1 }, text: "hi" },
+          { id: "msg_u", seq: 3, type: "user", time: { created: 1 }, text: "hi" },
           {
             id: "msg_a",
+            seq: 7,
             type: "assistant",
             time: { created: 2, completed: 3 },
             agent: "build",
@@ -648,6 +649,7 @@ describe("messages and config", () => {
     expect(requests[0].url.searchParams.get("limit")).toBe("20")
     expect(requests[0].url.searchParams.get("order")).toBe("asc")
     expect(page.items.map((item: { info: { role: string } }) => item.info.role)).toEqual(["user", "assistant"])
+    expect(page.items.map((item: { info: { seq: number } }) => item.info.seq)).toEqual([3, 7])
     expect(page.items[0].parts[0]).toMatchObject({ type: "text", text: "hi", id: "msg_u:text:0" })
     expect(page.items[1].parts[0]).toMatchObject({ type: "text", text: "hello", id: "msg_a:text:0" })
     expect(page.cursor).toEqual({ previous: "p1" })
@@ -655,14 +657,14 @@ describe("messages and config", () => {
 
   test("a page shorter than the limit drops the next cursor the server still attaches", async () => {
     responses.push(json({
-      data: [{ id: "msg_only", type: "user", time: { created: 1 }, text: "hi" }],
+      data: [{ id: "msg_only", seq: 3, type: "user", time: { created: 1 }, text: "hi" }],
       cursor: { previous: "p1", next: "n1" },
     }))
     const short = await opencodeClient.getSessionMessages("ses_1", { limit: 20 })
     expect(short.cursor).toEqual({ previous: "p1" })
 
     responses.push(json({
-      data: [{ id: "msg_only", type: "user", time: { created: 1 }, text: "hi" }],
+      data: [{ id: "msg_only", seq: 3, type: "user", time: { created: 1 }, text: "hi" }],
       cursor: { previous: "p1", next: "n1" },
     }))
     const full = await opencodeClient.getSessionMessages("ses_1", { limit: 1 })
