@@ -75,6 +75,7 @@ export function createUpstreamSseReader({
   reconnectMaxDelayMs = DEFAULT_UPSTREAM_RECONNECT_MAX_DELAY_MS,
   reconnectBackoffMultiplier = DEFAULT_UPSTREAM_RECONNECT_BACKOFF_MULTIPLIER,
   setTimeoutImpl = globalThis.setTimeout,
+  waitForReconnect = waitForReconnectDelay,
   onEvent,
   onConnect,
   onDisconnect,
@@ -91,6 +92,23 @@ export function createUpstreamSseReader({
   const nextReconnectDelay = () => (reconnectDelayMs instanceof Function
     ? resolveTimeoutMs(reconnectDelayMs, DEFAULT_UPSTREAM_RECONNECT_DELAY_MS)
     : resolveReconnectDelay(consecutiveReconnectFailures, reconnectDelayMs, reconnectMaxDelayMs, reconnectBackoffMultiplier));
+  const waitBeforeReconnect = async () => {
+    if (stopped || signal?.aborted) return;
+    consecutiveReconnectFailures += 1;
+    const delay = nextReconnectDelay();
+    const controller = new AbortController();
+    const abortWait = () => controller.abort();
+    signal?.addEventListener('abort', abortWait, { once: true });
+    activeController = controller;
+    try {
+      await waitForReconnect(delay, controller.signal, setTimeoutImpl);
+    } finally {
+      signal?.removeEventListener('abort', abortWait);
+      if (activeController === controller) {
+        activeController = null;
+      }
+    }
+  };
 
   function detachStopListener() {
     if (!stopListenerAttached) return;
@@ -119,6 +137,7 @@ export function createUpstreamSseReader({
 
     attachStopListener();
     stopped = false;
+    consecutiveReconnectFailures = 0;
     running = (async () => {
       while (!stopped && !signal?.aborted) {
         const controller = new AbortController();
@@ -127,6 +146,12 @@ export function createUpstreamSseReader({
         signal?.addEventListener('abort', abortActive, { once: true });
 
         let abortReason = null;
+        let disconnectNotified = false;
+        const notifyDisconnect = () => {
+          if (disconnectNotified) return;
+          disconnectNotified = true;
+          onDisconnect?.({ reason: abortReason ?? (stopped || signal?.aborted ? 'stopped' : 'closed') });
+        };
         let stallTimer = null;
         const clearStallTimer = () => {
           if (stallTimer) {
@@ -165,18 +190,17 @@ export function createUpstreamSseReader({
           });
 
           if (!response?.ok || !response.body) {
-            consecutiveReconnectFailures += 1;
             onError?.({
               type: 'upstream_unavailable',
               status: response?.status ?? 0,
               response,
             });
             await cancelResponseBody(response);
-            await waitForReconnectDelay(nextReconnectDelay(), signal, setTimeoutImpl);
+            notifyDisconnect();
+            await waitBeforeReconnect();
             continue;
           }
 
-          consecutiveReconnectFailures = 0;
           onConnect?.({ response, lastEventId });
 
           const decoder = new TextDecoder();
@@ -191,6 +215,9 @@ export function createUpstreamSseReader({
               break;
             }
 
+            if (value?.byteLength > 0) {
+              consecutiveReconnectFailures = 0;
+            }
             resetStallTimer();
             buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
 
@@ -233,7 +260,6 @@ export function createUpstreamSseReader({
           }
         } catch (error) {
           if (!stopped && !signal?.aborted && abortReason !== 'upstream_stalled') {
-            consecutiveReconnectFailures += 1;
             onError?.({
               type: 'stream_error',
               error,
@@ -245,11 +271,11 @@ export function createUpstreamSseReader({
           if (activeController === controller) {
             activeController = null;
           }
-          onDisconnect?.({ reason: abortReason ?? (stopped || signal?.aborted ? 'stopped' : 'closed') });
+          notifyDisconnect();
         }
 
         if (!stopped && !signal?.aborted) {
-          await waitForReconnectDelay(nextReconnectDelay(), signal, setTimeoutImpl);
+          await waitBeforeReconnect();
         }
       }
     })().finally(() => {
