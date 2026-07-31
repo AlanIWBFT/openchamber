@@ -13,6 +13,7 @@ interface RetryOverlayInput {
     sessionId: string | null;
     message: string;
     confirmedAt?: number;
+    resolution?: unknown;
     fallbackTimestamp: number;
 }
 
@@ -27,7 +28,10 @@ export const applyRetryOverlay = (
     const retryError = {
         name: 'SessionRetry',
         message: input.message,
-        data: { message: input.message },
+        data: {
+            message: input.message,
+            ...(input.resolution === undefined ? {} : { resolution: input.resolution }),
+        },
     };
 
     let lastUserIndex = -1;

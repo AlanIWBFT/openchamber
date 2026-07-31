@@ -3303,6 +3303,15 @@ export const dict = {
   'chat.assistantStatus.unifiedExec.pollingProcessOutput': 'polling process output',
   'chat.assistantStatus.unifiedExec.sendingProcessInput': 'sending process input',
   'chat.assistantStatus.unifiedExec.terminatingProcess': 'terminating process',
+  'chat.providerError.rateLimited': 'This model is rate limited. OpenCode will retry when capacity is available.',
+  'chat.providerError.usageLimited': "You've reached this model's usage limit. Select another model to continue.",
+  'chat.providerError.planNotIncluded': 'Your current plan does not include this model. Select another model or upgrade your plan.',
+  'chat.providerError.quotaExceeded': 'Quota exceeded. Check your plan and billing details.',
+  'chat.providerError.policyBlocked': 'This request was blocked by a safety policy. Change the request and try again.',
+  'chat.providerError.authentication': 'Authentication failed. Sign in again or check your provider credentials.',
+  'chat.providerError.invalidInput': 'This request could not be processed. Adjust it and try again.',
+  'chat.providerError.network': 'The provider request was blocked by the network or region. Check your connection and provider access.',
+  'chat.providerError.server': 'The provider is temporarily unavailable. OpenCode will retry automatically.',
 } as const;
 
 export type I18nKey = keyof typeof dict;

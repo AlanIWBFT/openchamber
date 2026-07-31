@@ -3304,4 +3304,13 @@ export const dict: Record<I18nKey, string> = {
   "chat.assistantStatus.unifiedExec.pollingProcessOutput": "consultando a saída do processo",
   "chat.assistantStatus.unifiedExec.sendingProcessInput": "enviando entrada ao processo",
   "chat.assistantStatus.unifiedExec.terminatingProcess": "encerrando processo",
+  "chat.providerError.rateLimited": "Este modelo está com limite de taxa. O OpenCode tentará novamente quando houver capacidade.",
+  "chat.providerError.usageLimited": "Você atingiu o limite de uso deste modelo. Selecione outro modelo para continuar.",
+  "chat.providerError.planNotIncluded": "Seu plano atual não inclui este modelo. Selecione outro modelo ou faça upgrade do plano.",
+  "chat.providerError.quotaExceeded": "A cota foi excedida. Verifique seu plano e faturamento.",
+  "chat.providerError.policyBlocked": "Esta solicitação foi bloqueada por uma política de segurança. Altere-a e tente novamente.",
+  "chat.providerError.authentication": "A autenticação falhou. Entre novamente ou verifique as credenciais do provedor.",
+  "chat.providerError.invalidInput": "Não foi possível processar esta solicitação. Ajuste-a e tente novamente.",
+  "chat.providerError.network": "A solicitação ao provedor foi bloqueada pela rede ou pela região. Verifique sua conexão e o acesso ao provedor.",
+  "chat.providerError.server": "O provedor está temporariamente indisponível. O OpenCode tentará novamente automaticamente.",
 };

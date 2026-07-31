@@ -429,6 +429,8 @@ interface MessageBodyProps {
     onRevert?: () => void;
     onFork?: () => void;
     errorMessage?: string;
+    errorVariant?: 'error' | 'info';
+    errorAction?: { label: string; onClick: () => void };
     userActionsMode?: 'inline' | 'external-content' | 'external-actions';
     stickyUserHeaderEnabled?: boolean;
     reviewTransferDirection?: ReviewTransferDirection | null;
@@ -1114,6 +1116,8 @@ const AssistantMessageBody = React.memo(({
     showReasoningTraces = false,
     turnGroupingContext,
     errorMessage,
+    errorVariant = 'error',
+    errorAction,
     reviewTransferDirection = null,
     contextPinned,
     contextPinPending,
@@ -2209,9 +2213,20 @@ const AssistantMessageBody = React.memo(({
                     {renderedParts}
                     {showErrorMessage && (
                         <FadeInOnReveal key="assistant-error">
-                            <div className="group/assistant-text relative mt-3 max-w-full break-words rounded-2xl border border-[var(--status-info-border)] bg-[var(--status-info-background)] px-4 py-3 text-base leading-relaxed">
+                            <div className={cn(
+                                'group/assistant-text relative mt-3 max-w-full break-words rounded-2xl border px-4 py-3 text-base leading-relaxed',
+                                errorVariant === 'info'
+                                    ? 'border-[var(--status-info-border)] bg-[var(--status-info-background)]'
+                                    : 'border-[var(--status-error-border)] bg-[var(--status-error-background)]',
+                            )}>
                                 <div className="flex items-center gap-3">
-                                    <Icon name="information" className="size-4 shrink-0 text-[var(--status-info)]" />
+                                    <Icon
+                                        name={errorVariant === 'info' ? 'information' : 'error-warning'}
+                                        className={cn(
+                                            'size-4 shrink-0',
+                                            errorVariant === 'info' ? 'text-[var(--status-info)]' : 'text-[var(--status-error)]',
+                                        )}
+                                    />
                                     <div className="min-w-0 flex-1 break-words">
                                         <SimpleMarkdownRenderer
                                             content={errorMessage ?? ''}
@@ -2221,6 +2236,21 @@ const AssistantMessageBody = React.memo(({
                                         />
                                     </div>
                                 </div>
+                                {errorAction ? (
+                                    <div className="mt-3">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className={errorVariant === 'info'
+                                                ? 'border-[var(--status-info-border)] bg-transparent text-[var(--status-info)] hover:bg-[color-mix(in_srgb,var(--status-info)_12%,transparent)] hover:text-[var(--status-info)] active:bg-[color-mix(in_srgb,var(--status-info)_18%,transparent)] focus-visible:border-[var(--status-info-border)] focus-visible:ring-[var(--status-info)]/20'
+                                                : 'border-[var(--status-error-border)] bg-transparent text-[var(--status-error)] hover:bg-[color-mix(in_srgb,var(--status-error)_12%,transparent)] hover:text-[var(--status-error)] active:bg-[color-mix(in_srgb,var(--status-error)_18%,transparent)] focus-visible:border-[var(--status-error-border)] focus-visible:ring-[var(--status-error)]/20'}
+                                            onClick={errorAction.onClick}
+                                        >
+                                            {errorAction.label}
+                                        </Button>
+                                    </div>
+                                ) : null}
                             </div>
                         </FadeInOnReveal>
                     )}
