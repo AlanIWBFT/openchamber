@@ -41,6 +41,45 @@ async function waitForAssertion(assertion) {
 }
 
 describe('createGlobalMessageStreamHub', () => {
+  it('ignores a stopped reader that disconnects after a replacement connects', async () => {
+    const reads = [];
+    const statuses = [];
+    const hub = createGlobalMessageStreamHub({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      upstreamReconnectDelayMs: 100,
+      fetchImpl: async () => ({
+        ok: true,
+        body: {
+          getReader() {
+            return {
+              read: () => new Promise((resolve) => reads.push(resolve)),
+            };
+          },
+        },
+      }),
+    });
+    hub.subscribeStatus((status) => statuses.push(status.type));
+
+    try {
+      hub.start();
+      await waitForAssertion(() => expect(reads).toHaveLength(1));
+      hub.stop();
+      hub.start();
+      await waitForAssertion(() => expect(reads).toHaveLength(2));
+      expect(hub.isConnected()).toBe(true);
+
+      reads[0]({ value: undefined, done: true });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(hub.isConnected()).toBe(true);
+      expect(statuses).toEqual(['connect', 'connect']);
+    } finally {
+      hub.stop();
+      reads[1]?.({ value: undefined, done: true });
+    }
+  });
+
   it('continues fanout when an event subscriber throws', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const received = [];
