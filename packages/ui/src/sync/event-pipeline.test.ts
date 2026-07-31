@@ -118,6 +118,73 @@ function createSdk(events: Event[], streamFinished: () => void): OpencodeClient 
 }
 
 describe("createEventPipeline", () => {
+  test("leaves SSE reconnect policy to the event pipeline", async () => {
+    let resolveOptions!: (options: Record<string, unknown>) => void
+    const receivedOptions = new Promise<Record<string, unknown>>((resolve) => {
+      resolveOptions = resolve
+    })
+    const sdk = {
+      global: {
+        event: async (options: Record<string, unknown>) => {
+          resolveOptions(options)
+          return {
+            stream: (async function* (): AsyncGenerator<never> {
+              await new Promise<void>((resolve) => {
+                const signal = options.signal as AbortSignal
+                if (signal.aborted) return resolve()
+                signal.addEventListener("abort", () => resolve(), { once: true })
+              })
+              yield* []
+            })(),
+          }
+        },
+      },
+    } as unknown as OpencodeClient
+    const pipeline = createEventPipeline({
+      sdk,
+      onEvents: () => undefined,
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+
+    try {
+      expect((await receivedOptions).sseMaxRetryAttempts).toBe(0)
+    } finally {
+      pipeline.cleanup()
+    }
+  })
+
+  test("routes terminal SDK SSE errors through pipeline disconnect handling", async () => {
+    let resolveDisconnected!: (reason: string) => void
+    const disconnected = new Promise<string>((resolve) => {
+      resolveDisconnected = resolve
+    })
+    const sdk = {
+      global: {
+        event: async (options: { onSseError?: (error: unknown) => void }) => ({
+          stream: (async function* (): AsyncGenerator<never> {
+            options.onSseError?.(new Error("network unavailable"))
+            yield* []
+          })(),
+        }),
+      },
+    } as unknown as OpencodeClient
+    const pipeline = createEventPipeline({
+      sdk,
+      onEvents: () => undefined,
+      onDisconnect: resolveDisconnected,
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+      reconnectDelayMs: 60_000,
+    })
+
+    try {
+      expect(await Promise.race([disconnected, failAfter(500)])).toContain("network unavailable")
+    } finally {
+      pipeline.cleanup()
+    }
+  })
+
   test("delivers one ordered batch per directory flush", async () => {
     let resolveStreamFinished!: () => void
     const streamFinished = new Promise<void>((resolve) => {
@@ -502,6 +569,51 @@ describe("createEventPipeline", () => {
       expect(delivered.properties).toEqual({
         sessionID: "ses_1",
         status: { type: "idle" },
+      })
+    } finally {
+      pipeline.cleanup()
+    }
+  })
+
+  test("preserves retry recovery metadata on normalized status events", async () => {
+    let resolveStreamFinished!: () => void
+    const streamFinished = new Promise<void>((resolve) => {
+      resolveStreamFinished = resolve
+    })
+    let resolveDelivered!: (event: Event) => void
+    const deliveredEvent = new Promise<Event>((resolve) => {
+      resolveDelivered = resolve
+    })
+    const resolution = { kind: "rate_limited", retry: "automatic", action: "wait" }
+    const pipeline = createEventPipeline({
+      sdk: createSdk([
+        {
+          type: "openchamber:session-status",
+          properties: {
+            sessionID: "ses_1",
+            status: "retry",
+            metadata: {
+              attempt: 2,
+              message: "Rate limited",
+              next: 123,
+              resolution,
+            },
+          },
+        } as unknown as Event,
+      ], resolveStreamFinished),
+      onEvent: (_directory, payload) => {
+        resolveDelivered(payload)
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+
+    try {
+      await streamFinished
+      const delivered = await Promise.race([deliveredEvent, failAfter(500)])
+      expect(delivered.properties).toEqual({
+        sessionID: "ses_1",
+        status: { type: "retry", attempt: 2, message: "Rate limited", next: 123, resolution },
       })
     } finally {
       pipeline.cleanup()

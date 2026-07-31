@@ -77,6 +77,52 @@ type MessageStreamWsFrame = {
   scope?: "global" | "directory"
 }
 
+type RetryStatus = Extract<SessionStatus, { type: "retry" }>
+
+const RETRY_RESOLUTION_KINDS = new Set([
+  "model_capacity",
+  "rate_limited",
+  "usage_limited",
+  "plan_not_included",
+  "quota_exceeded",
+  "policy_blocked",
+  "authentication",
+  "invalid_input",
+  "network",
+  "server",
+])
+const RETRY_RESOLUTION_ACTIONS = new Set([
+  "switch_model",
+  "wait",
+  "manage_billing",
+  "reauthenticate",
+  "fix_input",
+  "check_network",
+  "retry",
+])
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const isRetryAction = (value: unknown): value is NonNullable<RetryStatus["action"]> =>
+  isRecord(value)
+  && typeof value.reason === "string"
+  && typeof value.provider === "string"
+  && typeof value.title === "string"
+  && typeof value.message === "string"
+  && typeof value.label === "string"
+  && (value.link === undefined || typeof value.link === "string")
+
+const isRetryResolution = (value: unknown): value is NonNullable<RetryStatus["resolution"]> =>
+  isRecord(value)
+  && typeof value.kind === "string"
+  && RETRY_RESOLUTION_KINDS.has(value.kind)
+  && (value.retry === "automatic" || value.retry === "never")
+  && typeof value.action === "string"
+  && RETRY_RESOLUTION_ACTIONS.has(value.action)
+  && (value.retryAfterMs === undefined || (Number.isInteger(value.retryAfterMs) && Number(value.retryAfterMs) >= 0))
+  && (value.providerCode === undefined || typeof value.providerCode === "string")
+
 const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
   const record = payload as unknown as {
     id?: unknown
@@ -89,6 +135,8 @@ const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
         attempt?: unknown
         message?: unknown
         next?: unknown
+        action?: unknown
+        resolution?: unknown
       }
     }
   }
@@ -118,6 +166,8 @@ const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
         attempt: metadata.attempt,
         message: metadata.message,
         next: metadata.next,
+        ...(isRetryAction(metadata.action) ? { action: metadata.action } : {}),
+        ...(isRetryResolution(metadata.resolution) ? { resolution: metadata.resolution } : {}),
       }
     }
   }
@@ -356,6 +406,8 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   const isHidden = (): boolean =>
     typeof document !== "undefined" && document.visibilityState !== "visible"
 
+  let interruptRetryWait: (() => void) | undefined
+
   // Extract an HTTP status code from anywhere it might be hiding on the
   // error object. The SDK's unwrap pattern stashes it on `.status`; raw
   // fetch failures may carry `.response.status`; some SDKs also use `.code`.
@@ -365,6 +417,11 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     if (typeof direct === "number") return direct
     const fromResponse = (error as { response?: { status?: unknown } }).response?.status
     if (typeof fromResponse === "number") return fromResponse
+    const message = (error as { message?: unknown }).message
+    if (typeof message === "string") {
+      const match = /^SSE failed:\s*(\d{3})\b/.exec(message)
+      if (match) return Number(match[1])
+    }
     return undefined
   }
 
@@ -405,6 +462,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
         document.removeEventListener("visibilitychange", onVisibilityInterrupt)
       }
       abort.signal.removeEventListener("abort", onInterrupt)
+      if (interruptRetryWait === onInterrupt) interruptRetryWait = undefined
     }
     const onInterrupt = () => {
       cleanup()
@@ -417,6 +475,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     }
 
     let timer: ReturnType<typeof setTimeout> | undefined = setTimeout(onInterrupt, ms)
+    interruptRetryWait = onInterrupt
     if (typeof globalThis.window !== "undefined") {
       globalThis.window.addEventListener("online", onInterrupt, { once: true })
     }
@@ -436,6 +495,11 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     const exponent = Math.min(failures - 1, RETRY_BACKOFF_MAX_EXPONENT)
     return Math.min(cap, RETRY_BACKOFF_BASE_MS * 2 ** exponent)
   }
+
+  const retryDelayForAbortReason = (reason: AttemptAbortReason) =>
+    reason === "ws_offline" || reason === "sse_offline"
+      ? RETRY_BACKOFF_CAP_HIDDEN_OR_OFFLINE_MS
+      : 0
 
   let streamErrorLogged = false
   let attempt: AbortController | undefined
@@ -595,10 +659,19 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   }
 
   const runSseAttempt = async (signal: AbortSignal) => {
+    let terminalError: unknown
+    let connected = false
+    const markSseConnected = () => {
+      if (connected) return
+      connected = true
+      markConnected()
+    }
     const events = await sdk.global.event({
       signal,
+      sseMaxRetryAttempts: 0,
       ...(lastEventId && lastEventId.length > 0 ? { headers: { "Last-Event-ID": lastEventId } } : {}),
       onSseEvent: (event: { id?: unknown }) => {
+        markSseConnected()
         resetHeartbeat()
         if (typeof event.id === "string" && event.id.length > 0) {
           lastEventId = event.id
@@ -606,18 +679,18 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       },
       onSseError: (error: unknown) => {
         if (isAbortError(error)) return
+        terminalError = error
         if (streamErrorLogged) return
         streamErrorLogged = true
         console.error("[event-pipeline] SSE stream error", error)
       },
     })
 
-    markConnected()
-
     let yielded = Date.now()
     resetHeartbeat()
 
     for await (const event of events.stream) {
+      markSseConnected()
       resetHeartbeat()
       streamErrorLogged = false
 
@@ -632,6 +705,12 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       yielded = Date.now()
       await wait(0)
     }
+
+    if (signal.aborted) return
+    if (terminalError !== undefined) throw terminalError
+    const error = new Error("Global message SSE stream closed")
+    ;(error as Error & { reason?: string }).reason = "sse_closed"
+    throw error
   }
 
   const runWsAttempt = async (signal: AbortSignal) => {
@@ -918,7 +997,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       if (abort.signal.aborted) return
       if (attemptAbortReason && attemptAbortReason !== "pipeline_stopped") {
         notifyDisconnected(attemptAbortReason)
-        retryDelayMs = 0
+        retryDelayMs = retryDelayForAbortReason(attemptAbortReason)
         attemptAbortReason = null
       }
       if (retryDelayMs > 0) {
@@ -936,7 +1015,8 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
 
   const onPageShow = (event: PageTransitionEvent) => {
     if (!event.persisted) return
-    attempt?.abort()
+    if (attempt) attempt.abort()
+    else interruptRetryWait?.()
   }
 
   // OS wake-from-sleep (Electron powerMonitor.resume). The SSE connection
@@ -944,7 +1024,8 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   // reconnect loop fires on the next tick with retryDelayMs = 0.
   const onSystemResume = () => {
     attemptAbortReason = `${activeTransport}_system_resume`
-    attempt?.abort()
+    if (attempt) attempt.abort()
+    else interruptRetryWait?.()
   }
 
   // Browser told us the network is back. If we're already in a disconnected
@@ -962,12 +1043,14 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   // then returns the long cap so we wait for `online` instead of hammering
   // a dead network.
   const onOffline = () => {
+    attemptAbortReason = `${activeTransport}_offline`
     attempt?.abort()
   }
 
   const reconnect = (reason = "manual") => {
     attemptAbortReason = `${activeTransport}_${reason}`
-    attempt?.abort()
+    if (attempt) attempt.abort()
+    else interruptRetryWait?.()
   }
 
   if (typeof document !== "undefined") {
