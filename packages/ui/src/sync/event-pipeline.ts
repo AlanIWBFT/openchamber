@@ -79,7 +79,6 @@ type MessageStreamWsFrame = {
 type RetryStatus = Extract<SessionStatus, { type: "retry" }>
 
 const RETRY_RESOLUTION_KINDS = new Set([
-  "model_capacity",
   "rate_limited",
   "usage_limited",
   "plan_not_included",
@@ -122,6 +121,30 @@ const isRetryResolution = (value: unknown): value is NonNullable<RetryStatus["re
   && (value.retryAfterMs === undefined || (Number.isInteger(value.retryAfterMs) && Number(value.retryAfterMs) >= 0))
   && (value.providerCode === undefined || typeof value.providerCode === "string")
 
+const normalizeLegacyRetryResolution = (value: unknown): unknown => {
+  if (!isRecord(value) || value.kind !== "model_capacity") return value
+  return { ...value, kind: "server", retry: "automatic", action: "retry" }
+}
+
+const normalizeSessionStatusResolution = (payload: Event): Event => {
+  const record = payload as unknown as {
+    type?: unknown
+    properties?: { status?: unknown }
+  }
+  if (record.type !== "session.status" || !isRecord(record.properties?.status)) return payload
+  const status = record.properties.status
+  if (status.type !== "retry") return payload
+  const resolution = normalizeLegacyRetryResolution(status.resolution)
+  if (resolution === status.resolution) return payload
+  return {
+    ...payload,
+    properties: {
+      ...(payload as unknown as { properties: Record<string, unknown> }).properties,
+      status: { ...status, resolution },
+    },
+  } as Event
+}
+
 const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
   const record = payload as unknown as {
     id?: unknown
@@ -155,6 +178,7 @@ const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
     status = { type: rawStatus }
   } else if (rawStatus === "retry") {
     const metadata = record.properties?.metadata
+    const resolution = normalizeLegacyRetryResolution(metadata?.resolution)
     if (
       typeof metadata?.attempt === "number"
       && typeof metadata.message === "string"
@@ -166,7 +190,7 @@ const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
         message: metadata.message,
         next: metadata.next,
         ...(isRetryAction(metadata.action) ? { action: metadata.action } : {}),
-        ...(isRetryResolution(metadata.resolution) ? { resolution: metadata.resolution } : {}),
+        ...(isRetryResolution(resolution) ? { resolution } : {}),
       }
     }
   }
@@ -189,6 +213,9 @@ const normalizeEventType = (payload: Event): Event => {
   if (normalizedOpenChamberStatus) {
     return normalizedOpenChamberStatus
   }
+
+  const normalizedSessionStatus = normalizeSessionStatusResolution(payload)
+  if (normalizedSessionStatus !== payload) return normalizedSessionStatus
 
   const type = (payload as { type?: unknown }).type
   if (typeof type !== "string") {
