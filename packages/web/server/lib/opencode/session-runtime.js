@@ -35,6 +35,7 @@ const extractSessionStatusUpdate = (payload) => {
     next: typeof status.next === 'number'
       ? status.next
       : (typeof info.next === 'number' ? info.next : undefined),
+    action: status.action ?? info.action,
   };
 };
 
@@ -204,8 +205,16 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     const now = Date.now();
     const existing = sessionStates.get(sessionId);
     const existingAttentionState = sessionAttentionStates.get(sessionId);
+    const nextMetadata = { ...existing?.metadata, ...metadata };
+    const metadataChanged = !existing || JSON.stringify(existing.metadata) !== JSON.stringify(nextMetadata);
     const isRestartInterruption = metadata.reason === 'opencode-restart';
-    if (existing && existing.lastUpdateAt > now - 5000 && status === existing.status && !isRestartInterruption) {
+    if (
+      existing
+      && existing.lastUpdateAt > now - 5000
+      && status === existing.status
+      && !metadataChanged
+      && !isRestartInterruption
+    ) {
       return;
     }
 
@@ -213,14 +222,14 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
       status,
       lastUpdateAt: now,
       lastEventId: eventId || `server-${now}`,
-      metadata: { ...existing?.metadata, ...metadata },
+      metadata: nextMetadata,
     });
 
     updateSessionAttentionStatus(sessionId, status);
     const attentionState = sessionAttentionStates.get(sessionId);
     const attentionChanged = !!attentionState && existingAttentionState?.needsAttention !== attentionState.needsAttention;
     const clients = getNotificationClients();
-    if (!existing || existing.status !== status || attentionChanged || isRestartInterruption) {
+    if (!existing || existing.status !== status || metadataChanged || attentionChanged || isRestartInterruption) {
       const state = sessionStates.get(sessionId);
       const syntheticPayload = {
         type: 'openchamber:session-status',
@@ -444,6 +453,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
       attempt: update.attempt,
       message: update.message,
       next: update.next,
+      action: update.action,
     });
   };
 

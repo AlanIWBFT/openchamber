@@ -52,6 +52,18 @@ const state = (overrides: Partial<State> = {}): State => ({
 const apply = (draft: State, event: SyncEvent) => applyDirectoryEvent(draft, event)
 
 describe("session events", () => {
+  test("publishes changed retry actions without changing the retry counter", () => {
+    const draft = state({ session_status: { ses_1: { type: "retry", attempt: 1, message: "retrying", next: 10 } } })
+    const action = { reason: "rate_limited", provider: "openai", title: "Rate limited", message: "Wait and retry", label: "Wait" }
+    const event: SyncEvent = {
+      type: "session.status",
+      properties: { sessionID: "ses_1", status: { type: "retry", attempt: 1, message: "retrying", next: 10, action } },
+    }
+    expect(apply(draft, event)).toBe(true)
+    expect(draft.session_status.ses_1).toEqual(event.properties.status)
+    expect(apply(draft, event)).toBe(false)
+  })
+
   test("a patch updates the session in place and bumps its revision", () => {
     const draft = state()
     const changed = apply(draft, {
