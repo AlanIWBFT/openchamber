@@ -575,7 +575,7 @@ describe("createEventPipeline", () => {
     }
   })
 
-  test("preserves retry recovery metadata on normalized status events", async () => {
+  test("maps legacy retry recovery metadata on normalized status events", async () => {
     let resolveStreamFinished!: () => void
     const streamFinished = new Promise<void>((resolve) => {
       resolveStreamFinished = resolve
@@ -584,7 +584,8 @@ describe("createEventPipeline", () => {
     const deliveredEvent = new Promise<Event>((resolve) => {
       resolveDelivered = resolve
     })
-    const resolution = { kind: "rate_limited", retry: "automatic", action: "wait" }
+    const legacyResolution = { kind: "model_capacity", retry: "never", action: "switch_model" }
+    const resolution = { kind: "server", retry: "automatic", action: "retry" }
     const pipeline = createEventPipeline({
       sdk: createSdk([
         {
@@ -596,7 +597,7 @@ describe("createEventPipeline", () => {
               attempt: 2,
               message: "Rate limited",
               next: 123,
-              resolution,
+              resolution: legacyResolution,
             },
           },
         } as unknown as Event,
