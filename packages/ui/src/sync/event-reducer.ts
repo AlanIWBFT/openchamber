@@ -109,6 +109,7 @@ function areSessionStatusesEqual(left: SessionStatus | undefined, right: Session
       && left.attempt === right.attempt
       && left.message === right.message
       && left.next === right.next
+      && areJsonEquivalent(left.action, right.action)
   }
   return true
 }
