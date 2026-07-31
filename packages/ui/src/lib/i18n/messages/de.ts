@@ -3203,4 +3203,13 @@ export const dict = {
   'chat.activity.exploration.summary.searches': 'Suchen: {searchCount}',
   'chat.activity.exploration.summary.reads': 'Gelesen: {readCount}',
   'chat.toolPart.readDirectory': 'Verzeichnis lesen',
+  'chat.providerError.rateLimited': 'Für dieses Modell gilt derzeit eine Ratenbegrenzung. OpenCode versucht es erneut, sobald Kapazität verfügbar ist.',
+  'chat.providerError.usageLimited': 'Sie haben das Nutzungslimit dieses Modells erreicht. Wählen Sie ein anderes Modell aus, um fortzufahren.',
+  'chat.providerError.planNotIncluded': 'Ihr aktueller Tarif enthält dieses Modell nicht. Wählen Sie ein anderes Modell aus oder wechseln Sie zu einem höheren Tarif.',
+  'chat.providerError.quotaExceeded': 'Das Kontingent ist ausgeschöpft. Prüfen Sie Ihren Tarif und Ihre Abrechnungsdaten.',
+  'chat.providerError.policyBlocked': 'Diese Anfrage wurde durch eine Sicherheitsrichtlinie blockiert. Ändern Sie die Anfrage und versuchen Sie es erneut.',
+  'chat.providerError.authentication': 'Die Authentifizierung ist fehlgeschlagen. Melden Sie sich erneut an oder prüfen Sie die Anmeldedaten des Anbieters.',
+  'chat.providerError.invalidInput': 'Diese Anfrage konnte nicht verarbeitet werden. Passen Sie sie an und versuchen Sie es erneut.',
+  'chat.providerError.network': 'Die Anfrage an den Anbieter wurde durch das Netzwerk oder die Region blockiert. Prüfen Sie Ihre Verbindung und den Zugriff auf den Anbieter.',
+  'chat.providerError.server': 'Der Anbieter ist vorübergehend nicht verfügbar. OpenCode versucht es automatisch erneut.',
 };

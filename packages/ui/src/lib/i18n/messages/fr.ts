@@ -3203,4 +3203,13 @@ export const dict = {
   'chat.assistantStatus.unifiedExec.pollingProcessOutput': 'interrogation de la sortie du processus',
   'chat.assistantStatus.unifiedExec.sendingProcessInput': 'envoi d’une entrée au processus',
   'chat.assistantStatus.unifiedExec.terminatingProcess': 'arrêt du processus',
+  'chat.providerError.rateLimited': 'Ce modèle est limité en débit. OpenCode réessaiera lorsqu’une capacité sera disponible.',
+  'chat.providerError.usageLimited': 'Vous avez atteint la limite d’utilisation de ce modèle. Sélectionnez un autre modèle pour continuer.',
+  'chat.providerError.planNotIncluded': 'Votre forfait actuel n’inclut pas ce modèle. Sélectionnez un autre modèle ou mettez votre forfait à niveau.',
+  'chat.providerError.quotaExceeded': 'Quota dépassé. Vérifiez votre forfait et votre facturation.',
+  'chat.providerError.policyBlocked': 'Cette demande a été bloquée par une politique de sécurité. Modifiez-la et réessayez.',
+  'chat.providerError.authentication': 'L’authentification a échoué. Reconnectez-vous ou vérifiez les identifiants du fournisseur.',
+  'chat.providerError.invalidInput': 'Cette demande n’a pas pu être traitée. Modifiez-la et réessayez.',
+  'chat.providerError.network': 'La demande au fournisseur a été bloquée par le réseau ou la région. Vérifiez votre connexion et l’accès au fournisseur.',
+  'chat.providerError.server': 'Le fournisseur est temporairement indisponible. OpenCode réessaiera automatiquement.',
 } as const;

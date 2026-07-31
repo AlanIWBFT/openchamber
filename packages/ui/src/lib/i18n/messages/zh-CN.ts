@@ -3206,4 +3206,13 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.unifiedExec.pollingProcessOutput': '正在轮询进程输出',
   'chat.assistantStatus.unifiedExec.sendingProcessInput': '正在发送进程输入',
   'chat.assistantStatus.unifiedExec.terminatingProcess': '正在终止进程',
+  'chat.providerError.rateLimited': '此模型受到速率限制。容量可用时，OpenCode 将自动重试。',
+  'chat.providerError.usageLimited': '你已达到此模型的使用限额。请选择其他模型以继续。',
+  'chat.providerError.planNotIncluded': '你当前的套餐不包含此模型。请选择其他模型或升级套餐。',
+  'chat.providerError.quotaExceeded': '配额已用尽。请检查你的套餐和账单。',
+  'chat.providerError.policyBlocked': '此请求被安全策略拦截。请修改后重试。',
+  'chat.providerError.authentication': '身份验证失败。请重新登录或检查提供商凭据。',
+  'chat.providerError.invalidInput': '无法处理此请求。请调整后重试。',
+  'chat.providerError.network': '发往提供商的请求被网络或地区拦截。请检查连接和提供商访问权限。',
+  'chat.providerError.server': '提供商暂时不可用。OpenCode 将自动重试。',
 };

@@ -434,6 +434,7 @@ interface MessageBodyProps {
     onFork?: () => void;
     errorMessage?: string;
     errorVariant?: 'error' | 'info';
+    errorAction?: { label: string; onClick: () => void };
     userActionsMode?: 'inline' | 'external-content' | 'external-actions';
     stickyUserHeaderEnabled?: boolean;
     reviewTransferDirection?: ReviewTransferDirection | null;
@@ -1096,6 +1097,7 @@ const AssistantMessageBody = React.memo(({
     turnGroupingContext,
     errorMessage,
     errorVariant = 'error',
+    errorAction,
     reviewTransferDirection = null,
     contextPinned,
     contextPinPending,
@@ -2305,6 +2307,21 @@ const AssistantMessageBody = React.memo(({
                                         />
                                     </div>
                                 </div>
+                                {errorAction ? (
+                                    <div className="mt-3">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className={errorVariant === 'info'
+                                                ? 'border-[var(--status-info-border)] bg-transparent text-[var(--status-info)] hover:bg-[color-mix(in_srgb,var(--status-info)_12%,transparent)] hover:text-[var(--status-info)] active:bg-[color-mix(in_srgb,var(--status-info)_18%,transparent)] focus-visible:border-[var(--status-info-border)] focus-visible:ring-[var(--status-info)]/20'
+                                                : 'border-[var(--status-error-border)] bg-transparent text-[var(--status-error)] hover:bg-[color-mix(in_srgb,var(--status-error)_12%,transparent)] hover:text-[var(--status-error)] active:bg-[color-mix(in_srgb,var(--status-error)_18%,transparent)] focus-visible:border-[var(--status-error-border)] focus-visible:ring-[var(--status-error)]/20'}
+                                            onClick={errorAction.onClick}
+                                        >
+                                            {errorAction.label}
+                                        </Button>
+                                    </div>
+                                ) : null}
                             </div>
                         </FadeInOnReveal>
                     )}
