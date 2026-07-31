@@ -617,6 +617,26 @@ describe("applyDirectoryEvent", () => {
     expect((draft.session_status.ses_1 as Extract<SessionStatus, { type: "retry" }>).attempt).toBe(2)
   })
 
+  test("detects retry resolution changes with otherwise identical metadata", () => {
+    const draft = state({
+      session_status: {
+        ses_1: { type: "retry", attempt: 1, message: "rate limited", next: 10 } as SessionStatus,
+      },
+    })
+    const resolution = { kind: "rate_limited", retry: "automatic", action: "wait" } as const
+
+    const event = {
+      type: "session.status",
+      properties: {
+        sessionID: "ses_1",
+        status: { type: "retry", attempt: 1, message: "rate limited", next: 10, resolution } as SessionStatus,
+      },
+    } as Event
+
+    expect(applyDirectoryEvent(draft, event)).toBe(true)
+    expect((draft.session_status.ses_1 as Extract<SessionStatus, { type: "retry" }>).resolution).toEqual(resolution)
+  })
+
   test("updates permission request arrays immutably", () => {
     const initialPermissions = [
       { id: "perm_1", sessionID: "ses_1" } as PermissionRequest,
