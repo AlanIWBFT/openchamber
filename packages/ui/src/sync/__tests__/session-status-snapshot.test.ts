@@ -12,7 +12,7 @@ import {
   shouldTriggerStaleResync,
 } from "../sync-context"
 
-type StatusSnapshot = Record<string, { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }>
+type StatusSnapshot = Record<string, SessionStatus>
 
 function createDirectoryStore(initial: Partial<State>): StoreApi<DirectoryStore> {
   return create<DirectoryStore>()((set) => ({
@@ -120,6 +120,21 @@ describe("applySessionStatusSnapshot", () => {
       const store = createDirectoryStore({ session_status: { ses_a: BUSY } })
       const retry: SessionStatus = { type: "retry", attempt: 2, message: "x", next: 30 }
       applySessionStatusSnapshot(store, { ses_a: { type: "retry", attempt: 2, message: "x", next: 30 } }, ["ses_a"], "monotonic")
+      expect(store.getState().session_status.ses_a).toEqual(retry)
+    })
+
+    test("preserves retry recovery metadata from the snapshot", () => {
+      const store = createDirectoryStore({ session_status: { ses_a: BUSY } })
+      const retry: SessionStatus = {
+        type: "retry",
+        attempt: 2,
+        message: "rate limited",
+        next: 30,
+        resolution: { kind: "rate_limited", retry: "automatic", action: "wait" },
+      }
+
+      applySessionStatusSnapshot(store, { ses_a: retry }, ["ses_a"], "monotonic")
+
       expect(store.getState().session_status.ses_a).toEqual(retry)
     })
   })
