@@ -234,6 +234,112 @@ describe('createUpstreamSseReader', () => {
     expect(attempt).toBe(2);
   });
 
+  it('backs off repeated failures and resets after upstream progress', async () => {
+    const delays = [];
+    let attempt = 0;
+    let events = 0;
+    let reader;
+
+    reader = createUpstreamSseReader({
+      buildUrl: () => 'http://127.0.0.1:4096/global/event',
+      reconnectDelayMs: 10,
+      maxReconnectDelayMs: 25,
+      waitForReconnect: async (delay) => {
+        delays.push(delay);
+      },
+      fetchImpl: async (_url, options) => {
+        attempt += 1;
+        if (attempt === 1 || attempt === 2 || attempt === 4) {
+          return { ok: false, status: 503 };
+        }
+        return createSseResponse({
+          signal: options.signal,
+          blocks: [
+            `id: evt-${attempt}\ndata: {"type":"server.connected","properties":{}}\n\n`,
+          ],
+        });
+      },
+      onEvent() {
+        events += 1;
+        if (events === 2) reader.stop();
+      },
+    });
+
+    await reader.start();
+
+    expect(attempt).toBe(5);
+    expect(delays).toEqual([10, 20, 10, 20]);
+  });
+
+  it('reports disconnect before waiting to reconnect an unavailable upstream', async () => {
+    let enteredBackoff;
+    const backoffStarted = new Promise((resolve) => {
+      enteredBackoff = resolve;
+    });
+    let disconnects = 0;
+    const reader = createUpstreamSseReader({
+      buildUrl: () => 'http://127.0.0.1:4096/global/event',
+      reconnectDelayMs: 30_000,
+      fetchImpl: async () => ({ ok: false, status: 503 }),
+      waitForReconnect: (_delay, signal) => new Promise((resolve) => {
+        enteredBackoff();
+        if (signal.aborted) return resolve();
+        signal.addEventListener('abort', resolve, { once: true });
+      }),
+      onDisconnect() {
+        disconnects += 1;
+      },
+    });
+
+    const running = reader.start();
+    await backoffStarted;
+    expect(disconnects).toBe(1);
+    reader.stop();
+    await running;
+    expect(disconnects).toBe(1);
+  });
+
+  it('interrupts a long reconnect backoff when stopped', async () => {
+    let enteredBackoff;
+    const backoffStarted = new Promise((resolve) => {
+      enteredBackoff = resolve;
+    });
+    const reader = createUpstreamSseReader({
+      buildUrl: () => 'http://127.0.0.1:4096/global/event',
+      reconnectDelayMs: 30_000,
+      fetchImpl: async () => ({ ok: false, status: 503 }),
+      waitForReconnect: (_delay, signal) => new Promise((resolve) => {
+        enteredBackoff();
+        if (signal.aborted) return resolve();
+        signal.addEventListener('abort', resolve, { once: true });
+      }),
+    });
+
+    const running = reader.start();
+    await backoffStarted;
+    reader.stop();
+    await running;
+  });
+
+  it('starts a new retry sequence after stop and restart', async () => {
+    const delays = [];
+    let reader;
+    reader = createUpstreamSseReader({
+      buildUrl: () => 'http://127.0.0.1:4096/global/event',
+      reconnectDelayMs: 10,
+      fetchImpl: async () => ({ ok: false, status: 503 }),
+      waitForReconnect: async (delay) => {
+        delays.push(delay);
+        if (delays.length === 2 || delays.length === 3) reader.stop();
+      },
+    });
+
+    await reader.start();
+    await reader.start();
+
+    expect(delays).toEqual([10, 20, 10]);
+  });
+
   it('removes abort listeners after stop', async () => {
     const tracked = createTrackedSignal();
     let attempt = 0;
