@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, it } from 'bun:test';
+import { createRuntimeOpencodeClient } from '@/lib/opencode/client';
 import { createEventPipeline } from '../event-pipeline';
 
 const savedDocument = globalThis.document;
 const savedWindow = globalThis.window;
 const savedNavigator = globalThis.navigator;
+const savedFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.document = savedDocument;
   globalThis.window = savedWindow;
   globalThis.navigator = savedNavigator;
+  globalThis.fetch = savedFetch;
 });
 
 function createEventTarget(extras = {}) {
@@ -34,6 +37,84 @@ function createEventTarget(extras = {}) {
 }
 
 describe('createEventPipeline — permanent server errors', () => {
+  it('lets an explicit reconnect interrupt permanent-error backoff', async () => {
+    globalThis.document = createEventTarget({ visibilityState: 'visible' });
+    globalThis.window = createEventTarget({
+      location: { href: 'http://127.0.0.1:3000/', origin: 'http://127.0.0.1:3000' },
+    });
+    globalThis.navigator = { onLine: true };
+
+    let calls = 0;
+    const sdk = {
+      event: {
+        subscribe: ({ signal }) => {
+          calls += 1;
+          if (calls === 1) {
+            const error = new Error('Not Found');
+            error.status = 404;
+            throw error;
+          }
+          return (async function* () {
+              yield { id: 'evt_1', created: 1000, type: 'session.status', data: { sessionID: 's1', status: { type: 'idle' } } };
+              await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+            })();
+        },
+      },
+    };
+    let pipeline;
+    const recovered = new Promise((resolve) => {
+      pipeline = createEventPipeline({
+        sdk,
+        transport: 'sse',
+        heartbeatTimeoutMs: 60_000,
+        onEvent: () => {},
+        onDisconnect: () => setTimeout(() => pipeline.reconnect('manual'), 20),
+        onReconnect: resolve,
+      });
+    });
+
+    try {
+      await Promise.race([
+        recovered,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('reconnect remained in backoff')), 1000)),
+      ]);
+      expect(calls).toBe(2);
+    } finally {
+      pipeline?.cleanup();
+    }
+  });
+
+  it('recognizes HTTP errors from the real V2 subscription without an SDK retry loop', async () => {
+    globalThis.document = createEventTarget({ visibilityState: 'visible' });
+    globalThis.window = createEventTarget({
+      location: { href: 'http://127.0.0.1:3000/', origin: 'http://127.0.0.1:3000' },
+    });
+    globalThis.navigator = { onLine: true };
+
+    let sdkCalls = 0;
+    globalThis.fetch = async (input) => {
+      // Runtime auth may also probe its token endpoint; count subscriptions.
+      const url = new URL(input instanceof Request ? input.url : input, 'http://localhost');
+      if (url.pathname.endsWith('/event')) sdkCalls += 1;
+      return new Response('Unauthorized', { status: 401 });
+    };
+    const sdk = createRuntimeOpencodeClient({ baseUrl: 'http://localhost/api' });
+    let cleanupFn = () => {};
+    await new Promise((resolve) => {
+      const { cleanup } = createEventPipeline({
+        sdk,
+        transport: 'sse',
+        heartbeatTimeoutMs: 60_000,
+        onEvent: () => {},
+        onDisconnect: () => setTimeout(resolve, 300),
+      });
+      cleanupFn = cleanup;
+    });
+
+    cleanupFn();
+    expect(sdkCalls).toBe(1);
+  });
+
   it('uses the long backoff cap for 4xx so we do not hammer at 5s intervals', async () => {
     globalThis.document = createEventTarget({ visibilityState: 'visible' });
     globalThis.window = createEventTarget({

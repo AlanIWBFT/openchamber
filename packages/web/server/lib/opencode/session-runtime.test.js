@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createSessionRuntime } from './session-runtime.js';
+import { translateWireEvent } from '../event-stream/translate-v2.js';
 
 describe('session runtime', () => {
   const runtimes = [];
@@ -138,6 +139,64 @@ describe('session runtime', () => {
         sessionID: 'legacy-session-1',
         status: 'busy',
       }),
+    });
+  });
+
+  it('preserves retry recovery metadata in synthetic status events', () => {
+    const events = [];
+    const runtime = createSessionRuntime({
+      writeSseEvent() {
+        throw new Error('SSE fallback should not be used when broadcastEvent is provided');
+      },
+      getNotificationClients: () => new Set(),
+      broadcastEvent: (payload) => {
+        events.push(payload);
+      },
+    });
+    runtimes.push(runtime);
+
+    runtime.processOpenCodeSsePayload(translateWireEvent({
+      type: 'session.status',
+      data: {
+        sessionID: 'retry-session-1',
+        status: {
+          type: 'retry',
+          attempt: 2,
+          message: 'Rate limited',
+          next: 123,
+          action: { reason: 'rate_limit', provider: 'openai', title: 'Wait', message: 'Wait', label: 'wait' },
+        },
+      },
+    })[0]);
+    runtime.processOpenCodeSsePayload(translateWireEvent({
+      type: 'session.status',
+      data: {
+        sessionID: 'retry-session-1',
+        status: {
+          type: 'retry',
+          attempt: 3,
+          message: 'Rate limited',
+          next: 456,
+          action: { reason: 'rate_limit', provider: 'openai', title: 'Wait', message: 'Wait', label: 'wait' },
+        },
+      },
+    })[0]);
+
+    expect(events).toContainEqual({
+      type: 'openchamber:session-status',
+      properties: expect.objectContaining({
+        sessionID: 'retry-session-1',
+        status: 'retry',
+        metadata: expect.objectContaining({
+          attempt: 3,
+          next: 456,
+          action: { reason: 'rate_limit', provider: 'openai', title: 'Wait', message: 'Wait', label: 'wait' },
+        }),
+      }),
+    });
+    expect(runtime.getSessionStateSnapshot()['retry-session-1']).toMatchObject({
+      status: 'retry',
+      metadata: { attempt: 3, next: 456 },
     });
   });
 
