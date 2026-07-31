@@ -24,7 +24,7 @@ export function summarizeOpenCodeError(error: StructuredError | null | undefined
 }
 
 export function responseBodyOf(error: StructuredError | null | undefined): string | null {
-  const body = error?.response?.body.trim()
+  const body = (error?.response?.body ?? error?.responseBody)?.trim()
   return body ? body.slice(0, MAX_RESPONSE_BODY_LENGTH) : null
 }
 

@@ -41,6 +41,8 @@ export interface MessageBodyProps {
     onFork?: () => void;
     errorMessage?: string;
     errorResponseBody?: string;
+    errorVariant?: 'error' | 'info';
+    errorAction?: { label: string; onClick: () => void };
     userMessagePart?: 'bubble' | 'actions';
     reviewTransferDirection?: ReviewTransferDirection | null;
     contextPinned?: boolean;

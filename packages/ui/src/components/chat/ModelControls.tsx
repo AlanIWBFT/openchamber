@@ -586,6 +586,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         }
     }, [focusColumnInput, isModelSelectorOpen, isCompact]);
 
+    React.useEffect(() => {
+        if (!isCompact || !isModelSelectorOpen) return;
+        setActiveMobilePanel('model');
+        setAgentMenuOpen(false);
+    }, [isCompact, isModelSelectorOpen, setActiveMobilePanel, setAgentMenuOpen]);
+
     const [agentSearchQuery, setAgentSearchQuery] = React.useState('');
     React.useEffect(() => {
         if (isAgentSelectorOpen) return;
