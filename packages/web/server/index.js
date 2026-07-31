@@ -946,6 +946,12 @@ const processForwardedEventPayload = (payload, emitSyntheticEvent) => {
         next: typeof statusInfo.next === 'number'
           ? statusInfo.next
           : (typeof info.next === 'number' ? info.next : undefined),
+        action: statusInfo.action && typeof statusInfo.action === 'object'
+          ? statusInfo.action
+          : (info.action && typeof info.action === 'object' ? info.action : undefined),
+        resolution: statusInfo.resolution && typeof statusInfo.resolution === 'object'
+          ? statusInfo.resolution
+          : (info.resolution && typeof info.resolution === 'object' ? info.resolution : undefined),
       },
       needsAttention: false,
     },
