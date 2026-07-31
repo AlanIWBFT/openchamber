@@ -1426,6 +1426,7 @@ const processForwardedServerEvent = (payload, emitSyntheticEvent, spaceId = null
         next: typeof statusInfo.next === 'number'
           ? statusInfo.next
           : (typeof info.next === 'number' ? info.next : undefined),
+        action: statusInfo.action ?? info.action,
       },
     },
   });

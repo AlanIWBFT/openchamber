@@ -145,7 +145,9 @@ mock.module('@/stores/useProjectsStore', () => ({
 
 let directoryAvailability: 'available' | 'missing' | 'unknown' = 'available';
 
+const clientModule = await import('@/lib/opencode/client');
 mock.module('@/lib/opencode/client', () => ({
+  ...clientModule,
   OpencodeApiError: Error,
   normalizeOpencodeError: (operation: string, error: unknown) => new Error(`${operation}: ${String(error)}`),
   opencodeClient: {
