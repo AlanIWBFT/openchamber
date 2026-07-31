@@ -57,6 +57,32 @@ const EDIT_TOOL_NAMES = new Set([
     'file_write',
 ]);
 
+const PROVIDER_FAILURE_KINDS = [
+    'rate_limited',
+    'usage_limited',
+    'plan_not_included',
+    'quota_exceeded',
+    'policy_blocked',
+    'authentication',
+    'invalid_input',
+    'network',
+    'server',
+] as const;
+
+type ProviderFailureKind = (typeof PROVIDER_FAILURE_KINDS)[number];
+
+const providerFailureResolution = (value: unknown): { kind: ProviderFailureKind; action: string; retry: 'automatic' | 'never' } | undefined => {
+    if (typeof value !== 'object' || value === null) return undefined;
+    const resolution = value as { kind?: unknown; action?: unknown; retry?: unknown };
+    if (resolution.kind === 'model_capacity') {
+        return { kind: 'server', action: 'retry', retry: 'automatic' };
+    }
+    if (typeof resolution.kind !== 'string' || !PROVIDER_FAILURE_KINDS.includes(resolution.kind as ProviderFailureKind)) return undefined;
+    if (typeof resolution.action !== 'string') return undefined;
+    if (resolution.retry !== 'automatic' && resolution.retry !== 'never') return undefined;
+    return { kind: resolution.kind as ProviderFailureKind, action: resolution.action, retry: resolution.retry };
+};
+
 const normalizeToolName = (toolName: unknown): string => {
     if (typeof toolName !== 'string') return '';
     const trimmed = toolName.trim().toLowerCase();
@@ -173,6 +199,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     }
 
     const providers = useConfigStore((state) => state.providers);
+    const setModelSelectorOpen = useUIStore((state) => state.setModelSelectorOpen);
     const { showReasoningTraces, stickyUserHeader, chatRenderMode, showExpandedBashTools, showExpandedEditTools } = useUIStore(
         useShallow((state) => ({
             showReasoningTraces: state.showReasoningTraces,
@@ -689,7 +716,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             return undefined;
         }
         const errorInfo = (message.info as { error?: unknown } | undefined)?.error as
-            | { data?: { message?: unknown }; message?: unknown; name?: unknown }
+            | { data?: { message?: unknown; resolution?: unknown }; message?: unknown; name?: unknown }
             | undefined;
         if (!errorInfo) {
             return undefined;
@@ -697,6 +724,29 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         const dataMessage = typeof errorInfo.data?.message === 'string' ? errorInfo.data.message : undefined;
         const errorMessage = typeof errorInfo.message === 'string' ? errorInfo.message : undefined;
         const errorName = typeof errorInfo.name === 'string' ? errorInfo.name : undefined;
+        const resolution = providerFailureResolution(errorInfo.data?.resolution);
+        if (resolution) {
+            const text = (() => {
+                switch (resolution.kind) {
+                    case 'rate_limited': return t('chat.providerError.rateLimited');
+                    case 'usage_limited': return t('chat.providerError.usageLimited');
+                    case 'plan_not_included': return t('chat.providerError.planNotIncluded');
+                    case 'quota_exceeded': return t('chat.providerError.quotaExceeded');
+                    case 'policy_blocked': return t('chat.providerError.policyBlocked');
+                    case 'authentication': return t('chat.providerError.authentication');
+                    case 'invalid_input': return t('chat.providerError.invalidInput');
+                    case 'network': return t('chat.providerError.network');
+                    case 'server': return t('chat.providerError.server');
+                }
+            })();
+            return {
+                text,
+                variant: resolution.retry === 'automatic' ? 'info' as const : 'error' as const,
+                action: resolution.action === 'switch_model'
+                    ? { label: t('chat.modelControls.selectModel'), onClick: () => setModelSelectorOpen(true) }
+                    : undefined,
+            };
+        }
         const detail = dataMessage || errorMessage || errorName;
         if (!detail) {
             return undefined;
@@ -723,10 +773,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             text: `Opencode failed to send message with error:\n\`${detail}\``,
             variant: 'error' as const,
         };
-    }, [isUser, message.info]);
+    }, [isUser, message.info, setModelSelectorOpen, t]);
 
     const assistantErrorText = assistantError?.text;
     const assistantErrorVariant = assistantError?.variant;
+    const assistantErrorAction = assistantError?.action;
 
     const messageTextContent = React.useMemo(() => {
         if (isUser) {
@@ -1088,6 +1139,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 onToggleContextPin={canPinIntoContext && messageCreatedAt ? handleToggleContextPin : undefined}
                                                 errorMessage={assistantErrorText}
                                                 errorVariant={assistantErrorVariant}
+                                                errorAction={assistantErrorAction}
                                                 userActionsMode={useExternalUserActionsRow ? 'external-content' : 'inline'}
                                                 stickyUserHeaderEnabled={stickyUserHeader}
                                             />
@@ -1125,6 +1177,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 onToggleContextPin={canPinIntoContext && messageCreatedAt ? handleToggleContextPin : undefined}
                                                 errorMessage={assistantErrorText}
                                                 errorVariant={assistantErrorVariant}
+                                                errorAction={assistantErrorAction}
                                                 userActionsMode="external-actions"
                                                 stickyUserHeaderEnabled={stickyUserHeader}
                                             />
@@ -1168,6 +1221,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 turnGroupingContext={turnGroupingContext}
                                 errorMessage={assistantErrorText}
                                 errorVariant={assistantErrorVariant}
+                                errorAction={assistantErrorAction}
                                 reviewTransferDirection={reviewTransferDirection}
                                 footerProviderID={headerProviderID}
                                 footerModelName={headerModelName}

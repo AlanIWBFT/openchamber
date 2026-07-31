@@ -3169,4 +3169,13 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.unifiedExec.pollingProcessOutput': '正在輪詢程序輸出',
   'chat.assistantStatus.unifiedExec.sendingProcessInput': '正在傳送程序輸入',
   'chat.assistantStatus.unifiedExec.terminatingProcess': '正在終止程序',
+  'chat.providerError.rateLimited': '此模型受到速率限制。容量可用時，OpenCode 將自動重試。',
+  'chat.providerError.usageLimited': '你已達到此模型的使用限額。請選擇其他模型以繼續。',
+  'chat.providerError.planNotIncluded': '你目前的方案不包含此模型。請選擇其他模型或升級方案。',
+  'chat.providerError.quotaExceeded': '配額已用盡。請檢查你的方案和帳單。',
+  'chat.providerError.policyBlocked': '此請求被安全性原則攔截。請修改後重試。',
+  'chat.providerError.authentication': '身分驗證失敗。請重新登入或檢查提供者憑證。',
+  'chat.providerError.invalidInput': '無法處理此請求。請調整後重試。',
+  'chat.providerError.network': '傳送給提供者的請求被網路或地區攔截。請檢查連線和提供者存取權。',
+  'chat.providerError.server': '提供者暫時無法使用。OpenCode 將自動重試。',
 };

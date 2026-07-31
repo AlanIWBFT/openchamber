@@ -361,6 +361,7 @@ interface MessageListProps {
         sessionId: string;
         message: string;
         confirmedAt?: number;
+        resolution?: unknown;
         fallbackTimestamp?: number;
     } | null;
     onMessageContentChange: (reason?: ContentChangeReason) => void;
@@ -1423,6 +1424,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             sessionId: retryOverlay?.sessionId ?? null,
             message: retryOverlay?.message ?? 'Quota limit reached. Retrying automatically.',
             confirmedAt: retryOverlay?.confirmedAt,
+            resolution: retryOverlay?.resolution,
             fallbackTimestamp: retryOverlay?.fallbackTimestamp ?? 0,
         });
     }), [baseDisplayMessages, retryOverlay]);
