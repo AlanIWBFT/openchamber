@@ -53,11 +53,18 @@ const getStatusNumberField = (status: SessionStatus | undefined, field: 'attempt
   return typeof value === 'number' ? value : null
 }
 
+const getStatusObjectField = (status: SessionStatus | undefined, field: 'action' | 'resolution'): string | null => {
+  const value = (status as Record<string, unknown> | undefined)?.[field]
+  return value === undefined ? null : JSON.stringify(value)
+}
+
 const areStatusesEquivalent = (left: SessionStatus | undefined, right: SessionStatus | undefined): boolean => {
   return left?.type === right?.type
     && getStatusMessage(left) === getStatusMessage(right)
     && getStatusNumberField(left, 'attempt') === getStatusNumberField(right, 'attempt')
     && getStatusNumberField(left, 'next') === getStatusNumberField(right, 'next')
+    && getStatusObjectField(left, 'action') === getStatusObjectField(right, 'action')
+    && getStatusObjectField(left, 'resolution') === getStatusObjectField(right, 'resolution')
 }
 
 type StatusCandidate = {

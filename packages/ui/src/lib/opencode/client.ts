@@ -1,6 +1,6 @@
 import type { ContextPartMetadata } from '@/lib/messages/contextParts';
 import { createOpencodeClient, OpencodeClient } from "@opencode-ai/sdk/v2";
-import type { PermissionV2Request, PermissionV2Effect, PermissionV2Source, StoredMessageWithParts } from "@opencode-ai/sdk/v2/client";
+import type { PermissionV2Request, PermissionV2Effect, PermissionV2Source, SessionStatus, StoredMessageWithParts } from "@opencode-ai/sdk/v2/client";
 import { z } from "zod";
 import type { FilesAPI } from "../api/types";
 import { getDesktopHomeDirectory } from "../desktop";
@@ -1147,9 +1147,7 @@ class OpencodeService {
     return unwrapSdkData(response, 'session.fork');
   }
 
-  async getSessionStatus(): Promise<
-    Record<string, { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }>
-  > {
+  async getSessionStatus(): Promise<Record<string, SessionStatus>> {
     return (await this.getSessionStatusForDirectory(this.currentDirectory ?? null)) ?? {};
   }
 
@@ -1163,7 +1161,7 @@ class OpencodeService {
    */
   async getSessionStatusForDirectory(
     directory: string | null | undefined
-  ): Promise<Record<string, { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }> | null> {
+  ): Promise<Record<string, SessionStatus> | null> {
     try {
       const trimmedDirectory = this.normalizeCandidatePath(directory);
       const result = await this.client.session.status(trimmedDirectory ? { directory: trimmedDirectory } : undefined);
@@ -1177,9 +1175,7 @@ class OpencodeService {
     }
   }
 
-  async getGlobalSessionStatus(): Promise<
-    Record<string, { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }>
-  > {
+  async getGlobalSessionStatus(): Promise<Record<string, SessionStatus>> {
     return (await this.getSessionStatusForDirectory(null)) ?? {};
   }
 
