@@ -138,6 +138,20 @@ describe("applySessionStatusSnapshot", () => {
       applySessionStatusSnapshot(store, { ses_a: BUSY }, ["ses_a"], "monotonic")
       expect(store.getState().session_status.ses_a).toEqual(BUSY)
     })
+    test("preserves retry recovery metadata from the snapshot", () => {
+      const store = createDirectoryStore({ session_status: { ses_a: BUSY } })
+      const retry: SessionStatus = {
+        type: "retry",
+        attempt: 2,
+        message: "rate limited",
+        next: 30,
+        action: { reason: "rate_limited", provider: "openai", title: "Rate limited", message: "Wait and retry", label: "Wait" },
+      }
+
+      applySessionStatusSnapshot(store, { ses_a: retry }, ["ses_a"], "monotonic")
+
+      expect(store.getState().session_status.ses_a).toEqual(retry)
+    })
   })
 
   describe("authoritative mode (reconnect / escalated resync)", () => {
