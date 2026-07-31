@@ -33,6 +33,7 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 ### Upstream reader helpers
 - `DEFAULT_UPSTREAM_STALL_TIMEOUT_MS`: default idle timeout before an attached upstream SSE fetch is aborted for reconnect.
 - `DEFAULT_UPSTREAM_RECONNECT_DELAY_MS`: default delay between upstream reconnect attempts.
+- `DEFAULT_UPSTREAM_MAX_RECONNECT_DELAY_MS`: maximum delay for exponential upstream reconnect backoff.
 - `createUpstreamSseReader(...)`: creates a start/stop reader for OpenCode SSE streams. The reader parses SSE blocks, tracks the latest `Last-Event-ID`, reconnects after closed or stalled upstream streams, and reports events through callbacks.
 
 ## Runtime behavior
@@ -42,6 +43,7 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 - The global hub keeps a bounded replay buffer keyed by SSE `eventId` so reconnecting browser clients can receive buffered events after their requested `Last-Event-ID`.
 - Directory WS clients still attach one upstream `/event?directory=...` SSE reader per connection because directory streams are scoped.
 - If an upstream SSE stream stalls after the browser WS is already ready, the reader aborts that upstream fetch and reconnects upstream with `Last-Event-ID`, keeping the browser WS alive when recovery is fast.
+- Repeated upstream failures use capped exponential backoff. Any received upstream bytes, including SSE heartbeat comments, reset the failure sequence so a later disconnect from a healthy stream starts at the base delay.
 - When the shared global upstream reconnects after it was previously ready, the global WS bridge sends a fresh `ready` frame to already-ready browser clients. The browser treats this as a reconnect edge and can run scoped state repair without requiring the browser WS to close.
 - Health checks are reserved for initial upstream connect failures and explicit upstream-unavailable responses, not for ordinary stall recovery on an already-established stream.
 - Global synthetic events such as `openchamber:session-status`, `openchamber:session-activity`, `openchamber:notification`, and `openchamber:heartbeat` are preserved on the WS path, but heartbeat frames are emitted only while an upstream SSE stream is actively attached.

@@ -3,6 +3,7 @@ import { parseSseEventEnvelope } from './protocol.js';
 export const DEFAULT_UPSTREAM_STALL_TIMEOUT_MS = 20_000;
 export const UPSTREAM_STALL_TIMEOUT_CONCURRENT_MS = DEFAULT_UPSTREAM_STALL_TIMEOUT_MS * 3;
 export const DEFAULT_UPSTREAM_RECONNECT_DELAY_MS = 250;
+export const DEFAULT_UPSTREAM_MAX_RECONNECT_DELAY_MS = 30_000;
 
 function resolveTimeoutMs(value, fallback) {
   const resolved = typeof value === 'function' ? value() : value;
@@ -54,6 +55,8 @@ export function createUpstreamSseReader({
   signal,
   stallTimeoutMs = DEFAULT_UPSTREAM_STALL_TIMEOUT_MS,
   reconnectDelayMs = DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
+  maxReconnectDelayMs = DEFAULT_UPSTREAM_MAX_RECONNECT_DELAY_MS,
+  waitForReconnect = waitForReconnectDelay,
   onEvent,
   onConnect,
   onDisconnect,
@@ -64,6 +67,27 @@ export function createUpstreamSseReader({
   let activeController = null;
   let lastEventId = typeof initialLastEventId === 'string' ? initialLastEventId : '';
   let stopListenerAttached = false;
+  let consecutiveFailures = 0;
+
+  const waitBeforeReconnect = async () => {
+    if (stopped || signal?.aborted) return;
+    const base = Math.max(0, resolveTimeoutMs(reconnectDelayMs, DEFAULT_UPSTREAM_RECONNECT_DELAY_MS));
+    const cap = Math.max(base, resolveTimeoutMs(maxReconnectDelayMs, DEFAULT_UPSTREAM_MAX_RECONNECT_DELAY_MS));
+    const delay = Math.min(base * 2 ** Math.min(consecutiveFailures, 16), cap);
+    consecutiveFailures += 1;
+    const controller = new AbortController();
+    const abortWait = () => controller.abort();
+    signal?.addEventListener('abort', abortWait, { once: true });
+    activeController = controller;
+    try {
+      await waitForReconnect(delay, controller.signal);
+    } finally {
+      signal?.removeEventListener('abort', abortWait);
+      if (activeController === controller) {
+        activeController = null;
+      }
+    }
+  };
 
   function detachStopListener() {
     if (!stopListenerAttached) return;
@@ -92,6 +116,7 @@ export function createUpstreamSseReader({
 
     attachStopListener();
     stopped = false;
+    consecutiveFailures = 0;
     running = (async () => {
       while (!stopped && !signal?.aborted) {
         const controller = new AbortController();
@@ -100,6 +125,12 @@ export function createUpstreamSseReader({
         signal?.addEventListener('abort', abortActive, { once: true });
 
         let abortReason = null;
+        let disconnectNotified = false;
+        const notifyDisconnect = () => {
+          if (disconnectNotified) return;
+          disconnectNotified = true;
+          onDisconnect?.({ reason: abortReason ?? (stopped || signal?.aborted ? 'stopped' : 'closed') });
+        };
         let stallTimer = null;
         const clearStallTimer = () => {
           if (stallTimer) {
@@ -144,7 +175,8 @@ export function createUpstreamSseReader({
               response,
             });
             await cancelResponseBody(response);
-            await waitForReconnectDelay(reconnectDelayMs, signal);
+            notifyDisconnect();
+            await waitBeforeReconnect();
             continue;
           }
 
@@ -162,6 +194,9 @@ export function createUpstreamSseReader({
               break;
             }
 
+            if (value?.byteLength > 0) {
+              consecutiveFailures = 0;
+            }
             resetStallTimer();
             buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
 
@@ -215,11 +250,11 @@ export function createUpstreamSseReader({
           if (activeController === controller) {
             activeController = null;
           }
-          onDisconnect?.({ reason: abortReason ?? (stopped || signal?.aborted ? 'stopped' : 'closed') });
+          notifyDisconnect();
         }
 
         if (!stopped && !signal?.aborted) {
-          await waitForReconnectDelay(reconnectDelayMs, signal);
+          await waitBeforeReconnect();
         }
       }
     })().finally(() => {
