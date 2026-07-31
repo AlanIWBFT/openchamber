@@ -34,6 +34,97 @@ function createEventTarget(extras = {}) {
 }
 
 describe('createEventPipeline — permanent server errors', () => {
+  it('lets an explicit reconnect interrupt permanent-error backoff', async () => {
+    globalThis.document = createEventTarget({ visibilityState: 'visible' });
+    globalThis.window = createEventTarget({
+      location: { href: 'http://127.0.0.1:3000/', origin: 'http://127.0.0.1:3000' },
+    });
+    globalThis.navigator = { onLine: true };
+
+    let calls = 0;
+    const sdk = {
+      global: {
+        event: async () => {
+          calls += 1;
+          if (calls === 1) {
+            const error = new Error('Not Found');
+            error.status = 404;
+            throw error;
+          }
+          return {
+            stream: (async function* () {
+              yield {
+                payload: {
+                  type: 'session.status',
+                  properties: { sessionID: 's1', status: { type: 'idle' } },
+                },
+              };
+              await new Promise(() => {});
+            })(),
+          };
+        },
+      },
+    };
+    let pipeline;
+    const recovered = new Promise((resolve) => {
+      pipeline = createEventPipeline({
+        sdk,
+        transport: 'sse',
+        heartbeatTimeoutMs: 60_000,
+        onEvent: () => {},
+        onDisconnect: () => setTimeout(() => pipeline.reconnect('manual'), 20),
+        onReconnect: resolve,
+      });
+    });
+
+    try {
+      await Promise.race([
+        recovered,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('reconnect remained in backoff')), 1000)),
+      ]);
+      expect(calls).toBe(2);
+    } finally {
+      pipeline?.cleanup();
+    }
+  });
+
+  it('recognizes HTTP status embedded by the generated SSE client', async () => {
+    globalThis.document = createEventTarget({ visibilityState: 'visible' });
+    globalThis.window = createEventTarget({
+      location: { href: 'http://127.0.0.1:3000/', origin: 'http://127.0.0.1:3000' },
+    });
+    globalThis.navigator = { onLine: true };
+
+    let sdkCalls = 0;
+    const sdk = {
+      global: {
+        event: async (options) => {
+          sdkCalls += 1;
+          return {
+            stream: (async function* () {
+              options.onSseError?.(new Error('SSE failed: 401 Unauthorized'));
+              yield* [];
+            })(),
+          };
+        },
+      },
+    };
+    let cleanupFn = () => {};
+    await new Promise((resolve) => {
+      const { cleanup } = createEventPipeline({
+        sdk,
+        transport: 'sse',
+        heartbeatTimeoutMs: 60_000,
+        onEvent: () => {},
+        onDisconnect: () => setTimeout(resolve, 300),
+      });
+      cleanupFn = cleanup;
+    });
+
+    cleanupFn();
+    expect(sdkCalls).toBe(1);
+  });
+
   it('uses the long backoff cap for 4xx so we do not hammer at 5s intervals', async () => {
     globalThis.document = createEventTarget({ visibilityState: 'visible' });
     globalThis.window = createEventTarget({
