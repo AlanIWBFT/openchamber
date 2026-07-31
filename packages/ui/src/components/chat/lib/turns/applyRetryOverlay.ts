@@ -1,4 +1,4 @@
-import type { Message } from '@/lib/opencode/model';
+import type { Message, StructuredError } from '@/lib/opencode/model';
 
 import type { ChatMessageEntry } from './types';
 
@@ -24,10 +24,9 @@ export const applyRetryOverlay = (
         return messages;
     }
 
-    const retryError = {
-        name: 'SessionRetry',
+    const retryError: StructuredError = {
+        type: 'SessionRetry',
         message: input.message,
-        data: { message: input.message },
     };
 
     let lastUserIndex = -1;
@@ -52,6 +51,9 @@ export const applyRetryOverlay = (
 
     if (targetAssistantIndex >= 0) {
         const existing = messages[targetAssistantIndex];
+        // V2 persisted retries already carry the full classified error. The
+        // status-only fallback must not replace it with a generic notice.
+        if (existing.info.role === 'assistant' && existing.info.retry) return messages;
         const existingInfo = existing.info as { error?: unknown };
         if (existingInfo.error) {
             return messages;
