@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Session, SessionStatus } from '@/lib/opencode/model'
 
-import { aggregateLiveSessionStatuses } from './live-aggregate'
+import { aggregateLiveSessionStatuses, areStatusMapsEquivalent } from './live-aggregate'
 import {
   getSyncPerformanceDiagnostics,
   setSyncPerformanceDiagnosticsEnabled,
@@ -25,5 +25,15 @@ describe('aggregateLiveSessionStatuses performance', () => {
     expect(diagnostics?.statusAggregationSessionEntries).toBe(50)
     expect(diagnostics?.statusAggregationCandidates).toBe(50)
     setSyncPerformanceDiagnosticsEnabled(false)
+  })
+
+  test('detects retry action changes in status maps', () => {
+    const retry: SessionStatus = { type: 'retry', attempt: 1, message: 'retrying', next: 100 }
+    const classified: SessionStatus = {
+      ...retry,
+      action: { reason: 'rate_limited', provider: 'openai', title: 'Rate limited', message: 'Wait and retry', label: 'Wait' },
+    }
+
+    expect(areStatusMapsEquivalent({ session: retry }, { session: classified })).toBe(false)
   })
 })

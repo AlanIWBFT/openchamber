@@ -41,12 +41,11 @@ const getStatusPriority = (status: SessionStatus | undefined): number => {
   }
 }
 
-// Only the retry variant carries attempt/message/next, so equality compares
-// those fields when both sides are retries and the discriminator otherwise.
 const areStatusesEquivalent = (left: SessionStatus | undefined, right: SessionStatus | undefined): boolean => {
   if (left?.type !== right?.type) return false
   if (left?.type !== 'retry' || right?.type !== 'retry') return true
   return left.attempt === right.attempt && left.message === right.message && left.next === right.next
+    && JSON.stringify(left.action) === JSON.stringify(right.action)
 }
 
 type StatusCandidate = {
