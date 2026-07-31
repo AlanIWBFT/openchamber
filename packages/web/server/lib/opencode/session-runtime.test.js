@@ -98,6 +98,67 @@ describe('session runtime', () => {
     });
   });
 
+  it('preserves retry recovery metadata in synthetic status events', () => {
+    const events = [];
+    const runtime = createSessionRuntime({
+      writeSseEvent() {
+        throw new Error('SSE fallback should not be used when broadcastEvent is provided');
+      },
+      getNotificationClients: () => new Set(),
+      broadcastEvent: (payload) => {
+        events.push(payload);
+      },
+    });
+    runtimes.push(runtime);
+
+    runtime.processOpenCodeSsePayload({
+      type: 'session.status',
+      properties: {
+        sessionID: 'retry-session-1',
+        status: {
+          type: 'retry',
+          attempt: 2,
+          message: 'Rate limited',
+          next: 123,
+          action: { reason: 'rate_limit', provider: 'openai', title: 'Wait', message: 'Wait', label: 'wait' },
+          resolution: { kind: 'rate_limited', retry: 'automatic', action: 'wait' },
+        },
+      },
+    });
+    runtime.processOpenCodeSsePayload({
+      type: 'session.status',
+      properties: {
+        sessionID: 'retry-session-1',
+        status: {
+          type: 'retry',
+          attempt: 3,
+          message: 'Rate limited',
+          next: 456,
+          action: { reason: 'rate_limit', provider: 'openai', title: 'Wait', message: 'Wait', label: 'wait' },
+          resolution: { kind: 'rate_limited', retry: 'automatic', action: 'wait' },
+        },
+      },
+    });
+
+    expect(events).toContainEqual({
+      type: 'openchamber:session-status',
+      properties: expect.objectContaining({
+        sessionID: 'retry-session-1',
+        status: 'retry',
+        metadata: expect.objectContaining({
+          attempt: 3,
+          next: 456,
+          action: { reason: 'rate_limit', provider: 'openai', title: 'Wait', message: 'Wait', label: 'wait' },
+          resolution: { kind: 'rate_limited', retry: 'automatic', action: 'wait' },
+        }),
+      }),
+    });
+    expect(runtime.getSessionStateSnapshot()['retry-session-1']).toMatchObject({
+      status: 'retry',
+      metadata: { attempt: 3, next: 456 },
+    });
+  });
+
   it('broadcasts idle activity when cooldown expires', () => {
     vi.useFakeTimers();
     const events = [];
