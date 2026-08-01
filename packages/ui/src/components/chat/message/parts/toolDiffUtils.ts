@@ -140,6 +140,53 @@ export const getPatchText = (value: unknown): string | undefined => {
     return undefined;
 };
 
+export const getPrimaryToolPath = (
+    toolName: string,
+    input: Record<string, unknown> | undefined,
+    metadata: Record<string, unknown> | undefined,
+): string | null => {
+    if (toolName === 'apply_patch') {
+        const files = Array.isArray(metadata?.files) ? metadata.files : [];
+        const first = files.find((entry) => isRecord(entry) && entry.type !== 'delete');
+        if (!isRecord(first)) {
+            return null;
+        }
+        return typeof first.movePath === 'string'
+            ? first.movePath
+            : typeof first.filePath === 'string'
+                ? first.filePath
+                : typeof first.relativePath === 'string'
+                    ? first.relativePath
+                    : null;
+    }
+
+    if (toolName === 'edit' || toolName === 'multiedit') {
+        const fileDiff = isRecord(metadata?.filediff) ? metadata.filediff : undefined;
+        if (fileDiff && typeof fileDiff.file === 'string') {
+            return fileDiff.file;
+        }
+        return typeof input?.filePath === 'string'
+            ? input.filePath
+            : typeof input?.file_path === 'string'
+                ? input.file_path
+                : typeof input?.path === 'string'
+                    ? input.path
+                    : null;
+    }
+
+    if (toolName === 'write') {
+        return typeof input?.filePath === 'string'
+            ? input.filePath
+            : typeof input?.file_path === 'string'
+                ? input.file_path
+                : typeof input?.path === 'string'
+                    ? input.path
+                    : null;
+    }
+
+    return null;
+};
+
 const normalizeParsedPath = (path: string | undefined): string => {
     const trimmed = (path ?? '').trim().replace(/\t.*$/, '');
     if (!trimmed || trimmed === '/dev/null') {

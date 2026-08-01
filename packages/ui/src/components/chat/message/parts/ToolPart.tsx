@@ -53,10 +53,11 @@ import {
 } from './taskToolModel';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { useI18n } from '@/lib/i18n';
-import { getDiffPatchEntries, getPatchText, type DiffPatchEntry } from './toolDiffUtils';
+import { getDiffPatchEntries, getPatchText, getPrimaryToolPath, type DiffPatchEntry } from './toolDiffUtils';
 import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import { getStreamingOutputAppend, getToolOutput } from './toolOutput';
+import { toAbsoluteFilePath } from '@/lib/path-utils';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -423,8 +424,10 @@ const getPrimaryDiffFromMetadata = (
                 if (!file || typeof file !== 'object') {
                     return false;
                 }
-                const candidate = file as { relativePath?: unknown; filePath?: unknown };
-                return candidate.relativePath === preferred || candidate.filePath === preferred;
+                const candidate = file as { relativePath?: unknown; filePath?: unknown; movePath?: unknown };
+                return candidate.relativePath === preferred
+                    || candidate.filePath === preferred
+                    || candidate.movePath === preferred;
             })
             : files[0];
 
@@ -522,58 +525,6 @@ const normalizeToolDiagnostic = (value: unknown): ToolDiagnostic | null => {
         line: rawLine + 1,
         character: rawCharacter + 1,
     };
-};
-
-const getPrimaryToolPath = (
-    toolName: string,
-    input: Record<string, unknown> | undefined,
-    metadata: Record<string, unknown> | undefined,
-): string | null => {
-    if (toolName === 'apply_patch') {
-        const files = Array.isArray(metadata?.files) ? metadata.files : [];
-        const first = files.find((entry) => {
-            if (!isRecord(entry)) {
-                return false;
-            }
-            return entry.type !== 'delete';
-        });
-        if (!isRecord(first)) {
-            return null;
-        }
-        return typeof first.movePath === 'string'
-            ? first.movePath
-            : typeof first.filePath === 'string'
-                ? first.filePath
-                : typeof first.relativePath === 'string'
-                    ? first.relativePath
-                    : null;
-    }
-
-    if (toolName === 'edit' || toolName === 'multiedit') {
-        const fileDiff = isRecord(metadata?.filediff) ? metadata.filediff : undefined;
-        if (isRecord(fileDiff) && typeof fileDiff.file === 'string') {
-            return fileDiff.file;
-        }
-        return typeof input?.filePath === 'string'
-            ? input.filePath
-            : typeof input?.file_path === 'string'
-                ? input.file_path
-                : typeof input?.path === 'string'
-                    ? input.path
-                    : null;
-    }
-
-    if (toolName === 'write') {
-        return typeof input?.filePath === 'string'
-            ? input.filePath
-            : typeof input?.file_path === 'string'
-                ? input.file_path
-                : typeof input?.path === 'string'
-                    ? input.path
-                    : null;
-    }
-
-    return null;
 };
 
 const getToolDiagnosticSection = (
@@ -2349,23 +2300,21 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         let filePath: unknown;
         let targetLine: number | undefined;
         let toolDiff: string | undefined;
-        if (part.tool === 'edit' || part.tool === 'multiedit') {
+        if (normalizedPartTool === 'edit' || normalizedPartTool === 'multiedit') {
             filePath = input?.filePath || input?.file_path || input?.path || metadata?.filePath || metadata?.file_path || metadata?.path;
-            targetLine = getFirstChangedLineFromMetadata(part.tool, metadata);
+            targetLine = getFirstChangedLineFromMetadata(normalizedPartTool, metadata);
             if (typeof filePath === 'string') {
-                toolDiff = getPrimaryDiffFromMetadata(part.tool, metadata, filePath);
+                toolDiff = getPrimaryDiffFromMetadata(normalizedPartTool, metadata, filePath);
             }
-        } else if (part.tool === 'apply_patch') {
-            const files = Array.isArray(metadata?.files) ? metadata?.files : [];
-            const firstFile = files[0] as { relativePath?: string; filePath?: string } | undefined;
-            filePath = firstFile?.relativePath || firstFile?.filePath;
-            targetLine = getFirstChangedLineFromMetadata(part.tool, metadata);
+        } else if (normalizedPartTool === 'apply_patch') {
+            filePath = getPrimaryToolPath(normalizedPartTool, input, metadata);
+            targetLine = getFirstChangedLineFromMetadata(normalizedPartTool, metadata);
             if (typeof filePath === 'string') {
-                toolDiff = getPrimaryDiffFromMetadata(part.tool, metadata, filePath);
+                toolDiff = getPrimaryDiffFromMetadata(normalizedPartTool, metadata, filePath);
             }
-        } else if (['write', 'create', 'file_write'].includes(part.tool)) {
+        } else if (['write', 'create', 'file_write'].includes(normalizedPartTool)) {
             filePath = input?.filePath || input?.file_path || input?.path || metadata?.filePath || metadata?.file_path || metadata?.path;
-        } else if (part.tool === 'lsp') {
+        } else if (normalizedPartTool === 'lsp') {
             filePath = input?.filePath || input?.file_path || input?.path;
             const line = input?.line;
             targetLine = typeof line === 'number' && Number.isFinite(line) ? Math.trunc(line) : undefined;
@@ -2373,11 +2322,8 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
         if (typeof filePath === 'string') {
             e.stopPropagation();
-            let absolutePath = filePath;
-            if (!filePath.startsWith('/')) {
-                absolutePath = currentDirectory.endsWith('/') ? currentDirectory + filePath : currentDirectory + '/' + filePath;
-            }
-            if (runtime.runtime.isVSCode && toolDiff && (part.tool === 'edit' || part.tool === 'multiedit' || part.tool === 'apply_patch')) {
+            const absolutePath = toAbsoluteFilePath(currentDirectory, filePath);
+            if (runtime.runtime.isVSCode && toolDiff && (normalizedPartTool === 'edit' || normalizedPartTool === 'multiedit' || normalizedPartTool === 'apply_patch')) {
                 const label = `${getRelativePath(absolutePath, currentDirectory)} (changes)`;
                 void runtime.editor.openDiff('', absolutePath, label, { line: targetLine, patch: toolDiff });
                 return;

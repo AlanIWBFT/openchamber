@@ -1,10 +1,40 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getDiffPatchEntries, getRenderablePatchInfo } from './toolDiffUtils';
+import { getDiffPatchEntries, getPrimaryToolPath, getRenderablePatchInfo } from './toolDiffUtils';
 
 const identity = (path: string) => path;
 
 describe('toolDiffUtils', () => {
+    test('prefers the absolute apply_patch path over its worktree-relative label', () => {
+        expect(getPrimaryToolPath('apply_patch', undefined, {
+            files: [{
+                filePath: '/workspace/project/src/file.ts',
+                relativePath: 'workspace/project/src/file.ts',
+                type: 'update',
+            }],
+        })).toBe('/workspace/project/src/file.ts');
+    });
+
+    test('opens the move destination and skips deleted apply_patch files', () => {
+        expect(getPrimaryToolPath('apply_patch', undefined, {
+            files: [
+                { filePath: '/workspace/deleted.ts', relativePath: 'deleted.ts', type: 'delete' },
+                {
+                    filePath: '/workspace/old.ts',
+                    relativePath: 'new.ts',
+                    movePath: '/workspace/new.ts',
+                    type: 'move',
+                },
+            ],
+        })).toBe('/workspace/new.ts');
+    });
+
+    test('falls back to the relative apply_patch path for legacy metadata', () => {
+        expect(getPrimaryToolPath('apply_patch', undefined, {
+            files: [{ relativePath: 'src/file.ts', type: 'update' }],
+        })).toBe('src/file.ts');
+    });
+
     test('treats raw apply_patch envelopes as text, not visual diffs', () => {
         const entries = getDiffPatchEntries(undefined, [
             '*** Begin Patch',
