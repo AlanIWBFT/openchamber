@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getDiffPatchEntries, getPrimaryToolPath, getRenderablePatchInfo } from './toolDiffUtils';
+import { getApplyPatchFilePath, getDiffPatchEntries, getPrimaryToolPath, getRenderablePatchInfo } from './toolDiffUtils';
 
 const identity = (path: string) => path;
 
@@ -33,6 +33,18 @@ describe('toolDiffUtils', () => {
         expect(getPrimaryToolPath('apply_patch', undefined, {
             files: [{ relativePath: 'src/file.ts', type: 'update' }],
         })).toBe('src/file.ts');
+    });
+
+    test('resolves each apply_patch file independently', () => {
+        expect(getApplyPatchFilePath({
+            filePath: '/workspace/project/src/first.ts',
+            relativePath: 'workspace/project/src/first.ts',
+        })).toBe('/workspace/project/src/first.ts');
+        expect(getApplyPatchFilePath({
+            filePath: '/workspace/project/src/old.ts',
+            movePath: '/workspace/project/src/second.ts',
+            relativePath: 'src/second.ts',
+        })).toBe('/workspace/project/src/second.ts');
     });
 
     test('treats raw apply_patch envelopes as text, not visual diffs', () => {
@@ -85,6 +97,27 @@ describe('toolDiffUtils', () => {
         expect(entries).toHaveLength(1);
         expect(entries[0]?.renderMode).toBe('diff');
         expect(entries[0]?.title).toBe('src/file.ts');
+    });
+
+    test('keeps the authoritative path for every metadata file entry', () => {
+        const patch = [
+            '--- a/src/file.ts',
+            '+++ b/src/file.ts',
+            '@@ -1 +1 @@',
+            '-old',
+            '+new',
+        ].join('\n');
+        const entries = getDiffPatchEntries({
+            files: [
+                { filePath: '/workspace/project/src/first.ts', relativePath: 'src/first.ts', patch },
+                { filePath: '/workspace/project/src/second.ts', relativePath: 'src/second.ts', patch },
+            ],
+        }, undefined, identity);
+
+        expect(entries.map((entry) => entry.filePath)).toEqual([
+            '/workspace/project/src/first.ts',
+            '/workspace/project/src/second.ts',
+        ]);
     });
 
     test('synthesizes headers for valid headerless hunks', () => {

@@ -53,7 +53,7 @@ import {
 } from './taskToolModel';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { useI18n } from '@/lib/i18n';
-import { getDiffPatchEntries, getPatchText, getPrimaryToolPath, type DiffPatchEntry } from './toolDiffUtils';
+import { getApplyPatchFilePath, getDiffPatchEntries, getPatchText, getPrimaryToolPath, type DiffPatchEntry } from './toolDiffUtils';
 import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import { getStreamingOutputAppend, getToolOutput } from './toolOutput';
@@ -80,6 +80,7 @@ const getMultiFileDescription = (
     metadata: Record<string, unknown> | undefined,
     animate = true,
     showFileIcons = true,
+    onFileClick?: (file: Record<string, unknown>, event: React.MouseEvent<HTMLButtonElement>) => void,
 ): React.ReactNode => {
     const files = Array.isArray(metadata?.files) ? metadata?.files : [];
     if (files.length <= 1) return null;
@@ -103,10 +104,11 @@ const getMultiFileDescription = (
         return base + incoming;
     };
 
-    const entriesByPath = new Map<string, { path: string; name: string; added: number | null; removed: number | null }>();
+    const entriesByPath = new Map<string, { file: Record<string, unknown>; path: string; name: string; added: number | null; removed: number | null }>();
 
     for (const file of files) {
-        const fileObj = file as { relativePath?: string; filePath?: string; additions?: unknown; deletions?: unknown };
+        if (!file || typeof file !== 'object') continue;
+        const fileObj = file as Record<string, unknown> & { relativePath?: string; filePath?: string; additions?: unknown; deletions?: unknown };
         const filePath = fileObj.relativePath || fileObj.filePath || '';
         if (!filePath) continue;
         const fileName = filePath.split('/').pop() || filePath;
@@ -120,7 +122,7 @@ const getMultiFileDescription = (
             continue;
         }
 
-        entriesByPath.set(filePath, { path: filePath, name: fileName, added, removed });
+        entriesByPath.set(filePath, { file: fileObj, path: filePath, name: fileName, added, removed });
     }
 
     const entries = Array.from(entriesByPath.values());
@@ -129,8 +131,8 @@ const getMultiFileDescription = (
         <>
             {entries.map((entry) => {
                 const hasPerFileDiff = entry.added !== null || entry.removed !== null;
-                return (
-                    <span key={entry.path} className={cn('inline-flex min-w-0 max-w-full items-center gap-1', TOOL_ROW_DESCRIPTION_CLASS)} style={{ color: 'var(--tools-description)' }}>
+                const content = (
+                    <>
                         {showFileIcons ? <FileTypeIcon filePath={entry.path} className="h-3.5 w-3.5" /> : null}
                         <Text
                             variant={animate ? 'generate-effect' : 'static'}
@@ -147,6 +149,23 @@ const getMultiFileDescription = (
                                 <span style={{ color: 'var(--status-error)' }}>-{entry.removed ?? 0}</span>
                             </span>
                         ) : null}
+                    </>
+                );
+                const canOpen = onFileClick && entry.file.type !== 'delete' && getApplyPatchFilePath(entry.file);
+                return canOpen ? (
+                    <button
+                        key={entry.path}
+                        type="button"
+                        className={cn('inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring', TOOL_ROW_DESCRIPTION_CLASS)}
+                        style={{ color: 'var(--tools-description)' }}
+                        onClick={(event) => onFileClick(entry.file, event)}
+                        onKeyDown={(event) => event.stopPropagation()}
+                    >
+                        {content}
+                    </button>
+                ) : (
+                    <span key={entry.path} className={cn('inline-flex min-w-0 max-w-full items-center gap-1', TOOL_ROW_DESCRIPTION_CLASS)} style={{ color: 'var(--tools-description)' }}>
+                        {content}
                     </span>
                 );
             })}
@@ -1633,9 +1652,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     );
 
     const renderResultContent = () => {
-        const getEntryAbsolutePath = (entry: DiffPatchEntry) => (
-            entry.title.startsWith('/') ? entry.title : `${currentDirectory}/${entry.title}`.replace(/\/+/g, '/')
-        );
+        const getEntryAbsolutePath = (entry: DiffPatchEntry) => toAbsoluteFilePath(currentDirectory, entry.filePath ?? entry.title);
         const openEntryFile = (entry: DiffPatchEntry, event: React.MouseEvent<HTMLButtonElement>) => {
             event.stopPropagation();
             const line = extractFirstChangedLineFromDiff(entry.patch);
@@ -2291,6 +2308,24 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     }, [descriptionPath, normalizedPartTool, stateWithData, input]);
     const runtime = React.useContext(RuntimeAPIContext);
 
+    const openApplyPatchFile = (file: Record<string, unknown>, event: React.MouseEvent<HTMLButtonElement>) => {
+        const filePath = getApplyPatchFilePath(file);
+        if (!runtime?.editor || !filePath || file.type === 'delete') {
+            return;
+        }
+
+        event.stopPropagation();
+        const patch = getPatchText(file.patch) ?? getPatchText(file.diff);
+        const targetLine = patch ? extractFirstChangedLineFromDiff(patch) : undefined;
+        const absolutePath = toAbsoluteFilePath(currentDirectory, filePath);
+        if (runtime.runtime.isVSCode && patch) {
+            const label = `${getRelativePath(absolutePath, currentDirectory)} (changes)`;
+            void runtime.editor.openDiff('', absolutePath, label, { line: targetLine, patch });
+            return;
+        }
+        void runtime.editor.openFile(absolutePath, targetLine);
+    };
+
     const handleMainClick = (e: { stopPropagation: () => void }) => {
         if (isTaskTool || !runtime?.editor) {
             onToggle(part.id);
@@ -2403,7 +2438,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                             >
                                 {displayName}
                             </MinDurationShineText>
-                            {getMultiFileDescription(metadata, animateTailText, showToolFileIcons)}
+                            {getMultiFileDescription(metadata, animateTailText, showToolFileIcons, runtime?.editor ? openApplyPatchFile : undefined)}
                         </>
                     ) : (
                         <>
