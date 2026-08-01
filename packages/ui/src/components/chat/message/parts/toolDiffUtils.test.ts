@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getApplyPatchFilePath, getDiffPatchEntries, getPrimaryToolPath, getRenderablePatchInfo } from './toolDiffUtils';
+import {
+    getApplyPatchFilePath,
+    getDiffPatchEntries,
+    getFirstChangedLineFromMetadata,
+    getPrimaryDiffFromMetadata,
+    getPrimaryToolPath,
+    getRenderablePatchInfo,
+} from './toolDiffUtils';
 
 const identity = (path: string) => path;
 
@@ -45,6 +52,34 @@ describe('toolDiffUtils', () => {
             movePath: '/workspace/project/src/second.ts',
             relativePath: 'src/second.ts',
         })).toBe('/workspace/project/src/second.ts');
+    });
+
+    test('selects the move patch and line from the same non-deleted file', () => {
+        const deletedPatch = '@@ -3 +3 @@\n-old\n+deleted';
+        const movedPatch = '@@ -42 +42 @@\n-before\n+after';
+        const metadata = {
+            patch: deletedPatch,
+            files: [
+                {
+                    filePath: '/workspace/project/src/deleted.ts',
+                    relativePath: 'src/deleted.ts',
+                    patch: deletedPatch,
+                    type: 'delete',
+                },
+                {
+                    filePath: '/workspace/project/src/old.ts',
+                    movePath: '/workspace/project/src/moved.ts',
+                    relativePath: 'src/moved.ts',
+                    patch: movedPatch,
+                    type: 'move',
+                },
+            ],
+        };
+
+        expect(getPrimaryDiffFromMetadata('apply_patch', metadata, '/workspace/project/src/moved.ts'))
+            .toBe(movedPatch);
+        expect(getFirstChangedLineFromMetadata('apply_patch', metadata, '/workspace/project/src/moved.ts'))
+            .toBe(42);
     });
 
     test('treats raw apply_patch envelopes as text, not visual diffs', () => {

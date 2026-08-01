@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { PatchDiff } from '@pierre/diffs/react';
 import { cn } from '@/lib/utils';
@@ -53,11 +54,22 @@ import {
 } from './taskToolModel';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { useI18n } from '@/lib/i18n';
-import { getApplyPatchFilePath, getDiffPatchEntries, getPatchText, getPrimaryToolPath, type DiffPatchEntry } from './toolDiffUtils';
+import {
+    extractFirstChangedLineFromDiff,
+    getDiffPatchEntries,
+    getFirstChangedLineFromMetadata,
+    getPatchText,
+    getPrimaryDiffFromMetadata,
+    getPrimaryToolPath,
+    type DiffPatchEntry,
+} from './toolDiffUtils';
 import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import { getStreamingOutputAppend, getToolOutput } from './toolOutput';
 import { toAbsoluteFilePath } from '@/lib/path-utils';
+import { getToolDescriptionFallback } from './toolRenderUtils';
+import { ApplyPatchFileButtons } from './ApplyPatchFileButtons';
+import { openApplyPatchFileInEditor } from './applyPatchEditorAction';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -75,103 +87,6 @@ interface ToolPartProps {
     onShowPopup?: (content: ToolPopupContent) => void;
     animateTailText?: boolean;
 }
-
-const getMultiFileDescription = (
-    metadata: Record<string, unknown> | undefined,
-    animate = true,
-    showFileIcons = true,
-    onFileClick?: (file: Record<string, unknown>, event: React.MouseEvent<HTMLButtonElement>) => void,
-): React.ReactNode => {
-    const files = Array.isArray(metadata?.files) ? metadata?.files : [];
-    if (files.length <= 1) return null;
-
-    const parseCount = (value: unknown): number | null => {
-        if (typeof value === 'number' && Number.isFinite(value)) {
-            return Math.max(0, Math.trunc(value));
-        }
-        if (typeof value === 'string') {
-            const parsed = Number.parseInt(value, 10);
-            if (Number.isFinite(parsed)) {
-                return Math.max(0, parsed);
-            }
-        }
-        return null;
-    };
-
-    const combineCounts = (base: number | null, incoming: number | null): number | null => {
-        if (base === null) return incoming;
-        if (incoming === null) return base;
-        return base + incoming;
-    };
-
-    const entriesByPath = new Map<string, { file: Record<string, unknown>; path: string; name: string; added: number | null; removed: number | null }>();
-
-    for (const file of files) {
-        if (!file || typeof file !== 'object') continue;
-        const fileObj = file as Record<string, unknown> & { relativePath?: string; filePath?: string; additions?: unknown; deletions?: unknown };
-        const filePath = fileObj.relativePath || fileObj.filePath || '';
-        if (!filePath) continue;
-        const fileName = filePath.split('/').pop() || filePath;
-        const added = parseCount(fileObj.additions);
-        const removed = parseCount(fileObj.deletions);
-
-        const existing = entriesByPath.get(filePath);
-        if (existing) {
-            existing.added = combineCounts(existing.added, added);
-            existing.removed = combineCounts(existing.removed, removed);
-            continue;
-        }
-
-        entriesByPath.set(filePath, { file: fileObj, path: filePath, name: fileName, added, removed });
-    }
-
-    const entries = Array.from(entriesByPath.values());
-
-    return (
-        <>
-            {entries.map((entry) => {
-                const hasPerFileDiff = entry.added !== null || entry.removed !== null;
-                const content = (
-                    <>
-                        {showFileIcons ? <FileTypeIcon filePath={entry.path} className="h-3.5 w-3.5" /> : null}
-                        <Text
-                            variant={animate ? 'generate-effect' : 'static'}
-                            className={cn('min-w-0 max-w-full truncate', TOOL_ROW_DESCRIPTION_CLASS)}
-                            style={{ color: 'var(--tools-description)' }}
-                            title={entry.path}
-                        >
-                            {entry.name}
-                        </Text>
-                        {hasPerFileDiff ? (
-                            <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: '0.8rem', lineHeight: '1' }}>
-                                <span style={{ color: 'var(--status-success)' }}>+{entry.added ?? 0}</span>
-                                <span style={{ color: 'var(--tools-description)' }}>/</span>
-                                <span style={{ color: 'var(--status-error)' }}>-{entry.removed ?? 0}</span>
-                            </span>
-                        ) : null}
-                    </>
-                );
-                const canOpen = onFileClick && entry.file.type !== 'delete' && getApplyPatchFilePath(entry.file);
-                return canOpen ? (
-                    <button
-                        key={entry.path}
-                        type="button"
-                        className={cn('inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring', TOOL_ROW_DESCRIPTION_CLASS)}
-                        style={{ color: 'var(--tools-description)' }}
-                        onClick={(event) => onFileClick(entry.file, event)}
-                        onKeyDown={(event) => event.stopPropagation()}
-                    >
-                        {content}
-                    </button>
-                ) : (
-                    <span key={entry.path} className={cn('inline-flex min-w-0 max-w-full items-center gap-1', TOOL_ROW_DESCRIPTION_CLASS)} style={{ color: 'var(--tools-description)' }}>
-                        {content}
-                    </span>
-                );
-            })}
-        </>
-    );
-};
 
 const normalizeToolName = (toolName: string | undefined | null): string => {
     if (typeof toolName !== 'string') {
@@ -324,54 +239,6 @@ const parseWriteLineCount = (input?: Record<string, unknown>): number | null => 
     return lines;
 };
 
-const extractFirstChangedLineFromDiff = (diffText: string): number | undefined => {
-    if (!diffText || typeof diffText !== 'string') {
-        return undefined;
-    }
-
-    const lines = diffText.split('\n');
-    let currentNewLine: number | undefined;
-    let firstHunkStart: number | undefined;
-
-    for (const rawLine of lines) {
-        const line = rawLine.replace(/\r$/, '');
-        const hunkMatch = line.match(/^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
-        if (hunkMatch) {
-            const parsed = Number.parseInt(hunkMatch[1] ?? '', 10);
-            if (Number.isFinite(parsed)) {
-                currentNewLine = Math.max(1, parsed);
-                if (!Number.isFinite(firstHunkStart)) {
-                    firstHunkStart = currentNewLine;
-                }
-            }
-            continue;
-        }
-
-        if (currentNewLine === undefined || !Number.isFinite(currentNewLine)) {
-            continue;
-        }
-
-        if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ')) {
-            continue;
-        }
-
-        if (line.startsWith('+')) {
-            return currentNewLine;
-        }
-
-        if (line.startsWith(' ')) {
-            currentNewLine += 1;
-            continue;
-        }
-
-        if (line.startsWith('-') || line.startsWith('\\')) {
-            continue;
-        }
-    }
-
-    return firstHunkStart;
-};
-
 const buildWritePreviewPatch = (filePath: string | undefined, content: string): string | undefined => {
     const normalizedContent = content.replace(/\r\n/g, '\n');
     if (!normalizedContent.trim()) {
@@ -396,75 +263,6 @@ const buildWritePreviewPatch = (filePath: string | undefined, content: string): 
         `@@ -0,0 +1,${hunkSize} @@`,
         body,
     ].join('\n');
-};
-
-const getFirstChangedLineFromMetadata = (tool: string, metadata?: Record<string, unknown>): number | undefined => {
-    if (!metadata || (tool !== 'edit' && tool !== 'multiedit' && tool !== 'apply_patch')) {
-        return undefined;
-    }
-
-    const topLevelPatch = getPatchText((metadata as { patch?: unknown }).patch) ?? getPatchText(metadata.diff);
-    if (topLevelPatch) {
-        const line = extractFirstChangedLineFromDiff(topLevelPatch);
-        if (Number.isFinite(line)) {
-            return line;
-        }
-    }
-
-    const files = Array.isArray(metadata.files) ? metadata.files : [];
-    const firstFile = files[0] as { patch?: unknown; diff?: unknown } | undefined;
-    const filePatch = getPatchText(firstFile?.patch) ?? getPatchText(firstFile?.diff);
-    if (filePatch) {
-        const line = extractFirstChangedLineFromDiff(filePatch);
-        if (Number.isFinite(line)) {
-            return line;
-        }
-    }
-
-    return undefined;
-};
-
-const getPrimaryDiffFromMetadata = (
-    tool: string,
-    metadata?: Record<string, unknown>,
-    preferredPath?: string,
-): string | undefined => {
-    if (!metadata || (tool !== 'edit' && tool !== 'multiedit' && tool !== 'apply_patch')) {
-        return undefined;
-    }
-
-    const files = Array.isArray(metadata.files) ? metadata.files : [];
-    if (files.length > 0) {
-        const preferred = typeof preferredPath === 'string' && preferredPath.length > 0
-            ? preferredPath
-            : undefined;
-        const matched = preferred
-            ? files.find((file) => {
-                if (!file || typeof file !== 'object') {
-                    return false;
-                }
-                const candidate = file as { relativePath?: unknown; filePath?: unknown; movePath?: unknown };
-                return candidate.relativePath === preferred
-                    || candidate.filePath === preferred
-                    || candidate.movePath === preferred;
-            })
-            : files[0];
-
-        if (matched && typeof matched === 'object') {
-            const patch = getPatchText((matched as { patch?: unknown; diff?: unknown }).patch)
-                ?? getPatchText((matched as { patch?: unknown; diff?: unknown }).diff);
-            if (patch) {
-                return patch;
-            }
-        }
-    }
-
-    const topLevelPatch = getPatchText((metadata as { patch?: unknown }).patch) ?? getPatchText(metadata.diff);
-    if (topLevelPatch) {
-        return topLevelPatch;
-    }
-
-    return undefined;
 };
 
 const normalizeDisplayPath = (value: string): string => {
@@ -760,7 +558,7 @@ const getToolDescription = (part: ToolPartType, state: ToolStateUnion, currentDi
     }
 
     const desc = input?.description || metadata?.description || ('title' in state && state.title) || '';
-    return typeof desc === 'string' ? desc : '';
+    return getToolDescriptionFallback(part.tool, desc, input);
 };
 
 interface ToolScrollableSectionProps {
@@ -1122,7 +920,11 @@ const TaskSummaryEntryRow = React.memo(({
 
     return (
         <ToolRevealOnMount animate={animateTailText} wipe>
-            <div className={cn('flex gap-2 min-w-0 w-full', isMobile ? 'items-start' : 'items-center')}>
+            {/* Single-line rows everywhere: the old mobile break-words mode
+                wrapped long shell commands into a hanging column and floated
+                the icon to the top of the block. Errors still wrap — they must
+                stay readable. */}
+            <div className={cn('flex gap-2 min-w-0 w-full', status === 'error' && isMobile ? 'items-start' : 'items-center')}>
                 <span className="flex-shrink-0 text-foreground/80">{getToolIcon(toolName)}</span>
                 <span
                     className="typography-meta text-foreground/80 flex-shrink-0"
@@ -1145,10 +947,7 @@ const TaskSummaryEntryRow = React.memo(({
                         ) : (
                             <Text
                                 variant={animateTailText ? 'generate-effect' : 'static'}
-                                className={cn(
-                                    'typography-meta flex-1 min-w-0 text-muted-foreground/70',
-                                    isMobile ? 'whitespace-normal break-words' : 'truncate',
-                                )}
+                                className="typography-meta flex-1 min-w-0 truncate text-muted-foreground/70"
                                 style={{ color: 'var(--tools-description)' }}
                                 title={label}
                             >
@@ -1557,6 +1356,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
 }) => {
     const { t } = useI18n();
     const runtime = React.useContext(RuntimeAPIContext);
+    const mobileActions = useMobileAppActions();
     const { pierreTheme, pierreThemeType } = usePierreThemeConfig();
     const [diffViewMode, setDiffViewMode] = React.useState<DiffViewMode>('unified');
     const stateWithData = state as ToolStateWithMetadata;
@@ -1662,6 +1462,9 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                 return;
             }
             useUIStore.getState().openContextFileAtLine(currentDirectory, absolutePath, line ?? 1, 1);
+            // Dedicated mobile app: the pending file navigation is consumed by
+            // the FilesView pane — surface it (workspace drawer Files tab).
+            mobileActions?.openFiles();
         };
         const openEntryDiff = (entry: DiffPatchEntry, event: React.MouseEvent<HTMLButtonElement>) => {
             event.stopPropagation();
@@ -2015,6 +1818,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     onShowPopup,
     animateTailText = true,
 }) => {
+    const { t } = useI18n();
     const state = part.state;
     const showToolFileIcons = useUIStore((s) => s.showToolFileIcons);
     const currentDirectory = useEffectiveDirectory() ?? '';
@@ -2309,21 +2113,23 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const runtime = React.useContext(RuntimeAPIContext);
 
     const openApplyPatchFile = (file: Record<string, unknown>, event: React.MouseEvent<HTMLButtonElement>) => {
-        const filePath = getApplyPatchFilePath(file);
-        if (!runtime?.editor || !filePath || file.type === 'delete') {
+        if (!runtime?.editor) {
             return;
         }
 
         event.stopPropagation();
-        const patch = getPatchText(file.patch) ?? getPatchText(file.diff);
-        const targetLine = patch ? extractFirstChangedLineFromDiff(patch) : undefined;
-        const absolutePath = toAbsoluteFilePath(currentDirectory, filePath);
-        if (runtime.runtime.isVSCode && patch) {
-            const label = `${getRelativePath(absolutePath, currentDirectory)} (changes)`;
-            void runtime.editor.openDiff('', absolutePath, label, { line: targetLine, patch });
-            return;
-        }
-        void runtime.editor.openFile(absolutePath, targetLine);
+        const displayPath = typeof file.relativePath === 'string'
+            ? file.relativePath
+            : typeof file.filePath === 'string'
+                ? getRelativePath(file.filePath, currentDirectory)
+                : '';
+        openApplyPatchFileInEditor({
+            currentDirectory,
+            diffLabel: `${displayPath} (changes)`,
+            editor: runtime.editor,
+            file,
+            isVSCode: runtime.runtime.isVSCode,
+        });
     };
 
     const handleMainClick = (e: { stopPropagation: () => void }) => {
@@ -2337,15 +2143,15 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         let toolDiff: string | undefined;
         if (normalizedPartTool === 'edit' || normalizedPartTool === 'multiedit') {
             filePath = input?.filePath || input?.file_path || input?.path || metadata?.filePath || metadata?.file_path || metadata?.path;
-            targetLine = getFirstChangedLineFromMetadata(normalizedPartTool, metadata);
             if (typeof filePath === 'string') {
                 toolDiff = getPrimaryDiffFromMetadata(normalizedPartTool, metadata, filePath);
+                targetLine = getFirstChangedLineFromMetadata(normalizedPartTool, metadata, filePath);
             }
         } else if (normalizedPartTool === 'apply_patch') {
             filePath = getPrimaryToolPath(normalizedPartTool, input, metadata);
-            targetLine = getFirstChangedLineFromMetadata(normalizedPartTool, metadata);
             if (typeof filePath === 'string') {
                 toolDiff = getPrimaryDiffFromMetadata(normalizedPartTool, metadata, filePath);
+                targetLine = getFirstChangedLineFromMetadata(normalizedPartTool, metadata, filePath);
             }
         } else if (['write', 'create', 'file_write'].includes(normalizedPartTool)) {
             filePath = input?.filePath || input?.file_path || input?.path || metadata?.filePath || metadata?.file_path || metadata?.path;
@@ -2391,57 +2197,76 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             {}
             <div
                 className={cn(
-                'group/tool flex gap-1.5 pr-2 pl-px py-1.5 rounded-xl cursor-pointer',
-                isMultiFileApplyPatch ? 'flex-wrap items-start' : 'items-center'
-            )}
-                onClick={handleMainClick}
-                onKeyDown={handleMainKeyDown}
-                role="button"
-                tabIndex={0}
+                    'group/tool flex gap-1.5 pr-2 pl-px py-1.5 rounded-xl',
+                    isMultiFileApplyPatch ? 'flex-wrap items-start' : 'items-center cursor-pointer',
+                )}
+                onClick={isMultiFileApplyPatch ? undefined : handleMainClick}
+                onKeyDown={isMultiFileApplyPatch ? undefined : handleMainKeyDown}
+                role={isMultiFileApplyPatch ? undefined : 'button'}
+                tabIndex={isMultiFileApplyPatch ? undefined : 0}
             >
                 <div className={cn('flex gap-1.5', isMultiFileApplyPatch ? 'w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5' : 'items-center flex-shrink-0')}>
-                    {}
-                    <div
-                        className="relative h-3.5 w-3.5 flex-shrink-0 cursor-pointer"
-                        onClick={(event) => { event.stopPropagation(); onToggle(part.id); }}
-                    >
-                        {}
-                        <div
-                            className={cn(
-                                'absolute inset-0 transition-opacity',
-                                isExpanded && 'opacity-0',
-                                !isExpanded && 'group-hover/tool:opacity-0'
-                            )}
-                            style={iconStyle}
-                        >
-                            {getToolIcon(normalizedPartTool || part.tool)}
-                        </div>
-                        {}
-                        <div
-                            className={cn(
-                                'absolute inset-0 transition-opacity flex items-center justify-center',
-                                isExpanded && 'opacity-100',
-                                !isExpanded && 'opacity-0 group-hover/tool:opacity-100'
-                            )}
-                        >
-                            {isExpanded ? <Icon name="arrow-down-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-right-s" className="h-3.5 w-3.5" />}
-                        </div>
-                    </div>
                     {isMultiFileApplyPatch ? (
                         <>
-                            <MinDurationShineText
-                                active={Boolean(isActive && !isError)}
-                                minDurationMs={300}
-                                className={cn(TOOL_ROW_TITLE_CLASS, 'flex-shrink-0')}
-                                style={titleStyle}
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                className="gap-1.5 normal-case"
+                                aria-expanded={isExpanded}
+                                aria-label={displayName}
                                 title={displayName}
+                                onClick={() => onToggle(part.id)}
                             >
-                                {displayName}
-                            </MinDurationShineText>
-                            {getMultiFileDescription(metadata, animateTailText, showToolFileIcons, runtime?.editor ? openApplyPatchFile : undefined)}
+                                {isExpanded
+                                    ? <Icon name="arrow-down-s" className="h-3.5 w-3.5" />
+                                    : getToolIcon(normalizedPartTool || part.tool)}
+                                <MinDurationShineText
+                                    active={Boolean(isActive && !isError)}
+                                    minDurationMs={300}
+                                    className={cn(TOOL_ROW_TITLE_CLASS, 'flex-shrink-0')}
+                                    style={titleStyle}
+                                >
+                                    {displayName}
+                                </MinDurationShineText>
+                            </Button>
+                            <ApplyPatchFileButtons
+                                metadata={metadata}
+                                animate={animateTailText}
+                                showFileIcons={showToolFileIcons}
+                                textClassName={TOOL_ROW_DESCRIPTION_CLASS}
+                                openDiffLabel={t('chat.toolPart.openFileDiff')}
+                                onFileClick={runtime?.editor ? openApplyPatchFile : undefined}
+                            />
                         </>
                     ) : (
                         <>
+                            <div
+                                // h-5 matches StaticToolRow's icon column, so expandable
+                                // and static rows come out the same height (the 14px
+                                // icon alone left these rows ~2px shorter).
+                                className="relative h-5 w-3.5 flex-shrink-0 cursor-pointer"
+                                onClick={(event) => { event.stopPropagation(); onToggle(part.id); }}
+                            >
+                                <div
+                                    className={cn(
+                                        'absolute inset-0 flex items-center justify-center transition-opacity',
+                                        isExpanded && 'opacity-0',
+                                        !isExpanded && 'group-hover/tool:opacity-0'
+                                    )}
+                                    style={iconStyle}
+                                >
+                                    {getToolIcon(normalizedPartTool || part.tool)}
+                                </div>
+                                <div
+                                    className={cn(
+                                        'absolute inset-0 transition-opacity flex items-center justify-center',
+                                        isExpanded && 'opacity-100',
+                                        !isExpanded && 'opacity-0 group-hover/tool:opacity-100'
+                                    )}
+                                >
+                                    {isExpanded ? <Icon name="arrow-down-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-right-s" className="h-3.5 w-3.5" />}
+                                </div>
+                            </div>
                             <div className="flex items-center gap-2 min-w-0 flex-1">
                                 <MinDurationShineText
                                     active={Boolean(isActive && !isError)}

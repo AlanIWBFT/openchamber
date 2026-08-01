@@ -200,6 +200,113 @@ export const getPrimaryToolPath = (
     return null;
 };
 
+const supportsDiffMetadata = (toolName: string): boolean => (
+    toolName === 'edit' || toolName === 'multiedit' || toolName === 'apply_patch'
+);
+
+const getMetadataFileForPath = (
+    metadata: Record<string, unknown>,
+    preferredPath?: string,
+): Record<string, unknown> | undefined => {
+    const files = Array.isArray(metadata.files) ? metadata.files : [];
+    if (!preferredPath) {
+        const first = files[0];
+        return isRecord(first) ? first : undefined;
+    }
+
+    return files.find((file): file is Record<string, unknown> => (
+        isRecord(file)
+        && (file.relativePath === preferredPath || file.filePath === preferredPath || file.movePath === preferredPath)
+    ));
+};
+
+export const getPrimaryDiffFromMetadata = (
+    toolName: string,
+    metadata?: Record<string, unknown>,
+    preferredPath?: string,
+): string | undefined => {
+    if (!metadata || !supportsDiffMetadata(toolName)) {
+        return undefined;
+    }
+
+    const matchedFile = getMetadataFileForPath(metadata, preferredPath);
+    const filePatch = getPatchText(matchedFile?.patch) ?? getPatchText(matchedFile?.diff);
+    if (filePatch) {
+        return filePatch;
+    }
+
+    return getPatchText(metadata.patch) ?? getPatchText(metadata.diff);
+};
+
+export const extractFirstChangedLineFromDiff = (diffText: string): number | undefined => {
+    if (!diffText) {
+        return undefined;
+    }
+
+    let currentNewLine: number | undefined;
+    let firstHunkStart: number | undefined;
+    for (const rawLine of diffText.split('\n')) {
+        const line = rawLine.replace(/\r$/, '');
+        const hunkMatch = line.match(/^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
+        if (hunkMatch) {
+            const parsed = Number.parseInt(hunkMatch[1] ?? '', 10);
+            if (Number.isFinite(parsed)) {
+                currentNewLine = Math.max(1, parsed);
+                firstHunkStart ??= currentNewLine;
+            }
+            continue;
+        }
+
+        if (currentNewLine === undefined) {
+            continue;
+        }
+        if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ')) {
+            continue;
+        }
+        if (line.startsWith('+')) {
+            return currentNewLine;
+        }
+        if (line.startsWith(' ')) {
+            currentNewLine += 1;
+        }
+    }
+
+    return firstHunkStart;
+};
+
+export const getFirstChangedLineFromMetadata = (
+    toolName: string,
+    metadata?: Record<string, unknown>,
+    preferredPath?: string,
+): number | undefined => {
+    if (!metadata || !supportsDiffMetadata(toolName)) {
+        return undefined;
+    }
+
+    if (preferredPath) {
+        const matchedFile = getMetadataFileForPath(metadata, preferredPath);
+        const matchedPatch = getPatchText(matchedFile?.patch) ?? getPatchText(matchedFile?.diff);
+        if (matchedPatch) {
+            const matchedLine = extractFirstChangedLineFromDiff(matchedPatch);
+            if (matchedLine !== undefined) {
+                return matchedLine;
+            }
+        }
+    }
+
+    const topLevelPatch = getPatchText(metadata.patch) ?? getPatchText(metadata.diff);
+    if (topLevelPatch) {
+        const topLevelLine = extractFirstChangedLineFromDiff(topLevelPatch);
+        if (topLevelLine !== undefined) {
+            return topLevelLine;
+        }
+    }
+
+    const firstFile = getMetadataFileForPath(metadata);
+    const firstPatch = getPatchText(firstFile?.patch) ?? getPatchText(firstFile?.diff);
+    return firstPatch ? extractFirstChangedLineFromDiff(firstPatch) : undefined;
+};
+
 const normalizeParsedPath = (path: string | undefined): string => {
     const trimmed = (path ?? '').trim().replace(/\t.*$/, '');
     if (!trimmed || trimmed === '/dev/null') {
