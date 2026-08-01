@@ -58,6 +58,7 @@ import { getDiffPatchEntries, getPatchText, type DiffPatchEntry } from './toolDi
 import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import { getStreamingOutputAppend, getToolOutput } from './toolOutput';
+import { getToolDescriptionFallback } from './toolRenderUtils';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -791,7 +792,7 @@ const getToolDescription = (part: ToolPartType, state: ToolStateUnion, currentDi
     }
 
     const desc = input?.description || metadata?.description || ('title' in state && state.title) || '';
-    return typeof desc === 'string' ? desc : '';
+    return getToolDescriptionFallback(part.tool, desc, input);
 };
 
 interface ToolScrollableSectionProps {
