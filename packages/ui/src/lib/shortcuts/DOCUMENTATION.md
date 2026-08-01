@@ -35,11 +35,11 @@ The settings recorder also stops at two chords. It keeps the recording local unt
 
 # Dispatching
 
-`ShortcutDispatcher` is DOM-independent. It invokes only currently registered handlers, resolves bindings when dispatching, and holds an active sequence prefix for 1500ms. The application keydown route clears that prefix on window blur and consumes Escape only when it cancels a prefix. A handler returns `false` to leave the completed binding unconsumed. When a sequence prefix is active, only its second key is dispatched during window capture so local input handlers cannot block it; unconsumed keys retain local input behavior, while consumed keys are prevented and stopped. Normal application shortcuts remain window-bubble listeners.
+`ShortcutDispatcher` is DOM-independent. It invokes only currently registered handlers, resolves bindings when dispatching, and holds an active sequence prefix for 1500ms. The application keydown route clears that prefix on window blur and consumes Escape only when it cancels a prefix. A handler returns `false` to leave the completed binding unconsumed. When a sequence prefix is active, only its second key is dispatched during window capture so local input handlers cannot block it; an exact second key remains eligible during IME composition and is prevented when handled, while an IME mismatch clears the prefix and retains normal composition input. Normal application shortcuts remain window-bubble listeners.
 
 `shortcutRegistry.suspend()` disables all application handlers and returns an idempotent cleanup. Suspensions nest; handlers resume only after the final cleanup. Starting or ending a suspension invalidates every pending dispatcher prefix, so stale second keys and Escape cannot consume it.
 
-Shared `DropdownMenu` can opt into this boundary with `disableGlobalShortcuts`; it suspends while open for both controlled and uncontrolled menus and resumes on close or unmount.
+Shared `DropdownMenu` and `Select` can opt into this boundary with `disableGlobalShortcuts`; they suspend while open for both controlled and uncontrolled popups and resume on close or unmount.
 
 Terminal capture, Escape abort priming, and the shifted reverse-agent chord are input-boundary exceptions. They preserve their target-specific semantics and invoke the registered application handler rather than duplicating command behavior.
 

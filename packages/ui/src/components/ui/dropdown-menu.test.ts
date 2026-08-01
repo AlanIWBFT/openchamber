@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { getDropdownMenuNavigationKey } from './dropdown-menu-keyboard';
+import { getDropdownNavigationKey } from './dropdown-navigation';
 
 function keyEvent(key: string, modifiers: Partial<Pick<KeyboardEvent, 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>> = {}) {
   return {
@@ -13,11 +13,11 @@ function keyEvent(key: string, modifiers: Partial<Pick<KeyboardEvent, 'ctrlKey' 
 }
 
 test('maps only exact Ctrl+N and Ctrl+P to menu navigation keys', () => {
-  expect(getDropdownMenuNavigationKey(keyEvent('n', { ctrlKey: true }))).toBe('ArrowDown');
-  expect(getDropdownMenuNavigationKey(keyEvent('p', { ctrlKey: true }))).toBe('ArrowUp');
-  expect(getDropdownMenuNavigationKey(keyEvent('N', { ctrlKey: true }))).toBe('ArrowDown');
-  expect(getDropdownMenuNavigationKey(keyEvent('n'))).toBe(null);
-  expect(getDropdownMenuNavigationKey(keyEvent('n', { ctrlKey: true, shiftKey: true }))).toBe(null);
-  expect(getDropdownMenuNavigationKey(keyEvent('p', { ctrlKey: true, altKey: true }))).toBe(null);
-  expect(getDropdownMenuNavigationKey(keyEvent('p', { ctrlKey: true, metaKey: true }))).toBe(null);
+  expect(getDropdownNavigationKey(keyEvent('n', { ctrlKey: true }))).toBe('ArrowDown');
+  expect(getDropdownNavigationKey(keyEvent('p', { ctrlKey: true }))).toBe('ArrowUp');
+  expect(getDropdownNavigationKey(keyEvent('N', { ctrlKey: true }))).toBe('ArrowDown');
+  expect(getDropdownNavigationKey(keyEvent('n'))).toBe(null);
+  expect(getDropdownNavigationKey(keyEvent('n', { ctrlKey: true, shiftKey: true }))).toBe(null);
+  expect(getDropdownNavigationKey(keyEvent('p', { ctrlKey: true, altKey: true }))).toBe(null);
+  expect(getDropdownNavigationKey(keyEvent('p', { ctrlKey: true, metaKey: true }))).toBe(null);
 });

@@ -163,6 +163,34 @@ describe('ShortcutDispatcher', () => {
     expect(calls).toEqual(['sequence']);
   });
 
+  test('consumes a matching captured prefix key during IME composition', () => {
+    for (const compositionState of [{ isComposing: true }, { keyCode: 229 }]) {
+      const registry = new ShortcutRegistry();
+      const calls: string[] = [];
+      registry.register('open_session_list', () => { calls.push('sequence'); });
+      const dispatcher = new ShortcutDispatcher({ registry, getBinding: () => 'mod+s l' });
+      const secondKey = key('l', compositionState);
+
+      expect(dispatcher.dispatch(key('s', { ctrlKey: true }))).toBe(true);
+      expect(dispatcher.dispatchActivePrefix(secondKey)).toBe(true);
+      expect(dispatcher.consumeCapturedPrefixEvent(secondKey)).toBe(true);
+      expect(calls).toEqual(['sequence']);
+    }
+  });
+
+  test('clears an active prefix but preserves an unmatched IME key', () => {
+    const registry = new ShortcutRegistry();
+    const calls: string[] = [];
+    registry.register('open_session_list', () => { calls.push('sequence'); });
+    const dispatcher = new ShortcutDispatcher({ registry, getBinding: () => 'mod+s l' });
+    const secondKey = key('x', { isComposing: true });
+
+    dispatcher.dispatch(key('s', { ctrlKey: true }));
+    expect(dispatcher.dispatchActivePrefix(secondKey)).toBe(false);
+    expect(dispatcher.hasActivePrefix()).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
   test('stops after the first handler that accepts a conflicting binding', () => {
     const registry = new ShortcutRegistry();
     const calls: string[] = [];

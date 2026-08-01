@@ -135,6 +135,7 @@ export function DraftTargetSelectors(props: DraftTargetProps) {
                 open={openPicker === 'project'}
                 onOpenChange={(open) => setOpenPicker(open ? 'project' : null)}
                 onValueChange={handleProjectChange}
+                disableGlobalShortcuts
             >
                 <SelectTrigger
                     ref={projectTriggerRef}
@@ -160,6 +161,7 @@ export function DraftTargetSelectors(props: DraftTargetProps) {
                     open={openPicker === 'worktree'}
                     onOpenChange={(open) => setOpenPicker(open ? 'worktree' : null)}
                     onValueChange={handleDirectoryChange}
+                    disableGlobalShortcuts
                 >
                     <SelectTrigger
                         ref={worktreeTriggerRef}

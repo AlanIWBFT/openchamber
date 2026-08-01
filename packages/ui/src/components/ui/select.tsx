@@ -8,6 +8,9 @@ import { cn } from "@/lib/utils"
 import { dropdownTriggerVariants } from "@/components/ui/dropdown-trigger"
 import { ScrollableOverlay } from "@/components/ui/ScrollableOverlay";
 import { Icon } from "@/components/icon/Icon";
+import { shortcutRegistry } from "@/lib/shortcuts";
+import { isIMECompositionEvent } from "@/lib/ime";
+import { getDropdownNavigationKey } from "./dropdown-navigation";
 
 type AsChildProps = { asChild?: boolean };
 type AsChildRenderProps = {
@@ -36,14 +39,21 @@ type SelectRootProps<Value extends string = string> = Omit<
   value?: Value;
   defaultValue?: Value;
   onValueChange?: (value: Value, eventDetails: SelectRootChangeEventDetails) => void;
+  disableGlobalShortcuts?: boolean;
 };
 
 function Select<Value extends string = string>({
   onValueChange,
   modal = false,
+  disableGlobalShortcuts = false,
+  open,
+  defaultOpen,
+  onOpenChange,
   ...props
 }: SelectRootProps<Value>) {
   const [portalContainer, setPortalContainer] = React.useState<HTMLElement | null>(null);
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen ?? false);
+  const isOpen = open ?? uncontrolledOpen;
   const portalContextValue = React.useMemo<SelectPortalContextValue>(() => ({
     portalContainer,
     setPortalContainer,
@@ -58,9 +68,26 @@ function Select<Value extends string = string>({
     [onValueChange]
   );
 
+  React.useLayoutEffect(() => {
+    if (!disableGlobalShortcuts || !isOpen) return;
+    return shortcutRegistry.suspend();
+  }, [disableGlobalShortcuts, isOpen]);
+
+  const handleOpenChange: NonNullable<React.ComponentProps<typeof BaseSelect.Root>['onOpenChange']> = (nextOpen, eventDetails) => {
+    if (open === undefined) setUncontrolledOpen(nextOpen);
+    onOpenChange?.(nextOpen, eventDetails);
+  };
+
   return (
     <SelectPortalContext.Provider value={portalContextValue}>
-      <BaseSelect.Root {...props} modal={modal} onValueChange={handleValueChange} />
+      <BaseSelect.Root
+        {...props}
+        modal={modal}
+        open={open}
+        defaultOpen={defaultOpen}
+        onOpenChange={handleOpenChange}
+        onValueChange={handleValueChange}
+      />
     </SelectPortalContext.Provider>
   )
 }
@@ -174,11 +201,27 @@ function SelectContent({
   sideOffset,
   side,
   align,
+  onKeyDown,
   ...props
 }: React.ComponentProps<typeof BaseSelect.Popup> & SelectContentExtra) {
   const portalContext = React.useContext(SelectPortalContext);
   const alignItemWithTrigger = position === "item-aligned";
   const portalContainer = portalContext?.portalContainer ?? null;
+
+  const handleKeyDown: NonNullable<React.ComponentProps<typeof BaseSelect.Popup>['onKeyDown']> = (event) => {
+    onKeyDown?.(event);
+    if (event.defaultPrevented || event.isPropagationStopped() || isIMECompositionEvent(event)) return;
+    const navigationKey = getDropdownNavigationKey(event);
+    if (!navigationKey) return;
+
+    event.currentTarget.dispatchEvent(new KeyboardEvent('keydown', {
+      key: navigationKey,
+      bubbles: true,
+      cancelable: true,
+    }));
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   return (
     <BaseSelect.Portal container={portalToBody ? undefined : portalContainer || undefined}>
@@ -203,6 +246,7 @@ function SelectContent({
             className
           )}
           {...props}
+          onKeyDown={handleKeyDown}
         >
           <ScrollableOverlay
             outerClassName={cn(
@@ -248,7 +292,7 @@ function SelectItem({
     <BaseSelect.Item
       data-slot="select-item"
       className={cn(
-        "data-[highlighted]:bg-interactive-hover hover:bg-interactive-hover data-[selected]:bg-interactive-selection data-[selected]:text-interactive-selection-foreground [&_svg:not([class*='text-'])]:text-muted-foreground relative flex w-full cursor-pointer items-center gap-2 rounded-lg py-1.5 pr-8 pl-2 typography-ui-label outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        "data-[highlighted]:bg-interactive-hover hover:bg-interactive-hover [&_svg:not([class*='text-'])]:text-muted-foreground relative flex w-full cursor-pointer items-center gap-2 rounded-lg py-1.5 pr-8 pl-2 typography-ui-label outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
         className
       )}
       {...props}

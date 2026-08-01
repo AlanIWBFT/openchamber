@@ -7,6 +7,7 @@ import {
 } from './bindings';
 import { type ShortcutHandler, ShortcutRegistry } from './registry';
 import type { ShortcutActionId } from './schema';
+import { isIMECompositionEvent } from '../ime';
 
 const SEQUENCE_TIMEOUT_MS = 1500;
 const MODIFIER_KEYS = new Set(['alt', 'control', 'meta', 'shift']);
@@ -38,7 +39,7 @@ export class ShortcutDispatcher {
   }
 
   dispatch(event: KeyboardEvent): boolean {
-    if (event.repeat || event.isComposing || MODIFIER_KEYS.has(event.key.toLowerCase())) {
+    if (event.repeat || isIMECompositionEvent(event) || MODIFIER_KEYS.has(event.key.toLowerCase())) {
       return false;
     }
     if (event.key === 'Escape' && this.hasActivePrefix()) {
@@ -48,11 +49,7 @@ export class ShortcutDispatcher {
 
     const matches = this.getMatches();
     if (this.prefix) {
-      const pending = matches.filter((match) => (
-        match.chords.length === 2
-        && match.chords[0] === this.prefix
-        && eventMatchesShortcut(event, match.chords[1])
-      ));
+      const pending = this.getPrefixMatches(matches, event);
       if (pending.length > 0) {
         this.clear();
         return this.invoke(pending, event);
@@ -109,6 +106,14 @@ export class ShortcutDispatcher {
 
   dispatchActivePrefix(event: KeyboardEvent): boolean {
     this.capturedPrefixEvents.add(event);
+    if (isIMECompositionEvent(event)) {
+      if (event.repeat || MODIFIER_KEYS.has(event.key.toLowerCase()) || !this.hasActivePrefix()) {
+        return false;
+      }
+      const pending = this.getPrefixMatches(this.getMatches(), event);
+      this.clear();
+      return pending.length > 0 ? this.invoke(pending, event) : false;
+    }
     return this.dispatch(event);
   }
 
@@ -125,6 +130,14 @@ export class ShortcutDispatcher {
       }
     }
     return false;
+  }
+
+  private getPrefixMatches(matches: BindingMatch[], event: KeyboardEvent): BindingMatch[] {
+    return matches.filter((match) => (
+      match.chords.length === 2
+      && match.chords[0] === this.prefix
+      && eventMatchesShortcut(event, match.chords[1])
+    ));
   }
 
   private getMatches(): BindingMatch[] {
