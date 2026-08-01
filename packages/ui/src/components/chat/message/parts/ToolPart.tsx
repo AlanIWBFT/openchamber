@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { PatchDiff } from '@pierre/diffs/react';
 import { cn } from '@/lib/utils';
@@ -1152,7 +1153,11 @@ const TaskSummaryEntryRow = React.memo(({
 
     return (
         <ToolRevealOnMount animate={animateTailText} wipe>
-            <div className={cn('flex gap-2 min-w-0 w-full', isMobile ? 'items-start' : 'items-center')}>
+            {/* Single-line rows everywhere: the old mobile break-words mode
+                wrapped long shell commands into a hanging column and floated
+                the icon to the top of the block. Errors still wrap — they must
+                stay readable. */}
+            <div className={cn('flex gap-2 min-w-0 w-full', status === 'error' && isMobile ? 'items-start' : 'items-center')}>
                 <span className="flex-shrink-0 text-foreground/80">{getToolIcon(toolName)}</span>
                 <span
                     className="typography-meta text-foreground/80 flex-shrink-0"
@@ -1175,10 +1180,7 @@ const TaskSummaryEntryRow = React.memo(({
                         ) : (
                             <Text
                                 variant={animateTailText ? 'generate-effect' : 'static'}
-                                className={cn(
-                                    'typography-meta flex-1 min-w-0 text-muted-foreground/70',
-                                    isMobile ? 'whitespace-normal break-words' : 'truncate',
-                                )}
+                                className="typography-meta flex-1 min-w-0 truncate text-muted-foreground/70"
                                 style={{ color: 'var(--tools-description)' }}
                                 title={label}
                             >
@@ -1587,6 +1589,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
 }) => {
     const { t } = useI18n();
     const runtime = React.useContext(RuntimeAPIContext);
+    const mobileActions = useMobileAppActions();
     const { pierreTheme, pierreThemeType } = usePierreThemeConfig();
     const [diffViewMode, setDiffViewMode] = React.useState<DiffViewMode>('unified');
     const stateWithData = state as ToolStateWithMetadata;
@@ -1694,6 +1697,9 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                 return;
             }
             useUIStore.getState().openContextFileAtLine(currentDirectory, absolutePath, line ?? 1, 1);
+            // Dedicated mobile app: the pending file navigation is consumed by
+            // the FilesView pane — surface it (workspace drawer Files tab).
+            mobileActions?.openFiles();
         };
         const openEntryDiff = (entry: DiffPatchEntry, event: React.MouseEvent<HTMLButtonElement>) => {
             event.stopPropagation();
@@ -2421,13 +2427,16 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                 <div className={cn('flex gap-1.5', isMultiFileApplyPatch ? 'w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5' : 'items-center flex-shrink-0')}>
                     {}
                     <div
-                        className="relative h-3.5 w-3.5 flex-shrink-0 cursor-pointer"
+                        // h-5 matches StaticToolRow's icon column, so expandable
+                        // and static rows come out the same height (the 14px
+                        // icon alone left these rows ~2px shorter).
+                        className="relative h-5 w-3.5 flex-shrink-0 cursor-pointer"
                         onClick={(event) => { event.stopPropagation(); onToggle(part.id); }}
                     >
                         {}
                         <div
                             className={cn(
-                                'absolute inset-0 transition-opacity',
+                                'absolute inset-0 flex items-center justify-center transition-opacity',
                                 isExpanded && 'opacity-0',
                                 !isExpanded && 'group-hover/tool:opacity-0'
                             )}
