@@ -40,7 +40,11 @@ import { useGitStatus, useGitStore } from '@/stores/useGitStore';
 import { useMcpConfigStore, type McpDraft } from '@/stores/useMcpConfigStore';
 import { useMcpStore } from '@/stores/useMcpStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { listProjectWorktrees, worktreeMapsEqual } from '@/lib/worktrees/worktreeManager';
+import {
+  listProjectWorktrees,
+  partitionWorktreesByRegisteredProject,
+  worktreeMapsEqual,
+} from '@/lib/worktrees/worktreeManager';
 import { useUIStore } from '@/stores/useUIStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -1148,14 +1152,14 @@ export function MobileApp({ apis }: MobileAppProps) {
 
       if (cancelled) return;
 
-      const allWorktrees = Array.from(worktreesByProject.values()).flat();
+      const partitionedWorktreesByProject = partitionWorktreesByRegisteredProject(projects, worktreesByProject);
 
       // Skip update if nothing changed — see worktreeMapsEqual JSDoc.
       const currentByProject = useSessionUIStore.getState().availableWorktreesByProject;
-      if (!worktreeMapsEqual(worktreesByProject, currentByProject)) {
+      if (!worktreeMapsEqual(partitionedWorktreesByProject, currentByProject)) {
         useSessionUIStore.setState({
-          availableWorktrees: allWorktrees,
-          availableWorktreesByProject: worktreesByProject,
+          availableWorktrees: [...partitionedWorktreesByProject.values()].flat(),
+          availableWorktreesByProject: partitionedWorktreesByProject,
         });
       }
     };

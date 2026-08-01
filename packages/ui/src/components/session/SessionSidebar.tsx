@@ -47,7 +47,11 @@ import { SessionNodeItem } from './sidebar/SessionNodeItem';
 import type { SessionNodeRenderExtras } from './sidebar/sessionNodeItemUtils';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useShallow } from 'zustand/react/shallow';
-import { listProjectWorktrees, worktreeMapsEqual } from '@/lib/worktrees/worktreeManager';
+import {
+  listProjectWorktrees,
+  partitionWorktreesByRegisteredProject,
+  worktreeMapsEqual,
+} from '@/lib/worktrees/worktreeManager';
 import { checkIsGitRepository } from '@/lib/gitApi';
 import type { WorktreeMetadata } from '@/types/worktree';
 import type { SortableDragHandleProps } from './sidebar/sortableItems';
@@ -564,8 +568,8 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         return;
       }
 
-      const currentByProject = useSessionUIStore.getState().availableWorktreesByProject;
-      const worktreesByProject = new Map(currentByProject);
+      const knownWorktreesByProject = useSessionUIStore.getState().availableWorktreesByProject;
+      const worktreesByProject = new Map(knownWorktreesByProject);
       const unresolvedProjectPaths = new Set<string>();
 
       // Constrain fanout: previously `Promise.all(projects.map(...))` could
@@ -618,16 +622,17 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
           worktreesByProject.delete(projectPath);
         }
       }
-      const allWorktrees = [...worktreesByProject.values()].flat();
+      const partitionedWorktreesByProject = partitionWorktreesByRegisteredProject(projectEntries, worktreesByProject);
+      const allWorktrees = [...partitionedWorktreesByProject.values()].flat();
       // Newly appearing worktrees sort to the top of their project's
       // worktree list (see worktreeFirstSeen.ts).
       recordWorktreesSeen(allWorktrees.map((worktree) => worktree.path), Date.now());
 
       // Skip update if nothing changed — see worktreeMapsEqual JSDoc.
-      if (!worktreeMapsEqual(worktreesByProject, currentByProject)) {
+      if (!worktreeMapsEqual(partitionedWorktreesByProject, knownWorktreesByProject)) {
         useSessionUIStore.setState({
           availableWorktrees: allWorktrees,
-          availableWorktreesByProject: worktreesByProject,
+          availableWorktreesByProject: partitionedWorktreesByProject,
         });
       }
       setUnresolvedWorktreeProjectPaths(unresolvedProjectPaths);

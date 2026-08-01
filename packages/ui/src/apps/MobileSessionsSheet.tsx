@@ -45,7 +45,10 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
 import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, ProjectIconImage } from '@/lib/projectMeta';
 import { cn } from '@/lib/utils';
-import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
+import {
+  listProjectWorktrees,
+  partitionWorktreesByRegisteredProject,
+} from '@/lib/worktrees/worktreeManager';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { mergeLiveSessionWithGlobalSession, refreshGlobalSessions, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useMobileSessionExpansionStore } from '@/stores/useMobileSessionExpansionStore';
@@ -948,15 +951,15 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
         }),
       );
       if (cancelled) return;
-      const next = new Map<string, WorktreeMetadata[]>();
+      const discoveredWorktreesByProject = new Map<string, WorktreeMetadata[]>();
       const nextGitProjectPaths = new Set<string>();
       for (const entry of entries) {
         if (entry) {
-          next.set(entry[0], entry[1]);
+          discoveredWorktreesByProject.set(entry[0], entry[1]);
           if (entry[2]) nextGitProjectPaths.add(entry[0]);
         }
       }
-      setWorktreesByProject(next);
+      setWorktreesByProject(partitionWorktreesByRegisteredProject(projects, discoveredWorktreesByProject));
       setGitProjectPaths(nextGitProjectPaths);
     };
     void run();
