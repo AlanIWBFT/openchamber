@@ -399,7 +399,16 @@ export const useKeyboardShortcuts = () => {
         }
       }, Math.max(expiresAt - now, 0));
     };
+    const handleActivePrefixKeyDownCapture = (event: KeyboardEvent) => {
+      if (isTerminalEventTarget(event.target)) return;
+      if (!dispatcher.hasActivePrefix()) return;
+      if (dispatcher.dispatchActivePrefix(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (dispatcher.consumeCapturedPrefixEvent(event)) return;
       if (event.key === 'Escape' || isTerminalEventTarget(event.target)) return;
       const combo = getEffectiveShortcutCombo('cycle_agent', useUIStore.getState().shortcutOverrides);
       const backward = combo && !combo.includes('shift') ? normalizeCombo(`shift+${combo}`) : '';
@@ -456,6 +465,7 @@ export const useKeyboardShortcuts = () => {
     window.addEventListener('keyup', handleKeyUp, true);
     window.addEventListener('keydown', handleTerminalShortcutCapture, true);
     window.addEventListener('keydown', handleEscapeKeyDownCapture, true);
+    window.addEventListener('keydown', handleActivePrefixKeyDownCapture, true);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('blur', handleBlur);
     return () => {
@@ -463,6 +473,7 @@ export const useKeyboardShortcuts = () => {
       window.removeEventListener('keyup', handleKeyUp, true);
       window.removeEventListener('keydown', handleTerminalShortcutCapture, true);
       window.removeEventListener('keydown', handleEscapeKeyDownCapture, true);
+      window.removeEventListener('keydown', handleActivePrefixKeyDownCapture, true);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('blur', handleBlur);
     };

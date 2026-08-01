@@ -134,6 +134,35 @@ describe('ShortcutDispatcher', () => {
     expect(calls).toEqual(['x', 'y']);
   });
 
+  test('invalidates a prefix when shortcut suspension changes', () => {
+    const registry = new ShortcutRegistry();
+    const calls: string[] = [];
+    registry.register('open_command_palette', () => { calls.push('sequence'); });
+    const dispatcher = new ShortcutDispatcher({ registry, getBinding: () => 'g h' });
+
+    expect(dispatcher.dispatch(key('g'))).toBe(true);
+    const resume = registry.suspend();
+    expect(dispatcher.hasActivePrefix()).toBe(false);
+    expect(dispatcher.handleEscape()).toBe(false);
+    resume();
+    expect(dispatcher.dispatch(key('h'))).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  test('marks a second key dispatched from capture so bubble does not dispatch it again', () => {
+    const registry = new ShortcutRegistry();
+    const calls: string[] = [];
+    registry.register('open_command_palette', () => { calls.push('sequence'); });
+    const dispatcher = new ShortcutDispatcher({ registry, getBinding: () => 'g h' });
+    const secondKey = key('h');
+
+    dispatcher.dispatch(key('g'));
+    expect(dispatcher.dispatchActivePrefix(secondKey)).toBe(true);
+    expect(dispatcher.consumeCapturedPrefixEvent(secondKey)).toBe(true);
+    expect(dispatcher.consumeCapturedPrefixEvent(secondKey)).toBe(false);
+    expect(calls).toEqual(['sequence']);
+  });
+
   test('stops after the first handler that accepts a conflicting binding', () => {
     const registry = new ShortcutRegistry();
     const calls: string[] = [];

@@ -9,6 +9,8 @@ interface RegisteredHandler {
 /** Active application command handlers, keyed by shortcut action ID. */
 export class ShortcutRegistry {
   private readonly handlers = new Map<ShortcutActionId, RegisteredHandler[]>();
+  private suspensionCount = 0;
+  private suspensionVersion = 0;
 
   register(actionId: ShortcutActionId, handler: ShortcutHandler): () => void {
     const registration = { handler };
@@ -28,7 +30,27 @@ export class ShortcutRegistry {
   }
 
   get(actionId: ShortcutActionId): ShortcutHandler | undefined {
+    if (this.suspensionCount > 0) return undefined;
     return this.handlers.get(actionId)?.[0]?.handler;
+  }
+
+  /** Temporarily disables every registered application shortcut. */
+  suspend(): () => void {
+    this.suspensionCount += 1;
+    this.suspensionVersion += 1;
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      this.suspensionCount -= 1;
+      if (this.suspensionCount === 0) {
+        this.suspensionVersion += 1;
+      }
+    };
+  }
+
+  getSuspensionVersion(): number {
+    return this.suspensionVersion;
   }
 
   actionIds(): IterableIterator<ShortcutActionId> {

@@ -18,7 +18,7 @@ Component interaction keys that are not application commands, such as list navig
 - `config.ts` owns grouped declarations and the final `SHORTCUT_SCHEMA`.
 - `schema.ts` derives action and category types and provides schema lookup and effective binding resolution.
 - `bindings.ts` owns chord parsing, normalization, display, browser-risk checks, and conflict rules.
-- `registry.ts` owns the active handler for each action ID.
+- `registry.ts` owns the active handler for each action ID and stack-safe temporary suspension of all application handlers.
 - `dispatcher.ts` resolves current bindings and turns keyboard events into registered command calls.
 - `useKeybind.ts` ties registrations to React component lifetimes while keeping handlers current without re-registering after every render.
 - Runtime hooks install one dispatcher listener for their window. The main application and Mini Chat have separate windows but use the same contracts.
@@ -35,7 +35,11 @@ The settings recorder also stops at two chords. It keeps the recording local unt
 
 # Dispatching
 
-`ShortcutDispatcher` is DOM-independent. It invokes only currently registered handlers, resolves bindings when dispatching, and holds an active sequence prefix for 1500ms. The application keydown route clears that prefix on window blur and consumes Escape only when it cancels a prefix. A handler returns `false` to leave the completed binding unconsumed.
+`ShortcutDispatcher` is DOM-independent. It invokes only currently registered handlers, resolves bindings when dispatching, and holds an active sequence prefix for 1500ms. The application keydown route clears that prefix on window blur and consumes Escape only when it cancels a prefix. A handler returns `false` to leave the completed binding unconsumed. When a sequence prefix is active, only its second key is dispatched during window capture so local input handlers cannot block it; unconsumed keys retain local input behavior, while consumed keys are prevented and stopped. Normal application shortcuts remain window-bubble listeners.
+
+`shortcutRegistry.suspend()` disables all application handlers and returns an idempotent cleanup. Suspensions nest; handlers resume only after the final cleanup. Starting or ending a suspension invalidates every pending dispatcher prefix, so stale second keys and Escape cannot consume it.
+
+Shared `DropdownMenu` can opt into this boundary with `disableGlobalShortcuts`; it suspends while open for both controlled and uncontrolled menus and resumes on close or unmount.
 
 Terminal capture, Escape abort priming, and the shifted reverse-agent chord are input-boundary exceptions. They preserve their target-specific semantics and invoke the registered application handler rather than duplicating command behavior.
 

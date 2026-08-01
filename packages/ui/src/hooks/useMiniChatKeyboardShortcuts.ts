@@ -98,14 +98,24 @@ export const useMiniChatKeyboardShortcuts = () => {
   });
 
   React.useEffect(() => {
+    const handleActivePrefixKeyDownCapture = (event: KeyboardEvent) => {
+      if (!dispatcher.hasActivePrefix()) return;
+      if (dispatcher.dispatchActivePrefix(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (dispatcher.consumeCapturedPrefixEvent(event)) return;
       if (dispatcher.dispatch(event)) event.preventDefault();
     };
     const handleBlur = () => dispatcher.handleBlur();
 
+    window.addEventListener('keydown', handleActivePrefixKeyDownCapture, true);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('blur', handleBlur);
     return () => {
+      window.removeEventListener('keydown', handleActivePrefixKeyDownCapture, true);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('blur', handleBlur);
     };

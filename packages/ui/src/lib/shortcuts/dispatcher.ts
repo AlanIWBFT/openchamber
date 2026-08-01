@@ -29,6 +29,8 @@ export class ShortcutDispatcher {
   private readonly timeoutMs: number;
   private prefix: string | undefined;
   private expiresAt = 0;
+  private prefixSuspensionVersion = 0;
+  private readonly capturedPrefixEvents = new WeakSet<KeyboardEvent>();
 
   constructor(private readonly options: ShortcutDispatcherOptions) {
     this.now = options.now ?? Date.now;
@@ -39,12 +41,10 @@ export class ShortcutDispatcher {
     if (event.repeat || event.isComposing || MODIFIER_KEYS.has(event.key.toLowerCase())) {
       return false;
     }
-    if (event.key === 'Escape' && this.prefix) {
+    if (event.key === 'Escape' && this.hasActivePrefix()) {
       return this.handleEscape();
     }
-    if (this.prefix && this.now() >= this.expiresAt) {
-      this.clear();
-    }
+    this.hasActivePrefix();
 
     const matches = this.getMatches();
     if (this.prefix) {
@@ -73,6 +73,7 @@ export class ShortcutDispatcher {
     if (leader) {
       this.prefix = leader.chords[0];
       this.expiresAt = this.now() + this.timeoutMs;
+      this.prefixSuspensionVersion = this.options.registry.getSuspensionVersion();
       return true;
     }
     return false;
@@ -81,6 +82,7 @@ export class ShortcutDispatcher {
   clear(): void {
     this.prefix = undefined;
     this.expiresAt = 0;
+    this.prefixSuspensionVersion = 0;
   }
 
   handleBlur(): void {
@@ -88,9 +90,32 @@ export class ShortcutDispatcher {
   }
 
   handleEscape(): boolean {
-    const hadPrefix = Boolean(this.prefix);
+    const hadPrefix = this.hasActivePrefix();
     this.clear();
     return hadPrefix;
+  }
+
+  hasActivePrefix(): boolean {
+    if (!this.prefix) return false;
+    if (
+      this.now() >= this.expiresAt
+      || this.prefixSuspensionVersion !== this.options.registry.getSuspensionVersion()
+    ) {
+      this.clear();
+      return false;
+    }
+    return true;
+  }
+
+  dispatchActivePrefix(event: KeyboardEvent): boolean {
+    this.capturedPrefixEvents.add(event);
+    return this.dispatch(event);
+  }
+
+  consumeCapturedPrefixEvent(event: KeyboardEvent): boolean {
+    if (!this.capturedPrefixEvents.has(event)) return false;
+    this.capturedPrefixEvents.delete(event);
+    return true;
   }
 
   private invoke(matches: BindingMatch[], event: KeyboardEvent): boolean {

@@ -24,6 +24,23 @@ import { useI18n } from '@/lib/i18n';
 
 const MODIFIER_KEYS = new Set(['shift', 'control', 'alt', 'meta']);
 
+interface RecordingKeyboardEvent {
+  altKey: boolean;
+  ctrlKey: boolean;
+  isComposing: boolean;
+  key: string;
+  metaKey: boolean;
+  repeat: boolean;
+  shiftKey: boolean;
+}
+
+interface ShortcutRecordingState {
+  chords: ShortcutCombo[];
+  livePreview: ShortcutCombo | null;
+}
+
+type ShortcutRecordingAction = 'cancel' | 'none' | 'save';
+
 interface ShortcutRecordingDialogProps {
   action: CustomizableShortcutAction | null;
   actions: ReadonlyArray<CustomizableShortcutAction>;
@@ -36,7 +53,15 @@ interface ShortcutRecordingDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function keyboardEventToCombo(event: React.KeyboardEvent<HTMLDivElement>): ShortcutCombo | null {
+function getModifierPreview(event: RecordingKeyboardEvent): ShortcutCombo | null {
+  const parts: string[] = [];
+  if (event.metaKey || event.ctrlKey) parts.push('mod');
+  if (event.shiftKey) parts.push('shift');
+  if (event.altKey) parts.push('alt');
+  return parts.length > 0 ? normalizeCombo(parts.join('+')) : null;
+}
+
+function keyboardEventToCombo(event: RecordingKeyboardEvent): ShortcutCombo | null {
   if (MODIFIER_KEYS.has(event.key.toLowerCase())) return null;
 
   const key = keyToShortcutToken(event.key);
@@ -61,6 +86,37 @@ function modifierKeyUpToCombo(event: React.KeyboardEvent<HTMLDivElement>): Short
   return parts.length > 0 ? normalizeCombo(parts.join('+')) : null;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- tested pure recording state transition
+export function updateShortcutRecordingState(
+  state: ShortcutRecordingState,
+  event: RecordingKeyboardEvent,
+  phase: 'keydown' | 'keyup',
+): { action: ShortcutRecordingAction; state: ShortcutRecordingState } {
+  if (event.repeat || event.isComposing) return { action: 'none', state };
+  if (phase === 'keyup') {
+    return { action: 'none', state: { ...state, livePreview: getModifierPreview(event) } };
+  }
+
+  if (event.key === 'Escape') return { action: 'cancel', state };
+  if (event.key === 'Enter') return { action: 'save', state };
+  if (event.key === 'Backspace') {
+    return { action: 'none', state: { chords: state.chords.slice(0, -1), livePreview: null } };
+  }
+
+  const chord = keyboardEventToCombo(event);
+  if (chord) {
+    return {
+      action: 'none',
+      state: {
+        chords: state.chords.length < 2 ? [...state.chords, chord] : state.chords,
+        livePreview: null,
+      },
+    };
+  }
+
+  return { action: 'none', state: { ...state, livePreview: getModifierPreview(event) } };
+}
+
 export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = ({
   action,
   actions,
@@ -70,15 +126,16 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
 }) => {
   const { t } = useI18n();
   const actionLabel = (shortcut: CustomizableShortcutAction) => t(shortcut.settingsLabelKey);
-  const [chords, setChords] = React.useState<ShortcutCombo[]>([]);
+  const [recording, setRecording] = React.useState<ShortcutRecordingState>({ chords: [], livePreview: null });
   const recordingRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (!action) return;
-    setChords([]);
+    setRecording({ chords: [], livePreview: null });
+    recordingRef.current?.focus();
   }, [action]);
 
-  const combo = normalizeCombo(chords.join(' '));
+  const combo = normalizeCombo(recording.chords.join(' '));
   const conflicts = React.useMemo(() => {
     if (!action || !combo) return [];
     const result: Array<{ action: CustomizableShortcutAction; kind: 'exact' | 'prefix' }> = [];
@@ -96,95 +153,92 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
   const exactConflict = conflicts.find((conflict) => conflict.kind === 'exact');
 
   const close = () => onOpenChange(false);
+  const save = () => {
+    if (!action || !combo || prefixConflict || exactConflict) return;
+    onSave(action.id, combo);
+    close();
+  };
+  const handleRecordingEvent = (event: React.KeyboardEvent<HTMLDivElement>, phase: 'keydown' | 'keyup') => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (phase === 'keyup' && action?.id === 'switch_context_surface' && recording.chords.length === 0) {
+      const modifierCombo = modifierKeyUpToCombo(event);
+      if (modifierCombo) {
+        setRecording({ chords: [modifierCombo], livePreview: null });
+        return;
+      }
+    }
+    const result = updateShortcutRecordingState(recording, {
+      altKey: event.altKey,
+      ctrlKey: event.ctrlKey,
+      isComposing: event.nativeEvent.isComposing,
+      key: event.key,
+      metaKey: event.metaKey,
+      repeat: event.repeat,
+      shiftKey: event.shiftKey,
+    }, phase);
+    setRecording(action?.id === 'switch_context_surface' && result.state.chords.length > 1
+      ? { ...result.state, chords: result.state.chords.slice(0, 1) }
+      : result.state);
+    if (result.action === 'cancel') close();
+    if (result.action === 'save') save();
+  };
 
   return (
     <Dialog open={action !== null} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-w-md"
-        initialFocus={recordingRef}
-      >
+      <DialogContent className="max-w-md" initialFocus={recordingRef}>
         <DialogHeader>
           <DialogTitle>
-            {action
-              ? t('settings.openchamber.keyboardShortcuts.dialog.title', {
-                  action: actionLabel(action),
-                })
-              : ''}
+            {action ? t('settings.openchamber.keyboardShortcuts.dialog.title', { action: actionLabel(action) }) : ''}
           </DialogTitle>
           <DialogDescription>{t('settings.openchamber.keyboardShortcuts.dialog.instructions')}</DialogDescription>
         </DialogHeader>
 
         <div
-          className="space-y-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-h-28 items-center justify-center rounded-lg border border-border bg-[var(--surface-elevated)] px-4 py-5 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring"
           tabIndex={0}
           ref={recordingRef}
-          onKeyDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-
-            if (event.key === 'Escape') {
-              close();
-              return;
-            }
-            if (event.key === 'Backspace') {
-              setChords((current) => current.slice(0, -1));
-              return;
-            }
-
-            const chord = keyboardEventToCombo(event);
-            if (chord) {
-              setChords((current) => action?.id === 'switch_context_surface'
-                ? [chord]
-                : current.length < 2 ? [...current, chord] : current);
-            }
-          }}
-          onKeyUp={(event) => {
-            if (action?.id !== 'switch_context_surface' || chords.length > 0) return;
-            const combo = modifierKeyUpToCombo(event);
-            if (!combo) return;
-            event.preventDefault();
-            event.stopPropagation();
-            setChords([combo]);
-          }}
+          onKeyDown={(event) => handleRecordingEvent(event, 'keydown')}
+          onKeyUp={(event) => handleRecordingEvent(event, 'keyup')}
+          onBlur={() => setRecording((current) => ({ ...current, livePreview: null }))}
         >
-          {[0, 1].map((index) => (
-            <div key={index} className="flex items-center justify-between gap-3">
-              <span className="typography-ui-label text-foreground">
-                {t(index === 0
-                  ? 'settings.openchamber.keyboardShortcuts.dialog.firstChord'
-                  : 'settings.openchamber.keyboardShortcuts.dialog.secondChord')}
-              </span>
-              <kbd
-                className="min-w-32 rounded-md border border-border bg-muted px-3 py-2 text-center typography-meta font-mono text-foreground"
-              >
-                {chords[index]
-                  ? formatShortcutForDisplay(chords[index])
-                  : t('settings.openchamber.keyboardShortcuts.dialog.recording')}
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {recording.chords.map((chord, index) => (
+              <kbd key={`${chord}-${index}`} className="rounded-md border border-border bg-muted px-3 py-2 typography-ui-label font-mono text-foreground">
+                {formatShortcutForDisplay(chord)}
               </kbd>
-            </div>
-          ))}
-          {prefixConflict ? (
-            <p className="typography-meta text-[var(--status-error)]">
-              {t('settings.openchamber.keyboardShortcuts.error.prefixConflict', { action: actionLabel(prefixConflict.action) })}
-            </p>
-          ) : null}
-          {exactConflict && !prefixConflict ? (
-            <p className="typography-meta text-[var(--status-warning)]">
-              {t('settings.openchamber.keyboardShortcuts.error.exactConflict', { action: actionLabel(exactConflict.action) })}
-            </p>
-          ) : null}
-          {combo && isRiskyBrowserShortcut(combo) ? (
-            <p className="typography-meta text-[var(--status-warning)]">
-              {t('settings.openchamber.keyboardShortcuts.warning.riskyBrowserShortcut')}
-            </p>
-          ) : null}
+            ))}
+            {recording.livePreview ? (
+              <kbd className="rounded-md border border-dashed border-border bg-muted px-3 py-2 typography-ui-label font-mono text-muted-foreground">
+                {formatShortcutForDisplay(recording.livePreview)}
+              </kbd>
+            ) : null}
+            {recording.chords.length === 0 && !recording.livePreview ? (
+              <span className="typography-ui-label text-muted-foreground">
+                {t('settings.openchamber.keyboardShortcuts.dialog.recording')}
+              </span>
+            ) : null}
+          </div>
         </div>
 
-        <DialogFooter>
-          <Button type="button" variant="ghost" size="sm" onClick={close}>
-            {t('settings.common.actions.cancel')}
-          </Button>
-          {exactConflict && !prefixConflict ? (
+        {prefixConflict ? (
+          <p className="typography-meta text-[var(--status-error)]">
+            {t('settings.openchamber.keyboardShortcuts.error.prefixConflict', { action: actionLabel(prefixConflict.action) })}
+          </p>
+        ) : null}
+        {exactConflict && !prefixConflict ? (
+          <p className="typography-meta text-[var(--status-warning)]">
+            {t('settings.openchamber.keyboardShortcuts.error.exactConflict', { action: actionLabel(exactConflict.action) })}
+          </p>
+        ) : null}
+        {combo && isRiskyBrowserShortcut(combo) ? (
+          <p className="typography-meta text-[var(--status-warning)]">
+            {t('settings.openchamber.keyboardShortcuts.warning.riskyBrowserShortcut')}
+          </p>
+        ) : null}
+
+        {exactConflict && !prefixConflict ? (
+          <DialogFooter>
             <Button type="button" size="sm" onClick={() => {
               if (!action) return;
               onSave(action.id, combo, exactConflict.action.id);
@@ -192,16 +246,8 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
             }}>
               {t('settings.openchamber.keyboardShortcuts.actions.replaceAndSave')}
             </Button>
-          ) : (
-            <Button type="button" size="sm" disabled={!combo || Boolean(prefixConflict)} onClick={() => {
-              if (!action) return;
-              onSave(action.id, combo);
-              close();
-            }}>
-              {t('settings.common.actions.saveChanges')}
-            </Button>
-          )}
-        </DialogFooter>
+          </DialogFooter>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

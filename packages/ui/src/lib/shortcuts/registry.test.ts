@@ -25,3 +25,20 @@ test('a later registration takes over after the first unregisters', () => {
   first();
   expect(registry.get('open_settings')).toBe(secondHandler);
 });
+
+test('suspends all handlers until every idempotent cleanup completes', () => {
+  const registry = new ShortcutRegistry();
+  const handler = () => undefined;
+  registry.register('open_settings', handler);
+
+  const resumeFirst = registry.suspend();
+  const resumeSecond = registry.suspend();
+  expect(registry.get('open_settings')).toBe(undefined);
+
+  resumeFirst();
+  resumeFirst();
+  expect(registry.get('open_settings')).toBe(undefined);
+  resumeSecond();
+  resumeSecond();
+  expect(registry.get('open_settings')).toBe(handler);
+});
