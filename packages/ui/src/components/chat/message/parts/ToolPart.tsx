@@ -2228,23 +2228,12 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                 <div className={cn('flex gap-1.5', isMultiFileApplyPatch ? 'w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5' : 'items-center flex-shrink-0')}>
                     {isMultiFileApplyPatch ? (
                         <>
-                            <Button
-                                variant="ghost"
-                                size="xs"
-                                className="gap-1.5 normal-case"
-                                aria-expanded={isExpanded}
-                                aria-label={displayName}
-                                title={displayName}
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    onToggle(part.id);
-                                }}
-                            >
+                            <div className="flex h-5 flex-shrink-0 items-center gap-1.5">
                                 <span className="relative h-3.5 w-3.5 flex-shrink-0">
                                     <span className={cn(
                                         'absolute inset-0 flex items-center justify-center transition-opacity',
                                         isExpanded ? 'opacity-0' : 'group-hover/tool:opacity-0',
-                                    )}>
+                                    )} style={iconStyle}>
                                         {getToolIcon(normalizedPartTool || part.tool)}
                                     </span>
                                     <Icon
@@ -2263,7 +2252,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                 >
                                     {displayName}
                                 </MinDurationShineText>
-                            </Button>
+                            </div>
                             <ApplyPatchFileButtons
                                 metadata={metadata}
                                 animate={animateTailText}
