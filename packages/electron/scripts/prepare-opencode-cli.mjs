@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveTargetArchitecture } from './target-architecture.mjs';
+import { resolveOpenCodeCliTarget, resolveTargetArchitecture } from './target-architecture.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
@@ -40,23 +40,12 @@ const readPinnedSdkVersion = () => {
 };
 
 const artifactForPlatform = (platform, targetArchitecture) => {
-  const arch = targetArchitecture.opencode;
+  const arch = resolveOpenCodeCliTarget({ platform, targetArchitecture }).architecture;
   if (platform === 'darwin') {
     if (arch === 'arm64') return { name: 'opencode-darwin-arm64.zip', binary: 'opencode' };
     if (arch === 'x64') return { name: 'opencode-darwin-x64-baseline.zip', binary: 'opencode' };
   }
   if (platform === 'win32') {
-    // TEMPORARY WORKAROUND — Windows ARM64: native opencode.exe fails with a Bun
-    // FFI/TinyCC dlopen error (https://github.com/anomalyco/opencode/issues/19130).
-    // Bundle x64-baseline instead (runs under x64 emulation); OpenCode self-upgrade
-    // is disabled elsewhere so it can't overwrite with the broken ARM64 build.
-    // Remove this block and restore the original below when the upstream issue
-    // is resolved.
-    // --- ORIGINAL (restore when ARM64 is fixed) ---
-    // if (arch === 'arm64') return { name: 'opencode-windows-arm64.zip', binary: 'opencode.exe' };
-    // if (arch === 'x64') return { name: 'opencode-windows-x64-baseline.zip', binary: 'opencode.exe' };
-    // --- END ORIGINAL ---
-    if (arch === 'arm64') return { name: 'opencode-windows-x64-baseline.zip', binary: 'opencode.exe' };
     if (arch === 'x64') return { name: 'opencode-windows-x64-baseline.zip', binary: 'opencode.exe' };
   }
   if (platform === 'linux') {
@@ -130,7 +119,9 @@ const stageBinary = (source, destination, expectedVersion) => {
 };
 
 const prepareFromLocalSource = ({ sourceRoot, version, targetArchitecture, outputBinary }) => {
-  if (targetArchitecture.node !== process.arch) {
+  const cliTarget = resolveOpenCodeCliTarget({ platform: process.platform, targetArchitecture });
+  const isWindowsArm64Workaround = process.platform === 'win32' && targetArchitecture.node === 'arm64';
+  if (targetArchitecture.node !== process.arch && !isWindowsArm64Workaround) {
     throw new Error(
       `Local OpenCode source builds must target the native architecture: host is ${process.arch}, target is ${targetArchitecture.node}`,
     );
@@ -142,8 +133,9 @@ const prepareFromLocalSource = ({ sourceRoot, version, targetArchitecture, outpu
     throw new Error(`Local OpenCode package not found: ${opencodePackagePath}`);
   }
 
-  const args = ['run', '--cwd', opencodePackageRoot, 'build', '--single', '--skip-embed-web-ui'];
-  if (targetArchitecture.node === 'x64') args.push('--baseline');
+  const args = ['run', '--cwd', opencodePackageRoot, 'build', '--single', `--target=${cliTarget.buildTarget}`];
+  if (cliTarget.baseline) args.push('--baseline');
+  args.push('--skip-embed-web-ui');
   const channel = 'dev';
 
   console.log(`[electron] building bundled OpenCode CLI from local source (${channel}): ${sourceRoot}`);
@@ -222,6 +214,7 @@ const main = async () => {
   }
 
   const targetArchitecture = resolveTargetArchitecture();
+  const cliTarget = resolveOpenCodeCliTarget({ platform: process.platform, targetArchitecture });
   const artifact = artifactForPlatform(process.platform, targetArchitecture);
   const outputBinary = outputBinaryPath(artifact.binary);
   const localSourceDir = process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim();
@@ -240,7 +233,7 @@ const main = async () => {
     return;
   }
 
-  const cacheDir = path.join(cacheRoot, version, `${process.platform}-${targetArchitecture.opencode}`);
+  const cacheDir = path.join(cacheRoot, version, `${process.platform}-${cliTarget.architecture}`);
   const archivePath = path.join(cacheDir, artifact.name);
   const url = `https://github.com/anomalyco/opencode/releases/download/v${version}/${artifact.name}`;
   if (!fs.existsSync(archivePath)) {
