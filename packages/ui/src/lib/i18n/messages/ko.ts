@@ -1114,7 +1114,7 @@ export const dict: Record<I18nKey, string> = {
   'walkthrough.action.next': '다음 단계',
   'walkthrough.action.previous': '이전 단계',
   'walkthrough.action.refresh': '새로 고침',
-  'walkthrough.action.open': 'AI 워크스루',
+  'walkthrough.action.open': '워크스루',
   'walkthrough.stage.collecting': '변경 사항을 모으는 중',
   'walkthrough.stage.asking': '모델을 기다리는 중',
   'walkthrough.stage.assembling': '워크스루를 조립하는 중',

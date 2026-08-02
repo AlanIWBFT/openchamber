@@ -938,7 +938,7 @@ export const dict = {
   'walkthrough.action.next': 'Étape suivante',
   'walkthrough.action.previous': 'Étape précédente',
   'walkthrough.action.refresh': 'Actualiser',
-  'walkthrough.action.open': 'Parcours IA',
+  'walkthrough.action.open': 'Parcours',
   'walkthrough.stage.collecting': 'Collecte des modifications',
   'walkthrough.stage.asking': 'En attente du modèle',
   'walkthrough.stage.assembling': 'Assemblage du parcours',

@@ -1110,7 +1110,7 @@ export const dict: Record<I18nKey, string> = {
   'walkthrough.action.next': '次のステップ',
   'walkthrough.action.previous': '前のステップ',
   'walkthrough.action.refresh': '更新',
-  'walkthrough.action.open': 'AI ウォークスルー',
+  'walkthrough.action.open': 'ウォークスルー',
   'walkthrough.stage.collecting': '変更を集めています',
   'walkthrough.stage.asking': 'モデルの応答を待っています',
   'walkthrough.stage.assembling': 'ウォークスルーを組み立てています',

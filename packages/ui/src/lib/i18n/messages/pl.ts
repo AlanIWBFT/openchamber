@@ -1426,7 +1426,7 @@ export const dict: Record<I18nKey, string> = {
   'walkthrough.action.next': 'Następny krok',
   'walkthrough.action.previous': 'Poprzedni krok',
   'walkthrough.action.refresh': 'Odśwież',
-  'walkthrough.action.open': 'Przewodnik AI',
+  'walkthrough.action.open': 'Przewodnik',
   'walkthrough.stage.collecting': 'Zbieram zmiany',
   'walkthrough.stage.asking': 'Czekam na model',
   'walkthrough.stage.assembling': 'Składam przewodnik',

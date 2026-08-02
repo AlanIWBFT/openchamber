@@ -1113,7 +1113,7 @@ export const dict = {
   'walkthrough.action.next': 'Next step',
   'walkthrough.action.previous': 'Previous step',
   'walkthrough.action.refresh': 'Refresh',
-  'walkthrough.action.open': 'AI walkthrough',
+  'walkthrough.action.open': 'Walkthrough',
   'walkthrough.stage.collecting': 'Collecting the changes',
   'walkthrough.stage.asking': 'Waiting on the model',
   'walkthrough.stage.assembling': 'Assembling the walkthrough',

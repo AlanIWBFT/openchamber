@@ -1114,7 +1114,7 @@ export const dict: Record<I18nKey, string> = {
   'walkthrough.action.next': '下一步',
   'walkthrough.action.previous': '上一步',
   'walkthrough.action.refresh': '刷新',
-  'walkthrough.action.open': 'AI 导读',
+  'walkthrough.action.open': '导读',
   'walkthrough.stage.collecting': '正在收集改动',
   'walkthrough.stage.asking': '正在等待模型',
   'walkthrough.stage.assembling': '正在组装导读',
