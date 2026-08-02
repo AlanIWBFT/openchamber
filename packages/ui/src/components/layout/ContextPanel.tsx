@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
+import { DiffViewIcon } from '@/components/icons/DiffIcon';
 import { Button } from '@/components/ui/button';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { DiffView } from '@/components/views/DiffView';
@@ -246,7 +247,7 @@ const getTabIcon = (tab: { mode: ContextPanelMode; targetPath: string | null }):
   }
 
   if (tab.mode === 'diff') {
-    return <Icon name="arrow-left-right" className="h-3.5 w-3.5" />;
+    return <DiffViewIcon className="h-3.5 w-3.5" />;
   }
 
   if (tab.mode === 'walkthrough') {
@@ -258,7 +259,7 @@ const getTabIcon = (tab: { mode: ContextPanelMode; targetPath: string | null }):
   }
 
   if (tab.mode === 'pr') {
-    return <Icon name="git-pull-request" className="h-3.5 w-3.5" />;
+    return <Icon name="github" className="h-3.5 w-3.5" />;
   }
 
   if (tab.mode === 'notes') {

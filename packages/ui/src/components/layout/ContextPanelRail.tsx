@@ -17,6 +17,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 import { Icon } from '@/components/icon/Icon';
+import { DiffViewIcon } from '@/components/icons/DiffIcon';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useDeviceInfo } from '@/lib/device';
@@ -80,7 +81,11 @@ const ContextPanelRailItem: React.FC<RailItemProps> = ({
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >
-            <Icon name={surface.icon} className="h-[18px] w-[18px]" />
+            {surface.id === 'diff' ? (
+              <DiffViewIcon />
+            ) : (
+              <Icon name={surface.icon} className="h-[18px] w-[18px]" />
+            )}
             {showActivityDot ? (
               <span
                 aria-hidden="true"
