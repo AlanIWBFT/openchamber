@@ -112,7 +112,7 @@ The macOS menu bar item is enabled by default and can be disabled in General set
 
 ## Bundled OpenCode CLI
 
-Packaged Desktop builds include an OpenCode CLI that matches the pinned `@opencode-ai/sdk` version in the root `package.json`. By default, `prepare:opencode-cli` downloads the platform-specific release artifact, caches it under `packages/electron/.cache/opencode-cli`, stages `opencode` or `opencode.exe` into `resources/opencode-cli`, and verifies `opencode --version` before packaging. Set `OPENCHAMBER_OPENCODE_SOURCE_DIR` to build and stage the CLI from a local OpenCode checkout instead; the source build uses channel `dev` and omits OpenCode's unused embedded Web UI. Re-running the default path is fast when the staged binary already matches the pinned version.
+Packaged Desktop builds include an OpenCode CLI that matches the pinned `@opencode-ai/sdk` version in the root `package.json`. By default, `prepare:opencode-cli` downloads the platform-specific release artifact, caches it under `packages/electron/.cache/opencode-cli`, stages `opencode` or `opencode.exe` into `resources/opencode-cli`, and verifies `opencode --version` before packaging. Windows ARM64 packages use the x64-baseline CLI under Windows emulation because the native ARM64 CLI currently fails in Bun FFI/TinyCC. Set `OPENCHAMBER_OPENCODE_SOURCE_DIR` to build and stage the CLI from a local OpenCode checkout instead; the source build uses channel `dev`, selects the same explicit platform target (including `windows-x64 --baseline` for Windows ARM64), and omits OpenCode's unused embedded Web UI. Re-running the default path is fast when the staged binary already matches the pinned version.
 
 Managed local Desktop startup prefers OpenCode binaries in this order:
 
