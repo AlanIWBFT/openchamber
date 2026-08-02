@@ -2,12 +2,22 @@ import React from 'react';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { AgentSelector } from '@/components/sections/commands/AgentSelector';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
+import {
+  SettingsSection,
+  SettingsFieldRow,
+  SettingsCheckboxRow,
+  SettingsInset,
+  SettingsGroupTitle,
+  SETTINGS_CUSTOM_TRIGGER_CLASS,
+  SETTINGS_SELECT_ROW_TRIGGER_CLASS,
+  SETTINGS_SELECT_SIZE,
+  SETTINGS_OPTION_STACK_CLASS,
+} from '@/components/sections/shared/SettingsSection';
+import { SettingsInfoHint } from '@/components/sections/shared/SettingsInfoHint';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -35,6 +45,7 @@ export const DefaultsSettings: React.FC = () => {
   const showDeletionDialog = useUIStore((state) => state.showDeletionDialog);
   const setShowDeletionDialog = useUIStore((state) => state.setShowDeletionDialog);
   const providers = useConfigStore((state) => state.providers);
+  const modelsMetadata = useConfigStore((state) => state.modelsMetadata);
 
   const [defaultModel, setDefaultModel] = React.useState<string | undefined>();
   const [defaultVariant, setDefaultVariant] = React.useState<string | undefined>();
@@ -42,6 +53,7 @@ export const DefaultsSettings: React.FC = () => {
   const [smallModelUseDefault, setSmallModelUseDefault] = React.useState(true);
   const [smallModelOverride, setSmallModelOverride] = React.useState<string | undefined>();
   const [smallModelProviders, setSmallModelProviders] = React.useState<string[] | undefined>();
+  const [walkthroughModelOverride, setWalkthroughModelOverride] = React.useState<string | undefined>();
   const [isLoading, setIsLoading] = React.useState(true);
 
   const parsedModel = React.useMemo(() => getDisplayModel(defaultModel), [defaultModel]);
@@ -55,6 +67,7 @@ export const DefaultsSettings: React.FC = () => {
           defaultAgent?: string;
           smallModelUseDefault?: boolean;
           smallModelOverride?: string;
+          walkthroughModelOverride?: string;
         } | null = null;
 
         if (!data) {
@@ -74,6 +87,8 @@ export const DefaultsSettings: React.FC = () => {
                   defaultAgent: typeof settings.defaultAgent === 'string' ? settings.defaultAgent : undefined,
                   smallModelUseDefault: typeof raw.smallModelUseDefault === 'boolean' ? raw.smallModelUseDefault : undefined,
                   smallModelOverride: typeof raw.smallModelOverride === 'string' ? raw.smallModelOverride : undefined,
+                  walkthroughModelOverride:
+                    typeof raw.walkthroughModelOverride === 'string' ? raw.walkthroughModelOverride : undefined,
                 };
               }
             } catch {
@@ -112,6 +127,9 @@ export const DefaultsSettings: React.FC = () => {
           if (typeof data.smallModelUseDefault === 'boolean') setSmallModelUseDefault(data.smallModelUseDefault);
           if (typeof data.smallModelOverride === 'string' && data.smallModelOverride.trim()) {
             setSmallModelOverride(data.smallModelOverride.trim());
+          }
+          if (typeof data.walkthroughModelOverride === 'string' && data.walkthroughModelOverride.trim()) {
+            setWalkthroughModelOverride(data.walkthroughModelOverride.trim());
           }
         }
       } catch (error) {
@@ -226,10 +244,43 @@ export const DefaultsSettings: React.FC = () => {
     []
   );
 
+  const handleWalkthroughModelOverrideChange = React.useCallback(
+    async (providerId: string, modelId: string) => {
+      const newValue = providerId && modelId ? `${providerId}/${modelId}` : undefined;
+      setWalkthroughModelOverride(newValue);
+      try {
+        // Clearing the picker is how the user goes back to the small model, so
+        // an empty value is a real choice rather than a no-op.
+        await updateDesktopSettings({ walkthroughModelOverride: newValue ?? '' });
+      } catch (error) {
+        console.warn('Failed to save walkthrough model override:', error);
+      }
+    },
+    []
+  );
+
+  // The walkthrough cannot work at all without schema-shaped output, so models
+  // the catalog says cannot do it are hidden rather than offered and then
+  // refused. A missing capability is not a "no": roughly half the catalog omits
+  // the field, and those models usually work.
+  const isStructuredOutputCapable = React.useCallback(
+    (providerId: string, modelId: string) =>
+      modelsMetadata.get(`${providerId}/${modelId}`)?.structured_output !== false,
+    [modelsMetadata]
+  );
+
   const parsedSmallModel = React.useMemo(() => getDisplayModel(smallModelOverride), [smallModelOverride]);
+  const parsedWalkthroughModel = React.useMemo(
+    () => getDisplayModel(walkthroughModelOverride),
+    [walkthroughModelOverride]
+  );
 
   React.useEffect(() => {
-    if (smallModelUseDefault || smallModelProviders !== undefined) return;
+    // Both pickers filter by the same authenticated-provider list, so either
+    // one being open is reason enough to fetch it.
+    // Both pickers filter by the same authenticated-provider list, and the
+    // walkthrough picker is always visible, so this is always worth fetching.
+    if (smallModelProviders !== undefined) return;
     let cancelled = false;
     (async () => {
       try {
@@ -246,7 +297,7 @@ export const DefaultsSettings: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [smallModelUseDefault, smallModelProviders]);
+  }, [smallModelProviders]);
 
   const availableVariants = React.useMemo(() => {
     if (!parsedModel.providerId || !parsedModel.modelId) return [];
@@ -277,143 +328,144 @@ export const DefaultsSettings: React.FC = () => {
   }
 
   return (
-    <div className="mb-6">
-      <div className="mb-0.5 px-1">
-        <div className="flex items-center gap-2">
-          <h3 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.defaults.title')}</h3>
-        </div>
-      </div>
-
-      <section className="px-2 pb-2 pt-0 space-y-0">
-        <div className="mt-0 mb-1 typography-meta text-muted-foreground">
-          {t('settings.openchamber.defaults.summaryPrefix')}
-          {' '}
-          {parsedModel.providerId ? (
-            <span className="text-foreground">
-              {parsedModel.providerId}/{parsedModel.modelId}
-              {supportsVariants ? ` (${defaultVariant ?? t('settings.openchamber.defaults.option.defaultLowercase')})` : ''}
-            </span>
-          ) : (
-            <span className="text-foreground">{t('settings.openchamber.defaults.summaryOpenCodeDefault')}</span>
-          )}
-          {defaultAgent && (
-            <>
-              {' / '}
-              <span className="text-foreground">{defaultAgent}</span>
-            </>
-          )}
-        </div>
-
-        <div data-settings-item="sessions.default-model" className={cn('flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:gap-8')}>
-          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-            <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.defaultModel')}</span>
+    <>
+      <SettingsSection title={t('settings.openchamber.defaults.title')} divider={false}>
+        <div className="space-y-0">
+          <div className="mt-0 mb-1 typography-meta text-muted-foreground">
+            {t('settings.openchamber.defaults.summaryPrefix')}
+            {' '}
+            {parsedModel.providerId ? (
+              <span className="text-foreground">
+                {parsedModel.providerId}/{parsedModel.modelId}
+                {supportsVariants ? ` (${defaultVariant ?? t('settings.openchamber.defaults.option.defaultLowercase')})` : ''}
+              </span>
+            ) : (
+              <span className="text-foreground">{t('settings.openchamber.defaults.summaryOpenCodeDefault')}</span>
+            )}
+            {defaultAgent && (
+              <>
+                {' / '}
+                <span className="text-foreground">{defaultAgent}</span>
+              </>
+            )}
           </div>
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
-            <ModelSelector providerId={parsedModel.providerId} modelId={parsedModel.modelId} onChange={handleModelChange} />
-          </div>
-        </div>
 
-        <div data-settings-item="sessions.default-thinking" className="flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:gap-8">
-          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-            <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.defaultThinking')}</span>
-          </div>
-          <div className="flex items-center gap-2 sm:w-fit">
-            <Select value={defaultVariant ?? DEFAULT_VARIANT_VALUE} onValueChange={handleVariantChange} disabled={!supportsVariants}>
-              <SelectTrigger className="w-fit min-w-[120px]">
-                <SelectValue placeholder={t('settings.openchamber.defaults.field.thinkingPlaceholder')}>
-                  {formatVariantLabel(defaultVariant ?? DEFAULT_VARIANT_VALUE)}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={DEFAULT_VARIANT_VALUE}>{t('settings.openchamber.defaults.option.default')}</SelectItem>
-                {availableVariants.map((variant) => (
-                  <SelectItem key={variant} value={variant}>
-                    {formatVariantLabel(variant)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div data-settings-item="sessions.default-agent" className="flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:gap-8">
-          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-            <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.defaultAgent')}</span>
-          </div>
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
-            <AgentSelector agentName={defaultAgent || ''} onChange={handleAgentChange} />
-          </div>
-        </div>
-
-        <div
-          data-settings-item="sessions.deletion-dialog"
-          className="group flex cursor-pointer items-center gap-2 py-1"
-          role="button"
-          tabIndex={0}
-          aria-pressed={showDeletionDialog}
-          onClick={() => setShowDeletionDialog(!showDeletionDialog)}
-          onKeyDown={(event) => {
-            if (event.key === ' ' || event.key === 'Enter') {
-              event.preventDefault();
-              setShowDeletionDialog(!showDeletionDialog);
-            }
-          }}
-        >
-          <Checkbox checked={showDeletionDialog} onChange={setShowDeletionDialog} ariaLabel={t('settings.openchamber.defaults.field.showDeletionDialogAria')} />
-          <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.showDeletionDialog')}</span>
-        </div>
-
-      </section>
-
-      <div className="mt-6 mb-0.5 px-1">
-        <div className="flex items-center gap-2">
-          <h3 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.defaults.smallModel.title')}</h3>
-        </div>
-      </div>
-
-      <section className="px-2 pb-2 pt-0 space-y-0">
-        <div className="mt-0 mb-1 typography-meta text-muted-foreground">
-          {t('settings.openchamber.defaults.smallModel.description')}
-        </div>
-
-        <div
-          data-settings-item="sessions.small-model"
-          className="group flex cursor-pointer items-center gap-2 py-1"
-          role="button"
-          tabIndex={0}
-          aria-pressed={smallModelUseDefault}
-          onClick={() => void handleSmallModelUseDefaultChange(!smallModelUseDefault)}
-          onKeyDown={(event) => {
-            if (event.key === ' ' || event.key === 'Enter') {
-              event.preventDefault();
-              void handleSmallModelUseDefaultChange(!smallModelUseDefault);
-            }
-          }}
-        >
-          <Checkbox
-            checked={smallModelUseDefault}
-            onChange={(checked) => void handleSmallModelUseDefaultChange(checked)}
-            ariaLabel={t('settings.openchamber.defaults.smallModel.useDefaultAria')}
-          />
-          <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.smallModel.useDefault')}</span>
-        </div>
-
-        {!smallModelUseDefault ? (
-          <div className="flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:gap-8">
-            <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-              <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.smallModel.overrideModel')}</span>
-            </div>
-            <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
+          <div>
+            <SettingsFieldRow
+              settingsItem="sessions.default-model"
+              label={t('settings.openchamber.defaults.field.defaultModel')}
+            >
               <ModelSelector
-                providerId={parsedSmallModel.providerId}
-                modelId={parsedSmallModel.modelId}
-                onChange={handleSmallModelOverrideChange}
-                allowedProviderIds={smallModelProviders}
+                providerId={parsedModel.providerId}
+                modelId={parsedModel.modelId}
+                onChange={handleModelChange}
+                className={SETTINGS_CUSTOM_TRIGGER_CLASS}
               />
-            </div>
+            </SettingsFieldRow>
+
+            <SettingsFieldRow
+              settingsItem="sessions.default-thinking"
+              label={t('settings.openchamber.defaults.field.defaultThinking')}
+            >
+              <Select value={defaultVariant ?? DEFAULT_VARIANT_VALUE} onValueChange={handleVariantChange} disabled={!supportsVariants}>
+                <SelectTrigger size={SETTINGS_SELECT_SIZE} className={SETTINGS_SELECT_ROW_TRIGGER_CLASS}>
+                  <SelectValue placeholder={t('settings.openchamber.defaults.field.thinkingPlaceholder')}>
+                    {formatVariantLabel(defaultVariant ?? DEFAULT_VARIANT_VALUE)}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={DEFAULT_VARIANT_VALUE}>{t('settings.openchamber.defaults.option.default')}</SelectItem>
+                  {availableVariants.map((variant) => (
+                    <SelectItem key={variant} value={variant}>
+                      {formatVariantLabel(variant)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingsFieldRow>
+
+            <SettingsFieldRow
+              settingsItem="sessions.default-agent"
+              label={t('settings.openchamber.defaults.field.defaultAgent')}
+            >
+              <AgentSelector
+                agentName={defaultAgent || ''}
+                onChange={handleAgentChange}
+                className={SETTINGS_CUSTOM_TRIGGER_CLASS}
+              />
+            </SettingsFieldRow>
           </div>
-        ) : null}
-      </section>
-    </div>
+
+          <SettingsInset className={SETTINGS_OPTION_STACK_CLASS}>
+            <SettingsCheckboxRow
+              settingsItem="sessions.deletion-dialog"
+              checked={showDeletionDialog}
+              onChange={setShowDeletionDialog}
+              label={t('settings.openchamber.defaults.field.showDeletionDialog')}
+              ariaLabel={t('settings.openchamber.defaults.field.showDeletionDialogAria')}
+            />
+          </SettingsInset>
+
+          <div className="space-y-3 pt-6">
+            <div className="flex items-center gap-1.5">
+              <SettingsGroupTitle>
+                {t('settings.openchamber.defaults.smallModel.title')}
+              </SettingsGroupTitle>
+              <SettingsInfoHint>
+                {t('settings.openchamber.defaults.smallModel.description')}
+              </SettingsInfoHint>
+            </div>
+
+            <SettingsCheckboxRow
+              settingsItem="sessions.small-model"
+              checked={smallModelUseDefault}
+              onChange={(checked) => {
+                void handleSmallModelUseDefaultChange(checked);
+              }}
+              label={t('settings.openchamber.defaults.smallModel.useDefault')}
+              ariaLabel={t('settings.openchamber.defaults.smallModel.useDefaultAria')}
+            />
+
+            {!smallModelUseDefault ? (
+              <SettingsFieldRow label={t('settings.openchamber.defaults.smallModel.overrideModel')}>
+                <ModelSelector
+                  providerId={parsedSmallModel.providerId}
+                  modelId={parsedSmallModel.modelId}
+                  onChange={handleSmallModelOverrideChange}
+                  allowedProviderIds={smallModelProviders}
+                  className={SETTINGS_CUSTOM_TRIGGER_CLASS}
+                />
+              </SettingsFieldRow>
+            ) : null}
+
+            <SettingsInset className={SETTINGS_OPTION_STACK_CLASS}>
+              <div className="flex items-center gap-1.5">
+                <SettingsGroupTitle>
+                  {t('settings.openchamber.defaults.walkthroughModel.title')}
+                </SettingsGroupTitle>
+                <SettingsInfoHint>
+                  {t('settings.openchamber.defaults.walkthroughModel.description')}
+                </SettingsInfoHint>
+              </div>
+
+              <SettingsFieldRow
+                settingsItem="sessions.walkthrough-model"
+                label={t('settings.openchamber.defaults.walkthroughModel.overrideModel')}
+              >
+                <ModelSelector
+                  providerId={parsedWalkthroughModel.providerId}
+                  modelId={parsedWalkthroughModel.modelId}
+                  onChange={handleWalkthroughModelOverrideChange}
+                  allowedProviderIds={smallModelProviders}
+                  isModelAllowed={isStructuredOutputCapable}
+                  placeholder={t('settings.openchamber.defaults.walkthroughModel.usesSmallModel')}
+                  className={SETTINGS_CUSTOM_TRIGGER_CLASS}
+                />
+              </SettingsFieldRow>
+            </SettingsInset>
+          </div>
+        </div>
+      </SettingsSection>
+    </>
   );
 };

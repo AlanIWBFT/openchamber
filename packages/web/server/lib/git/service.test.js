@@ -9,17 +9,22 @@ import {
   checkoutCommit,
   cherryPick,
   createWorktree,
+  getWorktreeBootstrapStatus,
   getStatus,
+  isGitRepository,
+  populateWorktreeWithLockRecovery,
   removeWorktree,
   resolvePrimaryWorktreeRoot,
   resolveWorktreeTopLevel,
   resetToCommit,
   resolveBaseRefForLog,
   revertCommit,
+  setLocalIdentity,
   stageFiles,
   unstageFiles,
   applyHunk,
   getDiff,
+  getFileDiff,
 } from './service.js';
 
 // ---------------------------------------------------------------------------
@@ -121,6 +126,23 @@ describe('git index path validation', () => {
   it('rejects unstage paths outside the repository before invoking git', async () => {
     await expect(unstageFiles('/repo', ['../secret.txt'])).rejects.toThrow(
       'Path is outside repository: ../secret.txt'
+    );
+  });
+});
+
+describe.runIf(canRunGit())('setLocalIdentity', () => {
+  it('configures the local SSH command with the targeted simple-git opt-in', async () => {
+    const { tmpDir } = await createTempRepo();
+
+    await setLocalIdentity(tmpDir, {
+      userName: 'SSH User',
+      userEmail: 'ssh@example.com',
+      authType: 'ssh',
+      sshKey: '/tmp/test key',
+    });
+
+    expect(runGit(tmpDir, ['config', '--local', '--get', 'core.sshCommand']).trim()).toBe(
+      "ssh -i '/tmp/test key' -o IdentitiesOnly=yes"
     );
   });
 });
@@ -262,6 +284,26 @@ describe('applyHunk', () => {
   });
 });
 
+describe('symlink diffs', () => {
+  it('treats an untracked directory symlink as a link in patch and split diffs', async () => {
+    if (!canRunGit() || process.platform === 'win32') return;
+    const { tmpDir } = await createTempRepo();
+    fs.mkdirSync(path.join(tmpDir, 'source'));
+    fs.symlinkSync('source', path.join(tmpDir, 'linked-source'));
+
+    const patch = await getDiff(tmpDir, { path: 'linked-source' });
+    const split = await getFileDiff(tmpDir, { path: 'linked-source' });
+
+    expect(patch).toContain('new file mode 120000');
+    expect(patch).toContain('+source');
+    expect(split).toMatchObject({
+      original: '',
+      modified: 'source',
+      isBinary: false,
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // getStatus
 // ---------------------------------------------------------------------------
@@ -279,6 +321,84 @@ describe('getStatus', () => {
     runGit(repo, ['commit', '-m', 'Initial commit']);
 
     await expect(getStatus(repo)).resolves.toMatchObject({ current: 'main' });
+  });
+
+  it('rejects a non-git folder without using process.cwd()', async () => {
+    if (!canRunGit()) return;
+
+    const nonGit = createTempDir();
+    const previousCwd = process.cwd();
+    process.chdir(nonGit);
+    try {
+      await expect(getStatus(nonGit)).rejects.toThrow(/not a git repository/i);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
+  it('reads status for a git repo when process.cwd() is elsewhere', async () => {
+    if (!canRunGit()) return;
+
+    const repo = createTempDir();
+    const neutralCwd = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
+    runGit(repo, ['add', 'README.md']);
+    runGit(repo, ['commit', '-m', 'Initial commit']);
+
+    const previousCwd = process.cwd();
+    process.chdir(neutralCwd);
+    try {
+      await expect(getStatus(repo)).resolves.toMatchObject({ current: 'main', isClean: true });
+      await expect(isGitRepository(repo)).resolves.toBe(true);
+      await expect(isGitRepository(neutralCwd)).resolves.toBe(false);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
+  it('supports a folder with nested git repositories from a foreign cwd', async () => {
+    if (!canRunGit()) return;
+
+    const parent = createTempDir();
+    const nested = path.join(parent, 'nested');
+    const neutralCwd = createTempDir();
+    fs.mkdirSync(nested, { recursive: true });
+
+    runGit(parent, ['init', '-b', 'main']);
+    runGit(parent, ['config', 'user.email', 'test@example.com']);
+    runGit(parent, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(parent, 'README.md'), '# Parent\n');
+    runGit(parent, ['add', 'README.md']);
+    runGit(parent, ['commit', '-m', 'Parent commit']);
+
+    runGit(nested, ['init', '-b', 'feature']);
+    runGit(nested, ['config', 'user.email', 'test@example.com']);
+    runGit(nested, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(nested, 'nested.txt'), 'nested\n');
+    runGit(nested, ['add', 'nested.txt']);
+    runGit(nested, ['commit', '-m', 'Nested commit']);
+
+    const previousCwd = process.cwd();
+    process.chdir(neutralCwd);
+    try {
+      await expect(getStatus(parent)).resolves.toMatchObject({ current: 'main' });
+      await expect(getStatus(nested)).resolves.toMatchObject({ current: 'feature' });
+      // Enumeration must continue when one path is not a repo.
+      const results = await Promise.allSettled([
+        getStatus(parent),
+        getStatus(neutralCwd),
+        getStatus(nested),
+      ]);
+      expect(results[0].status).toBe('fulfilled');
+      expect(results[1].status).toBe('rejected');
+      expect(results[1].reason?.message || String(results[1].reason)).toMatch(/not a git repository/i);
+      expect(results[2].status).toBe('fulfilled');
+    } finally {
+      process.chdir(previousCwd);
+    }
   });
 });
 
@@ -321,6 +441,157 @@ describe('worktree root resolution', () => {
 // ---------------------------------------------------------------------------
 
 describe('createWorktree', () => {
+  it('returns ready/setup-ready when no bootstrap state is recorded', async () => {
+    const directory = path.join(createTempDir(), 'missing-worktree');
+
+    await expect(getWorktreeBootstrapStatus(directory)).resolves.toMatchObject({
+      status: 'ready',
+      phase: 'setup-ready',
+      error: null,
+    });
+  });
+
+  it('reports directory, Git, and setup bootstrap phases while preserving legacy status', async () => {
+    if (!canRunGit()) return;
+
+    const previousXdgDataHome = process.env.XDG_DATA_HOME;
+    const dataHome = createTempDir();
+    const setupMarker = path.join(dataHome, 'setup-started');
+    const setupScript = path.join(dataHome, 'setup-phase.cjs');
+    process.env.XDG_DATA_HOME = dataHome;
+
+    fs.writeFileSync(
+      setupScript,
+      `require('node:fs').writeFileSync(${JSON.stringify(setupMarker)}, 'started'); setTimeout(() => {}, 1000);\n`,
+    );
+
+    try {
+      const repo = createTempDir();
+      runGit(repo, ['init', '-b', 'main']);
+      runGit(repo, ['config', 'user.email', 'test@example.com']);
+      runGit(repo, ['config', 'user.name', 'Test User']);
+      fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
+      runGit(repo, ['add', 'README.md']);
+      runGit(repo, ['commit', '-m', 'Initial commit']);
+
+      const created = await createWorktree(repo, {
+        mode: 'new',
+        branchName: 'feature/bootstrap-phases',
+        worktreeName: 'bootstrap-phases',
+        returnAfterDirectoryCreated: true,
+        startCommand: `${JSON.stringify(process.execPath)} ${JSON.stringify(setupScript)}`,
+      });
+
+      expect(created.bootstrapStatus).toMatchObject({
+        status: 'pending',
+        phase: 'directory-created',
+        error: null,
+      });
+
+      await expect.poll(() => fs.existsSync(setupMarker), { timeout: 5_000 }).toBe(true);
+      await expect(getWorktreeBootstrapStatus(created.path)).resolves.toMatchObject({
+        status: 'pending',
+        phase: 'git-ready',
+        error: null,
+      });
+
+      await expect.poll(
+        async () => (await getWorktreeBootstrapStatus(created.path)).phase,
+        { timeout: 5_000 },
+      ).toBe('setup-ready');
+      await expect(getWorktreeBootstrapStatus(created.path)).resolves.toMatchObject({
+        status: 'ready',
+        phase: 'setup-ready',
+        error: null,
+      });
+    } finally {
+      if (previousXdgDataHome === undefined) {
+        delete process.env.XDG_DATA_HOME;
+      } else {
+        process.env.XDG_DATA_HOME = previousXdgDataHome;
+      }
+    }
+  });
+
+  it('waits for active bootstrap work before removing a worktree', async () => {
+    if (!canRunGit()) return;
+
+    const previousXdgDataHome = process.env.XDG_DATA_HOME;
+    const dataHome = createTempDir();
+    const setupStarted = path.join(dataHome, 'remove-race-started');
+    const setupCompleted = path.join(dataHome, 'remove-race-completed');
+    const setupScript = path.join(dataHome, 'remove-race.cjs');
+    process.env.XDG_DATA_HOME = dataHome;
+
+    fs.writeFileSync(
+      setupScript,
+      `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(setupStarted)}, 'started'); setTimeout(() => fs.writeFileSync(${JSON.stringify(setupCompleted)}, 'completed'), 300);\n`,
+    );
+
+    try {
+      const repo = createTempDir();
+      runGit(repo, ['init', '-b', 'main']);
+      runGit(repo, ['config', 'user.email', 'test@example.com']);
+      runGit(repo, ['config', 'user.name', 'Test User']);
+      fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
+      runGit(repo, ['add', 'README.md']);
+      runGit(repo, ['commit', '-m', 'Initial commit']);
+
+      const created = await createWorktree(repo, {
+        mode: 'new',
+        branchName: 'feature/remove-bootstrap-race',
+        worktreeName: 'remove-bootstrap-race',
+        returnAfterDirectoryCreated: true,
+        startCommand: `${JSON.stringify(process.execPath)} ${JSON.stringify(setupScript)}`,
+      });
+
+      await expect.poll(() => fs.existsSync(setupStarted), { timeout: 5_000 }).toBe(true);
+      let removalCompleted = false;
+      const removal = removeWorktree(repo, { directory: created.path }).then(() => {
+        removalCompleted = true;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(removalCompleted).toBe(false);
+      await removal;
+
+      expect(fs.existsSync(setupCompleted)).toBe(true);
+      expect(fs.existsSync(created.path)).toBe(false);
+      await expect(getWorktreeBootstrapStatus(created.path)).resolves.toMatchObject({
+        status: 'ready',
+        phase: 'setup-ready',
+      });
+    } finally {
+      if (previousXdgDataHome === undefined) {
+        delete process.env.XDG_DATA_HOME;
+      } else {
+        process.env.XDG_DATA_HOME = previousXdgDataHome;
+      }
+    }
+  });
+
+  it('recovers from an unchanged stale index lock while populating a worktree', async () => {
+    if (!canRunGit()) return;
+
+    const repo = createTempDir();
+    const worktree = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
+    runGit(repo, ['add', 'README.md']);
+    runGit(repo, ['commit', '-m', 'Initial commit']);
+    fs.rmSync(worktree, { recursive: true, force: true });
+    runGit(repo, ['worktree', 'add', '--no-checkout', '-b', 'feature/stale-lock', worktree, 'HEAD']);
+
+    const lockPath = runGit(worktree, ['rev-parse', '--git-path', 'index.lock']).trim();
+    fs.writeFileSync(lockPath, 'stale');
+
+    await expect(populateWorktreeWithLockRecovery(worktree)).resolves.toBeUndefined();
+    expect(fs.existsSync(lockPath)).toBe(false);
+    expect(fs.readFileSync(path.join(worktree, 'README.md'), 'utf8')).toBe('# Test\n');
+  });
+
   it('preflights fast create branch-in-use failures before creating the candidate directory', async () => {
     if (!canRunGit()) return;
 

@@ -17,6 +17,7 @@ import type {
   GitWorktreeValidationResult,
 } from '@/lib/api/types';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
 
 type WorktreeListEntry = {
   path?: string;
@@ -57,6 +58,18 @@ const normalizePath = (value: string): string => {
   return replaced.length > 1 ? replaced.replace(/\/+$/, '') : replaced;
 };
 
+export const getLatestWorktreeMetadata = (metadata: WorktreeMetadata): WorktreeMetadata => {
+  const target = normalizePath(metadata.path);
+  const state = useSessionUIStore.getState();
+  const available = state.availableWorktrees.find((candidate) => normalizePath(candidate.path) === target);
+  if (available) return available;
+  for (const worktrees of state.availableWorktreesByProject.values()) {
+    const candidate = worktrees.find((worktree) => normalizePath(worktree.path) === target);
+    if (candidate) return candidate;
+  }
+  return metadata;
+};
+
 const slugifyWorktreeName = (value: string): string => {
   return value
     .trim()
@@ -86,6 +99,7 @@ const setStoredWorktreeStatus = (directory: string, status: NonNullable<Worktree
     return;
   }
 
+  const changedSessionIds: string[] = [];
   useSessionUIStore.setState((state) => {
     let changed = false;
 
@@ -131,6 +145,7 @@ const setStoredWorktreeStatus = (directory: string, status: NonNullable<Worktree
     for (const [sessionId, metadata] of state.worktreeMetadata) {
       const next = applyStatus(metadata);
       if (next !== metadata) {
+        changedSessionIds.push(sessionId);
         if (worktreeMetadata === state.worktreeMetadata) {
           worktreeMetadata = new Map(state.worktreeMetadata);
         }
@@ -148,6 +163,19 @@ const setStoredWorktreeStatus = (directory: string, status: NonNullable<Worktree
       worktreeMetadata,
     };
   });
+
+  if (changedSessionIds.length > 0) {
+    useSessionWorktreeStore.setState((state) => {
+      let attachments = state.attachments;
+      for (const sessionId of changedSessionIds) {
+        const attachment = attachments.get(sessionId);
+        if (!attachment || attachment.worktreeStatus === status) continue;
+        if (attachments === state.attachments) attachments = new Map(state.attachments);
+        attachments.set(sessionId, { ...attachment, worktreeStatus: status });
+      }
+      return attachments === state.attachments ? state : { attachments };
+    });
+  }
 };
 
 const getWorktreeStatusFromBootstrap = (status?: GitWorktreeBootstrapStatus): WorktreeMetadata['worktreeStatus'] => {
@@ -270,6 +298,78 @@ export const worktreeMapsEqual = (
     }
   }
   return true;
+};
+
+/**
+ * Partition shared Git worktree topology across configured projects.
+ *
+ * A configured project may itself be a linked worktree. Asking Git for the
+ * worktree list from every configured checkout returns the same repository
+ * topology each time, which would otherwise render every sibling worktree
+ * under every project. The primary checkout owns the topology when it is
+ * configured; otherwise the first configured checkout for that repository
+ * owns it. Checkouts that are configured projects are omitted from the owned
+ * worktree list because they already have their own project section.
+ */
+export const partitionWorktreesByRegisteredProject = (
+  projects: ReadonlyArray<Pick<ProjectRef, 'path'>>,
+  worktreesByProject: ReadonlyMap<string, WorktreeMetadata[]>,
+): Map<string, WorktreeMetadata[]> => {
+  const configuredProjectOrder = new Map<string, number>();
+  projects.forEach((project, index) => {
+    const projectPath = normalizePath(project.path.trim());
+    if (projectPath && !configuredProjectOrder.has(projectPath)) {
+      configuredProjectOrder.set(projectPath, index);
+    }
+  });
+
+  type RepositorySource = {
+    projectPath: string;
+    worktrees: WorktreeMetadata[];
+    projectIndex: number;
+  };
+
+  const sourcesByRepository = new Map<string, RepositorySource[]>();
+  for (const [rawProjectPath, worktrees] of worktreesByProject) {
+    if (worktrees.length === 0) continue;
+    const projectPath = normalizePath(rawProjectPath.trim());
+    const projectIndex = configuredProjectOrder.get(projectPath);
+    if (!projectPath || projectIndex === undefined) continue;
+
+    const metadataRoot = worktrees.find((worktree) => worktree.projectDirectory?.trim())?.projectDirectory;
+    const repositoryRoot = normalizePath((metadataRoot || projectPath).trim());
+    if (!repositoryRoot) continue;
+
+    const sources = sourcesByRepository.get(repositoryRoot) ?? [];
+    sources.push({ projectPath, worktrees, projectIndex });
+    sourcesByRepository.set(repositoryRoot, sources);
+  }
+
+  const partitioned = new Map<string, WorktreeMetadata[]>();
+  for (const [repositoryRoot, sources] of sourcesByRepository) {
+    sources.sort((a, b) => a.projectIndex - b.projectIndex || a.projectPath.localeCompare(b.projectPath));
+    const firstSource = sources[0];
+    if (!firstSource) continue;
+
+    const ownerPath = configuredProjectOrder.has(repositoryRoot) ? repositoryRoot : firstSource.projectPath;
+    const topologySource = sources.find((candidate) => candidate.projectPath === ownerPath) ?? firstSource;
+
+    const seenPaths = new Set<string>();
+    const ownedWorktrees = topologySource.worktrees.filter((worktree) => {
+      const worktreePath = normalizePath(worktree.path.trim());
+      if (!worktreePath || configuredProjectOrder.has(worktreePath) || seenPaths.has(worktreePath)) {
+        return false;
+      }
+      seenPaths.add(worktreePath);
+      return true;
+    });
+
+    if (ownedWorktrees.length > 0) {
+      partitioned.set(ownerPath, ownedWorktrees);
+    }
+  }
+
+  return partitioned;
 };
 
 // Cache worktree listings to avoid repeated git worktree list + rev-parse calls
@@ -404,13 +504,17 @@ export async function createWorktree(project: ProjectRef, args: CreateWorktreeAr
 
   if (created?.bootstrapStatus) {
     setWorktreeBootstrapState(metadata.path, created.bootstrapStatus);
-  } else {
+  } else if (created?.directoryCreated) {
     markWorktreeBootstrapPending(metadata.path);
   }
-  startWorktreeBootstrapWatcher(metadata.path, {
-    onFailed: () => setStoredWorktreeStatus(metadata.path, 'invalid'),
-    onReady: () => setStoredWorktreeStatus(metadata.path, 'ready'),
-  });
+  const shouldWatchBootstrap = created?.bootstrapStatus?.status === 'pending'
+    || (!created?.bootstrapStatus && created?.directoryCreated === true);
+  if (shouldWatchBootstrap) {
+    startWorktreeBootstrapWatcher(metadata.path, {
+      onFailed: () => setStoredWorktreeStatus(metadata.path, 'invalid'),
+      onReady: () => setStoredWorktreeStatus(metadata.path, 'ready'),
+    });
+  }
 
   invalidateWorktreeList(projectDirectory);
   // The new worktree changes the repo's worktree topology; drop cached root
