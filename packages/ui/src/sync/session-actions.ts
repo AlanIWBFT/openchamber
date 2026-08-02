@@ -811,15 +811,6 @@ export type DeleteSessionOptions = {
    * confirmation spans a runtime switch.
    */
   expectedRuntimeKey?: string
-  /**
-   * Worktree flags accepted from `SessionDialogs`. This action does not consume
-   * them today — the dialog performs worktree removal itself. They are declared
-   * so the call site stays type-checked instead of hidden behind an untyped
-   * bag; wiring or removing them is separate follow-up work.
-   */
-  archiveWorktree?: boolean
-  deleteRemoteBranch?: boolean
-  deleteLocalBranch?: boolean
 }
 
 /**
