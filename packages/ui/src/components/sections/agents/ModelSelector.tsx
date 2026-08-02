@@ -23,6 +23,7 @@ interface ModelSelectorProps {
     onChange: (providerId: string, modelId: string) => void;
     className?: string;
     allowedProviderIds?: string[];
+    isModelAllowed?: (providerId: string, modelId: string) => boolean;
     placeholder?: string;
     tooltipsEnabled?: boolean;
     dropdownPortalToBody?: boolean;
@@ -34,6 +35,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     onChange,
     className,
     allowedProviderIds,
+    isModelAllowed,
     placeholder,
     tooltipsEnabled = true,
     dropdownPortalToBody = false,
@@ -115,6 +117,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             selectedModel={selectedModel}
             hiddenModels={hiddenModels}
             allowedProviderIds={allowedProviderIds}
+            isModelAllowed={isModelAllowed}
             includeNotSelected
             onSelectNone={handleSelectNone}
             onEscape={closePicker}
