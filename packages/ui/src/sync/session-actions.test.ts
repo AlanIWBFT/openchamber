@@ -448,7 +448,7 @@ describe("confirmed session removal", () => {
     const { archiveSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", source]]), () => "/test/project")
 
-    expect(await archiveSession("session-a", "archive-runtime-a")).toBe(false)
+    expect(await archiveSession("session-a")).toBe(false)
     expect(getRuntimeKey()).toBe("archive-runtime-b")
     // The stale response must not reconcile the runtime the user switched to.
     expect(source.getState().session.map((item) => item.id)).toEqual(["session-a"])
@@ -476,9 +476,7 @@ describe("confirmed session removal", () => {
     const { archiveSessions, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", source]]), () => "/test/project")
 
-    const result = await archiveSessions(["session-a", "session-b", "session-c"], {
-      expectedRuntimeKey: "archive-batch-a",
-    })
+    const result = await archiveSessions(["session-a", "session-b", "session-c"])
 
     // session-a was confirmed before the switch and stays archived; session-b's
     // response is stale and session-c is never attempted, so both are reported

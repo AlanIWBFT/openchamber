@@ -827,15 +827,16 @@ export async function deleteSessionInDirectory(sessionId: string, directory: str
 /**
  * Archive one session.
  *
- * `expectedRuntimeKey` is the runtime key the caller captured when the user
- * confirmed the operation. When it is supplied and the runtime changes, the
- * action stops and returns `false` without reconciling any store, so a response
+ * `expectedRuntimeKey` defaults to the active runtime when the action starts.
+ * Callers may supply a key captured earlier when confirmation spans a runtime
+ * switch. When the runtime changes, the action stops and returns `false`
+ * without reconciling any store, so a response
  * produced by the previous runtime cannot mutate the current runtime's live or
  * global session state. A session the server already archived before the switch
  * stays archived on that runtime and is re-read from the server the next time
  * the runtime is loaded.
  */
-export async function archiveSession(sessionId: string, expectedRuntimeKey?: string): Promise<boolean> {
+export async function archiveSession(sessionId: string, expectedRuntimeKey = getRuntimeKey()): Promise<boolean> {
   if (isStaleRuntime(expectedRuntimeKey)) return false
   const sessionDirectory = getSessionDirectory(sessionId)
   const archivedAt = Date.now()
@@ -884,7 +885,7 @@ export async function archiveSessions(
 ): Promise<{ archivedIds: string[]; failedIds: string[] }> {
   const archivedIds: string[] = []
   const failedIds: string[] = []
-  const expectedRuntimeKey = options?.expectedRuntimeKey
+  const expectedRuntimeKey = options?.expectedRuntimeKey ?? getRuntimeKey()
 
   for (const [index, id] of ids.entries()) {
     if (isStaleRuntime(expectedRuntimeKey)) {
