@@ -14,6 +14,7 @@ let sessionShareResult: { data?: unknown; error?: unknown; response?: { status?:
 let sessionUpdateResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {}
 let sessionMessagesResult: { data?: unknown; error?: unknown; response?: { status?: number } } = { data: [] }
 let sessionDeleteError: unknown | null = null
+let beforeSessionUpdateResolve: ((sessionId: string) => void) | null = null
 const globalUpsertedSessions: unknown[] = []
 const globalRemovedSessionIds: string[] = []
 const deletedCleanupIdentities: Array<{ runtimeKey: string; directory: string; sessionId: string }> = []
@@ -145,6 +146,9 @@ mock.module("@/lib/opencode/client", () => ({
     }),
     updateSession: mock((sessionId: string, changes: Record<string, unknown>, directory?: string | null) => {
       replyCalls.push({ method: "session.update", params: { sessionID: sessionId, ...changes, directory } })
+      // Lets a test mutate global runtime state while the SDK call is in flight,
+      // so the action observes the switch only after awaiting the response.
+      beforeSessionUpdateResolve?.(sessionId)
       return Promise.resolve(sessionUpdateResult.data)
     }),
     deleteSession: mock((sessionId: string, directory?: string | null) => {
@@ -368,6 +372,7 @@ describe("confirmed session removal", () => {
     deletedCleanupIdentities.length = 0
     sessionDeleteError = null
     sessionUpdateResult = {}
+    beforeSessionUpdateResolve = null
   })
 
   test("does not remove live or persisted state when delete fails", async () => {
@@ -426,6 +431,86 @@ describe("confirmed session removal", () => {
     expect(await archiveSession("session-a")).toBe(true)
     expect(source.getState().session).toEqual([])
     expect((globalUpsertedSessions[0] as Session)?.time?.archived).toBe(2)
+  })
+
+  test("rejects an archive response that arrives after a runtime switch", async () => {
+    sessionUpdateResult = {
+      data: { id: "session-a", directory: "/test/project", time: { created: 1, archived: 2 } } as Session,
+    }
+    const source = createStore({}, {
+      session: [{ id: "session-a", directory: "/test/project", time: { created: 1 } } as Session],
+    })
+    const { getRuntimeKey, switchRuntimeEndpoint } = await import("../lib/runtime-switch")
+    switchRuntimeEndpoint({ apiBaseUrl: "http://archive-runtime-a.test", runtimeKey: "archive-runtime-a" })
+    beforeSessionUpdateResolve = () => {
+      switchRuntimeEndpoint({ apiBaseUrl: "http://archive-runtime-b.test", runtimeKey: "archive-runtime-b" })
+    }
+    const { archiveSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", source]]), () => "/test/project")
+
+    expect(await archiveSession("session-a", "archive-runtime-a")).toBe(false)
+    expect(getRuntimeKey()).toBe("archive-runtime-b")
+    // The stale response must not reconcile the runtime the user switched to.
+    expect(source.getState().session.map((item) => item.id)).toEqual(["session-a"])
+    expect(globalUpsertedSessions).toEqual([])
+  })
+
+  test("keeps confirmed sessions and fails the rest when the runtime changes mid-batch", async () => {
+    sessionUpdateResult = {
+      data: { id: "session-a", directory: "/test/project", time: { created: 1, archived: 2 } } as Session,
+    }
+    const source = createStore({}, {
+      session: [
+        { id: "session-a", directory: "/test/project", time: { created: 1 } } as Session,
+        { id: "session-b", directory: "/test/project", time: { created: 1 } } as Session,
+        { id: "session-c", directory: "/test/project", time: { created: 1 } } as Session,
+      ],
+    })
+    const { switchRuntimeEndpoint } = await import("../lib/runtime-switch")
+    switchRuntimeEndpoint({ apiBaseUrl: "http://archive-batch-a.test", runtimeKey: "archive-batch-a" })
+    beforeSessionUpdateResolve = (sessionId) => {
+      if (sessionId === "session-b") {
+        switchRuntimeEndpoint({ apiBaseUrl: "http://archive-batch-b.test", runtimeKey: "archive-batch-b" })
+      }
+    }
+    const { archiveSessions, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", source]]), () => "/test/project")
+
+    const result = await archiveSessions(["session-a", "session-b", "session-c"], {
+      expectedRuntimeKey: "archive-batch-a",
+    })
+
+    // session-a was confirmed before the switch and stays archived; session-b's
+    // response is stale and session-c is never attempted, so both are reported
+    // as failures instead of being silently dropped.
+    expect(result).toEqual({ archivedIds: ["session-a"], failedIds: ["session-b", "session-c"] })
+    expect(source.getState().session.map((item) => item.id)).toEqual(["session-b", "session-c"])
+    expect(globalUpsertedSessions).toHaveLength(1)
+    // session-c must not reach the SDK after the runtime changed.
+    expect(replyCalls.filter((call) => call.method === "session.update").map((call) => call.params.sessionID))
+      .toEqual(["session-a", "session-b"])
+  })
+
+  test("archives every session when the runtime stays stable", async () => {
+    sessionUpdateResult = {
+      data: { id: "session-a", directory: "/test/project", time: { created: 1, archived: 2 } } as Session,
+    }
+    const source = createStore({}, {
+      session: [
+        { id: "session-a", directory: "/test/project", time: { created: 1 } } as Session,
+        { id: "session-b", directory: "/test/project", time: { created: 1 } } as Session,
+      ],
+    })
+    const { getRuntimeKey } = await import("../lib/runtime-switch")
+    const { archiveSessions, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", source]]), () => "/test/project")
+
+    const result = await archiveSessions(["session-a", "session-b"], {
+      expectedRuntimeKey: getRuntimeKey(),
+    })
+
+    expect(result).toEqual({ archivedIds: ["session-a", "session-b"], failedIds: [] })
+    expect(source.getState().session).toEqual([])
   })
 })
 

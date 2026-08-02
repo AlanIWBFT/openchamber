@@ -213,9 +213,19 @@ Examples of global-store updates performed in `session-actions.ts`:
 - `createSession()` -> `upsertSession(session)`
 - `updateSessionTitle()` -> `upsertSession(result.data)`
 - `shareSession()` / `unshareSession()` -> `upsertSession(result.data)`
-- `archiveSession()` -> waits for server confirmation, then upserts the archived session
+- `archiveSession()` / `archiveSessions()` -> wait for server confirmation, then upsert each archived session
 - `deleteSession()` -> waits for server confirmation or `404`, then removes the session and its persisted state
 - `moveSessionToDirectory()` -> move the session between directory stores and update the global directory index
+
+Archive callers whose confirmation spans asynchronous SDK calls may capture the
+runtime key at operation start and pass it as `expectedRuntimeKey`. The guarded
+action rechecks that key before every store reconciliation, so a response
+produced by the previous runtime is rejected instead of mutating the current
+runtime's live or global session state. A guarded batch stops at the first
+observed runtime change: sessions the server already confirmed remain archived
+and stay in `archivedIds`, while every ID not confirmed on the captured runtime
+is returned in `failedIds` so existing partial-failure feedback stays truthful.
+Callers that pass no runtime key keep the previous unguarded behavior.
 
 ## The golden rule
 
