@@ -16,6 +16,7 @@ export const dict: Record<I18nKey, string> = {
   'common.loading': 'Ładowanie...',
   'common.unavailable': 'Niedostępne',
   'common.language.english': 'Angielski',
+  'common.language.german': 'Niemiecki',
   'common.language.french': 'Francuski',
   'common.language.simplifiedChinese': 'Chiński (Uproszczony)',
   'common.language.traditionalChinese': 'Chiński (Tradycyjny)',
