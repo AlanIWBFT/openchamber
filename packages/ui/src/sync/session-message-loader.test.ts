@@ -7,9 +7,9 @@ import {
   startSessionLoadPerformanceEvent,
 } from "./session-load-performance"
 
-const createRecord = (sessionID: string, id = "msg_1") => ({
-  info: { id, sessionID, role: "user", time: { created: 1 }, seq: Number(id.match(/\d+$/)?.[0] ?? 1) } as unknown as Message,
-  parts: [{ id: `part_${id}`, messageID: id, sessionID, type: "text", text: "hello", seq: Number(id.match(/\d+$/)?.[0] ?? 1) }] as unknown as Part[],
+const createRecord = (sessionID: string, id = "msg_1", sequence = Number(id.match(/\d+$/)?.[0] ?? 1)) => ({
+  info: { id, sessionID, role: "user", time: { created: 1 }, seq: sequence } as unknown as Message,
+  parts: [{ id: `part_${id}`, messageID: id, sessionID, type: "text", text: "hello", seq: sequence }] as unknown as Part[],
 })
 
 const deferred = <T>() => {
@@ -65,8 +65,8 @@ describe("SessionMessageLoader", () => {
     const { childStores, loader } = createLoader(async ({ sessionID, limit, before }) => {
       calls.push({ limit, before })
       return before
-        ? response([createRecord(sessionID, "msg_older")])
-        : response([createRecord(sessionID, "msg_latest")], "older-cursor")
+        ? response([createRecord(sessionID, "msg_older", 1)])
+        : response([createRecord(sessionID, "msg_latest", 2)], "older-cursor")
     })
     const target = { directory: "/repo", sessionID: "session-a" }
 
@@ -83,7 +83,7 @@ describe("SessionMessageLoader", () => {
       { limit: 100, before: "older-cursor" },
     ])
     expect(childStores.getChild(target.directory)?.getState().message[target.sessionID]?.map((message) => message.id))
-      .toEqual(["msg_latest", "msg_older"].sort())
+      .toEqual(["msg_older", "msg_latest"])
     loader.dispose()
     childStores.disposeAll()
   })
@@ -115,9 +115,9 @@ describe("SessionMessageLoader", () => {
     const calls: Array<{ before?: string }> = []
     const { childStores, loader } = createLoader(async ({ sessionID, before }) => {
       calls.push({ before })
-      if (!before) return response([createRecord(sessionID, "msg_latest")], "cursor-2")
-      if (before === "cursor-2") return response([createRecord(sessionID, "msg_middle")], "cursor-1")
-      return response([createRecord(sessionID, "msg_oldest")])
+      if (!before) return response([createRecord(sessionID, "msg_latest", 3)], "cursor-2")
+      if (before === "cursor-2") return response([createRecord(sessionID, "msg_middle", 2)], "cursor-1")
+      return response([createRecord(sessionID, "msg_oldest", 1)])
     })
     const target = { directory: "/repo", sessionID: "session-a" }
 
@@ -183,9 +183,9 @@ describe("SessionMessageLoader", () => {
     let calls = 0
     const { childStores, loader } = createLoader(async ({ sessionID, before }) => {
       calls += 1
-      if (!before) return response([createRecord(sessionID, "latest")], "cursor-a")
-      if (before === "cursor-a") return response([createRecord(sessionID, "middle")], "cursor-b")
-      return response([createRecord(sessionID, "older")], "cursor-a")
+      if (!before) return response([createRecord(sessionID, "latest", 3)], "cursor-a")
+      if (before === "cursor-a") return response([createRecord(sessionID, "middle", 2)], "cursor-b")
+      return response([createRecord(sessionID, "older", 1)], "cursor-a")
     })
     const target = { directory: "/repo", sessionID: "session-a" }
 
