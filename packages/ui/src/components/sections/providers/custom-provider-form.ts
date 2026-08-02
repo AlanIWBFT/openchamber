@@ -40,6 +40,7 @@ export type FieldErrors = {
   providerID?: string;
   name?: string;
   baseURL?: string;
+  apiKey?: string;
 };
 
 export type ModelFieldErrors = {
@@ -76,6 +77,13 @@ export type ValidateCustomProviderInput = {
   t: CustomProviderTranslator;
   existingProviderIDs: ReadonlySet<string>;
   disabledProviders?: readonly string[];
+  /** When editing this provider id, treat it as an allowed update target. */
+  editingProviderID?: string;
+  /**
+   * When true, empty apiKey is allowed because auth.json already has a credential
+   * (edit path). Still requires env or key when false.
+   */
+  allowExistingAuth?: boolean;
 };
 
 export type ValidateCustomProviderResult = {
@@ -83,6 +91,14 @@ export type ValidateCustomProviderResult = {
   models: ModelFieldErrors[];
   headers: HeaderFieldErrors[];
   result?: CustomProviderPersistPlan;
+};
+
+export type ProviderLikeForCustomForm = {
+  id: string;
+  name?: string;
+  env?: string[];
+  options?: Record<string, unknown> | null;
+  models?: Array<{ id?: string; name?: string; api?: { npm?: string } }> | Record<string, unknown>;
 };
 
 let rowCounter = 0;
@@ -123,6 +139,73 @@ export function parseEnvApiKey(apiKey: string): { env?: string; key?: string } {
   return { key: trimmed };
 }
 
+export function isCustomOpenAICompatibleProvider(provider: ProviderLikeForCustomForm): boolean {
+  const options = provider.options && typeof provider.options === 'object' ? provider.options : null;
+  const baseURL = typeof options?.baseURL === 'string' ? options.baseURL.trim() : '';
+  if (baseURL && BASE_URL_PATTERN.test(baseURL)) {
+    return true;
+  }
+
+  const models = Array.isArray(provider.models)
+    ? provider.models
+    : (provider.models && typeof provider.models === 'object'
+      ? Object.values(provider.models)
+      : []);
+
+  return models.some((model) => {
+    if (!model || typeof model !== 'object') {
+      return false;
+    }
+    const api = 'api' in model && model.api && typeof model.api === 'object'
+      ? model.api as { npm?: unknown }
+      : null;
+    return typeof api?.npm === 'string' && api.npm === CUSTOM_PROVIDER_NPM;
+  });
+}
+
+export function providerToCustomFormState(provider: ProviderLikeForCustomForm): CustomProviderFormState {
+  const options = provider.options && typeof provider.options === 'object' ? provider.options : {};
+  const baseURL = typeof options.baseURL === 'string' ? options.baseURL : '';
+  const headersRaw = options.headers && typeof options.headers === 'object' && !Array.isArray(options.headers)
+    ? options.headers as Record<string, unknown>
+    : {};
+  const headerRows = Object.entries(headersRaw)
+    .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string')
+    .map(([key, value]) => ({ row: nextRow(), key, value }));
+
+  const modelEntries = Array.isArray(provider.models)
+    ? provider.models
+    : (provider.models && typeof provider.models === 'object'
+      ? Object.entries(provider.models).map(([id, value]) => ({
+          id,
+          name: value && typeof value === 'object' && 'name' in value && typeof (value as { name?: unknown }).name === 'string'
+            ? (value as { name: string }).name
+            : id,
+        }))
+      : []);
+
+  const models = modelEntries.length > 0
+    ? modelEntries.map((model) => ({
+        row: nextRow(),
+        id: typeof model?.id === 'string' ? model.id : '',
+        name: typeof model?.name === 'string' ? model.name : (typeof model?.id === 'string' ? model.id : ''),
+      }))
+    : [createModelRow()];
+
+  const envName = Array.isArray(provider.env)
+    ? provider.env.find((entry) => typeof entry === 'string' && entry.trim().length > 0)?.trim()
+    : undefined;
+
+  return {
+    providerID: provider.id,
+    name: typeof provider.name === 'string' && provider.name.trim() ? provider.name : provider.id,
+    baseURL,
+    apiKey: envName ? `{env:${envName}}` : '',
+    models,
+    headers: headerRows.length > 0 ? headerRows : [createHeaderRow()],
+  };
+}
+
 /**
  * Validates form input and builds the auth + OpenCode provider config payloads.
  */
@@ -132,6 +215,7 @@ export function validateCustomProvider(input: ValidateCustomProviderInput): Vali
   const baseURL = input.form.baseURL.trim();
   const { env, key } = parseEnvApiKey(input.form.apiKey);
   const disabledProviders = input.disabledProviders ?? [];
+  const editingProviderID = input.editingProviderID?.trim();
 
   const idError = !providerID
     ? input.t('settings.providers.page.custom.error.providerID.required')
@@ -149,8 +233,14 @@ export function validateCustomProvider(input: ValidateCustomProviderInput): Vali
       ? input.t('settings.providers.page.custom.error.baseURL.format')
       : undefined;
 
+  const credentialsSatisfied = Boolean(env || key || (editingProviderID && input.allowExistingAuth && editingProviderID === providerID));
+  const apiKeyError = credentialsSatisfied
+    ? undefined
+    : input.t('settings.providers.page.custom.error.apiKey.required');
+
   const disabled = disabledProviders.includes(providerID);
-  const existsError = idError
+  const isSelfEdit = Boolean(editingProviderID && editingProviderID === providerID);
+  const existsError = idError || isSelfEdit
     ? undefined
     : input.existingProviderIDs.has(providerID) && !disabled
       ? input.t('settings.providers.page.custom.error.providerID.exists')
@@ -211,9 +301,10 @@ export function validateCustomProvider(input: ValidateCustomProviderInput): Vali
     providerID: idError ?? existsError,
     name: nameError,
     baseURL: urlError,
+    apiKey: apiKeyError,
   };
 
-  const ok = !idError && !existsError && !nameError && !urlError && modelsValid && headersValid;
+  const ok = !idError && !existsError && !nameError && !urlError && !apiKeyError && modelsValid && headersValid;
   if (!ok) {
     return { err, models: modelErrors, headers: headerErrors };
   }
@@ -267,35 +358,4 @@ export function buildProviderUpsertRequest(plan: CustomProviderPersistPlan): {
     providerID: plan.providerID,
     config: plan.config,
   };
-}
-
-/**
- * Merges a custom provider block into an existing OpenCode config object.
- * Used by persistence tests and mirrors server upsert semantics.
- */
-export function mergeProviderConfig(
-  existing: Record<string, unknown>,
-  providerID: string,
-  config: CustomProviderConfig,
-  options?: { removeFromDisabled?: boolean },
-): Record<string, unknown> {
-  const providerSection = (
-    typeof existing.provider === 'object' && existing.provider !== null && !Array.isArray(existing.provider)
-      ? { ...(existing.provider as Record<string, unknown>) }
-      : {}
-  );
-  providerSection[providerID] = config;
-
-  const next: Record<string, unknown> = {
-    ...existing,
-    provider: providerSection,
-  };
-
-  if (options?.removeFromDisabled !== false && Array.isArray(existing.disabled_providers)) {
-    next.disabled_providers = existing.disabled_providers.filter(
-      (entry) => entry !== providerID,
-    );
-  }
-
-  return next;
 }

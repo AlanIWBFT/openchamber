@@ -1300,9 +1300,10 @@ export const settingsDict = {
   'settings.providers.page.connect.selectProviderPlaceholder': '프로바이더 선택',
   'settings.providers.page.connect.searchProvidersPlaceholder': '검색...',
   'settings.providers.page.connect.noProvidersFound': '프로바이더를 찾을 수 없습니다',
-  'settings.providers.page.connect.allProvidersConnected': '모든 프로바이더가 연결되었습니다.',
   'settings.providers.page.custom.optionLabel': '기타 / 사용자 정의',
   'settings.providers.page.custom.title': '사용자 정의 제공자',
+  'settings.providers.page.custom.editTitle': '사용자 지정 공급자 편집',
+
   'settings.providers.page.custom.description': '기본 URL, 자격 증명, 모델 목록으로 OpenAI 호환 제공자를 추가합니다. OpenCode 설정에 저장되어 다른 제공자와 같이 채팅에서 사용할 수 있습니다.',
   'settings.providers.page.custom.field.providerID.label': '제공자 ID',
   'settings.providers.page.custom.field.providerID.placeholder': 'my-provider',
@@ -1316,6 +1317,10 @@ export const settingsDict = {
   'settings.providers.page.custom.field.apiKey.label': 'API 키',
   'settings.providers.page.custom.field.apiKey.placeholder': 'sk-... 또는 {env:VAR_NAME}',
   'settings.providers.page.custom.field.apiKey.info': 'OpenChamber가 아니라 OpenCode 인증에 저장됩니다. 환경 변수에서 읽으려면 {env:VAR_NAME}을 사용하세요.',
+  'settings.providers.page.custom.field.apiKey.editInfo': '비워 두면 기존 자격 증명을 유지합니다. 새 키 또는 {env:VAR_NAME}을(를) 입력할 수도 있습니다.',
+  'settings.providers.page.custom.field.apiKey.editPlaceholder': '비워 두면 기존 키 유지',
+
+
   'settings.providers.page.custom.models.title': '모델',
   'settings.providers.page.custom.models.idLabel': '모델 ID',
   'settings.providers.page.custom.models.idPlaceholder': 'gpt-4o',
@@ -1333,6 +1338,8 @@ export const settingsDict = {
   'settings.providers.page.custom.headers.remove': '헤더 제거',
   'settings.providers.page.custom.actions.back': '뒤로',
   'settings.providers.page.custom.actions.save': '제공자 저장',
+  'settings.providers.page.custom.actions.update': '공급자 업데이트',
+
   'settings.providers.page.custom.error.providerID.required': '제공자 ID는 필수입니다',
   'settings.providers.page.custom.error.providerID.format': '소문자, 숫자, 하이픈, 밑줄을 사용하세요',
   'settings.providers.page.custom.error.providerID.exists': '이 ID의 제공자가 이미 연결되어 있습니다',
@@ -1341,6 +1348,10 @@ export const settingsDict = {
   'settings.providers.page.custom.error.baseURL.format': '기본 URL은 http:// 또는 https://로 시작해야 합니다',
   'settings.providers.page.custom.error.required': '필수',
   'settings.providers.page.custom.error.duplicate': '중복',
+  'settings.providers.page.custom.error.apiKey.required': 'API 키 또는 {env:VAR_NAME}이(가) 필요합니다',
+  'settings.providers.page.custom.authFailure.configAfterAuth': '자격 증명은 저장되었지만 공급자 구성은 저장되지 않았습니다. 오류를 수정한 뒤 다시 시도하거나, 연결을 해제하여 부분 저장을 지우세요.',
+
+
   'settings.providers.page.auth.title': '인증',
   'settings.providers.page.auth.loadingMethods': '인증 방식 로딩 중...',
   'settings.providers.page.auth.apiKeyLabel': 'API Key',
@@ -1349,6 +1360,10 @@ export const settingsDict = {
   'settings.providers.page.auth.oauthMethodFallback': 'OAuth 방식 {index}',
   'settings.providers.page.auth.pasteAuthorizationCodePlaceholder': 'authorization code 붙여넣기',
   'settings.providers.page.auth.connected': '연결됨',
+  'settings.providers.page.auth.incomplete': '자격 증명 없음',
+  'settings.providers.page.auth.incompleteHint': '· 채팅에서 이 공급자를 사용하기 전에 API 키 또는 {env:VAR}을(를) 추가하세요',
+
+
   'settings.providers.page.auth.useReconnectHint': '· 인증 정보를 업데이트하려면 Reconnect를 사용하세요',
   'settings.providers.page.connectionDetails.title': '연결 세부 정보',
   'settings.providers.page.connectionDetails.configuredIn': '설정 위치:',
@@ -1378,6 +1393,8 @@ export const settingsDict = {
   'settings.providers.page.actions.complete': '완료',
   'settings.providers.page.actions.hide': '숨기기',
   'settings.providers.page.actions.reconnect': '재연결',
+  'settings.providers.page.actions.edit': '편집',
+
   'settings.providers.page.actions.disconnecting': '연결 해제 중...',
   'settings.providers.page.actions.disconnect': '연결 해제',
   'settings.providers.page.actions.hideAll': '모두 숨기기',

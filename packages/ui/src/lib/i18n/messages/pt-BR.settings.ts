@@ -1300,9 +1300,10 @@ export const settingsDict = {
   "settings.providers.page.connect.selectProviderPlaceholder": "Selecionar provedor",
   "settings.providers.page.connect.searchProvidersPlaceholder": "Buscar...",
   "settings.providers.page.connect.noProvidersFound": "Nenhum provedores",
-  "settings.providers.page.connect.allProvidersConnected": "Todos os provedores estão conectados.",
   "settings.providers.page.custom.optionLabel": "Outro / Personalizado",
   "settings.providers.page.custom.title": "Provedor personalizado",
+  "settings.providers.page.custom.editTitle": "Editar provedor personalizado",
+
   "settings.providers.page.custom.description": "Adicione um provedor compatível com OpenAI com URL base, credenciais e lista de modelos. Salvo na configuração do OpenCode para uso no chat como qualquer outro provedor.",
   "settings.providers.page.custom.field.providerID.label": "ID do provedor",
   "settings.providers.page.custom.field.providerID.placeholder": "meu-provedor",
@@ -1316,6 +1317,10 @@ export const settingsDict = {
   "settings.providers.page.custom.field.apiKey.label": "Chave de API",
   "settings.providers.page.custom.field.apiKey.placeholder": "sk-... ou {env:VAR_NAME}",
   "settings.providers.page.custom.field.apiKey.info": "Armazenada na autenticação do OpenCode, não pelo OpenChamber. Use {env:VAR_NAME} para ler uma chave do ambiente.",
+  "settings.providers.page.custom.field.apiKey.editInfo": "Deixe em branco para manter a credencial existente, ou informe uma nova chave / {env:VAR_NAME}.",
+  "settings.providers.page.custom.field.apiKey.editPlaceholder": "Deixe em branco para manter a chave existente",
+
+
   "settings.providers.page.custom.models.title": "Modelos",
   "settings.providers.page.custom.models.idLabel": "ID do modelo",
   "settings.providers.page.custom.models.idPlaceholder": "gpt-4o",
@@ -1333,6 +1338,8 @@ export const settingsDict = {
   "settings.providers.page.custom.headers.remove": "Remover cabeçalho",
   "settings.providers.page.custom.actions.back": "Voltar",
   "settings.providers.page.custom.actions.save": "Salvar provedor",
+  "settings.providers.page.custom.actions.update": "Atualizar provedor",
+
   "settings.providers.page.custom.error.providerID.required": "O ID do provedor é obrigatório",
   "settings.providers.page.custom.error.providerID.format": "Use letras minúsculas, números, hífens ou sublinhados",
   "settings.providers.page.custom.error.providerID.exists": "Já existe um provedor conectado com este ID",
@@ -1341,6 +1348,10 @@ export const settingsDict = {
   "settings.providers.page.custom.error.baseURL.format": "A URL base deve começar com http:// ou https://",
   "settings.providers.page.custom.error.required": "Obrigatório",
   "settings.providers.page.custom.error.duplicate": "Duplicado",
+  "settings.providers.page.custom.error.apiKey.required": "É necessária uma chave de API ou {env:VAR_NAME}",
+  "settings.providers.page.custom.authFailure.configAfterAuth": "As credenciais foram salvas, mas a configuração do provedor não. Corrija o erro e tente novamente, ou desconecte para limpar o salvamento parcial.",
+
+
   "settings.providers.page.auth.title": "Autenticação",
   "settings.providers.page.auth.loadingMethods": "Carregando métodos de autenticação...",
   "settings.providers.page.auth.apiKeyLabel": "Chave API",
@@ -1349,6 +1360,10 @@ export const settingsDict = {
   "settings.providers.page.auth.oauthMethodFallback": "Método OAuth {index}",
   "settings.providers.page.auth.pasteAuthorizationCodePlaceholder": "Colar código de autorização",
   "settings.providers.page.auth.connected": "Conectado",
+  "settings.providers.page.auth.incomplete": "Credenciais ausentes",
+  "settings.providers.page.auth.incompleteHint": "· Adicione uma chave de API ou {env:VAR} antes de usar este provedor no chat",
+
+
   "settings.providers.page.auth.useReconnectHint": "· Usar Reconnect para atualizar credenciais",
   "settings.providers.page.connectionDetails.title": "Detalhes de conexão",
   "settings.providers.page.connectionDetails.configuredIn": "Configuredo en:",
@@ -1378,6 +1393,8 @@ export const settingsDict = {
   "settings.providers.page.actions.complete": "Completar",
   "settings.providers.page.actions.hide": "Ocultar",
   "settings.providers.page.actions.reconnect": "Reconectar",
+  "settings.providers.page.actions.edit": "Editar",
+
   "settings.providers.page.actions.disconnecting": "Desconectando...",
   "settings.providers.page.actions.disconnect": "Desconectar",
   "settings.providers.page.actions.hideAll": "Ocultar todo",

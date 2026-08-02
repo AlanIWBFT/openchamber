@@ -59,8 +59,8 @@ This module provides OpenCode server integration utilities for the web server ru
 
 ## Public exports (providers.js)
 - `getProviderSources(providerId, workingDirectory)`: Resolves which OpenCode config layers define a provider.
-- `upsertProviderConfig(providerId, config, workingDirectory, scope?)`: Validates and writes a custom OpenAI-compatible provider block (`npm`, `name`, `options.baseURL`, `models`, optional `env`/`headers`) into the user/project/custom config layer. Does not store API keys.
-- `validateCustomProviderConfig(providerId, config)`: Structural validation for custom provider payloads (id format, http(s) base URL, models).
+- `upsertProviderConfig(providerId, config, workingDirectory, scope?, options?)`: Validates and writes a custom OpenAI-compatible provider block (`npm`, `name`, `options.baseURL`, `models`, optional `env`/`headers`) into the user/project/custom config layer. Does not store API keys. Requires `config.env` or `options.hasStoredAuth` (auth already written via OpenCode `auth.set`).
+- `validateCustomProviderConfig(providerId, config, options?)`: Structural validation for custom provider payloads (id format, http(s) base URL, models, credentials via `env` or `hasStoredAuth`).
 - `removeProviderConfig(providerId, workingDirectory, scope?)`: Removes a provider block from the selected config layer.
 
 ## Public exports (shared.js)

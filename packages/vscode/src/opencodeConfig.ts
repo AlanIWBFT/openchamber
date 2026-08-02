@@ -2172,7 +2172,11 @@ const PROVIDER_ID_PATTERN = /^[a-z0-9][a-z0-9-_]*$/;
 const BASE_URL_PATTERN = /^https?:\/\//;
 const OPENAI_COMPATIBLE_NPM = '@ai-sdk/openai-compatible';
 
-export const validateCustomProviderConfig = (providerId: string, config: unknown) => {
+export const validateCustomProviderConfig = (
+  providerId: string,
+  config: unknown,
+  options: { hasStoredAuth?: boolean } = {},
+) => {
   if (!providerId || typeof providerId !== 'string' || !PROVIDER_ID_PATTERN.test(providerId)) {
     return { ok: false as const, error: 'Provider ID must match /^[a-z0-9][a-z0-9-_]*$/' };
   }
@@ -2191,12 +2195,12 @@ export const validateCustomProviderConfig = (providerId: string, config: unknown
     return { ok: false as const, error: `Custom providers must use npm package ${OPENAI_COMPATIBLE_NPM}` };
   }
 
-  const options = isPlainObject(config.options) ? config.options : null;
-  if (!options) {
+  const optionsBlock = isPlainObject(config.options) ? config.options : null;
+  if (!optionsBlock) {
     return { ok: false as const, error: 'Provider options are required' };
   }
 
-  const baseURL = typeof options.baseURL === 'string' ? options.baseURL.trim() : '';
+  const baseURL = typeof optionsBlock.baseURL === 'string' ? optionsBlock.baseURL.trim() : '';
   if (!baseURL) {
     return { ok: false as const, error: 'Base URL is required' };
   }
@@ -2234,8 +2238,9 @@ export const validateCustomProviderConfig = (providerId: string, config: unknown
     models: normalizedModels,
   };
 
+  let env: string[] = [];
   if (Array.isArray(config.env)) {
-    const env = config.env
+    env = config.env
       .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
       .map((entry) => entry.trim());
     if (env.length > 0) {
@@ -2243,9 +2248,13 @@ export const validateCustomProviderConfig = (providerId: string, config: unknown
     }
   }
 
-  if (isPlainObject(options.headers)) {
+  if (env.length === 0 && !options.hasStoredAuth) {
+    return { ok: false as const, error: 'API key or {env:VAR} credentials are required' };
+  }
+
+  if (isPlainObject(optionsBlock.headers)) {
     const headers: Record<string, string> = {};
-    for (const [headerKey, headerValue] of Object.entries(options.headers)) {
+    for (const [headerKey, headerValue] of Object.entries(optionsBlock.headers)) {
       if (typeof headerKey !== 'string' || !headerKey.trim()) {
         continue;
       }
@@ -2267,8 +2276,9 @@ export const upsertProviderConfig = (
   config: unknown,
   workingDirectory?: string,
   scope: 'user' | 'project' | 'custom' = 'user',
+  options: { hasStoredAuth?: boolean } = {},
 ) => {
-  const validated = validateCustomProviderConfig(providerId, config);
+  const validated = validateCustomProviderConfig(providerId, config, options);
   if (!validated.ok) {
     const error = new Error(validated.error) as Error & { statusCode?: number };
     error.statusCode = 400;

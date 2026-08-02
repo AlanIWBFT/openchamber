@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildAuthSetRequest,
   buildProviderUpsertRequest,
-  mergeProviderConfig,
+  isCustomOpenAICompatibleProvider,
+  providerToCustomFormState,
   validateCustomProvider,
+  type CustomProviderConfig,
   type CustomProviderFormState,
 } from './custom-provider-form';
 
@@ -18,6 +20,28 @@ const baseForm = (overrides: Partial<CustomProviderFormState> = {}): CustomProvi
   headers: [{ row: 'h0', key: '', value: '' }],
   ...overrides,
 });
+
+/** Mirrors server upsert semantics for request-construction tests. */
+function mergeProviderConfig(
+  existing: Record<string, unknown>,
+  providerID: string,
+  config: CustomProviderConfig,
+): Record<string, unknown> {
+  const providerSection = (
+    typeof existing.provider === 'object' && existing.provider !== null && !Array.isArray(existing.provider)
+      ? { ...(existing.provider as Record<string, unknown>) }
+      : {}
+  );
+  providerSection[providerID] = config;
+  const next: Record<string, unknown> = {
+    ...existing,
+    provider: providerSection,
+  };
+  if (Array.isArray(existing.disabled_providers)) {
+    next.disabled_providers = existing.disabled_providers.filter((entry) => entry !== providerID);
+  }
+  return next;
+}
 
 describe('validateCustomProvider', () => {
   test('builds trimmed config and auth payloads', () => {
@@ -70,6 +94,31 @@ describe('validateCustomProvider', () => {
     expect(result.result?.config.env).toEqual(['CUSTOM_PROVIDER_KEY']);
   });
 
+  test('rejects missing credentials', () => {
+    const result = validateCustomProvider({
+      form: baseForm({ apiKey: '   ' }),
+      t,
+      existingProviderIDs: new Set(),
+    });
+
+    expect(result.result).toEqual(undefined);
+    expect(result.err.apiKey).toBe('settings.providers.page.custom.error.apiKey.required');
+  });
+
+  test('allows empty api key when editing with existing auth', () => {
+    const result = validateCustomProvider({
+      form: baseForm({ apiKey: '' }),
+      t,
+      existingProviderIDs: new Set(['custom-provider']),
+      editingProviderID: 'custom-provider',
+      allowExistingAuth: true,
+    });
+
+    expect(result.result?.providerID).toBe('custom-provider');
+    expect(result.err.apiKey).toEqual(undefined);
+    expect(result.result?.apiKey).toEqual(undefined);
+  });
+
   test('rejects invalid provider id, base URL, and duplicate rows', () => {
     const result = validateCustomProvider({
       form: baseForm({
@@ -113,7 +162,7 @@ describe('validateCustomProvider', () => {
     expect(result.err.providerID).toEqual(undefined);
   });
 
-  test('rejects an already-connected provider id', () => {
+  test('rejects an already-connected provider id on create', () => {
     const result = validateCustomProvider({
       form: baseForm(),
       t,
@@ -122,6 +171,18 @@ describe('validateCustomProvider', () => {
 
     expect(result.result).toEqual(undefined);
     expect(result.err.providerID).toBe('settings.providers.page.custom.error.providerID.exists');
+  });
+
+  test('allows updating the same provider id while editing', () => {
+    const result = validateCustomProvider({
+      form: baseForm({ apiKey: 'sk-updated' }),
+      t,
+      existingProviderIDs: new Set(['custom-provider']),
+      editingProviderID: 'custom-provider',
+    });
+
+    expect(result.result?.providerID).toBe('custom-provider');
+    expect(result.err.providerID).toEqual(undefined);
   });
 });
 
@@ -198,5 +259,33 @@ describe('mergeProviderConfig persistence shape', () => {
     expect(next.provider).toEqual({
       'custom-provider': plan.config,
     });
+  });
+});
+
+describe('provider edit helpers', () => {
+  test('detects openai-compatible custom providers and prefills form state', () => {
+    expect(isCustomOpenAICompatibleProvider({
+      id: 'campus-llm',
+      options: { baseURL: 'https://llm.example.edu/v1' },
+      models: [],
+    })).toBe(true);
+
+    const state = providerToCustomFormState({
+      id: 'campus-llm',
+      name: 'Campus LLM',
+      env: ['CAMPUS_KEY'],
+      options: {
+        baseURL: 'https://llm.example.edu/v1',
+        headers: { 'X-Campus': '1' },
+      },
+      models: [{ id: 'fast', name: 'Fast' }],
+    });
+
+    expect(state.providerID).toBe('campus-llm');
+    expect(state.name).toBe('Campus LLM');
+    expect(state.baseURL).toBe('https://llm.example.edu/v1');
+    expect(state.apiKey).toBe('{env:CAMPUS_KEY}');
+    expect(state.models[0]).toEqual({ row: state.models[0].row, id: 'fast', name: 'Fast' });
+    expect(state.headers[0]).toEqual({ row: state.headers[0].row, key: 'X-Campus', value: '1' });
   });
 });

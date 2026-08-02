@@ -44,8 +44,11 @@ function getProviderSources(providerId, workingDirectory) {
 /**
  * Validate a custom OpenAI-compatible provider config payload before persistence.
  * Returns { ok: true, value } or { ok: false, error }.
+ *
+ * Credentials: either config.env contains a variable name, or hasStoredAuth is true
+ * (auth.json already has a key — typically after auth.set, or when editing).
  */
-function validateCustomProviderConfig(providerId, config) {
+function validateCustomProviderConfig(providerId, config, options = {}) {
   if (!providerId || typeof providerId !== 'string' || !PROVIDER_ID_PATTERN.test(providerId)) {
     return { ok: false, error: 'Provider ID must match /^[a-z0-9][a-z0-9-_]*$/' };
   }
@@ -64,12 +67,12 @@ function validateCustomProviderConfig(providerId, config) {
     return { ok: false, error: `Custom providers must use npm package ${OPENAI_COMPATIBLE_NPM}` };
   }
 
-  const options = isPlainObject(config.options) ? config.options : null;
-  if (!options) {
+  const optionsBlock = isPlainObject(config.options) ? config.options : null;
+  if (!optionsBlock) {
     return { ok: false, error: 'Provider options are required' };
   }
 
-  const baseURL = typeof options.baseURL === 'string' ? options.baseURL.trim() : '';
+  const baseURL = typeof optionsBlock.baseURL === 'string' ? optionsBlock.baseURL.trim() : '';
   if (!baseURL) {
     return { ok: false, error: 'Base URL is required' };
   }
@@ -107,8 +110,9 @@ function validateCustomProviderConfig(providerId, config) {
     models: normalizedModels,
   };
 
+  let env = [];
   if (Array.isArray(config.env)) {
-    const env = config.env
+    env = config.env
       .filter((entry) => typeof entry === 'string' && entry.trim().length > 0)
       .map((entry) => entry.trim());
     if (env.length > 0) {
@@ -116,9 +120,17 @@ function validateCustomProviderConfig(providerId, config) {
     }
   }
 
-  if (isPlainObject(options.headers)) {
+  const hasStoredAuth = Boolean(options.hasStoredAuth);
+  if (env.length === 0 && !hasStoredAuth) {
+    return {
+      ok: false,
+      error: 'API key or {env:VAR} credentials are required',
+    };
+  }
+
+  if (isPlainObject(optionsBlock.headers)) {
     const headers = {};
-    for (const [headerKey, headerValue] of Object.entries(options.headers)) {
+    for (const [headerKey, headerValue] of Object.entries(optionsBlock.headers)) {
       if (typeof headerKey !== 'string' || !headerKey.trim()) {
         continue;
       }
@@ -139,8 +151,8 @@ function validateCustomProviderConfig(providerId, config) {
  * Persist (create or update) a custom provider block in OpenCode user/project/custom config.
  * Does not write secrets — API keys remain in auth.json via the OpenCode auth API.
  */
-function upsertProviderConfig(providerId, config, workingDirectory, scope = 'user') {
-  const validated = validateCustomProviderConfig(providerId, config);
+function upsertProviderConfig(providerId, config, workingDirectory, scope = 'user', options = {}) {
+  const validated = validateCustomProviderConfig(providerId, config, options);
   if (!validated.ok) {
     const error = new Error(validated.error);
     error.statusCode = 400;

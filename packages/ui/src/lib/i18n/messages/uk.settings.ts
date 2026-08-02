@@ -1300,9 +1300,10 @@ export const settingsDict = {
   "settings.providers.page.connect.selectProviderPlaceholder": "Виберіть провайдера",
   "settings.providers.page.connect.searchProvidersPlaceholder": "Пошук...",
   "settings.providers.page.connect.noProvidersFound": "Немає провайдерів",
-  "settings.providers.page.connect.allProvidersConnected": "Усі провайдери підключені.",
   "settings.providers.page.custom.optionLabel": "Інший / Власний",
   "settings.providers.page.custom.title": "Власний провайдер",
+  "settings.providers.page.custom.editTitle": "Редагувати власного провайдера",
+
   "settings.providers.page.custom.description": "Додайте OpenAI-сумісного провайдера з базовою URL-адресою, обліковими даними та списком моделей. Зберігається в конфігурації OpenCode й працює в чаті як будь-який інший провайдер.",
   "settings.providers.page.custom.field.providerID.label": "ID провайдера",
   "settings.providers.page.custom.field.providerID.placeholder": "mij-provider",
@@ -1316,6 +1317,10 @@ export const settingsDict = {
   "settings.providers.page.custom.field.apiKey.label": "API-ключ",
   "settings.providers.page.custom.field.apiKey.placeholder": "sk-... або {env:VAR_NAME}",
   "settings.providers.page.custom.field.apiKey.info": "Зберігається в автентифікації OpenCode, не OpenChamber. Використовуйте {env:VAR_NAME}, щоб читати ключ зі змінної середовища.",
+  "settings.providers.page.custom.field.apiKey.editInfo": "Залиште порожнім, щоб зберегти наявні облікові дані, або введіть новий ключ / {env:VAR_NAME}.",
+  "settings.providers.page.custom.field.apiKey.editPlaceholder": "Залиште порожнім, щоб зберегти наявний ключ",
+
+
   "settings.providers.page.custom.models.title": "Моделі",
   "settings.providers.page.custom.models.idLabel": "ID моделі",
   "settings.providers.page.custom.models.idPlaceholder": "gpt-4o",
@@ -1333,6 +1338,8 @@ export const settingsDict = {
   "settings.providers.page.custom.headers.remove": "Видалити заголовок",
   "settings.providers.page.custom.actions.back": "Назад",
   "settings.providers.page.custom.actions.save": "Зберегти провайдера",
+  "settings.providers.page.custom.actions.update": "Оновити провайдера",
+
   "settings.providers.page.custom.error.providerID.required": "ID провайдера обов’язковий",
   "settings.providers.page.custom.error.providerID.format": "Використовуйте малі літери, цифри, дефіси або підкреслення",
   "settings.providers.page.custom.error.providerID.exists": "Провайдер із цим ID уже підключено",
@@ -1341,6 +1348,10 @@ export const settingsDict = {
   "settings.providers.page.custom.error.baseURL.format": "Базова URL-адреса має починатися з http:// або https://",
   "settings.providers.page.custom.error.required": "Обов’язково",
   "settings.providers.page.custom.error.duplicate": "Дублікат",
+  "settings.providers.page.custom.error.apiKey.required": "Потрібен API-ключ або {env:VAR_NAME}",
+  "settings.providers.page.custom.authFailure.configAfterAuth": "Облікові дані збережено, але конфігурацію провайдера — ні. Виправте помилку й спробуйте знову або від’єднайте, щоб очистити часткове збереження.",
+
+
   "settings.providers.page.auth.title": "Аутентифікація",
   "settings.providers.page.auth.loadingMethods": "Завантаження методів автентифікації...",
   "settings.providers.page.auth.apiKeyLabel": "API ключ",
@@ -1349,6 +1360,10 @@ export const settingsDict = {
   "settings.providers.page.auth.oauthMethodFallback": "OAuth метод {index}",
   "settings.providers.page.auth.pasteAuthorizationCodePlaceholder": "Вставити код авторизації",
   "settings.providers.page.auth.connected": "Підключено",
+  "settings.providers.page.auth.incomplete": "Облікові дані відсутні",
+  "settings.providers.page.auth.incompleteHint": "· Додайте API-ключ або {env:VAR} перед використанням цього провайдера в чаті",
+
+
   "settings.providers.page.auth.useReconnectHint": "· Скористайтеся повторним підключенням, щоб оновити облікові дані",
   "settings.providers.page.connectionDetails.title": "Деталі підключення",
   "settings.providers.page.connectionDetails.configuredIn": "Налаштовано в:",
@@ -1378,6 +1393,8 @@ export const settingsDict = {
   "settings.providers.page.actions.complete": "Завершити",
   "settings.providers.page.actions.hide": "Сховати",
   "settings.providers.page.actions.reconnect": "Перепідключити",
+  "settings.providers.page.actions.edit": "Редагувати",
+
   "settings.providers.page.actions.disconnecting": "Відключення...",
   "settings.providers.page.actions.disconnect": "Відключити",
   "settings.providers.page.actions.hideAll": "Сховати все",

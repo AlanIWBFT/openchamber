@@ -1333,9 +1333,10 @@ export const settingsDict = {
   'settings.providers.page.connect.selectProviderPlaceholder': 'Provider を選択',
   'settings.providers.page.connect.searchProvidersPlaceholder': '検索...',
   'settings.providers.page.connect.noProvidersFound': 'Provider が見つかりません',
-  'settings.providers.page.connect.allProvidersConnected': 'すべての Provider が接続されています。',
   'settings.providers.page.custom.optionLabel': 'その他 / カスタム',
   'settings.providers.page.custom.title': 'カスタムプロバイダー',
+  'settings.providers.page.custom.editTitle': 'カスタムプロバイダーを編集',
+
   'settings.providers.page.custom.description': 'ベース URL・認証情報・モデル一覧を指定して、OpenAI 互換プロバイダーを追加します。OpenCode 設定に保存され、他のプロバイダーと同様にチャットで使えます。',
   'settings.providers.page.custom.field.providerID.label': 'プロバイダー ID',
   'settings.providers.page.custom.field.providerID.placeholder': 'my-provider',
@@ -1349,6 +1350,10 @@ export const settingsDict = {
   'settings.providers.page.custom.field.apiKey.label': 'API キー',
   'settings.providers.page.custom.field.apiKey.placeholder': 'sk-... または {env:VAR_NAME}',
   'settings.providers.page.custom.field.apiKey.info': 'OpenChamber ではなく OpenCode の認証に保存されます。環境変数から読む場合は {env:VAR_NAME} を使います。',
+  'settings.providers.page.custom.field.apiKey.editInfo': '空のままにすると既存の認証情報を保持します。新しいキーまたは {env:VAR_NAME} を入力することもできます。',
+  'settings.providers.page.custom.field.apiKey.editPlaceholder': '空のままにすると既存のキーを保持',
+
+
   'settings.providers.page.custom.models.title': 'モデル',
   'settings.providers.page.custom.models.idLabel': 'モデル ID',
   'settings.providers.page.custom.models.idPlaceholder': 'gpt-4o',
@@ -1366,6 +1371,8 @@ export const settingsDict = {
   'settings.providers.page.custom.headers.remove': 'ヘッダーを削除',
   'settings.providers.page.custom.actions.back': '戻る',
   'settings.providers.page.custom.actions.save': 'プロバイダーを保存',
+  'settings.providers.page.custom.actions.update': 'プロバイダーを更新',
+
   'settings.providers.page.custom.error.providerID.required': 'プロバイダー ID は必須です',
   'settings.providers.page.custom.error.providerID.format': '小文字・数字・ハイフン・アンダースコアを使ってください',
   'settings.providers.page.custom.error.providerID.exists': 'この ID のプロバイダーは既に接続されています',
@@ -1374,6 +1381,10 @@ export const settingsDict = {
   'settings.providers.page.custom.error.baseURL.format': 'ベース URL は http:// または https:// で始めてください',
   'settings.providers.page.custom.error.required': '必須',
   'settings.providers.page.custom.error.duplicate': '重複',
+  'settings.providers.page.custom.error.apiKey.required': 'API キーまたは {env:VAR_NAME} が必要です',
+  'settings.providers.page.custom.authFailure.configAfterAuth': '認証情報は保存されましたが、プロバイダー設定は保存されませんでした。エラーを修正して再試行するか、切断して不完全な保存を削除してください。',
+
+
   'settings.providers.page.auth.title': '認証',
   'settings.providers.page.auth.loadingMethods': '認証方法を読み込み中...',
   'settings.providers.page.auth.apiKeyLabel': 'API キー',
@@ -1382,6 +1393,10 @@ export const settingsDict = {
   'settings.providers.page.auth.oauthMethodFallback': 'OAuth 方法 {index}',
   'settings.providers.page.auth.pasteAuthorizationCodePlaceholder': '認証コードを貼り付け',
   'settings.providers.page.auth.connected': '接続済み',
+  'settings.providers.page.auth.incomplete': '認証情報が不足しています',
+  'settings.providers.page.auth.incompleteHint': '· チャットでこのプロバイダーを使う前に API キーまたは {env:VAR} を追加してください',
+
+
   'settings.providers.page.auth.useReconnectHint': '· 認証情報を更新するには再接続を使用',
   'settings.providers.page.connectionDetails.title': '接続詳細',
   'settings.providers.page.connectionDetails.configuredIn': '設定場所:',
@@ -1411,6 +1426,8 @@ export const settingsDict = {
   'settings.providers.page.actions.complete': '完了',
   'settings.providers.page.actions.hide': '非表示',
   'settings.providers.page.actions.reconnect': '再接続',
+  'settings.providers.page.actions.edit': '編集',
+
   'settings.providers.page.actions.disconnecting': '切断中...',
   'settings.providers.page.actions.disconnect': '切断',
   'settings.providers.page.actions.hideAll': 'すべて非表示',

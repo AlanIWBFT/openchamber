@@ -1300,9 +1300,10 @@ export const settingsDict = {
   "settings.providers.page.connect.selectProviderPlaceholder": "Seleccionar proveedor",
   "settings.providers.page.connect.searchProvidersPlaceholder": "Buscar...",
   "settings.providers.page.connect.noProvidersFound": "No se encontraron proveedores",
-  "settings.providers.page.connect.allProvidersConnected": "Todos los proveedores están conectados.",
   "settings.providers.page.custom.optionLabel": "Otro / Personalizado",
   "settings.providers.page.custom.title": "Proveedor personalizado",
+  "settings.providers.page.custom.editTitle": "Editar proveedor personalizado",
+
   "settings.providers.page.custom.description": "Añade un proveedor compatible con OpenAI con URL base, credenciales y lista de modelos. Se guarda en la configuración de OpenCode para usarlo en el chat como cualquier otro proveedor.",
   "settings.providers.page.custom.field.providerID.label": "ID del proveedor",
   "settings.providers.page.custom.field.providerID.placeholder": "mi-proveedor",
@@ -1316,6 +1317,10 @@ export const settingsDict = {
   "settings.providers.page.custom.field.apiKey.label": "Clave API",
   "settings.providers.page.custom.field.apiKey.placeholder": "sk-... o {env:VAR_NAME}",
   "settings.providers.page.custom.field.apiKey.info": "Se guarda en la autenticación de OpenCode, no en OpenChamber. Usa {env:VAR_NAME} para leer una clave del entorno.",
+  "settings.providers.page.custom.field.apiKey.editInfo": "Déjalo en blanco para conservar la credencial existente, o introduce una clave nueva / {env:VAR_NAME}.",
+  "settings.providers.page.custom.field.apiKey.editPlaceholder": "Déjalo en blanco para conservar la clave existente",
+
+
   "settings.providers.page.custom.models.title": "Modelos",
   "settings.providers.page.custom.models.idLabel": "ID del modelo",
   "settings.providers.page.custom.models.idPlaceholder": "gpt-4o",
@@ -1333,6 +1338,8 @@ export const settingsDict = {
   "settings.providers.page.custom.headers.remove": "Quitar encabezado",
   "settings.providers.page.custom.actions.back": "Atrás",
   "settings.providers.page.custom.actions.save": "Guardar proveedor",
+  "settings.providers.page.custom.actions.update": "Actualizar proveedor",
+
   "settings.providers.page.custom.error.providerID.required": "El ID del proveedor es obligatorio",
   "settings.providers.page.custom.error.providerID.format": "Usa minúsculas, números, guiones o guiones bajos",
   "settings.providers.page.custom.error.providerID.exists": "Ya hay un proveedor conectado con este ID",
@@ -1341,6 +1348,10 @@ export const settingsDict = {
   "settings.providers.page.custom.error.baseURL.format": "La URL base debe empezar por http:// o https://",
   "settings.providers.page.custom.error.required": "Obligatorio",
   "settings.providers.page.custom.error.duplicate": "Duplicado",
+  "settings.providers.page.custom.error.apiKey.required": "Se requiere una clave API o {env:VAR_NAME}",
+  "settings.providers.page.custom.authFailure.configAfterAuth": "Las credenciales se guardaron, pero no la configuración del proveedor. Corrige el error e inténtalo de nuevo, o desconéctalo para eliminar el guardado parcial.",
+
+
   "settings.providers.page.auth.title": "Autenticación",
   "settings.providers.page.auth.loadingMethods": "Cargando métodos de autenticación...",
   "settings.providers.page.auth.apiKeyLabel": "Clave API",
@@ -1349,6 +1360,10 @@ export const settingsDict = {
   "settings.providers.page.auth.oauthMethodFallback": "Método OAuth {index}",
   "settings.providers.page.auth.pasteAuthorizationCodePlaceholder": "Pegar código de autorización",
   "settings.providers.page.auth.connected": "Conectado",
+  "settings.providers.page.auth.incomplete": "Faltan credenciales",
+  "settings.providers.page.auth.incompleteHint": "· Añade una clave API o {env:VAR} antes de usar este proveedor en el chat",
+
+
   "settings.providers.page.auth.useReconnectHint": "· Usar Reconnect para actualizar credenciales",
   "settings.providers.page.connectionDetails.title": "Detalles de conexión",
   "settings.providers.page.connectionDetails.configuredIn": "Configurado en:",
@@ -1378,6 +1393,8 @@ export const settingsDict = {
   "settings.providers.page.actions.complete": "Completar",
   "settings.providers.page.actions.hide": "Ocultar",
   "settings.providers.page.actions.reconnect": "Reconectar",
+  "settings.providers.page.actions.edit": "Editar",
+
   "settings.providers.page.actions.disconnecting": "Desconectando...",
   "settings.providers.page.actions.disconnect": "Desconectar",
   "settings.providers.page.actions.hideAll": "Ocultar todo",

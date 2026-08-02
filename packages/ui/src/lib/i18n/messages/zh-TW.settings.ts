@@ -1206,9 +1206,10 @@
   'settings.providers.page.connect.selectProviderPlaceholder': '選擇供應商',
   'settings.providers.page.connect.searchProvidersPlaceholder': '搜尋...',
   'settings.providers.page.connect.noProvidersFound': '找不到供應商',
-  'settings.providers.page.connect.allProvidersConnected': '所有供應商均已連線。',
   'settings.providers.page.custom.optionLabel': '其他 / 自訂',
   'settings.providers.page.custom.title': '自訂供應商',
+  'settings.providers.page.custom.editTitle': '編輯自訂提供者',
+
   'settings.providers.page.custom.description': '透過指定基礎 URL、憑證與模型清單，新增相容 OpenAI 的供應商。會寫入 OpenCode 設定，可像其他供應商一樣在聊天中使用。',
   'settings.providers.page.custom.field.providerID.label': '供應商 ID',
   'settings.providers.page.custom.field.providerID.placeholder': 'my-provider',
@@ -1222,6 +1223,10 @@
   'settings.providers.page.custom.field.apiKey.label': 'API 金鑰',
   'settings.providers.page.custom.field.apiKey.placeholder': 'sk-... 或 {env:VAR_NAME}',
   'settings.providers.page.custom.field.apiKey.info': '儲存在 OpenCode 驗證中，而非 OpenChamber。使用 {env:VAR_NAME} 可從環境變數讀取金鑰。',
+  'settings.providers.page.custom.field.apiKey.editInfo': '留空以保留現有憑證，或輸入新金鑰 / {env:VAR_NAME}。',
+  'settings.providers.page.custom.field.apiKey.editPlaceholder': '留空以保留現有金鑰',
+
+
   'settings.providers.page.custom.models.title': '模型',
   'settings.providers.page.custom.models.idLabel': '模型 ID',
   'settings.providers.page.custom.models.idPlaceholder': 'gpt-4o',
@@ -1239,6 +1244,8 @@
   'settings.providers.page.custom.headers.remove': '移除標頭',
   'settings.providers.page.custom.actions.back': '返回',
   'settings.providers.page.custom.actions.save': '儲存供應商',
+  'settings.providers.page.custom.actions.update': '更新提供者',
+
   'settings.providers.page.custom.error.providerID.required': '供應商 ID 為必填',
   'settings.providers.page.custom.error.providerID.format': '請使用小寫字母、數字、連字號或底線',
   'settings.providers.page.custom.error.providerID.exists': '已連線具有此 ID 的供應商',
@@ -1247,6 +1254,10 @@
   'settings.providers.page.custom.error.baseURL.format': '基礎 URL 必須以 http:// 或 https:// 開頭',
   'settings.providers.page.custom.error.required': '必填',
   'settings.providers.page.custom.error.duplicate': '重複',
+  'settings.providers.page.custom.error.apiKey.required': '需要 API 金鑰或 {env:VAR_NAME}',
+  'settings.providers.page.custom.authFailure.configAfterAuth': '憑證已儲存，但提供者設定未儲存。請修正錯誤後再試，或中斷連線以清除部分儲存。',
+
+
   'settings.providers.page.auth.title': '驗證',
   'settings.providers.page.auth.loadingMethods': '正在載入驗證方式...',
   'settings.providers.page.auth.apiKeyLabel': 'API Key',
@@ -1255,6 +1266,10 @@
   'settings.providers.page.auth.oauthMethodFallback': 'OAuth 方式 {index}',
   'settings.providers.page.auth.pasteAuthorizationCodePlaceholder': '貼上授權碼',
   'settings.providers.page.auth.connected': '已連線',
+  'settings.providers.page.auth.incomplete': '缺少憑證',
+  'settings.providers.page.auth.incompleteHint': '· 在聊天中使用此提供者之前，請新增 API 金鑰或 {env:VAR}',
+
+
   'settings.providers.page.auth.useReconnectHint': '· 使用「重新連線」以更新憑證',
   'settings.providers.page.connectionDetails.title': '連線詳情',
   'settings.providers.page.connectionDetails.configuredIn': '設定來源：',
@@ -1284,6 +1299,8 @@
   'settings.providers.page.actions.complete': '完成',
   'settings.providers.page.actions.hide': '隱藏',
   'settings.providers.page.actions.reconnect': '重新連線',
+  'settings.providers.page.actions.edit': '編輯',
+
   'settings.providers.page.actions.disconnecting': '中斷連線中...',
   'settings.providers.page.actions.disconnect': '中斷連線',
   'settings.providers.page.actions.hideAll': '全部隱藏',

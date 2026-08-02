@@ -1221,9 +1221,10 @@ export const settingsDict = {
   'settings.providers.page.connect.selectProviderPlaceholder': 'Sélectionnez le fournisseur',
   'settings.providers.page.connect.searchProvidersPlaceholder': 'Recherche...',
   'settings.providers.page.connect.noProvidersFound': 'Aucun fournisseur trouvé',
-  'settings.providers.page.connect.allProvidersConnected': 'Tous les fournisseurs connectés.',
   'settings.providers.page.custom.optionLabel': 'Autre / Personnalisé',
   'settings.providers.page.custom.title': 'Fournisseur personnalisé',
+  'settings.providers.page.custom.editTitle': 'Modifier le fournisseur personnalisé',
+
   'settings.providers.page.custom.description': 'Ajoutez un fournisseur compatible OpenAI avec une URL de base, des identifiants et une liste de modèles. Enregistré dans la configuration OpenCode pour l’utiliser dans le chat comme les autres fournisseurs.',
   'settings.providers.page.custom.field.providerID.label': 'ID du fournisseur',
   'settings.providers.page.custom.field.providerID.placeholder': 'mon-fournisseur',
@@ -1237,6 +1238,10 @@ export const settingsDict = {
   'settings.providers.page.custom.field.apiKey.label': 'Clé API',
   'settings.providers.page.custom.field.apiKey.placeholder': 'sk-... ou {env:VAR_NAME}',
   'settings.providers.page.custom.field.apiKey.info': 'Stockée dans l’auth OpenCode, pas par OpenChamber. Utilisez {env:VAR_NAME} pour lire une clé depuis l’environnement.',
+  'settings.providers.page.custom.field.apiKey.editInfo': 'Laissez vide pour conserver l\'identifiant existant, ou saisissez une nouvelle clé / {env:VAR_NAME}.',
+  'settings.providers.page.custom.field.apiKey.editPlaceholder': 'Laissez vide pour conserver la clé existante',
+
+
   'settings.providers.page.custom.models.title': 'Modèles',
   'settings.providers.page.custom.models.idLabel': 'ID du modèle',
   'settings.providers.page.custom.models.idPlaceholder': 'gpt-4o',
@@ -1254,6 +1259,8 @@ export const settingsDict = {
   'settings.providers.page.custom.headers.remove': 'Supprimer l’en-tête',
   'settings.providers.page.custom.actions.back': 'Retour',
   'settings.providers.page.custom.actions.save': 'Enregistrer le fournisseur',
+  'settings.providers.page.custom.actions.update': 'Mettre à jour le fournisseur',
+
   'settings.providers.page.custom.error.providerID.required': 'L’ID du fournisseur est obligatoire',
   'settings.providers.page.custom.error.providerID.format': 'Utilisez des minuscules, chiffres, tirets ou underscores',
   'settings.providers.page.custom.error.providerID.exists': 'Un fournisseur avec cet ID est déjà connecté',
@@ -1262,6 +1269,10 @@ export const settingsDict = {
   'settings.providers.page.custom.error.baseURL.format': 'L’URL de base doit commencer par http:// ou https://',
   'settings.providers.page.custom.error.required': 'Obligatoire',
   'settings.providers.page.custom.error.duplicate': 'Doublon',
+  'settings.providers.page.custom.error.apiKey.required': 'Une clé API ou {env:VAR_NAME} est requise',
+  'settings.providers.page.custom.authFailure.configAfterAuth': 'Les identifiants ont été enregistrés, mais pas la configuration du fournisseur. Corrigez l\'erreur et réessayez, ou déconnectez pour effacer l\'enregistrement partiel.',
+
+
   'settings.providers.page.auth.title': 'Authentification',
   'settings.providers.page.auth.loadingMethods': 'Chargement des méthodes d\'authentification...',
   'settings.providers.page.auth.apiKeyLabel': 'Clé API',
@@ -1270,6 +1281,10 @@ export const settingsDict = {
   'settings.providers.page.auth.oauthMethodFallback': 'Méthode OAuth {index}',
   'settings.providers.page.auth.pasteAuthorizationCodePlaceholder': 'Coller le code d\'autorisation',
   'settings.providers.page.auth.connected': 'Connecté',
+  'settings.providers.page.auth.incomplete': 'Identifiants manquants',
+  'settings.providers.page.auth.incompleteHint': '· Ajoutez une clé API ou {env:VAR} avant d’utiliser ce fournisseur dans le chat',
+
+
   'settings.providers.page.auth.useReconnectHint': '· Utilisez Reconnect pour mettre à jour les informations d\'identification',
   'settings.providers.page.connectionDetails.title': 'Détails de connexion',
   'settings.providers.page.connectionDetails.configuredIn': 'Configuré dans :',
@@ -1299,6 +1314,8 @@ export const settingsDict = {
   'settings.providers.page.actions.complete': 'Complet',
   'settings.providers.page.actions.hide': 'Cacher',
   'settings.providers.page.actions.reconnect': 'Reconnecter',
+  'settings.providers.page.actions.edit': 'Modifier',
+
   'settings.providers.page.actions.disconnecting': 'Déconnexion...',
   'settings.providers.page.actions.disconnect': 'Déconnecter',
   'settings.providers.page.actions.hideAll': 'Tout cacher',

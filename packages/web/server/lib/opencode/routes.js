@@ -482,14 +482,16 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         }
       }
 
-      const result = upsertProviderConfig(providerID, config, directory, scope);
+      const { getProviderAuth } = await getAuthLibrary();
+      const hasStoredAuth = Boolean(getProviderAuth(providerID));
+      const upsertResult = upsertProviderConfig(providerID, config, directory, scope, { hasStoredAuth });
       await refreshOpenCodeAfterConfigChange(`provider ${providerID} upserted (${scope})`);
 
       return res.json({
         success: true,
-        providerId: result.providerId,
-        path: result.path,
-        config: result.config,
+        providerId: upsertResult.providerId,
+        path: upsertResult.path,
+        config: upsertResult.config,
         requiresReload: true,
         reloadDelayMs: clientReloadDelayMs,
       });

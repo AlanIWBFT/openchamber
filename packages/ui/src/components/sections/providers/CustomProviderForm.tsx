@@ -29,28 +29,48 @@ type CustomProviderFormProps = {
   existingProviderIDs: ReadonlySet<string>;
   disabledProviders?: readonly string[];
   busy?: boolean;
+  mode?: 'create' | 'edit';
+  initialValues?: CustomProviderFormState;
+  allowExistingAuth?: boolean;
+  authFailureHint?: string | null;
   onSubmit: (plan: CustomProviderPersistPlan) => void | Promise<void>;
   onCancel?: () => void;
+  onDisconnect?: () => void | Promise<void>;
 };
 
 export const CustomProviderForm: React.FC<CustomProviderFormProps> = ({
   existingProviderIDs,
   disabledProviders = [],
   busy = false,
+  mode = 'create',
+  initialValues,
+  allowExistingAuth = false,
+  authFailureHint = null,
   onSubmit,
   onCancel,
+  onDisconnect,
 }) => {
   const { t } = useI18n();
-  const [form, setForm] = React.useState<CustomProviderFormState>(() => createEmptyCustomProviderForm());
+  const isEdit = mode === 'edit';
+  const [form, setForm] = React.useState<CustomProviderFormState>(
+    () => initialValues ?? createEmptyCustomProviderForm(),
+  );
   const [err, setErr] = React.useState<FieldErrors>({});
   const [modelErrors, setModelErrors] = React.useState<ModelFieldErrors[]>([]);
   const [headerErrors, setHeaderErrors] = React.useState<HeaderFieldErrors[]>([]);
 
+  React.useEffect(() => {
+    if (initialValues) {
+      setForm(initialValues);
+      setErr({});
+      setModelErrors([]);
+      setHeaderErrors([]);
+    }
+  }, [initialValues]);
+
   const setField = (key: keyof Pick<CustomProviderFormState, 'providerID' | 'name' | 'baseURL' | 'apiKey'>, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
-    if (key !== 'apiKey') {
-      setErr((prev) => ({ ...prev, [key]: undefined }));
-    }
+    setErr((prev) => ({ ...prev, [key]: undefined }));
   };
 
   const setModel = (index: number, key: 'id' | 'name', value: string) => {
@@ -88,6 +108,8 @@ export const CustomProviderForm: React.FC<CustomProviderFormProps> = ({
       t: ((key, vars) => t(key as Parameters<typeof t>[0], vars)) as CustomProviderTranslator,
       existingProviderIDs,
       disabledProviders,
+      editingProviderID: isEdit ? form.providerID : undefined,
+      allowExistingAuth: isEdit && allowExistingAuth,
     });
     setErr(output.err);
     setModelErrors(output.models);
@@ -101,12 +123,18 @@ export const CustomProviderForm: React.FC<CustomProviderFormProps> = ({
   return (
     <form onSubmit={handleSubmit} className="space-y-0">
       <SettingsSection
-        title={t('settings.providers.page.custom.title')}
+        title={isEdit ? t('settings.providers.page.custom.editTitle') : t('settings.providers.page.custom.title')}
         divider={false}
         settingsItem="providers.custom"
         contentClassName={SETTINGS_FIELDS_STACK_CLASS}
       >
         <p className={SETTINGS_HELPER_CLASS}>{t('settings.providers.page.custom.description')}</p>
+
+        {authFailureHint ? (
+          <p className="typography-meta text-[var(--status-warning)]" role="status">
+            {authFailureHint}
+          </p>
+        ) : null}
 
         <SettingsStackedField
           label={t('settings.providers.page.custom.field.providerID.label')}
@@ -117,7 +145,8 @@ export const CustomProviderForm: React.FC<CustomProviderFormProps> = ({
             onChange={(event) => setField('providerID', event.target.value)}
             placeholder={t('settings.providers.page.custom.field.providerID.placeholder')}
             className="h-8 rounded-md px-3 font-mono text-xs"
-            autoFocus
+            autoFocus={!isEdit}
+            disabled={isEdit || busy}
             aria-invalid={Boolean(err.providerID)}
             aria-label={t('settings.providers.page.custom.field.providerID.label')}
           />
@@ -156,16 +185,26 @@ export const CustomProviderForm: React.FC<CustomProviderFormProps> = ({
 
         <SettingsStackedField
           label={t('settings.providers.page.custom.field.apiKey.label')}
-          info={t('settings.providers.page.custom.field.apiKey.info')}
+          info={
+            isEdit && allowExistingAuth
+              ? t('settings.providers.page.custom.field.apiKey.editInfo')
+              : t('settings.providers.page.custom.field.apiKey.info')
+          }
         >
           <Input
             type="password"
             value={form.apiKey}
             onChange={(event) => setField('apiKey', event.target.value)}
-            placeholder={t('settings.providers.page.custom.field.apiKey.placeholder')}
+            placeholder={
+              isEdit && allowExistingAuth
+                ? t('settings.providers.page.custom.field.apiKey.editPlaceholder')
+                : t('settings.providers.page.custom.field.apiKey.placeholder')
+            }
             className="h-8 rounded-md px-3 font-mono text-xs"
+            aria-invalid={Boolean(err.apiKey)}
             aria-label={t('settings.providers.page.custom.field.apiKey.label')}
           />
+          {err.apiKey ? <p className="mt-1 typography-meta text-[var(--status-error)]">{err.apiKey}</p> : null}
         </SettingsStackedField>
       </SettingsSection>
 
@@ -324,10 +363,24 @@ export const CustomProviderForm: React.FC<CustomProviderFormProps> = ({
             {t('settings.providers.page.custom.actions.back')}
           </Button>
         ) : null}
+        {onDisconnect ? (
+          <Button
+            type="button"
+            variant="destructive"
+            size="xs"
+            className="!font-normal"
+            onClick={() => void onDisconnect()}
+            disabled={busy}
+          >
+            {t('settings.providers.page.actions.disconnect')}
+          </Button>
+        ) : null}
         <Button type="submit" size="xs" className="!font-normal" disabled={busy}>
           {busy
             ? t('settings.providers.page.actions.saving')
-            : t('settings.providers.page.custom.actions.save')}
+            : isEdit
+              ? t('settings.providers.page.custom.actions.update')
+              : t('settings.providers.page.custom.actions.save')}
         </Button>
       </div>
     </form>

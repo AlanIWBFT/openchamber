@@ -1364,6 +1364,8 @@ export const settingsDict = {
   'settings.providers.page.actions.hideAll': 'Ukryj wszystko',
   'settings.providers.page.actions.open': 'Otwórz',
   'settings.providers.page.actions.reconnect': 'Połącz ponownie',
+  'settings.providers.page.actions.edit': 'Edytuj',
+
   'settings.providers.page.actions.saveKey': 'Zapisz klucz',
   'settings.providers.page.actions.saving': 'Zapisywanie...',
   'settings.providers.page.actions.showAll': 'Pokaż wszystko',
@@ -1371,14 +1373,19 @@ export const settingsDict = {
   'settings.providers.page.auth.apiKeyPlaceholder': 'sk-...',
   'settings.providers.page.auth.apiKeyTooltip': 'Klucze są wysyłane bezpośrednio do OpenCode i nigdy nie są przechowywane przez OpenChamber.',
   'settings.providers.page.auth.connected': 'Połączono',
+  'settings.providers.page.auth.incomplete': 'Brak poświadczeń',
+  'settings.providers.page.auth.incompleteHint': '· Dodaj klucz API lub {env:VAR} przed użyciem tego dostawcy w czacie',
+
+
   'settings.providers.page.auth.loadingMethods': 'Ładowanie metod uwierzytelniania...',
   'settings.providers.page.auth.oauthMethodFallback': 'Metoda OAuth {index}',
   'settings.providers.page.auth.pasteAuthorizationCodePlaceholder': 'Wklej kod autoryzacyjny',
   'settings.providers.page.auth.title': 'Uwierzytelnianie',
   'settings.providers.page.auth.useReconnectHint': '· Użyj Połącz ponownie, aby zaktualizować dane logowania',
-  'settings.providers.page.connect.allProvidersConnected': 'Wszyscy dostawcy są połączeni.',
   'settings.providers.page.custom.optionLabel': 'Inny / Niestandardowy',
   'settings.providers.page.custom.title': 'Niestandardowy dostawca',
+  'settings.providers.page.custom.editTitle': 'Edytuj niestandardowego dostawcę',
+
   'settings.providers.page.custom.description': 'Dodaj dostawcę zgodnego z OpenAI, podając adres bazowy, poświadczenia i listę modeli. Zapisuje się w konfiguracji OpenCode i działa w czacie jak każdy inny dostawca.',
   'settings.providers.page.custom.field.providerID.label': 'ID dostawcy',
   'settings.providers.page.custom.field.providerID.placeholder': 'moj-dostawca',
@@ -1392,6 +1399,10 @@ export const settingsDict = {
   'settings.providers.page.custom.field.apiKey.label': 'Klucz API',
   'settings.providers.page.custom.field.apiKey.placeholder': 'sk-... lub {env:VAR_NAME}',
   'settings.providers.page.custom.field.apiKey.info': 'Przechowywany w auth OpenCode, nie przez OpenChamber. Użyj {env:VAR_NAME}, aby odczytać klucz ze zmiennej środowiskowej.',
+  'settings.providers.page.custom.field.apiKey.editInfo': 'Pozostaw puste, aby zachować istniejące poświadczenie, albo wpisz nowy klucz / {env:VAR_NAME}.',
+  'settings.providers.page.custom.field.apiKey.editPlaceholder': 'Pozostaw puste, aby zachować istniejący klucz',
+
+
   'settings.providers.page.custom.models.title': 'Modele',
   'settings.providers.page.custom.models.idLabel': 'ID modelu',
   'settings.providers.page.custom.models.idPlaceholder': 'gpt-4o',
@@ -1409,6 +1420,8 @@ export const settingsDict = {
   'settings.providers.page.custom.headers.remove': 'Usuń nagłówek',
   'settings.providers.page.custom.actions.back': 'Wstecz',
   'settings.providers.page.custom.actions.save': 'Zapisz dostawcę',
+  'settings.providers.page.custom.actions.update': 'Zaktualizuj dostawcę',
+
   'settings.providers.page.custom.error.providerID.required': 'ID dostawcy jest wymagane',
   'settings.providers.page.custom.error.providerID.format': 'Użyj małych liter, cyfr, myślników lub podkreśleń',
   'settings.providers.page.custom.error.providerID.exists': 'Dostawca o tym ID jest już połączony',
@@ -1417,6 +1430,10 @@ export const settingsDict = {
   'settings.providers.page.custom.error.baseURL.format': 'Adres bazowy musi zaczynać się od http:// lub https://',
   'settings.providers.page.custom.error.required': 'Wymagane',
   'settings.providers.page.custom.error.duplicate': 'Duplikat',
+  'settings.providers.page.custom.error.apiKey.required': 'Wymagany jest klucz API lub {env:VAR_NAME}',
+  'settings.providers.page.custom.authFailure.configAfterAuth': 'Poświadczenia zostały zapisane, ale konfiguracja dostawcy nie. Napraw błąd i spróbuj ponownie albo rozłącz, aby usunąć częściowy zapis.',
+
+
   'settings.providers.page.connect.noProvidersFound': 'Nie znaleziono dostawców',
   'settings.providers.page.connect.providerField': 'Dostawca',
   'settings.providers.page.connect.searchProvidersPlaceholder': 'Szukaj...',

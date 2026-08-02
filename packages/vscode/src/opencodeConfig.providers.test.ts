@@ -1,29 +1,28 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { afterEach, beforeEach, describe, test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import {
-  upsertProviderConfig,
-  validateCustomProviderConfig,
   getProviderSources,
   removeProviderConfig,
-} from './providers.js';
+  upsertProviderConfig,
+  validateCustomProviderConfig,
+} from './opencodeConfig';
 
-let projectDir;
+let projectDir: string;
 
-function writeJson(filePath, value) {
+const writeJson = (filePath: string, value: unknown) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
-}
+};
 
-function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-}
+const readJson = (filePath: string) => JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
-describe('custom provider config persistence', () => {
+describe('custom provider config persistence (VS Code parity)', () => {
   beforeEach(() => {
-    projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-provider-'));
+    projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-vscode-provider-'));
   });
 
   afterEach(() => {
@@ -31,44 +30,46 @@ describe('custom provider config persistence', () => {
   });
 
   test('validateCustomProviderConfig rejects invalid endpoint and credentials shape', () => {
-    expect(validateCustomProviderConfig('Bad Id', {
+    assert.equal(validateCustomProviderConfig('Bad Id', {
       name: 'X',
       options: { baseURL: 'https://api.example.com' },
       models: { m: { name: 'M' } },
-    }).ok).toBe(false);
+    }).ok, false);
 
-    expect(validateCustomProviderConfig('ok', {
+    const ftp = validateCustomProviderConfig('ok', {
       name: 'X',
       options: { baseURL: 'ftp://api.example.com' },
       models: { m: { name: 'M' } },
-    }).error).toContain('http://');
+    });
+    assert.equal(ftp.ok, false);
+    assert.match(ftp.error ?? '', /http:\/\//);
 
-    expect(validateCustomProviderConfig('ok', {
+    assert.equal(validateCustomProviderConfig('ok', {
       name: 'X',
       options: { baseURL: 'https://api.example.com' },
       models: {},
-    }).ok).toBe(false);
+    }).ok, false);
   });
 
   test('validateCustomProviderConfig rejects missing credentials', () => {
-    expect(validateCustomProviderConfig('ok', {
+    assert.equal(validateCustomProviderConfig('ok', {
       name: 'X',
       options: { baseURL: 'https://api.example.com' },
       models: { m: { name: 'M' } },
-    }).ok).toBe(false);
+    }).ok, false);
 
-    expect(validateCustomProviderConfig('ok', {
+    assert.equal(validateCustomProviderConfig('ok', {
       name: 'X',
       options: { baseURL: 'https://api.example.com' },
       models: { m: { name: 'M' } },
-    }, { hasStoredAuth: true }).ok).toBe(true);
+    }, { hasStoredAuth: true }).ok, true);
 
-    expect(validateCustomProviderConfig('ok', {
+    assert.equal(validateCustomProviderConfig('ok', {
       name: 'X',
       env: ['MY_KEY'],
       options: { baseURL: 'https://api.example.com' },
       models: { m: { name: 'M' } },
-    }).ok).toBe(true);
+    }).ok, true);
   });
 
   test('upsertProviderConfig writes and round-trips project config', () => {
@@ -85,12 +86,12 @@ describe('custom provider config persistence', () => {
       env: ['CAMPUS_KEY'],
     }, projectDir, 'project');
 
-    expect(result.providerId).toBe('campus-llm');
-    expect(fs.existsSync(result.path)).toBe(true);
-    expect(result.path.startsWith(projectDir)).toBe(true);
+    assert.equal(result.providerId, 'campus-llm');
+    assert.equal(fs.existsSync(result.path), true);
+    assert.equal(result.path.startsWith(projectDir), true);
 
     const written = readJson(result.path);
-    expect(written.provider['campus-llm']).toEqual({
+    assert.deepEqual(written.provider['campus-llm'], {
       npm: '@ai-sdk/openai-compatible',
       name: 'Campus LLM',
       env: ['CAMPUS_KEY'],
@@ -104,8 +105,8 @@ describe('custom provider config persistence', () => {
     });
 
     const sources = getProviderSources('campus-llm', projectDir);
-    expect(sources.sources.project.exists).toBe(true);
-    expect(sources.sources.project.path).toBe(result.path);
+    assert.equal(sources.project.exists, true);
+    assert.equal(sources.project.path, result.path);
   });
 
   test('upsertProviderConfig updates existing entry and clears disabled_providers', () => {
@@ -130,9 +131,9 @@ describe('custom provider config persistence', () => {
     }, projectDir, 'project');
 
     const written = readJson(configPath);
-    expect(written.provider['campus-llm'].name).toBe('Campus LLM');
-    expect(written.provider['campus-llm'].models).toEqual({ b: { name: 'B' } });
-    expect(written.disabled_providers).toEqual(['other']);
+    assert.equal(written.provider['campus-llm'].name, 'Campus LLM');
+    assert.deepEqual(written.provider['campus-llm'].models, { b: { name: 'B' } });
+    assert.deepEqual(written.disabled_providers, ['other']);
   });
 
   test('upsert then remove restores absence', () => {
@@ -143,20 +144,23 @@ describe('custom provider config persistence', () => {
       env: ['TEMP_KEY'],
     }, projectDir, 'project');
 
-    expect(getProviderSources('temp-provider', projectDir).sources.project.exists).toBe(true);
-    expect(removeProviderConfig('temp-provider', projectDir, 'project')).toBe(true);
-    expect(getProviderSources('temp-provider', projectDir).sources.project.exists).toBe(false);
+    assert.equal(getProviderSources('temp-provider', projectDir).project.exists, true);
+    assert.equal(removeProviderConfig('temp-provider', projectDir, 'project'), true);
+    assert.equal(getProviderSources('temp-provider', projectDir).project.exists, false);
   });
 
   test('failed validation does not write config', () => {
     const configPath = path.join(projectDir, 'opencode.json');
-    expect(() => upsertProviderConfig('ok', {
-      name: 'X',
-      options: { baseURL: 'not-a-url' },
-      models: { m: { name: 'M' } },
-      env: ['X'],
-    }, projectDir, 'project')).toThrow(/Base URL/);
-    expect(fs.existsSync(configPath)).toBe(false);
+    assert.throws(
+      () => upsertProviderConfig('ok', {
+        name: 'X',
+        options: { baseURL: 'not-a-url' },
+        models: { m: { name: 'M' } },
+        env: ['X'],
+      }, projectDir, 'project'),
+      /Base URL/,
+    );
+    assert.equal(fs.existsSync(configPath), false);
   });
 
   test('upsert with hasStoredAuth allows config without env', () => {
@@ -166,7 +170,7 @@ describe('custom provider config persistence', () => {
       models: { m: { name: 'M' } },
     }, projectDir, 'project', { hasStoredAuth: true });
 
-    expect(result.providerId).toBe('keyed-provider');
-    expect(result.config.env).toEqual(undefined);
+    assert.equal(result.providerId, 'keyed-provider');
+    assert.equal(result.config.env, undefined);
   });
 });

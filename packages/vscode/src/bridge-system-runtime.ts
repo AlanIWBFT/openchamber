@@ -521,6 +521,7 @@ export async function handleSystemBridgeMessage(
           config,
           workingDirectory,
           normalizedScope,
+          { hasStoredAuth: Boolean(getProviderAuth(providerId)) },
         );
         await ctx?.manager?.restart();
         return {

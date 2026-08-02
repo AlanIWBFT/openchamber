@@ -1300,9 +1300,10 @@ export const settingsDict = {
   'settings.providers.page.connect.selectProviderPlaceholder': '选择提供商',
   'settings.providers.page.connect.searchProvidersPlaceholder': '搜索...',
   'settings.providers.page.connect.noProvidersFound': '未找到提供商',
-  'settings.providers.page.connect.allProvidersConnected': '所有提供商均已连接。',
   'settings.providers.page.custom.optionLabel': '其他 / 自定义',
   'settings.providers.page.custom.title': '自定义提供商',
+  'settings.providers.page.custom.editTitle': '编辑自定义提供商',
+
   'settings.providers.page.custom.description': '通过指定基础 URL、凭据和模型列表，添加兼容 OpenAI 的提供商。会写入 OpenCode 配置，可像其他提供商一样在聊天中使用。',
   'settings.providers.page.custom.field.providerID.label': '提供商 ID',
   'settings.providers.page.custom.field.providerID.placeholder': 'my-provider',
@@ -1316,6 +1317,10 @@ export const settingsDict = {
   'settings.providers.page.custom.field.apiKey.label': 'API 密钥',
   'settings.providers.page.custom.field.apiKey.placeholder': 'sk-... 或 {env:VAR_NAME}',
   'settings.providers.page.custom.field.apiKey.info': '保存在 OpenCode 认证中，而非 OpenChamber。使用 {env:VAR_NAME} 可从环境变量读取密钥。',
+  'settings.providers.page.custom.field.apiKey.editInfo': '留空以保留现有凭据，或输入新密钥 / {env:VAR_NAME}。',
+  'settings.providers.page.custom.field.apiKey.editPlaceholder': '留空以保留现有密钥',
+
+
   'settings.providers.page.custom.models.title': '模型',
   'settings.providers.page.custom.models.idLabel': '模型 ID',
   'settings.providers.page.custom.models.idPlaceholder': 'gpt-4o',
@@ -1333,6 +1338,8 @@ export const settingsDict = {
   'settings.providers.page.custom.headers.remove': '移除请求头',
   'settings.providers.page.custom.actions.back': '返回',
   'settings.providers.page.custom.actions.save': '保存提供商',
+  'settings.providers.page.custom.actions.update': '更新提供商',
+
   'settings.providers.page.custom.error.providerID.required': '提供商 ID 为必填项',
   'settings.providers.page.custom.error.providerID.format': '请使用小写字母、数字、连字符或下划线',
   'settings.providers.page.custom.error.providerID.exists': '已连接具有此 ID 的提供商',
@@ -1341,6 +1348,10 @@ export const settingsDict = {
   'settings.providers.page.custom.error.baseURL.format': '基础 URL 必须以 http:// 或 https:// 开头',
   'settings.providers.page.custom.error.required': '必填',
   'settings.providers.page.custom.error.duplicate': '重复',
+  'settings.providers.page.custom.error.apiKey.required': '需要 API 密钥或 {env:VAR_NAME}',
+  'settings.providers.page.custom.authFailure.configAfterAuth': '凭据已保存，但提供商配置未保存。请修复错误后重试，或断开连接以清除部分保存。',
+
+
   'settings.providers.page.auth.title': '认证',
   'settings.providers.page.auth.loadingMethods': '正在加载认证方式...',
   'settings.providers.page.auth.apiKeyLabel': 'API Key',
@@ -1349,6 +1360,10 @@ export const settingsDict = {
   'settings.providers.page.auth.oauthMethodFallback': 'OAuth 方式 {index}',
   'settings.providers.page.auth.pasteAuthorizationCodePlaceholder': '粘贴授权码',
   'settings.providers.page.auth.connected': '已连接',
+  'settings.providers.page.auth.incomplete': '缺少凭据',
+  'settings.providers.page.auth.incompleteHint': '· 在聊天中使用此提供商之前，请添加 API 密钥或 {env:VAR}',
+
+
   'settings.providers.page.auth.useReconnectHint': '· 使用“重新连接”以更新凭据',
   'settings.providers.page.connectionDetails.title': '连接详情',
   'settings.providers.page.connectionDetails.configuredIn': '配置来源：',
@@ -1378,6 +1393,8 @@ export const settingsDict = {
   'settings.providers.page.actions.complete': '完成',
   'settings.providers.page.actions.hide': '隐藏',
   'settings.providers.page.actions.reconnect': '重新连接',
+  'settings.providers.page.actions.edit': '编辑',
+
   'settings.providers.page.actions.disconnecting': '断开连接中...',
   'settings.providers.page.actions.disconnect': '断开连接',
   'settings.providers.page.actions.hideAll': '全部隐藏',
