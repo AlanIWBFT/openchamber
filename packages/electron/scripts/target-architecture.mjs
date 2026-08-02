@@ -75,3 +75,19 @@ export const resolveTargetArchitecture = ({
   }
   return target;
 };
+
+export const resolveOpenCodeCliTarget = ({ platform = process.platform, targetArchitecture }) => {
+  const requestedArchitecture = normalizeTargetArchitecture(targetArchitecture?.opencode, 'OpenCode target architecture').opencode;
+  const architecture = platform === 'win32' && requestedArchitecture === 'arm64'
+    ? 'x64'
+    : requestedArchitecture;
+  const buildPlatform = platform === 'win32' ? 'windows' : platform;
+  if (!['linux', 'darwin', 'windows'].includes(buildPlatform)) {
+    throw new Error(`No OpenCode CLI build target mapping for ${platform}/${architecture}`);
+  }
+  return {
+    architecture,
+    buildTarget: `${buildPlatform}-${architecture}`,
+    baseline: architecture === 'x64',
+  };
+};
