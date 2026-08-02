@@ -353,6 +353,10 @@ an authoritative loopback callback URL even when OpenChamber binds port `0`.
   - Skills config CRUD and metadata under `/api/config/skills*`
   - Skills catalog listing/source pagination, scan, and install routes
   - Supporting skill file read/write/delete routes
+  - Directory resolution prefers an explicit request directory, then soft-falls
+    back to the active project / `lastDirectory` so repository-local
+    `.agents/skills` and `.opencode/skills` remain discoverable when the client
+    omits `directory`. Requests without any project still list user-scoped skills.
 
 ## Public exports (proxy.js)
 - `registerOpenCodeProxy(app, dependencies)`: registers OpenCode proxy routes and middleware.
