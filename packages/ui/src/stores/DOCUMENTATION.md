@@ -56,6 +56,7 @@ User-visible session ordering is also not owned by the global cache array order.
 
 Global refresh rules:
 
+- The OpenCode `archived` list flag means "also include archived sessions": the server only drops its `time_archived IS NULL` condition. `listGlobalSessionPages` therefore narrows archived requests to records carrying `time.archived`, at the data boundary, so the archived cache never holds active sessions and no consumer has to re-derive that. Pagination progress stays measured on the raw response, so a page that is full upstream but filtered out here is not mistaken for the last page.
 - Per-directory refresh is bounded to two requests across callers and prioritizes the current directory.
 - Each directory is an independent completeness scope. A failed directory preserves its previous sessions while successful directories reconcile normally.
 - Fetch failure must remain distinguishable from a successful empty list; failed scopes cannot destructively clear cached sessions.
