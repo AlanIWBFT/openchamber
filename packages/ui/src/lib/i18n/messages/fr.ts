@@ -2699,7 +2699,6 @@ export const dict = {
   'mobile.nav.changes': 'Modifications',
   'mobile.nav.settings': 'Paramètres',
   'mobile.surface.closeAria': 'Fermer',
-  'mobile.header.openMenuAria': 'Ouvrir le menu',
   'mobile.header.openWorkspaceAria': 'Ouvrir le panneau de travail',
   'mobile.header.openMetadataAria': 'Ouvrir les métadonnées de session',
   'mobile.header.metadata.context': 'Contexte',

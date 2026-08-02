@@ -90,7 +90,6 @@ export const dict = {
   'mobile.nav.changes': 'Changes',
   'mobile.nav.settings': 'Settings',
   'mobile.surface.closeAria': 'Close',
-  'mobile.header.openMenuAria': 'Open menu',
   'mobile.header.openWorkspaceAria': 'Open workspace panel',
   'mobile.header.openMetadataAria': 'Open session metadata',
   'mobile.header.metadata.context': 'Context',

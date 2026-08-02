@@ -91,7 +91,6 @@ export const dict: Record<I18nKey, string> = {
   'mobile.nav.changes': '변경사항',
   'mobile.nav.settings': '설정',
   'mobile.surface.closeAria': '닫기',
-  'mobile.header.openMenuAria': '메뉴 열기',
   'mobile.header.openWorkspaceAria': '작업 공간 패널 열기',
   'mobile.header.openMetadataAria': '세션 메타데이터 열기',
   'mobile.header.metadata.context': '컨텍스트',
