@@ -46,6 +46,7 @@ import { setActiveSession } from "./sync-context"
 import {
   createSession as createSessionAction,
   deleteSession as deleteSessionAction,
+  deleteSessions as deleteSessionsAction,
   archiveSession as archiveSessionAction,
   archiveSessions as archiveSessionsAction,
   updateSessionTitle as updateSessionTitleAction,
@@ -58,6 +59,8 @@ import {
   forkFromMessage as forkFromMessageAction,
   fetchMessagesForSession,
   type ArchiveSessionsOptions,
+  type DeleteSessionOptions,
+  type DeleteSessionsOptions,
 } from "./session-actions"
 import { useInputStore, type SyntheticContextPart } from "./input-store"
 import { useSessionGoalArmStore } from "@/stores/useSessionGoalArmStore"
@@ -322,8 +325,8 @@ export type SessionUIState = {
   ) => Promise<void>
 
   createSession: (title?: string, directoryOverride?: string | null, parentID?: string | null, metadata?: Record<string, unknown>) => Promise<Session | null>
-  deleteSession: (id: string, options?: Record<string, unknown>) => Promise<boolean>
-  deleteSessions: (ids: string[], options?: Record<string, unknown>) => Promise<{ deletedIds: string[]; failedIds: string[] }>
+  deleteSession: (id: string, options?: DeleteSessionOptions) => Promise<boolean>
+  deleteSessions: (ids: string[], options?: DeleteSessionsOptions) => Promise<{ deletedIds: string[]; failedIds: string[] }>
   archiveSession: (id: string) => Promise<boolean>
   archiveSessions: (ids: string[], options?: ArchiveSessionsOptions) => Promise<{ archivedIds: string[]; failedIds: string[] }>
   updateSessionTitle: (sessionId: string, title: string) => Promise<void>
@@ -1291,18 +1294,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   // deleteSession — calls SDK, SSE event updates child store
   // ---------------------------------------------------------------------------
-  deleteSession: (id) => deleteSessionAction(id),
+  deleteSession: (id, options) => deleteSessionAction(id, options),
 
-  deleteSessions: async (ids) => {
-    const deletedIds: string[] = []
-    const failedIds: string[] = []
-    for (const id of ids) {
-      const ok = await deleteSessionAction(id)
-      if (ok) deletedIds.push(id)
-      else failedIds.push(id)
-    }
-    return { deletedIds, failedIds }
-  },
+  deleteSessions: (ids, options) => deleteSessionsAction(ids, options),
 
   archiveSession: (id) => archiveSessionAction(id),
 

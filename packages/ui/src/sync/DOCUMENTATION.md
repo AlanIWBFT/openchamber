@@ -214,18 +214,41 @@ Examples of global-store updates performed in `session-actions.ts`:
 - `updateSessionTitle()` -> `upsertSession(result.data)`
 - `shareSession()` / `unshareSession()` -> `upsertSession(result.data)`
 - `archiveSession()` / `archiveSessions()` -> wait for server confirmation, then upsert each archived session
-- `deleteSession()` -> waits for server confirmation or `404`, then removes the session and its persisted state
+- `deleteSession()` / `deleteSessions()` -> wait for server confirmation or `404`, then remove the session and its persisted state
 - `moveSessionToDirectory()` -> move the session between directory stores and update the global directory index
 
-Archive actions capture the active runtime key when they start and recheck it
-before every store reconciliation, so a response
+Archive and delete actions capture the active runtime key when they start and
+recheck it before every store reconciliation, so a response
 produced by the previous runtime is rejected instead of mutating the current
 runtime's live or global session state. A guarded batch stops at the first
 observed runtime change: sessions the server already confirmed remain archived
-and stay in `archivedIds`, while every ID not confirmed on the captured runtime
-is returned in `failedIds` so existing partial-failure feedback stays truthful.
+or deleted and stay in `archivedIds`/`deletedIds`, while every ID not confirmed
+on the captured runtime is returned in `failedIds` so existing partial-failure
+feedback stays truthful.
 Callers whose confirmation can span a runtime switch may pass an
 `expectedRuntimeKey` captured earlier; ordinary callers are guarded by default.
+
+Deletion needs this guard more than archiving does. Session IDs are not unique
+across runtimes, and a committed deletion does more than hide a row: it evicts
+the session from every live store, removes it from the global cache, clears the
+current-session pointer, and calls `cleanupPersistedSessionState`, which erases
+that session's queued messages, todos, folder membership, inline-comment drafts,
+chat draft, and pins. Committing a stale deletion can therefore destroy user
+state belonging to an unrelated session on the new runtime.
+
+`cleanupPersistedSessionState` already refuses an identity whose runtime is no
+longer active, so `finalizeConfirmedSessionDeletion` must forward the **captured**
+runtime key. Passing the live key would make that check compare a value with
+itself and always pass. The in-memory live, global, and UI stores it mutates are
+not runtime-scoped, so the calling action must reject a stale runtime before
+committing rather than relying on that helper alone.
+
+A `404` still means "already deleted" and commits cleanup, but only while the
+captured runtime is active. After a runtime change the `404` describes either
+the previous runtime or one this session never belonged to, so the action
+reports failure instead of committing. The deletion already accepted by the
+server stays deleted there; its persisted state is left as harmless stale
+metadata and the next authoritative load reconciles it.
 
 ## The golden rule
 
