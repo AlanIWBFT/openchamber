@@ -58,15 +58,23 @@ export const CustomProviderForm: React.FC<CustomProviderFormProps> = ({
   const [err, setErr] = React.useState<FieldErrors>({});
   const [modelErrors, setModelErrors] = React.useState<ModelFieldErrors[]>([]);
   const [headerErrors, setHeaderErrors] = React.useState<HeaderFieldErrors[]>([]);
+  const seededEditProviderIdRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    if (initialValues) {
-      setForm(initialValues);
-      setErr({});
-      setModelErrors([]);
-      setHeaderErrors([]);
+    if (!initialValues) {
+      return;
     }
-  }, [initialValues]);
+    // Edit mode: seed once per provider id so parent re-renders (new object
+    // identity for the same snapshot) do not wipe in-progress edits.
+    if (isEdit && seededEditProviderIdRef.current === initialValues.providerID) {
+      return;
+    }
+    seededEditProviderIdRef.current = isEdit ? initialValues.providerID : null;
+    setForm(initialValues);
+    setErr({});
+    setModelErrors([]);
+    setHeaderErrors([]);
+  }, [initialValues, isEdit]);
 
   const setField = (key: keyof Pick<CustomProviderFormState, 'providerID' | 'name' | 'baseURL' | 'apiKey'>, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));

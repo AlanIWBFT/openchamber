@@ -31,8 +31,9 @@ import {
   buildAuthSetRequest,
   buildProviderUpsertRequest,
   CUSTOM_PROVIDER_ID,
-  isCustomOpenAICompatibleProvider,
+  isConfigDefinedCustomProvider,
   providerToCustomFormState,
+  type CustomProviderFormState,
   type CustomProviderPersistPlan,
 } from './custom-provider-form';
 
@@ -182,6 +183,7 @@ export const ProvidersPage: React.FC = () => {
   const [providerSources, setProviderSources] = React.useState<Record<string, ProviderSources>>({});
   const [showAuthPanel, setShowAuthPanel] = React.useState(false);
   const [editingCustomProviderId, setEditingCustomProviderId] = React.useState<string | null>(null);
+  const [editingCustomFormInitial, setEditingCustomFormInitial] = React.useState<CustomProviderFormState | null>(null);
   const [customAuthFailureHint, setCustomAuthFailureHint] = React.useState<string | null>(null);
   const [lastCustomPersistId, setLastCustomPersistId] = React.useState<string | null>(null);
   const isAddMode = selectedProviderId === ADD_PROVIDER_ID;
@@ -303,6 +305,7 @@ export const ProvidersPage: React.FC = () => {
     if (selectedProviderId === ADD_PROVIDER_ID) {
       setShowAuthPanel(true);
       setEditingCustomProviderId(null);
+      setEditingCustomFormInitial(null);
       setCustomAuthFailureHint(null);
       return;
     }
@@ -310,9 +313,10 @@ export const ProvidersPage: React.FC = () => {
     setShowAuthPanel(false);
     if (editingCustomProviderId && editingCustomProviderId !== selectedProviderId) {
       setEditingCustomProviderId(null);
+      setEditingCustomFormInitial(null);
       setCustomAuthFailureHint(null);
     }
-  }, [selectedProviderId, editingCustomProviderId, t]);
+  }, [selectedProviderId, editingCustomProviderId]);
 
   React.useEffect(() => {
     if (!selectedProviderId || selectedProviderId === ADD_PROVIDER_ID) {
@@ -427,6 +431,7 @@ export const ProvidersPage: React.FC = () => {
       toast.success(t('settings.providers.page.toast.customProviderSaved', { provider: plan.name }));
       setCandidateProviderId('');
       setEditingCustomProviderId(null);
+      setEditingCustomFormInitial(null);
       setCustomAuthFailureHint(null);
       setLastCustomPersistId(null);
       await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active' });
@@ -587,6 +592,7 @@ export const ProvidersPage: React.FC = () => {
     }
     await handleDisconnectProvider(providerId);
     setEditingCustomProviderId(null);
+    setEditingCustomFormInitial(null);
     setCustomAuthFailureHint(null);
     setLastCustomPersistId(null);
     setCandidateProviderId('');
@@ -902,15 +908,16 @@ export const ProvidersPage: React.FC = () => {
   const providerModels = Array.isArray(selectedProvider.models) ? selectedProvider.models : [];
   const providerAuthMethods = authMethodsByProvider[selectedProvider.id] ?? [];
   const oauthAuthMethods = providerAuthMethods.filter((method) => normalizeAuthType(method) === 'oauth');
-  const isCustomProvider = isCustomOpenAICompatibleProvider(selectedProvider);
+  const sourcesLoaded = Boolean(selectedSources);
+  const isEditableCustomProvider = sourcesLoaded
+    && isConfigDefinedCustomProvider(selectedProvider, selectedSources);
   const providerEnv = Array.isArray(selectedProvider.env)
     ? selectedProvider.env.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
     : [];
-  const sourcesLoaded = Boolean(selectedSources);
   const hasStoredAuth = Boolean(selectedSources?.auth.exists);
   const hasEnvCredentials = providerEnv.length > 0;
   const hasCredentials = hasStoredAuth || hasEnvCredentials;
-  const authStatusIncomplete = isCustomProvider && sourcesLoaded && !hasCredentials;
+  const authStatusIncomplete = isEditableCustomProvider && !hasCredentials;
 
   const filteredModels = providerModels.filter((model) => {
     const name = typeof model?.name === 'string' ? model.name : '';
@@ -920,8 +927,7 @@ export const ProvidersPage: React.FC = () => {
     return name.toLowerCase().includes(query) || id.toLowerCase().includes(query);
   });
 
-  if (isCustomEditMode && isCustomProvider) {
-    const initialValues = providerToCustomFormState(selectedProvider);
+  if (isCustomEditMode && isEditableCustomProvider && editingCustomFormInitial) {
     return (
       <SettingsPageLayout
         title={selectedProvider.name || selectedProvider.id}
@@ -932,12 +938,13 @@ export const ProvidersPage: React.FC = () => {
         <CustomProviderForm
           mode="edit"
           existingProviderIDs={connectedProviderIds}
-          initialValues={initialValues}
-          allowExistingAuth={hasCredentials}
+          initialValues={editingCustomFormInitial}
+          allowExistingAuth={hasCredentials || !sourcesLoaded}
           busy={authBusyKey?.startsWith('custom:') ?? false}
           authFailureHint={customAuthFailureHint}
           onCancel={() => {
             setEditingCustomProviderId(null);
+            setEditingCustomFormInitial(null);
             setCustomAuthFailureHint(null);
             setLastCustomPersistId(null);
           }}
@@ -960,13 +967,14 @@ export const ProvidersPage: React.FC = () => {
         divider={false}
         headerAction={(
           <div className="flex items-center gap-1">
-            {isCustomProvider ? (
+            {isEditableCustomProvider ? (
               <Button
                 variant="outline"
                 size="xs"
                 className="!font-normal"
                 onClick={() => {
                   setCustomAuthFailureHint(null);
+                  setEditingCustomFormInitial(providerToCustomFormState(selectedProvider));
                   setEditingCustomProviderId(selectedProvider.id);
                 }}
               >

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildAuthSetRequest,
   buildProviderUpsertRequest,
+  isConfigDefinedCustomProvider,
   isCustomOpenAICompatibleProvider,
   providerToCustomFormState,
   validateCustomProvider,
@@ -287,5 +288,25 @@ describe('provider edit helpers', () => {
     expect(state.apiKey).toBe('{env:CAMPUS_KEY}');
     expect(state.models[0]).toEqual({ row: state.models[0].row, id: 'fast', name: 'Fast' });
     expect(state.headers[0]).toEqual({ row: state.headers[0].row, key: 'X-Campus', value: '1' });
+  });
+
+  test('requires a config-layer source before treating a provider as editable custom', () => {
+    const catalogLike = {
+      id: 'openai',
+      options: { baseURL: 'https://api.openai.com/v1' },
+      models: [{ id: 'gpt-4o', name: 'GPT-4o', api: { npm: '@ai-sdk/openai-compatible' } }],
+    };
+
+    expect(isCustomOpenAICompatibleProvider(catalogLike)).toBe(true);
+    expect(isConfigDefinedCustomProvider(catalogLike, undefined)).toBe(false);
+    expect(isConfigDefinedCustomProvider(catalogLike, {
+      user: { exists: false },
+      project: { exists: false },
+      custom: { exists: false },
+    })).toBe(false);
+    expect(isConfigDefinedCustomProvider(catalogLike, {
+      user: { exists: true },
+      project: { exists: false },
+    })).toBe(true);
   });
 });

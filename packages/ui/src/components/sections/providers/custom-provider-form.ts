@@ -163,6 +163,30 @@ export function isCustomOpenAICompatibleProvider(provider: ProviderLikeForCustom
   });
 }
 
+export type ProviderConfigSourcesLike = {
+  user?: { exists?: boolean };
+  project?: { exists?: boolean };
+  custom?: { exists?: boolean };
+};
+
+/**
+ * True when a provider both looks OpenAI-compatible-custom and is defined in a
+ * user/project/custom OpenCode config layer. Catalog-only providers often share
+ * the same npm/baseURL signals and must not get Edit / config overrides.
+ */
+export function isConfigDefinedCustomProvider(
+  provider: ProviderLikeForCustomForm,
+  sources: ProviderConfigSourcesLike | null | undefined,
+): boolean {
+  if (!sources) {
+    return false;
+  }
+  const inConfigLayer = Boolean(
+    sources.user?.exists || sources.project?.exists || sources.custom?.exists,
+  );
+  return inConfigLayer && isCustomOpenAICompatibleProvider(provider);
+}
+
 export function providerToCustomFormState(provider: ProviderLikeForCustomForm): CustomProviderFormState {
   const options = provider.options && typeof provider.options === 'object' ? provider.options : {};
   const baseURL = typeof options.baseURL === 'string' ? options.baseURL : '';
