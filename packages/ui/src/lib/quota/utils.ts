@@ -83,6 +83,7 @@ export const formatWindowLabel = (label: string): string => {
   if (label === 'credits') return t('quota.window.credits');
   if (label === 'credits_balance') return t('quota.window.creditsBalance');
   if (label === 'billing_cycle') return t('quota.window.billingCycle');
+  if (label === 'plan_limit') return t('quota.window.planLimit');
   if (label === 'auto') return t('quota.window.auto');
   if (label === 'api') return t('quota.window.api');
   if (label === 'plan_limit') return t('quota.window.planLimit');
@@ -132,7 +133,7 @@ export interface PaceInfo {
  * Infer window duration in seconds from a window label.
  * Used when the API doesn't provide windowSeconds directly.
  */
-export const inferWindowSeconds = (label: string): number | null => {
+const inferWindowSeconds = (label: string): number | null => {
   const normalized = label.toLowerCase().trim();
   
   // Exact matches

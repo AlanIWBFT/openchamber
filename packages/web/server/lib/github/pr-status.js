@@ -1,5 +1,17 @@
+import { stat } from 'node:fs/promises';
 import { getRemotes, getStatus } from '../git/index.js';
 import { resolveGitHubRepoFromDirectory } from './repo/index.js';
+import { noteIfGitHubRateLimit } from './rate-limit.js';
+
+const directoryExists = async (dir) => {
+  if (!dir) return false;
+  try {
+    await stat(dir);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const REPO_DEFAULT_BRANCH_TTL_MS = 5 * 60_000;
 const defaultBranchCache = new Map();
@@ -160,6 +172,17 @@ const getRepoDefaultBranch = async (octokit, repo) => {
     return cached.defaultBranch;
   }
 
+  // Reuse the full repo metadata if it was already fetched (expandRepoNetwork
+  // calls getRepoMetadata for every candidate before the default-branch loop).
+  // This avoids a redundant repos.get per repo — fewer serial GitHub calls means
+  // less exposure to secondary-rate-limiting that makes PR status slow.
+  const metaCached = repoMetadataCache.get(repoKey);
+  if (metaCached && Date.now() - metaCached.fetchedAt < REPO_DEFAULT_BRANCH_TTL_MS) {
+    const defaultBranch = normalizeText(metaCached.data?.default_branch) || null;
+    defaultBranchCache.set(repoKey, { defaultBranch, fetchedAt: Date.now() });
+    return defaultBranch;
+  }
+
   try {
     const response = await octokit.rest.repos.get({
       owner: repo.owner,
@@ -171,7 +194,8 @@ const getRepoDefaultBranch = async (octokit, repo) => {
       fetchedAt: Date.now(),
     });
     return defaultBranch;
-  } catch {
+  } catch (error) {
+    noteIfGitHubRateLimit(error);
     return null;
   }
 };
@@ -199,6 +223,7 @@ const getRepoMetadata = async (octokit, repo) => {
     });
     return data;
   } catch (error) {
+    noteIfGitHubRateLimit(error);
     if (error?.status === 403 || error?.status === 404) {
       repoMetadataCache.set(repoKey, {
         data: null,
@@ -211,21 +236,26 @@ const getRepoMetadata = async (octokit, repo) => {
 };
 
 const resolveRemoteCandidates = async (directory, rankedRemoteNames) => {
+  // Resolve every ranked remote concurrently — they're independent git lookups.
+  // Dedup afterwards in rank order so the result is identical to the previous
+  // sequential pass, just without paying each lookup's latency back-to-back.
+  const resolvedRemotes = await Promise.all(
+    rankedRemoteNames.map((remoteName) =>
+      resolveGitHubRepoFromDirectory(directory, remoteName)
+        .then((resolved) => ({ remoteName, repo: resolved?.repo || null }))
+        .catch(() => ({ remoteName, repo: null })),
+    ),
+  );
+
   const results = [];
   const seenRepoKeys = new Set();
-
-  for (const remoteName of rankedRemoteNames) {
-    const resolved = await resolveGitHubRepoFromDirectory(directory, remoteName).catch(() => ({ repo: null }));
-    const repo = resolved?.repo || null;
+  for (const { remoteName, repo } of resolvedRemotes) {
     const repoKey = normalizeRepoKey(repo?.owner, repo?.repo);
     if (!repo || !repoKey || seenRepoKeys.has(repoKey)) {
       continue;
     }
     seenRepoKeys.add(repoKey);
-    results.push({
-      remoteName,
-      repo,
-    });
+    results.push({ remoteName, repo });
   }
 
   return results;
@@ -244,8 +274,16 @@ const expandRepoNetwork = async (octokit, candidates) => {
     expanded.push({ repo, remoteName, priority });
   };
 
-  for (const candidate of candidates) {
-    const metadata = await getRepoMetadata(octokit, candidate.repo);
+  // Fetch repo metadata for all candidates concurrently (independent GET
+  // /repos calls), then fold them in candidate order so dedup/priority is
+  // unchanged from the sequential version.
+  const metadatas = await Promise.all(
+    candidates.map((candidate) =>
+      getRepoMetadata(octokit, candidate.repo).then((metadata) => ({ candidate, metadata })),
+    ),
+  );
+
+  for (const { candidate, metadata } of metadatas) {
     if (!metadata) {
       continue;
     }
@@ -279,11 +317,65 @@ const safeListPulls = async (octokit, options) => {
     const response = await octokit.rest.pulls.list(options);
     return Array.isArray(response?.data) ? response.data : [];
   } catch (error) {
+    noteIfGitHubRateLimit(error);
     if (error?.status === 404 || error?.status === 403) {
       return [];
     }
     throw error;
   }
+};
+
+// Repo-level pull list, shared across every branch resolution. Ten worktree
+// branches of one repo need ONE pulls.list per state per TTL window, not ten
+// per-branch query fans. In-flight requests coalesce so concurrent branch
+// resolutions share a single GitHub call.
+const REPO_PULLS_CACHE_TTL_MS = 45_000;
+const repoPullsCache = new Map();
+
+export const invalidateRepoPullsCache = (owner, repo) => {
+  const prefix = `${normalizeText(owner)}/${normalizeText(repo)}::`;
+  for (const key of repoPullsCache.keys()) {
+    if (key.startsWith(prefix)) {
+      repoPullsCache.delete(key);
+    }
+  }
+  // A just-created PR must also clear remembered search misses for this repo.
+  const repoNameLower = normalizeText(repo).toLowerCase();
+  for (const key of _searchMissCache.keys()) {
+    const [repoPart] = key.split('::');
+    if (repoPart && repoPart.split(',').includes(repoNameLower)) {
+      _searchMissCache.delete(key);
+    }
+  }
+};
+
+const getRepoPulls = (octokit, repo, state, { force = false } = {}) => {
+  const key = `${normalizeText(repo.owner)}/${normalizeText(repo.repo)}::${state}`;
+  const cached = repoPullsCache.get(key);
+  if (cached?.promise) {
+    return cached.promise;
+  }
+  if (!force && cached && Date.now() - cached.fetchedAt < REPO_PULLS_CACHE_TTL_MS) {
+    return Promise.resolve(cached);
+  }
+
+  const promise = safeListPulls(octokit, {
+    owner: repo.owner,
+    repo: repo.repo,
+    state,
+    per_page: 100,
+  }).then((prs) => {
+    // `complete` means the first page held everything, so a miss is
+    // authoritative: this repo has no PR in this state for any branch.
+    const entry = { fetchedAt: Date.now(), prs, complete: prs.length < 100 };
+    repoPullsCache.set(key, entry);
+    return entry;
+  }).catch((error) => {
+    repoPullsCache.delete(key);
+    throw error;
+  });
+  repoPullsCache.set(key, { promise });
+  return promise;
 };
 
 const parseRepoFromApiUrl = (value) => {
@@ -312,6 +404,24 @@ const parseRepoFromApiUrl = (value) => {
 const _searchApiDisabledRepos = new Map();
 const SEARCH_API_RETRY_MS = 5 * 60 * 1000; // retry after 5 minutes
 
+// The Search API has its own tiny quota (30/min). A branch that has no PR
+// would otherwise re-search on every poll; a miss is extremely unlikely to
+// change within minutes, so remember it per repo+branch and back off.
+const SEARCH_MISS_RETRY_MS = 10 * 60 * 1000;
+const SEARCH_MISS_CACHE_MAX_ENTRIES = 500;
+const _searchMissCache = new Map();
+
+const rememberSearchMiss = (key) => {
+  _searchMissCache.delete(key);
+  _searchMissCache.set(key, Date.now());
+  if (_searchMissCache.size > SEARCH_MISS_CACHE_MAX_ENTRIES) {
+    const oldest = _searchMissCache.keys().next().value;
+    if (oldest !== undefined) {
+      _searchMissCache.delete(oldest);
+    }
+  }
+};
+
 const searchFallbackPr = async ({ octokit, branch, repoNames }) => {
   // Build a repo key to check/store 403 status per-repo
   const repoKey = [...repoNames].sort().join(',').toLowerCase();
@@ -319,6 +429,12 @@ const searchFallbackPr = async ({ octokit, branch, repoNames }) => {
   // Skip if this repo set returned 403 recently
   const disabledAt = _searchApiDisabledRepos.get(repoKey);
   if (disabledAt && Date.now() - disabledAt < SEARCH_API_RETRY_MS) {
+    return null;
+  }
+
+  const missKey = `${repoKey}::${normalizeText(branch)}`;
+  const missedAt = _searchMissCache.get(missKey);
+  if (missedAt && Date.now() - missedAt < SEARCH_MISS_RETRY_MS) {
     return null;
   }
 
@@ -334,6 +450,7 @@ const searchFallbackPr = async ({ octokit, branch, repoNames }) => {
       // If we get here, search API works for this repo — clear the disabled flag
       _searchApiDisabledRepos.delete(repoKey);
     } catch (error) {
+      noteIfGitHubRateLimit(error);
       if (error?.status === 403) {
         _searchApiDisabledRepos.set(repoKey, Date.now());
         return null;
@@ -380,10 +497,11 @@ const searchFallbackPr = async ({ octokit, branch, repoNames }) => {
     }
   }
 
+  rememberSearchMiss(missKey);
   return null;
 };
 
-const findFirstMatchingPr = async ({ octokit, target, branch, sourceCandidates }) => {
+const findFirstMatchingPr = async ({ octokit, target, branch, sourceCandidates, force = false, coverage = null }) => {
   const matcher = buildSourceMatcher(sourceCandidates);
   const sourceOwners = [];
   sourceCandidates.forEach((candidate) => pushUnique(sourceOwners, candidate.repo?.owner));
@@ -394,6 +512,27 @@ const findFirstMatchingPr = async ({ octokit, target, branch, sourceCandidates }
     .sort((left, right) => matcher.compare(left, right, target.repo.repo))[0] ?? null;
 
   for (const state of ['open', 'closed']) {
+    // Shared per-repo list first: one pulls.list answers every branch of the
+    // repo within the TTL. A miss in a complete list is authoritative — skip
+    // the per-branch query fan entirely.
+    let listWasComplete = false;
+    try {
+      const listEntry = await getRepoPulls(octokit, target.repo, state, { force });
+      const fromList = pickPreferred(listEntry.prs);
+      if (fromList) {
+        return fromList;
+      }
+      listWasComplete = listEntry.complete;
+    } catch {
+      // fall through to the precise per-branch queries
+    }
+    if (listWasComplete) {
+      continue;
+    }
+    if (coverage) {
+      coverage.authoritative = false;
+    }
+
     for (const owner of sourceOwners) {
       const directCandidates = await safeListPulls(octokit, {
         owner: target.repo.owner,
@@ -407,23 +546,20 @@ const findFirstMatchingPr = async ({ octokit, target, branch, sourceCandidates }
         return direct;
       }
     }
-
-    const fallbackCandidates = await safeListPulls(octokit, {
-      owner: target.repo.owner,
-      repo: target.repo.repo,
-      state,
-      per_page: 100,
-    });
-    const fallback = pickPreferred(fallbackCandidates);
-    if (fallback) {
-      return fallback;
-    }
   }
 
   return null;
 };
 
-export async function resolveGitHubPrStatus({ octokit, directory, branch, remoteName }) {
+export async function resolveGitHubPrStatus({ octokit, directory, branch, remoteName, force = false }) {
+  // A deleted worktree can still have a session in the sidebar that keeps
+  // requesting its PR status. Bail before touching git or GitHub for a
+  // directory that no longer exists — otherwise every poll spends a git call
+  // (and the remote/repo resolution that follows) on a path that's gone.
+  if (!(await directoryExists(directory))) {
+    return { repo: null, pr: null, defaultBranch: null, resolvedRemoteName: null };
+  }
+
   const normalizedBranch = normalizeText(branch);
   const normalizedRemoteName = normalizeText(remoteName) || 'origin';
 
@@ -458,6 +594,9 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
   }
 
   const sourceCandidates = resolvedTargets.slice();
+  // When every consulted repo list was complete, a no-PR result is
+  // authoritative and the expensive Search API fallback is pointless.
+  const coverage = { authoritative: true };
 
   let fallbackRepo = resolvedTargets[0].repo;
   let fallbackRemoteName = resolvedTargets[0].remoteName;
@@ -482,6 +621,8 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
         target,
         branch: candidateBranch,
         sourceCandidates,
+        force,
+        coverage,
       });
       if (pr) {
         return {
@@ -495,6 +636,9 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
   }
 
   for (const candidateBranch of branchCandidates) {
+    if (coverage.authoritative) {
+      break;
+    }
     const fallbackSearch = await searchFallbackPr({
       octokit,
       branch: candidateBranch,

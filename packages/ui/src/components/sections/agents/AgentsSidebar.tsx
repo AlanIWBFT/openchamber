@@ -27,6 +27,7 @@ import { SettingsProjectSelector } from '@/components/sections/shared/SettingsPr
 import { SidebarGroup } from '@/components/sections/shared/SidebarGroup';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
+import { SETTINGS_PANEL_TITLE_CLASS } from '@/components/sections/shared/SettingsSection';
 
 interface AgentsSidebarProps {
   onItemSelect?: () => void;
@@ -182,10 +183,12 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
 
     setIsConfirmActionPending(true);
     try {
-      const success = await deleteAgent(confirmActionAgent.name, (confirmActionAgent as Agent & { scope?: AgentScope }).scope);
+      const result = await deleteAgent(confirmActionAgent.name, (confirmActionAgent as Agent & { scope?: AgentScope }).scope);
 
-      if (success) {
-        if (confirmActionType === 'delete') {
+      if (result.ok) {
+        if (result.requiresManualRestart) {
+          toast.warning(t('settings.agents.page.toast.savedManualRestart'));
+        } else if (confirmActionType === 'delete') {
           toast.success(t('settings.agents.sidebar.toast.agentDeleted', { name: confirmActionAgent.name }));
         } else {
           toast.success(t('settings.agents.sidebar.toast.agentReset', { name: confirmActionAgent.name }));
@@ -274,7 +277,7 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
       ? `${renameDialogAgent.model.providerID}/${renameDialogAgent.model.modelID}`
       : null;
     const renameExt = renameDialogAgent as Agent & { scope?: AgentScope; disable?: boolean };
-    const success = await createAgent({
+    const createResult = await createAgent({
       name: sanitizedName,
       description: renameDialogAgent.description,
       model: renameModelStr,
@@ -288,11 +291,15 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
       scope: renameExt.scope,
     });
 
-    if (success) {
+    if (createResult.ok) {
       // Delete old agent
-      const deleteSuccess = await deleteAgent(renameDialogAgent.name, renameExt.scope);
-      if (deleteSuccess) {
-        toast.success(`Agent renamed to "${sanitizedName}"`);
+      const deleteResult = await deleteAgent(renameDialogAgent.name, renameExt.scope);
+      if (deleteResult.ok) {
+        if (createResult.requiresManualRestart || deleteResult.requiresManualRestart) {
+          toast.warning(t('settings.agents.page.toast.savedManualRestart'));
+        } else {
+          toast.success(t('settings.agents.sidebar.toast.agentRenamed', { name: sanitizedName }));
+        }
         setSelectedAgent(sanitizedName);
       } else {
         toast.error(t('settings.agents.sidebar.toast.removeOldAfterRenameFailed'));
@@ -344,7 +351,7 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
   return (
     <div className={cn('flex h-full flex-col', bgClass)}>
       <div className="border-b px-3 pt-4 pb-3">
-        <h2 className="text-base font-semibold text-foreground mb-3">{t('settings.agents.sidebar.title')}</h2>
+        <h2 className={`${SETTINGS_PANEL_TITLE_CLASS} mb-3`}>{t('settings.agents.sidebar.title')}</h2>
         <SettingsProjectSelector className="mb-3" />
         <div className="flex items-center justify-between gap-2">
           <span className="typography-meta text-muted-foreground">{t('settings.agents.sidebar.total', { count: visibleAgents.length })}</span>

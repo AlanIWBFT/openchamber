@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { rebuild } from '@electron/rebuild';
+import { resolveTargetArchitecture } from './target-architecture.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,6 +17,7 @@ const require = createRequire(import.meta.url);
 
 const electronPkg = require('electron/package.json');
 const electronVersion = electronPkg.version;
+const targetArchitecture = resolveTargetArchitecture();
 
 const copyDirectory = async (src, dst) => {
   await fsp.mkdir(dst, { recursive: true });
@@ -131,6 +133,19 @@ const ensureWindowsNodeAddonApiForNodePty = async (rebuildRootPath) => {
 
 console.log(`[electron] rebuilding native modules against Electron ${electronVersion}...`);
 
+await rebuild({
+  buildPath: electronDir,
+  electronVersion,
+  force: true,
+  arch: targetArchitecture.electronBuilder,
+  onlyModules: ['better-sqlite3'],
+});
+const betterSqliteDir = path.dirname(require.resolve('better-sqlite3/package.json'));
+const betterSqliteBinary = path.join(betterSqliteDir, 'build', 'Release', 'better_sqlite3.node');
+if (!existsSync(betterSqliteBinary)) {
+  throw new Error(`better-sqlite3 rebuild did not produce ${betterSqliteBinary}`);
+}
+
 // Rebuild against the hoisted root node_modules (bun workspace layout).
 // force=true re-links regardless of cached state; prebuild-install lookup is
 // bypassed by @electron/rebuild in favor of direct node-gyp builds.
@@ -142,8 +157,8 @@ try {
     buildPath: rebuildPath.buildPath,
     electronVersion,
     force: true,
-    arch: process.env.ELECTRON_BUILDER_ARCH || process.arch,
-    onlyModules: ['better-sqlite3', 'node-pty', 'bun-pty'],
+    arch: targetArchitecture.electronBuilder,
+    onlyModules: ['node-pty', 'bun-pty'],
   });
 } finally {
   try {

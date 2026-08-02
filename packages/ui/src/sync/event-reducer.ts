@@ -14,6 +14,7 @@ import type { FileDiff, GlobalState, State } from "./types"
 import { dropSessionCaches } from "./session-cache"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { syncDebug } from "./debug"
+import { shouldSkipStaleSessionEvent } from "./session-event-freshness"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const DELTA_OVERLAP_FIELDS = ["text", "output"] as const
@@ -151,10 +152,24 @@ export type GlobalEventResult = {
   project: Project
 } | null
 
+export type SessionMaterializationReason =
+  | "missing-owning-message"
+  | "orphan-delta"
+  | "missing-delta-part"
+  | "empty-assistant-message"
+  | "child-session-idle"
+  | "child-session-discovered"
+  | "ensure-session-messages"
+  | "stream-reconnect"
+  | "transport-switch"
+  | "stale-status-resync"
+  | "settled-running-tool"
+
 export type DirectoryEventResult = boolean | {
   changed: boolean
   materialization: {
     type: "incomplete-session-snapshot"
+    reason: SessionMaterializationReason
     sessionID?: string
     messageID: string
     partID?: string
@@ -203,6 +218,21 @@ export function applyDirectoryEvent(
     onSetSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void
   },
 ): DirectoryEventResult {
+  const markSessionEvent = (sessionID: string, deleted: boolean) => {
+    const revision = (draft.sessionRevision ?? 0) + 1
+    draft.sessionRevision = revision
+    draft.sessionListSource = "live"
+    draft.sessionEventRevision = draft.sessionEventRevision ?? {}
+    draft.sessionDeletedRevision = draft.sessionDeletedRevision ?? {}
+    if (deleted) {
+      draft.sessionDeletedRevision[sessionID] = revision
+      delete draft.sessionEventRevision[sessionID]
+    } else {
+      draft.sessionEventRevision[sessionID] = revision
+      delete draft.sessionDeletedRevision[sessionID]
+    }
+  }
+
   switch (event.type) {
     case "server.instance.disposed": {
       callbacks?.onRefresh?.("")
@@ -213,6 +243,9 @@ export function applyDirectoryEvent(
       const info = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
       const sessions = draft.session
       const result = Binary.search(sessions, info.id, (s) => s.id)
+      if (result.found && shouldSkipStaleSessionEvent(sessions[result.index], info)) {
+        return false
+      }
       if (result.found) {
         sessions[result.index] = info
       } else {
@@ -220,6 +253,7 @@ export function applyDirectoryEvent(
         trimSessions(draft)
         if (!info.parentID) draft.sessionTotal += 1
       }
+      markSessionEvent(info.id, false)
       return true
     }
 
@@ -227,11 +261,19 @@ export function applyDirectoryEvent(
       const info = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
       const sessions = draft.session
       const result = Binary.search(sessions, info.id, (s) => s.id)
+      // Keep the freshness check ahead of the archive branch: direct archive
+      // responses handle the store update on their own (optimistic removal +
+      // SDK response), so stale SSE echoes should not win just because they
+      // mark the session archived.
+      if (result.found && shouldSkipStaleSessionEvent(sessions[result.index], info)) {
+        return false
+      }
 
       if (info.time.archived) {
         if (result.found) sessions.splice(result.index, 1)
         cleanupSessionCaches(draft, info.id, callbacks?.onSetSessionTodo)
         if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
+        markSessionEvent(info.id, true)
         return true
       }
 
@@ -241,16 +283,21 @@ export function applyDirectoryEvent(
         sessions.splice(result.index, 0, info)
         trimSessions(draft)
       }
+      markSessionEvent(info.id, false)
       return true
     }
 
     case "session.deleted": {
-      const info = (event.properties as { info: Session }).info
       const sessions = draft.session
-      const result = Binary.search(sessions, info.id, (s) => s.id)
+      const props = event.properties as { info?: Session; sessionID?: string }
+      const sessionID = props.info?.id ?? props.sessionID
+      if (!sessionID) return false
+      const result = Binary.search(sessions, sessionID, (s) => s.id)
+      const info = props.info ?? (result.found ? sessions[result.index] : undefined)
       if (result.found) sessions.splice(result.index, 1)
-      cleanupSessionCaches(draft, info.id, callbacks?.onSetSessionTodo)
-      if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
+      cleanupSessionCaches(draft, sessionID, callbacks?.onSetSessionTodo)
+      if (!info?.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
+      markSessionEvent(sessionID, true)
       return true
     }
 
@@ -356,7 +403,7 @@ export function applyDirectoryEvent(
         return missingOwningMessage
           ? {
             changed: true,
-            materialization: { type: "incomplete-session-snapshot", sessionID, messageID, partID: part.id },
+            materialization: { type: "incomplete-session-snapshot", reason: "missing-owning-message", sessionID, messageID, partID: part.id },
           }
           : true
       }
@@ -390,7 +437,7 @@ export function applyDirectoryEvent(
       return missingOwningMessage
         ? {
           changed: true,
-          materialization: { type: "incomplete-session-snapshot", sessionID, messageID, partID: part.id },
+          materialization: { type: "incomplete-session-snapshot", reason: "missing-owning-message", sessionID, messageID, partID: part.id },
         }
         : true
     }
@@ -426,7 +473,7 @@ export function applyDirectoryEvent(
         syncDebug.reducer.partDeltaNoParts(props.messageID, props.partID)
         return {
           changed: false,
-          materialization: { type: "incomplete-session-snapshot", sessionID: props.sessionID, messageID: props.messageID, partID: props.partID },
+          materialization: { type: "incomplete-session-snapshot", reason: "orphan-delta", sessionID: props.sessionID, messageID: props.messageID, partID: props.partID },
         }
       }
       const result = Binary.search(parts, props.partID, (p) => p.id)
@@ -434,7 +481,7 @@ export function applyDirectoryEvent(
         syncDebug.reducer.partDeltaNotFound(props.messageID, props.partID)
         return {
           changed: false,
-          materialization: { type: "incomplete-session-snapshot", sessionID: props.sessionID, messageID: props.messageID, partID: props.partID },
+          materialization: { type: "incomplete-session-snapshot", reason: "missing-delta-part", sessionID: props.sessionID, messageID: props.messageID, partID: props.partID },
         }
       }
       const existing = parts[result.index] as Record<string, unknown>

@@ -8,12 +8,32 @@ import { spawn } from 'child_process';
 import { pathToFileURL } from 'url';
 
 import { isModuleCliExecution, normalizeCliEntryPath } from './cli-entry.js';
+import { requestJson } from './lib/cli-http.js';
+import { requestControlAction } from './lib/cli-control.js';
+import { inspectTunnelAttachability } from './lib/cli-lifecycle.js';
+import { formatGoal } from './lib/commands-schedule.js';
+import {
+  buildSessionCreatePayload,
+  buildSessionPromptPayload,
+  formatSessionLine,
+  sessionCommand,
+} from './lib/commands-session.js';
+import { formatModelsOutput } from './lib/commands-models.js';
+import { formatProjectLine } from './lib/commands-projects.js';
+import { resolveTargetPort } from './lib/cli-api-target.js';
+import { DEFAULT_TUNNEL_PROVIDER_CAPABILITIES } from './lib/cli-tunnel-capabilities.js';
+import {
+  TUNNEL_PROVIDER_CLOUDFLARE,
+  TUNNEL_PROVIDER_NGROK,
+} from '../server/lib/tunnels/types.js';
 import {
   assertAuthenticatedNetworkExposure,
   commands,
+  discoverOpenChamberInstanceOnPort,
   discoverLifecycleInstances,
   discoverRunningInstances,
   discoverUnconfirmedRegistryInstanceOnPort,
+  ensureTunnelProfilesMigrated,
   getInstanceFilePath,
   getPidFilePath,
   isOpenchamberCmdline,
@@ -169,6 +189,13 @@ function spawnOpenChamberLikeHungServer(port) {
 }
 
 describe('cli args', () => {
+  it('loads fallback tunnel provider capabilities for CLI startup', () => {
+    expect(DEFAULT_TUNNEL_PROVIDER_CAPABILITIES.map((provider) => provider.provider)).toEqual([
+      TUNNEL_PROVIDER_CLOUDFLARE,
+      TUNNEL_PROVIDER_NGROK,
+    ]);
+  });
+
   it('accepts legacy daemon flags as no-ops', () => {
     expect(parseArgs(['serve', '--daemon']).removedFlagErrors).toEqual([]);
     expect(parseArgs(['serve', '-d']).removedFlagErrors).toEqual([]);
@@ -188,6 +215,14 @@ describe('cli args', () => {
     expect(parsed.options.server).toBe('http://homebridge:3002');
   });
 
+  it('parses connect-url --relay flag', () => {
+    const parsed = parseArgs(['connect-url', '--relay', '--name', 'My laptop']);
+
+    expect(parsed.command).toBe('connect-url');
+    expect(parsed.options.relay).toBe(true);
+    expect(parsed.options.name).toBe('My laptop');
+  });
+
   it('parses connect-url api-only help', () => {
     const parsed = parseArgs(['connect-url', '--api-only', '--help']);
 
@@ -203,6 +238,351 @@ describe('cli args', () => {
     expect(parsed.startupAction).toBe('enable');
     expect(parsed.options.apiOnly).toBe(true);
     expect(parsed.options.port).toBe(3002);
+  });
+
+  it('parses schedule commands and options', () => {
+    const parsed = parseArgs([
+      'schedule',
+      'create',
+      '--project',
+      'proj_1',
+      '--name',
+      'Daily review',
+      '--prompt',
+      'Review the repo',
+      '--model',
+      'openai/gpt-5.5',
+      '--daily',
+      '09:30',
+      '--timezone',
+      'Europe/Kyiv',
+    ]);
+
+    expect(parsed.command).toBe('schedule');
+    expect(parsed.scheduleAction).toBe('create');
+    expect(parsed.options.project).toBe('proj_1');
+    expect(parsed.options.name).toBe('Daily review');
+    expect(parsed.options.prompt).toBe('Review the repo');
+    expect(parsed.options.model).toBe('openai/gpt-5.5');
+    expect(parsed.options.daily).toBe('09:30');
+    expect(parsed.options.timezone).toBe('Europe/Kyiv');
+  });
+
+  it('parses goal-enabled scheduled task options', () => {
+    const parsed = parseArgs([
+      'schedule',
+      'create',
+      '--dir',
+      '/repo',
+      '--name',
+      'Finish migration',
+      '--prompt',
+      'Complete and verify the migration',
+      '--model',
+      'openai/gpt-5.5',
+      '--daily',
+      '09:30',
+      '--goal',
+      '--goal-token-budget',
+      '200000',
+    ]);
+
+    expect(parsed.options.goal).toBe(true);
+    expect(parsed.options.goalTokenBudget).toBe('200000');
+  });
+
+  it('formats scheduled goal state compactly', () => {
+    expect(formatGoal({})).toBe('goal:no');
+    expect(formatGoal({ goalEnabled: true })).toBe('goal:yes');
+    expect(formatGoal({ goalEnabled: true, goalTokenBudget: 200000 })).toBe('goal:yes budget:200000');
+  });
+
+  it('parses session create options', () => {
+    const parsed = parseArgs([
+      'session',
+      'create',
+      '--dir',
+      '.',
+      '--name',
+      'Side task',
+      '--prompt',
+      'Investigate cache invalidation',
+      '--model',
+      'openai/gpt-5.5',
+      '--worktree',
+      'side-task',
+      '--branch',
+      'openchamber/side-task',
+      '--base',
+      'main',
+      '--no-upstream',
+    ]);
+
+    expect(parsed.command).toBe('session');
+    expect(parsed.sessionAction).toBe('create');
+    expect(parsed.options.directory).toBe('.');
+    expect(parsed.options.name).toBe('Side task');
+    expect(parsed.options.prompt).toBe('Investigate cache invalidation');
+    expect(parsed.options.model).toBe('openai/gpt-5.5');
+    expect(parsed.options.worktree).toBe('side-task');
+    expect(parsed.options.branch).toBe('openchamber/side-task');
+    expect(parsed.options.startRef).toBe('main');
+    expect(parsed.options.setUpstream).toBe(false);
+  });
+
+  it('parses control help command', () => {
+    const parsed = parseArgs(['control', 'help']);
+    expect(parsed.command).toBe('control');
+    expect(parsed.controlAction).toBe('help');
+  });
+
+  it('builds session create payloads from CLI options', () => {
+    expect(buildSessionCreatePayload({
+      directory: '.',
+      name: 'Side task',
+      prompt: 'Investigate cache invalidation',
+      model: 'openai/gpt-5.5',
+      agent: 'build',
+      worktree: 'side-task',
+      branch: 'openchamber/side-task',
+      startRef: 'main',
+      setUpstream: true,
+    })).toEqual({
+      directory: '.',
+      title: 'Side task',
+      worktree: {
+        name: 'side-task',
+        branchName: 'openchamber/side-task',
+        startRef: 'main',
+      },
+      prompt: 'Investigate cache invalidation',
+      model: 'openai/gpt-5.5',
+      agent: 'build',
+      setUpstream: true,
+    });
+  });
+
+  it('allows session create prompts without an explicit model', () => {
+    expect(buildSessionCreatePayload({
+      directory: '.',
+      prompt: 'Investigate cache invalidation',
+    })).toEqual({
+      directory: '.',
+      prompt: 'Investigate cache invalidation',
+    });
+  });
+
+  it('builds goal-enabled session create payloads', () => {
+    const parsed = parseArgs([
+      'session',
+      'create',
+      '--dir',
+      '/repo',
+      '--prompt',
+      'Finish and verify the migration',
+      '--goal',
+      '--goal-token-budget',
+      '200000',
+    ]);
+
+    expect(buildSessionCreatePayload(parsed.options)).toEqual({
+      directory: '/repo',
+      prompt: 'Finish and verify the migration',
+      goal: true,
+      goalTokenBudget: 200000,
+    });
+  });
+
+  it('validates session goal options before HTTP', () => {
+    expect(() => buildSessionCreatePayload({ directory: '/repo', goal: true })).toThrow('--goal requires --prompt.');
+    expect(() => buildSessionCreatePayload({
+      directory: '/repo',
+      prompt: 'Run',
+      goalTokenBudget: '200000',
+    })).toThrow('--goal-token-budget requires --goal.');
+    for (const value of ['999', '1.5', '100000001', 'nope']) {
+      expect(() => buildSessionCreatePayload({
+        directory: '/repo',
+        prompt: 'Run',
+        goal: true,
+        goalTokenBudget: value,
+      })).toThrow('--goal-token-budget must be an integer from 1000 to 100000000.');
+    }
+  });
+
+  it('parses session list filters', () => {
+    const parsed = parseArgs(['session', 'list', '--dir', '/repo', '--limit', '5']);
+
+    expect(parsed.command).toBe('session');
+    expect(parsed.sessionAction).toBe('list');
+    expect(parsed.options.directory).toBe('/repo');
+    expect(parsed.options.limit).toBe(5);
+  });
+
+  it('parses session status and message options', () => {
+    const status = parseArgs(['session', 'status', '--session', 'ses_123', '--dir', '/repo']);
+    expect(status.sessionAction).toBe('status');
+    expect(status.options.session).toBe('ses_123');
+    expect(status.options.directory).toBe('/repo');
+
+    const messages = parseArgs([
+      'session',
+      'messages',
+      '--session',
+      'ses_123',
+      '--dir',
+      '/repo',
+      '--last',
+      '--role',
+      'assistant',
+    ]);
+    expect(messages.sessionAction).toBe('messages');
+    expect(messages.options.last).toBe(true);
+    expect(messages.options.role).toBe('assistant');
+
+    const waiting = parseArgs([
+      'session',
+      'messages',
+      '--session',
+      'ses_123',
+      '--dir',
+      '/repo',
+      '--wait',
+      '--timeout',
+      '30',
+      '--last-assistant',
+    ]);
+    expect(waiting.options.wait).toBe(true);
+    expect(waiting.options.timeout).toBe('30');
+    expect(waiting.options.lastAssistant).toBe(true);
+
+    const list = parseArgs(['session', 'list', '--dir', '/repo', '--with-status']);
+    expect(list.options.withStatus).toBe(true);
+  });
+
+  it('parses session send and fork actions', () => {
+    const send = parseArgs([
+      'session', 'send', '--session', 'ses_123', '--dir', '/repo', '--prompt', 'Continue',
+      '--goal', '--wait', '--last-assistant',
+    ]);
+    expect(send.sessionAction).toBe('send');
+    expect(send.options).toMatchObject({
+      session: 'ses_123',
+      directory: '/repo',
+      prompt: 'Continue',
+      goal: true,
+      wait: true,
+      lastAssistant: true,
+    });
+
+    const fork = parseArgs([
+      'session', 'fork', '--session', 'ses_123', '--dir', '/repo', '--message', 'msg_123',
+      '--prompt', 'Try another approach',
+    ]);
+    expect(fork.sessionAction).toBe('fork');
+    expect(fork.options.message).toBe('msg_123');
+  });
+
+  it('builds session send and fork prompt payloads', () => {
+    expect(buildSessionPromptPayload({
+      session: 'ses_123',
+      directory: '/repo',
+      prompt: 'Continue',
+      model: 'openai/gpt-5.5',
+      agent: 'build',
+      goal: true,
+      goalTokenBudget: '200000',
+    }, 'send')).toEqual({
+      directory: '/repo',
+      prompt: 'Continue',
+      model: 'openai/gpt-5.5',
+      agent: 'build',
+      goal: true,
+      goalTokenBudget: 200000,
+    });
+    expect(buildSessionPromptPayload({
+      session: 'ses_123',
+      directory: '/repo',
+      message: 'msg_123',
+      prompt: 'Try another approach',
+    }, 'fork')).toEqual({
+      directory: '/repo',
+      messageId: 'msg_123',
+      prompt: 'Try another approach',
+    });
+  });
+
+  it('validates session message selectors before HTTP', async () => {
+    await expect(sessionCommand({ session: 'ses_123', directory: '/repo', all: true, last: true }, 'messages'))
+      .rejects.toThrow('--all cannot be combined with --last or --limit.');
+    await expect(sessionCommand({ session: 'ses_123', directory: '/repo', role: 'tool' }, 'messages'))
+      .rejects.toThrow('--role must be one of: all, user, assistant.');
+    await expect(sessionCommand({ session: 'ses_123' }, 'status'))
+      .rejects.toThrow('Missing required --dir.');
+    await expect(sessionCommand({ session: 'ses_123', directory: '/repo', timeout: '30' }, 'messages'))
+      .rejects.toThrow('--timeout requires --wait.');
+    await expect(sessionCommand({ directory: '/repo', lastAssistant: true }, 'create'))
+      .rejects.toThrow('--last-assistant requires --wait for session create.');
+    await expect(sessionCommand({ directory: '/repo', timeout: '30' }, 'create'))
+      .rejects.toThrow('--timeout requires --wait.');
+    await expect(sessionCommand({ session: 'ses_123', directory: '/repo' }, 'send'))
+      .rejects.toThrow('Missing required --prompt.');
+    await expect(sessionCommand({ session: 'ses_123', directory: '/repo', prompt: 'Run', message: 'msg_1' }, 'send'))
+      .rejects.toThrow('--message is only valid for session fork.');
+    await expect(sessionCommand({ session: 'ses_123', directory: '/repo', prompt: 'Run', lastAssistant: true }, 'fork'))
+      .rejects.toThrow('--last-assistant requires --wait for session fork.');
+  });
+
+  it('parses models command', () => {
+    const parsed = parseArgs(['models', '--json']);
+
+    expect(parsed.command).toBe('models');
+    expect(parsed.options.json).toBe(true);
+  });
+
+  it('parses projects command', () => {
+    const parsed = parseArgs(['projects', '--json']);
+
+    expect(parsed.command).toBe('projects');
+    expect(parsed.options.json).toBe(true);
+  });
+
+  it('formats projects compactly', () => {
+    expect(formatProjectLine({
+      id: 'path_repo',
+      label: 'Openchamber',
+      path: '/repo/openchamber',
+    })).toBe('- `Openchamber` — `path_repo` — `/repo/openchamber`');
+  });
+
+  it('formats model defaults and favorites compactly', () => {
+    expect(formatModelsOutput({
+      defaultModel: 'opencode-go/deepseek-v4-flash',
+      defaultAgent: 'build',
+      favoriteModels: [
+        { providerID: 'openai', modelID: 'gpt-5.5' },
+        { providerID: 'opencode-go', modelID: 'deepseek-v4-pro' },
+      ],
+      recentModels: [
+        { providerID: 'zai-coding-plan', modelID: 'glm-5.2' },
+      ],
+    })).toBe('Default: `opencode-go/deepseek-v4-flash` / `build`\n\nFavorites:\n- `openai/gpt-5.5`\n- `opencode-go/deepseek-v4-pro`\n\nRecent:\n- `zai-coding-plan/glm-5.2`\n');
+  });
+
+  it('formats compact session list lines', () => {
+    expect(formatSessionLine({
+      title: 'Default model smoke test',
+      agent: 'build',
+      directory: '/repo',
+      model: { providerID: 'opencode-go', id: 'deepseek-v4-flash', variant: 'default' },
+    })).toBe('- `Default model smoke test` — `opencode-go/deepseek-v4-flash`, `build` — `/repo`');
+    expect(formatSessionLine({
+      title: 'Working session',
+      agent: 'build',
+      directory: '/repo',
+      model: { providerID: 'openai', id: 'gpt-5.4-mini' },
+      status: { type: 'busy' },
+    })).toContain('status:busy');
   });
 
   it('parses tunnel auto-start server options', () => {
@@ -234,6 +614,50 @@ describe('cli args', () => {
 
     expect(parsed.options.hostname).toBe('app.example.com');
     expect(parsed.options.host).toBeUndefined();
+  });
+});
+
+describe('cli API target resolution', () => {
+  it('uses an explicit port without discovery', async () => {
+    await expect(resolveTargetPort(
+      { explicitPort: true, port: 4567 },
+      {
+        discoverDesktopInstance: async () => { throw new Error('should not discover desktop'); },
+        discoverLifecycleInstances: async () => { throw new Error('should not discover lifecycle'); },
+      },
+    )).resolves.toBe(4567);
+  });
+
+  it('prefers a desktop instance when no port is explicit', async () => {
+    await expect(resolveTargetPort({}, {
+      discoverDesktopInstance: async () => ({ port: 4500 }),
+      discoverLifecycleInstances: async () => [{ port: 3001 }],
+      isServerHealthReady: async () => false,
+    })).resolves.toBe(4500);
+  });
+
+  it('uses the only discovered lifecycle instance', async () => {
+    await expect(resolveTargetPort({}, {
+      discoverDesktopInstance: async () => null,
+      discoverLifecycleInstances: async () => [{ port: 3002 }],
+      isServerHealthReady: async () => false,
+    })).resolves.toBe(3002);
+  });
+
+  it('uses healthy default port when discovery finds no instances', async () => {
+    await expect(resolveTargetPort({}, {
+      discoverDesktopInstance: async () => null,
+      discoverLifecycleInstances: async () => [],
+      isServerHealthReady: async (port) => port === 3000,
+    })).resolves.toBe(3000);
+  });
+
+  it('fails when multiple non-default instances are running', async () => {
+    await expect(resolveTargetPort({}, {
+      discoverDesktopInstance: async () => null,
+      discoverLifecycleInstances: async () => [{ port: 3001 }, { port: 3002 }],
+      isServerHealthReady: async () => false,
+    })).rejects.toThrow('Multiple OpenChamber instances are running');
   });
 });
 
@@ -295,6 +719,188 @@ describe('serve host resolution', () => {
         delete process.env.OPENCHAMBER_HOST;
       }
     }
+  });
+});
+
+describe('compatibility exports', () => {
+  it('allows tunnel profile migration before command options are initialized', async () => {
+    await withTempOpenChamberDataDir(async () => {
+      const store = ensureTunnelProfilesMigrated();
+
+      expect(store).toEqual({ version: 1, profiles: [] });
+    });
+  });
+
+  it('includes ngrok in fallback tunnel providers when no server is reachable', async () => {
+    await withTempOpenChamberDataDir(async () => {
+      const port = await allocateLoopbackPort();
+      const output = await captureStdout(async () => {
+        await commands.tunnel({ json: true, explicitPort: true, port }, 'providers');
+      });
+
+      const body = JSON.parse(output);
+      expect(body.source).toBe('fallback');
+      expect(body.providers.map((entry) => entry.provider)).toContain('ngrok');
+    });
+  });
+
+  it('supports ngrok quick dry-run with an explicit port', async () => {
+    await withTempOpenChamberDataDir(async () => {
+      const output = await captureStdout(async () => {
+        await commands.tunnel({
+          json: true,
+          dryRun: true,
+          explicitPort: true,
+          port: 3003,
+          provider: 'ngrok',
+          mode: 'quick',
+        }, 'start');
+      });
+
+      const body = JSON.parse(output);
+      expect(body).toEqual(expect.objectContaining({
+        ok: true,
+        dryRun: true,
+        provider: 'ngrok',
+        mode: 'quick',
+      }));
+    });
+  });
+});
+
+describe('CLI HTTP helpers', () => {
+  it('sends one typed request to the shared control endpoint', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options = {}) => {
+      expect(new URL(String(url)).pathname).toBe('/api/openchamber/control');
+      expect(options.method).toBe('POST');
+      expect(JSON.parse(options.body)).toEqual({
+        action: 'session.status',
+        input: { sessionId: 'ses_1', directory: '/repo' },
+      });
+      return createMockJsonResponse({ status: 'ok', sessionStatus: { type: 'idle' } });
+    };
+    try {
+      await expect(requestControlAction(45677, 'session.status', {
+        sessionId: 'ses_1',
+        directory: '/repo',
+      })).resolves.toEqual({ status: 'ok', sessionStatus: { type: 'idle' } });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('retries UI-authenticated API requests with the stored instance password', async () => {
+    await withTempOpenChamberDataDir(async () => {
+      const port = 45678;
+      fs.writeFileSync(await getInstanceFilePath(port), JSON.stringify({ port, uiPassword: 'secret' }, null, 2));
+      const originalFetch = globalThis.fetch;
+      const calls = [];
+      globalThis.fetch = async (url, options = {}) => {
+        calls.push({ url: String(url), options });
+        if (String(url).endsWith('/auth/session')) {
+          expect(JSON.parse(options.body)).toEqual({ password: 'secret' });
+          return {
+            ok: true,
+            headers: { get: (name) => name.toLowerCase() === 'set-cookie' ? 'oc_ui_session=session-token; Path=/; HttpOnly' : null },
+            json: async () => ({ authenticated: true }),
+          };
+        }
+        if (options.headers?.Cookie === 'oc_ui_session=session-token') {
+          return createMockJsonResponse({ ok: true });
+        }
+        return {
+          ok: false,
+          status: 401,
+          json: async () => ({ error: 'UI authentication required', locked: true }),
+        };
+      };
+
+      try {
+        const { response, body } = await requestJson(port, '/api/openchamber/tunnel/start', {
+          method: 'POST',
+          body: JSON.stringify({ provider: 'ngrok', mode: 'quick' }),
+        });
+
+        expect(response.ok).toBe(true);
+        expect(body).toEqual({ ok: true });
+        expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+          '/api/openchamber/tunnel/start',
+          '/auth/session',
+          '/api/openchamber/tunnel/start',
+        ]);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  it('prefers the stored instance password over a non-explicit env password', async () => {
+    await withTempOpenChamberDataDir(async () => {
+      const port = 45679;
+      fs.writeFileSync(await getInstanceFilePath(port), JSON.stringify({ port, uiPassword: 'stored-secret' }, null, 2));
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async (url, options = {}) => {
+        if (String(url).endsWith('/auth/session')) {
+          expect(JSON.parse(options.body)).toEqual({ password: 'stored-secret' });
+          return {
+            ok: true,
+            headers: { getSetCookie: () => ['oc_ui_session=session-token; Path=/; HttpOnly'] },
+            json: async () => ({ authenticated: true }),
+          };
+        }
+        if (options.headers?.Cookie === 'oc_ui_session=session-token') {
+          return createMockJsonResponse({ ok: true });
+        }
+        return {
+          ok: false,
+          status: 401,
+          json: async () => ({ error: 'UI authentication required', locked: true }),
+        };
+      };
+
+      try {
+        const { response, body } = await requestJson(port, '/api/openchamber/scheduled-tasks/status', {
+          uiPassword: 'stale-env-secret',
+          explicitUiPassword: false,
+        });
+
+        expect(response.ok).toBe(true);
+        expect(body).toEqual({ ok: true });
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  it('authenticates desktop-local API requests with the stored client token', async () => {
+    await withTempOpenChamberDataDir(async (dir) => {
+      const port = 57123;
+      fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({
+        desktopLocalPort: port,
+        desktopLocalClientToken: 'oc_client_test',
+      }, null, 2));
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async (_url, options = {}) => {
+        if (options.headers?.Authorization === 'Bearer oc_client_test') {
+          return createMockJsonResponse({ ok: true });
+        }
+        return {
+          ok: false,
+          status: 401,
+          json: async () => ({ error: 'Client authentication required', locked: true }),
+        };
+      };
+
+      try {
+        const { response, body } = await requestJson(port, '/api/openchamber/scheduled-tasks/status');
+
+        expect(response.ok).toBe(true);
+        expect(body).toEqual({ ok: true });
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
   });
 });
 
@@ -387,6 +993,49 @@ describe('isOpenchamberProcessRunning', () => {
 });
 
 describe('lifecycle instance discovery', () => {
+  it('does not attribute a desktop runtime response to a different explicit port', async () => {
+    await withTempOpenChamberDataDir(async (dir) => {
+      fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ desktopLocalPort: 57123 }, null, 2));
+
+      const instance = await discoverOpenChamberInstanceOnPort(3003, {
+        fetchImpl: async () => createMockJsonResponse({ runtime: 'desktop', pid: 934 }),
+      });
+
+      expect(instance).toBeNull();
+    });
+  });
+
+  it('attributes a desktop runtime response to its configured desktop port', async () => {
+    await withTempOpenChamberDataDir(async (dir) => {
+      fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ desktopLocalPort: 57123 }, null, 2));
+
+      const instance = await discoverOpenChamberInstanceOnPort(57123, {
+        fetchImpl: async () => createMockJsonResponse({ runtime: 'desktop', pid: 934 }),
+      });
+
+      expect(instance).toEqual(expect.objectContaining({
+        port: 57123,
+        pid: 934,
+        runtime: 'desktop',
+      }));
+    });
+  });
+
+  it('does not mark tunnel attachability as desktop for a different explicit port', async () => {
+    await withTempOpenChamberDataDir(async (dir) => {
+      fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ desktopLocalPort: 57123 }, null, 2));
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => createMockJsonResponse({ runtime: 'desktop', pid: 934 });
+      try {
+        const attachability = await inspectTunnelAttachability(3004, { requireHealthy: false });
+
+        expect(attachability.reason).not.toBe('desktop');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
   it('keeps pid and instance files when live port probe confirms a cmdline mismatch', async () => {
     await withTempOpenChamberDataDir(async () => {
       const port = 45123;

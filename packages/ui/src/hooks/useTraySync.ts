@@ -6,7 +6,9 @@ import { desktopHostsGet, getDesktopHostApiUrl, locationMatchesHost, redactSensi
 import { getSyncChildStores, getAllSyncSessions } from '@/sync/sync-refs';
 import { opencodeClient } from '@/lib/opencode/client';
 import { useGlobalSessionStatusStore, applyGlobalSessionStatusSnapshot } from '@/sync/global-session-status';
+import { compareSessionsByLifecycleOrder, useSessionOrderingStore } from '@/sync/session-ordering';
 import { useNotificationStore } from '@/sync/notification-store';
+import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
 import { respondToPermission } from '@/sync/session-actions';
 import {
   useGlobalSessionsStore,
@@ -19,6 +21,7 @@ import { QUOTA_PROVIDERS, formatWindowLabel, formatQuotaValueLabel } from '@/lib
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useGitStore } from '@/stores/useGitStore';
+import { useUIStore } from '@/stores/useUIStore';
 import { resolveProjectForSessionDirectory, normalizeProjectPath } from '@/lib/projectResolution';
 import type { ProjectEntry } from '@/lib/api/types';
 import type { WorktreeMetadata } from '@/types/worktree';
@@ -26,17 +29,17 @@ import { toast } from '@/components/ui';
 import type { PermissionRequest } from '@/types/permission';
 import type { QuestionRequest } from '@/types/question';
 
-// macOS menu bar bridge. The Electron main process owns the Tray UI; this hook
+// Native tray/menu bar bridge. The Electron main process owns the Tray UI; this hook
 // streams a compact snapshot of live session/approval state to it via the
 // `desktop_tray_update` IPC command, and routes tray clicks back into the app.
 //
-// Only meaningful on the macOS desktop shell — main.mjs no-ops the command on
-// other platforms, but we still gate here to avoid pointless work.
+// Only meaningful on desktop platforms with a native tray/menu bar — main.mjs
+// no-ops the command elsewhere, but we still gate here to avoid pointless work.
 
 const TRAY_ACTION_EVENT = 'openchamber:tray-action';
 // Event-driven updates do the real work; this is just a slow safety net.
 const POLL_INTERVAL_MS = 5000;
-const FLUSH_DEBOUNCE_MS = 120;
+const FLUSH_DEBOUNCE_MS = 500;
 // Pull the full cross-project session list periodically. SSE keeps the active
 // directory instant; this catches sessions created in directories this client
 // never opened (other worktrees, other projects, the TUI, …).
@@ -80,6 +83,9 @@ type TraySnapshot = {
   // dropdown (same "configured to show" rule as the header/mobile). Empty
   // groups → the tray omits the Usage submenu entirely.
   usage: TrayUsage;
+  // Number of chats (root sessions) with unseen activity, for the macOS dock
+  // badge. 0 when the user disabled the badge — the main process clears it.
+  dockBadgeCount: number;
 };
 
 // focus-session / new-session are routed natively by the main process through
@@ -95,10 +101,14 @@ type DesktopBridgeGlobal = {
   ) => Promise<() => void>;
 };
 
-const isMac = (): boolean => {
+const isTrayPlatform = (): boolean => {
   if (typeof window === 'undefined') return false;
-  return (window as unknown as { __OPENCHAMBER_PLATFORM__?: string }).__OPENCHAMBER_PLATFORM__ === 'darwin';
+  const platform = (window as unknown as { __OPENCHAMBER_PLATFORM__?: string }).__OPENCHAMBER_PLATFORM__;
+  return platform === 'darwin' || platform === 'win32' || platform === 'linux';
 };
+
+const isTrayEnabled = (): boolean =>
+  typeof window !== 'undefined' && window.__OPENCHAMBER_ELECTRON__?.trayEnabled !== false;
 
 const permissionLabel = (request: PermissionRequest): string => {
   const head = typeof request.permission === 'string' ? request.permission : 'Permission';
@@ -111,8 +121,14 @@ const questionLabel = (request: QuestionRequest): string => {
   return first?.header || first?.question || 'Question';
 };
 
-const updatedAt = (session: Session): number =>
-  session.time?.updated ?? session.time?.created ?? 0;
+const compareSessionOrder = (left: Session, right: Session): number => (
+  compareSessionsByLifecycleOrder(
+    left,
+    right,
+    useSessionPinnedStore.getState().ids,
+    useSessionOrderingStore.getState().rankById,
+  )
+);
 
 const basenameOf = (p: string): string => {
   const norm = p.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -292,7 +308,7 @@ const collectStatusPollDirectories = (): Map<string, string[]> => {
   allSessions
     .filter((s) => s?.id && !s.parentID)
     .slice()
-    .sort((a, b) => updatedAt(b) - updatedAt(a))
+    .sort(compareSessionOrder)
     .slice(0, MAX_SESSIONS)
     .forEach((session) => {
       const directory = resolveGlobalSessionDirectory(session);
@@ -354,7 +370,7 @@ const buildSnapshot = (instanceName: string): TraySnapshot => {
   const resolveStatus = (id: string): TraySessionStatus => {
     const fromStores = live.statusById.get(id);
     if (fromStores && fromStores !== 'idle') return fromStores;
-    return globalStatusById.get(id)?.status ?? fromStores ?? 'idle';
+    return globalStatusById.get(id)?.status.type ?? fromStores ?? 'idle';
   };
 
   const rollupStatus = (family: string[]): TraySessionStatus => {
@@ -370,7 +386,7 @@ const buildSnapshot = (instanceName: string): TraySnapshot => {
   const sessions: TraySession[] = allSessions
     .filter((s) => s?.id && !s.parentID) // root rows; sub-session work rolls up
     .slice()
-    .sort((a, b) => updatedAt(b) - updatedAt(a)) // most recently updated first
+    .sort(compareSessionOrder)
     .slice(0, MAX_SESSIONS)
     .map((session) => {
       const family = [session.id, ...collectDescendants(session.id)];
@@ -389,12 +405,31 @@ const buildSnapshot = (instanceName: string): TraySnapshot => {
 
   const approvals = live.approvals.map((a) => ({ ...a, sessionTitle: titleById.get(a.sessionId) || '' }));
 
-  return { sessions, approvals, instanceName, usage: buildUsage() };
+  // Dock badge: count chats (root sessions) with unseen activity over the FULL
+  // cross-project list — not the MAX_SESSIONS-capped `sessions` above — so the
+  // number is accurate even with many projects. A subtask's unseen rolls up to
+  // its root only when the user opted into subtask notifications, matching the
+  // sidebar's needs-attention rule.
+  const ui = useUIStore.getState();
+  let dockBadgeCount = 0;
+  if (ui.dockBadgeEnabled) {
+    for (const session of allSessions) {
+      if (!session?.id || session.parentID) continue; // roots only
+      let familyUnseen = notif.unseenCount[session.id] ?? 0;
+      if (familyUnseen === 0 && ui.notifyOnSubtasks) {
+        familyUnseen = collectDescendants(session.id)
+          .reduce((sum, id) => sum + (notif.unseenCount[id] ?? 0), 0);
+      }
+      if (familyUnseen > 0) dockBadgeCount += 1;
+    }
+  }
+
+  return { sessions, approvals, instanceName, usage: buildUsage(), dockBadgeCount };
 };
 
 export const useTraySync = (): void => {
   React.useEffect(() => {
-    if (!isMac() || !canUseElectronDesktopIPC()) return;
+    if (!isTrayPlatform() || !isTrayEnabled() || !canUseElectronDesktopIPC()) return;
 
     let disposed = false;
     let lastSerialized = '';
@@ -433,8 +468,8 @@ export const useTraySync = (): void => {
     };
 
     // Coalesce bursts (e.g. token-by-token streaming updates a store rapidly)
-    // into a single push, while staying near-instant for discrete events like
-    // a new session appearing.
+    // into at most one push per FLUSH_DEBOUNCE_MS; discrete events surface within
+    // that window. The main app UI stays instant via SSE/stores.
     const scheduleFlush = () => {
       if (disposed || flushTimer !== null) return;
       flushTimer = window.setTimeout(() => {
@@ -491,9 +526,14 @@ export const useTraySync = (): void => {
     const unsubscribeProjects = useProjectsStore.subscribe(() => scheduleFlush());
     const unsubscribeWorktrees = useSessionUIStore.subscribe(() => scheduleFlush());
     const unsubscribeGit = useGitStore.subscribe(() => scheduleFlush());
+    // The dock-badge toggle and subtask-notification preference live here; a
+    // change must re-push the snapshot so the badge appears/clears immediately.
+    const unsubscribeUI = useUIStore.subscribe(() => scheduleFlush());
     // Cross-project status map: fed live by the sync dispatcher from the global
     // event stream, and seeded/reconciled by the poll below.
     const unsubscribeGlobalStatus = useGlobalSessionStatusStore.subscribe(() => scheduleFlush());
+    const unsubscribeSessionOrder = useSessionOrderingStore.subscribe(() => scheduleFlush());
+    const unsubscribePinnedSessions = useSessionPinnedStore.subscribe(() => scheduleFlush());
 
     // Make the tray self-sufficient: load the full cross-project list now
     // (independent of the sidebar) and refresh it periodically so sessions from
@@ -541,7 +581,10 @@ export const useTraySync = (): void => {
       unsubscribeProjects();
       unsubscribeWorktrees();
       unsubscribeGit();
+      unsubscribeUI();
       unsubscribeGlobalStatus();
+      unsubscribeSessionOrder();
+      unsubscribePinnedSessions();
       unsubscribeQuota();
       unsubscribeRegistry?.();
       for (const unsub of storeUnsubs.values()) unsub();
@@ -550,7 +593,7 @@ export const useTraySync = (): void => {
   }, []);
 
   React.useEffect(() => {
-    if (!isMac() || typeof window === 'undefined') return;
+    if (!isTrayPlatform() || !isTrayEnabled() || typeof window === 'undefined') return;
     const bridge = (window as unknown as { __OPENCHAMBER_DESKTOP__?: DesktopBridgeGlobal }).__OPENCHAMBER_DESKTOP__;
     const listen = bridge?.listen;
     if (typeof listen !== 'function') return;

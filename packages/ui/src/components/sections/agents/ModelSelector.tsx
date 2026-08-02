@@ -12,6 +12,7 @@ import { useOpenCodeReadiness } from '@/hooks/useOpenCodeReadiness';
 import { useDeviceInfo } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { dropdownTriggerVariants } from '@/components/ui/dropdown-trigger';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { ModelPickerList, type ModelPickerEntry, type ModelPickerProvider } from '@/components/model-picker/ModelPickerList';
@@ -22,6 +23,7 @@ interface ModelSelectorProps {
     onChange: (providerId: string, modelId: string) => void;
     className?: string;
     allowedProviderIds?: string[];
+    isModelAllowed?: (providerId: string, modelId: string) => boolean;
     placeholder?: string;
     tooltipsEnabled?: boolean;
     dropdownPortalToBody?: boolean;
@@ -33,6 +35,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     onChange,
     className,
     allowedProviderIds,
+    isModelAllowed,
     placeholder,
     tooltipsEnabled = true,
     dropdownPortalToBody = false,
@@ -46,6 +49,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     const toggleFavoriteModel = useUIStore((state) => state.toggleFavoriteModel);
     const isFavoriteModel = useUIStore((state) => state.isFavoriteModel);
     const addRecentModel = useUIStore((state) => state.addRecentModel);
+    const providerOrder = useUIStore((state) => state.providerOrder);
     const { favoriteModelsList, recentModelsList } = useModelLists();
     const { isMobile: deviceIsMobile } = useDeviceInfo();
     const isActuallyMobile = isMobile || deviceIsMobile;
@@ -89,11 +93,20 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     }), [placeholder, t]);
 
     const selectedModel = providerId && modelId ? { providerID: providerId, modelID: modelId } : null;
-    const triggerLabel = providerId && modelId ? `${providerId}/${modelId}` : (placeholder || t('settings.agents.modelSelector.notSelected'));
+    // Show the model's display name (as in the picker list), not the raw provider/model id.
+    const triggerLabel = React.useMemo(() => {
+        if (!providerId || !modelId) {
+            return placeholder || t('settings.agents.modelSelector.notSelected');
+        }
+        const provider = providers.find((entry) => entry.id === providerId);
+        const model = provider?.models?.find((entry) => entry.id === modelId);
+        return (typeof model?.name === 'string' && model.name.trim()) || modelId;
+    }, [modelId, placeholder, providerId, providers, t]);
 
     const picker = (
         <ModelPickerList
             providers={providers}
+            providerOrder={providerOrder}
             favoriteModels={favoriteModelsList}
             recentModels={recentModelsList}
             modelsMetadata={modelsMetadata}
@@ -104,6 +117,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             selectedModel={selectedModel}
             hiddenModels={hiddenModels}
             allowedProviderIds={allowedProviderIds}
+            isModelAllowed={isModelAllowed}
             includeNotSelected
             onSelectNone={handleSelectNone}
             onEscape={closePicker}
@@ -121,8 +135,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     onClick={isReady ? () => setIsMobilePanelOpen(true) : undefined}
                     disabled={!isReady}
                     className={cn(
-                        'flex w-full items-center justify-between gap-2 rounded-lg border border-border/40 bg-[var(--surface-elevated)] px-2 py-1.5 text-left',
-                        !isReady && 'opacity-60 cursor-not-allowed',
+                        dropdownTriggerVariants(),
+                        'w-full',
                         className,
                     )}
                 >
@@ -156,7 +170,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         <DropdownMenu open={isReady && isDropdownOpen} onOpenChange={isReady ? setIsDropdownOpen : undefined}>
             <DropdownMenuTrigger asChild>
                 <div className={cn(
-                    'border-input data-[placeholder]:text-muted-foreground flex min-w-0 items-center justify-between gap-2 rounded-lg border bg-transparent px-2 py-2 typography-ui-label whitespace-nowrap shadow-none outline-none hover:bg-interactive-hover data-[popup-open]:bg-interactive-active h-6 w-fit',
+                    dropdownTriggerVariants({ size: 'sm' }),
+                    'min-w-0 w-fit',
                     !isReady && 'opacity-60 cursor-not-allowed',
                     className,
                 )}>

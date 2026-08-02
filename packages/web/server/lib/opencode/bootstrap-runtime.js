@@ -7,6 +7,7 @@ export const createBootstrapRuntime = (dependencies) => {
     registerTtsRoutes,
     registerNotificationRoutes,
     registerOpenChamberRoutes,
+    registerAgentToolRoutes = () => {},
     express,
   } = dependencies;
 
@@ -22,6 +23,13 @@ export const createBootstrapRuntime = (dependencies) => {
       uiPassword,
       tunnelAuthController,
       remoteClientAuthRuntime,
+      clientPairingRuntime,
+      getRelayPairingCandidate,
+      reconcileRelay,
+      getPairingTransports,
+      getDirectCandidateUrls,
+      getServerId,
+      getServerLabel,
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
       sayTTSCapability,
@@ -32,7 +40,10 @@ export const createBootstrapRuntime = (dependencies) => {
       writeSettingsToDisk,
       addOrUpdatePushSubscription,
       removePushSubscription,
+      addOrUpdateApnsToken,
+      removeApnsToken,
       updateUiVisibility,
+      clearPendingPushBadge,
       isUiVisible,
       getUiNotificationClients,
       writeSseEvent,
@@ -49,6 +60,7 @@ export const createBootstrapRuntime = (dependencies) => {
       fetchFreeZenModels,
       getCachedZenModels,
       setAutoAcceptSession,
+      agentToolRuntime,
     } = options;
 
     const uiAuthController = createUiAuth({
@@ -68,17 +80,27 @@ export const createBootstrapRuntime = (dependencies) => {
       serverStartedAt,
       gracefulShutdown,
       getHealthSnapshot,
+      getServerId,
       tunnelAuthController,
       uiAuthController,
     });
 
     registerCommonRequestMiddleware(app, { express, verboseRequestLogs });
 
+    registerAgentToolRoutes(app, { express, agentToolRuntime });
+
     registerAuthAndAccessRoutes(app, {
       express,
       tunnelAuthController,
       uiAuthController,
       remoteClientAuthRuntime,
+      clientPairingRuntime,
+      getRelayPairingCandidate,
+      reconcileRelay,
+      getPairingTransports,
+      getDirectCandidateUrls,
+      getServerId,
+      getServerLabel,
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
     });
@@ -95,7 +117,10 @@ export const createBootstrapRuntime = (dependencies) => {
       writeSettingsToDisk,
       addOrUpdatePushSubscription,
       removePushSubscription,
+      addOrUpdateApnsToken,
+      removeApnsToken,
       updateUiVisibility,
+      clearPendingPushBadge,
       isUiVisible,
       getUiNotificationClients,
       writeSseEvent,

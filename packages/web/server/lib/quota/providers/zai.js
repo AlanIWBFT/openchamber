@@ -4,8 +4,6 @@ import {
   normalizeAuthEntry,
   buildResult,
   toUsageWindow,
-  toNumber,
-  toTimestamp,
   resolveWindowSeconds,
   resolveWindowLabel,
   normalizeTimestamp
@@ -13,7 +11,7 @@ import {
 
 export const providerId = 'zai-coding-plan';
 export const providerName = 'z.ai';
-export const aliases = ['zai-coding-plan', 'zai', 'z.ai'];
+const aliases = ['zai-coding-plan', 'zai', 'z.ai'];
 
 export const isConfigured = () => {
   const auth = readAuthFile();
@@ -57,18 +55,26 @@ export const fetchQuota = async () => {
 
     const payload = await response.json();
     const limits = Array.isArray(payload?.data?.limits) ? payload.data.limits : [];
-    const tokensLimit = limits.find((limit) => limit?.type === 'TOKENS_LIMIT');
-    const windowSeconds = resolveWindowSeconds(tokensLimit);
-    const windowLabel = resolveWindowLabel(windowSeconds);
-    const resetAt = tokensLimit?.nextResetTime ? normalizeTimestamp(tokensLimit.nextResetTime) : null;
-    const usedPercent = typeof tokensLimit?.percentage === 'number' ? tokensLimit.percentage : null;
-
     const windows = {};
-    if (tokensLimit) {
+    for (const tokensLimit of limits.filter((limit) => limit?.type === 'TOKENS_LIMIT')) {
+      const windowSeconds = resolveWindowSeconds(tokensLimit);
+      const windowLabel = resolveWindowLabel(windowSeconds);
+      const resetAt = tokensLimit?.nextResetTime ? normalizeTimestamp(tokensLimit.nextResetTime) : null;
+      const usedPercent = typeof tokensLimit?.percentage === 'number' ? tokensLimit.percentage : null;
+
       windows[windowLabel] = toUsageWindow({
         usedPercent,
         windowSeconds,
         resetAt
+      });
+    }
+
+    const mcpToolsTimeLimit = limits.find((limit) => limit?.type === 'TIME_LIMIT');
+    if (mcpToolsTimeLimit) {
+      windows['MCP Tools'] = toUsageWindow({
+        usedPercent: typeof mcpToolsTimeLimit.percentage === 'number' ? mcpToolsTimeLimit.percentage : null,
+        windowSeconds: 30 * 24 * 60 * 60,
+        resetAt: mcpToolsTimeLimit.nextResetTime ? normalizeTimestamp(mcpToolsTimeLimit.nextResetTime) : null
       });
     }
 

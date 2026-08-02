@@ -4,6 +4,7 @@ import type { SessionGroup, SessionNode } from '../types';
 import { normalizePath } from '../utils';
 import type { MainTab } from '@/stores/useUIStore';
 import { useUIStore } from '@/stores/useUIStore';
+import { useSessionUIStore } from '@/sync/session-ui-store';
 
 type ProjectSection = {
   project: { id: string; normalizedPath: string };
@@ -16,10 +17,10 @@ type Args = {
   activeSessionByProject: Map<string, string>;
   setActiveSessionByProject: React.Dispatch<React.SetStateAction<Map<string, string>>>;
   currentSessionId: string | null;
-  handleSessionSelect: (sessionId: string, sessionDirectory: string | null, projectId?: string | null) => void;
+  handleSessionSelect: (sessionId: string, sessionDirectory: string | null) => void;
   newSessionDraftOpen: boolean;
   mobileVariant: boolean;
-  openNewSessionDraft: (options?: { directoryOverride?: string | null }) => void;
+  openNewSessionDraft: (options?: { selectedProjectId?: string | null; directoryOverride?: string | null }) => void;
   setActiveMainTab: (tab: MainTab) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
 };
@@ -117,12 +118,24 @@ export const useProjectSessionSelection = (args: Args): void => {
       return;
     }
 
+    // Path A' — currentSessionId is set but not in stale projectMap.
+    // Preserve user's explicit selection when the projectMap exists but
+    // is missing the session (worktree data not yet loaded). For
+    // empty projects (projectMap is undefined), fall through to Path B
+    // so a new session draft is opened.
+    if (currentSessionId && projectMap) {
+      return;
+    }
+
     if (!projectMap || projectMap.size === 0) {
       setActiveMainTab('chat');
       if (mobileVariant) {
         setSessionSwitcherOpen(false);
       }
-      openNewSessionDraft({ directoryOverride: section.project.normalizedPath });
+      openNewSessionDraft({
+        selectedProjectId: section.project.id,
+        directoryOverride: section.project.normalizedPath,
+      });
       return;
     }
 
@@ -136,7 +149,7 @@ export const useProjectSessionSelection = (args: Args): void => {
       return;
     }
     const targetDirectory = projectMap.get(targetSessionId)?.directory ?? null;
-    handleSessionSelect(targetSessionId, targetDirectory, activeProjectId);
+    handleSessionSelect(targetSessionId, targetDirectory);
   }, [
     activeProjectId,
     activeSessionByProject,
@@ -170,4 +183,35 @@ export const useProjectSessionSelection = (args: Args): void => {
     });
   }, [activeProjectId, currentSessionId, projectSessionMeta, setActiveSessionByProject]);
 
+};
+
+type ProjectSessionSelectionEffectProps = Omit<
+  Args,
+  'activeSessionByProject' | 'setActiveSessionByProject' | 'currentSessionId' | 'newSessionDraftOpen'
+> & {
+  initialActiveSessionByProject: Map<string, string>;
+  persistActiveSessionByProject: (value: Map<string, string>) => void;
+};
+
+export const ProjectSessionSelectionEffect: React.FC<ProjectSessionSelectionEffectProps> = ({
+  initialActiveSessionByProject,
+  persistActiveSessionByProject,
+  ...args
+}) => {
+  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const newSessionDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
+  const [activeSessionByProject, setActiveSessionByProject] = React.useState(
+    () => new Map(initialActiveSessionByProject),
+  );
+  useProjectSessionSelection({
+    ...args,
+    activeSessionByProject,
+    setActiveSessionByProject,
+    currentSessionId,
+    newSessionDraftOpen,
+  });
+  React.useEffect(() => {
+    persistActiveSessionByProject(activeSessionByProject);
+  }, [activeSessionByProject, persistActiveSessionByProject]);
+  return null;
 };

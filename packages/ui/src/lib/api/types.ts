@@ -1,9 +1,9 @@
 import type { WorktreeMetadata } from '@/types/worktree';
 import type { DraftStarterRef } from '@/lib/draftStarters';
 
-export type RuntimePlatform = 'web' | 'desktop' | 'vscode';
+type RuntimePlatform = 'web' | 'desktop' | 'vscode';
 
-export interface RuntimeDescriptor {
+interface RuntimeDescriptor {
   platform: RuntimePlatform;
 
   isDesktop: boolean;
@@ -13,46 +13,32 @@ export interface RuntimeDescriptor {
   label?: string;
 }
 
-export interface ApiError {
-  message: string;
-  code?: string;
-  cause?: unknown;
-}
-
-export interface Subscription {
+interface Subscription {
 
   close: () => void;
-}
-
-export interface RetryPolicy {
-  maxRetries: number;
-  initialDelayMs: number;
-  maxDelayMs: number;
-}
-
-export interface TerminalTransportCapability {
-  preferred?: 'ws' | 'http' | 'sse';
-  transports?: Array<'ws' | 'http' | 'sse'>;
-  ws?: {
-    path: string;
-    v?: number;
-    enc?: string;
-  };
 }
 
 export interface TerminalSession {
   sessionId: string;
   cols: number;
   rows: number;
-  capabilities?: {
-    input?: TerminalTransportCapability;
-    stream?: TerminalTransportCapability;
-  };
+  status: 'running' | 'exited' | 'error';
+}
+
+export type TerminalShell = 'auto' | 'bash' | 'zsh' | 'sh' | 'fish' | 'pwsh' | 'powershell' | 'cmd' | 'dash' | 'ksh' | 'nu';
+
+export interface TerminalShellOption {
+  id: TerminalShell;
+  name: string;
+  supportsLogin: boolean;
 }
 
 export interface TerminalStreamEvent {
-  type: 'connected' | 'data' | 'exit' | 'reconnecting';
+  type: 'snapshot' | 'data' | 'exit' | 'reconnecting';
+  sequence?: number;
   data?: string;
+  replayData?: string;
+  status?: 'running' | 'exited' | 'error';
   exitCode?: number;
   signal?: number | null;
   attempt?: number;
@@ -62,15 +48,20 @@ export interface TerminalStreamEvent {
   ptyBackend?: string;
 }
 
-export interface CreateTerminalOptions {
-  cwd: string;
-  cols?: number;
-  rows?: number;
+export interface TerminalError extends Error {
+  code?: string;
 }
 
-export interface TerminalStreamOptions {
-  retry?: Partial<RetryPolicy>;
-  connectionTimeoutMs?: number;
+export interface CreateTerminalOptions {
+  cwd: string;
+  sessionId?: string;
+  cols?: number;
+  rows?: number;
+  themeMode?: 'light' | 'dark';
+  terminalBackground?: string;
+  terminalForeground?: string;
+  shell?: TerminalShell;
+  loginShell?: boolean;
 }
 
 export interface ResizeTerminalPayload {
@@ -81,7 +72,7 @@ export interface ResizeTerminalPayload {
 
 export interface TerminalHandlers {
   onEvent: (event: TerminalStreamEvent) => void;
-  onError?: (error: Error, fatal?: boolean) => void;
+  onError?: (error: TerminalError, fatal?: boolean) => void;
 }
 
 export interface ForceKillOptions {
@@ -90,16 +81,18 @@ export interface ForceKillOptions {
 }
 
 export interface TerminalAPI {
+  listShells?(): Promise<TerminalShellOption[]>;
   createSession(options: CreateTerminalOptions): Promise<TerminalSession>;
-  connect(sessionId: string, handlers: TerminalHandlers, options?: TerminalStreamOptions): Subscription;
+  connect(sessionId: string, handlers: TerminalHandlers): Subscription;
   sendInput(sessionId: string, input: string): Promise<void>;
   resize(payload: ResizeTerminalPayload): Promise<void>;
+  updateAppearance?(sessionId: string, appearance: Pick<CreateTerminalOptions, 'themeMode' | 'terminalBackground' | 'terminalForeground'>): Promise<void>;
   close(sessionId: string): Promise<void>;
   restartSession?(currentSessionId: string, options: CreateTerminalOptions): Promise<TerminalSession>;
   forceKill?(options: ForceKillOptions): Promise<void>;
 }
 
-export interface GitStatusFile {
+interface GitStatusFile {
   path: string;
   index: string;
   working_dir: string;
@@ -153,6 +146,17 @@ export interface GetGitDiffOptions {
   contextLines?: number;
 }
 
+/**
+ * Diff between two refs. Uses three-dot (`base...head`) semantics server-side, so changes
+ * pulled into `head` by merging `base` are excluded — only the branch's own work is returned.
+ */
+export interface GetGitRangeDiffOptions {
+  base: string;
+  head: string;
+  path?: string;
+  contextLines?: number;
+}
+
 export interface GitFileDiffResponse {
   original: string;
   modified: string;
@@ -181,7 +185,7 @@ export interface GitBranch {
   branches: Record<string, GitBranchDetails>;
 }
 
-export interface GitCommitSummary {
+interface GitCommitSummary {
   changes: number;
   insertions: number;
   deletions: number;
@@ -241,29 +245,18 @@ export interface CheckoutCommitResponse {
   success: boolean;
 }
 
-export interface CherryPickRequest {
-  hash: string;
-}
 export interface CherryPickResponse {
   success: boolean;
   conflict?: boolean;
   conflictFiles?: string[];
 }
 
-export interface RevertCommitRequest {
-  hash: string;
-}
 export interface RevertCommitResponse {
   success: boolean;
   conflict?: boolean;
   conflictFiles?: string[];
 }
 
-export interface ResetToCommitRequest {
-  hash: string;
-  mode: 'soft' | 'mixed' | 'hard';
-  force?: boolean;
-}
 export interface ResetToCommitResponse {
   success: boolean;
 }
@@ -375,6 +368,7 @@ export interface GitWorktreeValidationResult {
 
 export interface GitWorktreeBootstrapStatus {
   status: 'pending' | 'ready' | 'failed';
+  phase?: 'directory-created' | 'git-ready' | 'setup-ready';
   error: string | null;
   updatedAt: number;
 }
@@ -456,7 +450,7 @@ export interface GeneratedPullRequestDescription {
   body: string;
 }
 
-export interface GitWorktreeAPI {
+interface GitWorktreeAPI {
   list(directory: string): Promise<GitWorktreeInfo[]>;
   validate?(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeValidationResult>;
   bootstrapStatus?(directory: string): Promise<GitWorktreeBootstrapStatus>;
@@ -470,6 +464,7 @@ export interface GitAPI {
   getGitStatus(directory: string, options?: { mode?: 'light' }): Promise<GitStatus>;
   getGitDiff(directory: string, options: GetGitDiffOptions): Promise<GitDiffResponse>;
   getGitFileDiff(directory: string, options: GetGitFileDiffOptions): Promise<GitFileDiffResponse>;
+  getGitRangeDiff?(directory: string, options: GetGitRangeDiffOptions): Promise<GitDiffResponse>;
   revertGitFile(directory: string, filePath: string, options?: { scope?: 'all' | 'working' }): Promise<void>;
   stageGitFile(directory: string, filePath: string): Promise<void>;
   stageGitFiles?(directory: string, filePaths: string[]): Promise<void>;
@@ -591,11 +586,11 @@ export interface CommandExecResult {
   error?: string;
 }
 
-export interface ListDirectoryOptions {
+interface ListDirectoryOptions {
   respectGitignore?: boolean;
 }
 
-export interface FileReadOptions {
+interface FileReadOptions {
   allowOutsideWorkspace?: boolean;
   outsideFileGrant?: string;
   optional?: boolean;
@@ -629,6 +624,7 @@ export interface ProjectEntry {
   } | null;
   iconBackground?: string | null;
   color?: string | null;
+  defaultModel?: string;
   addedAt?: number;
   lastOpenedAt?: number;
   sidebarCollapsed?: boolean;
@@ -653,14 +649,17 @@ export interface SettingsPayload {
   nativeNotificationsEnabled?: boolean;
   notificationMode?: 'always' | 'hidden-only';
   autoDeleteEnabled?: boolean;
+  autoSaveEnabled?: boolean;
   autoDeleteAfterDays?: number;
   sessionRetentionAction?: 'archive' | 'delete';
+  followUpBehavior?: 'steer' | 'queue';
   queueModeEnabled?: boolean;
   gitmojiEnabled?: boolean;
   inputSpellcheckEnabled?: boolean;
   showOpenCodeUpdateNotifications?: boolean;
   openCodeUpdateToastDismissedVersion?: string;
   showToolFileIcons?: boolean;
+  codeBlockLineWrap?: boolean;
   showTurnChangedFiles?: boolean;
   showExpandedBashTools?: boolean;
   showExpandedEditTools?: boolean;
@@ -671,6 +670,9 @@ export interface SettingsPayload {
   showSplitAssistantMessageActions?: boolean;
   fontSize?: number;
   terminalFontSize?: number;
+  terminalShell?: TerminalShell;
+  terminalLoginShells?: TerminalShell[];
+  editorFontSize?: number;
   uiFont?: string;
   monoFont?: string;
   padding?: number;
@@ -687,6 +689,8 @@ export interface SettingsPayload {
   pwaAppName?: string;
   mobileKeyboardMode?: 'native' | 'resize-content';
   draftStarters?: DraftStarterRef[];
+  draftStartersVisible?: boolean;
+  draftStartersCraftGoalAdded?: boolean;
 
   [key: string]: unknown;
 }
@@ -707,7 +711,7 @@ export interface DirectoryPermissionRequest {
   path: string;
 }
 
-export interface DirectoryPermissionResult {
+interface DirectoryPermissionResult {
   success: boolean;
   path?: string;
   error?: string;
@@ -740,7 +744,7 @@ export interface NotificationsAPI {
   canNotify?: () => boolean | Promise<boolean>;
 }
 
-export interface DiagnosticsAPI {
+interface DiagnosticsAPI {
   downloadLogs(): Promise<{ fileName: string; content: string }>;
 }
 
@@ -763,7 +767,7 @@ export interface VSCodeAPI {
   executeCommand(command: string, ...args: unknown[]): Promise<unknown>;
   openAgentManager(): Promise<void>;
   openExternalUrl(url: string): Promise<void>;
-  pickFiles?(): Promise<unknown>;
+  pickFiles?(options?: { extensions?: string[] }): Promise<unknown>;
   saveImage?(payload: unknown): Promise<unknown>;
   saveMarkdown?(payload: unknown): Promise<unknown>;
 }
@@ -775,17 +779,33 @@ export interface PushSubscribePayload {
     auth: string;
   };
   origin?: string;
+  /** Runtime surface ('ios' | 'android' | 'vscode' | 'desktop' | 'web') for presence-aware routing. */
+  platform?: string;
 }
 
 export interface PushUnsubscribePayload {
   endpoint: string;
 }
 
+export interface ApnsTokenPayload {
+  token: string;
+  /** 'ios' (APNs) or 'android' (FCM) — lets the relay route the token to the right service. */
+  platform?: string;
+  /**
+   * APNs environment the token belongs to: 'sandbox' for Xcode/dev-signed installs,
+   * 'production' for TestFlight/App Store. Omitted when unknown (server defaults to production).
+   */
+  environment?: 'sandbox' | 'production';
+}
+
 export interface PushAPI {
   getVapidPublicKey(): Promise<{ publicKey: string } | null>;
   subscribe(payload: PushSubscribePayload): Promise<{ ok: true } | null>;
   unsubscribe(payload: PushUnsubscribePayload): Promise<{ ok: true } | null>;
-  setVisibility(payload: { visible: boolean }): Promise<{ ok: true } | null>;
+  setVisibility(payload: { visible: boolean; platform?: string }): Promise<{ ok: true } | null>;
+  /** Register a native iOS APNs device token (Capacitor mobile app only). */
+  registerApnsToken(payload: ApnsTokenPayload): Promise<{ ok: true } | null>;
+  unregisterApnsToken(payload: ApnsTokenPayload): Promise<{ ok: true } | null>;
 }
 
 export type GitHubUserSummary = {
@@ -796,7 +816,7 @@ export type GitHubUserSummary = {
   email?: string;
 };
 
-export type GitHubRepoRef = {
+type GitHubRepoRef = {
   owner: string;
   repo: string;
   url: string;
@@ -807,12 +827,19 @@ export type GitHubChecksSummary = {
   total: number;
   success: number;
   failure: number;
+  /** queued + in_progress + unconcluded runs. */
   pending: number;
+  inProgress?: number;
+  queued?: number;
+  /** Earliest started_at among in-progress runs (ISO), for elapsed display. */
+  startedAt?: string;
 };
 
 export type GitHubCheckRun = {
   id?: number;
   name: string;
+  startedAt?: string;
+  completedAt?: string;
   app?: {
     name?: string;
     slug?: string;
@@ -830,6 +857,7 @@ export type GitHubCheckRun = {
     jobId?: number;
     url?: string;
     name?: string;
+    workflowName?: string;
     conclusion?: string | null;
     steps?: Array<{
       name: string;
@@ -865,7 +893,7 @@ export type GitHubPullRequest = {
   mergeableState?: string | null;
 };
 
-export type GitHubPullRequestHeadRepo = {
+type GitHubPullRequestHeadRepo = {
   owner: string;
   repo: string;
   url: string;
@@ -883,7 +911,7 @@ export type GitHubPullRequestSummary = GitHubPullRequest & {
   sourceRepo?: (GitHubRepoSelector & { source: string }) | null;
 };
 
-export type GitHubPullRequestFile = {
+type GitHubPullRequestFile = {
   filename: string;
   status?: string;
   additions?: number;
@@ -892,7 +920,7 @@ export type GitHubPullRequestFile = {
   patch?: string;
 };
 
-export type GitHubPullRequestReviewComment = {
+type GitHubPullRequestReviewComment = {
   id: number;
   url: string;
   body: string;
@@ -914,6 +942,8 @@ export type GitHubPullRequestsListResult = {
 
 export type GitHubPullRequestContextResult = {
   connected: boolean;
+  /** Server-side stamp of when the data was fetched from GitHub (ms epoch); survives server cache serves. */
+  fetchedAt?: number;
   repo?: GitHubRepoRef | null;
   pr?: GitHubPullRequestSummary | null;
   issueComments?: GitHubIssueComment[];
@@ -926,6 +956,8 @@ export type GitHubPullRequestContextResult = {
 
 export type GitHubPullRequestStatus = {
   connected: boolean;
+  /** Server-side stamp of when the data was fetched from GitHub (ms epoch); survives server cache serves. */
+  fetchedAt?: number;
   repo?: GitHubRepoRef | null;
   branch?: string;
   pr?: GitHubPullRequest | null;
@@ -977,7 +1009,7 @@ export type GitHubPullRequestMergeResult = {
   message?: string;
 };
 
-export type GitHubIssueLabel = {
+type GitHubIssueLabel = {
   name: string;
   color?: string;
 };
@@ -1052,7 +1084,7 @@ export type GitHubAuthStatus = {
   } | null;
 };
 
-export type GitHubAuthAccount = {
+type GitHubAuthAccount = {
   id: string;
   user: GitHubUserSummary;
   scope?: string;
@@ -1111,6 +1143,23 @@ export interface RemoteClientRecord {
   revokedAt: string | null;
   expiresAt?: string | null;
   clientKind?: string | null;
+  authMethod?: string | null;
+  /** Pairing session this client was created from, when authMethod is 'pairing'. */
+  pairingId?: string | null;
+  deviceName?: string | null;
+  devicePlatform?: string | null;
+  usesRelay?: boolean;
+  /** Transport that carried the device's most recent authenticated request. */
+  lastTransport?: 'relay' | 'direct' | null;
+}
+
+// A pairing link that has been created but not yet redeemed by a device.
+export interface PendingPairingRecord {
+  id: string;
+  label?: string;
+  fingerprint?: string | null;
+  expiresAt?: string;
+  usesRelay?: boolean;
 }
 
 export interface RemoteClientCreateResult {
@@ -1127,11 +1176,49 @@ export interface RemoteClientPurgeRevokedResult {
   purged: number;
 }
 
+export interface PairingSessionCreateResult {
+  pairing: {
+    id: string;
+    label?: string;
+    fingerprint?: string | null;
+    expiresAt?: string;
+    secret: string;
+  };
+  server: {
+    label: string;
+    // Transport candidates for the pairing-v2 payload. Shape matches
+    // PairingEndpointCandidate in `@/lib/connectionPayload` (direct lan/tunnel or
+    // relay); left as a structural type here so this contract file stays leaf.
+    candidates: Array<Record<string, unknown>>;
+  };
+}
+
 export interface ClientAuthAPI {
   listClients(): Promise<RemoteClientRecord[]>;
   createClient(input?: { label?: string }): Promise<RemoteClientCreateResult>;
+  // Creates a one-time pairing session (pairing v2). `serverUrl` is the
+  // externally reachable URL to advertise as the direct candidate (the desktop
+  // UI talks to its server over loopback, so it must supply the LAN URL); the
+  // server folds in a relay candidate when its relay host is enabled.
+  createPairingSession(input?: {
+    label?: string;
+    allowedClientKinds?: Array<'mobile' | 'desktop'>;
+    serverUrl?: string;
+    // Per-link transport choice. `includeRelay: true` adds the relay candidate
+    // and enables the relay host on demand; `false` omits it; omitted keeps the
+    // legacy "relay only if already enabled" behavior. `includeDirect: false`
+    // produces a relay-only link (no direct candidate).
+    includeRelay?: boolean;
+    includeDirect?: boolean;
+  }): Promise<PairingSessionCreateResult>;
   purgeRevokedClients(): Promise<RemoteClientPurgeRevokedResult>;
   revokeClient(id: string): Promise<RemoteClientRevokeResult>;
+  // Pairing links created but not yet redeemed (the "pending devices" list).
+  listPendingPairings(): Promise<PendingPairingRecord[]>;
+  cancelPairing(id: string): Promise<{ cancelled: boolean }>;
+  // Direct transports the server can be reached on, for the create-device dialog.
+  // LAN reflects the server's actual bind, independent of the UI origin.
+  getPairingTransports(): Promise<{ local: string | null; lan: string | null; relayAvailable: boolean }>;
 }
 
 export interface RuntimeAPIs {
@@ -1156,9 +1243,9 @@ export type RuntimeAPISelector<TValue> = (apis: RuntimeAPIs) => TValue;
 
 // ============== Skills Catalog Types ==============
 
-export type SkillsCatalogSourceId = string;
+type SkillsCatalogSourceId = string;
 
-export type SkillsCatalogSourceType = 'github' | 'clawdhub';
+type SkillsCatalogSourceType = 'github' | 'clawdhub';
 
 export interface SkillsCatalogSource {
   id: SkillsCatalogSourceId;
@@ -1169,13 +1256,13 @@ export interface SkillsCatalogSource {
   sourceType?: SkillsCatalogSourceType;
 }
 
-export interface SkillsCatalogItemInstalledBadge {
+interface SkillsCatalogItemInstalledBadge {
   isInstalled: boolean;
   scope?: 'user' | 'project';
   source?: 'opencode' | 'agents' | 'claude';
 }
 
-export interface ClawdHubSkillMetadata {
+interface ClawdHubSkillMetadata {
   slug: string;
   version: string;
   displayName?: string;
@@ -1224,7 +1311,7 @@ export interface SkillsRepoScanRequest {
   gitIdentityId?: string;
 }
 
-export type SkillsRepoScanError =
+type SkillsRepoScanError =
   | { kind: 'authRequired'; message: string; sshOnly: true; identities?: Array<{ id: string; name: string }> }
   | { kind: 'invalidSource'; message: string }
   | { kind: 'gitUnavailable'; message: string }
@@ -1237,7 +1324,7 @@ export interface SkillsRepoScanResponse {
   error?: SkillsRepoScanError;
 }
 
-export interface SkillsInstallSelection {
+interface SkillsInstallSelection {
   skillDir: string;
   /** ClawdHub-specific metadata for installation */
   clawdhub?: {

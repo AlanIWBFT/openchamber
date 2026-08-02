@@ -14,6 +14,7 @@ const readArgValue = (name) => {
 const localOrigin = readArgValue('--openchamber-local-origin');
 const apiBaseUrl = readArgValue('--openchamber-api-base-url');
 const clientToken = readArgValue('--openchamber-client-token');
+const runtimeHeadersRaw = readArgValue('--openchamber-runtime-headers');
 const homeDirectory = readArgValue('--openchamber-home');
 const macosMajorRaw = readArgValue('--openchamber-macos-major');
 const macosMajor = Number.parseInt(macosMajorRaw, 10);
@@ -21,6 +22,7 @@ const macVibrancySupported = process.platform === 'darwin';
 // Effective state for this window (main process resolves the saved preference
 // and passes it in). Defaults on when supported unless explicitly '0'.
 const hasMacVibrancy = macVibrancySupported && readArgValue('--openchamber-mac-vibrancy') !== '0';
+const trayEnabled = process.platform !== 'darwin' || readArgValue('--openchamber-tray-enabled') !== '0';
 
 // Preload re-executes on every cross-origin navigation (we run with
 // sandbox:false, per-document). Two separate concerns to balance:
@@ -61,6 +63,24 @@ if (clientToken && isLocalPage) {
   contextBridge.exposeInMainWorld('__OPENCHAMBER_CLIENT_TOKEN__', clientToken);
 }
 
+// Which saved host this window should connect to over the relay-capable path
+// (direct probe first, E2EE tunnel fallback). Local pages only — the id is
+// only useful together with the desktop IPC channel anyway.
+const relayHostId = readArgValue('--openchamber-relay-host-id');
+if (relayHostId && isLocalPage) {
+  contextBridge.exposeInMainWorld('__OPENCHAMBER_RELAY_HOST_ID__', relayHostId);
+}
+
+if (runtimeHeadersRaw && isLocalPage) {
+  try {
+    const runtimeHeaders = JSON.parse(runtimeHeadersRaw);
+    if (runtimeHeaders && typeof runtimeHeaders === 'object') {
+      contextBridge.exposeInMainWorld('__OPENCHAMBER_RUNTIME_HEADERS__', runtimeHeaders);
+    }
+  } catch {
+  }
+}
+
 // Home directory leaks the OS username — keep local-only. Remote pages
 // operate on the REMOTE server's filesystem, local home is irrelevant
 // (and would be misleading if consumed as a workspace hint).
@@ -76,8 +96,10 @@ if (Number.isFinite(macosMajor) && macosMajor > 0) {
 
 contextBridge.exposeInMainWorld('__OPENCHAMBER_ELECTRON__', {
   runtime: 'electron',
+  arch: process.arch,
   macVibrancy: hasMacVibrancy,
   macVibrancySupported,
+  trayEnabled,
 });
 
 contextBridge.exposeInMainWorld('__OPENCHAMBER_PLATFORM__', process.platform);

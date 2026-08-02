@@ -10,6 +10,7 @@ import { buildResult } from '../utils/index.js';
 import * as claude from './claude.js';
 import * as codex from './codex.js';
 import * as copilot from './copilot.js';
+import * as crof from './crof.js';
 import * as cursor from './cursor.js';
 import * as google from './google/index.js';
 import * as kimi from './kimi.js';
@@ -20,8 +21,10 @@ import * as zai from './zai.js';
 import * as zhipuaiCodingPlan from './zhipuai-coding-plan.js';
 import * as minimaxCodingPlan from './minimax-coding-plan.js';
 import * as minimaxCnCodingPlan from './minimax-cn-coding-plan.js';
+import * as neuralwatt from './neuralwatt.js';
 import * as ollamaCloud from './ollama-cloud.js';
 import * as wafer from './wafer.js';
+import * as opencodeGo from './opencode-go.js';
 
 const registry = {
   claude: {
@@ -36,6 +39,12 @@ const registry = {
     isConfigured: codex.isConfigured,
     fetchQuota: codex.fetchQuota
   },
+  crof: {
+    providerId: crof.providerId,
+    providerName: crof.providerName,
+    isConfigured: crof.isConfigured,
+    fetchQuota: crof.fetchQuota
+  },
   cursor: {
     providerId: cursor.providerId,
     providerName: cursor.providerName,
@@ -43,9 +52,9 @@ const registry = {
     fetchQuota: cursor.fetchQuota
   },
   google: {
-    providerId: 'google',
-    providerName: 'Google',
-    isConfigured: () => google.resolveGoogleAuthSources().length > 0,
+    providerId: google.providerId,
+    providerName: google.providerName,
+    isConfigured: google.isConfigured,
     fetchQuota: google.fetchGoogleQuota
   },
   'zai-coding-plan': {
@@ -113,6 +122,18 @@ const registry = {
     providerName: wafer.providerName,
     isConfigured: wafer.isConfigured,
     fetchQuota: wafer.fetchQuota
+  },
+  'opencode-go': {
+    providerId: opencodeGo.providerId,
+    providerName: opencodeGo.providerName,
+    isConfigured: opencodeGo.isConfigured,
+    fetchQuota: opencodeGo.fetchQuota
+  },
+  neuralwatt: {
+    providerId: neuralwatt.providerId,
+    providerName: neuralwatt.providerName,
+    isConfigured: neuralwatt.isConfigured,
+    fetchQuota: neuralwatt.fetchQuota
   }
 };
 
@@ -168,7 +189,7 @@ export const fetchCopilotAddonQuota = copilot.fetchQuotaAddon;
 export const fetchKimiQuota = kimi.fetchQuota;
 export const fetchOpenRouterQuota = openrouter.fetchQuota;
 export const fetchZaiQuota = zai.fetchQuota;
-export const fetchZhipuaiCodingPlanQuota = zhipuaiCodingPlan.fetchQuota;
+const fetchZhipuaiCodingPlanQuota = zhipuaiCodingPlan.fetchQuota;
 export const fetchNanoGptQuota = nanogpt.fetchQuota;
 export const fetchMinimaxCodingPlanQuota = minimaxCodingPlan.fetchQuota;
 export const fetchMinimaxCnCodingPlanQuota = minimaxCnCodingPlan.fetchQuota;
