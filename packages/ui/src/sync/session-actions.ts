@@ -654,15 +654,29 @@ export async function createSession(
   }
 }
 
+/**
+ * True when a caller captured a runtime key before an asynchronous mutation and
+ * that runtime is no longer the active one. Callers pass `undefined` when they
+ * do not participate in runtime-scoped guarding, which keeps the previous
+ * unguarded behavior.
+ */
+function isStaleRuntime(expectedRuntimeKey: string | undefined): boolean {
+  return expectedRuntimeKey !== undefined && getRuntimeKey() !== expectedRuntimeKey
+}
+
 export async function patchSessionMetadata(
   sessionId: string,
   directory: string | null | undefined,
   updater: (metadata: SessionMetadataRecord) => SessionMetadataRecord,
+  expectedRuntimeKey?: string,
 ): Promise<Session> {
+  if (isStaleRuntime(expectedRuntimeKey)) throw new Error("runtime changed")
   const targetDirectory = directory ?? getSessionDirectory(sessionId)
   const current = await opencodeClient.getSession(sessionId, targetDirectory)
+  if (isStaleRuntime(expectedRuntimeKey)) throw new Error("runtime changed")
   const nextMetadata = updater(getSessionMetadata(current))
   const updated = await opencodeClient.updateSession(sessionId, { metadata: nextMetadata }, targetDirectory)
+  if (isStaleRuntime(expectedRuntimeKey)) throw new Error("runtime changed")
   useGlobalSessionsStore.getState().upsertSession(updated)
   const sessionDirectory = (updated as { directory?: string | null }).directory ?? targetDirectory
   if (sessionDirectory) registerSessionDirectory(updated.id, sessionDirectory)
@@ -682,19 +696,26 @@ export async function setContextObligatoryMessage(
   return updated
 }
 
-async function cleanupReviewMetadataBeforeDelete(sessionId: string, directory?: string | null): Promise<void> {
+async function cleanupReviewMetadataBeforeDelete(
+  sessionId: string,
+  directory?: string | null,
+  expectedRuntimeKey?: string,
+): Promise<void> {
+  if (isStaleRuntime(expectedRuntimeKey)) return
   let session: Session
   try {
     session = await opencodeClient.getSession(sessionId, directory ?? getSessionDirectory(sessionId))
   } catch {
     return
   }
+  if (isStaleRuntime(expectedRuntimeKey)) return
   if (!isReviewSession(session)) return
   const originalSessionID = getOriginalSessionID(session)
   if (!originalSessionID) return
   try {
     await patchSessionMetadata(originalSessionID, directory ?? getSessionDirectory(originalSessionID), (metadata) =>
       withoutReviewSessionLink(metadata, sessionId),
+      expectedRuntimeKey,
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -803,12 +824,26 @@ export async function deleteSessionInDirectory(sessionId: string, directory: str
   }
 }
 
-export async function archiveSession(sessionId: string): Promise<boolean> {
+/**
+ * Archive one session.
+ *
+ * `expectedRuntimeKey` is the runtime key the caller captured when the user
+ * confirmed the operation. When it is supplied and the runtime changes, the
+ * action stops and returns `false` without reconciling any store, so a response
+ * produced by the previous runtime cannot mutate the current runtime's live or
+ * global session state. A session the server already archived before the switch
+ * stays archived on that runtime and is re-read from the server the next time
+ * the runtime is loaded.
+ */
+export async function archiveSession(sessionId: string, expectedRuntimeKey?: string): Promise<boolean> {
+  if (isStaleRuntime(expectedRuntimeKey)) return false
   const sessionDirectory = getSessionDirectory(sessionId)
   const archivedAt = Date.now()
   try {
-    await cleanupReviewMetadataBeforeDelete(sessionId, sessionDirectory)
+    await cleanupReviewMetadataBeforeDelete(sessionId, sessionDirectory, expectedRuntimeKey)
+    if (isStaleRuntime(expectedRuntimeKey)) return false
     const archived = await opencodeClient.updateSession(sessionId, { time: { archived: archivedAt } }, sessionDirectory)
+    if (isStaleRuntime(expectedRuntimeKey)) return false
     if (!archived) {
       throw new Error("session.update failed: server did not return the archived session")
     }
@@ -822,6 +857,45 @@ export async function archiveSession(sessionId: string): Promise<boolean> {
     console.error("[session-actions] archiveSession failed", error)
     return false
   }
+}
+
+export type ArchiveSessionsOptions = {
+  /**
+   * Runtime key captured when the batch was confirmed. When supplied, the batch
+   * stops as soon as the active runtime differs.
+   */
+  expectedRuntimeKey?: string
+}
+
+/**
+ * Archive several sessions sequentially, preserving partial results.
+ *
+ * One failed session never blocks or erases the others: it is reported in
+ * `failedIds` while the remaining IDs are still attempted. When
+ * `expectedRuntimeKey` is supplied and the runtime changes mid-batch, the
+ * already-confirmed sessions stay in `archivedIds` and every ID that was not
+ * confirmed on the captured runtime is reported in `failedIds`, so callers keep
+ * showing the existing partial-failure feedback instead of silently dropping
+ * work.
+ */
+export async function archiveSessions(
+  ids: string[],
+  options?: ArchiveSessionsOptions,
+): Promise<{ archivedIds: string[]; failedIds: string[] }> {
+  const archivedIds: string[] = []
+  const failedIds: string[] = []
+  const expectedRuntimeKey = options?.expectedRuntimeKey
+
+  for (const [index, id] of ids.entries()) {
+    if (isStaleRuntime(expectedRuntimeKey)) {
+      failedIds.push(...ids.slice(index))
+      break
+    }
+    if (await archiveSession(id, expectedRuntimeKey)) archivedIds.push(id)
+    else failedIds.push(id)
+  }
+
+  return { archivedIds, failedIds }
 }
 
 export async function updateSessionTitle(sessionId: string, title: string): Promise<void> {

@@ -454,3 +454,33 @@ describe('routeMessage skill invocation', () => {
     expect(sendCommandCalls).toHaveLength(0);
   });
 });
+
+describe('archiveSessions option forwarding', () => {
+  let originalUpdateSession;
+  let updateSessionCalls;
+
+  beforeEach(() => {
+    updateSessionCalls = [];
+    originalUpdateSession = opencodeClient.updateSession;
+    opencodeClient.updateSession = (sessionId) => {
+      updateSessionCalls.push(sessionId);
+      return Promise.resolve(null);
+    };
+  });
+
+  afterEach(() => {
+    opencodeClient.updateSession = originalUpdateSession;
+  });
+
+  // The store used to accept an options object and silently drop it, so a
+  // caller-supplied runtime key had no effect. Passing a key that cannot match
+  // the active runtime must abort the batch before any SDK call.
+  test('honors expectedRuntimeKey instead of discarding the options object', async () => {
+    const result = await useSessionUIStore.getState().archiveSessions(['session-x', 'session-y'], {
+      expectedRuntimeKey: 'runtime-that-is-not-active',
+    });
+
+    expect(result).toEqual({ archivedIds: [], failedIds: ['session-x', 'session-y'] });
+    expect(updateSessionCalls).toEqual([]);
+  });
+});
