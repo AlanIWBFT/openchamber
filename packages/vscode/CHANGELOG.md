@@ -1,3 +1,10 @@
+## [Unreleased]
+
+- Chat: clicking an apply_patch tool result now opens each changed file at its correct path instead of always opening the first file (thanks to @nabsiddiqui).
+- Chat: assistant messages no longer render active HTML.
+- Sidebar: a worktree shared by more than one project no longer appears twice.
+- Sessions: archiving and unarchiving now stays scoped to the current workspace.
+
 ## [1.17.2] - 2026-08-01
 
 - Per-session permission auto-accept now replies to live permission requests correctly when auto-accept is turned on.
