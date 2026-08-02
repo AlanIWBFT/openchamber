@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Sessions: launching OpenChamber from a directory other than your project (for example your home folder) no longer produces repeated "not a git repository" errors that could stop sessions and projects from loading (thanks to @makeittech).
 - Sidebar: a worktree shared by more than one project no longer appears twice (thanks to @makeittech).
 - Sidebar: session titles no longer clip at the ends of their rows.
+- Git/Diff: opening a changed file now jumps its header directly to the top, and live updates refresh only files that actually changed while preserving the current review position. Saves from the built-in file editor update the diff too.
 - Sessions: archiving and unarchiving now stays scoped to the current instance and workspace (thanks to @alexandrereyes).
 - Chat: assistant messages no longer render active HTML.
 - VSCode: clicking an apply_patch tool result now opens each changed file at its correct path instead of always opening the first file (thanks to @nabsiddiqui).

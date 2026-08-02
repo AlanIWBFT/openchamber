@@ -252,7 +252,10 @@ Expected model:
 
 - `GitView` / `DiffView` ensure current-directory Git state when visible
 - explicit Git actions refresh status/branches/log as needed
-- successful file-mutating tools can issue a one-shot Git refresh hint
+- a mounted file-mutating tool issues a one-shot Git refresh hint when it transitions from active to successfully finalized; remounting historical completed tools does not replay the hint
+- a successful dirty save from the in-app file editor issues a path-scoped Git refresh hint; clean autosave checks remain no-ops
+- refresh hints with authoritative file paths invalidate only those cached and currently rendered diffs before status refresh; pathless tools request status reconciliation without broadly remounting DiffView
+- targeted diff remounts preserve the user's current file-section anchor and intra-file offset before paint instead of resetting the stacked view to the top
 - no root-level background Git polling
 
 ### PR

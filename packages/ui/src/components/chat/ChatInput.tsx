@@ -373,6 +373,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     );
     const ensureGitStatus = useGitStore((state) => state.ensureStatus);
     const fetchGitStatus = useGitStore((state) => state.fetchStatus);
+    const clearGitDiffCache = useGitStore((state) => state.clearDiffCache);
     const [showAbortStatus, setShowAbortStatus] = React.useState(false);
     const setSessionAutoAccept = usePermissionStore((state) => state.setSessionAutoAccept);
     const [isNarrowComposer, setIsNarrowComposer] = React.useState(false);
@@ -449,9 +450,12 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (!currentDirectory || !runtimeGit) return;
         return sessionEvents.onGitRefreshHint((hint) => {
             if (normalizePath(hint.directory) !== normalizePath(currentDirectory)) return;
-            void fetchGitStatus(currentDirectory, runtimeGit);
+            if (hint.paths?.length) {
+                clearGitDiffCache(currentDirectory, hint.paths);
+            }
+            void fetchGitStatus(currentDirectory, runtimeGit, { silent: true });
         });
-    }, [currentDirectory, runtimeGit, fetchGitStatus]);
+    }, [clearGitDiffCache, currentDirectory, runtimeGit, fetchGitStatus]);
 
     const handleStartReviewFlow = React.useCallback(async (execution: ReviewFlowExecution) => {
         if (!currentSessionId) return;

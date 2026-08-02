@@ -58,6 +58,7 @@ import {
     extractFirstChangedLineFromDiff,
     getDiffPatchEntries,
     getFirstChangedLineFromMetadata,
+    getMutatedToolPaths,
     getPatchText,
     getPrimaryDiffFromMetadata,
     getPrimaryToolPath,
@@ -113,7 +114,6 @@ const GIT_REFRESH_MUTATING_TOOLS = new Set([
     'write',
     'apply_patch',
     'patch',
-    'task',
 ]);
 
 const formatDuration = (start: number, end?: number, now: number = Date.now()) => {
@@ -1820,6 +1820,9 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 }) => {
     const { t } = useI18n();
     const state = part.state;
+    const stateWithData = state as ToolStateWithMetadata;
+    const metadata = stateWithData.metadata;
+    const input = stateWithData.input;
     const showToolFileIcons = useUIStore((s) => s.showToolFileIcons);
     const currentDirectory = useEffectiveDirectory() ?? '';
 
@@ -1828,18 +1831,19 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
     const status = state?.status as string | undefined;
     const isFinalized = status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled';
+    const isSuccessfullyFinalized = status === 'completed';
     const isError = status === 'error' || status === 'failed';
 
     const [activeLatched, setActiveLatched] = React.useState<boolean>(!isFinalized);
     const previousPartIdRef = React.useRef<string | undefined>(part.id);
-    const lastGitRefreshSignatureRef = React.useRef<string>('');
+    const observedActiveGitToolRef = React.useRef(!isFinalized);
 
     React.useEffect(() => {
         if (previousPartIdRef.current === part.id) {
             return;
         }
         previousPartIdRef.current = part.id;
-        lastGitRefreshSignatureRef.current = '';
+        observedActiveGitToolRef.current = !isFinalized;
         // Reset latch only when tool identity changes.
         setActiveLatched(!isFinalized);
     }, [isFinalized, part.id]);
@@ -1851,20 +1855,34 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     }, [isFinalized]);
 
     React.useEffect(() => {
-        if (!isFinalized || isError || !currentDirectory) {
-            return;
-        }
-        if (!GIT_REFRESH_MUTATING_TOOLS.has(normalizedPartTool)) {
+        if (!isFinalized) {
+            observedActiveGitToolRef.current = true;
             return;
         }
 
-        const signature = `${part.id}:${status ?? 'unknown'}`;
-        if (lastGitRefreshSignatureRef.current === signature) {
+        // Historical completed tools can remount when the timeline changes.
+        // Refresh only for a tool whose active state this instance observed.
+        const finalizedAfterObservedActive = observedActiveGitToolRef.current;
+        if (!finalizedAfterObservedActive) {
             return;
         }
-        lastGitRefreshSignatureRef.current = signature;
-        sessionEvents.requestGitRefresh({ directory: currentDirectory });
-    }, [currentDirectory, isError, isFinalized, normalizedPartTool, part.id, status]);
+
+        if (!isSuccessfullyFinalized || !GIT_REFRESH_MUTATING_TOOLS.has(normalizedPartTool)) {
+            observedActiveGitToolRef.current = false;
+            return;
+        }
+        if (!currentDirectory) {
+            return;
+        }
+
+        observedActiveGitToolRef.current = false;
+        const paths = getMutatedToolPaths(normalizedPartTool, input, metadata)
+            .map((path) => getRelativePath(path, currentDirectory));
+        sessionEvents.requestGitRefresh({
+            directory: currentDirectory,
+            ...(paths.length > 0 ? { paths } : {}),
+        });
+    }, [currentDirectory, input, isFinalized, isSuccessfullyFinalized, metadata, normalizedPartTool]);
 
     const shouldNotifyStructuralChange = isFinalized || isTaskTool;
 
@@ -1890,10 +1908,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         }
     }, [isExpanded, isTaskTool, shouldNotifyStructuralChange]);
 
-    const stateWithData = state as ToolStateWithMetadata;
-    const metadata = stateWithData.metadata;
     const partMetadata = (part as unknown as { metadata?: unknown }).metadata;
-    const input = stateWithData.input;
     const time = stateWithData.time;
 
     const [pinnedTime, setPinnedTime] = React.useState<{ start?: number; end?: number }>(() => ({

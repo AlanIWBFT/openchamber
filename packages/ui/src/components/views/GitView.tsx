@@ -280,6 +280,7 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     setLogMaxCount,
     fetchIdentity,
     prefetchDiffs,
+    clearDiffCache,
     moveStatusPathsOptimistically,
     restoreStatus,
     bumpIndexRevision,
@@ -293,6 +294,7 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     setLogMaxCount: state.setLogMaxCount,
     fetchIdentity: state.fetchIdentity,
     prefetchDiffs: state.prefetchDiffs,
+    clearDiffCache: state.clearDiffCache,
     moveStatusPathsOptimistically: state.moveStatusPathsOptimistically,
     restoreStatus: state.restoreStatus,
     bumpIndexRevision: state.bumpIndexRevision,
@@ -861,9 +863,12 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
       if (normalizePath(hint.directory) !== normalizePath(currentDirectory)) {
         return;
       }
-      void fetchStatus(currentDirectory, git);
+      if (hint.paths?.length) {
+        clearDiffCache(currentDirectory, hint.paths);
+      }
+      void fetchStatus(currentDirectory, git, { silent: true });
     });
-  }, [isActive, currentDirectory, fetchStatus, git]);
+  }, [isActive, clearDiffCache, currentDirectory, fetchStatus, git]);
 
   const refreshStatusAndBranches = React.useCallback(
     async (showErrors = true) => {
