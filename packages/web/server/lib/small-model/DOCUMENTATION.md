@@ -56,6 +56,11 @@ other runtime API.
   stays at the default overruns the context, and the failure looks like a
   truncation bug rather than a budgeting one. `describeSmallModel` takes
   `outputReserveTokens` so readiness checks agree with what generation will do.
+  It may be a **function** of `{ contextTokens, outputTokenLimit }` for callers
+  that want as much answer room as the resolved model allows — they cannot name
+  a number before knowing which model they got. The resolved value comes back as
+  `outputTokens`, which is what the caller should then request, so the reserve
+  and the request are the same number by construction.
 - Reasoning models can spend the entire output budget thinking and return
   nothing. That case (empty content with `finish_reason: 'length'`, or content
   empty while `reasoning_content` is populated) throws with

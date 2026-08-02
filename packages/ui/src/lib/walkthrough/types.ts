@@ -62,6 +62,11 @@ export interface WalkthroughResult {
   source: WalkthroughSource;
   walkthrough: Walkthrough | null;
   model?: WalkthroughModel;
+  /**
+   * Language the prose on screen is written in — not necessarily the one being
+   * asked for now. Null for an entry written before the setting existed.
+   */
+  language?: string | null;
   generatedAt?: string;
   fromCache?: boolean;
   hunks: WalkthroughHunk[];

@@ -1,3 +1,4 @@
+import { DEFAULT_LANGUAGE, languageName } from './languages.js';
 import { MAX_CHAPTERS, MAX_CHAPTER_TITLE_CHARS, MAX_HUNKS_PER_STOP, MAX_STOPS } from './schema.js';
 
 const SYSTEM = `You are writing a guided review of a code change for the engineer who is about to read it.
@@ -23,6 +24,21 @@ Rules:
 - Write prose as plain sentences. No markdown, no bullet lists, no code fences.
 
 Respond with a single JSON object and nothing else. (Some providers refuse a structured-output request unless the word "json" appears in the request, which is why this is stated explicitly.)`;
+
+// A reader who cannot follow English prose gets nothing out of a walkthrough,
+// so the output language is the reader's, not the codebase's.
+//
+// Only prose is translated. Hunk aliases are keys the server resolves back to
+// hunk ids, and `icon`/`importance` are enums the normalizer validates against
+// fixed English values — translating either produces a walkthrough that drops
+// its anchors or loses its styling, silently and completely. Identifiers taken
+// from the diff stay verbatim for the same reason a translated function name
+// would be unsearchable.
+const languageInstruction = (language) => `
+
+Write all prose in ${languageName(language)}: the walkthrough title, the focus line, chapter titles and blurbs, and stop titles and prose. The reader of this review reads ${languageName(language)}.
+
+Keep these in English exactly as given, regardless of the prose language: hunk aliases (h1, h2, …), the "icon" values, and the "importance" values. Keep identifiers, file paths, and API names as they appear in the code — never translate them.`;
 
 const sizing = ({ fileCount, hunkCount }) => {
   const targetStops = Math.max(1, Math.min(MAX_STOPS, Math.round(hunkCount / 2.5) || 1));
@@ -65,7 +81,7 @@ export const JSON_SHAPE_INSTRUCTION = `
 Return ONLY a JSON object, with no prose around it and no markdown fences, in exactly this shape:
 {"title": string, "focus": string, "chapters": [{"title": string, "icon": "bug"|"wrench"|"path"|"flask"|"doc"|"gear", "blurb": string, "stops": [{"title": string, "hunks": [string], "importance": "critical"|"normal"|"context", "prose": string}]}]}`;
 
-export function buildPrompt({ digest, fileCount, hunkCount, source, previousWalkthrough }) {
+export function buildPrompt({ digest, fileCount, hunkCount, source, previousWalkthrough, language = DEFAULT_LANGUAGE }) {
   const sourceLine = source.kind === 'working-tree'
     ? `Uncommitted local changes (${source.scope === 'all' ? 'staged and unstaged' : source.scope}).`
     : source.kind === 'branch'
@@ -79,5 +95,9 @@ ${previousWalkthroughSection(previousWalkthrough)}
 Change digest:
 ${JSON.stringify(digest)}`;
 
-  return { system: SYSTEM, prompt };
+  // The default language adds nothing: the system prompt is already English, so
+  // saying so would only spend context restating it.
+  const system = language === DEFAULT_LANGUAGE ? SYSTEM : `${SYSTEM}${languageInstruction(language)}`;
+
+  return { system, prompt };
 }

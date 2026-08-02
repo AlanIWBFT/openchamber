@@ -78,7 +78,7 @@ const readJson = (filePath) => {
  * Content-addressed key. Every input that can change the output is in here:
  * change any of them and you get a miss rather than a stale hit.
  */
-export function buildCacheKey({ repoRoot, sourceKey, providerID, modelID, files }) {
+export function buildCacheKey({ repoRoot, sourceKey, providerID, modelID, language, files }) {
   const canonical = JSON.stringify({
     walkthroughVersion: WALKTHROUGH_VERSION,
     promptVersion: PROMPT_VERSION,
@@ -86,6 +86,10 @@ export function buildCacheKey({ repoRoot, sourceKey, providerID, modelID, files 
     sourceKey,
     providerID,
     modelID,
+    // Without this, switching language hits the entry written in the previous
+    // one and the panel answers a request to translate with the untranslated
+    // text it already had.
+    language,
     files: [...files]
       .map((file) => ({ path: file.path, status: file.status, hunkIds: file.hunks.map((hunk) => hunk.id) }))
       .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),

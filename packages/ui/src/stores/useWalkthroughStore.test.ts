@@ -33,28 +33,35 @@ let generateCalls = 0;
 let releaseGeneration: (() => void) | undefined;
 let lastReadModel: string | undefined;
 let lastGenerateModel: string | undefined;
+let lastReadLanguage: string | undefined;
+let lastGenerateLanguage: string | undefined;
 
 mock.module('@/lib/walkthrough/api', () => ({
   fetchWalkthrough: async (
     _directory: string,
     _source: WalkthroughSource,
-    options: { model?: string } = {},
+    options: { model?: string; language?: string } = {},
   ) => {
     lastReadModel = options.model;
+    lastReadLanguage = options.language;
     return readResult;
   },
   generateWalkthrough: async (
     _directory: string,
     _source: WalkthroughSource,
-    options: { model?: string } = {},
+    options: { model?: string; language?: string } = {},
   ) => {
     generateCalls += 1;
     lastGenerateModel = options.model;
+    lastGenerateLanguage = options.language;
     return new Promise<WalkthroughResult>((resolve) => {
       releaseGeneration = () => resolve(finished);
     });
   },
   cancelWalkthroughGeneration: async () => {},
+  // The store imports this for its progress poller. Leaving it out of the mock
+  // makes the whole module fail to load, which reads as an unrelated crash.
+  fetchWalkthroughStage: async () => null,
 }));
 mock.module('@/lib/runtime-switch', () => ({ getRuntimeKey: () => 'local' }));
 
@@ -160,5 +167,59 @@ describe('useWalkthroughStore — model selection', () => {
     expect(useWalkthroughStore.getState().getSelectedModel("/repo", branch)).toBe(undefined);
     expect(useWalkthroughStore.getState().getSelectedModel('/repo', SOURCE))
       .toBe('anthropic/claude-haiku-4-5');
+  });
+});
+
+describe('useWalkthroughStore — walkthrough language', () => {
+  beforeEach(() => {
+    useWalkthroughStore.getState().reset();
+    readResult = result();
+    generateCalls = 0;
+    lastReadLanguage = undefined;
+    lastGenerateLanguage = undefined;
+  });
+
+  afterEach(() => {
+    useWalkthroughStore.getState().reset();
+  });
+
+  // The read carries it too: readiness is an answer about a specific request,
+  // and the language instruction is part of that request.
+  test('sends the resolved language with both the read and the generation', async () => {
+    await useWalkthroughStore.getState().load('/repo', SOURCE, { language: 'uk' });
+    await flush();
+    expect(lastReadLanguage).toBe('uk');
+
+    void useWalkthroughStore.getState().generate('/repo', SOURCE, { language: 'uk' });
+    await flush();
+    expect(lastGenerateLanguage).toBe('uk');
+    releaseGeneration?.();
+    await flush();
+  });
+
+  test('keeps an explicit choice apart per source', () => {
+    const branch: WalkthroughSource = { kind: 'branch', baseRef: 'main', headRef: 'feature' };
+    useWalkthroughStore.getState().selectLanguage('/repo', SOURCE, 'ja');
+
+    expect(useWalkthroughStore.getState().getSelectedLanguage('/repo', branch)).toBe(undefined);
+    expect(useWalkthroughStore.getState().getSelectedLanguage('/repo', SOURCE)).toBe('ja');
+  });
+
+  test('clearing the choice returns to no explicit language', () => {
+    useWalkthroughStore.getState().selectLanguage('/repo', SOURCE, 'ja');
+    useWalkthroughStore.getState().selectLanguage('/repo', SOURCE, null);
+
+    expect(useWalkthroughStore.getState().getSelectedLanguage('/repo', SOURCE)).toBe(undefined);
+  });
+
+  test('a re-attach after a reload still names the language it would ask for', async () => {
+    readResult = result({ generating: true });
+
+    await useWalkthroughStore.getState().load('/repo', SOURCE, { language: 'pl' });
+    await flush();
+
+    expect(lastGenerateLanguage).toBe('pl');
+    releaseGeneration?.();
+    await flush();
   });
 });

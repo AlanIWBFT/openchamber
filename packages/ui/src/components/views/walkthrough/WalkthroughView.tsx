@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type Locale } from '@/lib/i18n';
 import { buildWalkthroughView } from '@/lib/walkthrough/model';
 import type { WalkthroughSource, WalkthroughWorkingTreeScope } from '@/lib/walkthrough/types';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
@@ -54,8 +54,19 @@ const TOC_MIN_WIDTH = 180;
 // than half the panel no matter how far the user drags.
 const TOC_MAX_FRACTION = 0.5;
 
+// Below this the header controls wrap onto a second row and the labels squeeze
+// to two letters and an ellipsis, which reads as broken rather than dense. The
+// controls drop their text instead: every one of them carries an icon that
+// already identifies it.
+//
+// Every control in this row is 32px tall — `Button` size `sm` and the dropdown
+// trigger's `default` size are both h-8, so this is the design system's form
+// scale rather than a number picked here. Three heights in one row (28px
+// pickers, 32px action, 36px arrows) read as misalignment, not hierarchy.
+const HEADER_COMPACT_WIDTH = 680;
+
 export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
-  const { t } = useI18n();
+  const { t, locale, locales, label } = useI18n();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [panelWidth, setPanelWidth] = useState(0);
 
@@ -76,6 +87,9 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
   const [draggingToc, setDraggingToc] = useState(false);
 
   const showToc = panelWidth === 0 || panelWidth >= TOC_MIN_PANEL_WIDTH;
+  // Zero means the observer has not reported yet; assume there is room rather
+  // than rendering a compact header for one frame on every open.
+  const compactHeader = panelWidth > 0 && panelWidth < HEADER_COMPACT_WIDTH;
   // Clamped on read rather than on write: the panel can be resized after the
   // width was stored, and a remembered 400px column must not swallow a narrow
   // panel.
@@ -229,12 +243,28 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
   const requestSource = useWalkthroughStore((state) => state.requestSource);
   const selectModel = useWalkthroughStore((state) => state.selectModel);
   const selectedModel = useWalkthroughStore((state) => state.getSelectedModel(directory, source));
+  const selectLanguage = useWalkthroughStore((state) => state.selectLanguage);
+  const selectedLanguage = useWalkthroughStore((state) => state.getSelectedLanguage(directory, source));
 
-  // Reloads on a model change too: whether this diff fits, and whether the
-  // model can produce structured output, are answers about a specific model.
+  // Explicit pick first, then the language the walkthrough on screen is
+  // actually written in, then the interface locale. The middle step matters for
+  // the same reason it does for the model: reopening a review should describe
+  // what is there, not what a fresh one would be.
+  const generatedLanguage = entry.result?.language;
+  const activeLanguage: Locale = (
+    selectedLanguage && locales.includes(selectedLanguage as Locale)
+      ? (selectedLanguage as Locale)
+      : generatedLanguage && locales.includes(generatedLanguage as Locale)
+        ? (generatedLanguage as Locale)
+        : locale
+  );
+
+  // Reloads on a model or language change: whether this diff fits, and whether
+  // the model can produce structured output, are answers about a specific
+  // request — and the language instruction is part of that request.
   useEffect(() => {
-    void load(directory, source);
-  }, [directory, load, source, selectedModel]);
+    void load(directory, source, { language: activeLanguage });
+  }, [activeLanguage, directory, load, source, selectedModel]);
 
   const view = useMemo(() => buildWalkthroughView(entry.result), [entry.result]);
 
@@ -278,6 +308,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
   );
 
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const sourceValue = source.kind === 'working-tree' ? source.scope : source.kind;
   const sourceLabel = source.kind === 'branch'
     ? t('walkthrough.scope.branch')
@@ -331,7 +362,27 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
     [modelsMetadata]
   );
 
-  const isBusy = entry.status === 'loading' || entry.status === 'generating';
+  // Only generation is worth interrupting. A read is a few hundred milliseconds
+  // of git with nothing to cancel, and offering a Cancel button for it made the
+  // action flicker every time the model or language changed.
+  const isGeneratingEntry = entry.status === 'generating';
+
+  // What is on screen versus what is being asked for. A read that has settled
+  // is the only thing that can answer this: while one is in flight the panel is
+  // still showing the previous answer, and a banner claiming something is
+  // missing before we know would be the same flicker in another place.
+  const shownModel = entry.result?.model
+    ? `${entry.result.model.providerID}/${entry.result.model.modelID}`
+    : undefined;
+  const shownLanguage = entry.result?.language;
+  const shownLocale = shownLanguage && locales.includes(shownLanguage as Locale)
+    ? (shownLanguage as Locale)
+    : undefined;
+  const settled = entry.status === 'ready' && Boolean(view);
+  // An entry written before walkthroughs had a language carries none. Unknown
+  // is not the same as different, so it is not reported as missing.
+  const languageMissing = settled && Boolean(shownLocale) && shownLocale !== activeLanguage;
+  const modelMissing = settled && Boolean(shownModel) && Boolean(activeModel) && shownModel !== activeModel;
 
   // The stage list outlives the work by a beat. Assembling takes milliseconds,
   // so without this the result replaces the list before the last step is ever
@@ -371,9 +422,9 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
 
   const handleGenerate = useCallback(
     (force: boolean) => {
-      void generate(directory, source, { force });
+      void generate(directory, source, { force, language: activeLanguage });
     },
-    [directory, generate, source]
+    [activeLanguage, directory, generate, source]
   );
 
   return (
@@ -383,7 +434,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex h-7 flex-shrink-0 items-center gap-1.5 rounded-md px-2 typography-ui-label font-semibold text-foreground outline-none hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-8 flex-shrink-0 items-center gap-1.5 rounded-md px-2 typography-ui-label font-semibold text-foreground outline-none hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={t('walkthrough.scope.selectorAria')}
             >
               <span className="whitespace-nowrap">{sourceLabel}</span>
@@ -444,6 +495,47 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
         </DropdownMenu>
 
         <div className="ml-auto flex min-w-0 items-center gap-1">
+          {/* A walkthrough nobody can read is worth nothing, so the prose
+              language is a per-review choice like the model — defaulting to the
+              interface language, which is the best evidence of what the reader
+              reads. */}
+          <DropdownMenu open={languageMenuOpen} onOpenChange={setLanguageMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex h-8 min-w-0 flex-shrink items-center gap-1.5 rounded-md px-2 typography-ui-label text-muted-foreground outline-none hover:bg-interactive-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={t('walkthrough.language.selectorAria')}
+                title={compactHeader ? label(activeLanguage) : undefined}
+              >
+                <Icon name="global" className="size-4 flex-shrink-0 opacity-70" />
+                {!compactHeader && (
+                  <>
+                    <span className="truncate">{label(activeLanguage)}</span>
+                    <Icon name="arrow-down-s" className="size-4 flex-shrink-0 opacity-60" />
+                  </>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel className={SCOPE_GROUP_LABEL_CLASS}>
+                {t('walkthrough.language.menuLabel')}
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={activeLanguage}
+                onValueChange={(value) => {
+                  setLanguageMenuOpen(false);
+                  selectLanguage(directory, source, value);
+                }}
+              >
+                {locales.map((value) => (
+                  <DropdownMenuRadioItem key={value} value={value}>
+                    {label(value)}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           {/* Choosing a roomier model for a risky change is a per-review call,
               so this is panel state rather than a settings edit. */}
           <ModelSelector
@@ -456,14 +548,15 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
             isModelAllowed={isStructuredOutputCapable}
             tooltipsEnabled={false}
             dropdownPortalToBody
-            className="h-7 min-w-0 max-w-48"
+            compact={compactHeader}
+            className={cn('h-8 min-w-0', !compactHeader && 'max-w-48')}
           />
           {view && (
             <>
               <Button
                 type="button"
                 variant="ghost"
-                size="icon"
+                size="sm"
                 aria-label={t('walkthrough.action.previous')}
                 onClick={() => step(-1)}
               >
@@ -472,7 +565,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
               <Button
                 type="button"
                 variant="ghost"
-                size="icon"
+                size="sm"
                 aria-label={t('walkthrough.action.next')}
                 onClick={() => step(1)}
               >
@@ -481,9 +574,18 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
             </>
           )}
 
-          {isBusy ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => cancel(directory, source)}>
-              {t('walkthrough.action.cancel')}
+          {isGeneratingEntry ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={compactHeader ? t('walkthrough.action.cancel') : undefined}
+              title={compactHeader ? t('walkthrough.action.cancel') : undefined}
+              onClick={() => cancel(directory, source)}
+            >
+              {compactHeader
+                ? <Icon name="stop" className="size-3.5" />
+                : t('walkthrough.action.cancel')}
             </Button>
           ) : (
             <Button
@@ -491,10 +593,16 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
               variant="outline"
               size="sm"
               className={WALKTHROUGH_ACTION_CLASS}
+              aria-label={compactHeader
+                ? (view ? t('walkthrough.action.regenerate') : t('walkthrough.action.generate'))
+                : undefined}
+              title={compactHeader
+                ? (view ? t('walkthrough.action.regenerate') : t('walkthrough.action.generate'))
+                : undefined}
               onClick={() => handleGenerate(Boolean(view))}
             >
               <Icon name={view ? 'refresh' : 'route'} className="size-3.5" />
-              {view ? t('walkthrough.action.regenerate') : t('walkthrough.action.generate')}
+              {!compactHeader && (view ? t('walkthrough.action.regenerate') : t('walkthrough.action.generate'))}
             </Button>
           )}
         </div>
@@ -516,6 +624,38 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
         </div>
       )}
 
+      {/* Switching the model or the language is a request for a walkthrough
+          that may not exist yet. Falling back to the last one is better than an
+          empty panel, but only if the panel says so — otherwise the picker
+          claims Ukrainian over English prose. */}
+      {(languageMissing || modelMissing) && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border/60 bg-[var(--status-info-background)] px-3 py-2">
+          <Icon name="information" className="size-4 shrink-0 text-[var(--status-info)]" />
+          <span className="typography-meta text-foreground">
+            {languageMissing && modelMissing
+              ? t('walkthrough.missing.languageAndModel')
+              : languageMissing
+                ? t('walkthrough.missing.language', {
+                  requested: label(activeLanguage),
+                  shown: label(shownLocale as Locale),
+                })
+                : t('walkthrough.missing.model', { model: activeModelId })}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="ml-auto"
+            // Not forced: if an entry for this exact request existed the banner
+            // would not be here, and a forced run would refuse the cache it may
+            // find on the way.
+            onClick={() => handleGenerate(false)}
+          >
+            {t('walkthrough.action.generate')}
+          </Button>
+        </div>
+      )}
+
       {view?.isStale && entry.status !== 'generating' && (
         <div className="flex shrink-0 items-center gap-2 border-b border-border/60 bg-status-warning/10 px-3 py-2">
           <Icon name="error-warning" className="size-4 shrink-0 text-status-warning" />
@@ -529,7 +669,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
             className="ml-auto"
             // Clicking this again mid-flight would abort the running generation
             // and start another — paying for the same answer twice.
-            disabled={isBusy}
+            disabled={isGeneratingEntry}
             onClick={() => handleGenerate(true)}
           >
             {t('walkthrough.action.regenerate')}

@@ -214,6 +214,29 @@ describe('output budget and input reserve', () => {
 
     expect(described.inputCharBudget).toBe(304_000);
   });
+
+  // A caller that wants "as much room as this model allows" cannot name a
+  // number before knowing which model it got, so it hands over the decision.
+  it('lets the reserve be decided from the resolved model\'s limits', async () => {
+    readConfigLayers.mockReturnValue({ mergedConfig: { small_model: 'anthropic/roomy' } });
+
+    const described = await describeSmallModel({
+      directory: '/proj',
+      outputReserveTokens: ({ contextTokens, outputTokenLimit }) => Math.min(contextTokens / 10, outputTokenLimit),
+    });
+
+    // 100k context, 8k output limit -> 8k reserved, leaving 92k tokens.
+    expect(described.outputTokens).toBe(8_000);
+    expect(described.inputCharBudget).toBe(92_000 * 4);
+  });
+
+  it('reports the reserve it used so the caller can request the same number', async () => {
+    readConfigLayers.mockReturnValue({ mergedConfig: { small_model: 'anthropic/unlisted' } });
+
+    const described = await describeSmallModel({ directory: '/proj', outputReserveTokens: 24_000 });
+
+    expect(described.outputTokens).toBe(24_000);
+  });
 });
 
 afterAll(() => {

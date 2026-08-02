@@ -14,11 +14,15 @@ describe('walkthrough routes', () => {
   let releaseJob;
   let job;
 
+  let lastArgs;
+
   const service = {
-    async getWalkthrough() {
+    async getWalkthrough(args) {
+      lastArgs = args;
       return { walkthrough: null, hunks: [], hunkCount: 0, generating: Boolean(job) };
     },
-    async generateWalkthrough() {
+    async generateWalkthrough(args) {
+      lastArgs = args;
       if (job) return job;
       job = new Promise((resolve) => {
         releaseJob = () => resolve({ walkthrough: { title: 'DONE' }, hunks: [], hunkCount: 1 });
@@ -40,6 +44,7 @@ describe('walkthrough routes', () => {
   beforeEach(async () => {
     job = null;
     releaseJob = undefined;
+    lastArgs = undefined;
     const app = express();
     app.use(express.json());
     registerWalkthroughRoutes(app, { getWalkthroughService: async () => service });
@@ -92,6 +97,35 @@ describe('walkthrough routes', () => {
 
     expect(response.status).toBe(400);
     expect(job).toBeNull();
+  });
+
+  // The language belongs to the request, not to a setting, so both the read
+  // and the generation have to carry it: readiness is computed from a prompt
+  // that contains the language instruction.
+  it('carries the requested language into the service', async () => {
+    await fetch(
+      `${base}/api/walkthrough?directory=/repo&language=uk&source=${encodeURIComponent(JSON.stringify(SOURCE))}`,
+    );
+    expect(lastArgs.language).toBe('uk');
+
+    const pending = fetch(`${base}/api/walkthrough/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directory: '/repo', source: SOURCE, language: 'ja' }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    releaseJob();
+    await pending;
+
+    expect(lastArgs.language).toBe('ja');
+  });
+
+  it('ignores a language that is not a string', async () => {
+    await fetch(
+      `${base}/api/walkthrough?directory=/repo&language[]=uk&source=${encodeURIComponent(JSON.stringify(SOURCE))}`,
+    );
+
+    expect(lastArgs.language).toBeUndefined();
   });
 
   it('cancels through its own endpoint rather than a dropped connection', async () => {

@@ -41,6 +41,7 @@ export function registerWalkthroughRoutes(app, { getWalkthroughService }) {
           directory,
           source: readSource(req.query.source),
           model: typeof req.query.model === 'string' ? req.query.model : undefined,
+          language: typeof req.query.language === 'string' ? req.query.language : undefined,
         },
         { getPullRequestDiff },
       );
@@ -57,13 +58,19 @@ export function registerWalkthroughRoutes(app, { getWalkthroughService }) {
   app.post('/api/walkthrough/generate', async (req, res) => {
     try {
       const { generateWalkthrough, getPullRequestDiff } = await getWalkthroughService();
-      const { directory, source, force, model } = req.body || {};
+      const { directory, source, force, model, language } = req.body || {};
       if (!directory || typeof directory !== 'string') {
         return res.status(400).json({ error: 'directory is required' });
       }
 
       const result = await generateWalkthrough(
-        { directory, source, force: force === true, model: typeof model === 'string' ? model : undefined },
+        {
+          directory,
+          source,
+          force: force === true,
+          model: typeof model === 'string' ? model : undefined,
+          language: typeof language === 'string' ? language : undefined,
+        },
         { getPullRequestDiff },
       );
       if (clientIsGone(res)) return;

@@ -22,6 +22,7 @@ has to ask for it.
 - `store.js` — content-addressed cache entries plus mutable pointers.
 - `pull-request.js` — PR diffs via the shared GitHub octokit helper.
 - `model-settings.js` — the feature's own model override.
+- `languages.js` — the languages the prose may be written in.
 - `index.js` — orchestration.
 - `routes.js` — `/api/walkthrough*`.
 
@@ -117,6 +118,53 @@ model picker, only shows providers with a usable login. The in-panel picker on a
 blocked walkthrough writes this setting too, so recovering from a refusal never
 silently changes the model behind commit messages.
 
+## Output language
+
+A walkthrough its reader cannot read is worth nothing, so the prose language is
+a per-review choice in the panel header, defaulting to the interface language.
+Like the model it is request state rather than a setting: it travels as
+`language` on `GET` and `POST`, and it is not persisted, because the language a
+walkthrough was written in is already recorded in its cache entry and returned
+as `language` — which makes it the better default on reopen than any remembered
+preference. Resolution is *explicit choice → language of what is on screen →
+interface locale*.
+
+Only prose is translated. Hunk aliases are keys that resolve back to hunk ids,
+and `icon`/`importance` are validated against fixed English values, so a
+translated one is dropped by the normalizer — losing an anchor or a style
+silently. The prompt says so explicitly.
+
+`languages.js` owns the accepted tags; they match the UI's `Locale` union, and
+anything else — unknown, malformed, absent — resolves to English rather than
+failing the request. The default language adds no instruction at all, since the
+system prompt is already English.
+
+The language is part of the cache key. Without that, asking for a translation
+would be answered with the untranslated entry that was already there; with it,
+switching language and back returns the earlier walkthrough for free, exactly as
+switching models does.
+
+The read follows the same rule: `GET` builds the cache key for the language and
+model being asked for and answers from that entry when it exists, before
+consulting the pointer. The pointer alone was not enough — it records what was
+generated here *last*, which after a switch is the answer to a different
+question, and the panel kept showing the English review while the picker said
+Ukrainian and the Ukrainian one sat unused in the cache. The key is computed
+from the diff the read already parsed, so this costs one file read and no extra
+git work.
+
+Falling back to the pointer still happens when nothing exists in the requested
+language: an English review beats an empty panel, and the response says which
+language it is in so the panel can say so too — it shows a banner naming what is
+on screen versus what was asked for, and only once a read has settled, because
+claiming something is missing while still looking for it is the same flicker in
+another place. Serving an entry makes it the last
+one shown here, so the pointer follows it — otherwise a regeneration would
+re-author from a walkthrough the reader is not looking at.
+
+Attaching to a running job still ignores the language of the second request,
+because the job already has one. That matches how the model behaves.
+
 ## Structured output, and what happens when it is refused
 
 `structured_output: false` in the catalog blocks generation up front. A
@@ -145,18 +193,36 @@ for a wasted first call.
 
 ## Output budget
 
-Generation asks for 24k output tokens (capped per model by the catalog), and the
-input budget reserves exactly that much. A walkthrough itself is only a few
-thousand tokens of JSON — the headroom exists because reasoning models spend the
-same budget thinking first and return nothing when it runs out. When that still
-happens, `code: 'output-exhausted'` reports it as what it is: this model cannot
-finish this job, so pick another or review a narrower scope.
+A walkthrough itself is only a few thousand tokens of JSON. The budget exists
+for what comes before it: reasoning models spend the same allowance thinking and
+return nothing when it runs out, which is a bill for no answer.
+
+The ask is therefore derived from the resolved model rather than fixed:
+`min(96k, max(24k, a quarter of the context))`, then capped by the catalog's
+`limit.output`. A flat 24k was the same number for a 64k-context model and for
+one that admits to 384k output tokens and a million of context — and on the
+latter it was the only reason generation failed.
+
+The bounds are not arbitrary. The **same number is reserved from the input
+allowance**, so the ceiling and the context share are what stop a generous
+answer budget from eating the diff it is supposed to describe; the 24k floor is
+what this feature always asked for, so no model gets less room than before. A
+model whose own `limit.output` is below the floor gets its limit, because asking
+for more than a provider allows is rejected by some and ignored by others.
+
+`describeSmallModel` decides this once — the walkthrough hands it the rule as a
+function and reads back `outputTokens` — so the reserve and the request cannot
+drift apart.
+
+When a model exhausts even that, `code: 'output-exhausted'` reports it as what
+it is: this model cannot finish this job, so pick another or review a narrower
+scope.
 
 ## Caching and staleness
 
 **Cache entries** (`entries/<sha256>.json`) are immutable and content-addressed.
 The key covers walkthrough version, prompt version, repo root, source, provider,
-model, and every file's path/status/hunk-ids. The key is computed from the
+model, output language, and every file's path/status/hunk-ids. The key is computed from the
 *current* diff, so a hit means the walkthrough was written about exactly this
 code; there is no freshness question to ask of an entry, because staleness is a
 miss. Returning the working tree to an earlier state therefore costs nothing.
@@ -166,6 +232,11 @@ miss. Returning the working tree to an earlier state therefore costs nothing.
 cannot: which walkthrough was last shown here, and has the code moved since. A
 pointer whose entry has been evicted reads as "no walkthrough" — truthful, and
 the next generation overwrites it.
+
+A pointer is a *fallback*, not the primary lookup. A read that can name the
+entry it wants — same diff, same model, same language — goes straight to it and
+moves the pointer there; the pointer answers only when nothing matches the
+request exactly.
 
 Regeneration is manual and re-authors rather than merges: the previous
 walkthrough goes into the prompt as prose so the model can keep what is still
@@ -275,9 +346,11 @@ be used for this: it re-runs the whole git pipeline.
 
 ## Routes
 
-- `GET /api/walkthrough?directory&source` — last walkthrough, the current hunk
-  index, staleness, and `readiness`. Never generates.
-- `POST /api/walkthrough/generate` — `{ directory, source, force }`. Survives
+- `GET /api/walkthrough?directory&source&model&language` — last walkthrough, the
+  current hunk index, staleness, and `readiness`. Never generates. `language`
+  matters here because readiness is measured against the prompt that would be
+  sent, and the language instruction is part of it.
+- `POST /api/walkthrough/generate` — `{ directory, source, force, model, language }`. Survives
   client disconnects; a concurrent call for the same source joins the running
   job.
 - `GET /api/walkthrough/progress?directory&source` — the current stage, or

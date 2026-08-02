@@ -31,13 +31,14 @@ const throwFromResponse = async (response: Response, fallback: string): Promise<
 export async function fetchWalkthrough(
   directory: string,
   source: WalkthroughSource,
-  options: { model?: string; signal?: AbortSignal } = {}
+  options: { model?: string; language?: string; signal?: AbortSignal } = {}
 ): Promise<WalkthroughResult> {
   const response = await runtimeFetch(BASE, {
     query: {
       directory,
       source: JSON.stringify(source),
       ...(options.model ? { model: options.model } : {}),
+      ...(options.language ? { language: options.language } : {}),
     },
     signal: options.signal,
   });
@@ -50,7 +51,7 @@ export async function fetchWalkthrough(
 export async function generateWalkthrough(
   directory: string,
   source: WalkthroughSource,
-  options: { force?: boolean; model?: string; signal?: AbortSignal } = {}
+  options: { force?: boolean; model?: string; language?: string; signal?: AbortSignal } = {}
 ): Promise<WalkthroughResult> {
   const response = await runtimeFetch(`${BASE}/generate`, {
     method: 'POST',
@@ -60,6 +61,7 @@ export async function generateWalkthrough(
       source,
       force: options.force === true,
       ...(options.model ? { model: options.model } : {}),
+      ...(options.language ? { language: options.language } : {}),
     }),
     signal: options.signal,
   });

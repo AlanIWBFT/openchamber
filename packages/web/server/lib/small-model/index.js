@@ -205,6 +205,18 @@ export function listAuthenticatedProviders() {
  * proxies especially), and treating "unknown" as "unsupported" would hide
  * models that work fine.
  */
+/**
+ * The reserve, resolved against the model that was actually picked.
+ *
+ * A caller that wants "as much answer room as this model allows" cannot state a
+ * number up front — it does not know which model it will get. Passing a
+ * function lets it decide once the limits are known, and keeps the reserve and
+ * the eventual request the same number by construction.
+ */
+const resolveReserveTokens = (outputReserveTokens, limits) => (
+  typeof outputReserveTokens === 'function' ? outputReserveTokens(limits) : outputReserveTokens
+);
+
 export async function describeSmallModel({ directory, preferredProviderID, preferredModelID, outputReserveTokens, overrideModel } = {}) {
   const auth = readAuthFile();
   const catalog = await getModelCatalog().catch(() => ({}));
@@ -224,11 +236,20 @@ export async function describeSmallModel({ directory, preferredProviderID, prefe
   if (!resolved) return resolved;
 
   const entry = catalog?.[resolved.providerID]?.models?.[resolved.modelID];
-  const { maxChars, contextTokens, contextKnown } = getModelInputCharBudget({
+  const outputTokenLimit = Number(entry?.limit?.output) > 0 ? Number(entry.limit.output) : null;
+  // Two passes: the first only to learn the context, which a caller-supplied
+  // reserve function needs before it can answer.
+  const { contextTokens, contextKnown } = getModelInputCharBudget({
     catalog,
     providerID: resolved.providerID,
     modelID: resolved.modelID,
-    outputReserveTokens,
+  });
+  const reserveTokens = resolveReserveTokens(outputReserveTokens, { contextTokens, outputTokenLimit });
+  const { maxChars } = getModelInputCharBudget({
+    catalog,
+    providerID: resolved.providerID,
+    modelID: resolved.modelID,
+    outputReserveTokens: reserveTokens,
   });
 
   return {
@@ -236,7 +257,10 @@ export async function describeSmallModel({ directory, preferredProviderID, prefe
     inputCharBudget: maxChars,
     contextTokens,
     contextKnown,
+    // What the caller should ask for, so the request and the reserve above
+    // cannot drift apart.
+    outputTokens: Number(reserveTokens) > 0 ? Number(reserveTokens) : null,
     structuredOutput: typeof entry?.structured_output === 'boolean' ? entry.structured_output : null,
-    outputTokenLimit: Number(entry?.limit?.output) > 0 ? Number(entry.limit.output) : null,
+    outputTokenLimit,
   };
 }

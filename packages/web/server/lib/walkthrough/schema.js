@@ -8,7 +8,7 @@ export const WALKTHROUGH_VERSION = 1;
 // Bumping this invalidates every cached walkthrough, which is the point: a
 // changed prompt produces different output and old entries would misrepresent
 // what the current code would say.
-export const PROMPT_VERSION = 2;
+export const PROMPT_VERSION = 3;
 
 export const MAX_CHAPTERS = 6;
 export const MAX_STOPS = 16;

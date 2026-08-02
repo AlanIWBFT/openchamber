@@ -137,6 +137,25 @@ describe('generation jobs', () => {
       .toEqual({ cancelled: false });
   });
 
+  // The reserve and the request must be the same number: asking for more than
+  // was subtracted from the input allowance overruns the context mid-answer.
+  it('requests exactly the budget the model resolution reserved', async () => {
+    describeSmallModel.mockResolvedValue({
+      providerID: 'opencode-go',
+      modelID: 'deepseek-v4-flash',
+      source: 'config',
+      inputCharBudget: 1_000_000,
+      structuredOutput: true,
+      outputTokens: 96_000,
+      outputTokenLimit: 384_000,
+    });
+    generateSmallModelText.mockResolvedValue({ text: RESPONSE });
+
+    await generateWalkthrough({ directory: '/repo', source: SOURCE });
+
+    expect(generateSmallModelText.mock.calls.at(-1)[0].maxOutputTokens).toBe(96_000);
+  });
+
   it('serves the cache once the job has finished, without calling the model again', async () => {
     generateSmallModelText.mockResolvedValue({ text: RESPONSE });
 
@@ -168,6 +187,34 @@ describe('generation timeout', () => {
 
   it('stays bounded so a hung connection cannot hold a job forever', () => {
     expect(generationTimeoutMs(100_000)).toBe(900_000);
+  });
+});
+
+// The failure this replaced: a flat 24k ask, spent entirely on reasoning by a
+// model that advertises 384k output tokens and a million of context. The ceiling
+// exists because the same number is reserved out of the input allowance.
+describe('output budget', () => {
+  const { walkthroughOutputTokens } = walkthroughTesting;
+
+  it('asks a roomy model for far more than the old fixed budget', () => {
+    expect(walkthroughOutputTokens({ contextTokens: 1_000_000, outputTokenLimit: 384_000 })).toBe(96_000);
+  });
+
+  it('never asks for more than the model says it can emit', () => {
+    expect(walkthroughOutputTokens({ contextTokens: 202_752, outputTokenLimit: 32_768 })).toBe(32_768);
+  });
+
+  it('keeps the reserve to a share of the context', () => {
+    expect(walkthroughOutputTokens({ contextTokens: 200_000, outputTokenLimit: 64_000 })).toBe(50_000);
+  });
+
+  it('holds the old floor for a small or uncatalogued model', () => {
+    expect(walkthroughOutputTokens({ contextTokens: 64_000, outputTokenLimit: null })).toBe(24_000);
+    expect(walkthroughOutputTokens({ contextTokens: 0, outputTokenLimit: null })).toBe(24_000);
+  });
+
+  it('yields to a model whose own limit is below the floor', () => {
+    expect(walkthroughOutputTokens({ contextTokens: 128_000, outputTokenLimit: 8_192 })).toBe(8_192);
   });
 });
 
