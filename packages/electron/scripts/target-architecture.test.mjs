@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   normalizeTargetArchitecture,
   readElectronBuilderArchitecture,
+  resolveOpenCodeCliTarget,
   resolveTargetArchitecture,
 } from './target-architecture.mjs';
 
@@ -50,4 +51,28 @@ test('accepts matching native Linux architecture aliases', () => {
     hostArchitecture: 'x64',
     environment: { OPENCHAMBER_TARGET_ARCH: 'amd64' },
   }).node, 'x64');
+});
+
+test('uses an explicit baseline OpenCode target for Windows ARM64 packages', () => {
+  const targetArchitecture = resolveTargetArchitecture({
+    platform: 'win32',
+    hostArchitecture: 'x64',
+    environment: { OPENCHAMBER_TARGET_ARCH: 'arm64' },
+  });
+
+  assert.deepEqual(resolveOpenCodeCliTarget({ platform: 'win32', targetArchitecture }), {
+    architecture: 'x64',
+    buildTarget: 'windows-x64',
+    baseline: true,
+  });
+});
+
+test('keeps native ARM64 OpenCode targets outside the Windows workaround', () => {
+  const targetArchitecture = normalizeTargetArchitecture('arm64');
+
+  assert.deepEqual(resolveOpenCodeCliTarget({ platform: 'darwin', targetArchitecture }), {
+    architecture: 'arm64',
+    buildTarget: 'darwin-arm64',
+    baseline: false,
+  });
 });
