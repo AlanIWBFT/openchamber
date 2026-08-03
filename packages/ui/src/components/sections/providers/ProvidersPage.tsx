@@ -33,8 +33,10 @@ import {
   CUSTOM_PROVIDER_ID,
   isConfigDefinedCustomProvider,
   providerToCustomFormState,
+  resolveProviderConfigScope,
   type CustomProviderFormState,
   type CustomProviderPersistPlan,
+  type ProviderConfigScope,
 } from './custom-provider-form';
 
 const formatCompactNumber = (value: number) => new Intl.NumberFormat(getCurrentIntlLocale(), {
@@ -184,6 +186,7 @@ export const ProvidersPage: React.FC = () => {
   const [showAuthPanel, setShowAuthPanel] = React.useState(false);
   const [editingCustomProviderId, setEditingCustomProviderId] = React.useState<string | null>(null);
   const [editingCustomFormInitial, setEditingCustomFormInitial] = React.useState<CustomProviderFormState | null>(null);
+  const [editingCustomScope, setEditingCustomScope] = React.useState<ProviderConfigScope | null>(null);
   const [customAuthFailureHint, setCustomAuthFailureHint] = React.useState<string | null>(null);
   const [lastCustomPersistId, setLastCustomPersistId] = React.useState<string | null>(null);
   const isAddMode = selectedProviderId === ADD_PROVIDER_ID;
@@ -306,6 +309,7 @@ export const ProvidersPage: React.FC = () => {
       setShowAuthPanel(true);
       setEditingCustomProviderId(null);
       setEditingCustomFormInitial(null);
+      setEditingCustomScope(null);
       setCustomAuthFailureHint(null);
       return;
     }
@@ -314,6 +318,7 @@ export const ProvidersPage: React.FC = () => {
     if (editingCustomProviderId && editingCustomProviderId !== selectedProviderId) {
       setEditingCustomProviderId(null);
       setEditingCustomFormInitial(null);
+      setEditingCustomScope(null);
       setCustomAuthFailureHint(null);
     }
   }, [selectedProviderId, editingCustomProviderId]);
@@ -411,7 +416,14 @@ export const ProvidersPage: React.FC = () => {
         }
       }
 
-      const upsertBody = buildProviderUpsertRequest(plan);
+      const upsertBody = buildProviderUpsertRequest(plan, {
+        // Create defaults to user. Edit must rewrite the winning config layer
+        // (custom > project > user) so project/custom providers are not copied
+        // into a global user override.
+        scope: editingCustomProviderId
+          ? (editingCustomScope ?? resolveProviderConfigScope(providerSources[editingCustomProviderId]))
+          : 'user',
+      });
       const response = await runtimeFetch('/api/provider', {
         method: 'PUT',
         headers: {
@@ -432,6 +444,7 @@ export const ProvidersPage: React.FC = () => {
       setCandidateProviderId('');
       setEditingCustomProviderId(null);
       setEditingCustomFormInitial(null);
+      setEditingCustomScope(null);
       setCustomAuthFailureHint(null);
       setLastCustomPersistId(null);
       await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active' });
@@ -593,6 +606,7 @@ export const ProvidersPage: React.FC = () => {
     await handleDisconnectProvider(providerId);
     setEditingCustomProviderId(null);
     setEditingCustomFormInitial(null);
+    setEditingCustomScope(null);
     setCustomAuthFailureHint(null);
     setLastCustomPersistId(null);
     setCandidateProviderId('');
@@ -945,6 +959,7 @@ export const ProvidersPage: React.FC = () => {
           onCancel={() => {
             setEditingCustomProviderId(null);
             setEditingCustomFormInitial(null);
+            setEditingCustomScope(null);
             setCustomAuthFailureHint(null);
             setLastCustomPersistId(null);
           }}
@@ -975,6 +990,7 @@ export const ProvidersPage: React.FC = () => {
                 onClick={() => {
                   setCustomAuthFailureHint(null);
                   setEditingCustomFormInitial(providerToCustomFormState(selectedProvider));
+                  setEditingCustomScope(resolveProviderConfigScope(selectedSources));
                   setEditingCustomProviderId(selectedProvider.id);
                 }}
               >

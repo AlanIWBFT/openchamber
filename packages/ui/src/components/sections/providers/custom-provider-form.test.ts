@@ -5,6 +5,7 @@ import {
   isConfigDefinedCustomProvider,
   isCustomOpenAICompatibleProvider,
   providerToCustomFormState,
+  resolveProviderConfigScope,
   validateCustomProvider,
   type CustomProviderConfig,
   type CustomProviderFormState,
@@ -203,7 +204,20 @@ describe('request construction', () => {
     expect(buildProviderUpsertRequest(plan)).toEqual({
       providerID: 'custom-provider',
       config: plan.config,
+      scope: 'user',
     });
+  });
+
+  test('includes explicit project/custom scope on upsert requests', () => {
+    const validated = validateCustomProvider({
+      form: baseForm(),
+      t,
+      existingProviderIDs: new Set(),
+    });
+    const plan = validated.result!;
+
+    expect(buildProviderUpsertRequest(plan, { scope: 'project' }).scope).toBe('project');
+    expect(buildProviderUpsertRequest(plan, { scope: 'custom' }).scope).toBe('custom');
   });
 
   test('omits auth.set when using env credentials', () => {
@@ -308,5 +322,29 @@ describe('provider edit helpers', () => {
       user: { exists: true },
       project: { exists: false },
     })).toBe(true);
+  });
+
+  test('resolveProviderConfigScope follows custom > project > user precedence', () => {
+    expect(resolveProviderConfigScope(undefined)).toBe('user');
+    expect(resolveProviderConfigScope({
+      user: { exists: true },
+      project: { exists: false },
+      custom: { exists: false },
+    })).toBe('user');
+    expect(resolveProviderConfigScope({
+      user: { exists: true },
+      project: { exists: true },
+      custom: { exists: false },
+    })).toBe('project');
+    expect(resolveProviderConfigScope({
+      user: { exists: true },
+      project: { exists: true },
+      custom: { exists: true },
+    })).toBe('custom');
+    expect(resolveProviderConfigScope({
+      user: { exists: false },
+      project: { exists: false },
+      custom: { exists: true },
+    })).toBe('custom');
   });
 });

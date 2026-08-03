@@ -169,6 +169,8 @@ export type ProviderConfigSourcesLike = {
   custom?: { exists?: boolean };
 };
 
+export type ProviderConfigScope = 'user' | 'project' | 'custom';
+
 /**
  * True when a provider both looks OpenAI-compatible-custom and is defined in a
  * user/project/custom OpenCode config layer. Catalog-only providers often share
@@ -185,6 +187,22 @@ export function isConfigDefinedCustomProvider(
     sources.user?.exists || sources.project?.exists || sources.custom?.exists,
   );
   return inConfigLayer && isCustomOpenAICompatibleProvider(provider);
+}
+
+/**
+ * Effective writable config layer for a provider, matching OpenCode merge
+ * precedence: custom > project > user.
+ */
+export function resolveProviderConfigScope(
+  sources: ProviderConfigSourcesLike | null | undefined,
+): ProviderConfigScope {
+  if (sources?.custom?.exists) {
+    return 'custom';
+  }
+  if (sources?.project?.exists) {
+    return 'project';
+  }
+  return 'user';
 }
 
 export function providerToCustomFormState(provider: ProviderLikeForCustomForm): CustomProviderFormState {
@@ -373,13 +391,20 @@ export function buildAuthSetRequest(plan: CustomProviderPersistPlan): {
 
 /**
  * Builds the OpenChamber provider upsert request body (config persistence).
+ * `scope` selects the OpenCode config layer (user/project/custom). Create
+ * defaults to user; edit must pass the provider's effective existing layer.
  */
-export function buildProviderUpsertRequest(plan: CustomProviderPersistPlan): {
+export function buildProviderUpsertRequest(
+  plan: CustomProviderPersistPlan,
+  options?: { scope?: ProviderConfigScope },
+): {
   providerID: string;
   config: CustomProviderConfig;
+  scope: ProviderConfigScope;
 } {
   return {
     providerID: plan.providerID,
     config: plan.config,
+    scope: options?.scope ?? 'user',
   };
 }

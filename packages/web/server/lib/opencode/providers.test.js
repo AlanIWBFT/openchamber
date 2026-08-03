@@ -169,4 +169,93 @@ describe('custom provider config persistence', () => {
     expect(result.providerId).toBe('keyed-provider');
     expect(result.config.env).toEqual(undefined);
   });
+
+  test('project-scope edit updates project layer without creating a user entry', () => {
+    const providerId = `proj-scope-${Date.now()}`;
+    const configPath = path.join(projectDir, 'opencode.json');
+
+    upsertProviderConfig(providerId, {
+      name: 'Project Scoped',
+      options: { baseURL: 'https://project.example.com/v1' },
+      models: { m: { name: 'M' } },
+    }, projectDir, 'project', { hasStoredAuth: true });
+
+    upsertProviderConfig(providerId, {
+      name: 'Project Scoped Updated',
+      options: { baseURL: 'https://project.example.com/v2', headers: { 'X-Project': '1' } },
+      models: { m: { name: 'M2' } },
+    }, projectDir, 'project', { hasStoredAuth: true });
+
+    const written = readJson(configPath);
+    expect(written.provider[providerId]).toEqual({
+      npm: '@ai-sdk/openai-compatible',
+      name: 'Project Scoped Updated',
+      options: {
+        baseURL: 'https://project.example.com/v2',
+        headers: { 'X-Project': '1' },
+      },
+      models: { m: { name: 'M2' } },
+    });
+
+    const sources = getProviderSources(providerId, projectDir);
+    expect(sources.sources.project.exists).toBe(true);
+    expect(sources.sources.user.exists).toBe(false);
+    expect(sources.sources.custom.exists).toBe(false);
+
+    for (const userPath of [
+      path.join(os.homedir(), '.config', 'opencode', 'opencode.json'),
+      path.join(os.homedir(), '.config', 'opencode', 'config.json'),
+    ]) {
+      if (!fs.existsSync(userPath)) continue;
+      const userConfig = readJson(userPath);
+      expect(userConfig.provider?.[providerId]).toBeUndefined();
+      expect(userConfig.providers?.[providerId]).toBeUndefined();
+    }
+  });
+
+  test('custom-scope edit updates custom layer without creating a user entry', () => {
+    const providerId = `custom-scope-${Date.now()}`;
+    const customPath = path.join(projectDir, 'custom-opencode.json');
+    const previousEnv = process.env.OPENCODE_CONFIG;
+    process.env.OPENCODE_CONFIG = customPath;
+
+    try {
+      upsertProviderConfig(providerId, {
+        name: 'Custom Scoped',
+        options: { baseURL: 'https://custom.example.com/v1' },
+        models: { m: { name: 'M' } },
+      }, projectDir, 'custom', { hasStoredAuth: true });
+
+      upsertProviderConfig(providerId, {
+        name: 'Custom Scoped Updated',
+        options: { baseURL: 'https://custom.example.com/v2' },
+        models: { n: { name: 'N' } },
+      }, projectDir, 'custom', { hasStoredAuth: true });
+
+      const written = readJson(customPath);
+      expect(written.provider[providerId].name).toBe('Custom Scoped Updated');
+      expect(written.provider[providerId].options.baseURL).toBe('https://custom.example.com/v2');
+
+      const sources = getProviderSources(providerId, projectDir);
+      expect(sources.sources.custom.exists).toBe(true);
+      expect(sources.sources.user.exists).toBe(false);
+      expect(sources.sources.project.exists).toBe(false);
+
+      for (const userPath of [
+        path.join(os.homedir(), '.config', 'opencode', 'opencode.json'),
+        path.join(os.homedir(), '.config', 'opencode', 'config.json'),
+      ]) {
+        if (!fs.existsSync(userPath)) continue;
+        const userConfig = readJson(userPath);
+        expect(userConfig.provider?.[providerId]).toBeUndefined();
+        expect(userConfig.providers?.[providerId]).toBeUndefined();
+      }
+    } finally {
+      if (previousEnv === undefined) {
+        delete process.env.OPENCODE_CONFIG;
+      } else {
+        process.env.OPENCODE_CONFIG = previousEnv;
+      }
+    }
+  });
 });
