@@ -16,6 +16,8 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import { rangeToMarkdown, trimSelectionValue, wrapMarkdownSelectionForChat } from './selectionMarkdown';
+import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
+import { focusChatInput } from '@/components/chat/composer/editor/dom';
 
 interface TextSelectionMenuProps {
   containerRef: React.RefObject<HTMLElement | null>;
@@ -63,6 +65,11 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const setPendingInputText = useInputStore((state) => state.setPendingInputText);
   const isMobile = useUIStore((state) => state.isMobile);
+  const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
+  const addToChatShortcut = React.useMemo(
+    () => formatShortcutForDisplay(getEffectiveShortcutCombo('add_selection_to_chat', shortcutOverrides)),
+    [shortcutOverrides],
+  );
   const projects = useProjectsStore((state) => state.projects);
   const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
   const effectiveDirectory = useEffectiveDirectory();
@@ -309,6 +316,9 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     
     // Clear selection
     window.getSelection()?.removeAllRanges();
+    queueMicrotask(() => {
+      focusChatInput();
+    });
   }, [selectedTextMarkdown, setPendingInputText, hideMenu]);
 
   const handleCreateNewSession = React.useCallback(async () => {
@@ -415,7 +425,9 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
               'active:opacity-80',
               'transition-opacity duration-150'
             )}
-            title={t('chat.textSelection.title.addToCurrentChat')}
+            title={addToChatShortcut
+              ? `${t('chat.textSelection.title.addToCurrentChat')} (${addToChatShortcut})`
+              : t('chat.textSelection.title.addToCurrentChat')}
             type="button"
           >
             <Icon name="add" className="h-5 w-5 flex-shrink-0" />
@@ -508,11 +520,16 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
             'hover:bg-[var(--interactive-hover)]',
             'transition-colors duration-150'
           )}
-          title={t('chat.textSelection.title.addToCurrentChat')}
+          title={addToChatShortcut
+            ? `${t('chat.textSelection.title.addToCurrentChat')} (${addToChatShortcut})`
+            : t('chat.textSelection.title.addToCurrentChat')}
           type="button"
         >
           <Icon name="add" className="h-4 w-4" />
           <span className="whitespace-nowrap">{t('chat.textSelection.actions.addToChat')}</span>
+          {addToChatShortcut ? (
+            <span className="whitespace-nowrap text-xs text-muted-foreground">{addToChatShortcut}</span>
+          ) : null}
         </button>
       
         <div className="w-px h-4 bg-[var(--interactive-border)]" />
