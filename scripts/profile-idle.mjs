@@ -42,6 +42,9 @@ Options:
   --then-tab <name>        After settling, navigate to this tab without a
                            reload, then record. Use it to measure what a
                            surface keeps doing after the user leaves it.
+  --expand-projects        Expand every project in the sidebar before
+                           recording, which mounts a row per worktree and
+                           session directory
   --panel <mode[=target]>  Open the context panel on this surface before
                            recording (chat, preview, terminal, git, pr, notes,
                            file, diff, plan, context, browser, walkthrough).
@@ -70,6 +73,7 @@ const parseArgs = (argv) => {
     tab: null,
     thenTab: null,
     panels: [],
+    expandProjects: false,
     duration: 30,
     settle: 15,
     output: null,
@@ -94,6 +98,7 @@ const parseArgs = (argv) => {
     else if (value === "--tab") options.tab = argv[++index]
     else if (value === "--then-tab") options.thenTab = argv[++index]
     else if (value === "--panel") options.panels.push(argv[++index])
+    else if (value === "--expand-projects") options.expandProjects = true
     else if (value === "--label") options.label = argv[++index]
     else if (value === "--duration") options.duration = Number(argv[++index])
     else if (value === "--settle") options.settle = Number(argv[++index])
@@ -351,8 +356,16 @@ const main = async () => {
     await client.send("Page.navigate", { url: options.url })
     await loaded
 
-    if (options.panels.length > 0) {
-      await seedContextPanel(client, options.panels, options.session)
+    if (options.expandProjects) {
+      // The sidebar persists the ids of collapsed projects, so an empty list
+      // expands everything. This is the state in issue #1472: one mounted
+      // directory-bound row per worktree and session.
+      await evaluateValue(client, `localStorage.setItem("oc.sessions.projectCollapse", "[]")`)
+      console.log("Expanded every project in the sidebar.")
+    }
+
+    if (options.panels.length > 0 || options.expandProjects) {
+      if (options.panels.length > 0) await seedContextPanel(client, options.panels, options.session)
       const reloaded = client.once("Page.loadEventFired", 60_000)
       await client.send("Page.reload", { ignoreCache: false })
       await reloaded
