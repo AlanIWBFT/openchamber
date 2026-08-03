@@ -37,6 +37,36 @@ export const percentile = (values, fraction) => {
   return round(sorted[rank])
 }
 
+// `RunTask` and `RunMicrotasks` are containers: their duration already
+// includes the work below them, so counting them would double-count.
+const CONTAINER_TRACE_EVENTS = new Set(["RunTask", "RunMicrotasks", "ProfileChunk", "Profile"])
+
+/**
+ * Breaks recorded time down by trace event.
+ *
+ * A CPU sampling profile attributes native work to `(program)`, which hides
+ * whether time went to HTML parsing, style recalculation, layout, or paint.
+ * The timeline trace names that work explicitly, so this is what turns "76% of
+ * busy time is native" into an actionable list.
+ */
+export const summarizeTraceEvents = (traceEvents, topCount = 15) => {
+  const totals = new Map()
+  for (const event of traceEvents) {
+    if (event.ph !== "X" || !(Number(event.dur) > 0)) continue
+    if (CONTAINER_TRACE_EVENTS.has(event.name)) continue
+    const entry = totals.get(event.name) ?? { name: event.name, count: 0, totalMs: 0, maxMs: 0 }
+    const durationMs = Number(event.dur) / 1000
+    entry.count += 1
+    entry.totalMs += durationMs
+    if (durationMs > entry.maxMs) entry.maxMs = durationMs
+    totals.set(event.name, entry)
+  }
+  return [...totals.values()]
+    .sort((left, right) => right.totalMs - left.totalMs)
+    .slice(0, topCount)
+    .map((entry) => ({ ...entry, totalMs: round(entry.totalMs), maxMs: round(entry.maxMs) }))
+}
+
 /**
  * Long tasks block input and animation, so a streaming capture is judged by
  * its task-duration distribution rather than by an average frame rate.

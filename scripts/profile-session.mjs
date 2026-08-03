@@ -29,7 +29,7 @@ import process from "node:process"
 import { CdpClient, createPageTarget, evaluateValue, launchChrome, reservePort, resolveChrome, wait } from "./perf/cdp.mjs"
 import { buildIdleProbeSource, IDLE_PROBE_GLOBAL } from "./perf/idle-probe.mjs"
 import { summarizeCpuProfile } from "./perf/cpu-profile.mjs"
-import { growthPerSecond, metricMap, round, summarizeLongTasks } from "./perf/metrics.mjs"
+import { growthPerSecond, metricMap, round, summarizeLongTasks, summarizeTraceEvents } from "./perf/metrics.mjs"
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const cliPath = join(repoRoot, "packages/web/bin/cli.js")
@@ -222,6 +222,11 @@ const printReport = (summary, baseline) => {
   console.log("\nTop self time while streaming:")
   for (const entry of summary.cpuProfile?.topSelfTime?.slice(0, 15) ?? []) {
     console.log(`  ${String(entry.selfMs).padStart(9)} ms  ${String(entry.percentOfBusy).padStart(5)}%  ${entry.function}`)
+  }
+
+  console.log("\nWhere recorded time went (timeline trace):")
+  for (const entry of summary.traceBreakdown?.slice(0, 14) ?? []) {
+    console.log(`  ${String(entry.totalMs).padStart(9)} ms  ${String(entry.count).padStart(6)}x  max ${String(entry.maxMs).padStart(7)} ms  ${entry.name}`)
   }
 
   const streamEntries = summary.streamPerformance?.entries ?? []
@@ -435,6 +440,7 @@ const main = async () => {
     const renderedCharacterGrowth = renderedAfter.characters - renderedBefore.characters
 
     const tasks = summarizeLongTasks(traceEvents)
+    const traceBreakdown = summarizeTraceEvents(traceEvents)
     const delta = (name) => Number(after[name] ?? 0) - Number(before[name] ?? 0)
     const perSecond = (name) => round(delta(name) / elapsedSeconds)
     const heapSamples = samples.map((sample) => sample.jsHeapUsedMb)
@@ -488,6 +494,7 @@ const main = async () => {
       },
       frameLiveness,
       cpuProfile: summarizeCpuProfile(profile),
+      traceBreakdown,
       streamPerformance,
       syncCounters,
       scheduledWork: probe,
