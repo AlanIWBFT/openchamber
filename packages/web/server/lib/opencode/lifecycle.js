@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
+import { stripAppImageArgv0Leak } from '../inherited-env.js';
 import { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses } from './managed-process-registry.js';
 import { applyProviderEnvAliases } from './provider-env-aliases.js';
 import { recordStartupPerformance } from './startup-performance.js';
@@ -70,7 +71,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }
   };
 
-  const hasChildProcessExited = (child) => !child || child.exitCode !== null || child.signalCode !== null;
+  const hasChildProcessExited = (child) => !child
+    || (child.exitCode !== null && child.exitCode !== undefined)
+    || (child.signalCode !== null && child.signalCode !== undefined);
 
   const isManagedOpenCodeProcessAlive = () => {
     const child = state.openCodeProcess;
@@ -366,6 +369,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     return {
       url,
       pid: child.pid || null,
+      get exitCode() {
+        return child.exitCode;
+      },
+      get signalCode() {
+        return child.signalCode;
+      },
       async close() {
         await closeManagedOpenCodeChild(child);
       },
@@ -519,13 +528,13 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         timeout: 30000,
         cwd: state.openCodeWorkingDirectory,
         shellEnvKeysCount: Object.keys(shellEnv).length,
-        env: applyProviderEnvAliases({
+        env: stripAppImageArgv0Leak(applyProviderEnvAliases({
           ...shellEnv,
           ...process.env,
           ...managedOpenCodeEnv,
           PATH: envPath,
           OPENCODE_SERVER_PASSWORD: openCodePassword,
-        }),
+        })),
       });
 
       if (!serverInstance || !serverInstance.url) {

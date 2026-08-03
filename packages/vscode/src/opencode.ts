@@ -10,30 +10,7 @@ import { randomBytes } from 'crypto';
 import { normalizeWindowsDriveLetter } from './pathUtils';
 import { resolveWorkingDirectoryChange } from './workingDirectoryChange';
 import { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses } from './opencodeProcessRegistry';
-
-/** Keep in sync with packages/web/server/lib/opencode/provider-env-aliases.js */
-const GOOGLE_API_KEY_ALIASES = [
-  'GOOGLE_GENERATIVE_AI_API_KEY',
-  'GOOGLE_API_KEY',
-  'GEMINI_API_KEY',
-] as const;
-
-function applyProviderEnvAliases(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const next: NodeJS.ProcessEnv = { ...env };
-  const googleValue = GOOGLE_API_KEY_ALIASES
-    .map((key) => next[key])
-    .find((value) => typeof value === 'string' && value.trim().length > 0);
-
-  if (googleValue) {
-    for (const key of GOOGLE_API_KEY_ALIASES) {
-      if (typeof next[key] !== 'string' || next[key]!.trim().length === 0) {
-        next[key] = googleValue;
-      }
-    }
-  }
-
-  return next;
-}
+import { applyProviderEnvAliases } from './provider-env-aliases';
 
 const t = vscode.l10n.t;
 
