@@ -151,22 +151,26 @@ export const OpenCodeReloadFooterAction: React.FC<OpenCodeReloadFooterActionProp
           {/* Plain stack — avoid DialogFooter (sm:flex-row) fighting this layout */}
           <div className="flex w-full flex-col items-center gap-3">
             <div className="flex w-full items-stretch justify-center gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-9 w-[40%] min-w-0 shrink-0 normal-case"
-                onClick={() => setConfirmOpen(false)}
-              >
-                {t('settings.view.pendingRestart.confirm.cancel')}
-              </Button>
-              <Button
-                type="button"
-                variant="default"
-                className="h-9 w-[40%] min-w-0 shrink-0 normal-case"
-                onClick={handleConfirmApply}
-              >
-                {t('settings.view.actions.applyAndRestartOpenCode')}
-              </Button>
+              <div className="w-[40%] min-w-0 shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 w-full normal-case"
+                  onClick={() => setConfirmOpen(false)}
+                >
+                  {t('settings.view.pendingRestart.confirm.cancel')}
+                </Button>
+              </div>
+              <div className="w-[40%] min-w-0 shrink-0">
+                <Button
+                  type="button"
+                  variant="default"
+                  className="h-9 w-full normal-case"
+                  onClick={handleConfirmApply}
+                >
+                  {t('settings.view.actions.applyAndRestartOpenCode')}
+                </Button>
+              </div>
             </div>
             <button
               type="button"
