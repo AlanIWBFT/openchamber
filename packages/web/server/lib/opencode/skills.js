@@ -602,6 +602,60 @@ function deleteSkill(skillName, workingDirectory) {
   }
 }
 
+function isPathInside(candidatePath, parentPath) {
+  if (!candidatePath || !parentPath) return false;
+  const resolvedCandidate = path.resolve(candidatePath);
+  const resolvedParent = path.resolve(parentPath);
+  return resolvedCandidate === resolvedParent
+    || resolvedCandidate.startsWith(`${resolvedParent}${path.sep}`);
+}
+
+function getManagedSkillRoots(workingDirectory) {
+  const roots = [];
+  const pushRoot = (dir) => {
+    if (!dir) return;
+    const resolved = path.resolve(dir);
+    if (!roots.includes(resolved)) {
+      roots.push(resolved);
+    }
+  };
+
+  pushRoot(SKILL_DIR);
+  pushRoot(path.join(OPENCODE_CONFIG_DIR, 'skill'));
+  pushRoot(path.join(os.homedir(), '.opencode', 'skills'));
+  pushRoot(path.join(os.homedir(), '.opencode', 'skill'));
+  pushRoot(path.join(os.homedir(), '.claude', 'skills'));
+  pushRoot(path.join(os.homedir(), '.agents', 'skills'));
+
+  const customConfigDir = process.env.OPENCODE_CONFIG_DIR
+    ? path.resolve(process.env.OPENCODE_CONFIG_DIR)
+    : null;
+  if (customConfigDir) {
+    pushRoot(path.join(customConfigDir, 'skills'));
+    pushRoot(path.join(customConfigDir, 'skill'));
+  }
+
+  if (workingDirectory) {
+    const worktreeRoot = findWorktreeRoot(workingDirectory) || path.resolve(workingDirectory);
+    for (const ancestor of getAncestors(workingDirectory, worktreeRoot)) {
+      pushRoot(path.join(ancestor, '.opencode', 'skills'));
+      pushRoot(path.join(ancestor, '.opencode', 'skill'));
+      pushRoot(path.join(ancestor, '.claude', 'skills'));
+      pushRoot(path.join(ancestor, '.agents', 'skills'));
+    }
+  }
+
+  return roots;
+}
+
+function isManagedSkillPath(skillMdPath, workingDirectory) {
+  if (!skillMdPath || skillMdPath === BUILT_IN_SKILL_LOCATION) {
+    return false;
+  }
+  const skillDir = path.dirname(path.resolve(skillMdPath));
+  return getManagedSkillRoots(workingDirectory).some((root) => isPathInside(skillDir, root));
+}
+
 function renameSkill(oldName, newName, workingDirectory) {
   ensureDirs();
   assertValidSkillName(newName);
@@ -619,6 +673,17 @@ function renameSkill(oldName, newName, workingDirectory) {
   }
   if (path.basename(existing.path) !== 'SKILL.md') {
     throw new Error(`Skill "${oldName}" target must be a SKILL.md file`);
+  }
+  if (!isManagedSkillPath(existing.path, workingDirectory)) {
+    throw new Error(`Skill "${oldName}" is outside managed skill directories and cannot be renamed`);
+  }
+
+  const mdDataBeforeMove = parseMdFile(existing.path);
+  const frontmatterName = typeof mdDataBeforeMove.frontmatter?.name === 'string'
+    ? mdDataBeforeMove.frontmatter.name
+    : oldName;
+  if (frontmatterName !== oldName) {
+    throw new Error(`Skill "${oldName}" does not match ${existing.path}`);
   }
 
   const conflict = getSkillScope(newName, workingDirectory);

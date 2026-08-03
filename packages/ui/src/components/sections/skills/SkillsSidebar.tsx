@@ -27,6 +27,7 @@ import { SidebarGroup } from '@/components/sections/shared/SidebarGroup';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { SETTINGS_PANEL_TITLE_CLASS } from '@/components/sections/shared/SettingsSection';
+import { isManagedSkillFilesystemPath } from '@/components/sections/skills/skillLocations';
 
 interface SkillsSidebarProps {
   onItemSelect?: () => void;
@@ -35,6 +36,9 @@ interface SkillsSidebarProps {
 const BUILT_IN_SKILL_LOCATION = '<built-in>';
 
 const isBuiltInSkill = (skill: DiscoveredSkill | null | undefined): boolean => skill?.path === BUILT_IN_SKILL_LOCATION;
+const isRenamableSkill = (skill: DiscoveredSkill | null | undefined): boolean => (
+  !!skill && !isBuiltInSkill(skill) && isManagedSkillFilesystemPath(skill.path)
+);
 
 export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) => {
   const { t } = useI18n();
@@ -140,14 +144,14 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
   };
 
   const handleOpenRenameDialog = (skill: DiscoveredSkill) => {
-    if (isBuiltInSkill(skill)) return;
+    if (!isRenamableSkill(skill)) return;
     setRenameNewName(skill.name);
     setRenameDialogSkill(skill);
   };
 
   const handleRenameSkill = async () => {
     if (!renameDialogSkill) return;
-    if (isBuiltInSkill(renameDialogSkill)) {
+    if (!isRenamableSkill(renameDialogSkill)) {
       setRenameDialogSkill(null);
       return;
     }
@@ -443,13 +447,16 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
       : t('settings.skills.sidebar.badge.opencode');
   const badgeClassName = 'typography-micro text-muted-foreground bg-[var(--surface-muted)] px-1 rounded flex-shrink-0 leading-none pb-px border border-[var(--interactive-border)]/50';
   const isBuiltIn = isBuiltInSkill(skill);
+  const canRename = isRenamableSkill(skill);
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
   const renderMenuItems = (Item: React.ElementType) => (
     <>
-      <Item onClick={(e: React.MouseEvent) => { e.stopPropagation(); onRename(); }}>
-        <Icon name="edit" className="h-4 w-4 mr-px" />
-        {t('settings.common.actions.rename')}
-      </Item>
+      {canRename ? (
+        <Item onClick={(e: React.MouseEvent) => { e.stopPropagation(); onRename(); }}>
+          <Icon name="edit" className="h-4 w-4 mr-px" />
+          {t('settings.common.actions.rename')}
+        </Item>
+      ) : null}
       <Item onClick={(e: React.MouseEvent) => { e.stopPropagation(); onDuplicate(); }}>
         <Icon name="file-copy" className="h-4 w-4 mr-px" />
         {t('settings.common.actions.duplicate')}

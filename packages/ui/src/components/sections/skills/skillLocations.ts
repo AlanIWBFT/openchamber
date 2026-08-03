@@ -57,3 +57,22 @@ export function locationPartsFrom(value: SkillLocationValue): { scope: SkillScop
   }
   return { scope: match.scope, source: match.source };
 }
+
+/** True when a discovered skill path is under a managed skill root that rename/delete may mutate. */
+export function isManagedSkillFilesystemPath(skillPath: string | null | undefined): boolean {
+  if (!skillPath || skillPath === '<built-in>') return false;
+  const normalized = skillPath.replace(/\\/g, '/');
+  if (
+    normalized.includes('/.cache/opencode/skills/')
+    || normalized.includes('/Caches/opencode/skills/')
+    || normalized.includes('/Library/Caches/opencode/skills/')
+  ) {
+    return false;
+  }
+  return (
+    /\/\.opencode\/skills?\//.test(normalized)
+    || /\/\.claude\/skills\//.test(normalized)
+    || /\/\.agents\/skills\//.test(normalized)
+    || /\/\.config\/opencode\/skills?\//.test(normalized)
+  );
+}

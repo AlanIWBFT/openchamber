@@ -178,4 +178,147 @@ describe('skills', () => {
       await fsPromises.rm(tempRoot, { recursive: true, force: true });
     }
   });
+
+  it('rolls back the directory rename when frontmatter write fails', async () => {
+    const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-skills-rename-rollback-'));
+    const projectRoot = path.join(tempRoot, 'project');
+    const skillDir = path.join(projectRoot, '.opencode', 'skills', 'rollback-skill');
+    const skillPath = path.join(skillDir, 'SKILL.md');
+    const body = '# Rollback body\n\nMust remain in the original directory.';
+
+    try {
+      await fsPromises.mkdir(skillDir, { recursive: true });
+      await fsPromises.writeFile(
+        skillPath,
+        [
+          '---',
+          'name: rollback-skill',
+          'description: Rollback skill',
+          '---',
+          '',
+          body,
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+      await fsPromises.chmod(skillPath, 0o444);
+
+      expect(() => renameSkill('rollback-skill', 'rollback-skill-renamed', projectRoot)).toThrow();
+
+      expect(fs.existsSync(skillDir)).toBe(true);
+      expect(fs.existsSync(path.join(projectRoot, '.opencode', 'skills', 'rollback-skill-renamed'))).toBe(false);
+      expect(await fsPromises.readFile(skillPath, 'utf8')).toContain(body);
+    } finally {
+      try {
+        await fsPromises.chmod(skillPath, 0o644);
+      } catch {
+        // Best-effort cleanup when the file was rolled back under a different mode.
+      }
+      await fsPromises.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects invalid names, missing skills, conflicts, unmanaged paths, and frontmatter mismatches', async () => {
+    const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-skills-rename-reject-'));
+    const projectRoot = path.join(tempRoot, 'project');
+    const managedDir = path.join(projectRoot, '.opencode', 'skills', 'managed-skill');
+    const conflictDir = path.join(projectRoot, '.opencode', 'skills', 'taken-name');
+    const mismatchDir = path.join(projectRoot, '.opencode', 'skills', 'folder-name');
+    const unmanagedDir = path.join(projectRoot, 'custom-skills', 'unmanaged-skill');
+    const cacheStamp = `oc-rename-${Date.now()}`;
+    const cacheDir = path.join(os.homedir(), '.cache', 'opencode', 'skills', cacheStamp, 'cache-skill');
+
+    try {
+      await fsPromises.mkdir(managedDir, { recursive: true });
+      await fsPromises.writeFile(
+        path.join(managedDir, 'SKILL.md'),
+        [
+          '---',
+          'name: managed-skill',
+          'description: Managed',
+          '---',
+          '',
+          'Managed body',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+
+      await fsPromises.mkdir(conflictDir, { recursive: true });
+      await fsPromises.writeFile(
+        path.join(conflictDir, 'SKILL.md'),
+        [
+          '---',
+          'name: taken-name',
+          'description: Taken',
+          '---',
+          '',
+          'Taken body',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+
+      await fsPromises.mkdir(mismatchDir, { recursive: true });
+      await fsPromises.writeFile(
+        path.join(mismatchDir, 'SKILL.md'),
+        [
+          '---',
+          'name: frontmatter-name',
+          'description: Mismatch',
+          '---',
+          '',
+          'Mismatch body',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+
+      await fsPromises.mkdir(unmanagedDir, { recursive: true });
+      await fsPromises.writeFile(
+        path.join(unmanagedDir, 'SKILL.md'),
+        [
+          '---',
+          'name: unmanaged-skill',
+          'description: Unmanaged',
+          '---',
+          '',
+          'Unmanaged body',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+
+      await fsPromises.mkdir(cacheDir, { recursive: true });
+      await fsPromises.writeFile(
+        path.join(cacheDir, 'SKILL.md'),
+        [
+          '---',
+          'name: cache-skill',
+          'description: Cache skill',
+          '---',
+          '',
+          'Cache body',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+
+      expect(() => renameSkill('managed-skill', 'Invalid_Name', projectRoot)).toThrow(/Invalid skill name/);
+      expect(() => renameSkill('missing-skill', 'new-skill', projectRoot)).toThrow(/not found/);
+      expect(() => renameSkill('managed-skill', 'taken-name', projectRoot)).toThrow(/already exists/);
+      expect(() => renameSkill('folder-name', 'renamed-mismatch', projectRoot)).toThrow(/does not match/);
+      expect(() => renameSkill('cache-skill', 'cache-skill-renamed', projectRoot)).toThrow(/managed skill directories/);
+
+      expect(fs.existsSync(managedDir)).toBe(true);
+      expect(fs.existsSync(cacheDir)).toBe(true);
+      expect(fs.existsSync(path.join(projectRoot, '.opencode', 'skills', 'renamed-mismatch'))).toBe(false);
+    } finally {
+      await fsPromises.rm(tempRoot, { recursive: true, force: true });
+      await fsPromises.rm(path.join(os.homedir(), '.cache', 'opencode', 'skills', cacheStamp), {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
 });
