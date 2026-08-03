@@ -1914,7 +1914,7 @@ export const settingsDict = {
   'settings.view.actions.reloadOpenCode': 'Przeładuj OpenCode',
   'settings.view.actions.reloadOpenCodeTooltip': 'Uruchom ponownie OpenCode i przeładuj jego konfigurację.',
 
-  'settings.view.actions.applyAndRestartOpenCode': 'Zastosuj i uruchom ponownie OpenCode',
+  'settings.view.actions.applyAndRestartOpenCode': 'Zastosuj i uruchom ponownie',
   'settings.view.actions.applyAndRestartOpenCodeTooltipSingle': 'Zastosuj 1 oczekującą zmianę konfiguracji i uruchom ponownie OpenCode.',
   'settings.view.actions.applyAndRestartOpenCodeTooltipPlural': 'Zastosuj {count} oczekujących zmian konfiguracji i uruchom ponownie OpenCode.',
   'settings.view.pendingRestart.applying': 'Stosowanie zmian i ponowne uruchamianie OpenCode…',
@@ -1923,7 +1923,7 @@ export const settingsDict = {
   'settings.view.pendingRestart.manualRestartRequired': 'Zapisano na dysku. Uruchom ponownie podłączony serwer OpenCode, aby zastosować zmiany.',
   'settings.view.pendingRestart.saved': 'Zapisano. Uruchom ponownie OpenCode, aby zastosować.',
 
-  'settings.view.pendingRestart.confirm.title': 'Zastosować i uruchomić ponownie OpenCode?',
+  'settings.view.pendingRestart.confirm.title': 'Zastosować i uruchomić ponownie?',
   'settings.view.pendingRestart.confirm.description': 'Ponowne uruchomienie OpenCode zatrzyma wszystkie aktywne czaty. Zapisane zmiany konfiguracji zaczną obowiązywać po restarcie.',
   'settings.view.pendingRestart.confirm.dontShowAgain': 'Nie pokazuj ponownie',
   'settings.view.pendingRestart.confirm.cancel': 'Anuluj',  'settings.view.actions.resizeNavigation': 'Zmień rozmiar nawigacji',

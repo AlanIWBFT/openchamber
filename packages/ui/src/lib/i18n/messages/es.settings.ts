@@ -41,7 +41,7 @@ export const settingsDict = {
   "settings.view.actions.reloadOpenCode": "Recargar OpenCode",
   "settings.view.actions.reloadOpenCodeTooltip": "Restablecer OpenCode y recargar su configuración.",
 
-  "settings.view.actions.applyAndRestartOpenCode": "Aplicar y reiniciar OpenCode",
+  "settings.view.actions.applyAndRestartOpenCode": "Aplicar y reiniciar",
   "settings.view.actions.applyAndRestartOpenCodeTooltipSingle": "Aplicar 1 cambio de configuración pendiente y reiniciar OpenCode.",
   "settings.view.actions.applyAndRestartOpenCodeTooltipPlural": "Aplicar {count} cambios de configuración pendientes y reiniciar OpenCode.",
   "settings.view.pendingRestart.applying": "Aplicando cambios y reiniciando OpenCode…",
@@ -50,7 +50,7 @@ export const settingsDict = {
   "settings.view.pendingRestart.manualRestartRequired": "Guardado en disco. Reinicia el servidor OpenCode conectado para aplicar los cambios.",
   "settings.view.pendingRestart.saved": "Guardado. Reinicia OpenCode para aplicar.",
 
-  "settings.view.pendingRestart.confirm.title": "¿Aplicar y reiniciar OpenCode?",
+  "settings.view.pendingRestart.confirm.title": "¿Aplicar y reiniciar?",
   "settings.view.pendingRestart.confirm.description": "Reiniciar OpenCode detendrá cualquier chat en ejecución. Los cambios de configuración guardados se aplicarán después del reinicio.",
   "settings.view.pendingRestart.confirm.dontShowAgain": "No volver a mostrar",
   "settings.view.pendingRestart.confirm.cancel": "Cancelar",  "settings.view.actions.backToSettings": "Volver a Configuración",

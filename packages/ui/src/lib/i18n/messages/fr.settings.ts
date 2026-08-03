@@ -41,7 +41,7 @@ export const settingsDict = {
   'settings.view.actions.reloadOpenCode': 'Recharger OpenCode',
   'settings.view.actions.reloadOpenCodeTooltip': 'Redémarrez OpenCode et rechargez sa configuration.',
 
-  'settings.view.actions.applyAndRestartOpenCode': 'Appliquer et redémarrer OpenCode',
+  'settings.view.actions.applyAndRestartOpenCode': 'Appliquer et redémarrer',
   'settings.view.actions.applyAndRestartOpenCodeTooltipSingle': 'Appliquer 1 modification de configuration en attente et redémarrer OpenCode.',
   'settings.view.actions.applyAndRestartOpenCodeTooltipPlural': 'Appliquer {count} modifications de configuration en attente et redémarrer OpenCode.',
   'settings.view.pendingRestart.applying': 'Application des modifications et redémarrage de OpenCode…',
@@ -50,7 +50,7 @@ export const settingsDict = {
   'settings.view.pendingRestart.manualRestartRequired': 'Enregistré sur le disque. Redémarrez le serveur OpenCode connecté pour appliquer les modifications.',
   'settings.view.pendingRestart.saved': 'Enregistré. Redémarrez OpenCode pour appliquer.',
 
-  'settings.view.pendingRestart.confirm.title': 'Appliquer et redémarrer OpenCode ?',
+  'settings.view.pendingRestart.confirm.title': 'Appliquer et redémarrer ?',
   'settings.view.pendingRestart.confirm.description': 'Le redémarrage de OpenCode arrêtera tous les chats en cours. Vos modifications de configuration enregistrées prendront effet après le redémarrage.',
   'settings.view.pendingRestart.confirm.dontShowAgain': 'Ne plus afficher',
   'settings.view.pendingRestart.confirm.cancel': 'Annuler',  'settings.view.actions.backToSettings': 'Retour aux paramètres',

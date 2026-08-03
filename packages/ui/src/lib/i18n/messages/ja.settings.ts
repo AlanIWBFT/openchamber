@@ -41,7 +41,7 @@ export const settingsDict = {
   'settings.view.actions.reloadOpenCode': 'OpenCode を再読み込み',
   'settings.view.actions.reloadOpenCodeTooltip': 'OpenCode を再起動して設定を再読み込みします。',
 
-  'settings.view.actions.applyAndRestartOpenCode': '適用して OpenCode を再起動',
+  'settings.view.actions.applyAndRestartOpenCode': '適用して再起動',
   'settings.view.actions.applyAndRestartOpenCodeTooltipSingle': '保留中の設定変更 1 件を適用して OpenCode を再起動します。',
   'settings.view.actions.applyAndRestartOpenCodeTooltipPlural': '保留中の設定変更 {count} 件を適用して OpenCode を再起動します。',
   'settings.view.pendingRestart.applying': '変更を適用して OpenCode を再起動しています…',
@@ -50,7 +50,7 @@ export const settingsDict = {
   'settings.view.pendingRestart.manualRestartRequired': 'ディスクに保存しました。接続中の OpenCode サーバーを再起動して変更を適用してください。',
   'settings.view.pendingRestart.saved': '保存しました。適用するには OpenCode を再起動してください。',
 
-  'settings.view.pendingRestart.confirm.title': '適用して OpenCode を再起動しますか？',
+  'settings.view.pendingRestart.confirm.title': '適用して再起動しますか？',
   'settings.view.pendingRestart.confirm.description': 'OpenCode を再起動すると実行中のチャットが停止します。保存済みの設定変更は再起動後に反映されます。',
   'settings.view.pendingRestart.confirm.dontShowAgain': '今後表示しない',
   'settings.view.pendingRestart.confirm.cancel': 'キャンセル',  'settings.view.actions.backToSettings': '設定に戻る',

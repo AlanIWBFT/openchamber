@@ -41,7 +41,7 @@ export const settingsDict = {
   'settings.view.actions.reloadOpenCode': 'OpenCode 다시 로드',
   'settings.view.actions.reloadOpenCodeTooltip': 'OpenCode를 재시작하고 설정을 다시 불러옵니다.',
 
-  'settings.view.actions.applyAndRestartOpenCode': '적용하고 OpenCode 다시 시작',
+  'settings.view.actions.applyAndRestartOpenCode': '적용하고 다시 시작',
   'settings.view.actions.applyAndRestartOpenCodeTooltipSingle': '보류 중인 구성 변경 1개를 적용하고 OpenCode를 다시 시작합니다.',
   'settings.view.actions.applyAndRestartOpenCodeTooltipPlural': '보류 중인 구성 변경 {count}개를 적용하고 OpenCode를 다시 시작합니다.',
   'settings.view.pendingRestart.applying': '변경 사항을 적용하고 OpenCode를 다시 시작하는 중…',
@@ -50,7 +50,7 @@ export const settingsDict = {
   'settings.view.pendingRestart.manualRestartRequired': '디스크에 저장되었습니다. 연결된 OpenCode 서버를 다시 시작하여 변경 사항을 적용하세요.',
   'settings.view.pendingRestart.saved': '저장되었습니다. 적용하려면 OpenCode를 다시 시작하세요.',
 
-  'settings.view.pendingRestart.confirm.title': '적용하고 OpenCode를 다시 시작할까요?',
+  'settings.view.pendingRestart.confirm.title': '적용하고 다시 시작할까요?',
   'settings.view.pendingRestart.confirm.description': 'OpenCode를 다시 시작하면 실행 중인 채팅이 중지됩니다. 저장된 구성 변경 사항은 다시 시작 후 적용됩니다.',
   'settings.view.pendingRestart.confirm.dontShowAgain': '다시 표시하지 않음',
   'settings.view.pendingRestart.confirm.cancel': '취소',  'settings.view.actions.backToSettings': '설정으로 돌아가기',

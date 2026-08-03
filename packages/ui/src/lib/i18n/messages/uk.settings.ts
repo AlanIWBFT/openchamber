@@ -41,7 +41,7 @@ export const settingsDict = {
   "settings.view.actions.reloadOpenCode": "Перезавантажити OpenCode",
   "settings.view.actions.reloadOpenCodeTooltip": "Перезапустити OpenCode і перезавантажити його конфігурацію.",
 
-  "settings.view.actions.applyAndRestartOpenCode": "Застосувати та перезапустити OpenCode",
+  "settings.view.actions.applyAndRestartOpenCode": "Застосувати та перезапустити",
   "settings.view.actions.applyAndRestartOpenCodeTooltipSingle": "Застосувати 1 очікувану зміну конфігурації та перезапустити OpenCode.",
   "settings.view.actions.applyAndRestartOpenCodeTooltipPlural": "Застосувати {count} очікуваних змін конфігурації та перезапустити OpenCode.",
   "settings.view.pendingRestart.applying": "Застосування змін і перезапуск OpenCode…",
@@ -50,7 +50,7 @@ export const settingsDict = {
   "settings.view.pendingRestart.manualRestartRequired": "Збережено на диску. Перезапустіть підключений сервер OpenCode, щоб застосувати зміни.",
   "settings.view.pendingRestart.saved": "Збережено. Перезапустіть OpenCode, щоб застосувати.",
 
-  "settings.view.pendingRestart.confirm.title": "Застосувати та перезапустити OpenCode?",
+  "settings.view.pendingRestart.confirm.title": "Застосувати та перезапустити?",
   "settings.view.pendingRestart.confirm.description": "Перезапуск OpenCode зупинить усі активні чати. Збережені зміни конфігурації набудуть чинності після перезапуску.",
   "settings.view.pendingRestart.confirm.dontShowAgain": "Більше не показувати",
   "settings.view.pendingRestart.confirm.cancel": "Скасувати",  "settings.view.actions.backToSettings": "Назад до налаштувань",
