@@ -233,6 +233,30 @@ describe('OpenCode lifecycle', () => {
     warn.mockRestore();
   });
 
+  it('does not mistake a live managed process wrapper for an exited child', async () => {
+    const close = vi.fn(async () => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    globalThis.fetch = vi.fn(async () => ({
+      ok: false,
+      json: async () => null,
+    }));
+    const runtime = createRuntime({}, {
+      openCodePort: 45678,
+      openCodeProcess: {
+        pid: process.pid,
+        close,
+      },
+      isOpenCodeReady: true,
+    });
+
+    await runtime.triggerHealthCheck();
+
+    expect(close).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('(1/20)'));
+    warn.mockRestore();
+  });
+
   it('restarts an exited managed process without waiting for the failure interval', async () => {
     const close = vi.fn(async () => {});
     const replacement = createMockChild();
@@ -281,8 +305,11 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.PATH).toBe('/home/user/.bun/bin:/usr/local/bin:/usr/bin');
     expect(options.env.SHELL_ONLY).toBe('yes');
     expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
+    expect(server.exitCode).toBeNull();
+    expect(server.signalCode).toBeNull();
 
     await server.close();
+    expect(server.signalCode).toBe('SIGTERM');
   });
 
   it('adds managed OpenChamber tool environment without allowing it to replace launch invariants', async () => {

@@ -69,7 +69,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }
   };
 
-  const hasChildProcessExited = (child) => !child || child.exitCode !== null || child.signalCode !== null;
+  const hasChildProcessExited = (child) => !child
+    || (child.exitCode !== null && child.exitCode !== undefined)
+    || (child.signalCode !== null && child.signalCode !== undefined);
 
   const isManagedOpenCodeProcessAlive = () => {
     const child = state.openCodeProcess;
@@ -365,6 +367,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     return {
       url,
       pid: child.pid || null,
+      get exitCode() {
+        return child.exitCode;
+      },
+      get signalCode() {
+        return child.signalCode;
+      },
       async close() {
         await closeManagedOpenCodeChild(child);
       },
