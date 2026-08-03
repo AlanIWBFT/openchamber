@@ -352,6 +352,12 @@ export type SessionUIState = {
   debugSessionMessages: (sessionId: string) => Promise<void>
   pollForTokenUpdates: () => void
   setSessionDirectory: (sessionId: string, directory: string | null) => void
+  /**
+   * Replace a guessed selection directory with the authoritative one once sync
+   * has indexed the session. Safe to call at any time: it only ever promotes a
+   * guess, never overrides a confirmed selection.
+   */
+  adoptAuthoritativeSessionDirectory: (sessionId?: string) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -1737,6 +1743,26 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
   pollForTokenUpdates: () => {
     // Handled by sync system's SSE stream
+  },
+
+  adoptAuthoritativeSessionDirectory: (sessionId) => {
+    const target = sessionId ?? get().currentSessionId
+    // Only a guess is promoted. A confirmed selection outranks anything sync
+    // learns later, and a selection that has since moved on must not be
+    // rewritten by a directory that finished bootstrapping in the background.
+    if (!target || target !== guessedSelectionSessionId) return
+    if (target !== get().currentSessionId) return
+
+    const authoritative = getAuthoritativeSessionDirectory(target)
+    if (!authoritative) return
+
+    // The selection stops being a guess even when the directory is unchanged:
+    // the value has now been confirmed by the store that owns the session.
+    guessedSelectionSessionId = null
+    if (authoritative !== get().currentSessionDirectory) {
+      set({ currentSessionDirectory: authoritative })
+    }
+    writeRuntimeSessionMemory(runtimeMemoryKey(), { sessionId: target, directory: authoritative })
   },
 
   setSessionDirectory: (sessionId, directory) => {
