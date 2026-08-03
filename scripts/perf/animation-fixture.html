@@ -41,6 +41,56 @@
   .v-box-shadow .cell { animation: oc-box-shadow 1.5s linear infinite; }
   .v-filter svg { animation: oc-filter 1.5s linear infinite; }
   .v-width svg { animation: oc-width 1.5s linear infinite; }
+
+  /*
+    Context variants. The same composited animation can stop being composited
+    because of an ancestor, so these reproduce the surroundings a spinner
+    actually lives in. Each keeps the identical transform animation and varies
+    only the context.
+  */
+  .v-ctx-button .cell svg,
+  .v-ctx-filter .cell svg,
+  .v-ctx-overflow .cell svg,
+  .v-ctx-backdrop .cell svg,
+  .v-ctx-opacity .cell svg,
+  .v-ctx-transformed-parent .cell svg,
+  .v-ctx-sibling-translatez .cell svg,
+  .v-ctx-currentcolor .cell svg { animation: oc-transform-rotate 1s linear infinite; }
+
+  /* Mirrors the repository rule that gives every other button SVG a GPU hint. */
+  .v-ctx-sibling-translatez button svg:not(.spin) { transform: translateZ(0); }
+
+  .v-ctx-filter .cell { filter: brightness(1.05); }
+  .v-ctx-overflow .cell { overflow: hidden; }
+  .v-ctx-backdrop .cell { backdrop-filter: blur(2px); }
+  .v-ctx-opacity .cell { opacity: 0.9; }
+  .v-ctx-transformed-parent .cell { transform: translateY(1px); }
+  .v-ctx-currentcolor .cell { color: color-mix(in srgb, #8ab 60%, #345); }
+  .v-ctx-currentcolor .cell svg { stroke: currentColor; }
+
+  /*
+    The repository's own spinner rules, isolated. The application overrides
+    Tailwind's animate-spin with these, so each piece is measured separately to
+    find which one stops the rotation being composited.
+  */
+  @keyframes oc-webkit-spin {
+    0% { transform: translateZ(0) rotate(0deg); }
+    100% { transform: translateZ(0) rotate(360deg); }
+  }
+  .v-app-keyframes svg { animation: oc-webkit-spin 1s linear infinite; }
+  .v-app-fillbox svg {
+    animation: oc-transform-rotate 1s linear infinite;
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+  }
+  .v-app-full svg {
+    animation: oc-webkit-spin 1s linear infinite;
+    will-change: transform;
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+    overflow: visible;
+    display: block;
+  }
 </style>
 </head>
 <body>
@@ -49,16 +99,34 @@
   const SPINNER = '<svg viewBox="0 0 24 24" fill="none" stroke="#8ab" stroke-width="2">'
     + '<circle cx="12" cy="12" r="9" stroke-opacity=".25"/><path d="M21 12a9 9 0 0 0-9-9"/></svg>';
   const params = new URLSearchParams(location.search);
+  // Style recalculation cost depends on how much document there is to walk, so
+  // a variant that is free on a small page is not proven free in a real one.
+  const filler = Math.max(0, Number(params.get('filler') || 0));
   const variant = params.get('variant') || 'none';
   const count = Math.max(1, Number(params.get('count') || 2));
   const grid = document.getElementById('grid');
   grid.className = 'grid v-' + variant;
   const usesWrapper = variant.endsWith('-wrapper');
+  const usesButton = variant === 'ctx-button' || variant === 'ctx-sibling-translatez';
   for (let index = 0; index < count; index += 1) {
     const cell = document.createElement('div');
     cell.className = 'cell';
-    cell.innerHTML = usesWrapper ? '<span class="wrap">' + SPINNER + '</span>' : SPINNER;
+    const spinner = SPINNER.replace('<svg', '<svg class="spin"');
+    if (usesWrapper) cell.innerHTML = '<span class="wrap">' + SPINNER + '</span>';
+    else if (usesButton) cell.innerHTML = '<button>' + spinner + '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="#456"/></svg></button>';
+    else cell.innerHTML = SPINNER;
     grid.appendChild(cell);
+  }
+
+  if (filler > 0) {
+    const container = document.createElement('div');
+    container.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;';
+    let markup = '';
+    for (let index = 0; index < filler; index += 1) {
+      markup += '<div class="filler-row"><span>row ' + index + '</span><em>x</em></div>';
+    }
+    container.innerHTML = markup;
+    document.body.appendChild(container);
   }
 </script>
 </body>

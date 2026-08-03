@@ -47,6 +47,14 @@ const DEFAULT_VARIANTS = [
   "box-shadow",
   "filter",
   "width",
+  "ctx-button",
+  "ctx-sibling-translatez",
+  "ctx-filter",
+  "ctx-overflow",
+  "ctx-backdrop",
+  "ctx-opacity",
+  "ctx-transformed-parent",
+  "ctx-currentcolor",
 ]
 
 const HELP = `Usage: bun run profile:animation -- [options]
@@ -58,6 +66,8 @@ Options:
   --count <n>          Animated elements per variant (default: 2)
   --duration <seconds> Measurement window per variant (default: 10)
   --settle <seconds>   Wait before measuring each variant (default: 3)
+  --filler <n>         Static elements added to the page, to measure a variant
+                       against a realistically sized document (default: 0)
   --chrome <path>      Chrome/Chromium executable
   --profile-dir <path> Reusable isolated Chrome profile
   --headed             Show the browser (default: headless)
@@ -73,6 +83,7 @@ const parseArgs = (argv) => {
     count: 2,
     duration: 10,
     settle: 3,
+    filler: 0,
     chrome: null,
     profileDir: join(homedir(), ".openchamber", "browser-profile-google-chrome"),
     headless: true,
@@ -87,6 +98,7 @@ const parseArgs = (argv) => {
     else if (value === "--count") options.count = Number(argv[++index])
     else if (value === "--duration") options.duration = Number(argv[++index])
     else if (value === "--settle") options.settle = Number(argv[++index])
+    else if (value === "--filler") options.filler = Number(argv[++index])
     else if (value === "--chrome") options.chrome = argv[++index]
     else if (value === "--profile-dir") options.profileDir = argv[++index]
     else throw new Error(`Unknown option: ${value}`)
@@ -170,7 +182,7 @@ const main = async () => {
 
     console.log(`Measuring ${options.variants.length} variants, ${options.count} element(s) each, ${options.duration}s per variant.\n`)
     for (const variant of options.variants) {
-      const url = `http://127.0.0.1:${fixturePort}/?variant=${encodeURIComponent(variant)}&count=${options.count}`
+      const url = `http://127.0.0.1:${fixturePort}/?variant=${encodeURIComponent(variant)}&count=${options.count}&filler=${options.filler}`
       const measured = await measureVariant(client, url, options)
       results.push({ variant, ...measured })
       if (!options.json) {
