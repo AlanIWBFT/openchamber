@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { stripAppImageArgv0Leak } from './inherited-env.js';
+import {
+  clearAppImageArgv0FromProcessEnv,
+  resolveLinuxPtyLaunch,
+  stripAppImageArgv0Leak,
+} from './inherited-env.js';
 
 describe('stripAppImageArgv0Leak', () => {
   it('removes ARGV0 from a child env object', () => {
@@ -25,5 +29,37 @@ describe('stripAppImageArgv0Leak', () => {
   it('tolerates nullish env values', () => {
     expect(stripAppImageArgv0Leak(null)).toBeNull();
     expect(stripAppImageArgv0Leak(undefined)).toBeUndefined();
+  });
+});
+
+describe('clearAppImageArgv0FromProcessEnv', () => {
+  it('removes ARGV0 from process.env', () => {
+    const previous = process.env.ARGV0;
+    process.env.ARGV0 = '/path/to/OpenChamber.AppImage';
+    try {
+      clearAppImageArgv0FromProcessEnv();
+      expect(process.env.ARGV0).toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.ARGV0;
+      else process.env.ARGV0 = previous;
+    }
+  });
+});
+
+describe('resolveLinuxPtyLaunch', () => {
+  it('wraps the shell with env -u ARGV0 on Linux', () => {
+    if (process.platform !== 'linux') return;
+    expect(resolveLinuxPtyLaunch('/bin/zsh', ['-l'])).toEqual({
+      executable: expect.stringMatching(/\/env$/),
+      args: ['-u', 'ARGV0', '/bin/zsh', '-l'],
+    });
+  });
+
+  it('leaves non-Linux launches unchanged', () => {
+    if (process.platform === 'linux') return;
+    expect(resolveLinuxPtyLaunch('/bin/zsh', ['-l'])).toEqual({
+      executable: '/bin/zsh',
+      args: ['-l'],
+    });
   });
 });

@@ -1374,7 +1374,7 @@ const loadShellEnv = () => {
 
 // Merge the user's login-shell env (PATH, etc.) into this process before we
 import { pathLooksUserConfigured, mergePathValues } from '@openchamber/web/server/lib/opencode/path-utils.js';
-import { stripAppImageArgv0Leak } from '@openchamber/web/server/lib/inherited-env.js';
+import { clearAppImageArgv0FromProcessEnv } from '@openchamber/web/server/lib/inherited-env.js';
 
 // import/start the server in-process. The server and its children (opencode
 // CLI, git, etc.) inherit process.env directly now — there is no sidecar
@@ -1382,7 +1382,7 @@ import { stripAppImageArgv0Leak } from '@openchamber/web/server/lib/inherited-en
 const inheritUserShellEnv = () => {
   // Clear before probing/merging so login-shell snapshots and children never
   // inherit the AppImage path as argv[0] via zsh's ARGV0 parameter (#2588).
-  stripAppImageArgv0Leak(process.env);
+  clearAppImageArgv0FromProcessEnv();
 
   const shellEnv = loadShellEnv();
   if (!shellEnv) return;
