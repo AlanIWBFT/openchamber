@@ -22,6 +22,7 @@ export const registerSkillRoutes = (app, dependencies) => {
     updateSkill,
     deleteSkill,
     renameSkill,
+    isManagedSkillPath,
     readSkillSupportingFile,
     writeSkillSupportingFile,
     deleteSkillSupportingFile,
@@ -213,9 +214,15 @@ export const registerSkillRoutes = (app, dependencies) => {
 
       const enrichedSkills = skills.map((skill) => {
         const sources = getSkillSources(skill.name, directory, skill);
+        const skillPath = typeof skill.path === 'string' ? skill.path : null;
         return {
           ...skill,
-          sources
+          sources,
+          renamable: Boolean(
+            skillPath
+            && skillPath !== '<built-in>'
+            && isManagedSkillPath(skillPath, directory)
+          ),
         };
       });
 

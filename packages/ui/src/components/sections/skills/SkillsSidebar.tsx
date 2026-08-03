@@ -27,7 +27,6 @@ import { SidebarGroup } from '@/components/sections/shared/SidebarGroup';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { SETTINGS_PANEL_TITLE_CLASS } from '@/components/sections/shared/SettingsSection';
-import { isManagedSkillFilesystemPath } from '@/components/sections/skills/skillLocations';
 
 interface SkillsSidebarProps {
   onItemSelect?: () => void;
@@ -37,7 +36,7 @@ const BUILT_IN_SKILL_LOCATION = '<built-in>';
 
 const isBuiltInSkill = (skill: DiscoveredSkill | null | undefined): boolean => skill?.path === BUILT_IN_SKILL_LOCATION;
 const isRenamableSkill = (skill: DiscoveredSkill | null | undefined): boolean => (
-  !!skill && !isBuiltInSkill(skill) && isManagedSkillFilesystemPath(skill.path)
+  !!skill && !isBuiltInSkill(skill) && skill.renamable === true
 );
 
 export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) => {

@@ -352,6 +352,7 @@ an authoritative loopback callback URL even when OpenChamber binds port `0`.
 - `registerSkillRoutes(app, dependencies)`: registers skills-related routes:
   - Skills config CRUD and metadata under `/api/config/skills*`
   - Skill rename via `PATCH /api/config/skills/:name` with `{ renameTo }` (directory rename preserves `SKILL.md` body and supporting files; restricted to managed skill roots under `.opencode/skills|skill`, `.claude/skills`, and `.agents/skills`)
+  - Skill list responses include authoritative `renamable` derived from the same managed-root policy used by rename
   - Skills catalog listing/source pagination, scan, and install routes
   - Supporting skill file read/write/delete routes
 

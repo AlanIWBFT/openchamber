@@ -224,7 +224,6 @@ describe('skills', () => {
     const managedDir = path.join(projectRoot, '.opencode', 'skills', 'managed-skill');
     const conflictDir = path.join(projectRoot, '.opencode', 'skills', 'taken-name');
     const mismatchDir = path.join(projectRoot, '.opencode', 'skills', 'folder-name');
-    const unmanagedDir = path.join(projectRoot, 'custom-skills', 'unmanaged-skill');
     const cacheStamp = `oc-rename-${Date.now()}`;
     const cacheDir = path.join(os.homedir(), '.cache', 'opencode', 'skills', cacheStamp, 'cache-skill');
 
@@ -269,21 +268,6 @@ describe('skills', () => {
           '---',
           '',
           'Mismatch body',
-          '',
-        ].join('\n'),
-        'utf8',
-      );
-
-      await fsPromises.mkdir(unmanagedDir, { recursive: true });
-      await fsPromises.writeFile(
-        path.join(unmanagedDir, 'SKILL.md'),
-        [
-          '---',
-          'name: unmanaged-skill',
-          'description: Unmanaged',
-          '---',
-          '',
-          'Unmanaged body',
           '',
         ].join('\n'),
         'utf8',

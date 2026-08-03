@@ -734,4 +734,5 @@ export {
   updateSkill,
   deleteSkill,
   renameSkill,
+  isManagedSkillPath,
 };

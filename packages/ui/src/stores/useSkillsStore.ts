@@ -70,6 +70,8 @@ export interface DiscoveredSkill {
   description?: string;
   /** Domain folder parsed from file path, e.g. "automation-ai", "lark-ecosystem" */
   group?: string;
+  /** Authoritative server flag: skill lives under a managed root and can be renamed in place. */
+  renamable?: boolean;
 }
 
 /** Parse the domain group folder from a skill file path.
@@ -93,6 +95,7 @@ interface RawSkillResponse {
   path: string;
   scope?: SkillScope;
   source?: SkillSource;
+  renamable?: boolean;
   sources?: {
     md?: {
       description?: string;
@@ -237,6 +240,7 @@ export const useSkillsStore = create<SkillsStore>()(
                   source: s.source ?? 'opencode',
                   description: s.sources?.md?.description || '',
                   group: parseSkillGroup(s.path),
+                  renamable: s.renamable === true,
                 }));
 
                 set({ skills: configSkills, isLoading: false });

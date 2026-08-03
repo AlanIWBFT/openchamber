@@ -2885,6 +2885,8 @@ const isManagedSkillPath = (skillMdPath: string, workingDirectory?: string): boo
   return getManagedSkillRoots(workingDirectory).some((root) => isPathInside(skillDir, root));
 };
 
+export { isManagedSkillPath };
+
 export const renameSkill = (oldName: string, newName: string, workingDirectory?: string): void => {
   ensureSkillDirs();
   validateSkillName(newName);

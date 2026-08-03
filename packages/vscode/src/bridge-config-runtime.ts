@@ -26,6 +26,7 @@ import {
   updateSkill,
   deleteSkill,
   renameSkill,
+  isManagedSkillPath,
   readSkillSupportingFile,
   writeSkillSupportingFile,
   deleteSkillSupportingFile,
@@ -653,7 +654,21 @@ export async function handleConfigBridgeMessage(
 
       if (!name && normalizedMethod === 'GET') {
         const skills = await resolveDiscoveredSkills(deps, ctx, workingDirectory);
-        return { id, type, success: true, data: { skills } };
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            skills: skills.map((skill) => ({
+              ...skill,
+              renamable: Boolean(
+                skill.path
+                && skill.path !== '<built-in>'
+                && isManagedSkillPath(skill.path, workingDirectory)
+              ),
+            })),
+          },
+        };
       }
 
       const skillName = typeof name === 'string' ? name.trim() : '';
