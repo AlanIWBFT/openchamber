@@ -80,7 +80,9 @@ export const summarizeLongTasks = (traceEvents, thresholdMs = 50) => {
     taskCount: durations.length,
     longTaskCount: long.length,
     longTaskTotalMs: round(long.reduce((total, duration) => total + duration, 0)),
-    longestTaskMs: round(Math.max(0, ...durations)),
+    // Spreading a large array into Math.max overflows the call stack; a trace
+    // can easily carry hundreds of thousands of tasks.
+    longestTaskMs: round(durations.reduce((max, duration) => Math.max(max, duration), 0)),
     taskP95Ms: percentile(durations, 0.95),
     taskP99Ms: percentile(durations, 0.99),
   }
