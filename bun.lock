@@ -95,7 +95,7 @@
     },
     "packages/electron": {
       "name": "@openchamber/electron",
-      "version": "1.17.1",
+      "version": "1.17.2",
       "dependencies": {
         "@openchamber/web": "workspace:*",
         "better-sqlite3": "^12.10.0",
@@ -132,7 +132,7 @@
     },
     "packages/ui": {
       "name": "@openchamber/ui",
-      "version": "1.17.1",
+      "version": "1.17.2",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
         "@base-ui/react": "^1.4.0",
@@ -237,7 +237,7 @@
     },
     "packages/vscode": {
       "name": "openchamber",
-      "version": "1.17.1",
+      "version": "1.17.2",
       "dependencies": {
         "@openchamber/ui": "workspace:*",
         "@opencode-ai/sdk": "1.18.11",
@@ -260,7 +260,7 @@
     },
     "packages/web": {
       "name": "@openchamber/web",
-      "version": "1.17.1",
+      "version": "1.17.2",
       "bin": {
         "openchamber": "./bin/cli.js",
       },
@@ -352,6 +352,7 @@
   ],
   "patchedDependencies": {
     "@tanstack/virtual-core@3.17.3": "bun-patches/@tanstack+virtual-core+3.17.3.patch",
+    "bun-pty@0.4.8": "bun-patches/bun-pty@0.4.8.patch",
   },
   "overrides": {
     "@codemirror/language": "6.12.2",

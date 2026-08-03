@@ -160,8 +160,8 @@ describe('terminal runtime', () => {
         expect(harness.processes[0].shell).toMatch(/\/env$/);
         expect(harness.processes[0].args.slice(0, 3)).toEqual(['-u', 'ARGV0', expect.any(String)]);
       }
-      harness.processes[0].emitData('\u001b[?2031h\u001b]10;?\u0007\u001b]11;?\u0007');
-      expect(harness.processes[0].writes).toEqual(['\u001b]10;rgb:1b1b/1b1b/1b1b\u001b\\', '\u001b]11;rgb:fafa/f8f8/f0f0\u001b\\']);
+      harness.processes[0].emitData('\u001b[?2031h\u001b]10;?\u0007\u001b]11;?\u0007\u001b[0c');
+      expect(harness.processes[0].writes).toEqual(['\u001b]10;rgb:1b1b/1b1b/1b1b\u001b\\', '\u001b]11;rgb:fafa/f8f8/f0f0\u001b\\', '\u001b[?1;2c']);
 
       const appearance = createResponse();
       harness.routes.post.get('/api/terminal/:sessionId/appearance')({ params: { sessionId: 'term-1' }, body: { themeMode: 'dark' } }, appearance);
