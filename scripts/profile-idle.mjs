@@ -29,6 +29,7 @@ import process from "node:process"
 import { CdpClient, createPageTarget, evaluateValue, launchChrome, reservePort, resolveChrome, wait } from "./perf/cdp.mjs"
 import { buildIdleProbeSource, IDLE_PROBE_GLOBAL } from "./perf/idle-probe.mjs"
 import { summarizeCpuProfile } from "./perf/cpu-profile.mjs"
+import { growthPerSecond, metricMap, round } from "./perf/metrics.mjs"
 
 const HELP = `Usage: bun run profile:idle -- [options]
 
@@ -117,8 +118,6 @@ const parseArgs = (argv) => {
   return options
 }
 
-const metricMap = (metrics = []) => Object.fromEntries(metrics.map(({ name, value }) => [name, value]))
-
 /**
  * Mirrors `useUIStore`'s context-panel tab identity rules so a seeded tab is
  * indistinguishable from one the user opened. Only `file` and `preview` key
@@ -194,23 +193,6 @@ const seedContextPanel = async (client, panels, sessionId) => {
   await evaluateValue(client, `localStorage.setItem("ui-store", ${JSON.stringify(JSON.stringify(parsed))})`)
   console.log(`Context panel seeded for ${normalized}: ${tabs.map((tab) => tab.id).join(", ")}`)
 }
-
-/** Least-squares slope of a sampled series, in units per second. */
-const growthPerSecond = (samples, key) => {
-  if (samples.length < 2) return 0
-  const meanTime = samples.reduce((total, sample) => total + sample.elapsedSeconds, 0) / samples.length
-  const meanValue = samples.reduce((total, sample) => total + (sample[key] ?? 0), 0) / samples.length
-  let covariance = 0
-  let variance = 0
-  for (const sample of samples) {
-    const timeDelta = sample.elapsedSeconds - meanTime
-    covariance += timeDelta * ((sample[key] ?? 0) - meanValue)
-    variance += timeDelta * timeDelta
-  }
-  return variance === 0 ? 0 : Number((covariance / variance).toFixed(3))
-}
-
-const round = (value, digits = 2) => Number(Number(value ?? 0).toFixed(digits))
 
 const REPORTED_METRICS = [
   { key: "mainThreadBusyPercent", label: "Main-thread busy", unit: "%", lowerIsBetter: true },

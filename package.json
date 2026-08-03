@@ -82,7 +82,8 @@
     "release:test": "./scripts/test-release-build.sh",
     "release:test:intel": "./scripts/test-release-build.sh x86_64",
     "release:test:arm": "./scripts/test-release-build.sh aarch64",
-    "profile:idle": "node scripts/profile-idle.mjs"
+    "profile:idle": "node scripts/profile-idle.mjs",
+    "profile:session": "node scripts/profile-session.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",
