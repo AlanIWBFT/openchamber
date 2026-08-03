@@ -11,6 +11,30 @@ import { normalizeWindowsDriveLetter } from './pathUtils';
 import { resolveWorkingDirectoryChange } from './workingDirectoryChange';
 import { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses } from './opencodeProcessRegistry';
 
+/** Keep in sync with packages/web/server/lib/opencode/provider-env-aliases.js */
+const GOOGLE_API_KEY_ALIASES = [
+  'GOOGLE_GENERATIVE_AI_API_KEY',
+  'GOOGLE_API_KEY',
+  'GEMINI_API_KEY',
+] as const;
+
+function applyProviderEnvAliases(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const next: NodeJS.ProcessEnv = { ...env };
+  const googleValue = GOOGLE_API_KEY_ALIASES
+    .map((key) => next[key])
+    .find((value) => typeof value === 'string' && value.trim().length > 0);
+
+  if (googleValue) {
+    for (const key of GOOGLE_API_KEY_ALIASES) {
+      if (typeof next[key] !== 'string' || next[key]!.trim().length === 0) {
+        next[key] = googleValue;
+      }
+    }
+  }
+
+  return next;
+}
+
 const t = vscode.l10n.t;
 
 const READY_CHECK_TIMEOUT_MS = 30000;
@@ -667,7 +691,7 @@ async function spawnManagedOpenCodeServer(
   const launch = resolveWindowsLaunchSpec(binary, ['serve', '--hostname', '127.0.0.1', '--port', String(port)]);
   const child = spawn(launch.binary, launch.args, {
     cwd: workingDirectory,
-    env: { ...process.env },
+    env: applyProviderEnvAliases({ ...process.env }),
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
