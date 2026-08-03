@@ -3,7 +3,7 @@ import fs from 'fs';
 import fsPromises from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { getSkillSources, mergeDiscoveredSkills, renameSkill } from './skills.js';
+import { discoverSkills, getSkillSources, mergeDiscoveredSkills, renameSkill } from './skills.js';
 
 describe('skills', () => {
   it('merges locally discovered skills missing from OpenCode live discovery', () => {
@@ -23,6 +23,43 @@ describe('skills', () => {
       'existing-agent-skill',
       'new-agent-skill',
     ]);
+  });
+
+  it('discovers repository-local .agents skills for the project directory', async () => {
+    const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-project-agents-'));
+    const skillDir = path.join(tempRoot, '.agents', 'skills', 'repo-local-skill');
+    const skillPath = path.join(skillDir, 'SKILL.md');
+
+    try {
+      await fsPromises.mkdir(skillDir, { recursive: true });
+      await fsPromises.mkdir(path.join(tempRoot, '.git'));
+      await fsPromises.writeFile(
+        skillPath,
+        [
+          '---',
+          'name: repo-local-skill',
+          'description: Repository-local agents skill',
+          '---',
+          '',
+          'Use this skill in this repository.',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+
+      const discovered = discoverSkills(tempRoot);
+      const match = discovered.find((skill) => skill.name === 'repo-local-skill');
+
+      expect(match).toEqual({
+        name: 'repo-local-skill',
+        path: skillPath,
+        scope: 'project',
+        source: 'agents',
+        description: 'Repository-local agents skill',
+      });
+    } finally {
+      await fsPromises.rm(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it('resolves built-in OpenCode skill content without parsing virtual locations as files', () => {

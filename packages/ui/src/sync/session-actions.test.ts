@@ -245,6 +245,7 @@ mock.module("./session-deletion-cleanup", () => ({
 }))
 
 mock.module("./sync-refs", () => ({
+  getSyncSessionDirectory: () => null,
   registerSessionDirectory: (sessionID: string, directory: string) => {
     registeredSessionDirectories.push({ sessionID, directory })
   },
