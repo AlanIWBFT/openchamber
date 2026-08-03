@@ -207,7 +207,7 @@ The discriminator is whether the server confirmed the path, not whether the valu
 
 | Source | Meaning |
 |---|---|
-| `authoritative` | The child store that actually holds the session, then its own record |
+| `authoritative` | The session record's own directory, then a child store that holds it |
 | `selected` | Server-confirmed directory captured at selection; a guessed one is never passed |
 | `attachment` | Worktree attachment recorded by this client; the *requested* path |
 | `worktree-metadata` | Worktree captured when the session was created in one; the *requested* path |
@@ -215,7 +215,7 @@ The discriminator is whether the server confirmed the path, not whether the valu
 
 Rules:
 
-1. `getSyncSessionDirectory()` is the authoritative session→directory mapping: a session lives in exactly the child store for its directory, whether or not the server populated `session.directory`. `null` means "not indexed yet", never "no directory".
+1. Ownership comes from the session record's own `directory`. `getSyncSessionDirectory()` reports *containment*, not ownership, and is only the fallback for a record without a directory: a project's session list includes the sessions of its worktrees so the sidebar can group them, so the parent repository holds worktree sessions too, and reading ownership from membership routes a worktree session to its parent. `null` means "not indexed yet", never "no directory".
 2. `attachment` and `worktreeMetadata` hold the worktree path this client asked for, before the server canonicalized it. They are a hint for a session sync has not indexed yet, never a correction of a confirmed directory — otherwise a stale local path re-creates the very mismatch this precedence exists to prevent.
 3. Never persist or rank a guessed directory. `selectSession` may fall back to the active directory to keep routing usable, but that value is not written to runtime memory, not written to the last-active snapshot, and not passed as `selected` — a persisted guess outlives the race that produced it and survives reloads and restarts.
 4. Components must not read `currentSessionDirectory` to build request or queue keys; use `getDirectoryForSession()` so every consumer resolves identically.
