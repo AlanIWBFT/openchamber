@@ -49,6 +49,11 @@ import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
 import { McpIcon } from '@/components/icons/McpIcon';
 import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import { PendingOpenCodeRestartAction } from '@/components/views/PendingOpenCodeRestartAction';
+import {
+  selectPendingOpenCodeRestartCount,
+  usePendingOpenCodeRestartStore,
+} from '@/stores/usePendingOpenCodeRestartStore';
 import {
   SETTINGS_PAGE_METADATA,
   getSettingsPageMeta,
@@ -235,6 +240,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const { t } = useI18n();
   const deviceInfo = useDeviceInfo();
   const isMobile = forceMobile ?? deviceInfo.isMobile;
+  const pendingRestartCount = usePendingOpenCodeRestartStore(selectPendingOpenCodeRestartCount);
 
   const settingsPageRaw = useUIStore((state) => state.settingsPage);
   const isSettingsDialogOpen = useUIStore((state) => state.isSettingsDialogOpen);
@@ -974,7 +980,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         {/* Footer */}
         <div className="overflow-hidden transition-opacity duration-150 opacity-100">
           <div className="border-t border-border bg-background px-4 py-1 space-y-0.5 sm:bg-sidebar">
-            {!runtimeCtx.isVSCode && (
+            {!runtimeCtx.isVSCode && pendingRestartCount <= 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -984,7 +990,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
                       'text-sm font-semibold text-sidebar-foreground/90',
                       'hover:text-sidebar-foreground hover:bg-interactive-hover',
                     )}
-                    onClick={() => void reloadOpenCodeConfiguration({ message: 'Restarting OpenCode…', mode: 'projects', scopes: ['all'] }).catch(() => undefined)}
+                    onClick={() => {
+                      void (async () => {
+                        try {
+                          await reloadOpenCodeConfiguration({
+                            message: t('settings.view.pendingRestart.applying'),
+                            mode: 'projects',
+                            scopes: ['all'],
+                          });
+                          usePendingOpenCodeRestartStore.getState().clear();
+                        } catch {
+                          // ignore
+                        }
+                      })();
+                    }}
                   >
                     <Icon name="restart" className="h-4 w-4 shrink-0" />
                     <span>{t('settings.view.actions.reloadOpenCode')}</span>
@@ -1113,6 +1132,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
             </button>
           )}
 
+          <PendingOpenCodeRestartAction compact className="max-w-[min(100%,14rem)]" />
+
           {onClose && (
             <button
               type="button"
@@ -1140,8 +1161,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
             </div>
           )}
 
-      {onClose && (
-        <div className={cn('absolute right-0.5 z-50', isWindowed ? 'top-0.5' : 'top-1')}>
+      <div className={cn('absolute right-0.5 z-50 flex items-center gap-1.5', isWindowed ? 'top-0.5' : 'top-1')}>
+        <PendingOpenCodeRestartAction compact className="max-w-[min(100%,16rem)]" />
+        {onClose && (
           <button
             type="button"
             onClick={onClose}
@@ -1151,8 +1173,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
           >
             <Icon name="close" className="h-5 w-5" />
           </button>
-        </div>
-      )}
+        )}
+      </div>
         </>
       )}
 

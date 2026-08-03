@@ -17,7 +17,7 @@ import {
 import { toast } from '@/components/ui';
 import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import { noteDeferredRestartFromPayload, recordDeferredOpenCodeRestart } from '@/lib/opencode/deferredRestart';
 import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
@@ -351,7 +351,7 @@ export const ProvidersPage: React.FC = () => {
 
       toast.success(t('settings.providers.page.toast.apiKeySaved'));
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      recordDeferredOpenCodeRestart('providers', { id: providerId });
       setSelectedProvider(providerId);
     } catch (error) {
       console.error('Failed to save API key:', error);
@@ -444,7 +444,7 @@ export const ProvidersPage: React.FC = () => {
       toast.success(t('settings.providers.page.toast.oauthCompleted'));
       setOauthCodes((prev) => ({ ...prev, [codeKey]: '' }));
       setPendingOAuth(null);
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      recordDeferredOpenCodeRestart('providers', { id: providerId });
       setSelectedProvider(providerId);
     } catch (error) {
       console.error('Failed to complete OAuth flow:', error);
@@ -490,7 +490,9 @@ export const ProvidersPage: React.FC = () => {
       }
 
       toast.success(t('settings.providers.page.toast.providerDisconnected'));
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      if (!noteDeferredRestartFromPayload(payload, 'providers', { id: providerId })) {
+        recordDeferredOpenCodeRestart('providers', { id: providerId });
+      }
     } catch (error) {
       console.error('Failed to disconnect provider:', error);
       toast.error(t('settings.providers.page.toast.providerDisconnectFailed'));
