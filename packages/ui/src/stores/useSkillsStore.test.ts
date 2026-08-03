@@ -100,4 +100,20 @@ describe('useSkillsStore directory resolution', () => {
       group: undefined,
     }]);
   });
+
+  test('invalidateSkillsLoadCache() with no argument clears the active-project cache key used by loadSkills', async () => {
+    expect(await useSkillsStore.getState().loadSkills()).toBe(true);
+    expect(runtimeFetchCalls.length).toBe(1);
+
+    // Wrong key: client-directory-first null maps to __default__, not the active project.
+    invalidateSkillsLoadCache(null);
+    expect(await useSkillsStore.getState().loadSkills()).toBe(true);
+    expect(runtimeFetchCalls.length).toBe(1);
+
+    // Default resolution must match loadSkills (active project first).
+    invalidateSkillsLoadCache();
+    expect(await useSkillsStore.getState().loadSkills()).toBe(true);
+    expect(runtimeFetchCalls.length).toBe(2);
+    expect(runtimeFetchCalls[1]?.url).toContain(`directory=${encodeURIComponent(activeProjectPath)}`);
+  });
 });
