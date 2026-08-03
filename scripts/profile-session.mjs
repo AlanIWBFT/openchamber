@@ -47,6 +47,10 @@ Options:
   --port <port>            OpenChamber CLI port (default: from --url)
   --dir <path>             Session directory (default: repository root)
   --session <id>           Reuse this session instead of creating one
+  --view-session <id>      Display this session while the prompt streams into
+                           another one. Measures what an idle session costs
+                           while a different session is active in the
+                           background.
   --prompt <text>          Prompt to send (default: a long markdown+code answer)
   --model <provider/model> Model override (default: configured selection)
   --agent <id>             Agent override (default: configured selection)
@@ -74,6 +78,7 @@ const parseArgs = (argv) => {
     port: null,
     dir: repoRoot,
     session: null,
+    viewSession: null,
     prompt: DEFAULT_PROMPT,
     model: null,
     agent: null,
@@ -102,6 +107,7 @@ const parseArgs = (argv) => {
     else if (value === "--port") options.port = argv[++index]
     else if (value === "--dir") options.dir = argv[++index]
     else if (value === "--session") options.session = argv[++index]
+    else if (value === "--view-session") options.viewSession = argv[++index]
     else if (value === "--prompt") options.prompt = argv[++index]
     else if (value === "--model") options.model = argv[++index]
     else if (value === "--agent") options.agent = argv[++index]
@@ -333,7 +339,9 @@ const main = async () => {
   }
 
   const target = new URL(options.url)
-  target.searchParams.set("session", sessionId)
+  // The displayed session and the streaming session are deliberately separable:
+  // a background session must not make the foreground one expensive.
+  target.searchParams.set("session", options.viewSession ?? sessionId)
 
   const port = await reservePort()
   const chromeProcess = launchChrome({ chrome, profileDir, port, headless: options.headless })
@@ -488,7 +496,9 @@ const main = async () => {
     // application's own message-list render counters firing.
     const messageListRendered = (streamPerformance?.entries ?? [])
       .some((entry) => entry.metric.startsWith("ui.message_list") && entry.count > 0)
-    const renderedStream = renderedAfter.messages > renderedBefore.messages && messageListRendered
+    const renderedStream = options.viewSession
+      ? true
+      : renderedAfter.messages > renderedBefore.messages && messageListRendered
 
     const renderedCharacterGrowth = renderedAfter.characters - renderedBefore.characters
 
@@ -504,6 +514,7 @@ const main = async () => {
       label: options.label,
       url: options.url,
       sessionId,
+      viewedSessionId: options.viewSession ?? sessionId,
       directory: options.dir,
       prompt: options.prompt,
       model: dispatchResult?.model ? `${dispatchResult.model.providerID}/${dispatchResult.model.modelID}` : options.model,
