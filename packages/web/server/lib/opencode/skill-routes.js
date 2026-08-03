@@ -200,9 +200,33 @@ export const registerSkillRoutes = (app, dependencies) => {
     return null;
   };
 
+  // Prefer an explicit request directory, then soft-fallback to the active
+  // project / lastDirectory so repository-local skills stay visible when the
+  // client omits `directory` (create already used resolveProjectDirectory).
+  const resolveSkillsDirectory = async (req) => {
+    const optional = await resolveOptionalProjectDirectory(req);
+    if (optional.error) {
+      return optional;
+    }
+    if (optional.directory) {
+      return optional;
+    }
+
+    try {
+      const fallback = await resolveProjectDirectory(req);
+      if (fallback.directory) {
+        return { directory: fallback.directory, error: null };
+      }
+    } catch {
+      // ignore — listing user-scoped skills without a project is valid
+    }
+
+    return { directory: null, error: null };
+  };
+
   app.get('/api/config/skills', async (req, res) => {
     try {
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
+      const { directory, error } = await resolveSkillsDirectory(req);
       if (error) {
         return res.status(400).json({ error });
       }
@@ -257,7 +281,7 @@ export const registerSkillRoutes = (app, dependencies) => {
 
   app.get('/api/config/skills/catalog/source', async (req, res) => {
     try {
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
+      const { directory, error } = await resolveSkillsDirectory(req);
       if (error) {
         return res.status(400).json({ ok: false, error: { kind: 'invalidSource', message: error } });
       }
@@ -516,7 +540,7 @@ export const registerSkillRoutes = (app, dependencies) => {
   app.get('/api/config/skills/:name', async (req, res) => {
     try {
       const skillName = req.params.name;
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
+      const { directory, error } = await resolveSkillsDirectory(req);
       if (error) {
         return res.status(400).json({ error });
       }
@@ -544,7 +568,7 @@ export const registerSkillRoutes = (app, dependencies) => {
       if (isUnsafeSkillRelativePath(filePath)) {
         return res.status(400).json({ error: 'Invalid file path' });
       }
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
+      const { directory, error } = await resolveSkillsDirectory(req);
       if (error) {
         return res.status(400).json({ error });
       }
@@ -577,7 +601,7 @@ export const registerSkillRoutes = (app, dependencies) => {
       const { scope, source: skillSource, ...config } = req.body;
       const { directory, error } = scope === SKILL_SCOPE.PROJECT
         ? await resolveProjectDirectory(req)
-        : await resolveOptionalProjectDirectory(req);
+        : await resolveSkillsDirectory(req);
       if (error || (scope === SKILL_SCOPE.PROJECT && !directory)) {
         return res.status(400).json({ error: error || 'Project skill creation requires a directory' });
       }
@@ -599,7 +623,7 @@ export const registerSkillRoutes = (app, dependencies) => {
     try {
       const skillName = req.params.name;
       const updates = req.body;
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
+      const { directory, error } = await resolveSkillsDirectory(req);
       if (error) {
         return res.status(400).json({ error });
       }
@@ -625,7 +649,7 @@ export const registerSkillRoutes = (app, dependencies) => {
         return res.status(400).json({ error: 'Invalid file path' });
       }
       const { content } = req.body;
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
+      const { directory, error } = await resolveSkillsDirectory(req);
       if (error) {
         return res.status(400).json({ error });
       }
@@ -659,7 +683,7 @@ export const registerSkillRoutes = (app, dependencies) => {
       if (isUnsafeSkillRelativePath(filePath)) {
         return res.status(400).json({ error: 'Invalid file path' });
       }
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
+      const { directory, error } = await resolveSkillsDirectory(req);
       if (error) {
         return res.status(400).json({ error });
       }
@@ -689,7 +713,7 @@ export const registerSkillRoutes = (app, dependencies) => {
   app.delete('/api/config/skills/:name', async (req, res) => {
     try {
       const skillName = req.params.name;
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
+      const { directory, error } = await resolveSkillsDirectory(req);
       if (error) {
         return res.status(400).json({ error });
       }
