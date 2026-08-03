@@ -490,9 +490,9 @@ export const ProvidersPage: React.FC = () => {
       }
 
       toast.success(t('settings.providers.page.toast.providerDisconnected'));
-      if (!noteDeferredRestartFromPayload(payload, 'providers', { id: providerId })) {
-        recordDeferredOpenCodeRestart('providers', { id: providerId });
-      }
+      // Only accumulate when the server actually deferred a restart (e.g. auth removed).
+      // removed:false payloads must not create a phantom pending Apply & Restart.
+      noteDeferredRestartFromPayload(payload, 'providers', { id: providerId });
     } catch (error) {
       console.error('Failed to disconnect provider:', error);
       toast.error(t('settings.providers.page.toast.providerDisconnectFailed'));

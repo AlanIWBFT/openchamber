@@ -70,10 +70,12 @@ export async function applyPendingOpenCodeRestart(options?: {
     usePendingOpenCodeRestartStore.getState().clear();
     return { ok: true };
   } catch (error) {
-    usePendingOpenCodeRestartStore.getState().setApplying(false);
     if ((error as Error & { requiresManualRestart?: boolean })?.requiresManualRestart) {
+      // Changes are already on disk; clear the badge after delivering manual-restart guidance.
+      usePendingOpenCodeRestartStore.getState().clear();
       return { ok: false, requiresManualRestart: true };
     }
+    usePendingOpenCodeRestartStore.getState().setApplying(false);
     throw error;
   }
 }

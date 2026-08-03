@@ -243,9 +243,7 @@ export const BehaviorPage: React.FC = () => {
       }
 
       const payload = await response.json().catch(() => null);
-      if (!noteDeferredRestartFromPayload(payload, 'behavior', { id: 'agents-md' })) {
-        recordDeferredOpenCodeRestart('behavior', { id: 'agents-md' });
-      }
+      const deferred = noteDeferredRestartFromPayload(payload, 'behavior', { id: 'agents-md' });
 
       await saveBehaviorSetting({
         globalBehaviorPrompt: content,
@@ -253,7 +251,11 @@ export const BehaviorPage: React.FC = () => {
 
       setPrompt(content);
       setInitialPrompt(content);
-      toast.success(t('settings.view.pendingRestart.saved'));
+      toast.success(
+        deferred
+          ? t('settings.view.pendingRestart.saved')
+          : t('settings.behavior.page.toast.saved'),
+      );
     } catch (error) {
       console.error('Failed to save behavior:', error);
       const message = error instanceof Error ? error.message : t('settings.behavior.page.toast.saveFailed');

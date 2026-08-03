@@ -43,6 +43,20 @@ describe('deferred OpenCode restart helpers', () => {
     expect(usePendingOpenCodeRestartStore.getState().changes[0]?.scope).toBe('mcp');
   });
 
+  test('noteDeferredRestartFromPayload ignores non-deferred payloads', async () => {
+    const { usePendingOpenCodeRestartStore } = await import('@/stores/usePendingOpenCodeRestartStore');
+    usePendingOpenCodeRestartStore.getState().clear();
+
+    const { noteDeferredRestartFromPayload } = await import('./deferredRestart');
+    const noted = noteDeferredRestartFromPayload({
+      requiresReload: false,
+      message: 'Provider was not connected',
+    }, 'providers', { id: 'openai' });
+
+    expect(noted).toBe(false);
+    expect(usePendingOpenCodeRestartStore.getState().changes).toHaveLength(0);
+  });
+
   test('applyPendingOpenCodeRestart clears pending changes after success', async () => {
     mock.module('@/stores/useAgentsStore', () => ({
       reloadOpenCodeConfiguration: async () => undefined,
@@ -56,6 +70,27 @@ describe('deferred OpenCode restart helpers', () => {
     const result = await applyPendingOpenCodeRestart({ message: 'Applying…' });
 
     expect(result).toEqual({ ok: true });
+    expect(usePendingOpenCodeRestartStore.getState().changes).toHaveLength(0);
+    expect(usePendingOpenCodeRestartStore.getState().isApplying).toBe(false);
+  });
+
+  test('applyPendingOpenCodeRestart clears pending changes on manual restart', async () => {
+    mock.module('@/stores/useAgentsStore', () => ({
+      reloadOpenCodeConfiguration: async () => {
+        const error = new Error('Restart your connected OpenCode server');
+        (error as Error & { requiresManualRestart?: boolean }).requiresManualRestart = true;
+        throw error;
+      },
+    }));
+
+    const { usePendingOpenCodeRestartStore } = await import('@/stores/usePendingOpenCodeRestartStore');
+    usePendingOpenCodeRestartStore.getState().clear();
+    usePendingOpenCodeRestartStore.getState().recordChange({ scope: 'mcp', id: 'filesystem' });
+
+    const { applyPendingOpenCodeRestart } = await import('./deferredRestart');
+    const result = await applyPendingOpenCodeRestart({ message: 'Applying…' });
+
+    expect(result).toEqual({ ok: false, requiresManualRestart: true });
     expect(usePendingOpenCodeRestartStore.getState().changes).toHaveLength(0);
     expect(usePendingOpenCodeRestartStore.getState().isApplying).toBe(false);
   });
