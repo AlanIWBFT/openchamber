@@ -930,12 +930,15 @@ html:not(.dark) .chat-scroll {
   }
 }
 
-/* Status row: hide secondary labels before the controls collide. */
-@container status-row (max-width: 30rem) {
+/* Hide the long active todo before it can collide with the changed-files summary. */
+@container status-row (max-width: 38rem) {
   .status-row__active-todo {
     display: none;
   }
+}
 
+/* Hide the secondary changed-files label on narrow mobile layouts. */
+@container status-row (max-width: 30rem) {
   .status-row__changed-label {
     display: none;
   }
