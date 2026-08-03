@@ -351,23 +351,38 @@ const buildGitEnv = async () => {
   return env;
 };
 
-const createGit = async (directory) => {
+const createGit = async (directory, { allowUnsafeSshCommand = false } = {}) => {
   const env = await buildGitEnv();
   const spawnOptions = { windowsHide: true };
   const binary = getGitBinary();
   const hasCustomBinary = typeof binary === 'string' && binary.trim() && binary !== 'git' && binary !== 'git.exe';
-  const unsafe = hasCustomBinary ? { allowUnsafeCustomBinary: true } : undefined;
-  if (!directory) {
-    return createSimpleGit({ env, spawnOptions, binary, unsafe });
+  const unsafe = hasCustomBinary || allowUnsafeSshCommand
+    ? {
+      ...(hasCustomBinary && { allowUnsafeCustomBinary: true }),
+      ...(allowUnsafeSshCommand && { allowUnsafeSshCommand: true }),
+    }
+    : undefined;
+  // Always pin simple-git to an explicit working directory. Omitting baseDir
+  // makes simple-git use process.cwd(), which breaks when the OpenChamber
+  // server was launched from a neutral directory (e.g. $HOME) and the opened
+  // project lives elsewhere — session/project discovery then sees spurious
+  // "not a git repository" errors and can abort enumeration.
+  const baseDir = normalizeDirectoryPath(directory);
+  if (typeof baseDir !== 'string' || !baseDir.trim()) {
+    throw new Error('Git directory is required');
   }
   return createSimpleGit({
-    baseDir: normalizeDirectoryPath(directory),
+    baseDir,
     env,
     spawnOptions,
     binary,
     unsafe,
   });
 };
+
+// Global config reads do not need a repository; use the home directory as a
+// stable baseDir so we never accidentally inherit process.cwd().
+const createGitForGlobalConfig = async () => createGit(os.homedir());
 
 const normalizeDirectoryPath = (value) => {
   if (typeof value !== 'string') {
@@ -469,11 +484,24 @@ const resolveGitRepositoryRoot = async (directoryPath, git) => {
 
 const createRepositoryGitContext = async (directory) => {
   const directoryPath = normalizeDirectoryPath(directory);
+  if (typeof directoryPath !== 'string' || !directoryPath.trim()) {
+    throw new Error('Git directory is required');
+  }
   const directoryGit = await createGit(directoryPath);
   const repoRoot = await resolveGitRepositoryRoot(directoryPath, directoryGit);
   const git = path.resolve(directoryPath) === repoRoot ? directoryGit : await createGit(repoRoot);
   return { directoryPath, directoryGit, repoRoot, git };
 };
+
+/**
+ * Absolute repository root for a directory anywhere inside it. Callers that key
+ * persisted data by repository need this so two directories in the same
+ * repository do not address different records.
+ */
+export async function getRepositoryRoot(directory) {
+  const { repoRoot } = await createRepositoryGitContext(directory);
+  return repoRoot;
+}
 
 const resolveGitInternalPath = async (repoRoot, git, gitPath) => {
   const resolved = await git.raw(['rev-parse', '--git-path', gitPath]);
@@ -767,7 +795,11 @@ const parseGitErrorText = (error) => {
   const stderr = typeof error?.stderr === 'string' ? error.stderr : '';
   const stdout = typeof error?.stdout === 'string' ? error.stdout : '';
   const message = typeof error?.message === 'string' ? error.message : '';
-  return [stderr, stdout, message]
+  // Some runtimes (notably Bun + simple-git GitError) surface the fatal text
+  // primarily via message/toString; keep String(error) as a last resort so
+  // "not a git repository" matching never misses and aborts callers.
+  const fallback = !message && error != null ? String(error) : '';
+  return [stderr, stdout, message, fallback]
     .map((chunk) => String(chunk || '').trim())
     .filter(Boolean)
     .join('\n')
@@ -1942,7 +1974,7 @@ export async function isGitRepository(directory) {
 }
 
 export async function getGlobalIdentity() {
-  const git = await createGit();
+  const git = await createGitForGlobalConfig();
 
   try {
     const userName = await git.getConfig('user.name', 'global').catch(() => null);
@@ -2020,7 +2052,7 @@ export async function hasLocalIdentity(directory) {
 }
 
 export async function setLocalIdentity(directory, profile) {
-  const git = await createGit(directory);
+  const git = await createGit(directory, { allowUnsafeSshCommand: true });
 
   try {
 
@@ -2030,12 +2062,12 @@ export async function setLocalIdentity(directory, profile) {
     const authType = profile.authType || 'ssh';
 
     if (authType === 'ssh' && profile.sshKey) {
-      await git.addConfig(
+      await git.raw([
+        'config',
+        '--local',
         'core.sshCommand',
-        buildSshCommand(profile.sshKey),
-        false,
-        'local'
-      );
+        buildSshCommand(profile.sshKey)
+      ]);
       await git.raw(['config', '--local', '--unset', 'credential.helper']).catch(() => {});
     } else if (authType === 'token' && profile.host) {
       await git.addConfig(
@@ -2062,9 +2094,19 @@ export async function setLocalIdentity(directory, profile) {
 
 export async function getStatus(directory, options = {}) {
   const lightMode = options.mode === 'light';
+  const normalizedDirectory = normalizeDirectoryPath(directory);
+  if (typeof normalizedDirectory !== 'string' || !normalizedDirectory.trim()) {
+    throw new Error('directory is required');
+  }
 
   try {
-    const { directoryPath, repoRoot, git } = await createRepositoryGitContext(directory);
+    // Prefer an explicit non-repo check before simple-git status so a missing
+    // repository never depends on process.cwd() or an opaque GitError shape.
+    if (!(await isGitRepository(normalizedDirectory))) {
+      throw new Error('fatal: not a git repository (or any of the parent directories): .git');
+    }
+
+    const { directoryPath, repoRoot, git } = await createRepositoryGitContext(normalizedDirectory);
 
     // Use -uall to show all untracked files individually, not just directories
     const status = await git.status(['-uall']);
@@ -2318,9 +2360,12 @@ export async function getStatus(directory, options = {}) {
       rebaseInProgress,
     };
   } catch (error) {
-    if (!isNotGitRepositoryError(error) && !isMissingDirectoryError(error)) {
-      console.error('Failed to get Git status:', error);
+    if (isNotGitRepositoryError(error) || isMissingDirectoryError(error)) {
+      // Re-throw a plain Error so route/session callers can match reliably and
+      // continue enumerating other projects instead of treating GitError as 500.
+      throw new Error('fatal: not a git repository (or any of the parent directories): .git');
     }
+    console.error('Failed to get Git status:', error);
     throw error;
   }
 }
@@ -2395,6 +2440,78 @@ export async function getDiff(directory, { path: filePath, staged = false, conte
     console.error('Failed to get Git diff:', error);
     throw error;
   }
+}
+
+/**
+ * Individual untracked file paths, honoring ignore rules.
+ *
+ * Deliberately not `--directory`: collapsed directory entries end in a slash
+ * and are not valid inputs to the per-file diff helpers, so a caller would
+ * silently lose every file inside a new directory. Listing files costs more
+ * entries but each one is usable.
+ *
+ * Callers that only need this list should not pay for `getStatus`, which also
+ * computes ahead/behind, diff stats, and merge state — an order of magnitude
+ * more work for an answer they throw away.
+ */
+export async function listUntrackedPaths(directory) {
+  const { repoRoot } = await createRepositoryGitContext(directory);
+  const result = await runGitCommand(repoRoot, [
+    'ls-files',
+    '--others',
+    '--exclude-standard',
+  ]);
+  if (!result.success) return [];
+  return String(result.stdout || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Diffs for untracked files, produced against an empty tree.
+ *
+ * `getDiff` re-resolves the repository context on every call, which costs an
+ * extra `rev-parse` per file; a walkthrough of a branch with thirty new files
+ * pays that thirty times. This resolves once and reuses it, with a bounded pool
+ * so a repository full of new files cannot flood the process table.
+ *
+ * Returns one entry per input path, in order; unreadable paths yield `''`
+ * rather than failing the batch.
+ */
+export async function getUntrackedDiffs(directory, filePaths = [], { concurrency = 8, contextLines = 3 } = {}) {
+  const paths = (Array.isArray(filePaths) ? filePaths : []).filter((value) => typeof value === 'string' && value);
+  if (paths.length === 0) return [];
+
+  const { directoryPath, directoryGit, repoRoot, git } = await createRepositoryGitContext(directory);
+  const results = new Array(paths.length).fill('');
+  let cursor = 0;
+
+  const worker = async () => {
+    while (cursor < paths.length) {
+      const index = cursor++;
+      try {
+        const fileContext = await resolveGitFileContext(directoryPath, directoryGit, paths[index], repoRoot);
+        const args = ['diff', '--no-color'];
+        if (typeof contextLines === 'number' && !Number.isNaN(contextLines)) {
+          args.push(`-U${Math.max(0, contextLines)}`);
+        }
+        args.push('--no-index', '--', '/dev/null', fileContext.repoPath);
+        try {
+          results[index] = await git.raw(args);
+        } catch (error) {
+          // `git diff --no-index` exits 1 whenever there are differences, which
+          // for a new file is always.
+          results[index] = error?.exitCode === 1 && error?.message ? error.message : '';
+        }
+      } catch {
+        results[index] = '';
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, paths.length) }, worker));
+  return results;
 }
 
 export async function getRangeDiff(directory, { base, head, path: filePath, contextLines = 3 } = {}) {
