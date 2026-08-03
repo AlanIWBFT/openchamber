@@ -2761,7 +2761,7 @@ export const updateSkill = (skillName: string, updates: Record<string, unknown>,
   let mdModified = false;
   
   for (const [field, value] of Object.entries(updates || {})) {
-    if (field === 'scope') continue;
+    if (field === 'scope' || field === 'source' || field === 'targetPath' || field === 'renameTo') continue;
     
     if (field === 'instructions') {
       const normalizedValue = typeof value === 'string' ? value : value == null ? '' : String(value);
@@ -2831,5 +2831,61 @@ export const deleteSkill = (skillName: string, workingDirectory?: string): void 
   
   if (!deleted) {
     throw new Error(`Skill "${skillName}" not found`);
+  }
+};
+
+export const renameSkill = (oldName: string, newName: string, workingDirectory?: string): void => {
+  ensureSkillDirs();
+  validateSkillName(newName);
+
+  if (oldName === newName) {
+    return;
+  }
+
+  const existing = getSkillScope(oldName, workingDirectory);
+  if (!existing.path) {
+    throw new Error(`Skill "${oldName}" not found`);
+  }
+  if (existing.path === BUILT_IN_SKILL_LOCATION || !fs.existsSync(existing.path)) {
+    throw new Error(`Skill "${oldName}" cannot be renamed`);
+  }
+  if (path.basename(existing.path) !== 'SKILL.md') {
+    throw new Error(`Skill "${oldName}" target must be a SKILL.md file`);
+  }
+
+  const conflict = getSkillScope(newName, workingDirectory);
+  if (conflict.path) {
+    throw new Error(`Skill ${newName} already exists at ${conflict.path}`);
+  }
+
+  const oldDir = path.dirname(existing.path);
+  const newDir = path.join(path.dirname(oldDir), newName);
+  const directoriesDiffer = path.resolve(oldDir) !== path.resolve(newDir);
+
+  if (directoriesDiffer && fs.existsSync(newDir)) {
+    throw new Error(`Skill directory already exists at ${newDir}`);
+  }
+
+  if (directoriesDiffer) {
+    fs.renameSync(oldDir, newDir);
+  }
+
+  const newPath = path.join(newDir, 'SKILL.md');
+  try {
+    const mdData = parseMdFile(newPath);
+    mdData.frontmatter = {
+      ...mdData.frontmatter,
+      name: newName,
+    };
+    writeMdFile(newPath, mdData.frontmatter, mdData.body);
+  } catch (error) {
+    if (directoriesDiffer && fs.existsSync(newDir) && !fs.existsSync(oldDir)) {
+      try {
+        fs.renameSync(newDir, oldDir);
+      } catch {
+        // Best-effort rollback; surface the original write failure.
+      }
+    }
+    throw error;
   }
 };

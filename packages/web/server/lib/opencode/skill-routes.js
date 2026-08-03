@@ -21,6 +21,7 @@ export const registerSkillRoutes = (app, dependencies) => {
     createSkill,
     updateSkill,
     deleteSkill,
+    renameSkill,
     readSkillSupportingFile,
     writeSkillSupportingFile,
     deleteSkillSupportingFile,
@@ -609,6 +610,22 @@ export const registerSkillRoutes = (app, dependencies) => {
       const { directory, error } = await resolveOptionalProjectDirectory(req);
       if (error) {
         return res.status(400).json({ error });
+      }
+
+      if (typeof updates?.renameTo === 'string') {
+        const newName = updates.renameTo.trim();
+        console.log(`[Server] Renaming skill: ${skillName} -> ${newName}`);
+        console.log('[Server] Working directory:', directory);
+        renameSkill(skillName, newName, directory);
+        await refreshOpenCodeAfterConfigChange('skill rename');
+
+        return res.json({
+          success: true,
+          name: newName,
+          requiresReload: true,
+          message: `Skill renamed to ${newName} successfully. Reloading interface…`,
+          reloadDelayMs: clientReloadDelayMs,
+        });
       }
 
       console.log(`[Server] Updating skill: ${skillName}`);

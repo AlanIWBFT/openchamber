@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import fs from 'fs';
 import fsPromises from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { getSkillSources, mergeDiscoveredSkills } from './skills.js';
+import { getSkillSources, mergeDiscoveredSkills, renameSkill } from './skills.js';
 
 describe('skills', () => {
   it('merges locally discovered skills missing from OpenCode live discovery', () => {
@@ -106,6 +107,73 @@ describe('skills', () => {
       expect(sources.md.source).toBe('agents');
       expect(sources.md.description).toBe('Example from agents');
       expect(sources.md.instructions).toBe('Use this skill for examples.');
+    } finally {
+      await fsPromises.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('renames a skill directory while preserving SKILL.md body and supporting files', async () => {
+    const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-skills-rename-'));
+    const projectRoot = path.join(tempRoot, 'project');
+    const skillDir = path.join(projectRoot, '.opencode', 'skills', 'original-skill');
+    const skillPath = path.join(skillDir, 'SKILL.md');
+    const supportPath = path.join(skillDir, 'notes.md');
+    const body = [
+      '# Original Skill',
+      '',
+      'Preserve this non-trivial body across rename.',
+      '',
+      '## Details',
+      '',
+      '- step one',
+      '- step two',
+    ].join('\n');
+
+    try {
+      await fsPromises.mkdir(skillDir, { recursive: true });
+      await fsPromises.writeFile(
+        skillPath,
+        [
+          '---',
+          'name: original-skill',
+          'description: Original skill description',
+          'license: MIT',
+          '---',
+          '',
+          body,
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+      await fsPromises.writeFile(supportPath, 'supporting file contents\n', 'utf8');
+
+      renameSkill('original-skill', 'renamed-skill', projectRoot);
+
+      const renamedDir = path.join(projectRoot, '.opencode', 'skills', 'renamed-skill');
+      const renamedPath = path.join(renamedDir, 'SKILL.md');
+      const renamedSupportPath = path.join(renamedDir, 'notes.md');
+
+      expect(fs.existsSync(skillDir)).toBe(false);
+      expect(fs.existsSync(renamedPath)).toBe(true);
+      expect(fs.existsSync(renamedSupportPath)).toBe(true);
+
+      const sources = getSkillSources('renamed-skill', projectRoot, {
+        name: 'renamed-skill',
+        path: renamedPath,
+        scope: 'project',
+        source: 'opencode',
+        description: 'fallback',
+      });
+
+      expect(sources.md.exists).toBe(true);
+      expect(sources.md.name).toBe('renamed-skill');
+      expect(sources.md.description).toBe('Original skill description');
+      expect(sources.md.instructions).toBe(body);
+      expect(await fsPromises.readFile(renamedSupportPath, 'utf8')).toBe('supporting file contents\n');
+
+      const raw = await fsPromises.readFile(renamedPath, 'utf8');
+      expect(raw).toContain('license: MIT');
+      expect(raw).not.toContain('Renamed skill');
     } finally {
       await fsPromises.rm(tempRoot, { recursive: true, force: true });
     }

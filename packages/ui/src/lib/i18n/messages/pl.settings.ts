@@ -1867,6 +1867,7 @@ export const settingsDict = {
   'settings.skills.sidebar.toast.renameFailed': 'Nie udało się zmienić nazwy umiejętności',
   'settings.skills.sidebar.toast.renameLoadFailed': 'Nie udało się załadować szczegółów umiejętności',
   'settings.skills.sidebar.toast.skillDeleted': 'Umiejętność „{name}” została usunięta',
+  'settings.skills.sidebar.toast.skillRenamed': 'Zmieniono nazwę umiejętności na „{name}”',
   'settings.skills.sidebar.total': 'Suma: {count}',
   'settings.usage.pace.prediction': 'Prognoza: {prediction}',
   'settings.usage.pace.predictionLabel': 'Prognoza: ',

@@ -143,6 +143,7 @@ interface SkillsStore {
   getSkillDetail: (name: string) => Promise<SkillDetail | null>;
   createSkill: (config: SkillConfig) => Promise<boolean>;
   updateSkill: (name: string, config: Partial<SkillConfig>) => Promise<boolean>;
+  renameSkill: (name: string, newName: string) => Promise<boolean>;
   deleteSkill: (name: string) => Promise<boolean>;
   getSkillByName: (name: string) => DiscoveredSkill | undefined;
   
@@ -354,6 +355,50 @@ export const useSkillsStore = create<SkillsStore>()(
             const payload = await response.json().catch(() => null);
             if (!response.ok) {
               const message = payload?.error || 'Failed to update skill';
+              throw new Error(message);
+            }
+
+            const needsReload = payload?.requiresReload ?? false;
+            invalidateSkillsLoadCache(currentDirectory);
+            if (needsReload) {
+              requiresReload = true;
+              await refreshSkillsAfterOpenCodeRestart({
+                message: payload?.message,
+                delayMs: payload?.reloadDelayMs,
+              });
+              return true;
+            }
+
+            const loaded = await get().loadSkills();
+            if (loaded) {
+              emitConfigChange("skills", { source: CONFIG_EVENT_SOURCE });
+            }
+            return loaded;
+          } catch {
+            return false;
+          } finally {
+            if (!requiresReload) {
+              finishConfigUpdate();
+            }
+          }
+        },
+
+        renameSkill: async (name: string, newName: string) => {
+          startConfigUpdate("Renaming skill...");
+          let requiresReload = false;
+          try {
+            const currentDirectory = getCurrentDirectory();
+            const queryParams = currentDirectory ? `?directory=${encodeURIComponent(currentDirectory)}` : '';
+
+            const response = await runtimeFetch(`/api/config/skills/${encodeURIComponent(name)}${queryParams}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ renameTo: newName }),
+            });
+
+            const payload = await response.json().catch(() => null);
+            if (!response.ok) {
+              const message = payload?.error || 'Failed to rename skill';
               throw new Error(message);
             }
 

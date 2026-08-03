@@ -49,16 +49,16 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
     skills,
     setSelectedSkill,
     setSkillDraft,
-    createSkill,
     deleteSkill,
+    renameSkill,
     getSkillDetail,
   } = useSkillsStore(useShallow((s) => ({
     selectedSkillName: s.selectedSkillName,
     skills: s.skills,
     setSelectedSkill: s.setSelectedSkill,
     setSkillDraft: s.setSkillDraft,
-    createSkill: s.createSkill,
     deleteSkill: s.deleteSkill,
+    renameSkill: s.renameSkill,
     getSkillDetail: s.getSkillDetail,
   })));
 
@@ -169,31 +169,11 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
       return;
     }
 
-    // Get full detail to copy
-    const detail = await getSkillDetail(renameDialogSkill.name);
-    if (!detail) {
-      toast.error(t('settings.skills.sidebar.toast.renameLoadFailed'));
-      setRenameDialogSkill(null);
-      return;
-    }
-
-    // Create new skill with new name
-    const success = await createSkill({
-      name: sanitizedName,
-      description: 'Renamed skill', // Will need proper description
-      scope: renameDialogSkill.scope,
-      source: renameDialogSkill.source,
-    });
-
+    // Rename in place on disk so SKILL.md body and supporting files are preserved.
+    const success = await renameSkill(renameDialogSkill.name, sanitizedName);
     if (success) {
-      // Delete old skill
-      const deleteSuccess = await deleteSkill(renameDialogSkill.name);
-      if (deleteSuccess) {
-        toast.success(`Skill renamed to "${sanitizedName}"`);
-        setSelectedSkill(sanitizedName);
-      } else {
-        toast.error(t('settings.skills.sidebar.toast.removeOldAfterRenameFailed'));
-      }
+      toast.success(t('settings.skills.sidebar.toast.skillRenamed', { name: sanitizedName }));
+      setSelectedSkill(sanitizedName);
     } else {
       toast.error(t('settings.skills.sidebar.toast.renameFailed'));
     }

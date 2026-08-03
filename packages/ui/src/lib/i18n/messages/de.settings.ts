@@ -669,6 +669,7 @@ export const settingsDict = {
   'settings.skills.sidebar.toast.renameLoadFailed': 'Skill-Details konnten nicht geladen werden',
   'settings.skills.sidebar.toast.removeOldAfterRenameFailed': 'Alter Skill konnte nach Umbenennung nicht entfernt werden',
   'settings.skills.sidebar.toast.renameFailed': 'Skill konnte nicht umbenannt werden',
+  'settings.skills.sidebar.toast.skillRenamed': 'Skill umbenannt in "{name}"',
   'settings.skills.sidebar.deleteDialog.title': 'Skill löschen',
   'settings.skills.sidebar.deleteDialog.description': 'Möchten Sie den Skill "{name}" wirklich löschen?',
   'settings.skills.sidebar.renameDialog.title': 'Skill umbenennen',

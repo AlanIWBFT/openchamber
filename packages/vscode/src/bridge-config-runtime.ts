@@ -25,6 +25,7 @@ import {
   createSkill,
   updateSkill,
   deleteSkill,
+  renameSkill,
   readSkillSupportingFile,
   writeSkillSupportingFile,
   deleteSkillSupportingFile,
@@ -693,6 +694,24 @@ export async function handleConfigBridgeMessage(
       }
 
       if (normalizedMethod === 'PATCH') {
+        if (typeof body?.renameTo === 'string') {
+          const newName = body.renameTo.trim();
+          renameSkill(skillName, newName, workingDirectory);
+          await ctx?.manager?.restart();
+          return {
+            id,
+            type,
+            success: true,
+            data: {
+              success: true,
+              name: newName,
+              requiresReload: true,
+              message: `Skill renamed to ${newName} successfully. Reloading interface…`,
+              reloadDelayMs: deps.clientReloadDelayMs,
+            },
+          };
+        }
+
         updateSkill(skillName, (body || {}) as Record<string, unknown>, workingDirectory);
         await ctx?.manager?.restart();
         return {
