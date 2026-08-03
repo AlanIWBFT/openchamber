@@ -61,20 +61,20 @@ export const PendingOpenCodeRestartAction: React.FC<PendingOpenCodeRestartAction
       onClick={() => void handleApply()}
       className={cn('gap-1.5 shadow-sm', className)}
     >
+      <span
+        className={cn(
+          'inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5',
+          'bg-background text-foreground typography-micro font-semibold tabular-nums',
+        )}
+        aria-hidden="true"
+      >
+        {pendingCount}
+      </span>
       <Icon name="restart" className="h-3.5 w-3.5 shrink-0" />
       <span className="truncate">
         {isApplying
           ? t('settings.view.pendingRestart.applying')
           : t('settings.view.actions.applyAndRestartOpenCode')}
-      </span>
-      <span
-        className={cn(
-          'inline-flex min-w-5 items-center justify-center rounded-md px-1.5 typography-micro font-semibold',
-          'bg-primary-foreground/15 text-primary-foreground',
-        )}
-        aria-hidden="true"
-      >
-        {pendingCount}
       </span>
     </Button>
   );
