@@ -408,12 +408,15 @@ export const useSkillsStore = create<SkillsStore>()(
           startConfigUpdate("Renaming skill...");
           let requiresReload = false;
           try {
-            const currentDirectory = getCurrentDirectory();
-            const queryParams = currentDirectory ? `?directory=${encodeURIComponent(currentDirectory)}` : '';
+            const directory = getRequestDirectory();
+            const queryParams = directory ? `?directory=${encodeURIComponent(directory)}` : '';
 
             const response = await runtimeFetch(`/api/config/skills/${encodeURIComponent(name)}${queryParams}`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                ...(directory ? { 'x-opencode-directory': directory } : {}),
+              },
               body: JSON.stringify({ renameTo: newName }),
             });
 
@@ -424,7 +427,7 @@ export const useSkillsStore = create<SkillsStore>()(
             }
 
             const needsReload = payload?.requiresReload ?? false;
-            invalidateSkillsLoadCache(currentDirectory);
+            invalidateSkillsLoadCache(directory);
             if (needsReload) {
               requiresReload = true;
               await refreshSkillsAfterOpenCodeRestart({
