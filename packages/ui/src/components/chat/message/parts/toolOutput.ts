@@ -1,16 +1,39 @@
-const ensureLine = (lines: string[][], row: number): void => {
+const MAX_SYNTHETIC_TERMINAL_CELLS = 100_000;
+
+interface TerminalRenderBudget {
+    syntheticCells: number;
+}
+
+const ensureLine = (lines: string[][], requestedRow: number, budget: TerminalRenderBudget): number => {
+    const missingRows = Math.max(0, requestedRow - lines.length + 1);
+    const availableCells = MAX_SYNTHETIC_TERMINAL_CELLS - budget.syntheticCells;
+    const addedRows = Math.min(missingRows, availableCells);
+    const row = Math.min(requestedRow, lines.length + addedRows - 1);
+
     while (lines.length <= row) {
         lines.push([]);
     }
+    budget.syntheticCells += addedRows;
+    return row;
 };
 
-const writeTerminalCharacter = (lines: string[][], row: number, column: number, character: string): void => {
-    ensureLine(lines, row);
+const writeTerminalCharacter = (
+    lines: string[][],
+    row: number,
+    requestedColumn: number,
+    character: string,
+    budget: TerminalRenderBudget,
+): number => {
     const line = lines[row];
+    const availableCells = MAX_SYNTHETIC_TERMINAL_CELLS - budget.syntheticCells;
+    const column = Math.min(requestedColumn, line.length + availableCells);
+    const padding = Math.max(0, column - line.length);
     while (line.length < column) {
         line.push(' ');
     }
+    budget.syntheticCells += padding;
     line[column] = character;
+    return column;
 };
 
 export const renderTerminalOutput = (output: string): string => {
@@ -19,6 +42,7 @@ export const renderTerminalOutput = (output: string): string => {
     }
 
     const lines: string[][] = [[]];
+    const budget: TerminalRenderBudget = { syntheticCells: 0 };
     let row = 0;
     let column = 0;
 
@@ -28,7 +52,7 @@ export const renderTerminalOutput = (output: string): string => {
         if (character === '\n') {
             row += 1;
             column = 0;
-            ensureLine(lines, row);
+            lines[row] ??= [];
             continue;
         }
         if (character === '\r') {
@@ -40,8 +64,7 @@ export const renderTerminalOutput = (output: string): string => {
             continue;
         }
         if (character !== '\u001B') {
-            writeTerminalCharacter(lines, row, column, character);
-            column += 1;
+            column = writeTerminalCharacter(lines, row, column, character, budget) + 1;
             continue;
         }
 
@@ -62,8 +85,7 @@ export const renderTerminalOutput = (output: string): string => {
             if (command === 'A') {
                 row = Math.max(0, row - count);
             } else if (command === 'B') {
-                row += count;
-                ensureLine(lines, row);
+                row = ensureLine(lines, row + count, budget);
             } else if (command === 'C') {
                 column += count;
             } else if (command === 'D') {
@@ -71,11 +93,9 @@ export const renderTerminalOutput = (output: string): string => {
             } else if (command === 'G') {
                 column = Math.max(0, count - 1);
             } else if (command === 'H' || command === 'f') {
-                row = Math.max(0, (parameters[0] || 1) - 1);
+                row = ensureLine(lines, Math.max(0, (parameters[0] || 1) - 1), budget);
                 column = Math.max(0, (parameters[1] || 1) - 1);
-                ensureLine(lines, row);
             } else if (command === 'K') {
-                ensureLine(lines, row);
                 const line = lines[row];
                 const mode = parameters[0];
                 if (mode === 1) {

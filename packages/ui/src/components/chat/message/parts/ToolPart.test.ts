@@ -1,10 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { renderTerminalOutput } from './toolOutput';
+import { getStreamingOutputAppend, getToolOutput, renderTerminalOutput } from './toolOutput';
 import { readTaskTagSessionIdFromOutput } from './taskSessionIdParser';
 import { tryParseJsonOutput } from '../toolRenderers';
 import { getStreamingThrottleText } from '../../hooks/useStreamingTextThrottle';
-import { getStreamingOutputAppend, getToolOutput } from './toolOutput';
 import { getToolDescriptionFallback } from './toolRenderUtils';
 
 describe('getToolOutput', () => {
@@ -75,6 +74,36 @@ describe('renderTerminalOutput', () => {
         const elapsed = performance.now() - start;
         expect(result).toBe('A'.repeat(50000));
         expect(elapsed).toBeLessThan(1000);
+    });
+
+    test('bounds synthetic rows from large cursor coordinates', () => {
+        const result = renderTerminalOutput('\u001B[999999999Bdone');
+        expect(result.endsWith('done')).toBe(true);
+        expect(result.length <= 100_004).toBe(true);
+    });
+
+    test('bounds synthetic columns from large cursor coordinates', () => {
+        const result = renderTerminalOutput('\u001B[999999999Cdone');
+        expect(result.endsWith('done')).toBe(true);
+        expect(result.length <= 100_004).toBe(true);
+    });
+
+    test('shares the synthetic allocation budget across cursor movements', () => {
+        const result = renderTerminalOutput('\u001B[50001B\u001B[999999999Cdone');
+        expect(result.endsWith('done')).toBe(true);
+        expect(result.length <= 100_004).toBe(true);
+    });
+
+    test('bounds absolute cursor row and column coordinates', () => {
+        const result = renderTerminalOutput('\u001B[999999999;999999999Hdone');
+        expect(result.endsWith('done')).toBe(true);
+        expect(result.length <= 100_004).toBe(true);
+    });
+
+    test('bounds absolute cursor columns', () => {
+        const result = renderTerminalOutput('\u001B[999999999Gdone');
+        expect(result.endsWith('done')).toBe(true);
+        expect(result.length <= 100_004).toBe(true);
     });
 });
 
