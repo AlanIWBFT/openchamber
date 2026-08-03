@@ -154,6 +154,8 @@ describe('terminal runtime', () => {
       expect(harness.processes[0].options.cwd).toBe('/repo');
       expect(harness.processes[0].options.env.COLORFGBG).toBe('0;15');
       expect(harness.processes[0].options.env.NODE_CHANNEL_FD).toBe('');
+      expect(harness.processes[0].options.env).not.toHaveProperty('ARGV0');
+      expect(harness.processes[0].options.env).not.toHaveProperty('ELECTRON_RUN_AS_NODE');
       harness.processes[0].emitData('\u001b[?2031h\u001b]10;?\u0007\u001b]11;?\u0007');
       expect(harness.processes[0].writes).toEqual(['\u001b]10;rgb:1b1b/1b1b/1b1b\u001b\\', '\u001b]11;rgb:fafa/f8f8/f0f0\u001b\\']);
 
@@ -171,6 +173,22 @@ describe('terminal runtime', () => {
       harness.routes.post.get('/api/terminal/:sessionId/resize')({ params: { sessionId: 'term-1' }, body: { cols: 1001, rows: 60 } }, invalid);
       expect(invalid.statusCode).toBe(400);
     } finally { await harness.runtime.shutdown(); }
+  });
+
+  it('strips AppImage ARGV0 from PTY child environments', async () => {
+    const previousArgv0 = process.env.ARGV0;
+    process.env.ARGV0 = '/path/to/OpenChamber/OpenChamber-1.17.2-linux-x86_64.AppImage';
+    const harness = createHarness();
+    try {
+      const response = createResponse();
+      await harness.routes.post.get('/api/terminal/create')({ body: { sessionId: 'term-argv0', cwd: '/repo', cols: 80, rows: 24 } }, response);
+      expect(response.statusCode).toBe(200);
+      expect(harness.processes[0].options.env).not.toHaveProperty('ARGV0');
+    } finally {
+      if (previousArgv0 === undefined) delete process.env.ARGV0;
+      else process.env.ARGV0 = previousArgv0;
+      await harness.runtime.shutdown();
+    }
   });
 
   it('lists available shells and uses the selected shell for create and restart', async () => {

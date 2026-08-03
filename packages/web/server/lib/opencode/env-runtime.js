@@ -232,7 +232,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       return;
     }
 
-    const skipKeys = new Set(['PWD', 'OLDPWD', 'SHLVL', '_']);
+    const skipKeys = new Set(['PWD', 'OLDPWD', 'SHLVL', '_', 'ARGV0']);
     for (const [key, value] of Object.entries(snapshot)) {
       if (skipKeys.has(key)) {
         continue;
@@ -243,6 +243,9 @@ export const createOpenCodeEnvRuntime = (deps) => {
       }
       process.env[key] = value;
     }
+
+    // AppImage ARGV0 must never remain on process.env (zsh rewrites argv[0]; #2588).
+    delete process.env.ARGV0;
 
     const currentPath = process.env.PATH || '';
     const shellPath = snapshot.PATH || '';
