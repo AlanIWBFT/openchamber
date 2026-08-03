@@ -30,6 +30,7 @@ import { CdpClient, createPageTarget, evaluateValue, launchChrome, reservePort, 
 import { buildIdleProbeSource, IDLE_PROBE_GLOBAL } from "./perf/idle-probe.mjs"
 import { summarizeCpuProfile } from "./perf/cpu-profile.mjs"
 import { growthPerSecond, metricMap, round, summarizeLongTasks, summarizeTraceEvents } from "./perf/metrics.mjs"
+import { expandProjects, expandSessionLists } from "./perf/scenario.mjs"
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const cliPath = join(repoRoot, "packages/web/bin/cli.js")
@@ -47,6 +48,9 @@ Options:
   --port <port>            OpenChamber CLI port (default: from --url)
   --dir <path>             Session directory (default: repository root)
   --session <id>           Reuse this session instead of creating one
+  --expand-projects        Expand every project in the sidebar before recording
+  --expand-sessions        Click every "Show more sessions" control before
+                           recording, so all session rows are mounted
   --view-session <id>      Display this session while the prompt streams into
                            another one. Measures what an idle session costs
                            while a different session is active in the
@@ -79,6 +83,8 @@ const parseArgs = (argv) => {
     dir: repoRoot,
     session: null,
     viewSession: null,
+    expandProjects: false,
+    expandSessions: false,
     prompt: DEFAULT_PROMPT,
     model: null,
     agent: null,
@@ -108,6 +114,8 @@ const parseArgs = (argv) => {
     else if (value === "--dir") options.dir = argv[++index]
     else if (value === "--session") options.session = argv[++index]
     else if (value === "--view-session") options.viewSession = argv[++index]
+    else if (value === "--expand-projects") options.expandProjects = true
+    else if (value === "--expand-sessions") options.expandSessions = true
     else if (value === "--prompt") options.prompt = argv[++index]
     else if (value === "--model") options.model = argv[++index]
     else if (value === "--agent") options.agent = argv[++index]
@@ -364,7 +372,11 @@ const main = async () => {
     })
 
     const traceEvents = []
-    const unsubscribeTrace = client.on("Tracing.dataCollected", ({ value }) => traceEvents.push(...(value ?? [])))
+    // A spread push overflows the call stack once a chunk carries hundreds of
+    // thousands of events, which a heavily populated sidebar easily produces.
+    const unsubscribeTrace = client.on("Tracing.dataCollected", ({ value }) => {
+      for (const event of value ?? []) traceEvents.push(event)
+    })
 
     let loaded = client.once("Page.loadEventFired", 60_000)
     await client.send("Page.navigate", { url: target.toString() })
@@ -375,12 +387,22 @@ const main = async () => {
       localStorage.setItem("openchamber_sync_perf", "1")
       localStorage.setItem("openchamber_stream_perf", "1")
     `)
+    if (options.expandProjects) {
+      await expandProjects(client)
+      console.log("Expanded every project in the sidebar.")
+    }
     loaded = client.once("Page.loadEventFired", 60_000)
     await client.send("Page.reload", { ignoreCache: false })
     await loaded
 
     console.log(`Opened the session; settling for ${options.settle}s.`)
     await wait(options.settle * 1000)
+
+    if (options.expandSessions) {
+      const expanded = await expandSessionLists(client)
+      console.log(`Expanded ${expanded} collapsed session lists; settling ${options.settle}s again.`)
+      await wait(options.settle * 1000)
+    }
 
     await evaluateValue(client, `globalThis[${JSON.stringify(IDLE_PROBE_GLOBAL)}]?.start()`)
     await evaluateValue(client, `window.__openchamberSyncPerformance?.reset()`)
@@ -553,7 +575,7 @@ const main = async () => {
         listenerGrowth: delta("JSEventListeners"),
         heapStartMb: round(heapSamples.at(0) ?? 0),
         heapEndMb: round(heapSamples.at(-1) ?? 0),
-        heapMaxMb: round(Math.max(0, ...heapSamples)),
+        heapMaxMb: round(heapSamples.reduce((max, value) => Math.max(max, value), 0)),
         heapGrowthMbPerSecond: growthPerSecond(samples, "jsHeapUsedMb"),
       },
       frameLiveness,

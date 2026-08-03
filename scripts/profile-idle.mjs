@@ -29,6 +29,7 @@ import process from "node:process"
 import { CdpClient, createPageTarget, evaluateValue, launchChrome, reservePort, resolveChrome, wait } from "./perf/cdp.mjs"
 import { buildIdleProbeSource, IDLE_PROBE_GLOBAL } from "./perf/idle-probe.mjs"
 import { summarizeCpuProfile } from "./perf/cpu-profile.mjs"
+import { expandProjects, expandSessionLists } from "./perf/scenario.mjs"
 import { growthPerSecond, metricMap, round } from "./perf/metrics.mjs"
 
 const HELP = `Usage: bun run profile:idle -- [options]
@@ -42,6 +43,10 @@ Options:
   --then-tab <name>        After settling, navigate to this tab without a
                            reload, then record. Use it to measure what a
                            surface keeps doing after the user leaves it.
+  --expand-sessions        Click every "Show more sessions" control until the
+                           sidebar has no collapsed session lists left, so all
+                           session rows are mounted. Clicks happen before the
+                           recording window, which stays input-free.
   --expand-projects        Expand every project in the sidebar before
                            recording, which mounts a row per worktree and
                            session directory
@@ -74,6 +79,7 @@ const parseArgs = (argv) => {
     thenTab: null,
     panels: [],
     expandProjects: false,
+    expandSessions: false,
     duration: 30,
     settle: 15,
     output: null,
@@ -99,6 +105,7 @@ const parseArgs = (argv) => {
     else if (value === "--then-tab") options.thenTab = argv[++index]
     else if (value === "--panel") options.panels.push(argv[++index])
     else if (value === "--expand-projects") options.expandProjects = true
+    else if (value === "--expand-sessions") options.expandSessions = true
     else if (value === "--label") options.label = argv[++index]
     else if (value === "--duration") options.duration = Number(argv[++index])
     else if (value === "--settle") options.settle = Number(argv[++index])
@@ -243,7 +250,7 @@ const buildSummary = ({ options, before, after, samples, cpu, probe, elapsedSeco
       frames: Number(after.Frames ?? 0),
       heapStartMb: round(heapSamples.at(0) ?? 0),
       heapEndMb: round(heapSamples.at(-1) ?? 0),
-      heapMaxMb: round(Math.max(0, ...heapSamples)),
+      heapMaxMb: round(heapSamples.reduce((max, value) => Math.max(max, value), 0)),
       heapGrowthMbPerSecond: growthPerSecond(samples, "jsHeapUsedMb"),
     },
     cpuProfile: cpu,
@@ -357,10 +364,7 @@ const main = async () => {
     await loaded
 
     if (options.expandProjects) {
-      // The sidebar persists the ids of collapsed projects, so an empty list
-      // expands everything. This is the state in issue #1472: one mounted
-      // directory-bound row per worktree and session.
-      await evaluateValue(client, `localStorage.setItem("oc.sessions.projectCollapse", "[]")`)
+      await expandProjects(client)
       console.log("Expanded every project in the sidebar.")
     }
 
@@ -374,18 +378,9 @@ const main = async () => {
     console.log(`Loaded ${options.url}; settling for ${options.settle}s before recording.`)
     await wait(options.settle * 1000)
 
-    if (options.thenTab) {
-      // Route changes normally come from clicks; driving history directly
-      // reaches the same router path without generating input work inside the
-      // recorded window, and leaves already-mounted surfaces mounted.
-      await evaluateValue(client, `(() => {
-        const url = new URL(window.location.href)
-        url.searchParams.set("tab", ${JSON.stringify(options.thenTab)})
-        window.history.pushState({}, "", url.toString())
-        window.dispatchEvent(new PopStateEvent("popstate", { state: {} }))
-        return true
-      })()`)
-      console.log(`Navigated to tab "${options.thenTab}" without reloading; settling ${options.settle}s again.`)
+    if (options.expandSessions) {
+      const expanded = await expandSessionLists(client)
+      console.log(`Expanded ${expanded} collapsed session lists; settling ${options.settle}s again.`)
       await wait(options.settle * 1000)
     }
 
