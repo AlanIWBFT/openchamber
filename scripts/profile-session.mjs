@@ -187,6 +187,9 @@ const REPORTED_METRICS = [
   { key: "layoutsPerSecond", label: "Layouts/sec", unit: "", lowerIsBetter: true },
   { key: "framesPerSecond", label: "Animation frames/sec", unit: "", lowerIsBetter: false },
   { key: "streamSeconds", label: "Stream duration", unit: "s", lowerIsBetter: true },
+  { key: "renderedCharacters", label: "Rendered characters", unit: "", lowerIsBetter: false },
+  { key: "busyMsPerKilochar", label: "Busy per 1k chars", unit: "ms", lowerIsBetter: true },
+  { key: "recalcStylePerKilochar", label: "Style recalcs per 1k", unit: "", lowerIsBetter: true },
   { key: "nodeGrowth", label: "DOM node growth", unit: "", lowerIsBetter: true },
   { key: "listenerGrowth", label: "Listener growth", unit: "", lowerIsBetter: true },
   { key: "heapGrowthMbPerSecond", label: "Heap growth", unit: "MB/s", lowerIsBetter: true },
@@ -429,6 +432,8 @@ const main = async () => {
       .some((entry) => entry.metric.startsWith("ui.message_list") && entry.count > 0)
     const renderedStream = renderedAfter.messages > renderedBefore.messages && messageListRendered
 
+    const renderedCharacterGrowth = renderedAfter.characters - renderedBefore.characters
+
     const tasks = summarizeLongTasks(traceEvents)
     const delta = (name) => Number(after[name] ?? 0) - Number(before[name] ?? 0)
     const perSecond = (name) => round(delta(name) / elapsedSeconds)
@@ -448,7 +453,7 @@ const main = async () => {
       renderedStream,
       renderedMessagesBefore: renderedBefore.messages,
       renderedMessagesAfter: renderedAfter.messages,
-      renderedCharacterGrowth: renderedAfter.characters - renderedBefore.characters,
+      renderedCharacterGrowth,
       traceComplete,
       disposableSession: !options.keepSession && !options.session,
       metrics: {
@@ -458,6 +463,16 @@ const main = async () => {
         recalcStylePerSecond: perSecond("RecalcStyleCount"),
         layoutsPerSecond: perSecond("LayoutCount"),
         framesPerSecond: round(Number(probe?.counters?.rafScheduled ?? 0) / elapsedSeconds),
+        // Response length varies between runs even for an identical prompt, so
+        // per-second and total figures are not comparable across captures.
+        // Normalising by rendered output is what makes two runs contrastable.
+        renderedCharacters: renderedCharacterGrowth,
+        busyMsPerKilochar: renderedCharacterGrowth > 0
+          ? round((delta("TaskDuration") * 1000) / (renderedCharacterGrowth / 1000))
+          : 0,
+        recalcStylePerKilochar: renderedCharacterGrowth > 0
+          ? round(delta("RecalcStyleCount") / (renderedCharacterGrowth / 1000))
+          : 0,
         streamSeconds,
         recordedSeconds: round(elapsedSeconds),
         nodeStart: Number(before.Nodes ?? 0),
