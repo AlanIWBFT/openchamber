@@ -38,6 +38,13 @@ Options:
   --url <url>              OpenChamber URL (default: http://localhost:3000)
   --session <id>           Open this session before recording (deep link)
   --tab <name>             Open this main tab before recording
+  --then-tab <name>        After settling, navigate to this tab without a
+                           reload, then record. Use it to measure what a
+                           surface keeps doing after the user leaves it.
+  --panel <mode[=target]>  Open the context panel on this surface before
+                           recording (chat, preview, terminal, git, pr, notes,
+                           file, diff, plan, context, browser, walkthrough).
+                           Repeatable; the first entry becomes the active tab.
   --duration <seconds>     Idle recording window (default: 30)
   --settle <seconds>       Wait after load before recording (default: 15)
   --output <directory>     Artifact directory (default: artifacts/idle-profile-<time>)
@@ -60,6 +67,8 @@ const parseArgs = (argv) => {
     url: "http://localhost:3000",
     session: null,
     tab: null,
+    thenTab: null,
+    panels: [],
     duration: 30,
     settle: 15,
     output: null,
@@ -82,6 +91,8 @@ const parseArgs = (argv) => {
     else if (value === "--url") options.url = argv[++index]
     else if (value === "--session") options.session = argv[++index]
     else if (value === "--tab") options.tab = argv[++index]
+    else if (value === "--then-tab") options.thenTab = argv[++index]
+    else if (value === "--panel") options.panels.push(argv[++index])
     else if (value === "--label") options.label = argv[++index]
     else if (value === "--duration") options.duration = Number(argv[++index])
     else if (value === "--settle") options.settle = Number(argv[++index])
@@ -107,6 +118,82 @@ const parseArgs = (argv) => {
 }
 
 const metricMap = (metrics = []) => Object.fromEntries(metrics.map(({ name, value }) => [name, value]))
+
+/**
+ * Mirrors `useUIStore`'s context-panel tab identity rules so a seeded tab is
+ * indistinguishable from one the user opened. Only `file` and `preview` key
+ * their identity by target path; every other surface allows one tab per mode.
+ */
+const buildPanelTab = (descriptor, touchedAt) => {
+  const { mode, targetPath } = descriptor
+  const dedupeKey = (mode === "file" || mode === "preview") ? (targetPath || mode) : mode
+  return {
+    id: dedupeKey === mode ? mode : `${mode}:${dedupeKey}`,
+    mode,
+    targetPath: targetPath || null,
+    dedupeKey,
+    label: null,
+    sessionTitleFallback: null,
+    readOnly: false,
+    stagedDiff: false,
+    diffScope: "working",
+    touchedAt,
+  }
+}
+
+const parsePanelDescriptor = (value) => {
+  const separator = value.indexOf("=")
+  if (separator === -1) return { mode: value.trim(), targetPath: null }
+  return { mode: value.slice(0, separator).trim(), targetPath: value.slice(separator + 1).trim() || null }
+}
+
+/**
+ * Opens the context panel by seeding the persisted store the app reads on
+ * boot, then reloading. Driving persisted state rather than synthesising
+ * clicks keeps the scenario deterministic and keeps the recorded window free
+ * of input-driven work that a real idle session would not perform.
+ */
+const seedContextPanel = async (client, panels, sessionId) => {
+  const descriptors = panels.map(parsePanelDescriptor)
+  const tabs = descriptors.map((descriptor, index) => buildPanelTab(
+    descriptor.mode === "chat" && !descriptor.targetPath ? { ...descriptor, targetPath: sessionId } : descriptor,
+    Date.now() + index,
+  ))
+
+  const stored = await evaluateValue(client, `JSON.stringify({
+    lastDirectory: localStorage.getItem("lastDirectory"),
+    uiStore: localStorage.getItem("ui-store"),
+  })`)
+  const { lastDirectory, uiStore } = JSON.parse(stored ?? "{}")
+  if (!lastDirectory) throw new Error("Could not open the context panel: no lastDirectory in browser storage")
+  if (!uiStore) throw new Error("Could not open the context panel: no ui-store in browser storage")
+
+  // `lastDirectory` is persisted as a JSON string by some writers and as a raw
+  // path by others; accept both rather than guessing.
+  let directory = lastDirectory
+  try {
+    const decoded = JSON.parse(lastDirectory)
+    if (typeof decoded === "string") directory = decoded
+  } catch {
+    // Already a raw path.
+  }
+  const normalized = directory.replace(/\\/g, "/").replace(/\/+$/g, "") || "/"
+
+  const parsed = JSON.parse(uiStore)
+  parsed.state = parsed.state ?? {}
+  parsed.state.contextPanelByDirectory = parsed.state.contextPanelByDirectory ?? {}
+  parsed.state.contextPanelByDirectory[normalized] = {
+    isOpen: true,
+    expanded: false,
+    tabs,
+    activeTabId: tabs[0]?.id ?? null,
+    widthByMode: {},
+    touchedAt: Date.now(),
+  }
+
+  await evaluateValue(client, `localStorage.setItem("ui-store", ${JSON.stringify(JSON.stringify(parsed))})`)
+  console.log(`Context panel seeded for ${normalized}: ${tabs.map((tab) => tab.id).join(", ")}`)
+}
 
 /** Least-squares slope of a sampled series, in units per second. */
 const growthPerSecond = (samples, key) => {
@@ -282,8 +369,30 @@ const main = async () => {
     await client.send("Page.navigate", { url: options.url })
     await loaded
 
+    if (options.panels.length > 0) {
+      await seedContextPanel(client, options.panels, options.session)
+      const reloaded = client.once("Page.loadEventFired", 60_000)
+      await client.send("Page.reload", { ignoreCache: false })
+      await reloaded
+    }
+
     console.log(`Loaded ${options.url}; settling for ${options.settle}s before recording.`)
     await wait(options.settle * 1000)
+
+    if (options.thenTab) {
+      // Route changes normally come from clicks; driving history directly
+      // reaches the same router path without generating input work inside the
+      // recorded window, and leaves already-mounted surfaces mounted.
+      await evaluateValue(client, `(() => {
+        const url = new URL(window.location.href)
+        url.searchParams.set("tab", ${JSON.stringify(options.thenTab)})
+        window.history.pushState({}, "", url.toString())
+        window.dispatchEvent(new PopStateEvent("popstate", { state: {} }))
+        return true
+      })()`)
+      console.log(`Navigated to tab "${options.thenTab}" without reloading; settling ${options.settle}s again.`)
+      await wait(options.settle * 1000)
+    }
 
     await evaluateValue(client, `globalThis[${JSON.stringify(IDLE_PROBE_GLOBAL)}]?.start()`)
     await client.send("Profiler.setSamplingInterval", { interval: options.samplingInterval })
