@@ -141,7 +141,7 @@ export const OpenCodeReloadFooterAction: React.FC<OpenCodeReloadFooterActionProp
           }
         }}
       >
-        <DialogContent showCloseButton={false} className="max-w-sm gap-5">
+        <DialogContent showCloseButton={false} className="max-w-md gap-5">
           <DialogHeader>
             <DialogTitle>{t('settings.view.pendingRestart.confirm.title')}</DialogTitle>
             <DialogDescription>
@@ -151,7 +151,7 @@ export const OpenCodeReloadFooterAction: React.FC<OpenCodeReloadFooterActionProp
           {/* Plain stack — avoid DialogFooter (sm:flex-row) fighting this layout */}
           <div className="flex w-full flex-col items-center gap-3">
             <div className="flex w-full items-stretch justify-center gap-3">
-              <div className="w-[40%] min-w-0 shrink-0">
+              <div className="min-w-0 shrink-0" style={{ width: '40%' }}>
                 <Button
                   type="button"
                   variant="outline"
@@ -161,7 +161,7 @@ export const OpenCodeReloadFooterAction: React.FC<OpenCodeReloadFooterActionProp
                   {t('settings.view.pendingRestart.confirm.cancel')}
                 </Button>
               </div>
-              <div className="w-[40%] min-w-0 shrink-0">
+              <div className="min-w-0 shrink-0" style={{ width: '40%' }}>
                 <Button
                   type="button"
                   variant="default"
