@@ -28,9 +28,10 @@ export const resolveControlTimeoutMs = (input, options) => {
   }
   const waitSeconds = Number(input?.timeout) > 0 ? Number(input.timeout) : DEFAULT_WAIT_TIMEOUT_SECONDS;
   const waitTimeoutMs = (waitSeconds * 1000) + WAIT_HTTP_TIMEOUT_BUFFER_MS;
-  // Waiting for the session and provisioning its worktree are additive, so the
-  // window must cover whichever is longer rather than only the wait.
-  return provisionsWorktree ? Math.max(waitTimeoutMs, WORKTREE_PROVISION_TIMEOUT_MS) : waitTimeoutMs;
+  // The server provisions the worktree inside session creation, before it
+  // starts waiting for the session to go idle, so the two windows run in
+  // sequence rather than overlapping. The client window has to cover both.
+  return provisionsWorktree ? waitTimeoutMs + WORKTREE_PROVISION_TIMEOUT_MS : waitTimeoutMs;
 };
 
 export const requestControlAction = async (port, action, input, options = {}) => {

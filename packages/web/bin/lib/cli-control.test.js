@@ -28,11 +28,10 @@ describe('resolveControlTimeoutMs', () => {
     expect(resolveControlTimeoutMs({ worktree: '   ' }, {})).toBeUndefined();
   });
 
-  it('covers worktree provisioning even when the wait window is shorter', () => {
-    expect(resolveControlTimeoutMs({ wait: true, timeout: 30, worktree: 'feature' }, {})).toBe(120_000);
-  });
-
-  it('keeps a longer wait window when it outlasts worktree provisioning', () => {
-    expect(resolveControlTimeoutMs({ wait: true, worktree: 'feature' }, {})).toBe(630_000);
+  it('covers provisioning and waiting in sequence when both are requested', () => {
+    // The server creates the worktree before it begins waiting for the session,
+    // so the client window must span both rather than the longer of the two.
+    expect(resolveControlTimeoutMs({ wait: true, timeout: 30, worktree: 'feature' }, {})).toBe(180_000);
+    expect(resolveControlTimeoutMs({ wait: true, worktree: 'feature' }, {})).toBe(750_000);
   });
 });

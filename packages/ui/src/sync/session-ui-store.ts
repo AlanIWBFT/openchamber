@@ -407,12 +407,10 @@ const getAttachmentForSession = (sessionId: string | null | undefined): SessionW
 }
 
 /**
- * Authoritative directory for a session: the child store that holds it, and
- * only then the session record's own fields. `null` means "not indexed yet",
- * never "no directory" — callers must fall back rather than treat it as empty.
- */
-/**
  * The directory that owns a session, from the two server-backed signals.
+ *
+ * `null` means "not indexed yet", never "no directory" — callers must fall back
+ * rather than treat it as empty.
  *
  * The session's own record wins. Holding a session in a child store proves
  * containment, not ownership: a project's session list legitimately includes
