@@ -115,7 +115,7 @@ export const OpenCodeReloadFooterAction: React.FC<OpenCodeReloadFooterActionProp
           className,
         )}
       >
-        {hasPending && (
+        {hasPending ? (
           <span
             className={cn(
               'inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5',
@@ -125,8 +125,9 @@ export const OpenCodeReloadFooterAction: React.FC<OpenCodeReloadFooterActionProp
           >
             {pendingCount}
           </span>
+        ) : (
+          <Icon name="restart" className="h-4 w-4 shrink-0" />
         )}
-        <Icon name="restart" className="h-4 w-4 shrink-0" />
         <span className="truncate">{label}</span>
       </button>
 
@@ -146,11 +147,27 @@ export const OpenCodeReloadFooterAction: React.FC<OpenCodeReloadFooterActionProp
               {t('settings.view.pendingRestart.confirm.description')}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="w-full sm:items-center sm:justify-between">
+          <DialogFooter className="w-full flex-col gap-3 sm:flex-col sm:justify-center">
+            <div className="flex w-full items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                className="inline-flex h-9 w-[40%] items-center justify-center rounded-md border border-border px-3 typography-ui-label text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                {t('settings.view.pendingRestart.confirm.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmApply}
+                className="inline-flex h-9 w-[40%] items-center justify-center rounded-md bg-primary px-3 typography-ui-label text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                {t('settings.view.actions.applyAndRestartOpenCode')}
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => setDontShowAgain((value) => !value)}
-              className="inline-flex items-center gap-1.5 typography-ui-label text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+              className="inline-flex items-center justify-center gap-1.5 typography-ui-label text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
               aria-pressed={dontShowAgain}
             >
               {dontShowAgain
@@ -158,22 +175,6 @@ export const OpenCodeReloadFooterAction: React.FC<OpenCodeReloadFooterActionProp
                 : <Icon name="checkbox-blank" className="h-4 w-4" />}
               {t('settings.view.pendingRestart.confirm.dontShowAgain')}
             </button>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmOpen(false)}
-                className="inline-flex h-8 items-center justify-center rounded-md border border-border px-3 typography-ui-label text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-              >
-                {t('settings.view.pendingRestart.confirm.cancel')}
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmApply}
-                className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 typography-ui-label text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-              >
-                {t('settings.view.actions.applyAndRestartOpenCode')}
-              </button>
-            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
