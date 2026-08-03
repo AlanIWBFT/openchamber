@@ -176,6 +176,43 @@ const countRenderedMessages = async (client) => {
   }
 }
 
+/**
+ * Snapshots the animations the page is running right now.
+ *
+ * Compositing work shows up in a trace as `Layerize`/`Commit`/`PrePaint` with
+ * no indication of what caused it. `document.getAnimations()` names the
+ * culprits directly, which turns "the compositor is busy" into a specific list
+ * of elements and keyframes.
+ */
+const snapshotAnimations = async (client) => {
+  const raw = await evaluateValue(client, `JSON.stringify((() => {
+    if (typeof document.getAnimations !== "function") return []
+    const describe = (animation) => {
+      const target = animation.effect && animation.effect.target
+      const identity = target
+        ? \`\${target.tagName.toLowerCase()}\${target.className && typeof target.className === "string" ? "." + target.className.trim().split(/\\s+/).slice(0, 4).join(".") : ""}\`
+        : "(no target)"
+      const keyframe = animation.animationName
+        || (animation.effect && animation.effect.getKeyframes && animation.effect.getKeyframes().length ? "transition/keyframes" : "unknown")
+      return \`\${animation.playState} \${keyframe} on \${identity}\`
+    }
+    const counts = new Map()
+    for (const animation of document.getAnimations()) {
+      const key = describe(animation)
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    return [...counts.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 20)
+      .map(([description, count]) => ({ description, count }))
+  })())`)
+  try {
+    return JSON.parse(raw ?? "[]")
+  } catch {
+    return []
+  }
+}
+
 const REPORTED_METRICS = [
   { key: "longTaskCount", label: "Long tasks (>50ms)", unit: "", lowerIsBetter: true },
   { key: "longestTaskMs", label: "Longest task", unit: "ms", lowerIsBetter: true },
@@ -222,6 +259,15 @@ const printReport = (summary, baseline) => {
   console.log("\nTop self time while streaming:")
   for (const entry of summary.cpuProfile?.topSelfTime?.slice(0, 15) ?? []) {
     console.log(`  ${String(entry.selfMs).padStart(9)} ms  ${String(entry.percentOfBusy).padStart(5)}%  ${entry.function}`)
+  }
+
+  if (summary.runningAnimations?.length) {
+    console.log("\nAnimations running mid-stream:")
+    for (const entry of summary.runningAnimations.slice(0, 12)) {
+      console.log(`  ${String(entry.count).padStart(4)}x  ${entry.description}`)
+    }
+  } else {
+    console.log("\nAnimations running mid-stream: none")
   }
 
   console.log("\nWhere recorded time went (timeline trace):")
@@ -362,6 +408,7 @@ const main = async () => {
 
     const samples = []
     let dispatchError = null
+    let animationSnapshot = null
     let becameIdle = false
     dispatch.catch((error) => { dispatchError = error })
 
@@ -378,6 +425,12 @@ const main = async () => {
         taskDuration: round(Number(current.TaskDuration ?? 0), 3),
       })
       if (dispatchError) break
+
+      // One mid-stream snapshot is enough to name a continuously running
+      // animation, and avoids polling overhead inside the measured window.
+      if (animationSnapshot === null && Date.now() - startedAt > 15_000) {
+        animationSnapshot = await snapshotAnimations(client)
+      }
 
       // `session status` is the authoritative activity source; polling it
       // avoids inferring completion from render or network quiet periods,
@@ -493,6 +546,7 @@ const main = async () => {
         heapGrowthMbPerSecond: growthPerSecond(samples, "jsHeapUsedMb"),
       },
       frameLiveness,
+      runningAnimations: animationSnapshot ?? [],
       cpuProfile: summarizeCpuProfile(profile),
       traceBreakdown,
       streamPerformance,
