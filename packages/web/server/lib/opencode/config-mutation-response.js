@@ -24,21 +24,3 @@ export function buildExternalManualRestartResponse(message) {
     message,
   };
 }
-
-export function buildConfigMutationResponse(refreshResult, { liveMessage, manualRestartMessage, deferredMessage }) {
-  if (refreshResult && refreshResult.external) {
-    return buildExternalManualRestartResponse(manualRestartMessage);
-  }
-
-  // When callers skip the live refresh (deferred apply flow), report a pending restart.
-  if (!refreshResult || refreshResult.deferred === true) {
-    return buildDeferredRestartResponse(deferredMessage || liveMessage);
-  }
-
-  return {
-    success: true,
-    requiresReload: true,
-    message: liveMessage,
-    reloadDelayMs: refreshResult.reloadDelayMs,
-  };
-}
