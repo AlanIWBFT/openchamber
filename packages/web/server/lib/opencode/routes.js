@@ -2,11 +2,13 @@ import { createProjectIdFromPath } from '../projects/project-id.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import {
+  buildDeferredRestartResponse,
+} from './config-mutation-response.js';
 
 export const registerOpenCodeRoutes = (app, dependencies) => {
   const {
     crypto,
-    clientReloadDelayMs,
     getOpenCodeResolutionSnapshot,
     getOpenCodeUpgradeCapability,
     formatSettingsResponse,
@@ -489,15 +491,18 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       }
 
       if (removed) {
-        await refreshOpenCodeAfterConfigChange(`provider ${providerId} disconnected (${scope})`);
+        return res.json({
+          success: true,
+          removed,
+          ...buildDeferredRestartResponse('Provider disconnected successfully. Restart OpenCode to apply.'),
+        });
       }
 
       return res.json({
         success: true,
         removed,
-        requiresReload: removed,
-        message: removed ? 'Provider disconnected successfully' : 'Provider was not connected',
-        reloadDelayMs: removed ? clientReloadDelayMs : undefined,
+        requiresReload: false,
+        message: 'Provider was not connected',
       });
     } catch (error) {
       console.error('Failed to disconnect provider:', error);
@@ -591,14 +596,9 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
       await fs.promises.writeFile(AGENTS_MD_PATH, content, 'utf8');
 
-      // Refresh OpenCode so it picks up the new AGENTS.md without a full restart
-      try {
-        await refreshOpenCodeAfterConfigChange('global behavior (AGENTS.md) updated');
-      } catch {
-        // Non-fatal: file was written successfully
-      }
-
-      return res.json({ success: true });
+      return res.json(buildDeferredRestartResponse(
+        'AGENTS.md saved. Restart OpenCode to apply.',
+      ));
     } catch (error) {
       console.error('Failed to write AGENTS.md:', error);
       return res.status(500).json({ error: error.message || 'Failed to write AGENTS.md' });
