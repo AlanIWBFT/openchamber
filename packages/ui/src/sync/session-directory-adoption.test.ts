@@ -19,10 +19,14 @@ const PARENT = "/repo"
 const WORKTREE = "/repo/.worktrees/feature"
 const SESSION_ID = "ses_directory_adoption"
 
-const indexSessionIn = (manager: ChildStoreManager, directory: string): void => {
+const indexSessionIn = (
+  manager: ChildStoreManager,
+  directory: string,
+  recordDirectory: string = directory,
+): void => {
   const store = manager.ensureChild(directory, { bootstrap: false })
   store.setState({
-    session: [{ id: SESSION_ID, directory, title: "test" } as never],
+    session: [{ id: SESSION_ID, directory: recordDirectory, title: "test" } as never],
   })
 }
 
@@ -40,6 +44,18 @@ describe("adoptAuthoritativeSessionDirectory", () => {
     expect(useSessionUIStore.getState().currentSessionDirectory).not.toBe(WORKTREE)
 
     indexSessionIn(manager, WORKTREE)
+    useSessionUIStore.getState().adoptAuthoritativeSessionDirectory()
+
+    expect(useSessionUIStore.getState().currentSessionDirectory).toBe(WORKTREE)
+  })
+
+  test("believes the session record over the store that merely holds it", () => {
+    // A project's session list includes the sessions of its worktrees so the
+    // sidebar can group them, so the parent store holds this session while the
+    // session itself reports the worktree. Ownership comes from the record.
+    useSessionUIStore.getState().setCurrentSession(SESSION_ID)
+    indexSessionIn(manager, PARENT, WORKTREE)
+
     useSessionUIStore.getState().adoptAuthoritativeSessionDirectory()
 
     expect(useSessionUIStore.getState().currentSessionDirectory).toBe(WORKTREE)

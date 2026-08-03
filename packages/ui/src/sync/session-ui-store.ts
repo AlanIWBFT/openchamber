@@ -411,11 +411,24 @@ const getAttachmentForSession = (sessionId: string | null | undefined): SessionW
  * only then the session record's own fields. `null` means "not indexed yet",
  * never "no directory" — callers must fall back rather than treat it as empty.
  */
+/**
+ * The directory that owns a session, from the two server-backed signals.
+ *
+ * The session's own record wins. Holding a session in a child store proves
+ * containment, not ownership: a project's session list legitimately includes
+ * the sessions of its worktrees so the sidebar can group them, so the parent
+ * repository holds worktree sessions too. Reading ownership from store
+ * membership therefore reports the parent for a session that lives in a
+ * worktree, and every fetch is then addressed to a directory that does not own
+ * it. Store membership remains the fallback for a session whose record carries
+ * no directory.
+ */
 const getAuthoritativeSessionDirectory = (sessionId: string): string | null => {
-  const owningDirectory = getSyncSessionDirectory(sessionId)
-  if (owningDirectory) return normalizePath(owningDirectory)
   const target = getAllSyncSessions().find((s) => s.id === sessionId)
-  return target ? resolveDirectoryKey(target) : null
+  const recordDirectory = target ? resolveDirectoryKey(target) : null
+  if (recordDirectory) return normalizePath(recordDirectory)
+  const owningDirectory = getSyncSessionDirectory(sessionId)
+  return owningDirectory ? normalizePath(owningDirectory) : null
 }
 
 /**
