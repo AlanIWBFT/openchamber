@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/icon/Icon';
 import { toast } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
@@ -147,22 +148,25 @@ export const OpenCodeReloadFooterAction: React.FC<OpenCodeReloadFooterActionProp
               {t('settings.view.pendingRestart.confirm.description')}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="!flex w-full !flex-col gap-3 sm:!flex-col sm:!justify-center">
-            <div className="mx-auto flex w-full max-w-none items-stretch justify-center gap-3 px-0">
-              <button
+          {/* Plain stack — avoid DialogFooter (sm:flex-row) fighting this layout */}
+          <div className="flex w-full flex-col items-center gap-3">
+            <div className="flex w-full items-stretch justify-center gap-3">
+              <Button
                 type="button"
+                variant="outline"
+                className="h-9 w-[40%] min-w-0 shrink-0 normal-case"
                 onClick={() => setConfirmOpen(false)}
-                className="inline-flex h-9 w-[40%] min-w-0 flex-none items-center justify-center rounded-md border border-border px-3 typography-ui-label text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               >
                 {t('settings.view.pendingRestart.confirm.cancel')}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="default"
+                className="h-9 w-[40%] min-w-0 shrink-0 normal-case"
                 onClick={handleConfirmApply}
-                className="inline-flex h-9 w-[40%] min-w-0 flex-none items-center justify-center rounded-md bg-primary px-3 typography-ui-label text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               >
                 {t('settings.view.actions.applyAndRestartOpenCode')}
-              </button>
+              </Button>
             </div>
             <button
               type="button"
@@ -175,7 +179,7 @@ export const OpenCodeReloadFooterAction: React.FC<OpenCodeReloadFooterActionProp
                 : <Icon name="checkbox-blank" className="h-4 w-4" />}
               {t('settings.view.pendingRestart.confirm.dontShowAgain')}
             </button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </>
