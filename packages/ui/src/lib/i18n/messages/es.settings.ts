@@ -49,7 +49,11 @@ export const settingsDict = {
   "settings.view.pendingRestart.applyFailed": "No se pudieron aplicar los cambios de configuración.",
   "settings.view.pendingRestart.manualRestartRequired": "Guardado en disco. Reinicia el servidor OpenCode conectado para aplicar los cambios.",
   "settings.view.pendingRestart.saved": "Guardado. Reinicia OpenCode para aplicar.",
-  "settings.view.actions.backToSettings": "Volver a Configuración",
+
+  "settings.view.pendingRestart.confirm.title": "¿Aplicar y reiniciar OpenCode?",
+  "settings.view.pendingRestart.confirm.description": "Reiniciar OpenCode detendrá cualquier chat en ejecución. Los cambios de configuración guardados se aplicarán después del reinicio.",
+  "settings.view.pendingRestart.confirm.dontShowAgain": "No volver a mostrar",
+  "settings.view.pendingRestart.confirm.cancel": "Cancelar",  "settings.view.actions.backToSettings": "Volver a Configuración",
   "settings.view.actions.closeSettings": "Cerrar configuración",
   "settings.view.actions.openSectionList": "Abrir lista de secciones",
   "settings.view.actions.closeSettingsWithShortcut": "Cerrar configuración ({shortcut}+,)",

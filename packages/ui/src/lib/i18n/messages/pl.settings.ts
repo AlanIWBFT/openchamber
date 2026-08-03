@@ -1922,7 +1922,11 @@ export const settingsDict = {
   'settings.view.pendingRestart.applyFailed': 'Nie udało się zastosować zmian konfiguracji.',
   'settings.view.pendingRestart.manualRestartRequired': 'Zapisano na dysku. Uruchom ponownie podłączony serwer OpenCode, aby zastosować zmiany.',
   'settings.view.pendingRestart.saved': 'Zapisano. Uruchom ponownie OpenCode, aby zastosować.',
-  'settings.view.actions.resizeNavigation': 'Zmień rozmiar nawigacji',
+
+  'settings.view.pendingRestart.confirm.title': 'Zastosować i uruchomić ponownie OpenCode?',
+  'settings.view.pendingRestart.confirm.description': 'Ponowne uruchomienie OpenCode zatrzyma wszystkie aktywne czaty. Zapisane zmiany konfiguracji zaczną obowiązywać po restarcie.',
+  'settings.view.pendingRestart.confirm.dontShowAgain': 'Nie pokazuj ponownie',
+  'settings.view.pendingRestart.confirm.cancel': 'Anuluj',  'settings.view.actions.resizeNavigation': 'Zmień rozmiar nawigacji',
   'settings.view.search.placeholder': 'Szukaj ustawień',
   'settings.view.search.aria': 'Szukaj ustawień',
   'settings.view.search.clear': 'Wyczyść wyszukiwanie ustawień',

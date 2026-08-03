@@ -49,7 +49,11 @@ export const settingsDict = {
   'settings.view.pendingRestart.applyFailed': 'Échec de l\'application des modifications de configuration.',
   'settings.view.pendingRestart.manualRestartRequired': 'Enregistré sur le disque. Redémarrez le serveur OpenCode connecté pour appliquer les modifications.',
   'settings.view.pendingRestart.saved': 'Enregistré. Redémarrez OpenCode pour appliquer.',
-  'settings.view.actions.backToSettings': 'Retour aux paramètres',
+
+  'settings.view.pendingRestart.confirm.title': 'Appliquer et redémarrer OpenCode ?',
+  'settings.view.pendingRestart.confirm.description': 'Le redémarrage de OpenCode arrêtera tous les chats en cours. Vos modifications de configuration enregistrées prendront effet après le redémarrage.',
+  'settings.view.pendingRestart.confirm.dontShowAgain': 'Ne plus afficher',
+  'settings.view.pendingRestart.confirm.cancel': 'Annuler',  'settings.view.actions.backToSettings': 'Retour aux paramètres',
   'settings.view.actions.closeSettings': 'Fermer les paramètres',
   'settings.view.actions.openSectionList': 'Ouvrir la liste des sections',
   'settings.view.actions.closeSettingsWithShortcut': 'Fermer les paramètres ({shortcut}+,)',

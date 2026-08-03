@@ -49,7 +49,11 @@ export const settingsDict = {
   "settings.view.pendingRestart.applyFailed": "Не вдалося застосувати зміни конфігурації.",
   "settings.view.pendingRestart.manualRestartRequired": "Збережено на диску. Перезапустіть підключений сервер OpenCode, щоб застосувати зміни.",
   "settings.view.pendingRestart.saved": "Збережено. Перезапустіть OpenCode, щоб застосувати.",
-  "settings.view.actions.backToSettings": "Назад до налаштувань",
+
+  "settings.view.pendingRestart.confirm.title": "Застосувати та перезапустити OpenCode?",
+  "settings.view.pendingRestart.confirm.description": "Перезапуск OpenCode зупинить усі активні чати. Збережені зміни конфігурації набудуть чинності після перезапуску.",
+  "settings.view.pendingRestart.confirm.dontShowAgain": "Більше не показувати",
+  "settings.view.pendingRestart.confirm.cancel": "Скасувати",  "settings.view.actions.backToSettings": "Назад до налаштувань",
   "settings.view.actions.closeSettings": "Закрити налаштування",
   "settings.view.actions.openSectionList": "Відкрити список розділів",
   "settings.view.actions.closeSettingsWithShortcut": "Закрити налаштування ({shortcut}+,)",

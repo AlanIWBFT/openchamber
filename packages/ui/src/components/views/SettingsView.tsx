@@ -9,7 +9,7 @@ import { useSnippetsStore } from '@/stores/useSnippetsStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipTrigger } from '@/components/ui/tooltip';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AgentsSidebar } from '@/components/sections/agents/AgentsSidebar';
 import { AgentsPage } from '@/components/sections/agents/AgentsPage';
@@ -48,8 +48,7 @@ import { useI18n } from '@/lib/i18n';
 import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
 import { McpIcon } from '@/components/icons/McpIcon';
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
-import { PendingOpenCodeRestartAction } from '@/components/views/PendingOpenCodeRestartAction';
+import { OpenCodeReloadFooterAction } from '@/components/views/OpenCodeReloadFooterAction';
 import {
   selectPendingOpenCodeRestartCount,
   usePendingOpenCodeRestartStore,
@@ -979,42 +978,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
         {/* Footer */}
         <div className="overflow-hidden transition-opacity duration-150 opacity-100">
-          <div className="border-t border-border bg-background px-4 py-1 space-y-0.5 sm:bg-sidebar">
-            {!runtimeCtx.isVSCode && pendingRestartCount <= 0 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      'flex h-11 w-full items-center gap-2 rounded-md px-3 overflow-hidden whitespace-nowrap sm:h-7 sm:px-2',
-                      'text-sm font-semibold text-sidebar-foreground/90',
-                      'hover:text-sidebar-foreground hover:bg-interactive-hover',
-                    )}
-                    onClick={() => {
-                      void (async () => {
-                        try {
-                          await reloadOpenCodeConfiguration({
-                            message: t('settings.view.pendingRestart.applying'),
-                            mode: 'projects',
-                            scopes: ['all'],
-                          });
-                          usePendingOpenCodeRestartStore.getState().clear();
-                        } catch {
-                          // ignore
-                        }
-                      })();
-                    }}
-                  >
-                    <Icon name="restart" className="h-4 w-4 shrink-0" />
-                    <span>{t('settings.view.actions.reloadOpenCode')}</span>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t('settings.view.actions.reloadOpenCodeTooltip')}
-                </TooltipContent>
-              </Tooltip>
+          <div className="border-t border-border bg-background px-4 py-1.5 space-y-0.5 sm:bg-sidebar">
+            {(!runtimeCtx.isVSCode || pendingRestartCount > 0) && (
+              <OpenCodeReloadFooterAction />
             )}
-
           </div>
         </div>
       </div>
@@ -1132,8 +1099,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
             </button>
           )}
 
-          <PendingOpenCodeRestartAction compact className="max-w-[min(100%,14rem)]" />
-
           {onClose && (
             <button
               type="button"
@@ -1161,9 +1126,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
             </div>
           )}
 
-      <div className={cn('absolute right-0.5 z-50 flex items-center gap-1.5', isWindowed ? 'top-0.5' : 'top-1')}>
-        <PendingOpenCodeRestartAction compact className="max-w-[min(100%,16rem)]" />
-        {onClose && (
+      {onClose && (
+        <div className={cn('absolute right-0.5 z-50', isWindowed ? 'top-0.5' : 'top-1')}>
           <button
             type="button"
             onClick={onClose}
@@ -1173,8 +1137,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
           >
             <Icon name="close" className="h-5 w-5" />
           </button>
-        )}
-      </div>
+        </div>
+      )}
         </>
       )}
 

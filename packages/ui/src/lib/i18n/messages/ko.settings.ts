@@ -49,7 +49,11 @@ export const settingsDict = {
   'settings.view.pendingRestart.applyFailed': '구성 변경을 적용하지 못했습니다.',
   'settings.view.pendingRestart.manualRestartRequired': '디스크에 저장되었습니다. 연결된 OpenCode 서버를 다시 시작하여 변경 사항을 적용하세요.',
   'settings.view.pendingRestart.saved': '저장되었습니다. 적용하려면 OpenCode를 다시 시작하세요.',
-  'settings.view.actions.backToSettings': '설정으로 돌아가기',
+
+  'settings.view.pendingRestart.confirm.title': '적용하고 OpenCode를 다시 시작할까요?',
+  'settings.view.pendingRestart.confirm.description': 'OpenCode를 다시 시작하면 실행 중인 채팅이 중지됩니다. 저장된 구성 변경 사항은 다시 시작 후 적용됩니다.',
+  'settings.view.pendingRestart.confirm.dontShowAgain': '다시 표시하지 않음',
+  'settings.view.pendingRestart.confirm.cancel': '취소',  'settings.view.actions.backToSettings': '설정으로 돌아가기',
   'settings.view.actions.closeSettings': '설정 닫기',
   'settings.view.actions.openSectionList': '섹션 목록 열기',
   'settings.view.actions.closeSettingsWithShortcut': '설정 닫기 ({shortcut}+,)',

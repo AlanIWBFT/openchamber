@@ -47,7 +47,11 @@
   'settings.view.pendingRestart.applyFailed': '套用設定變更失敗。',
   'settings.view.pendingRestart.manualRestartRequired': '已儲存到磁碟。請重新啟動已連線的 OpenCode 伺服器以套用變更。',
   'settings.view.pendingRestart.saved': '已儲存。請重新啟動 OpenCode 以套用。',
-  'settings.view.actions.backToSettings': '返回設定頁',
+
+  'settings.view.pendingRestart.confirm.title': '套用並重新啟動 OpenCode？',
+  'settings.view.pendingRestart.confirm.description': '重新啟動 OpenCode 將停止任何執行中的聊天。已儲存的設定變更將在重新啟動後生效。',
+  'settings.view.pendingRestart.confirm.dontShowAgain': '不要再顯示',
+  'settings.view.pendingRestart.confirm.cancel': '取消',  'settings.view.actions.backToSettings': '返回設定頁',
   'settings.view.actions.closeSettings': '關閉設定',
   'settings.view.actions.openSectionList': '開啟群組清單',
   'settings.view.actions.closeSettingsWithShortcut': '關閉設定（{shortcut}+,）',
