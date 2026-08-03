@@ -147,19 +147,19 @@ export const OpenCodeReloadFooterAction: React.FC<OpenCodeReloadFooterActionProp
               {t('settings.view.pendingRestart.confirm.description')}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="w-full flex-col gap-3 sm:flex-col sm:justify-center">
-            <div className="flex w-full items-center justify-center gap-3">
+          <DialogFooter className="!flex w-full !flex-col gap-3 sm:!flex-col sm:!justify-center">
+            <div className="mx-auto flex w-full max-w-none items-stretch justify-center gap-3 px-0">
               <button
                 type="button"
                 onClick={() => setConfirmOpen(false)}
-                className="inline-flex h-9 w-[40%] items-center justify-center rounded-md border border-border px-3 typography-ui-label text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                className="inline-flex h-9 w-[40%] min-w-0 flex-none items-center justify-center rounded-md border border-border px-3 typography-ui-label text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               >
                 {t('settings.view.pendingRestart.confirm.cancel')}
               </button>
               <button
                 type="button"
                 onClick={handleConfirmApply}
-                className="inline-flex h-9 w-[40%] items-center justify-center rounded-md bg-primary px-3 typography-ui-label text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                className="inline-flex h-9 w-[40%] min-w-0 flex-none items-center justify-center rounded-md bg-primary px-3 typography-ui-label text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               >
                 {t('settings.view.actions.applyAndRestartOpenCode')}
               </button>
