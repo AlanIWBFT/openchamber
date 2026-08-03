@@ -30,9 +30,16 @@ const readTextControlSelection = (element: Element): string | null => {
   const tag = element.tagName?.toLowerCase();
   if (tag === 'textarea') {
     const control = element as HTMLTextAreaElement;
-    return trimSelectionValue(
-      control.value.slice(control.selectionStart ?? 0, control.selectionEnd ?? 0),
-    ) || null;
+    const start = control.selectionStart ?? 0;
+    const end = control.selectionEnd ?? 0;
+    const text = trimSelectionValue(control.value.slice(start, end));
+    if (!text) {
+      return null;
+    }
+    // Collapse so a duplicate menu delivery cannot append the same range twice.
+    control.selectionStart = end;
+    control.selectionEnd = end;
+    return text;
   }
 
   if (tag === 'input') {
@@ -41,9 +48,15 @@ const readTextControlSelection = (element: Element): string | null => {
     if (!['text', 'search', 'url', 'tel', 'password'].includes(type)) {
       return null;
     }
-    return trimSelectionValue(
-      control.value.slice(control.selectionStart ?? 0, control.selectionEnd ?? 0),
-    ) || null;
+    const start = control.selectionStart ?? 0;
+    const end = control.selectionEnd ?? 0;
+    const text = trimSelectionValue(control.value.slice(start, end));
+    if (!text) {
+      return null;
+    }
+    control.selectionStart = end;
+    control.selectionEnd = end;
+    return text;
   }
 
   return null;

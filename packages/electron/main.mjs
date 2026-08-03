@@ -2250,6 +2250,13 @@ const dispatchMenuAction = (action) => {
   dispatchDomEventToWindow(target, 'openchamber:menu-action', action);
 };
 
+// Append-style menu actions must reach the renderer exactly once. Dual IPC+DOM
+// delivery (dispatchMenuAction) would insert the selection twice.
+const dispatchAddSelectionToChat = () => {
+  const target = getMenuTargetWindow();
+  if (target) emitToWindow(target, 'openchamber:menu-action', 'add-selection-to-chat');
+};
+
 // Mini-chat draft windows are not deduplicated, so this must reach the renderer
 // exactly once — emitToWindow alone (no DOM-event double dispatch). The renderer
 // resolves the active directory/project and opens the window.
@@ -4559,7 +4566,7 @@ const buildMacMenu = () => {
         { type: 'separator' },
         { role: 'cut' },
         { label: 'Copy', accelerator: 'Cmd+C', click: () => handleCopyAction() },
-        { label: 'Add Selection to Chat', accelerator: 'Cmd+L', registerAccelerator: false, click: () => dispatchAction('add-selection-to-chat') },
+        { label: 'Add Selection to Chat', accelerator: 'Cmd+L', registerAccelerator: false, click: () => dispatchAddSelectionToChat() },
         { role: 'paste' },
         { role: 'selectAll' },
       ],
@@ -4657,7 +4664,7 @@ const buildAutoHiddenMenu = () => {
         { type: 'separator' },
         { role: 'cut' },
         { label: 'Copy', accelerator: 'Ctrl+C', click: () => handleCopyAction() },
-        { label: 'Add Selection to Chat', accelerator: 'Ctrl+L', registerAccelerator: false, click: () => dispatchAction('add-selection-to-chat') },
+        { label: 'Add Selection to Chat', accelerator: 'Ctrl+L', registerAccelerator: false, click: () => dispatchAddSelectionToChat() },
         { role: 'paste' },
         { role: 'selectAll' },
       ],
