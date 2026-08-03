@@ -27,27 +27,15 @@ const terminalViewportSource = readFileSync(
     'utf-8',
 );
 
-const viewportKeyBlock = (() => {
-    const start = terminalViewSource.indexOf('const terminalViewportKey = React.useMemo(');
-    expect(start).toBeGreaterThan(-1);
-    const end = terminalViewSource.indexOf('}, [', start);
-    expect(end).toBeGreaterThan(start);
-    return terminalViewSource.slice(start, terminalViewSource.indexOf(');', end));
-})();
+const viewportKeyDeclaration = terminalViewSource
+    .split('\n')
+    .find((line) => line.includes('const terminalViewportKey =')) ?? '';
 
 describe('terminal viewport remount guard', () => {
     test('viewport identity excludes the PTY session id', () => {
-        expect(viewportKeyBlock).toContain('effectiveDirectory');
-        expect(viewportKeyBlock).toContain('activeTabId');
-        expect(viewportKeyBlock).not.toContain('terminalSessionId');
-    });
-
-    test('viewport key memo does not depend on the PTY session id', () => {
-        const dependencyStart = terminalViewSource.indexOf('}, [', terminalViewSource.indexOf('const terminalViewportKey'));
-        const dependencies = terminalViewSource.slice(dependencyStart, terminalViewSource.indexOf(']', dependencyStart));
-        expect(dependencies).toContain('effectiveDirectory');
-        expect(dependencies).toContain('activeTabId');
-        expect(dependencies).not.toContain('terminalSessionId');
+        expect(viewportKeyDeclaration).toContain('effectiveDirectory');
+        expect(viewportKeyDeclaration).toContain('activeTabId');
+        expect(viewportKeyDeclaration).not.toContain('terminalSessionId');
     });
 
     test('replay discontinuities reset the terminal in place instead of remounting it', () => {
@@ -78,6 +66,32 @@ describe('terminal viewport remount guard', () => {
     test('deduplicates create attempts while the viewport layout settles', () => {
         expect(terminalViewSource).toContain('pendingTerminalCreatesRef.current.has(createKey)');
         expect(terminalViewSource).toContain('pendingTerminalCreatesRef.current.delete(createKey)');
+    });
+
+    test('lets the session-ID effect own stream startup after creating a tab', () => {
+        const createStart = terminalViewSource.indexOf('if (!terminalId) {');
+        const createEnd = terminalViewSource.indexOf('if (!terminalId || cancelled) return;', createStart);
+        expect(createStart).toBeGreaterThan(-1);
+        expect(createEnd).toBeGreaterThan(createStart);
+        const createBlock = terminalViewSource.slice(createStart, createEnd);
+
+        expect(createBlock).toContain('setTabSessionId(directory, tabId, session.sessionId);');
+        expect(createBlock).toContain('Let that next');
+        expect(createBlock).not.toContain('startStream(');
+    });
+
+    test('clears a current tab from connecting when a strict-mode create rejects', () => {
+        const createStart = terminalViewSource.indexOf('if (!terminalId) {');
+        const catchStart = terminalViewSource.indexOf('} catch (error) {', createStart);
+        const catchEnd = terminalViewSource.indexOf('} finally {', catchStart);
+        expect(catchStart).toBeGreaterThan(createStart);
+        expect(catchEnd).toBeGreaterThan(catchStart);
+        const catchBlock = terminalViewSource.slice(catchStart, catchEnd);
+
+        expect(catchBlock).toContain('owningTab.terminalSessionId');
+        expect(catchBlock).toContain('activeTabIdRef.current !== tabId');
+        expect(catchBlock).toContain('setConnecting(directory, tabId, false);');
+        expect(catchBlock).not.toContain('if (!cancelled)');
     });
 
     test('derives the initial PTY size before Ghostty mounts', () => {

@@ -10,11 +10,12 @@
 
 - `attach` registers a connection for one terminal. One socket may attach to many terminals.
 - Every attach and reconnect begins with an authoritative `snapshot` containing bounded history and the current sequence.
+- A current socket that closes or errors before its initial `open` invalidates its URL-scoped auth token before retrying, so retries mint a fresh token instead of backing off against a rejected upgrade. Hidden or offline clients wait 60 seconds and wake promptly on visibility/online recovery.
 - `output`, `exit`, and `restarted` carry monotonically increasing per-terminal sequences. Output carries raw live bytes plus replay-safe bytes with terminal query exchanges removed.
 - Attach registers before capturing the snapshot, buffers concurrent events, drops events represented by the snapshot sequence, then enters live delivery.
 - `write` always includes the terminal ID; sockets never have mutable single-terminal binding state.
 - `detach` removes only that attachment.
-- Creation carries the active UI appearance. The PTY sets `COLORFGBG` and answers OSC 10, OSC 11, and Mode 2031 queries immediately, including queries emitted before a WebSocket attachment exists. Subscribed TUIs receive a Mode 2031 notification when the appearance changes.
+- Creation carries the active UI appearance. The PTY sets `COLORFGBG` and answers OSC 10, OSC 11, Mode 2031, and primary-device-attribute queries immediately, including queries emitted before a WebSocket attachment exists. The DA1 fallback prevents Fish from waiting ten seconds for a renderer that cannot observe or answer its startup query. Subscribed TUIs receive a Mode 2031 notification when the appearance changes.
 
 HTTP remains the authenticated command plane for create, resize, appearance updates, restart, close, and force-kill. There is no SSE output or HTTP input compatibility path.
 

@@ -421,7 +421,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ visible }) => {
             }
 
             const tab = state.tabs.find((t) => t.id === tabId) ?? state.tabs[0];
-            let terminalId = tab?.terminalSessionId ?? null;
+            const terminalId = tab?.terminalSessionId ?? null;
             const terminalLifecycle = tab?.lifecycle ?? 'idle';
             const isActionTab = Boolean(tab?.label?.startsWith('Action:'));
             const buffer = useTerminalStore.getState().getBuffer(directory, tabId);
@@ -487,18 +487,27 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ visible }) => {
                     ) {
                         void terminal.resize({ sessionId: session.sessionId, ...viewportSize }).catch(() => {});
                     }
-                    terminalId = session.sessionId;
+                    // Storing the session ID reruns this effect. Let that next
+                    // effect own stream startup: starting here would be torn
+                    // down immediately by this effect's cleanup.
+                    return;
                 } catch (error) {
-                    if (!cancelled) {
-                        setConnectionError(
-                            error instanceof Error
-                                ? error.message
-                                : t('terminalView.error.startSessionFailed')
-                        );
-                        setIsFatalError(true);
-                        setIsReconnectPending(false);
-                        setConnecting(directory, tabId, false);
-                    }
+                    const owningTab = useTerminalStore.getState().getDirectoryState(directory)?.tabs.find((entry) => entry.id === tabId);
+                    if (!owningTab || owningTab.terminalSessionId) return;
+
+                    setConnecting(directory, tabId, false);
+                    // Strict Mode replaces the first effect while its create
+                    // request is pending. `cancelled` therefore does not mean
+                    // this tab stopped owning the request; use current store
+                    // ownership so a rejected create cannot leave it spinning.
+                    if (directoryRef.current !== directory || activeTabIdRef.current !== tabId) return;
+                    setConnectionError(
+                        error instanceof Error
+                            ? error.message
+                            : t('terminalView.error.startSessionFailed')
+                    );
+                    setIsFatalError(true);
+                    setIsReconnectPending(false);
                     return;
                 } finally {
                     pendingTerminalCreatesRef.current.delete(createKey);
@@ -706,9 +715,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ visible }) => {
     const handleViewportResize = React.useCallback(
         (cols: number, rows: number) => {
             const previous = lastViewportSizeRef.current;
-            if (!previous) {
-                lastViewportSizeRef.current = { cols, rows };
-            } else if (previous.cols !== cols || previous.rows !== rows) {
+            if (!previous || previous.cols !== cols || previous.rows !== rows) {
                 lastViewportSizeRef.current = { cols, rows };
             }
             if (!isTerminalVisible) {
@@ -716,9 +723,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ visible }) => {
             }
             const terminalId = terminalIdRef.current;
             if (!terminalId) return;
-            void terminal.resize({ sessionId: terminalId, cols, rows }).catch(() => {
-
-            });
+            void terminal.resize({ sessionId: terminalId, cols, rows }).catch(() => {});
         },
         [isTerminalVisible, terminal]
     );
@@ -812,11 +817,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ visible }) => {
     // here tore down and rebuilt the Ghostty terminal (WASM VT + canvas + font
     // atlas) a second time the moment `createSession` resolved, doubling the cost
     // of every terminal open. Session changes are handled by the chunk replay path.
-    const terminalViewportKey = React.useMemo(() => {
-        const directoryPart = effectiveDirectory ?? 'no-dir';
-        const tabPart = activeTabId ?? 'no-tab';
-        return `${directoryPart}::${tabPart}`;
-    }, [effectiveDirectory, activeTabId]);
+    const terminalViewportKey = `${effectiveDirectory ?? 'no-dir'}::${activeTabId ?? 'no-tab'}`;
 
     React.useEffect(() => {
         if (!isTerminalVisible || useTouchTerminalInput) {
