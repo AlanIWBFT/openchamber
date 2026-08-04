@@ -1075,6 +1075,8 @@ export const settingsDict = {
   'settings.openchamber.keyboardShortcuts.action.toggle_right_sidebar.label': '切换上下文面板',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_git.label': '打开 Git 界面',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_files.label': '打开文件界面',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.label': '切换上下文面板界面',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.suffix': ' + 1…0',
   'settings.openchamber.keyboardShortcuts.action.new_chat.label': '新建会话',
   'settings.openchamber.keyboardShortcuts.action.new_chat_worktree.label': '新建工作树草稿',
   'settings.openchamber.keyboardShortcuts.action.new_mini_chat.label': '新建 Mini Chat 窗口',

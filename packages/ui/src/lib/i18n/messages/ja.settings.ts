@@ -1108,6 +1108,8 @@ export const settingsDict = {
   'settings.openchamber.keyboardShortcuts.action.toggle_right_sidebar.label': 'コンテキストパネルの表示切替',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_git.label': 'Git サーフェスを開く',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_files.label': 'ファイルサーフェスを開く',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.label': 'コンテキストパネルのサーフェスを切り替え',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.suffix': ' + 1…0',
   'settings.openchamber.keyboardShortcuts.action.new_chat.label': '新しい Session',
   'settings.openchamber.keyboardShortcuts.action.new_chat_worktree.label': '新しい Worktree 下書き',
   'settings.openchamber.keyboardShortcuts.action.new_mini_chat.label': '新しいミニチャットウィンドウ',

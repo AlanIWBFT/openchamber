@@ -1689,7 +1689,7 @@ export const dict: Record<I18nKey, string> = {
   "helpDialog.item.toggleTerminalExpanded": "Expandir o contraer terminal",
   "helpDialog.item.togglePlanContextPanel": "Alternar panel de contexto del plan",
   "helpDialog.item.cycleTheme": "Cambiar tema (Claro → Oscuro → Sistema)",
-  "helpDialog.item.switchProject": "Cambiar proyecto",
+  "helpDialog.item.switchContextSurface": "Cambiar superficie del panel de contexto (tecla numérica)",
   "helpDialog.item.toggleServicesMenu": "Mostrar u ocultar menú de servicios",
   "helpDialog.item.cycleServicesTab": "Cambiar pestaña de servicios",
   "helpDialog.item.openSettings": "Abrir configuración",

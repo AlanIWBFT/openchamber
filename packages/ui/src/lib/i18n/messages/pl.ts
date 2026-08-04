@@ -2333,7 +2333,7 @@ export const dict: Record<I18nKey, string> = {
   'helpDialog.item.openRightSidebarGitTab': 'Otwórz powierzchnię Git',
   'helpDialog.item.openSettings': 'Otwórz ustawienia',
   'helpDialog.item.showKeyboardShortcuts': 'Pokaż skróty klawiaturowe (to okno)',
-  'helpDialog.item.switchProject': 'Przełącz projekt',
+  'helpDialog.item.switchContextSurface': 'Przełącz powierzchnię panelu kontekstu (klawisz liczbowy)',
   'helpDialog.item.togglePlanContextPanel': 'Przełącz panel kontekstu planu',
   'helpDialog.item.toggleRightSidebar': 'Przełącz panel kontekstu',
   'helpDialog.item.toggleServicesMenu': 'Przełącz menu usług',

@@ -1558,7 +1558,7 @@ export const dict = {
   'helpDialog.item.toggleTerminalExpanded': 'Terminal erweitert umschalten',
   'helpDialog.item.togglePlanContextPanel': 'Plan-Kontext-Panel umschalten',
   'helpDialog.item.cycleTheme': 'Thema wechseln (Hell → Dunkel → System)',
-  'helpDialog.item.switchProject': 'Projekt wechseln',
+  'helpDialog.item.switchContextSurface': 'Kontextpanel-Oberfläche wechseln (Zahlentaste)',
   'helpDialog.item.toggleServicesMenu': 'Dienstemenü umschalten',
   'helpDialog.item.cycleServicesTab': 'Dienste-Registerkarte durchgehen',
   'helpDialog.item.openSettings': 'Einstellungen öffnen',

@@ -1681,7 +1681,7 @@ export const dict: Record<I18nKey, string> = {
   'helpDialog.item.toggleTerminalExpanded': '切換終端機展開狀態',
   'helpDialog.item.togglePlanContextPanel': '切換計畫上下文面板',
   'helpDialog.item.cycleTheme': '循環切換主題（淺色 → 深色 → 跟隨系統）',
-  'helpDialog.item.switchProject': '切換專案',
+  'helpDialog.item.switchContextSurface': '切換上下文面板介面（數字鍵）',
   'helpDialog.item.toggleServicesMenu': '切換服務選單',
   'helpDialog.item.cycleServicesTab': '循環服務標籤',
   'helpDialog.item.openSettings': '開啟設定',

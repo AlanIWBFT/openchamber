@@ -1075,6 +1075,8 @@ export const settingsDict = {
   "settings.openchamber.keyboardShortcuts.action.toggle_right_sidebar.label": 'Alternar painel de contexto',
   "settings.openchamber.keyboardShortcuts.action.open_right_sidebar_git.label": 'Abrir superfície do Git',
   "settings.openchamber.keyboardShortcuts.action.open_right_sidebar_files.label": 'Abrir superfície de arquivos',
+  "settings.openchamber.keyboardShortcuts.action.switch_context_surface.label": "Alternar superfície do painel de contexto",
+  "settings.openchamber.keyboardShortcuts.action.switch_context_surface.suffix": " + 1…0",
   "settings.openchamber.keyboardShortcuts.action.new_chat.label": "Nova sessão",
   "settings.openchamber.keyboardShortcuts.action.new_chat_worktree.label": "Novo rascunho de worktree",
   "settings.openchamber.keyboardShortcuts.action.new_mini_chat.label": "Nova janela Mini Chat",

@@ -1524,7 +1524,7 @@ export const dict = {
   'helpDialog.item.toggleTerminalExpanded': 'Terminal à bascule étendu',
   'helpDialog.item.togglePlanContextPanel': 'Toggle Panneau contextuel du plan',
   'helpDialog.item.cycleTheme': 'Basculer le thème (clair → sombre → système)',
-  'helpDialog.item.switchProject': 'Changer de projet',
+  'helpDialog.item.switchContextSurface': 'Basculer la surface du panneau contextuel (touche numérique)',
   'helpDialog.item.toggleServicesMenu': 'Basculer le menu des services',
   'helpDialog.item.cycleServicesTab': 'Onglet Services de vélo',
   'helpDialog.item.openSettings': 'Ouvrir les paramètres',

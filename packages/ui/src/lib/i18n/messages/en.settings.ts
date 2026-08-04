@@ -1108,6 +1108,8 @@ export const settingsDict = {
   'settings.openchamber.keyboardShortcuts.action.toggle_right_sidebar.label': 'Toggle context panel',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_git.label': 'Open Git surface',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_files.label': 'Open Files surface',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.label': 'Switch context panel surface',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.suffix': ' + 1…0',
   'settings.openchamber.keyboardShortcuts.action.new_chat.label': 'New session',
   'settings.openchamber.keyboardShortcuts.action.new_chat_worktree.label': 'New worktree draft',
   'settings.openchamber.keyboardShortcuts.action.new_mini_chat.label': 'New Mini Chat window',

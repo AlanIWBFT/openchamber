@@ -1689,7 +1689,7 @@ export const dict: Record<I18nKey, string> = {
   "helpDialog.item.toggleTerminalExpanded": "Розгорнути або згорнути термінал",
   "helpDialog.item.togglePlanContextPanel": "Перемкнути панель контексту плану",
   "helpDialog.item.cycleTheme": "Перемкнути тему (Світла → Темна → Системна)",
-  "helpDialog.item.switchProject": "Перемкнути проєкт",
+  "helpDialog.item.switchContextSurface": "Перемкнути поверхню панелі контексту (цифрова клавіша)",
   "helpDialog.item.toggleServicesMenu": "Перемкнути меню сервісів",
   "helpDialog.item.cycleServicesTab": "Перемкнути вкладку сервісів",
   "helpDialog.item.openSettings": "Відкрити налаштування",

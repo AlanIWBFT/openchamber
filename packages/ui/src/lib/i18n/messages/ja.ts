@@ -1707,7 +1707,7 @@ export const dict: Record<I18nKey, string> = {
   'helpDialog.item.toggleTerminalExpanded': 'ターミナル展開の切り替え',
   'helpDialog.item.togglePlanContextPanel': '計画コンテキストパネルの切り替え',
   'helpDialog.item.cycleTheme': 'テーマ切り替え（ライト→ダーク→システム）',
-  'helpDialog.item.switchProject': 'プロジェクトを切り替え',
+  'helpDialog.item.switchContextSurface': 'コンテキストパネルのサーフェスを切り替え（数字キー）',
   'helpDialog.item.toggleServicesMenu': 'サービスの切り替え',
   'helpDialog.item.cycleServicesTab': 'サービス変数の切り替え',
   'helpDialog.item.openSettings': '設定を開く',

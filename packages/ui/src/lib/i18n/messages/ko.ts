@@ -1713,7 +1713,7 @@ export const dict: Record<I18nKey, string> = {
   'helpDialog.item.toggleTerminalExpanded': '터미널 펼치기/접기',
   'helpDialog.item.togglePlanContextPanel': '플랜 컨텍스트 패널 전환',
   'helpDialog.item.cycleTheme': '테마 순환(라이트 → 다크 → 시스템)',
-  'helpDialog.item.switchProject': '프로젝트 전환',
+  'helpDialog.item.switchContextSurface': '컨텍스트 패널 서피스 전환(숫자 키)',
   'helpDialog.item.toggleServicesMenu': '서비스 메뉴 전환',
   'helpDialog.item.cycleServicesTab': '서비스 탭 순환',
   'helpDialog.item.openSettings': '설정 열기',

@@ -1043,6 +1043,8 @@ export const settingsDict = {
   'settings.openchamber.keyboardShortcuts.action.toggle_right_sidebar.label': 'Rechte Seitenleiste umschalten',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_git.label': 'Git-Tab der rechten Seitenleiste öffnen',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_files.label': 'Datei-Tab der rechten Seitenleiste öffnen',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.label': 'Kontextpanel-Oberfläche wechseln',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.suffix': ' + 1…0',
   'settings.openchamber.keyboardShortcuts.action.new_chat.label': 'Neue Sitzung',
   'settings.openchamber.keyboardShortcuts.action.new_chat_worktree.label': 'Neuer Worktree-Entwurf',
   'settings.openchamber.keyboardShortcuts.action.new_mini_chat.label': 'Neues Mini-Chat-Fenster',

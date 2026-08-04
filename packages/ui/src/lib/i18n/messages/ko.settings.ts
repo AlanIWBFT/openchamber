@@ -1075,6 +1075,8 @@ export const settingsDict = {
   'settings.openchamber.keyboardShortcuts.action.toggle_right_sidebar.label': '컨텍스트 패널 표시 전환',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_git.label': 'Git 서피스 열기',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_files.label': '파일 서피스 열기',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.label': '컨텍스트 패널 서피스 전환',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.suffix': ' + 1…0',
   'settings.openchamber.keyboardShortcuts.action.new_chat.label': '새 세션',
   'settings.openchamber.keyboardShortcuts.action.new_chat_worktree.label': '새 worktree 초안',
   'settings.openchamber.keyboardShortcuts.action.new_mini_chat.label': '새 Mini Chat 창',

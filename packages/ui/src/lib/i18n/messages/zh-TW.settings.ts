@@ -982,6 +982,8 @@
   'settings.openchamber.keyboardShortcuts.action.toggle_right_sidebar.label': '切換上下文面板',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_git.label': '開啟 Git 介面',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_files.label': '開啟檔案介面',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.label': '切換上下文面板介面',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.suffix': ' + 1…0',
   'settings.openchamber.keyboardShortcuts.action.new_chat.label': '新建工作階段',
   'settings.openchamber.keyboardShortcuts.action.new_chat_worktree.label': '新增 worktree 草稿',
   'settings.openchamber.keyboardShortcuts.action.new_mini_chat.label': '新建 Mini Chat 視窗',

@@ -996,6 +996,8 @@ export const settingsDict = {
   'settings.openchamber.keyboardShortcuts.action.toggle_right_sidebar.label': 'Afficher/masquer le panneau de contexte',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_git.label': 'Ouvrir la surface Git',
   'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_files.label': 'Ouvrir la surface Fichiers',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.label': 'Basculer la surface du panneau contextuel',
+  'settings.openchamber.keyboardShortcuts.action.switch_context_surface.suffix': ' + 1…0',
   'settings.openchamber.keyboardShortcuts.action.new_chat.label': 'Nouvelle session',
   'settings.openchamber.keyboardShortcuts.action.new_chat_worktree.label': 'Nouvelle ébauche d\'worktree',
   'settings.openchamber.keyboardShortcuts.action.new_mini_chat.label': 'Nouvelle fenêtre de mini-chat',
