@@ -954,9 +954,8 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
       return;
     }
 
-    // Before spawning our own server, reap any OpenCode process WE spawned in a
-    // prior run that was orphaned by a crash/host-kill. Verified + scoped to our
-    // own pids, so it never touches a live instance's or the user's own server.
+    // Reap only children previously registered by this extension. The registry
+    // verifies ownership before terminating anything.
     if (!reapedOrphansOnce) {
       reapedOrphansOnce = true;
       try {

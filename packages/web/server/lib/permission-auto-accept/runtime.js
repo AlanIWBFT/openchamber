@@ -36,6 +36,7 @@ export function createPermissionAutoAcceptRuntime({
   const sessions = new Map();
   const inFlight = new Map();
   const reconcilePromises = new Map();
+  let shuttingDown = false;
 
   const snapshot = () => ({
     sessions: { ...policy.sessions },
@@ -96,6 +97,7 @@ export function createPermissionAutoAcceptRuntime({
   };
 
   const request = async (path, { directory, method = 'GET', body } = {}) => {
+    if (shuttingDown) throw new Error('Permission auto-accept runtime is shutting down');
     const url = new URL(buildOpenCodeUrl(path, ''));
     if (directory) url.searchParams.set('directory', directory);
     const response = await fetchImpl(url, {
@@ -157,12 +159,14 @@ export function createPermissionAutoAcceptRuntime({
   };
 
   const processPermission = (permission, directory) => {
+    if (shuttingDown) return Promise.resolve(false);
     if (!permission?.id) return Promise.resolve(false);
     const key = permission.id;
     const existing = inFlight.get(key);
     if (existing) return existing;
     const task = (async () => {
       for (const delay of retryDelaysMs) {
+        if (shuttingDown) return false;
         if (delay > 0) await wait(delay);
         try {
           return await replyOnce(permission, directory);
@@ -177,6 +181,7 @@ export function createPermissionAutoAcceptRuntime({
   };
 
   async function reconcilePending({ directories = [] } = {}) {
+    if (shuttingDown) return;
     const normalizedDirectories = Array.from(new Set(
       directories.filter((directory) => typeof directory === 'string' && directory.trim()).map((directory) => directory.trim()),
     ));
@@ -209,6 +214,7 @@ export function createPermissionAutoAcceptRuntime({
   }
 
   const processEvent = (event) => {
+    if (shuttingDown) return;
     const raw = event?.payload;
     const payload = raw?.payload && typeof raw.payload === 'object' ? raw.payload : raw;
     const directory = typeof event?.directory === 'string' && event.directory !== 'global' ? event.directory : undefined;
@@ -235,6 +241,10 @@ export function createPermissionAutoAcceptRuntime({
     };
   };
 
+  const shutdown = () => {
+    shuttingDown = true;
+  };
+
   return {
     snapshot,
     load,
@@ -243,6 +253,7 @@ export function createPermissionAutoAcceptRuntime({
     processPermission,
     reconcilePending,
     start,
+    shutdown,
   };
 }
 

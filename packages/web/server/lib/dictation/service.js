@@ -32,6 +32,8 @@ import { ensureLocalSttModel, isLocalSttModelInstalled } from './local/model-dow
 
 export function createDictationService({ modelsDir }) {
   const workerClient = new DictationWorkerClient();
+  const shutdownController = new AbortController();
+  let shuttingDown = false;
   /** modelId -> 'downloading' | 'error' */
   const downloadStates = new Map();
   /** modelId -> last download error message */
@@ -42,6 +44,7 @@ export function createDictationService({ modelsDir }) {
   const downloadProgress = new Map();
 
   const startModelDownload = (modelId) => {
+    if (shuttingDown) return Promise.resolve();
     const existing = downloadPromises.get(modelId);
     if (existing) {
       return existing;
@@ -52,6 +55,7 @@ export function createDictationService({ modelsDir }) {
     const promise = ensureLocalSttModel({
       modelsDir,
       modelId,
+      signal: shutdownController.signal,
       onProgress: (downloadedBytes, totalBytes) => {
         downloadProgress.set(
           modelId,
@@ -65,6 +69,13 @@ export function createDictationService({ modelsDir }) {
         downloadProgress.delete(modelId);
       })
       .catch((error) => {
+        if (shuttingDown && shutdownController.signal.aborted) {
+          downloadStates.delete(modelId);
+          downloadErrors.delete(modelId);
+          downloadPromises.delete(modelId);
+          downloadProgress.delete(modelId);
+          return;
+        }
         downloadStates.set(modelId, 'error');
         downloadErrors.set(modelId, error?.message || String(error));
         downloadPromises.delete(modelId);
@@ -311,6 +322,8 @@ export function createDictationService({ modelsDir }) {
   };
 
   const shutdown = () => {
+    shuttingDown = true;
+    shutdownController.abort();
     workerClient.shutdown();
   };
 

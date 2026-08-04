@@ -1,5 +1,14 @@
 const SHUTDOWN_FINALIZATION_RESERVE_MS = 500;
 
+export const createShutdownFence = (getIsShuttingDown) => (_req, res, next) => {
+  if (!getIsShuttingDown()) {
+    next();
+    return;
+  }
+  res.setHeader('Connection', 'close');
+  res.status(503).json({ error: 'OpenChamber is shutting down' });
+};
+
 export const createGracefulShutdownRuntime = (dependencies) => {
   const {
     process,

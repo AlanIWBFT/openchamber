@@ -80,6 +80,7 @@ export const createRelayService = ({
   const identityRuntime = createRelayIdentityRuntime({ crypto, readSettingsFromDiskMigrated, writeSettingsToDisk, readSettingsStrict });
 
   let hostClient = null;
+  let stopped = false;
   let status = { state: 'disabled', lastError: null, connectedClients: 0 };
   // Re-checks the claim while enabled: a standby instance takes over when the
   // claimant dies; a running host stands down when another process claims.
@@ -132,7 +133,7 @@ export const createRelayService = ({
   // This back-off is what actually ends the mutual-eviction fight: the loser
   // must STOP reconnecting, otherwise both keep replacing each other forever.
   const ensureClaimWatch = (relayUrl) => {
-    if (!hostLock || claimWatchTimer) return;
+    if (stopped || !hostLock || claimWatchTimer) return;
     claimWatchTimer = setInterval(() => {
       void (async () => {
         try {
@@ -176,6 +177,7 @@ export const createRelayService = ({
   };
 
   const start = async (relayUrl, { claim = 'try' } = {}) => {
+    if (stopped) return;
     if (hostClient) return;
     if (claim !== 'force' && !allowPassiveHost) {
       status = {
@@ -194,6 +196,7 @@ export const createRelayService = ({
       }
     }
     const identity = await identityRuntime.getRelayIdentity();
+    if (stopped) return;
     hostClient = startRelayHost({
       relayUrl,
       identity,
@@ -214,6 +217,11 @@ export const createRelayService = ({
     status = { state: 'disabled', lastError: null, connectedClients: 0 };
   };
 
+  const shutdown = () => {
+    stopped = true;
+    stop();
+  };
+
   const startIfEnabled = async () => {
     try {
       const config = await readConfig();
@@ -229,9 +237,12 @@ export const createRelayService = ({
   // session uses the relay, stop it when none remain. Called on startup and after
   // pairing/device changes, so the operator never toggles it manually.
   const reconcile = async () => {
+    if (stopped) return;
     try {
       const demand = await hasRelayDemand();
+      if (stopped) return;
       const config = await readConfig();
+      if (stopped) return;
       if (demand) {
         if (!config.enabled) await writeConfig({ enabled: true, relayUrl: config.relayUrl });
         if (!hostClient) {
@@ -358,6 +369,7 @@ export const createRelayService = ({
     startIfEnabled,
     reconcile,
     stop,
+    shutdown,
     getStatus,
     getServerId,
     getPairingCandidate,

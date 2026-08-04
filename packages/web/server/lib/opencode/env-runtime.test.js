@@ -265,6 +265,19 @@ describe('OpenCode env runtime', () => {
     expect(runtime.isBundledOpenCodeCliPath(path.join(bundledDir, 'other'))).toBe(false);
   });
 
+  it('requires a sibling marker before enabling the private shutdown protocol', () => {
+    const dir = createTempDir('openchamber-opencode-shutdown-');
+    const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
+    fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n');
+    if (process.platform !== 'win32') fs.chmodSync(binary, 0o755);
+    const { runtime } = createRuntime({});
+
+    expect(runtime.supportsOpenCodeShutdownProtocol(binary)).toBe(false);
+
+    fs.writeFileSync(path.join(dir, 'openchamber-shutdown-protocol.capability'), '1\n');
+    expect(runtime.supportsOpenCodeShutdownProtocol(binary)).toBe(true);
+  });
+
   it('keeps explicit OpenCode binary ahead of bundled CLI', () => {
     const bundledDir = createTempDir('openchamber-bundled-opencode-');
     const bundledBinary = path.join(bundledDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
