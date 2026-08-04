@@ -91,6 +91,7 @@ export type WalkthroughStage = 'collecting' | 'asking' | 'retrying' | 'assemblin
 
 export type WalkthroughBlockedReason =
   | 'no-model'
+  | 'no-provider-login'
   | 'empty-diff'
   | 'only-generated'
   | 'context-too-small'
@@ -104,6 +105,8 @@ export interface WalkthroughReadiness {
     inputCharBudget?: number;
     contextTokens?: number;
     structuredOutput?: boolean | null;
+    /** False when the resolved provider has no usable OpenCode login. */
+    hasLogin?: boolean;
   };
   requiredChars?: number;
   availableChars?: number;

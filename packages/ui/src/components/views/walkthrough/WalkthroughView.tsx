@@ -323,14 +323,35 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
   // Explicit pick first, then the model that actually produced what is on
   // screen, then whatever settings resolve to. The middle step is what makes
   // reopening a review show the model behind it rather than the default.
-  const activeModel = selectedModel
-    ?? (entry.result?.model ? `${entry.result.model.providerID}/${entry.result.model.modelID}` : undefined)
-    ?? (entry.readiness?.model ? `${entry.readiness.model.providerID}/${entry.readiness.model.modelID}` : undefined);
-  const [activeProviderId, ...activeModelParts] = (activeModel ?? '').split('/');
-  const activeModelId = activeModelParts.join('/');
-
+  // Never present a provider without a usable login as the current selection —
+  // the picker already hides them from the menu; showing one as selected was
+  // the whole "why say so?" failure mode.
   const modelsMetadata = useConfigStore((state) => state.modelsMetadata);
   const [modelProviders, setModelProviders] = useState<string[] | undefined>(undefined);
+
+  const providerIsAuthenticated = (providerId: string | undefined) => {
+    if (!providerId) return false;
+    // Until the auth list loads, do not present a candidate as selected —
+    // otherwise an unauthenticated config model flashes in the picker.
+    if (modelProviders === undefined) return false;
+    return modelProviders.includes(providerId);
+  };
+  const readinessModelRef = entry.readiness?.model
+    && entry.readiness.model.hasLogin !== false
+    && providerIsAuthenticated(entry.readiness.model.providerID)
+    ? `${entry.readiness.model.providerID}/${entry.readiness.model.modelID}`
+    : undefined;
+  const resultModelRef = entry.result?.model
+    && providerIsAuthenticated(entry.result.model.providerID)
+    ? `${entry.result.model.providerID}/${entry.result.model.modelID}`
+    : undefined;
+  const selectedModelUsable = selectedModel
+    && providerIsAuthenticated(selectedModel.split('/')[0])
+    ? selectedModel
+    : undefined;
+  const activeModel = selectedModelUsable ?? resultModelRef ?? readinessModelRef;
+  const [activeProviderId, ...activeModelParts] = (activeModel ?? '').split('/');
+  const activeModelId = activeModelParts.join('/');
 
   useEffect(() => {
     if (modelProviders !== undefined) return;
@@ -403,6 +424,8 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
 
   const showStages = startedFromEmptyRef.current
     && (entry.status === 'generating' || stageProgress.holding);
+  // Auth/login gaps are not a full-panel blocker: hide the unusable model and
+  // disable Generate instead of explaining a raw provider error.
   const blockedReason = entry.error?.code === 'context-too-small'
     || entry.error?.code === 'structured-output-unsupported'
     || entry.error?.code === 'no-model'
@@ -411,6 +434,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
     || entry.error?.code === 'output-exhausted'
     ? entry.error.code
     : entry.readiness && !entry.readiness.ready && !view
+      && entry.readiness.reason !== 'no-provider-login'
       ? entry.readiness.reason
       : undefined;
 
@@ -420,11 +444,16 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
   const blockedRequiredChars = entry.error?.requiredChars ?? entry.readiness?.requiredChars;
   const blockedAvailableChars = entry.error?.availableChars ?? entry.readiness?.availableChars;
 
+  // Not ready, or no usable selected model, means Generate must not look
+  // actionable — including when the resolved model has no login.
+  const generateDisabled = !activeModel || Boolean(entry.readiness && !entry.readiness.ready);
+
   const handleGenerate = useCallback(
     (force: boolean) => {
+      if (generateDisabled) return;
       void generate(directory, source, { force, language: activeLanguage });
     },
-    [activeLanguage, directory, generate, source]
+    [activeLanguage, directory, generate, generateDisabled, source]
   );
 
   return (
@@ -544,7 +573,8 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
             onChange={(providerId, modelId) => {
               selectModel(directory, source, providerId && modelId ? `${providerId}/${modelId}` : null);
             }}
-            allowedProviderIds={modelProviders}
+            // While the auth list is loading, allow none — not every provider.
+            allowedProviderIds={modelProviders ?? []}
             isModelAllowed={isStructuredOutputCapable}
             tooltipsEnabled={false}
             dropdownPortalToBody
@@ -592,7 +622,10 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
               type="button"
               variant="outline"
               size="sm"
-              className={WALKTHROUGH_ACTION_CLASS}
+              className={generateDisabled
+                ? 'border-border text-muted-foreground'
+                : WALKTHROUGH_ACTION_CLASS}
+              disabled={generateDisabled}
               aria-label={compactHeader
                 ? (view ? t('walkthrough.action.regenerate') : t('walkthrough.action.generate'))
                 : undefined}
@@ -646,6 +679,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
             variant="ghost"
             size="xs"
             className="ml-auto"
+            disabled={generateDisabled}
             // Not forced: if an entry for this exact request existed the banner
             // would not be here, and a forced run would refuse the cache it may
             // find on the way.
@@ -677,7 +711,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
         </div>
       )}
 
-      {entry.error && !blockedReason && (
+      {entry.error && !blockedReason && entry.error.code !== 'no-provider-login' && (
         <div className="flex shrink-0 items-start gap-2 border-b border-border/60 bg-status-error/10 px-3 py-2">
           <Icon name="error-warning" className="mt-0.5 size-4 shrink-0 text-status-error" />
           {/* Provider errors arrive as raw JSON bodies. Show a readable amount
