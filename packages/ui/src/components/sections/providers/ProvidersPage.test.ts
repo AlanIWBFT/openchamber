@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { shouldLoadAvailableProviders, shouldLoadProviderAuthMethods } from './providerAvailability';
-import { listOAuthMethods, normalizeAuthType } from './providerAuthMethods';
+import { shouldLoadAvailableProviders } from './providerAvailability';
+import {
+  getOAuthAuthMethods,
+  normalizeAuthType,
+  parseAuthPayload,
+  shouldShowApiKeyAuth,
+} from './providerAuth';
 
 describe('ProvidersPage available provider loading', () => {
   test('loads available providers only in add-provider mode', () => {
@@ -9,35 +14,47 @@ describe('ProvidersPage available provider loading', () => {
   });
 });
 
-describe('ProvidersPage auth method loading', () => {
-  test('loads auth methods for add mode and reconnect panel', () => {
-    expect(shouldLoadProviderAuthMethods(false, false)).toBe(false);
-    expect(shouldLoadProviderAuthMethods(true, false)).toBe(true);
-    expect(shouldLoadProviderAuthMethods(false, true)).toBe(true);
-    expect(shouldLoadProviderAuthMethods(true, true)).toBe(true);
+describe('provider auth method helpers', () => {
+  test('normalizeAuthType recognizes oauth and api labels', () => {
+    expect(normalizeAuthType({ type: 'oauth', label: 'Login with Cursor' })).toBe('oauth');
+    expect(normalizeAuthType({ type: 'api', label: 'API Key' })).toBe('api');
+    expect(normalizeAuthType({ label: 'OAuth browser login' })).toBe('oauth');
+    expect(normalizeAuthType({ name: 'API key' })).toBe('api');
   });
-});
 
-describe('ProvidersPage OAuth method indexes', () => {
-  test('preserves the original provider.auth() index after filtering', () => {
-    const methods = listOAuthMethods([
-      { type: 'api' },
-      { type: 'oauth', label: 'Browser' },
+  test('parseAuthPayload keeps only object auth method entries', () => {
+    expect(parseAuthPayload({
+      cursor: [{ type: 'oauth', label: 'Cursor' }, 'skip'],
+      openai: null,
+    })).toEqual({
+      cursor: [{ type: 'oauth', label: 'Cursor' }],
+    });
+    expect(parseAuthPayload(null)).toEqual({});
+  });
+
+  test('shouldShowApiKeyAuth hides API key for oauth-only providers', () => {
+    expect(shouldShowApiKeyAuth([{ type: 'oauth', label: 'Cursor OAuth' }])).toBe(false);
+    expect(shouldShowApiKeyAuth([
+      { type: 'api', label: 'API Key' },
+      { type: 'oauth', label: 'ChatGPT' },
+    ])).toBe(true);
+    expect(shouldShowApiKeyAuth([{ type: 'api', label: 'API Key' }])).toBe(true);
+    // Unknown / unloaded methods keep the legacy API key fallback.
+    expect(shouldShowApiKeyAuth([])).toBe(true);
+  });
+
+  test('getOAuthAuthMethods preserves original method indexes', () => {
+    const methods = [
+      { type: 'api', label: 'API Key' },
+      { type: 'oauth', label: 'OAuth' },
+      { type: 'oauth', label: 'Device' },
+    ];
+    expect(getOAuthAuthMethods(methods)).toEqual([
+      { method: methods[1], methodIndex: 1 },
+      { method: methods[2], methodIndex: 2 },
     ]);
-    expect(methods).toEqual([{ method: { type: 'oauth', label: 'Browser' }, methodIndex: 1 }]);
-  });
-
-  test('keeps multiple OAuth indexes relative to the full methods array', () => {
-    const methods = listOAuthMethods([
-      { type: 'oauth', label: 'First' },
-      { type: 'api' },
-      { type: 'oauth', label: 'Second' },
+    expect(getOAuthAuthMethods([{ type: 'oauth', label: 'Cursor' }])).toEqual([
+      { method: { type: 'oauth', label: 'Cursor' }, methodIndex: 0 },
     ]);
-    expect(methods.map((entry) => entry.methodIndex)).toEqual([0, 2]);
-  });
-
-  test('detects oauth from labels when type is missing', () => {
-    expect(normalizeAuthType({ label: 'Sign in with OAuth' })).toBe('oauth');
-    expect(normalizeAuthType({ name: 'API Key' })).toBe('api');
   });
 });

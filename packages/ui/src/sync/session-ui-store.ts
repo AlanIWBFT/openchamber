@@ -55,6 +55,8 @@ import {
   deleteSessions as deleteSessionsAction,
   archiveSession as archiveSessionAction,
   archiveSessions as archiveSessionsAction,
+  unarchiveSession as unarchiveSessionAction,
+  unarchiveSessions as unarchiveSessionsAction,
   updateSessionTitle as updateSessionTitleAction,
   shareSession as shareSessionAction,
   unshareSession as unshareSessionAction,
@@ -67,6 +69,7 @@ import {
   type ArchiveSessionsOptions,
   type DeleteSessionOptions,
   type DeleteSessionsOptions,
+  type UnarchiveSessionsOptions,
 } from "./session-actions"
 import { useInputStore, type SyntheticContextPart } from "./input-store"
 import { useSessionGoalArmStore } from "@/stores/useSessionGoalArmStore"
@@ -335,6 +338,8 @@ export type SessionUIState = {
   deleteSessions: (ids: string[], options?: DeleteSessionsOptions) => Promise<{ deletedIds: string[]; failedIds: string[] }>
   archiveSession: (id: string) => Promise<boolean>
   archiveSessions: (ids: string[], options?: ArchiveSessionsOptions) => Promise<{ archivedIds: string[]; failedIds: string[] }>
+  unarchiveSession: (id: string) => Promise<boolean>
+  unarchiveSessions: (ids: string[], options?: UnarchiveSessionsOptions) => Promise<{ restoredIds: string[]; failedIds: string[] }>
   updateSessionTitle: (sessionId: string, title: string) => Promise<void>
   shareSession: (sessionId: string) => Promise<Session | null>
   unshareSession: (sessionId: string) => Promise<Session | null>
@@ -352,6 +357,12 @@ export type SessionUIState = {
   debugSessionMessages: (sessionId: string) => Promise<void>
   pollForTokenUpdates: () => void
   setSessionDirectory: (sessionId: string, directory: string | null) => void
+  /**
+   * Replace a guessed selection directory with the authoritative one once sync
+   * has indexed the session. Safe to call at any time: it only ever promotes a
+   * guess, never overrides a confirmed selection.
+   */
+  adoptAuthoritativeSessionDirectory: (sessionId?: string) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -401,15 +412,26 @@ const getAttachmentForSession = (sessionId: string | null | undefined): SessionW
 }
 
 /**
- * Authoritative directory for a session: the child store that holds it, and
- * only then the session record's own fields. `null` means "not indexed yet",
- * never "no directory" — callers must fall back rather than treat it as empty.
+ * The directory that owns a session, from the two server-backed signals.
+ *
+ * `null` means "not indexed yet", never "no directory" — callers must fall back
+ * rather than treat it as empty.
+ *
+ * The session's own record wins. Holding a session in a child store proves
+ * containment, not ownership: a project's session list legitimately includes
+ * the sessions of its worktrees so the sidebar can group them, so the parent
+ * repository holds worktree sessions too. Reading ownership from store
+ * membership therefore reports the parent for a session that lives in a
+ * worktree, and every fetch is then addressed to a directory that does not own
+ * it. Store membership remains the fallback for a session whose record carries
+ * no directory.
  */
 const getAuthoritativeSessionDirectory = (sessionId: string): string | null => {
-  const owningDirectory = getSyncSessionDirectory(sessionId)
-  if (owningDirectory) return normalizePath(owningDirectory)
   const target = getAllSyncSessions().find((s) => s.id === sessionId)
-  return target ? resolveDirectoryKey(target) : null
+  const recordDirectory = target ? resolveDirectoryKey(target) : null
+  if (recordDirectory) return normalizePath(recordDirectory)
+  const owningDirectory = getSyncSessionDirectory(sessionId)
+  return owningDirectory ? normalizePath(owningDirectory) : null
 }
 
 /**
@@ -1406,6 +1428,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
   archiveSessions: (ids, options) => archiveSessionsAction(ids, options),
 
+  unarchiveSession: (id) => unarchiveSessionAction(id),
+
+  unarchiveSessions: (ids, options) => unarchiveSessionsAction(ids, options),
+
   // ---------------------------------------------------------------------------
   // updateSessionTitle — calls SDK, SSE event updates child store
   // ---------------------------------------------------------------------------
@@ -1737,6 +1763,26 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
   pollForTokenUpdates: () => {
     // Handled by sync system's SSE stream
+  },
+
+  adoptAuthoritativeSessionDirectory: (sessionId) => {
+    const target = sessionId ?? get().currentSessionId
+    // Only a guess is promoted. A confirmed selection outranks anything sync
+    // learns later, and a selection that has since moved on must not be
+    // rewritten by a directory that finished bootstrapping in the background.
+    if (!target || target !== guessedSelectionSessionId) return
+    if (target !== get().currentSessionId) return
+
+    const authoritative = getAuthoritativeSessionDirectory(target)
+    if (!authoritative) return
+
+    // The selection stops being a guess even when the directory is unchanged:
+    // the value has now been confirmed by the store that owns the session.
+    guessedSelectionSessionId = null
+    if (authoritative !== get().currentSessionDirectory) {
+      set({ currentSessionDirectory: authoritative })
+    }
+    writeRuntimeSessionMemory(runtimeMemoryKey(), { sessionId: target, directory: authoritative })
   },
 
   setSessionDirectory: (sessionId, directory) => {

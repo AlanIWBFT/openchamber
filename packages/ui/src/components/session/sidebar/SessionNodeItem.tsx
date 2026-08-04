@@ -92,6 +92,7 @@ type Props = {
   createFolderAndStartRename: (scopeKey: string, parentId?: string | null) => { id: string } | null;
   openContextPanelTab: (directory: string, options: { mode: 'chat'; dedupeKey: string; label: string; sessionTitleFallback?: string; readOnly?: boolean }) => void;
   handleDeleteSession: (session: Session, source?: { archivedBucket?: boolean; hardDelete?: boolean; skipConfirm?: boolean }) => void;
+  handleRestoreSession: (session: Session) => void;
   mobileVariant: boolean;
   alwaysShowActions: boolean;
   renderSessionNode: (
@@ -287,6 +288,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     createFolderAndStartRename,
     openContextPanelTab,
     handleDeleteSession,
+    handleRestoreSession,
     mobileVariant,
     alwaysShowActions,
     renderSessionNode,
@@ -1092,6 +1094,12 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
           {t('sessions.sidebar.bulkActions.archive')}
         </Item>
       ) : null}
+      {archivedBucket ? (
+        <Item className="[&>svg]:mr-1" onClick={() => handleRestoreSession(session)}>
+          <Icon name="inbox-unarchive" className="mr-1 h-4 w-4" />
+          {t('sessions.sidebar.bulkActions.restore')}
+        </Item>
+      ) : null}
       <Item className="text-destructive focus:text-destructive [&>svg]:mr-1" onClick={() => handleDeleteSession(session, { archivedBucket, hardDelete: true })}>
         <Icon name="delete-bin" className="mr-1 h-4 w-4" />
         {t('sessions.sidebar.bulkActions.delete')}
@@ -1607,6 +1615,7 @@ const areSessionNodeItemPropsEqual = (prev: Props, next: Props): boolean => {
     && prev.createFolderAndStartRename === next.createFolderAndStartRename
     && prev.openContextPanelTab === next.openContextPanelTab
     && prev.handleDeleteSession === next.handleDeleteSession
+    && prev.handleRestoreSession === next.handleRestoreSession
     && prev.renderSessionNode === next.renderSessionNode;
 };
 
