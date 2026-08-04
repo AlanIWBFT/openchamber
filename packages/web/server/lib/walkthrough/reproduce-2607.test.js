@@ -90,11 +90,8 @@ describe('issue 2607 — walkthrough blocks unauthenticated providers', () => {
 
     expect(result.readiness.ready).toBe(false);
     expect(result.readiness.reason).toBe('no-provider-login');
-    expect(result.readiness.model).toMatchObject({
-      providerID: 'deepseek',
-      modelID: 'deepseek-v4-flash',
-      hasLogin: false,
-    });
+    // Unusable models must not be offered as the current selection.
+    expect(result.readiness.model).toBeUndefined();
   });
 
   it('callSmallModel throws a structured no-provider-login error', async () => {

@@ -41,8 +41,7 @@ export const WalkthroughBlocker = ({
   // Settings.
   const canChooseModel = reason === 'context-too-small'
     || reason === 'structured-output-unsupported'
-    || reason === 'output-exhausted'
-    || reason === 'no-provider-login';
+    || reason === 'output-exhausted';
 
   useEffect(() => {
     if (!canChooseModel || providers !== undefined) return;
@@ -101,11 +100,6 @@ export const WalkthroughBlocker = ({
 
   const description = () => {
     if (reason === 'no-model') return t('walkthrough.blocked.noModel.description');
-    if (reason === 'no-provider-login') {
-      return label
-        ? t('walkthrough.blocked.noProviderLogin.description', { model: label })
-        : t('walkthrough.blocked.noProviderLogin.descriptionUnknownModel');
-    }
     if (reason === 'empty-diff') return t('walkthrough.blocked.emptyDiff.description');
     if (reason === 'only-generated') return t('walkthrough.blocked.onlyGenerated.description');
     if (reason === 'output-exhausted') {
@@ -129,7 +123,6 @@ export const WalkthroughBlocker = ({
 
   const title = () => {
     if (reason === 'no-model') return t('walkthrough.blocked.noModel.title');
-    if (reason === 'no-provider-login') return t('walkthrough.blocked.noProviderLogin.title');
     if (reason === 'empty-diff') return t('walkthrough.blocked.emptyDiff.title');
     if (reason === 'only-generated') return t('walkthrough.blocked.onlyGenerated.title');
     if (reason === 'output-exhausted') return t('walkthrough.blocked.outputExhausted.title');

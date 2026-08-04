@@ -334,9 +334,10 @@ function computeReadiness({ model, digest, files, fileCount, hunkCount, generate
   }
 
   // A resolved override/config model can still have no usable login. Refuse up
-  // front so the panel does not look ready and then dump a raw auth error.
+  // front and omit the model — offering an unauthenticated selection in the
+  // picker is what made the old raw auth error feel like a product bug.
   if (model.hasLogin === false) {
-    return { ready: false, reason: 'no-provider-login', model };
+    return { ready: false, reason: 'no-provider-login' };
   }
 
   // Built with the same language the generation would use: the instruction is

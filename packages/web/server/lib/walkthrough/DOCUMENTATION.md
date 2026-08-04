@@ -121,9 +121,10 @@ silently changes the model behind commit messages.
 A settings or `opencode.json` `small_model` override can still name a provider
 with no usable login (neither `auth.json` nor `provider.<id>.options.apiKey`).
 `describeSmallModel` reports that as `hasLogin: false`, readiness refuses with
-`code: 'no-provider-login'`, and generation maps the same code to HTTP 401 —
-so the panel shows a blocker with a model picker instead of looking ready and
-then dumping the raw `No OpenCode login found for provider "…"` string.
+`reason: 'no-provider-login'` and omits the unusable model so the panel cannot
+present it as selected, and generation maps the same code to HTTP 401. The UI
+disables Generate and keeps the picker on authenticated providers only — it does
+not surface a raw auth error or a special login blocker for this case.
 
 ## Output language
 
