@@ -5,6 +5,8 @@ import path from 'node:path';
 import { clearAppImageArgv0FromProcessEnv } from '../inherited-env.js';
 import { mergePathValues } from './path-utils.js';
 
+const SHUTDOWN_PROTOCOL_MARKER = 'openchamber-shutdown-protocol.capability';
+
 export const createOpenCodeEnvRuntime = (deps) => {
   const {
     state,
@@ -321,6 +323,16 @@ export const createOpenCodeEnvRuntime = (deps) => {
     return bundledOpenCodeCliCandidates().some((bundledCandidate) => (
       canonicalExecutablePath(bundledCandidate) === canonicalCandidate
     ));
+  };
+
+  const supportsOpenCodeShutdownProtocol = (candidate) => {
+    const canonicalCandidate = canonicalExecutablePath(candidate);
+    if (!canonicalCandidate) return false;
+    try {
+      return fs.statSync(path.join(path.dirname(canonicalCandidate), SHUTDOWN_PROTOCOL_MARKER)).isFile();
+    } catch {
+      return false;
+    }
   };
 
   const bundledOpenCodeCliFallback = () => {
@@ -1194,6 +1206,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
     getLoginShellEnvSnapshot,
     resolveOpencodeCliPath,
     isBundledOpenCodeCliPath,
+    supportsOpenCodeShutdownProtocol,
     resolveManagedOpenCodeLaunchSpec,
     isExecutable,
     searchPathFor,

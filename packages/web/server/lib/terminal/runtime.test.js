@@ -145,6 +145,32 @@ describe('terminal runtime', () => {
     expect(server.listenerCount('upgrade')).toBe(0);
   });
 
+  it('does not publish a PTY that finishes spawning after force shutdown', async () => {
+    let releaseProvider;
+    const providerReady = new Promise((resolve) => { releaseProvider = resolve; });
+    const harness = createHarness({
+      loadPtyProvider: async () => {
+        await providerReady;
+        return {
+          backend: 'fake-pty',
+          spawn: () => { throw new Error('must not spawn after shutdown'); },
+        };
+      },
+    });
+    const response = createResponse();
+    const creating = harness.routes.post.get('/api/terminal/create')({
+      body: { sessionId: 'late', cwd: '/repo' },
+    }, response);
+
+    harness.runtime.forceShutdown();
+    releaseProvider();
+    await creating;
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: 'Terminal runtime is shutting down' });
+    expect(harness.processes).toHaveLength(0);
+  });
+
   it('creates client-identified sessions and forwards bounded resize operations', async () => {
     const harness = createHarness();
     try {

@@ -44,6 +44,16 @@ bun run electron:dev
 
 Closing the last Electron window exits the development launcher and its Vite process unless Windows "Minimize to tray" is enabled. When it is enabled, use **Quit** from the tray menu. `Ctrl+C` in the launcher terminal stops the complete Electron/Vite process tree.
 
+Desktop quit asks a managed local fork CLI staged with the
+`openchamber-shutdown-protocol.capability` marker to shut down over its private
+stdin protocol. OpenCode stops its listener and disposes its application runtime,
+allowing SQLite to checkpoint WAL as its final connection closes. Electron waits
+for a roughly five-second grace window, then dispatches one best-effort force termination for the
+complete process tree and exits without waiting for confirmation or retrying.
+Upstream downloads and custom CLIs without that marker receive one immediate
+best-effort force-termination dispatch. External OpenCode servers are never
+terminated.
+
 The Electron workspace package trusts Electron's install script so `bun install` downloads the platform runtime in fresh checkouts and worktrees.
 
 Electron's postinstall (`node install.js`) is run by `bun install` with the system Node. Older Electron releases bundled `extract-zip@2.0.1`, which under Node 24 silently unpacked only the first entry of the Electron zip, leaving `dist/` without the binary and `path.txt` missing. Electron 43+ ships its own fixed extractor (`@electron-internal/extract-zip`), but to keep interrupted or wrong-architecture installs from blocking desktop work:
@@ -123,7 +133,7 @@ Managed local Desktop startup prefers OpenCode binaries in this order:
 5. Known npm/Bun/Homebrew/Scoop/Chocolatey and other standard install locations.
 6. Platform discovery through `where opencode` on Windows or a login shell on macOS/Linux.
 
-Use an explicit override when testing a different OpenCode CLI build or when a user needs to point Desktop at a custom binary. The configured path must point to the standalone CLI, not the OpenCode Desktop app executable.
+Use an explicit override when testing a different OpenCode CLI build or when a user needs to point Desktop at a custom binary. The configured path must point to the standalone CLI, not the OpenCode Desktop app executable. A custom CLI only participates in the private shutdown protocol when its directory intentionally contains `openchamber-shutdown-protocol.capability`.
 
 ## Common Env Vars
 

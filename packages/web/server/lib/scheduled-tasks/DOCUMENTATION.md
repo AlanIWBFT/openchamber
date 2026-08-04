@@ -161,6 +161,9 @@ project write lock on every `syncProject` when the project path is known:
   - `syncProject(projectId)`
   - `runNow(projectId, taskId)`
 
+`stop()` closes admission as well as timers and queued runs. Manual run requests
+that race with shutdown receive 503 instead of creating new OpenCode work.
+
 ## Public exports (routes.js)
 
 - `registerScheduledTaskRoutes(app, dependencies)`
