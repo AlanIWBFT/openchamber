@@ -2,7 +2,7 @@ import React from 'react';
 import { animate, type AnimationPlaybackControls } from 'motion';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { cn } from '@/lib/utils';
-import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
+import type { ContentChangeReason } from '@/hooks/useChatTimelineScroll';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from '@/components/icon/Icon';
 import { BusyDots } from './BusyDots';

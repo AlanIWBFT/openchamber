@@ -20,7 +20,7 @@ import { toast } from '@/components/ui';
 import { Text } from '@/components/ui/text';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { copyTextToClipboard } from '@/lib/clipboard';
-import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
+import type { ContentChangeReason } from '@/hooks/useChatTimelineScroll';
 import type { ToolPopupContent } from '../types';
 import { PlainDiffFallback } from './PlainDiffFallback';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';

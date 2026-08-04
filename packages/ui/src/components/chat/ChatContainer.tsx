@@ -18,8 +18,8 @@ import { StatusRowContainer } from './StatusRowContainer';
 import { SessionRecapNote } from '@/components/chat/SessionRecapSpacer';
 import ScrollToBottomButton from './components/ScrollToBottomButton';
 import { PromptNavigatorRail } from './components/PromptNavigatorRail';
-import { ScrollShadow } from '@/components/ui/ScrollShadow';
-import { useChatAutoFollow, type AnimationHandlers, type ContentChangeReason } from '@/hooks/useChatAutoFollow';
+import { useScrollShadow } from '@/components/ui/useScrollShadow';
+import { useChatTimelineScroll, type AnimationHandlers, type ContentChangeReason, type TimelineListHandle } from '@/hooks/useChatTimelineScroll';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
 import { TimelineDialog } from './TimelineDialog';
 import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
@@ -151,10 +151,16 @@ type ChatViewportProps = {
     currentSessionKey: string;
     isDesktopExpandedInput: boolean;
     isMobile: boolean;
-    stickyUserHeader: boolean;
     directory?: string;
     scrollRef: React.RefObject<HTMLDivElement | null>;
     messageListRef: React.RefObject<MessageListHandle | null>;
+    registerList: (list: TimelineListHandle | null) => void;
+    anchorMessageId: string | null;
+    onAnchorReady: (messageId: string, anchorIndex: number) => void;
+    onAnchorSizeChanged: (messageId: string) => void;
+    composerOverlayHeight: number;
+    onIsAtEndChange: (isAtEnd: boolean) => void;
+    onTimelineDataChange: () => void;
     pendingRevealWork: boolean;
     renderedMessages: SessionMessageRecord[];
     isLoadingOlder: boolean;
@@ -169,7 +175,6 @@ type ChatViewportProps = {
     } | null;
     handleMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
-    handleHistoryScroll: () => void;
     scrollToBottom: () => void;
     sessionQuestions: QuestionRequest[];
     sessionPermissions: PermissionRequest[];
@@ -190,10 +195,16 @@ const ChatViewport = React.memo(({
     currentSessionKey,
     isDesktopExpandedInput,
     isMobile,
-    stickyUserHeader,
     directory,
     scrollRef,
     messageListRef,
+    registerList,
+    anchorMessageId,
+    onAnchorReady,
+    onAnchorSizeChanged,
+    composerOverlayHeight,
+    onIsAtEndChange,
+    onTimelineDataChange,
     pendingRevealWork,
     renderedMessages,
     isLoadingOlder,
@@ -203,7 +214,6 @@ const ChatViewport = React.memo(({
     retryOverlay,
     handleMessageContentChange,
     getAnimationHandlers,
-    handleHistoryScroll,
     scrollToBottom,
     sessionQuestions,
     sessionPermissions,
@@ -315,6 +325,60 @@ const ChatViewport = React.memo(({
         scrollRef.current?.focus({ preventScroll: true });
     }, [scrollRef]);
 
+    // Everything that used to sit beside the list inside the scroll container
+    // now renders as the list's header/footer, so it keeps scrolling with the
+    // rows exactly as before.
+    const listHeader = React.useMemo(() => (
+        showLoadOlderButton ? (
+            <div className="flex justify-center pt-3 pb-1">
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={onLoadOlder}
+                    disabled={isLoadingOlder}
+                >
+                    {isLoadingOlder && (
+                        <Icon name="loader-4" className="size-4 animate-spin" />
+                    )}
+                    {t('chat.history.loadOlder')}
+                </Button>
+            </div>
+        ) : null
+    ), [isLoadingOlder, onLoadOlder, showLoadOlderButton, t]);
+
+    const listFooter = React.useMemo(() => (
+        <>
+            {(sessionQuestions.length > 0 || sessionPermissions.length > 0) && (
+                <div>
+                    {sessionQuestions.map((question) => (
+                        <QuestionCard key={question.id} question={question} />
+                    ))}
+                    {sessionPermissions.map((permission) => (
+                        <PermissionCard key={permission.id} permission={permission} />
+                    ))}
+                </div>
+            )}
+
+            <SessionRecapNote sessionId={currentSessionId} directory={directory} isMobile={isMobile} />
+
+            <div className="mb-3">
+                <StatusRowContainer />
+            </div>
+
+            <div className="flex-shrink-0" style={{ height: isMobile ? '40px' : '10vh' }} aria-hidden="true" />
+        </>
+    ), [currentSessionId, directory, isMobile, sessionPermissions, sessionQuestions]);
+
+    const scrollContainerProps = React.useMemo(() => ({
+        className: 'absolute inset-0 overflow-y-auto overflow-x-hidden z-0 chat-scroll overlay-scrollbar-target',
+        style: CHAT_SCROLL_STYLE,
+        tabIndex: 0,
+        onClick: focusScrollContainer,
+        'data-scrollbar': 'chat',
+        'data-scroll-shadow': 'true',
+        'data-orientation': 'vertical',
+    }), [focusScrollContainer]);
+
     return (
         <div
             className={cn(
@@ -326,71 +390,32 @@ const ChatViewport = React.memo(({
             aria-hidden={isDesktopExpandedInput}
         >
             <div className="absolute inset-0">
-                <ScrollShadow
-                    className="absolute inset-0 overflow-y-auto overflow-x-hidden z-0 chat-scroll overlay-scrollbar-target"
-                    ref={scrollRef}
-                    style={CHAT_SCROLL_STYLE}
-                    observeMutations={false}
-                    hideTopShadow={isMobile && stickyUserHeader}
-                    tabIndex={0}
-                    onClick={focusScrollContainer}
-                    onScroll={handleHistoryScroll}
-                    data-scroll-shadow="true"
-                    data-scrollbar="chat"
-                >
-                    <div className="relative z-0 min-h-full">
-                        {showLoadOlderButton && (
-                            <div className="flex justify-center pt-3 pb-1">
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={onLoadOlder}
-                                    disabled={isLoadingOlder}
-                                >
-                                    {isLoadingOlder && (
-                                        <Icon name="loader-4" className="size-4 animate-spin" />
-                                    )}
-                                    {t('chat.history.loadOlder')}
-                                </Button>
-                            </div>
-                        )}
-                        <MessageList
-                            key={currentSessionKey}
-                            ref={messageListRef}
-                            sessionKey={currentSessionId}
-                            disableStaging={pendingRevealWork}
-                            messages={renderedMessages}
-                            sessionIsWorking={sessionIsWorking}
-                            activeStreamingMessageId={streamingMessageId}
-                            activeStreamingPhase={activeStreamingPhase}
-                            retryOverlay={retryOverlay}
-                            onMessageContentChange={handleMessageContentChange}
-                            getAnimationHandlers={getAnimationHandlers}
-                            isLoadingOlder={isLoadingOlder}
-                            scrollToBottom={scrollToBottom}
-                            scrollRef={scrollRef}
-                            directory={directory}
-                        />
-                        {(sessionQuestions.length > 0 || sessionPermissions.length > 0) && (
-                            <div>
-                                {sessionQuestions.map((question) => (
-                                    <QuestionCard key={question.id} question={question} />
-                                ))}
-                                {sessionPermissions.map((permission) => (
-                                    <PermissionCard key={permission.id} permission={permission} />
-                                ))}
-                            </div>
-                        )}
-
-                        <SessionRecapNote sessionId={currentSessionId} directory={directory} isMobile={isMobile} />
-
-                        <div className="mb-3">
-                            <StatusRowContainer />
-                        </div>
-
-                        <div className="flex-shrink-0" style={{ height: isMobile ? '40px' : '10vh' }} aria-hidden="true" />
-                    </div>
-                </ScrollShadow>
+                <MessageList
+                    key={currentSessionKey}
+                    ref={messageListRef}
+                    sessionKey={currentSessionId}
+                    disableStaging={pendingRevealWork}
+                    messages={renderedMessages}
+                    sessionIsWorking={sessionIsWorking}
+                    activeStreamingMessageId={streamingMessageId}
+                    activeStreamingPhase={activeStreamingPhase}
+                    retryOverlay={retryOverlay}
+                    onMessageContentChange={handleMessageContentChange}
+                    getAnimationHandlers={getAnimationHandlers}
+                    isLoadingOlder={isLoadingOlder}
+                    scrollToBottom={scrollToBottom}
+                    directory={directory}
+                    registerList={registerList}
+                    anchorMessageId={anchorMessageId}
+                    onAnchorReady={onAnchorReady}
+                    onAnchorSizeChanged={onAnchorSizeChanged}
+                    composerOverlayHeight={composerOverlayHeight}
+                    onIsAtEndChange={onIsAtEndChange}
+                    onTimelineDataChange={onTimelineDataChange}
+                    listHeader={listHeader}
+                    listFooter={listFooter}
+                    scrollContainerProps={scrollContainerProps}
+                />
                 <OverlayScrollbar containerRef={scrollRef} suppressVisibility={isProgrammaticFollowActive} userIntentOnly observeMutations={false} />
                 {showPromptNavigator && promptTurnIds.length >= 2 ? (
                     <PromptNavigatorRail
@@ -411,7 +436,6 @@ const ChatViewport = React.memo(({
         && prev.currentSessionKey === next.currentSessionKey
         && prev.isDesktopExpandedInput === next.isDesktopExpandedInput
         && prev.isMobile === next.isMobile
-        && prev.stickyUserHeader === next.stickyUserHeader
         && prev.directory === next.directory
         && prev.scrollRef === next.scrollRef
         && prev.messageListRef === next.messageListRef
@@ -424,7 +448,6 @@ const ChatViewport = React.memo(({
         && prev.retryOverlay === next.retryOverlay
         && prev.handleMessageContentChange === next.handleMessageContentChange
         && prev.getAnimationHandlers === next.getAnimationHandlers
-        && prev.handleHistoryScroll === next.handleHistoryScroll
         && prev.scrollToBottom === next.scrollToBottom
         && prev.sessionQuestions === next.sessionQuestions
         && prev.sessionPermissions === next.sessionPermissions
@@ -891,23 +914,44 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         activeTurnChangeRef.current(turnId);
     }, []);
 
+    // The composer sits below the timeline rather than over it, so no part of
+    // the scroll container is occluded. Mobile surfaces that float the composer
+    // pass their measured height here instead.
+    const composerOverlayHeight = 0;
+    const lastUserMessageId = React.useMemo(() => {
+        for (let index = sessionMessages.length - 1; index >= 0; index -= 1) {
+            const message = sessionMessages[index];
+            if (message.info.role === 'user') {
+                return message.info.id;
+            }
+        }
+        return null;
+    }, [sessionMessages]);
+
     const {
         scrollRef,
+        scrollNode,
+        registerList,
+        anchorMessageId,
+        onAnchorReady,
+        onAnchorSizeChanged,
+        onIsAtEndChange,
+        onManualNavigation,
+        onTimelineDataChange,
         notifyContentChange: handleMessageContentChange,
         getAnimationHandlers,
         goToBottom,
         scrollToBottomOnSend,
-        releaseAutoFollow,
         restoreSnapshot,
         isPinned,
         isFollowingProgrammatically,
         showScrollButton,
-    } = useChatAutoFollow({
+    } = useChatTimelineScroll({
         currentSessionId,
         currentSessionKey,
         sessionMessageCount,
-        sessionIsWorking,
-        isMobile,
+        composerOverlayHeight,
+        lastUserMessageId,
         onActiveTurnChange: handleActiveTurnChange,
     });
 
@@ -922,10 +966,28 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         messageListRef,
         loadMoreMessages,
         goToBottom,
-        releaseAutoFollow,
+        releaseAutoFollow: onManualNavigation,
         isPinned,
         showScrollButton,
     });
+    // The list owns the scroll element, so the shadows and the load-older
+    // trigger bind to its node rather than to a wrapper we render.
+    const scrollNodeRef = React.useMemo(() => ({ current: scrollNode }), [scrollNode]);
+    useScrollShadow(scrollNodeRef, {
+        observeMutations: false,
+        hideTopShadow: isMobile && stickyUserHeader,
+    });
+
+    const handleHistoryScroll = timelineController.handleHistoryScroll;
+    React.useEffect(() => {
+        if (!scrollNode) return;
+        const onScroll = () => handleHistoryScroll();
+        scrollNode.addEventListener('scroll', onScroll, { passive: true });
+        return () => {
+            scrollNode.removeEventListener('scroll', onScroll);
+        };
+    }, [handleHistoryScroll, scrollNode]);
+
     const resumeToLatestInstant = React.useCallback(() => {
         goToBottom('instant');
     }, [goToBottom]);
@@ -1084,7 +1146,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         lastScrolledSessionKeyRef.current = currentSessionKey;
         if (hasHashTarget) {
             // Hash navigation handler will scroll to target; we just release auto-follow.
-            releaseAutoFollow();
+            onManualNavigation();
             return;
         }
 
@@ -1096,7 +1158,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         } else {
             window.requestAnimationFrame(run);
         }
-    }, [active, currentSessionId, currentSessionKey, releaseAutoFollow, restoreSnapshot]);
+    }, [active, currentSessionId, currentSessionKey, onManualNavigation, restoreSnapshot]);
 
     React.useEffect(() => {
         if (!messagesEnabled || !currentSessionId) return;
@@ -1265,9 +1327,15 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 currentSessionKey={currentSessionKey ?? currentSessionId ?? ''}
                 isDesktopExpandedInput={isDesktopExpandedInput}
                 isMobile={isMobile}
-                stickyUserHeader={stickyUserHeader}
                 directory={effectiveSessionDirectory}
                 scrollRef={scrollRef}
+                registerList={registerList}
+                anchorMessageId={anchorMessageId}
+                onAnchorReady={onAnchorReady}
+                onAnchorSizeChanged={onAnchorSizeChanged}
+                composerOverlayHeight={composerOverlayHeight}
+                onIsAtEndChange={onIsAtEndChange}
+                onTimelineDataChange={onTimelineDataChange}
                 messageListRef={messageListRef}
                 pendingRevealWork={timelineController.pendingRevealWork}
                 renderedMessages={timelineController.renderedMessages}
@@ -1278,7 +1346,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 retryOverlay={retryOverlay}
                 handleMessageContentChange={handleMessageContentChange}
                 getAnimationHandlers={getAnimationHandlers}
-                handleHistoryScroll={timelineController.handleHistoryScroll}
                 scrollToBottom={resumeToLatestInstant}
                 sessionQuestions={sessionQuestions}
                 sessionPermissions={sessionPermissions}

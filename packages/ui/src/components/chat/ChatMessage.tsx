@@ -14,7 +14,7 @@ import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { cn } from '@/lib/utils';
 import { useChatSurfaceMode } from './useChatSurfaceMode';
 
-import type { AnimationHandlers, ContentChangeReason } from '@/hooks/useChatAutoFollow';
+import type { AnimationHandlers, ContentChangeReason } from '@/hooks/useChatTimelineScroll';
 import MessageBody from './message/MessageBody';
 import type { AgentMentionInfo } from './message/types';
 import type { StreamPhase, ToolPopupContent } from './message/types';

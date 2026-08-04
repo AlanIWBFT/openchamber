@@ -19,7 +19,7 @@ import { SaveProjectPlanDialog } from '@/components/session/SaveProjectPlanDialo
 import { ForkSessionDialog, type ForkSessionExecution } from '@/components/session/ForkSessionDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ArrowsMerge } from '@/components/icons/ArrowsMerge';
-import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
+import type { ContentChangeReason } from '@/hooks/useChatTimelineScroll';
 
 import { MarkdownImageGallery, SimpleMarkdownRenderer } from '../MarkdownRenderer';
 import { useSessionUIStore } from '@/sync/session-ui-store';

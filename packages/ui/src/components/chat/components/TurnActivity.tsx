@@ -4,7 +4,7 @@ import ProgressiveGroup from '../message/parts/ProgressiveGroup';
 import type { TurnActivityRecord } from '../lib/turns/types';
 import type { ToolPopupContent } from '../message/types';
 import type { StreamPhase } from '../message/types';
-import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
+import type { ContentChangeReason } from '@/hooks/useChatTimelineScroll';
 
 interface DiffStats {
     additions: number;

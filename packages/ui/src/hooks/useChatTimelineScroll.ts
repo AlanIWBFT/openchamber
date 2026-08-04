@@ -1,0 +1,691 @@
+import React from 'react';
+
+import { MessageFreshnessDetector } from '@/lib/messageFreshness';
+import { createScrollSpy } from '@/components/chat/lib/scroll/scrollSpy';
+import { useViewportStore } from '@/sync/viewport-store';
+import {
+    CHAT_LIST_ANCHOR_OFFSET,
+    getAnchoredTurnMetrics,
+    type TimelineListMeasurementState,
+    type TimelineScrollMode,
+} from '@/components/chat/lib/scroll/timelineScrollAnchoring';
+
+// ──────────────────────────────────────────────────────────────────────────
+// Chat timeline scroll ownership.
+//
+// The virtualized list owns the scroll position; this hook only decides which
+// of three mutually exclusive modes is active and, when a mode calls for it,
+// issues ONE deterministic scroll command:
+//
+//   • `following-end`      — pinned to the live edge. The list keeps us there
+//     through `maintainScrollAtEnd`; we only re-assert after a data change.
+//   • `anchoring-new-turn` — the just-sent user message is parked near the TOP
+//     of the viewport and the reply streams into the reserved end space below
+//     it. The viewport does NOT move while the turn still fits; once the turn
+//     outgrows the usable viewport we scroll by the exact delta needed to keep
+//     its end visible.
+//   • `free-scrolling`     — the user took over. Nothing moves until they opt
+//     back in by returning to the end.
+//
+// Opting out of automatic movement is driven by REAL gestures (wheel /
+// touchmove / pointerdown), not by inferring intent from scroll positions. Each
+// gesture bumps a generation counter; any in-flight automatic movement compares
+// its captured generation against the current one and aborts if they differ.
+// That comparison replaces the timer windows the previous implementation needed
+// to tell its own writes apart from the user's, which is why there are no
+// guard/settle/entry-stick timers here.
+// ──────────────────────────────────────────────────────────────────────────
+
+// Kept for source compatibility with message parts that report content growth.
+// Growth no longer drives scrolling — the list handles it — so these are inert,
+// but the prop threads through many part components and removing the contract
+// is a separate change.
+export type ContentChangeReason = 'text' | 'structural' | 'permission' | 'animation';
+
+export interface AnimationHandlers {
+    onChunk: () => void;
+    onComplete: () => void;
+    onStreamingCandidate?: () => void;
+    onAnimationStart?: () => void;
+    onReservationCancelled?: () => void;
+    onReasoningBlock?: () => void;
+    onAnimatedHeightChange?: (height: number) => void;
+}
+
+// The subset of the list ref this hook drives. Declared structurally so the
+// hook stays testable without a renderer and does not hard-depend on the list
+// implementation.
+export interface TimelineListHandle {
+    getState: () => TimelineListMeasurementState & { readonly scroll: number };
+    getScrollableNode: () => HTMLElement | null;
+    scrollToEnd: (options?: { animated?: boolean }) => unknown;
+    scrollToOffset: (params: { offset: number; animated?: boolean }) => unknown;
+    scrollToIndex: (params: {
+        index: number;
+        animated?: boolean;
+        viewPosition?: number;
+        viewOffset?: number;
+    }) => unknown;
+}
+
+interface UseChatTimelineScrollOptions {
+    currentSessionId: string | null;
+    currentSessionKey: string | null;
+    sessionMessageCount: number;
+    composerOverlayHeight: number;
+    // Id of the newest user message in the rendered timeline. When a send has
+    // armed the anchor, the next new id here becomes the anchored row.
+    lastUserMessageId: string | null;
+    onActiveTurnChange?: (turnId: string | null) => void;
+}
+
+export interface UseChatTimelineScrollResult {
+    scrollRef: React.RefObject<HTMLDivElement | null>;
+    // The live scroll element, as state, so effects that must re-bind when the
+    // list remounts (session switch) can depend on it.
+    scrollNode: HTMLDivElement | null;
+    isPinned: boolean;
+    registerList: (list: TimelineListHandle | null) => void;
+    anchorMessageId: string | null;
+    onAnchorReady: (messageId: string, anchorIndex: number) => void;
+    onAnchorSizeChanged: (messageId: string) => void;
+    onIsAtEndChange: (isAtEnd: boolean) => void;
+    onManualNavigation: () => void;
+    onTimelineDataChange: () => void;
+    showScrollButton: boolean;
+    isFollowingProgrammatically: boolean;
+    goToBottom: (mode?: 'instant' | 'smooth') => void;
+    scrollToBottomOnSend: () => void;
+    notifyContentChange: (reason?: ContentChangeReason) => void;
+    getAnimationHandlers: (messageId: string) => AnimationHandlers;
+    saveSnapshotNow: () => void;
+    restoreSnapshot: () => Promise<boolean>;
+}
+
+// Showing the pill is debounced so it does not flash while a thread switch
+// settles (the list reports isAtEnd=false until its initial end-scroll lands).
+// Hiding is always immediate.
+const SHOW_SCROLL_BUTTON_DELAY_MS = 150;
+const SAVE_DEBOUNCE_MS = 150;
+// The anchor scroll is animated; `scrollend` is the authoritative completion
+// signal, and this bounds the wait for browsers that drop it.
+const ANCHOR_SETTLE_FALLBACK_MS = 750;
+// Re-running the anchor positioning while the list is still mounting rows.
+const ANCHOR_POSITION_ATTEMPTS = 12;
+// Anchor restores only correct sub-pixel drift; anything larger is the user or
+// a genuine relayout and must not be undone.
+const ANCHOR_RESTORE_TOLERANCE_PX = 2;
+
+const NOOP = (): void => {};
+
+export const useChatTimelineScroll = ({
+    currentSessionId,
+    currentSessionKey,
+    sessionMessageCount,
+    composerOverlayHeight,
+    lastUserMessageId,
+    onActiveTurnChange,
+}: UseChatTimelineScrollOptions): UseChatTimelineScrollResult => {
+    const scrollRef = React.useRef<HTMLDivElement | null>(null);
+    const listRef = React.useRef<TimelineListHandle | null>(null);
+
+    const [scrollNode, setScrollNode] = React.useState<HTMLDivElement | null>(null);
+    const [anchorMessageId, setAnchorMessageId] = React.useState<string | null>(null);
+    const [showScrollButton, setShowScrollButton] = React.useState(false);
+    // "Pinned" is the live edge, which history pagination uses to decide whether
+    // it may load older pages without disturbing the read position.
+    const [isPinned, setIsPinned] = React.useState(true);
+    const [isFollowingProgrammatically, setIsFollowingProgrammatically] = React.useState(false);
+
+    const modeRef = React.useRef<TimelineScrollMode>('following-end');
+    const isAtEndRef = React.useRef(true);
+    // Incremented by every real user gesture. Automatic movement is only valid
+    // while `liveFollowGenerationRef` still equals it.
+    const userGenerationRef = React.useRef(0);
+    const liveFollowGenerationRef = React.useRef<number | null>(0);
+    // Anchor lifecycle: armed on send → pending until the row exists → positioned
+    // while the animated scroll runs → settled once it has come to rest.
+    const armedForNextUserMessageRef = React.useRef(false);
+    const pendingAnchorRef = React.useRef<string | null>(null);
+    const positionedAnchorRef = React.useRef<string | null>(null);
+    const settledAnchorRef = React.useRef<string | null>(null);
+    const activeAnchorIndexRef = React.useRef<number | null>(null);
+    const pendingAnchorRestoreRef = React.useRef<{
+        readonly messageId: string;
+        readonly offset: number;
+        readonly userGeneration: number;
+    } | null>(null);
+    const anchorRestoreFrameRef = React.useRef<number | null>(null);
+    const showButtonTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const composerOverlayHeightRef = React.useRef(composerOverlayHeight);
+    composerOverlayHeightRef.current = composerOverlayHeight;
+    const sessionMessageCountRef = React.useRef(sessionMessageCount);
+    sessionMessageCountRef.current = sessionMessageCount;
+    const currentSessionIdRef = React.useRef(currentSessionId);
+    currentSessionIdRef.current = currentSessionId;
+    const currentSessionKeyRef = React.useRef(currentSessionKey);
+    currentSessionKeyRef.current = currentSessionKey;
+
+    const updateViewportAnchor = useViewportStore((state) => state.updateViewportAnchor);
+
+    const cancelShowButtonTimer = React.useCallback(() => {
+        if (showButtonTimerRef.current !== null) {
+            clearTimeout(showButtonTimerRef.current);
+            showButtonTimerRef.current = null;
+        }
+    }, []);
+
+    const hideScrollButton = React.useCallback(() => {
+        cancelShowButtonTimer();
+        setShowScrollButton(false);
+    }, [cancelShowButtonTimer]);
+
+    const scheduleShowScrollButton = React.useCallback(() => {
+        if (showButtonTimerRef.current !== null) return;
+        showButtonTimerRef.current = setTimeout(() => {
+            showButtonTimerRef.current = null;
+            setShowScrollButton(true);
+        }, SHOW_SCROLL_BUTTON_DELAY_MS);
+    }, []);
+
+    const clearAnchor = React.useCallback(() => {
+        armedForNextUserMessageRef.current = false;
+        pendingAnchorRef.current = null;
+        positionedAnchorRef.current = null;
+        settledAnchorRef.current = null;
+        activeAnchorIndexRef.current = null;
+        pendingAnchorRestoreRef.current = null;
+        if (anchorRestoreFrameRef.current !== null) {
+            cancelAnimationFrame(anchorRestoreFrameRef.current);
+            anchorRestoreFrameRef.current = null;
+        }
+        setAnchorMessageId(null);
+    }, []);
+
+    // A real gesture: stop every automatic movement until the user opts back in.
+    const onManualNavigation = React.useCallback(() => {
+        userGenerationRef.current += 1;
+        modeRef.current = 'free-scrolling';
+        liveFollowGenerationRef.current = null;
+        clearAnchor();
+    }, [clearAnchor]);
+
+    const isLiveFollowActive = React.useCallback(() => (
+        liveFollowGenerationRef.current === userGenerationRef.current
+    ), []);
+
+    // ── snapshot persistence ────────────────────────────────────────────────
+    const pendingSaveRef = React.useRef<{ sessionId: string; anchor: number } | null>(null);
+    const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const flushSave = React.useCallback(() => {
+        if (saveTimerRef.current !== null) {
+            clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+        }
+        const pending = pendingSaveRef.current;
+        if (!pending) return;
+        const container = scrollRef.current;
+        if (!container) {
+            pendingSaveRef.current = null;
+            return;
+        }
+        updateViewportAnchor(pending.sessionId, pending.anchor, {
+            scrollTop: container.scrollTop,
+            scrollHeight: container.scrollHeight,
+            clientHeight: container.clientHeight,
+        });
+        pendingSaveRef.current = null;
+    }, [updateViewportAnchor]);
+
+    const queueSave = React.useCallback(() => {
+        const sessionId = currentSessionIdRef.current;
+        if (!sessionId) return;
+        const container = scrollRef.current;
+        if (!container) return;
+
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        const anchorRatio = scrollHeight > 0
+            ? (scrollTop + clientHeight / 2) / scrollHeight
+            : 0;
+        const anchor = Math.floor(anchorRatio * sessionMessageCountRef.current);
+
+        pendingSaveRef.current = { sessionId, anchor };
+        if (saveTimerRef.current !== null) return;
+        saveTimerRef.current = setTimeout(() => {
+            saveTimerRef.current = null;
+            flushSave();
+        }, SAVE_DEBOUNCE_MS);
+    }, [flushSave]);
+
+    const saveSnapshotNow = React.useCallback(() => {
+        flushSave();
+    }, [flushSave]);
+
+    // ── scroll commands ─────────────────────────────────────────────────────
+    const goToBottom = React.useCallback((mode: 'instant' | 'smooth' = 'instant') => {
+        isAtEndRef.current = true;
+        setIsPinned(true);
+        modeRef.current = 'following-end';
+        // Returning to the end is an explicit opt back IN to live follow.
+        liveFollowGenerationRef.current = userGenerationRef.current;
+        clearAnchor();
+        hideScrollButton();
+        void listRef.current?.scrollToEnd({ animated: mode === 'smooth' });
+    }, [clearAnchor, hideScrollButton]);
+
+    // Sending arms the anchor. The message id is not known here (the optimistic
+    // row is created by the store), so the next new user message id claims it.
+    const scrollToBottomOnSend = React.useCallback(() => {
+        isAtEndRef.current = true;
+        modeRef.current = 'anchoring-new-turn';
+        liveFollowGenerationRef.current = userGenerationRef.current;
+        armedForNextUserMessageRef.current = true;
+        pendingAnchorRef.current = null;
+        positionedAnchorRef.current = null;
+        settledAnchorRef.current = null;
+        activeAnchorIndexRef.current = null;
+        hideScrollButton();
+    }, [hideScrollButton]);
+
+    // Claim the anchor as soon as the sent row exists in the timeline.
+    const lastArmedUserMessageIdRef = React.useRef<string | null>(lastUserMessageId);
+    React.useEffect(() => {
+        const previous = lastArmedUserMessageIdRef.current;
+        lastArmedUserMessageIdRef.current = lastUserMessageId;
+        if (!armedForNextUserMessageRef.current) return;
+        if (!lastUserMessageId || lastUserMessageId === previous) return;
+        armedForNextUserMessageRef.current = false;
+        pendingAnchorRef.current = lastUserMessageId;
+        setAnchorMessageId(lastUserMessageId);
+    }, [lastUserMessageId]);
+
+    const restoreSnapshot = React.useCallback(async (): Promise<boolean> => {
+        const sessionKey = currentSessionKeyRef.current;
+        if (!sessionKey) return false;
+
+        // Entering a session always returns to the live edge. Late async growth
+        // is handled by the list staying at the end, not by a timed hold.
+        isAtEndRef.current = true;
+        modeRef.current = 'following-end';
+        liveFollowGenerationRef.current = userGenerationRef.current;
+        clearAnchor();
+        hideScrollButton();
+        void listRef.current?.scrollToEnd({ animated: false });
+        return false;
+    }, [clearAnchor, hideScrollButton]);
+
+    // ── list callbacks ──────────────────────────────────────────────────────
+    const registerList = React.useCallback((list: TimelineListHandle | null) => {
+        listRef.current = list;
+        const node = (list?.getScrollableNode() as HTMLDivElement | null) ?? null;
+        scrollRef.current = node;
+        setScrollNode(node);
+    }, []);
+
+    const onIsAtEndChange = React.useCallback((isAtEnd: boolean) => {
+        // While an automatic movement owns the viewport, leaving the end is our
+        // own doing (the anchored turn parks mid-timeline) — not a reason to
+        // offer the user a scroll-to-bottom pill.
+        if (!isAtEnd && isLiveFollowActive()) {
+            hideScrollButton();
+            return;
+        }
+        if (isAtEndRef.current === isAtEnd) return;
+        isAtEndRef.current = isAtEnd;
+        setIsPinned(isAtEnd);
+        if (isAtEnd) {
+            modeRef.current = 'following-end';
+            liveFollowGenerationRef.current = userGenerationRef.current;
+            hideScrollButton();
+        } else {
+            modeRef.current = 'free-scrolling';
+            liveFollowGenerationRef.current = null;
+            scheduleShowScrollButton();
+        }
+        queueSave();
+    }, [hideScrollButton, isLiveFollowActive, queueSave, scheduleShowScrollButton]);
+
+    // Park the anchored row near the top once the list has measured it.
+    const onAnchorReady = React.useCallback((messageId: string, anchorIndex: number) => {
+        if (pendingAnchorRef.current === messageId) {
+            pendingAnchorRef.current = null;
+        }
+        activeAnchorIndexRef.current = anchorIndex;
+        if (positionedAnchorRef.current === messageId) return;
+        positionedAnchorRef.current = messageId;
+        settledAnchorRef.current = null;
+
+        const positionAnchor = (remainingAttempts: number) => {
+            requestAnimationFrame(() => {
+                if (positionedAnchorRef.current !== messageId) return;
+                const list = listRef.current;
+                if (!list) {
+                    if (remainingAttempts > 0) positionAnchor(remainingAttempts - 1);
+                    return;
+                }
+                const scrollNode = list.getScrollableNode();
+                if (!scrollNode) {
+                    if (remainingAttempts > 0) positionAnchor(remainingAttempts - 1);
+                    return;
+                }
+
+                let finished = false;
+                const finishPositioning = () => {
+                    if (finished) return;
+                    finished = true;
+                    clearTimeout(fallbackTimer);
+                    scrollNode.removeEventListener('scrollend', finishPositioning);
+                    if (positionedAnchorRef.current !== messageId) return;
+                    // Re-assert the resting offset without animation so the
+                    // smooth scroll's own momentum cannot drift past it.
+                    const scrollOffset = list.getState().scroll;
+                    void list.scrollToOffset({ offset: scrollOffset, animated: false });
+                    settledAnchorRef.current = messageId;
+                };
+                const fallbackTimer = setTimeout(finishPositioning, ANCHOR_SETTLE_FALLBACK_MS);
+                scrollNode.addEventListener('scrollend', finishPositioning, { once: true });
+
+                void list.scrollToIndex({
+                    index: anchorIndex,
+                    animated: true,
+                    viewPosition: 0,
+                    viewOffset: CHAT_LIST_ANCHOR_OFFSET,
+                });
+            });
+        };
+
+        requestAnimationFrame(() => positionAnchor(ANCHOR_POSITION_ATTEMPTS));
+    }, []);
+
+    // The anchored row can still change height after it settles (an image
+    // decoding, a code block highlighting). Hold the resting offset, but only
+    // against sub-pixel drift and only while the user has not taken over.
+    const onAnchorSizeChanged = React.useCallback((messageId: string) => {
+        if (settledAnchorRef.current !== messageId) return;
+        if (isLiveFollowActive()) return;
+        const scrollOffset = listRef.current?.getState().scroll;
+        if (scrollOffset === undefined) return;
+
+        if (pendingAnchorRestoreRef.current === null) {
+            pendingAnchorRestoreRef.current = {
+                messageId,
+                offset: scrollOffset,
+                userGeneration: userGenerationRef.current,
+            };
+        }
+        if (anchorRestoreFrameRef.current !== null) return;
+
+        anchorRestoreFrameRef.current = requestAnimationFrame(() => {
+            anchorRestoreFrameRef.current = null;
+            const pending = pendingAnchorRestoreRef.current;
+            pendingAnchorRestoreRef.current = null;
+            if (
+                !pending
+                || settledAnchorRef.current !== pending.messageId
+                || pending.userGeneration !== userGenerationRef.current
+            ) {
+                return;
+            }
+            const list = listRef.current;
+            const currentOffset = list?.getState().scroll;
+            if (
+                typeof currentOffset === 'number'
+                && Math.abs(currentOffset - pending.offset) <= ANCHOR_RESTORE_TOLERANCE_PX
+            ) {
+                void list?.scrollToOffset({ offset: pending.offset, animated: false });
+            }
+        });
+    }, [isLiveFollowActive]);
+
+    // Whether the real rows (ignoring any reserved anchored end space) are tall
+    // enough to scroll. Without this, entering a short session would scroll into
+    // the reserved space and strand the content above the viewport.
+    const realContentOverflowsViewport = React.useCallback((list: TimelineListHandle): boolean => {
+        const state = list.getState();
+        if (state.data.length === 0) return false;
+
+        const lastIndex = state.data.length - 1;
+        const lastTop = state.positionAtIndex(lastIndex);
+        const lastHeight = state.sizeAtIndex(lastIndex);
+        if (
+            typeof lastTop !== 'number'
+            || typeof lastHeight !== 'number'
+            || !Number.isFinite(lastTop)
+            || !Number.isFinite(lastHeight)
+        ) {
+            return false;
+        }
+
+        const realContentBottom = lastTop + Math.max(1, lastHeight);
+        const visibleScrollLength = Math.max(
+            0,
+            state.scrollLength - composerOverlayHeightRef.current - CHAT_LIST_ANCHOR_OFFSET,
+        );
+        return realContentBottom > visibleScrollLength;
+    }, []);
+
+    // One deterministic correction per data change, two frames out so the list
+    // has measured the new rows. Nothing runs while the user owns the scroll.
+    const dataChangeFramesRef = React.useRef<{ first: number | null; second: number | null }>({
+        first: null,
+        second: null,
+    });
+    const onTimelineDataChange = React.useCallback(() => {
+        if (!isLiveFollowActive()) return;
+
+        const frames = dataChangeFramesRef.current;
+        if (frames.first !== null) cancelAnimationFrame(frames.first);
+        if (frames.second !== null) cancelAnimationFrame(frames.second);
+
+        frames.first = requestAnimationFrame(() => {
+            frames.first = null;
+            frames.second = requestAnimationFrame(() => {
+                frames.second = null;
+                if (!isLiveFollowActive()) return;
+                // An anchor that exists but has not come to rest yet owns the
+                // viewport; correcting now would fight its animation.
+                if (pendingAnchorRef.current !== null) return;
+                if (
+                    positionedAnchorRef.current !== null
+                    && settledAnchorRef.current !== positionedAnchorRef.current
+                ) {
+                    return;
+                }
+
+                const list = listRef.current;
+                if (!list) return;
+
+                if (modeRef.current === 'anchoring-new-turn') {
+                    const anchorIndex = activeAnchorIndexRef.current;
+                    if (anchorIndex === null) return;
+                    const metrics = getAnchoredTurnMetrics({
+                        state: list.getState(),
+                        anchorIndex,
+                        composerOverlayHeight: composerOverlayHeightRef.current,
+                        anchorOffset: CHAT_LIST_ANCHOR_OFFSET,
+                    });
+                    // The turn still fits: leave the viewport exactly where the
+                    // user is reading.
+                    if (!metrics || metrics.scrollDeltaToRevealEnd <= 1) return;
+                    void list.scrollToOffset({
+                        offset: list.getState().scroll + metrics.scrollDeltaToRevealEnd,
+                        animated: false,
+                    });
+                    return;
+                }
+
+                if (modeRef.current !== 'following-end') return;
+                if (!realContentOverflowsViewport(list)) return;
+                void list.scrollToEnd({ animated: false });
+            });
+        });
+    }, [isLiveFollowActive, realContentOverflowsViewport]);
+
+    // ── gesture opt-out ─────────────────────────────────────────────────────
+    const onManualNavigationRef = React.useRef(onManualNavigation);
+    onManualNavigationRef.current = onManualNavigation;
+
+    React.useEffect(() => {
+        if (!scrollNode) return;
+
+        const handleGesture = () => {
+            onManualNavigationRef.current();
+        };
+        const handleScroll = () => {
+            queueSave();
+        };
+
+        scrollNode.addEventListener('wheel', handleGesture, { passive: true });
+        scrollNode.addEventListener('touchmove', handleGesture, { passive: true });
+        scrollNode.addEventListener('pointerdown', handleGesture, { passive: true });
+        scrollNode.addEventListener('scroll', handleScroll, { passive: true });
+
+        return () => {
+            scrollNode.removeEventListener('wheel', handleGesture);
+            scrollNode.removeEventListener('touchmove', handleGesture);
+            scrollNode.removeEventListener('pointerdown', handleGesture);
+            scrollNode.removeEventListener('scroll', handleScroll);
+        };
+    }, [queueSave, scrollNode]);
+
+    // ── session lifecycle ───────────────────────────────────────────────────
+    const lastSessionKeyRef = React.useRef<string | null>(null);
+    React.useEffect(() => {
+        if (!currentSessionId || !currentSessionKey || currentSessionKey === lastSessionKeyRef.current) {
+            return;
+        }
+        lastSessionKeyRef.current = currentSessionKey;
+        MessageFreshnessDetector.getInstance().recordSessionStart(currentSessionId);
+        // Persist the outgoing session's position before the new one takes over.
+        flushSave();
+        isAtEndRef.current = true;
+        modeRef.current = 'following-end';
+        liveFollowGenerationRef.current = userGenerationRef.current;
+        clearAnchor();
+        hideScrollButton();
+    }, [clearAnchor, currentSessionId, currentSessionKey, flushSave, hideScrollButton]);
+
+    // Suppress the overlay scrollbar thumb while automatic movement owns the
+    // scroll position, so it does not jump on each correction.
+    React.useEffect(() => {
+        setIsFollowingProgrammatically(!showScrollButton && anchorMessageId === null);
+    }, [anchorMessageId, showScrollButton]);
+
+    React.useEffect(() => () => {
+        cancelShowButtonTimer();
+        if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
+        if (anchorRestoreFrameRef.current !== null) cancelAnimationFrame(anchorRestoreFrameRef.current);
+        const frames = dataChangeFramesRef.current;
+        if (frames.first !== null) cancelAnimationFrame(frames.first);
+        if (frames.second !== null) cancelAnimationFrame(frames.second);
+    }, [cancelShowButtonTimer]);
+
+    // ── active-turn spy ─────────────────────────────────────────────────────
+    // Reads turn positions straight from the DOM, so it is unaffected by which
+    // list implementation owns the container. Rows mounting and unmounting
+    // during virtualized scrolling are tracked through the mutation observer.
+    React.useEffect(() => {
+        if (!onActiveTurnChange) return;
+        const container = scrollNode;
+        if (!container) return;
+
+        let lastActiveTurnId: string | null = null;
+        const spy = createScrollSpy({
+            onActive: (turnId) => {
+                if (turnId === lastActiveTurnId) return;
+                lastActiveTurnId = turnId;
+                onActiveTurnChange(turnId);
+            },
+        });
+        spy.setContainer(container);
+
+        const elementByTurnId = new Map<string, HTMLElement>();
+        const registerTurnNode = (node: HTMLElement) => {
+            const turnId = node.dataset.turnId;
+            if (!turnId) return false;
+            elementByTurnId.set(turnId, node);
+            spy.register(node, turnId);
+            return true;
+        };
+        const unregisterTurnNode = (node: HTMLElement) => {
+            const turnId = node.dataset.turnId;
+            if (!turnId) return false;
+            if (elementByTurnId.get(turnId) !== node) return false;
+            elementByTurnId.delete(turnId);
+            spy.unregister(turnId);
+            return true;
+        };
+        const collectTurnNodes = (node: Node): HTMLElement[] => {
+            if (!(node instanceof HTMLElement)) return [];
+            const collected: HTMLElement[] = [];
+            if (node.matches('[data-turn-id]')) collected.push(node);
+            node.querySelectorAll<HTMLElement>('[data-turn-id]').forEach((el) => collected.push(el));
+            return collected;
+        };
+
+        container.querySelectorAll<HTMLElement>('[data-turn-id]').forEach(registerTurnNode);
+        spy.markDirty();
+
+        const mutationObserver = new MutationObserver((records) => {
+            let changed = false;
+            records.forEach((record) => {
+                record.removedNodes.forEach((node) => {
+                    collectTurnNodes(node).forEach((turnNode) => {
+                        if (unregisterTurnNode(turnNode)) changed = true;
+                    });
+                });
+                record.addedNodes.forEach((node) => {
+                    collectTurnNodes(node).forEach((turnNode) => {
+                        if (registerTurnNode(turnNode)) changed = true;
+                    });
+                });
+            });
+            if (changed) spy.markDirty();
+        });
+        mutationObserver.observe(container, { subtree: true, childList: true });
+
+        const onScroll = () => spy.onScroll();
+        container.addEventListener('scroll', onScroll, { passive: true });
+
+        return () => {
+            container.removeEventListener('scroll', onScroll);
+            mutationObserver.disconnect();
+            spy.destroy();
+        };
+    }, [onActiveTurnChange, scrollNode]);
+
+    // ── inert compatibility surface ─────────────────────────────────────────
+    const stableAnimationHandlers = React.useMemo<AnimationHandlers>(() => ({
+        onChunk: NOOP,
+        onComplete: NOOP,
+        onStreamingCandidate: NOOP,
+        onAnimationStart: NOOP,
+        onReservationCancelled: NOOP,
+        onReasoningBlock: NOOP,
+        onAnimatedHeightChange: NOOP,
+    }), []);
+    const getAnimationHandlers = React.useCallback(() => stableAnimationHandlers, [stableAnimationHandlers]);
+
+    return {
+        scrollRef,
+        scrollNode,
+        isPinned,
+        registerList,
+        anchorMessageId,
+        onAnchorReady,
+        onAnchorSizeChanged,
+        onIsAtEndChange,
+        onManualNavigation,
+        onTimelineDataChange,
+        showScrollButton,
+        isFollowingProgrammatically,
+        goToBottom,
+        scrollToBottomOnSend,
+        notifyContentChange: NOOP,
+        getAnimationHandlers,
+        saveSnapshotNow,
+        restoreSnapshot,
+    };
+};
