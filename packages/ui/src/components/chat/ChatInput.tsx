@@ -88,6 +88,11 @@ import {
     createPastedContextFile,
     isLargePlainTextPaste,
 } from './composer/largeTextPaste';
+import {
+    LARGE_TEXT_PASTE_TOAST_CLASSNAME,
+    beginLargeTextPasteOffer,
+    resolveLargeTextPasteOffer,
+} from './composer/largeTextPasteOffer';
 import type { LargeTextPasteBehavior } from '@/stores/useUIStore';
 import type { FileMentionAutocompleteInputSource } from './fileMentionAutocompleteState';
 import {
@@ -1591,21 +1596,24 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (!editor) {
             // No mounted editor (collapsed mobile pill): append to the state
             // the editor will be seeded from.
-            const nextValue = message + text;
+            const nextValue = messageRef.current + text;
             setMessage(nextValue);
             updateAutocompleteState(nextValue, nextValue.length, inputSource, text);
             return;
         }
 
         const { start, end } = editor.getSelection();
-        const nextValue = `${message.substring(0, start)}${text}${message.substring(end)}`;
+        // Read the live document — delayed toast actions must not use a
+        // paste-time React `message` closure.
+        const currentMessage = editor.getValue();
+        const nextValue = `${currentMessage.substring(0, start)}${text}${currentMessage.substring(end)}`;
         const cursorPosition = start + text.length;
 
         // One dispatch places both the text and the caret, so there is no
         // frame where the caret sits at a stale offset.
         editor.insertText(text);
         updateAutocompleteState(nextValue, cursorPosition, inputSource, text);
-    }, [message, updateAutocompleteState]);
+    }, [updateAutocompleteState]);
 
     const clearDropTextSuppression = React.useCallback(() => {
         suppressNextFileDropTextInsertRef.current = false;
@@ -1762,18 +1770,22 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             };
 
             const attachAsFile = async () => {
+                // Read live attachment + composer state at action time — the ask
+                // toast can outlive the paste while the user types or attaches more.
+                const liveAttachedFiles = useInputStore.getState().attachedFiles;
                 const filename = nextPastedContextFilename([
-                    ...attachedFiles.map((file) => file.filename),
+                    ...liveAttachedFiles.map((file) => file.filename),
                     ...pendingPastedAttachmentFilenamesRef.current,
                 ]);
                 const citationText = buildAttachmentCitationText([filename]);
-                const textarea = composerRef.current;
-                const selectionStart = textarea?.getSelection().start ?? message.length;
-                const selectionEnd = textarea?.getSelection().end ?? message.length;
+                const editor = composerRef.current;
+                const currentMessage = editor?.getValue() ?? messageRef.current;
+                const selectionStart = editor?.getSelection().start ?? currentMessage.length;
+                const selectionEnd = editor?.getSelection().end ?? currentMessage.length;
                 const insertionText = withInlineInsertionBoundaries(
                     citationText,
-                    message.slice(0, selectionStart),
-                    message.slice(selectionEnd),
+                    currentMessage.slice(0, selectionStart),
+                    currentMessage.slice(selectionEnd),
                 );
 
                 insertTextAtSelection(
@@ -1802,7 +1814,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 return;
             }
 
-            const offerId = largeTextPasteOfferIdRef.current + 1;
+            const offerId = beginLargeTextPasteOffer(largeTextPasteOfferIdRef.current);
             largeTextPasteOfferIdRef.current = offerId;
 
             if (largeTextPasteToastIdRef.current !== null) {
@@ -1813,11 +1825,14 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             }
 
             const resolveLargePaste = (action: 'attach' | 'inline') => {
-                if (offerId !== largeTextPasteOfferIdRef.current) {
+                const resolution = resolveLargeTextPasteOffer(
+                    largeTextPasteOfferIdRef.current,
+                    offerId,
+                );
+                largeTextPasteOfferIdRef.current = resolution.nextOfferId;
+                if (!resolution.accepted) {
                     return;
                 }
-                // Invalidate this offer so a later onDismiss cannot double-apply.
-                largeTextPasteOfferIdRef.current += 1;
                 largeTextPasteToastIdRef.current = null;
                 if (action === 'attach') {
                     void attachAsFile();
@@ -1830,7 +1845,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 t('chat.chatInput.toast.largeTextPaste.title'),
                 {
                     duration: Infinity,
-                    className: '!min-w-[22rem] !w-auto [&_[data-icon]]:!hidden',
+                    className: LARGE_TEXT_PASTE_TOAST_CLASSNAME,
                     action: {
                         label: t('chat.chatInput.toast.largeTextPaste.attach'),
                         onClick: () => resolveLargePaste('attach'),
