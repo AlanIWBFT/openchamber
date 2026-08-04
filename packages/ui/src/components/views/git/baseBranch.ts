@@ -62,3 +62,18 @@ export const deriveBaseBranch = (options: {
   if (localBranches.includes('develop')) return 'develop';
   return 'main';
 };
+
+/**
+ * Whether a base branch can be resolved locally or through one of the active
+ * remote-tracking refs. Callers must not offer comparisons against the `main`
+ * fallback when that ref does not actually exist in the repository.
+ */
+export const hasResolvableBaseBranch = (options: {
+  baseBranch: string;
+  localBranches: readonly string[];
+  remoteBranches: readonly string[];
+}): boolean => {
+  const { baseBranch, localBranches, remoteBranches } = options;
+  return localBranches.includes(baseBranch)
+    || remoteBranches.some((branch) => branch.endsWith(`/${baseBranch}`));
+};
