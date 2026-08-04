@@ -240,16 +240,38 @@ Examples of global-store updates performed in `session-actions.ts`:
 - `updateSessionTitle()` -> `upsertSession(result.data)`
 - `shareSession()` / `unshareSession()` -> `upsertSession(result.data)`
 - `archiveSession()` / `archiveSessions()` -> wait for server confirmation, then upsert each archived session
+- `unarchiveSession()` / `unarchiveSessions()` -> wait for server confirmation, then upsert each restored session
 - `deleteSession()` / `deleteSessions()` -> wait for server confirmation or `404`, then remove the session and its persisted state
 - `moveSessionToDirectory()` -> move the session between directory stores and update the global directory index
+
+### Restore (unarchive) contract
+
+The OpenCode server cannot clear `time.archived` over HTTP: `session.update`
+only applies the field when the payload carries a finite number, so an omitted
+key is a no-op and `null` is silently ignored. Restore therefore writes
+`time.archived = 0` (`UNARCHIVED_TIMESTAMP` in `session-actions.ts`). Every
+client-side reader classifies archive state by truthiness of `time.archived`,
+so `0` reads as active in the UI, the event reducer, and the OpenCode app/TUI.
+
+The server's `time_archived IS NULL` list filter still excludes such rows, so
+any query that wants a truthful active list must fetch inclusively
+(`archived: true`) and split client-side (`splitGlobalSessionsByArchived`).
+The global sessions store does this for its full and per-directory loads;
+directory bootstrap keeps using the server filter because live child stores
+must not hold archived sessions. A restored session re-enters its live
+directory store through the authoritative `session.updated` event the server
+publishes for the update; until then it remains fully visible through the
+global store (sidebar, switcher) and addressable by ID (message loading).
 
 Archive and delete actions capture the active runtime key when they start and
 recheck it before every store reconciliation, so a response
 produced by the previous runtime is rejected instead of mutating the current
-runtime's live or global session state. A guarded batch stops at the first
-observed runtime change: sessions the server already confirmed remain archived
-or deleted and stay in `archivedIds`/`deletedIds`, while every ID not confirmed
-on the captured runtime is returned in `failedIds` so existing partial-failure
+runtime's live or global session state. Restore follows the same guard: a
+stale completion returns `false` without touching any store. A guarded batch
+stops at the first observed runtime change: sessions the server already
+confirmed remain archived, restored, or deleted and stay in
+`archivedIds`/`restoredIds`/`deletedIds`, while every ID not confirmed on the
+captured runtime is returned in `failedIds` so existing partial-failure
 feedback stays truthful.
 Callers whose confirmation can span a runtime switch may pass an
 `expectedRuntimeKey` captured earlier; ordinary callers are guarded by default.
