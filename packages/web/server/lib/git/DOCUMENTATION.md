@@ -105,12 +105,17 @@ The following functions are internal helpers used by exported functions:
 - `ahead`: Number of commits ahead of upstream.
 - `behind`: Number of commits behind upstream.
 - `upstreamComparison`: Optional comparison against `upstream/<current-branch>`, with `{ remote, branch, ahead, behind }`.
-- `defaultBranches`: Remote default branches derived from local symbolic refs such as `remotes/origin/HEAD -> origin/main`, keyed by remote name. Omitted by runtimes that do not provide this Git metadata.
 - `files`: Array of file objects with `path`, `index`, `working_dir` status codes.
 - `isClean`: Boolean indicating if working tree is clean.
 - `diffStats`: Object mapping file paths to `{ insertions, deletions }`.
 - `mergeInProgress`: Object with `{ head, message }` if merge in progress.
 - `rebaseInProgress`: Object with `{ headName, onto }` if rebase in progress.
+
+### Branches Response
+- `all`: Local branches plus remote-tracking branches that still exist on their remote. A remote that fails to answer keeps its branches in the list: "we could not ask" must not be reported as "these branches are gone", because callers use this list to decide whether a base branch exists at all.
+- `current`: Current branch name.
+- `branches`: Per-branch detail keyed by branch name, as reported by `git branch`.
+- `defaultBranches`: Each remote's default branch, keyed by remote name. Read from the local `remotes/<name>/HEAD` symbolic ref; for a remote that has none — clone writes it, a hand-added remote may not — the remote itself is asked once with `ls-remote --symref`. A remote that answers neither is absent rather than guessed, and consumers fall back to conventional branch names. Omitted entirely by runtimes that do not provide this Git metadata.
 
 ### Runtime availability of range diffs
 - `GET /api/git/range-diff` is served by the OpenChamber web server, so it is available to web, desktop, and mobile clients. The shared `GitAPI.getGitRangeDiff` is therefore optional: web supplies the HTTP implementation, and VS Code does not implement it because the extension host serves Git through its own bridge rather than these routes. Features built on range diffs (currently the AI diff walkthrough) are not offered in VS Code.

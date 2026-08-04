@@ -55,10 +55,17 @@ written against staged code never silently re-anchors onto an unstaged edit.
 | `branch` | `branch` | `getRangeDiff` uses three-dot `base...head`, so work merged in from the base branch is excluded |
 | `pr` | `pr:<number>` | GitHub returns the merge-base diff, matching the branch semantics |
 
-For the current-branch source, the UI prefers the default branch of the current
-branch's tracking remote (from its local `remote/HEAD` symbolic ref), then uses
-the existing conventional-branch fallback. It does not offer the source when the
-chosen base cannot be resolved locally or through a remote-tracking ref.
+For the current-branch source, the UI takes the base from the default branch of
+the current branch's tracking remote (`defaultBranches` in the branches
+response), and only then falls back to the conventional names. It does not offer
+the source at all when the chosen base exists neither locally nor on a remote —
+a repository whose default is neither `main`, `master` nor `develop` used to be
+handed `main...<head>`, which git rejects outright.
+
+A base that exists only on a remote still works: `getRangeDiff` prefers
+`origin/<base>` when it exists, and otherwise resolves the base through whichever
+remote carries it, because a bare branch name git cannot find in `refs/heads`
+fails the same way.
 
 The panel offers the current branch's pull request on its own: it registers with
 the shared GitHub PR status store (`useGitHubPrStatusStore`) rather than waiting

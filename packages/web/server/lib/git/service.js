@@ -2446,6 +2446,27 @@ export async function getRangeDiff(directory, { base, head, path: filePath, cont
     // ignore
   }
 
+  // Not every repository has an `origin`. When the base names a branch that
+  // exists only on another remote, a bare name does not resolve — git looks in
+  // refs/heads, not across remotes — and the diff fails with "ambiguous
+  // argument". Fall back to whichever remote actually carries it.
+  if (resolvedBase === baseRef && !/[*?[\]^~:\\]/.test(baseRef)) {
+    const resolvesLocally = await git
+      .raw(['rev-parse', '--verify', `refs/heads/${baseRef}`])
+      .then((value) => Boolean(String(value || '').trim()))
+      .catch(() => false);
+
+    if (!resolvesLocally) {
+      const remoteMatch = await git
+        .raw(['for-each-ref', '--count=1', '--format=%(refname:short)', `refs/remotes/*/${baseRef}`])
+        .then((value) => String(value || '').trim())
+        .catch(() => '');
+      if (remoteMatch) {
+        resolvedBase = remoteMatch;
+      }
+    }
+  }
+
   const args = ['diff', '--no-color'];
   if (typeof contextLines === 'number' && !Number.isNaN(contextLines)) {
     args.push(`-U${Math.max(0, contextLines)}`);
@@ -3387,13 +3408,15 @@ export async function getBranches(directory) {
 }
 
 async function getRemoteDefaultBranches(git) {
+  let defaults = {};
+
   try {
     const refs = await git.raw([
       'for-each-ref',
       '--format=%(refname) %(symref)',
       'refs/remotes',
     ]);
-    return Object.fromEntries(
+    defaults = Object.fromEntries(
       refs.trim().split('\n').flatMap((line) => {
         const [ref, symbolicRef] = line.split(' ');
         const match = ref.match(/^refs\/remotes\/([^/]+)\/HEAD$/);
@@ -3404,14 +3427,51 @@ async function getRemoteDefaultBranches(git) {
       })
     );
   } catch {
-    return {};
+    defaults = {};
   }
+
+  // `remote/HEAD` is written by clone and by `git remote set-head`; a remote
+  // added by hand may never have one. Without this the caller falls back to
+  // guessing main/master/develop, which is exactly the guess this data exists
+  // to replace — so ask the remote itself, but only for the remotes that are
+  // actually missing an answer.
+  try {
+    const remotes = await git.getRemotes();
+    const missing = remotes.filter((remote) => remote?.name && !defaults[remote.name]);
+    if (missing.length === 0) return defaults;
+
+    const resolved = await Promise.all(missing.map(async (remote) => {
+      try {
+        const output = await git.raw(['ls-remote', '--symref', remote.name, 'HEAD']);
+        const match = String(output || '').match(/^ref:\s+refs\/heads\/(.+?)\s+HEAD$/m);
+        return match ? [remote.name, match[1]] : null;
+      } catch {
+        // Unreachable or refusing: no answer is better than a guessed one.
+        return null;
+      }
+    }));
+
+    for (const entry of resolved) {
+      if (entry) defaults[entry[0]] = entry[1];
+    }
+  } catch {
+    // Remote list unavailable; the local symrefs are still valid.
+  }
+
+  return defaults;
 }
 
 async function filterActiveRemoteBranches(git, remoteBranches) {
   try {
     const remotes = await git.getRemotes();
     const branchesByRemote = new Map();
+
+    // A remote that did not answer says nothing about its branches. Dropping
+    // them would turn "we could not ask" into "these branches are gone", and
+    // callers use this list to decide whether a base branch exists at all — so
+    // offline would silently remove comparisons that work perfectly well
+    // against the local remote-tracking refs.
+    const unreachableRemotes = new Set();
 
     await Promise.all(remotes.map(async (remote) => {
       try {
@@ -3426,7 +3486,7 @@ async function filterActiveRemoteBranches(git, remoteBranches) {
         }
         branchesByRemote.set(remote.name, actualRemoteBranches);
       } catch {
-        // Skip remotes that fail (e.g., unreachable)
+        unreachableRemotes.add(remote.name);
       }
     }));
 
@@ -3435,6 +3495,7 @@ async function filterActiveRemoteBranches(git, remoteBranches) {
       if (!match) return false;
       const remoteName = remoteBranch.split('/')[1];
       const branchName = match[1];
+      if (unreachableRemotes.has(remoteName)) return true;
       return branchesByRemote.get(remoteName)?.has(branchName) ?? false;
     });
   } catch (error) {

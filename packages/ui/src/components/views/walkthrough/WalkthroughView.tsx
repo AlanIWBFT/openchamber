@@ -185,9 +185,14 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
         .filter(Boolean)
     );
     const trackingRemote = status?.tracking?.split('/')[0];
-    const rootBranchHint = (trackingRemote && branches?.defaultBranches?.[trackingRemote])
+    const defaultBranch = (trackingRemote && branches?.defaultBranches?.[trackingRemote])
       ?? branches?.defaultBranches?.origin;
-    const baseRef = deriveBaseBranch({ remoteNames, localBranches, rootBranchHint });
+    const baseRef = deriveBaseBranch({
+      remoteNames,
+      localBranches,
+      defaultBranch,
+      headBranch: headRef,
+    });
     if (!baseRef || baseRef === headRef || !hasResolvableBaseBranch({ baseBranch: baseRef, localBranches, remoteBranches })) {
       return null;
     }
