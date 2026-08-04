@@ -10,7 +10,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useI18n, type Locale } from '@/lib/i18n';
+import { openExternalUrl } from '@/lib/url';
 import { buildWalkthroughView } from '@/lib/walkthrough/model';
 import type { WalkthroughSource, WalkthroughWorkingTreeScope } from '@/lib/walkthrough/types';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
@@ -40,6 +42,12 @@ interface WalkthroughViewProps {
 }
 
 const SCOPES: WalkthroughWorkingTreeScope[] = ['all', 'staged', 'working'];
+
+// What a walkthrough is — and what it deliberately is not — cannot be read off
+// the panel: the first question users asked about it was whether its marks were
+// review findings. The guide answers that, so it is reachable from the surface
+// itself rather than only from the release announcement.
+const WALKTHROUGH_GUIDE_URL = 'https://docs.openchamber.dev/walkthrough/';
 
 // DropdownMenuLabel defaults to the same size and weight as its items, which
 // makes a heading read as another choice. This matches SelectLabel, the
@@ -524,6 +532,25 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
         </DropdownMenu>
 
         <div className="ml-auto flex min-w-0 items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label={t('walkthrough.help.guide')}
+                onClick={() => {
+                  void openExternalUrl(WALKTHROUGH_GUIDE_URL);
+                }}
+              >
+                <Icon name="question" className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="typography-micro leading-tight">{t('walkthrough.help.guide')}</p>
+            </TooltipContent>
+          </Tooltip>
+
           {/* A walkthrough nobody can read is worth nothing, so the prose
               language is a per-review choice like the model — defaulting to the
               interface language, which is the best evidence of what the reader
