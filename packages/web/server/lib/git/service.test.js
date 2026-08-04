@@ -10,6 +10,7 @@ import {
   cherryPick,
   createWorktree,
   getWorktreeBootstrapStatus,
+  getBranches,
   getStatus,
   isGitRepository,
   populateWorktreeWithLockRecovery,
@@ -986,5 +987,27 @@ describe('hash validation', () => {
     await expect(
       resetToCommit('/tmp', '1234567890abcdef1234567890abcdef12345678', 'soft')
     ).rejects.not.toThrow('Invalid commit hash');
+  });
+});
+
+describe.runIf(canRunGit())('getBranches', () => {
+  it('returns a remote default branch whose name is not a conventional fallback', async () => {
+    const remote = createTempDir();
+    const repository = createTempDir();
+    runGit(remote, ['init', '--bare', '--initial-branch=react']);
+    runGit(repository, ['init', '-b', 'next']);
+    runGit(repository, ['config', 'user.email', 'test@example.com']);
+    runGit(repository, ['config', 'user.name', 'Test']);
+    fs.writeFileSync(path.join(repository, 'README.md'), '# Test\n');
+    runGit(repository, ['add', 'README.md']);
+    runGit(repository, ['commit', '-m', 'init']);
+    runGit(repository, ['remote', 'add', 'origin', remote]);
+    runGit(repository, ['push', 'origin', 'HEAD:react']);
+    runGit(repository, ['fetch', 'origin']);
+    runGit(repository, ['remote', 'set-head', 'origin', '--auto']);
+
+    await expect(getBranches(repository)).resolves.toMatchObject({
+      defaultBranches: { origin: 'react' },
+    });
   });
 });

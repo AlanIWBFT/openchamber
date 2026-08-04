@@ -105,6 +105,7 @@ The following functions are internal helpers used by exported functions:
 - `ahead`: Number of commits ahead of upstream.
 - `behind`: Number of commits behind upstream.
 - `upstreamComparison`: Optional comparison against `upstream/<current-branch>`, with `{ remote, branch, ahead, behind }`.
+- `defaultBranches`: Remote default branches derived from local symbolic refs such as `remotes/origin/HEAD -> origin/main`, keyed by remote name. Omitted by runtimes that do not provide this Git metadata.
 - `files`: Array of file objects with `path`, `index`, `working_dir` status codes.
 - `isClean`: Boolean indicating if working tree is clean.
 - `diffStats`: Object mapping file paths to `{ insertions, deletions }`.

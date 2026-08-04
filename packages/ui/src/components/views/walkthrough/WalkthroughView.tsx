@@ -16,10 +16,10 @@ import { openExternalUrl } from '@/lib/url';
 import { buildWalkthroughView } from '@/lib/walkthrough/model';
 import type { WalkthroughSource, WalkthroughWorkingTreeScope } from '@/lib/walkthrough/types';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
-import { deriveBaseBranch } from '@/components/views/git/baseBranch';
+import { deriveBaseBranch, hasResolvableBaseBranch } from '@/components/views/git/baseBranch';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { useGitBranches, useGitStatus } from '@/stores/useGitStore';
+import { useGitBranches, useGitStatus, useGitStore } from '@/stores/useGitStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import {
   getFreshestPrStatusForBranch,
@@ -160,6 +160,12 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
 
   const status = useGitStatus(directory || null);
   const branches = useGitBranches(directory || null);
+  const ensureAll = useGitStore((state) => state.ensureAll);
+  const { github, git } = useRuntimeAPIs();
+
+  useEffect(() => {
+    if (directory) void ensureAll(directory, git);
+  }, [directory, ensureAll, git]);
 
   // The branch source reviews everything on this branch that is not on its
   // base. Three-dot semantics server-side mean merges from the base are
@@ -170,22 +176,28 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
     if (!headRef) return null;
     const all = branches?.all ?? [];
     const localBranches = all.filter((name) => !name.startsWith('remotes/'));
+    const remoteBranches = all
+      .filter((name) => name.startsWith('remotes/'))
+      .map((name) => name.slice('remotes/'.length));
     const remoteNames = new Set(
-      all
-        .filter((name) => name.startsWith('remotes/'))
-        .map((name) => name.slice('remotes/'.length).split('/')[0])
+      remoteBranches
+        .map((name) => name.split('/')[0])
         .filter(Boolean)
     );
-    const baseRef = deriveBaseBranch({ remoteNames, localBranches });
-    if (!baseRef || baseRef === headRef) return null;
+    const trackingRemote = status?.tracking?.split('/')[0];
+    const rootBranchHint = (trackingRemote && branches?.defaultBranches?.[trackingRemote])
+      ?? branches?.defaultBranches?.origin;
+    const baseRef = deriveBaseBranch({ remoteNames, localBranches, rootBranchHint });
+    if (!baseRef || baseRef === headRef || !hasResolvableBaseBranch({ baseBranch: baseRef, localBranches, remoteBranches })) {
+      return null;
+    }
     return { kind: 'branch', baseRef, headRef };
-  }, [branches, currentBranch]);
+  }, [branches, currentBranch, status?.tracking]);
 
   // The pull request for this branch used to appear only after visiting the PR
   // panel, because nothing else asked GitHub about it. Ask here too: the status
   // store already dedupes by signature and throttles by TTL, so several panels
   // wanting the same answer produce one request.
-  const { github } = useRuntimeAPIs();
   const githubConnected = useGitHubAuthStore((state) => state.status?.connected ?? false);
   const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
   const ensurePrStatusEntry = useGitHubPrStatusStore((state) => state.ensureEntry);
