@@ -124,6 +124,8 @@ the user is still speaking, so only the tail is left to transcribe on stop.
   Whisper-style providers do not hallucinate on silence.
 - Model files live under `~/.config/openchamber/speech-models`.
 - Model installation verifies required files in a staging directory before promotion. Extraction failures remove the staging directory and cached archive.
+- Runtime shutdown aborts in-flight model downloads and force-stops extraction
+  before the managed OpenCode shutdown window begins.
 
 ## Decisions
 
