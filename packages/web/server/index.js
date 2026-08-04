@@ -107,7 +107,9 @@ import { createRoutingRuntime } from './lib/routing/runtime.js';
 import { createJevClient } from './lib/routing/jev.js';
 import { createSessionWorkRuntime } from './lib/session-work/runtime.js';
 import { createSessionLineage } from './lib/session-lineage.js';
-import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.js';
+import { createGracefulShutdownRuntime, createShutdownFence } from './lib/opencode/shutdown-runtime.js';
+import { forceStopCloudflareTunnels } from './lib/cloudflare-tunnel.js';
+import { forceStopNgrokTunnels } from './lib/ngrok-tunnel.js';
 import { beginGuestServiceHost, beginGuestServiceShutdown, stopAllGuestServices } from './lib/guests/service.js';
 import { findInstalledGuest } from './lib/guests/catalog.js';
 import { extensionsPersistPath } from './lib/guests/persist.js';
@@ -1033,7 +1035,7 @@ const permissionAutoAcceptRuntime = createPermissionAutoAcceptRuntime({
   onPermissionReplied: (permissionId) => routingRuntime.forgetPermission(permissionId),
   resolveLegacyEnabledMode: async () => ((await routingRuntime.legacySafetyNetEnabled()) ? 'safety' : 'auto'),
 });
-permissionAutoAcceptRuntime.start();
+const stopPermissionAutoAccept = permissionAutoAcceptRuntime.start();
 // A request the safety net held still needs the user, so only one that was
 // actually answered automatically skips the notification.
 notificationTriggerRuntime.setGetIsSessionAutoAccepting(
@@ -1301,9 +1303,19 @@ const tunnelWiringRuntime = createTunnelWiringRuntime({
   },
 });
 const startupPipelineRuntime = createStartupPipelineRuntime({
-  createTerminalRuntime,
-  createDictationRuntime,
-  createMessageStreamWsRuntime,
+  // Own resources at creation, before listener/tunnel startup can suspend.
+  createTerminalRuntime: (options) => {
+    terminalRuntime = createTerminalRuntime(options);
+    return terminalRuntime;
+  },
+  createDictationRuntime: (options) => {
+    dictationRuntime = createDictationRuntime(options);
+    return dictationRuntime;
+  },
+  createMessageStreamWsRuntime: (options) => {
+    messageStreamRuntime = createMessageStreamWsRuntime(options);
+    return messageStreamRuntime;
+  },
   createServerStartupRuntime,
 });
 
@@ -1453,6 +1465,8 @@ const getOpenCodeUpgradeCapability = () => {
 };
 
 const restartOpenCode = (...args) => openCodeLifecycleRuntime.restartOpenCode(...args);
+const stopManagedOpenCode = (...args) => openCodeLifecycleRuntime.stopManagedOpenCode(...args);
+const getManagedOpenCodeProcessInfo = () => openCodeLifecycleRuntime.getManagedOpenCodeProcessInfo();
 const waitForOpenCodeReady = (...args) => openCodeLifecycleRuntime.waitForOpenCodeReady(...args);
 const waitForAgentPresence = (...args) => openCodeLifecycleRuntime.waitForAgentPresence(...args);
 const refreshOpenCodeAfterConfigChange = (...args) => openCodeLifecycleRuntime.refreshOpenCodeAfterConfigChange(...args);
@@ -1685,6 +1699,7 @@ const openChamberControlService = createOpenChamberControlService({
 });
 
 const ensureGlobalWatcherStarted = async () => {
+  if (isShuttingDown) return;
   if (globalWatcherStartPromise) {
     return globalWatcherStartPromise;
   }
@@ -1698,6 +1713,7 @@ const ensureGlobalWatcherStarted = async () => {
 };
 const bootstrapOpenCodeAtStartup = async (...args) => {
   await openCodeLifecycleRuntime.bootstrapOpenCodeAtStartup(...args);
+  if (isShuttingDown) return;
   scheduleOpenCodeApiDetection();
   if (openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) {
     startHealthMonitoring();
@@ -1714,8 +1730,6 @@ const bootstrapOpenCodeAtStartup = async (...args) => {
     .then(() => sessionMetadataStore.migrateLegacy())
     .catch((error) => console.warn('[openchamber-sessions] session metadata migration failed:', error?.message ?? error));
 };
-const killProcessOnPort = (...args) => openCodeLifecycleRuntime.killProcessOnPort(...args);
-const waitForPortRelease = (...args) => openCodeLifecycleRuntime.waitForPortRelease(...args);
 
 const fetchAgentsSnapshot = (...args) => serverUtilsRuntime.fetchAgentsSnapshot(...args);
 const fetchProvidersSnapshot = (...args) => serverUtilsRuntime.fetchProvidersSnapshot(...args);
@@ -1725,7 +1739,6 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   process,
   shutdownTimeoutMs: SHUTDOWN_TIMEOUT,
   getExitOnShutdown: () => exitOnShutdown,
-  getIsShuttingDown: () => isShuttingDown,
   setIsShuttingDown: (value) => {
     isShuttingDown = value;
   },
@@ -1748,14 +1761,12 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   setMessageStreamRuntime: (value) => {
     messageStreamRuntime = value;
   },
-  shouldSkipOpenCodeStop: () => ENV_SKIP_OPENCODE_START || isExternalOpenCode,
-  getOpenCodePort: () => openCodePort,
-  getOpenCodeProcess: () => openCodeProcess,
-  setOpenCodeProcess: (value) => {
-    openCodeProcess = value;
-  },
-  killProcessOnPort,
-  waitForPortRelease,
+  stopManagedOpenCode,
+  stopPermissionAutoAccept,
+  permissionAutoAcceptRuntime,
+  globalMessageStreamHub,
+  forceStopCloudflareTunnels,
+  forceStopNgrokTunnels,
   getServer: () => server,
   getUiAuthController: () => uiAuthController,
   setUiAuthController: (value) => {
@@ -1778,8 +1789,10 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
 });
 
 const gracefulShutdown = (...args) => gracefulShutdownRuntime.gracefulShutdown(...args);
+const stopDesktopBackgroundResources = () => gracefulShutdown({ exitProcess: false });
 
 async function main(options = {}) {
+  if (isShuttingDown) throw new Error('OpenChamber server startup cancelled during shutdown');
   beginGuestServiceHost();
   const port = Number.isFinite(options.port) && options.port >= 0 ? Math.trunc(options.port) : DEFAULT_PORT;
   const host = typeof options.host === 'string' && options.host.length > 0 ? options.host : undefined;
@@ -2012,6 +2025,7 @@ async function main(options = {}) {
   ]);
   const isLocalDevClientOrigin = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
   app.set('trust proxy', true);
+  app.use(createShutdownFence(() => isShuttingDown));
   // Keep self-hosted instances out of search engines. The app shell is served
   // publicly (it loads before prompting for the UI password), so without this
   // even a password-protected instance gets crawled and indexed. Applies to
@@ -2373,6 +2387,10 @@ async function main(options = {}) {
     idleStopMs: BROWSER_PROVIDER_IDLE_MS,
   });
 
+  if (isShuttingDown) {
+    await stopDesktopBackgroundResources();
+    throw new Error('OpenChamber server startup cancelled during shutdown');
+  }
   const startupPipelineResult = await startupPipelineRuntime.run({
     app,
     server,
@@ -2426,11 +2444,19 @@ async function main(options = {}) {
   terminalRuntime = startupPipelineResult.terminalRuntime;
   dictationRuntime = startupPipelineResult.dictationRuntime;
   messageStreamRuntime = startupPipelineResult.messageStreamRuntime;
+  if (isShuttingDown) {
+    await stopDesktopBackgroundResources();
+    throw new Error('OpenChamber server startup cancelled during shutdown');
+  }
 
   try {
     await scheduledTasksRuntime.start();
   } catch (error) {
     console.warn('[ScheduledTasks] Failed to start runtime:', error?.message || error);
+  }
+  if (isShuttingDown) {
+    await stopDesktopBackgroundResources();
+    throw new Error('OpenChamber server startup cancelled during shutdown');
   }
 
   // Only opens a relay control socket when the user opted in (config enabled).
@@ -2514,6 +2540,9 @@ runCliEntryIfMain({
 
 export {
   gracefulShutdown,
+  getManagedOpenCodeProcessInfo,
+  stopManagedOpenCode,
+  stopDesktopBackgroundResources,
   setupProxy,
   restartOpenCode,
   main as startWebUiServer,

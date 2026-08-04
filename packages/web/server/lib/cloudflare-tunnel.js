@@ -20,6 +20,15 @@ const MANAGED_TUNNEL_LIVENESS_FALLBACK_MS = 6000;
 const TUNNEL_MODE_QUICK = 'quick';
 const TUNNEL_MODE_MANAGED_REMOTE = 'managed-remote';
 const TUNNEL_MODE_MANAGED_LOCAL = 'managed-local';
+const activeCloudflaredProcesses = new Set();
+let cloudflareShutdownRequested = false;
+
+export function forceStopCloudflareTunnels() {
+  cloudflareShutdownRequested = true;
+  for (const child of activeCloudflaredProcesses) {
+    try { child.kill('SIGKILL'); } catch { /* already gone */ }
+  }
+}
 
 export async function checkCloudflaredAvailable() {
   const target = resolveExecutableLaunchTarget('cloudflared');
@@ -68,16 +77,22 @@ Or visit: https://developers.cloudflare.com/cloudflare-one/networks/connectors/c
 `);
 }
 
-const spawnCloudflared = (args, envOverrides = {}, resolvedBinaryPath = 'cloudflared') => spawn(resolvedBinaryPath, args, {
-  stdio: ['ignore', 'pipe', 'pipe'],
-  windowsHide: true,
-  env: {
-    ...createExecutableSearchEnv(),
-    CF_TELEMETRY_DISABLE: '1',
-    ...envOverrides,
-  },
-  killSignal: 'SIGINT',
-});
+const spawnCloudflared = (args, envOverrides = {}, resolvedBinaryPath = 'cloudflared') => {
+  if (cloudflareShutdownRequested) throw new Error('Cloudflared startup cancelled during shutdown');
+  const child = spawn(resolvedBinaryPath, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+    env: {
+      ...createExecutableSearchEnv(),
+      CF_TELEMETRY_DISABLE: '1',
+      ...envOverrides,
+    },
+    killSignal: 'SIGINT',
+  });
+  activeCloudflaredProcesses.add(child);
+  child.once('close', () => activeCloudflaredProcesses.delete(child));
+  return child;
+};
 
 const normalizeHostname = (value) => {
   if (typeof value !== 'string') {
