@@ -622,10 +622,9 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
               type="button"
               variant="outline"
               size="sm"
-              className={cn(
-                WALKTHROUGH_ACTION_CLASS,
-                generateDisabled && 'border-border bg-transparent text-muted-foreground hover:bg-transparent hover:text-muted-foreground',
-              )}
+              className={generateDisabled
+                ? 'border-border text-muted-foreground'
+                : WALKTHROUGH_ACTION_CLASS}
               disabled={generateDisabled}
               aria-label={compactHeader
                 ? (view ? t('walkthrough.action.regenerate') : t('walkthrough.action.generate'))
