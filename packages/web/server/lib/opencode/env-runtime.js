@@ -10,6 +10,7 @@ import { mergePathValues } from './path-utils.js';
 // hostage: a probe that overruns is abandoned and resolution falls through
 // to the next candidate. Electron's own login-shell probe uses the same bound.
 const SHELL_PROBE_TIMEOUT_MS = 5_000;
+const SHUTDOWN_PROTOCOL_MARKER = 'openchamber-shutdown-protocol.capability';
 
 export const createOpenCodeEnvRuntime = (deps) => {
   const {
@@ -328,6 +329,16 @@ export const createOpenCodeEnvRuntime = (deps) => {
     return bundledOpenCodeCliCandidates().some((bundledCandidate) => (
       canonicalExecutablePath(bundledCandidate) === canonicalCandidate
     ));
+  };
+
+  const supportsOpenCodeShutdownProtocol = (candidate) => {
+    const canonicalCandidate = canonicalExecutablePath(candidate);
+    if (!canonicalCandidate) return false;
+    try {
+      return fs.statSync(path.join(path.dirname(canonicalCandidate), SHUTDOWN_PROTOCOL_MARKER)).isFile();
+    } catch {
+      return false;
+    }
   };
 
   const bundledOpenCodeCliFallback = () => {
@@ -1210,6 +1221,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
     getLoginShellEnvSnapshot,
     resolveOpencodeCliPath,
     isBundledOpenCodeCliPath,
+    supportsOpenCodeShutdownProtocol,
     resolveManagedOpenCodeLaunchSpec,
     isExecutable,
     searchPathFor,

@@ -24,8 +24,11 @@ export declare function startWebUiServer(
 ): Promise<WebUiServerController>;
 
 export declare function gracefulShutdown(options?: { exitProcess?: boolean; deadline?: number }): Promise<void>;
+export declare function getManagedOpenCodeProcessInfo(): { managed: boolean; pid: number | null; port: number | null };
 export declare function setupProxy(app: Express): void;
 export declare function restartOpenCode(): Promise<void>;
+export declare function stopDesktopBackgroundResources(): void;
+export declare function stopManagedOpenCode(options?: { deadline?: number }): Promise<{ graceful: boolean }>;
 export declare function parseArgs(argv?: string[]): {
   port: number;
   host?: string;
