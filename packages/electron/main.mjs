@@ -12,6 +12,7 @@ import { promisify } from 'node:util';
 import updaterPkg from 'electron-updater';
 import { ElectronSshManager } from './ssh-manager.mjs';
 import { replaceFileWithRetry } from './windows-file-replace.mjs';
+import { buildQuitPageHtml, buildSplashLogoSvg, closeMiniChatWindows } from './quit-page.mjs';
 import { createTrayController } from './tray.mjs';
 import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { stopEmbeddedServer } from './server-shutdown.mjs';
@@ -254,12 +255,13 @@ const INSTALLED_APPS_CACHE_FILE = 'discovered-apps.json';
 // entries written by an older build are treated as stale and refresh immediately.
 const INSTALLED_APPS_CACHE_VERSION = 2;
 const LINUX_DESKTOP_ENTRIES_CACHE_TTL_MS = 30_000;
-const OPENCODE_SHUTDOWN_GRACE_MS = 100;
-const OPENCHAMBER_SHUTDOWN_TIMEOUT_MS = 15000;
+const OPENCHAMBER_SHUTDOWN_TIMEOUT_MS = 5000;
+const QUIT_PAGE_LOAD_BUDGET_MS = 500;
 const { autoUpdater } = updaterPkg;
 
 const state = {
   serverHandle: null,
+  serverModule: null,
   sidecarUrl: null,
   localUiUrl: null,
   localOrigin: null,
@@ -274,10 +276,12 @@ const state = {
   quitRequested: false,
   quitConfirmed: false,
   quitInProgress: false,
+  quitPrepared: false,
+  allowWindowClose: false,
+  quitPageReadyPromise: null,
   quitConfirmationPending: false,
   backgroundShutdownComplete: false,
   backgroundShutdownPromise: null,
-  sshShutdownPromise: null,
   installingUpdate: false,
   pendingUpdate: null,
   unreachableHosts: new Set(),
@@ -369,39 +373,29 @@ const quitConfirmationMessage = () => {
 };
 
 const shutdownBackgroundServices = () => {
-  if (!state.backgroundShutdownPromise) {
-    setDesktopKeepAwakeActive(false);
-    shellEnvironmentAbort.abort();
-    state.backgroundShutdownPromise = Promise.all([
-      loadShellEnv().catch(() => {}),
-      killSidecar(),
-      shutdownSshSessions(),
-    ]).finally(() => {
+  if (state.backgroundShutdownPromise) return state.backgroundShutdownPromise;
+  if (state.backgroundShutdownComplete) return Promise.resolve();
+  setDesktopKeepAwakeActive(false);
+  shellEnvironmentAbort.abort();
+  state.backgroundShutdownPromise = Promise.resolve(state.quitPageReadyPromise)
+    .then(closeAllDevTunnels)
+    .then(() => Promise.all([loadShellEnv().catch(() => {}), killSidecar()]))
+    .catch((error) => {
+      log.warn('[electron] background shutdown failed:', error);
+    })
+    .finally(() => {
       state.backgroundShutdownComplete = true;
     });
-  }
   return state.backgroundShutdownPromise;
 };
 
-const shutdownSshSessions = async () => {
-  if (state.sshShutdownPromise) {
-    await state.sshShutdownPromise;
-    return;
-  }
-
-  state.sshShutdownPromise = sshManager.shutdownAll().catch((error) => {
-    log.warn('[electron] failed to stop SSH sessions:', error);
-  }).finally(() => {
-    state.sshShutdownPromise = null;
-  });
-
-  await state.sshShutdownPromise;
-};
-
-const prepareForQuit = () => {
+const prepareForQuit = ({ installingUpdate = false } = {}) => {
+  if (state.quitPrepared) return;
+  state.quitPrepared = true;
+  state.quitInProgress = true;
   state.quitRequested = true;
   state.quitConfirmed = true;
-  state.installingUpdate = false;
+  state.installingUpdate = installingUpdate;
   state.quitConfirmationPending = false;
 
   if (state.trayController) {
@@ -423,6 +417,37 @@ const prepareForQuit = () => {
     }
   }
 
+  closeMiniChatWindows(BrowserWindow.getAllWindows());
+
+  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+    const settings = readSettingsRoot();
+    try {
+      const html = buildQuitPageHtml({
+        locale: app.getLocale(),
+        colors: {
+          backgroundLight: settings.splashBgLight,
+          foregroundLight: settings.splashFgLight,
+          backgroundDark: settings.splashBgDark,
+          foregroundDark: settings.splashFgDark,
+        },
+      });
+      if (state.mainWindow.isMinimized()) state.mainWindow.restore();
+      state.mainWindow.show();
+      state.mainWindow.focus();
+      const loadQuitPage = state.mainWindow
+        .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+        .catch((error) => {
+          if (!isBenignNavigationAbort(error)) log.warn('[electron] failed to show quit page:', error);
+        });
+      state.quitPageReadyPromise = Promise.race([
+        loadQuitPage,
+        new Promise((resolve) => setTimeout(resolve, QUIT_PAGE_LOAD_BUDGET_MS)),
+      ]).then(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    } catch (error) {
+      log.warn('[electron] failed to prepare quit page:', error);
+    }
+  }
+
   setDesktopKeepAwakeActive(false);
 
   return shutdownBackgroundServices();
@@ -438,6 +463,7 @@ const performConfirmedQuit = async ({ relaunch = false } = {}) => {
     log.warn('[electron] background shutdown failed:', error);
   } finally {
     if (relaunch) app.relaunch();
+    state.allowWindowClose = true;
     app.exit(0);
   }
 };
@@ -445,26 +471,29 @@ const performConfirmedQuit = async ({ relaunch = false } = {}) => {
 // Hard-stop signals (`Ctrl+C` on `electron:dev`, an external `kill`/SIGTERM,
 // terminal close) bypass the normal app-quit flow — which would orphan the
 // in-process web server's managed OpenCode child. Run the same background
-// teardown the quit path uses (which kills the sidecar), then exit. The startup
-// reaper remains the backstop for an unhandled hard crash (SIGKILL).
+// teardown the quit path uses (which kills the sidecar), then exit.
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(signal, () => {
-    void performConfirmedQuit();
+    state.quitInProgress = true;
+    void shutdownBackgroundServices()
+      .catch((error) => log.warn(`[electron] ${signal} shutdown failed:`, error))
+      .finally(() => {
+        state.allowWindowClose = true;
+        app.exit(0);
+      });
   });
 }
 
 const requestQuitWithConfirmation = async () => {
+  if (state.quitInProgress || state.quitConfirmationPending) return;
+  state.quitConfirmationPending = true;
   await refreshQuitRiskFlags();
 
   if (!shouldRequireQuitConfirmation()) {
+    state.quitConfirmationPending = false;
     performConfirmedQuit();
     return;
   }
-
-  if (state.quitConfirmationPending) {
-    return;
-  }
-  state.quitConfirmationPending = true;
 
   const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
   const visible = windows.find((window) => window.isVisible());
@@ -1473,9 +1502,11 @@ const spawnLocalServer = async () => {
   process.env.NO_PROXY = process.env.NO_PROXY || 'localhost,127.0.0.1';
   process.env.no_proxy = process.env.no_proxy || 'localhost,127.0.0.1';
 
-  const { startWebUiServer } = await import('@openchamber/web/server/index.js');
+  const serverModule = await import('@openchamber/web/server/index.js');
+  state.serverModule = serverModule;
+  if (state.quitInProgress) throw new Error('OpenChamber server startup cancelled during shutdown');
 
-  const handle = await startWebUiServer({
+  const handle = await serverModule.startWebUiServer({
     port: chosenPort,
     host: bindHost,
     uiPassword: desktopUiPassword || null,
@@ -1602,10 +1633,17 @@ Stop-ProcessTree $targetPid $true
 
 const killSidecar = async () => {
   const handle = state.serverHandle;
+  const serverModule = state.serverModule;
   state.serverHandle = null;
   state.sidecarUrl = null;
-  if (!handle) return;
-
+  try { sshManager.forceShutdownAll(); } catch (error) {
+    log.warn('[electron] failed to stop SSH processes:', error);
+  }
+  if (!handle) {
+    serverModule?.stopDesktopBackgroundResources?.();
+    await serverModule?.stopManagedOpenCode?.({ deadline: Date.now() + OPENCHAMBER_SHUTDOWN_TIMEOUT_MS });
+    return;
+  }
   await stopEmbeddedServer(handle, {
     launchFallback: launchDetachedOpenCodeKiller,
     warn: (error) => log.warn('[electron] embedded server shutdown failed:', error),
@@ -1760,47 +1798,7 @@ const buildStartupSplashHtml = () => {
   </head>
   <body>
     <div class="stack">
-      <svg width="120" height="120" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenChamber loading icon">
-        <path d="M50 50 L8.432 26 L8.432 74 L50 98 Z" fill="var(--splash-face-fill)" stroke="var(--splash-stroke)" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M50 50 L39.608 44 L39.608 56 L50 62 Z" fill="var(--splash-cell-fill)" opacity="0.2"/>
-        <path d="M39.608 44 L29.216 38 L29.216 50 L39.608 56 Z" fill="var(--splash-cell-fill)" opacity="0.45"/>
-        <path d="M29.216 38 L18.824 32 L18.824 44 L29.216 50 Z" fill="var(--splash-cell-fill)" opacity="0.15"/>
-        <path d="M18.824 32 L8.432 26 L8.432 38 L18.824 44 Z" fill="var(--splash-cell-fill)" opacity="0.55"/>
-        <path d="M50 62 L39.608 56 L39.608 68 L50 74 Z" fill="var(--splash-cell-fill)" opacity="0.35"/>
-        <path d="M39.608 56 L29.216 50 L29.216 62 L39.608 68 Z" fill="var(--splash-cell-fill)" opacity="0.1"/>
-        <path d="M29.216 50 L18.824 44 L18.824 56 L29.216 62 Z" fill="var(--splash-cell-fill)" opacity="0.5"/>
-        <path d="M18.824 44 L8.432 38 L8.432 50 L18.824 56 Z" fill="var(--splash-cell-fill)" opacity="0.25"/>
-        <path d="M50 74 L39.608 68 L39.608 80 L50 86 Z" fill="var(--splash-cell-fill)" opacity="0.4"/>
-        <path d="M39.608 68 L29.216 62 L29.216 74 L39.608 80 Z" fill="var(--splash-cell-fill)" opacity="0.3"/>
-        <path d="M29.216 62 L18.824 56 L18.824 68 L29.216 74 Z" fill="var(--splash-cell-fill)" opacity="0.45"/>
-        <path d="M18.824 56 L8.432 50 L8.432 62 L18.824 68 Z" fill="var(--splash-cell-fill)" opacity="0.15"/>
-        <path d="M50 86 L39.608 80 L39.608 92 L50 98 Z" fill="var(--splash-cell-fill)" opacity="0.55"/>
-        <path d="M39.608 80 L29.216 74 L29.216 86 L39.608 92 Z" fill="var(--splash-cell-fill)" opacity="0.2"/>
-        <path d="M29.216 74 L18.824 68 L18.824 80 L29.216 86 Z" fill="var(--splash-cell-fill)" opacity="0.35"/>
-        <path d="M18.824 68 L8.432 62 L8.432 74 L18.824 80 Z" fill="var(--splash-cell-fill)" opacity="0.1"/>
-        <path d="M50 50 L91.568 26 L91.568 74 L50 98 Z" fill="var(--splash-face-fill)" stroke="var(--splash-stroke)" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M50 50 L60.392 44 L60.392 56 L50 62 Z" fill="var(--splash-cell-fill)" opacity="0.3"/>
-        <path d="M60.392 44 L70.784 38 L70.784 50 L60.392 56 Z" fill="var(--splash-cell-fill)" opacity="0.15"/>
-        <path d="M70.784 38 L81.176 32 L81.176 44 L70.784 50 Z" fill="var(--splash-cell-fill)" opacity="0.45"/>
-        <path d="M81.176 32 L91.568 26 L91.568 38 L81.176 44 Z" fill="var(--splash-cell-fill)" opacity="0.25"/>
-        <path d="M50 62 L60.392 56 L60.392 68 L50 74 Z" fill="var(--splash-cell-fill)" opacity="0.5"/>
-        <path d="M60.392 56 L70.784 50 L70.784 62 L60.392 68 Z" fill="var(--splash-cell-fill)" opacity="0.35"/>
-        <path d="M70.784 50 L81.176 44 L81.176 56 L70.784 62 Z" fill="var(--splash-cell-fill)" opacity="0.1"/>
-        <path d="M81.176 44 L91.568 38 L91.568 50 L81.176 56 Z" fill="var(--splash-cell-fill)" opacity="0.4"/>
-        <path d="M50 74 L60.392 68 L60.392 80 L50 86 Z" fill="var(--splash-cell-fill)" opacity="0.2"/>
-        <path d="M60.392 68 L70.784 62 L70.784 74 L60.392 80 Z" fill="var(--splash-cell-fill)" opacity="0.55"/>
-        <path d="M70.784 62 L81.176 56 L81.176 68 L70.784 74 Z" fill="var(--splash-cell-fill)" opacity="0.3"/>
-        <path d="M81.176 56 L91.568 50 L91.568 62 L81.176 68 Z" fill="var(--splash-cell-fill)" opacity="0.15"/>
-        <path d="M50 86 L60.392 80 L60.392 92 L50 98 Z" fill="var(--splash-cell-fill)" opacity="0.45"/>
-        <path d="M60.392 80 L70.784 74 L70.784 86 L60.392 92 Z" fill="var(--splash-cell-fill)" opacity="0.25"/>
-        <path d="M70.784 74 L81.176 68 L81.176 80 L70.784 86 Z" fill="var(--splash-cell-fill)" opacity="0.4"/>
-        <path d="M81.176 68 L91.568 62 L91.568 74 L81.176 80 Z" fill="var(--splash-cell-fill)" opacity="0.2"/>
-        <path d="M50 2 L8.432 26 L50 50 L91.568 26 Z" fill="none" stroke="var(--splash-stroke)" stroke-width="2" stroke-linejoin="round"/>
-        <g transform="matrix(0.866, 0.5, -0.866, 0.5, 50, 26) scale(0.75)">
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M-16 -20 L16 -20 L16 20 L-16 20 Z M-8 -12 L-8 12 L8 12 L8 -12 Z" fill="var(--splash-logo-fill)"/>
-          <path d="M-8 -4 L8 -4 L8 12 L-8 12 Z" fill="var(--splash-logo-fill)" fill-opacity="0.4"/>
-        </g>
-      </svg>
+      ${buildSplashLogoSvg({ ariaLabel: 'OpenChamber loading icon' })}
     </div>
   </body>
   </html>`;
@@ -2497,6 +2495,11 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     debounceWindowStatePersist(browserWindow, false);
   });
   browserWindow.on('close', (event) => {
+    if (browserWindow === state.mainWindow && state.quitInProgress && !state.allowWindowClose) {
+      event.preventDefault();
+      return;
+    }
+
     if (!state.quitRequested && shouldHideMainWindowToTray(browserWindow)) {
       debounceWindowStatePersist(browserWindow, true);
       event.preventDefault();
@@ -2515,6 +2518,12 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
         browserWindow.hide();
         return;
       }
+    }
+
+    if (process.platform !== 'darwin' && browserWindow === state.mainWindow && !state.quitRequested) {
+      event.preventDefault();
+      void requestQuitWithConfirmation();
+      return;
     }
 
     debounceWindowStatePersist(browserWindow, true);
@@ -2652,6 +2661,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
 };
 
 const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig = {}) => {
+  if (state.quitInProgress) return state.mainWindow;
   state.startupResolved = true;
   state.localOrigin = localOrigin;
   state.apiBaseUrl = typeof runtimeConfig.apiBaseUrl === 'string' ? runtimeConfig.apiBaseUrl : state.apiBaseUrl;
@@ -2692,6 +2702,7 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
 };
 
 const openMainWindow = async () => {
+  if (state.quitInProgress) return state.mainWindow;
   if (!state.startupResolved) {
     const { initialUrl, localOrigin, bootOutcome, apiBaseUrl, clientToken, requestHeaders } = await resolveInitialUrl();
     return activateMainWindow(initialUrl, localOrigin, bootOutcome, { apiBaseUrl, clientToken, requestHeaders });
@@ -3777,12 +3788,16 @@ const getDevTunnelClient = async () => {
   return devTunnelClientPromise;
 };
 
-const closeAllDevTunnels = () => {
+const closeAllDevTunnels = async () => {
   relayDevTunnelBridge.closeAll();
   if (!devTunnelClientPromise) return;
   const pending = devTunnelClientPromise;
   devTunnelClientPromise = null;
-  pending.then((client) => client.closeAll()).catch(() => {});
+  try {
+    const client = await pending;
+    await client.closeAll();
+  } catch {
+  }
 };
 
 const handleInvoke = async (browserWindow, command, args = {}) => {
@@ -5096,6 +5111,7 @@ const COMMANDS_SAFE_FOR_REMOTE = new Set([
 ]);
 
 ipcMain.handle('openchamber:invoke', async (event, command, args) => {
+  if (state.quitInProgress) throw new Error('OpenChamber is shutting down');
   if (!isLocalSender(event.sender) && !COMMANDS_SAFE_FOR_REMOTE.has(command)) {
     log.warn(`[ipc] rejected ${command} from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
     throw new Error('IPC not available for this origin');
@@ -5298,9 +5314,10 @@ const focusMainWindowWithSession = async (sessionId, directory) => {
 
 const dispatchTrayAction = async (action) => {
   if (!action || typeof action !== 'object') return;
+  if (state.quitInProgress) return;
 
   if (action.type === 'quit') {
-    app.quit();
+    void requestQuitWithConfirmation();
     return;
   }
 
@@ -5389,27 +5406,13 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', (event) => {
-  state.quitRequested = true;
-  // Loopback listeners would otherwise outlive the window that needed them.
-  closeAllDevTunnels();
-
-  if (state.installingUpdate) {
-    return;
-  }
-
-  if (process.platform === 'darwin' && !state.quitConfirmed) {
-    event.preventDefault();
-    void requestQuitWithConfirmation();
-    return;
-  }
-
-  if (!state.backgroundShutdownComplete) {
-    event.preventDefault();
-    performConfirmedQuit();
-  }
+  if (state.allowWindowClose) return;
+  event.preventDefault();
+  void requestQuitWithConfirmation();
 });
 
 app.on('second-instance', (_event, argv) => {
+  if (state.quitInProgress) return;
   const urls = Array.isArray(argv)
     ? argv.filter((arg) => typeof arg === 'string' && arg.startsWith(`${DEEP_LINK_PROTOCOL}://`))
     : [];
@@ -5423,6 +5426,7 @@ app.on('second-instance', (_event, argv) => {
 
 app.on('open-url', (event, url) => {
   event.preventDefault();
+  if (state.quitInProgress) return;
   handleDeepLinks([url]);
   if (BrowserWindow.getAllWindows().length === 0) {
     void openMainWindow();
@@ -5430,6 +5434,7 @@ app.on('open-url', (event, url) => {
 });
 
 app.on('activate', async () => {
+  if (state.quitInProgress) return;
   const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
   // Only spawn a main window when there is genuinely nothing to come back to.
   if (windows.length === 0) {
@@ -5534,5 +5539,9 @@ app.whenReady().then(async () => {
 }).catch((error) => {
   if (state.quitInProgress) return;
   log.error('[electron] startup failed:', error);
-  void shutdownBackgroundServices().finally(() => app.exit(1));
+  state.quitInProgress = true;
+  void shutdownBackgroundServices().finally(() => {
+    state.allowWindowClose = true;
+    app.exit(1);
+  });
 });

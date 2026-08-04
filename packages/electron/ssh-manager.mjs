@@ -420,6 +420,8 @@ export class ElectronSshManager {
     this.connectAttempts = new Map();
     this.connecting = new Map();
     this.sshAuth = new WeakMap();
+    this.sshChildren = new Set();
+    this.shuttingDown = false;
   }
 
   usesControlMaster() {
@@ -455,6 +457,7 @@ export class ElectronSshManager {
     childProcessDiagnostics.set(child, diagnostics);
     const auth = this.sshAuth.get(parsed);
     auth?.children.add(child);
+    this.sshChildren.add(child);
     child.stderr?.on('data', (chunk) => {
       diagnostics.stderr = `${diagnostics.stderr}${chunk.toString()}`.slice(-MAX_PROCESS_ERROR_CAPTURE_CHARS);
     });
@@ -463,6 +466,7 @@ export class ElectronSshManager {
     });
     child.on('close', () => {
       auth?.children.delete(child);
+      this.sshChildren.delete(child);
     });
     return child;
   }
@@ -478,6 +482,7 @@ export class ElectronSshManager {
   }
 
   spawnSsh(parsed, preDestinationArgs, options, remoteCommand = null) {
+    if (this.shuttingDown) throw new Error('SSH manager is shutting down');
     const child = this.spawnProcess('ssh', buildSshArgs(parsed, preDestinationArgs, remoteCommand), {
       ...options,
       ...this.hiddenSpawnOptions(),
@@ -488,6 +493,10 @@ export class ElectronSshManager {
 
   async runSshOutput(parsed, preDestinationArgs, remoteCommand = null) {
     return await new Promise((resolve, reject) => {
+      if (this.shuttingDown) {
+        reject(new Error('SSH manager is shutting down'));
+        return;
+      }
       const child = this.trackSshProcess(this.spawnProcess('ssh', buildSshArgs(parsed, preDestinationArgs, remoteCommand), {
         stdio: ['pipe', 'pipe', 'pipe'],
         ...this.hiddenSpawnOptions(),
@@ -1560,6 +1569,35 @@ export class ElectronSshManager {
     const ids = [...new Set([...this.sessions.keys(), ...this.connecting.keys(), ...this.monitorTimers.keys()])];
     for (const id of ids) {
       await this.disconnectInternal(id, false);
+    }
+  }
+
+  forceShutdownAll() {
+    this.shuttingDown = true;
+    for (const timer of this.monitorTimers.values()) clearTimeout(timer);
+    this.monitorTimers.clear();
+    if (this.usesControlMaster()) {
+      for (const session of this.sessions.values()) {
+        try {
+          const child = this.spawnProcess('ssh', buildSshArgs(session.parsed, [
+            '-o', 'ControlMaster=no',
+            '-o', `ControlPath=${session.controlPath}`,
+            '-o', 'BatchMode=yes',
+            '-o', 'ConnectTimeout=1',
+            '-O', 'exit',
+          ]), {
+            detached: true,
+            stdio: 'ignore',
+            ...this.hiddenSpawnOptions(),
+            env: this.authEnvironment(session.parsed),
+          });
+          child.unref?.();
+        } catch {
+        }
+      }
+    }
+    for (const child of this.sshChildren) {
+      try { child.kill('SIGKILL'); } catch {}
     }
   }
 }

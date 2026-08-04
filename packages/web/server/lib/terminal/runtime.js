@@ -102,6 +102,7 @@ export function createTerminalRuntime({
   let ptyProviderPromise = null;
   let shutdownPromise = null;
   let wsServer = new WebSocketServer({ noServer: true, maxPayload: TERMINAL_WS_MAX_PAYLOAD_BYTES });
+  let stopping = false;
   const shellResolver = createTerminalShellResolver({ fs, path, searchPathFor, isExecutable, buildAugmentedPath });
 
   const getPtyProvider = async () => {
@@ -118,11 +119,13 @@ export function createTerminalRuntime({
   };
 
   const spawnPty = async ({ cwd, cols, rows, themeMode, shell, loginShell, mode, command }) => {
+    if (stopping) throw new Error('Terminal runtime is shutting down');
     const provider = await getPtyProvider();
     const resolvedShell = await shellResolver.resolve(shell);
     let lastError = null;
     for (const executable of resolvedShell.executables) {
       try {
+        if (stopping) throw new Error('Terminal runtime is shutting down');
         const env = { ...process.env, PATH: buildAugmentedPath(), TERM: 'xterm-256color', COLORTERM: 'truecolor', COLORFGBG: themeMode === 'light' ? '0;15' : '15;0' };
         // The daemon's IPC fd is closed inside the PTY; an inherited NODE_CHANNEL_FD
         // (even an empty one) makes Node CLIs warn about an unparsable IPC channel.
@@ -136,7 +139,12 @@ export function createTerminalRuntime({
         const launch = resolvePosixPtyLaunch(shellLaunch.executable, shellLaunch.args);
         const options = { name: 'xterm-256color', cwd, cols, rows, env };
         if (process.platform === 'win32') options.useConpty = true;
-        return { process: await provider.spawn(launch.executable, launch.args, options), backend: provider.backend, shell: resolvedShell.id, loginShell };
+        const ptyProcess = await provider.spawn(launch.executable, launch.args, options);
+        if (stopping) {
+          killProcess(ptyProcess, true);
+          throw new Error('Terminal runtime is shutting down');
+        }
+        return { process: ptyProcess, backend: provider.backend, shell: resolvedShell.id, loginShell };
       } catch (error) { lastError = error; }
     }
     throw lastError ?? new Error('No executable shell found');
@@ -568,6 +576,7 @@ export function createTerminalRuntime({
   }, 5 * 60 * 1000);
 
   const stop = async () => {
+    stopping = true;
     server.off('upgrade', upgradeHandler); clearInterval(idleSweep);
     for (const pending of pendingSessionCreates.values()) pending.cancelled = true;
     await Promise.allSettled([
@@ -589,5 +598,16 @@ export function createTerminalRuntime({
     if (!shutdownPromise) shutdownPromise = stop();
     return shutdownPromise;
   };
-  return { shutdown };
+  const forceShutdown = () => {
+    stopping = true;
+    for (const pending of pendingSessionCreates.values()) pending.cancelled = true;
+    server.off('upgrade', upgradeHandler); clearInterval(idleSweep);
+    for (const session of sessions.values()) killProcess(session.process, true);
+    sessions.clear();
+    if (!wsServer) return;
+    for (const client of wsServer.clients) client.terminate();
+    try { wsServer.close(); } catch { /* already closed */ }
+    wsServer = null;
+  };
+  return { shutdown, forceShutdown };
 }
