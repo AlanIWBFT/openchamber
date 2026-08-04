@@ -1964,7 +1964,7 @@ export const dict = {
   'chat.chatInput.toast.messageSendFailed': 'Nachricht konnte nicht gesendet werden. Anhänge wurden wiederhergestellt.',
   'chat.chatInput.toast.clipboardAttachFailed': 'Fehler beim Anhängen des Bildes aus der Zwischenablage',
   'chat.chatInput.toast.clipboardTextAttachFailed': 'Fehler beim Anhängen des eingefügten Texts als Datei',
-  'chat.chatInput.toast.largeTextPaste.title': 'Großes Texteinfügen',
+  'chat.chatInput.toast.largeTextPaste.title': 'Großer Text erkannt',
   'chat.chatInput.toast.largeTextPaste.attach': 'Als Datei anhängen',
   'chat.chatInput.toast.largeTextPaste.inline': 'Direkt einfügen',
   'chat.chatInput.toast.addedFileMentions': '{count} Datei(er) hinzugefügt',

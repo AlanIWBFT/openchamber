@@ -1222,7 +1222,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.attachmentsTooLarge': 'Załączniki są zbyt duże, aby je wysłać. Spróbuj zmniejszyć liczbę lub rozmiar obrazów.',
   'chat.chatInput.toast.clipboardAttachFailed': 'Nie udało się dołączyć obrazu ze schowka',
   'chat.chatInput.toast.clipboardTextAttachFailed': 'Nie udało się dołączyć wklejonego tekstu jako pliku',
-  'chat.chatInput.toast.largeTextPaste.title': 'Wklejanie dużego tekstu',
+  'chat.chatInput.toast.largeTextPaste.title': 'Wykryto duży tekst',
   'chat.chatInput.toast.largeTextPaste.attach': 'Dołącz jako plik',
   'chat.chatInput.toast.largeTextPaste.inline': 'Wklej w treści',
   'chat.chatInput.toast.compactFailed': 'Nie udało się skompaktować sesji',

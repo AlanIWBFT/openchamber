@@ -2095,7 +2095,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.messageSendFailed': '訊息傳送失敗，附件已恢復。',
   'chat.chatInput.toast.clipboardAttachFailed': '從剪貼簿附加圖片失敗',
   'chat.chatInput.toast.clipboardTextAttachFailed': '無法將貼上的文字附加為檔案',
-  'chat.chatInput.toast.largeTextPaste.title': '貼上大段文字',
+  'chat.chatInput.toast.largeTextPaste.title': '偵測到大段文字',
   'chat.chatInput.toast.largeTextPaste.attach': '附加為檔案',
   'chat.chatInput.toast.largeTextPaste.inline': '直接貼上',
   'chat.chatInput.toast.addedFileMentions': '已加入 {count} 個檔案提及',

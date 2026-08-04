@@ -2091,7 +2091,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.chatInput.toast.messageSendFailed": "Не вдалося надіслати повідомлення. Вкладення відновлено.",
   "chat.chatInput.toast.clipboardAttachFailed": "Не вдалося вкласти зображення з буфера обміну",
   "chat.chatInput.toast.clipboardTextAttachFailed": "Не вдалося долучити вставлений текст як файл",
-  "chat.chatInput.toast.largeTextPaste.title": "Вставлення великого тексту",
+  "chat.chatInput.toast.largeTextPaste.title": "Виявлено великий текст",
   "chat.chatInput.toast.largeTextPaste.attach": "Долучити як файл",
   "chat.chatInput.toast.largeTextPaste.inline": "Вставити в повідомлення",
   "chat.chatInput.toast.addedFileMentions": "Додано згадки файлів {count}",
