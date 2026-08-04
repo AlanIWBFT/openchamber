@@ -5,6 +5,8 @@ import path from 'node:path';
 import { clearAppImageArgv0FromProcessEnv } from '../inherited-env.js';
 import { mergePathValues } from './path-utils.js';
 
+const SQLITE_FINALIZER_MARKER = 'openchamber-sqlite-finalizer.capability';
+
 export const createOpenCodeEnvRuntime = (deps) => {
   const {
     state,
@@ -321,6 +323,16 @@ export const createOpenCodeEnvRuntime = (deps) => {
     return bundledOpenCodeCliCandidates().some((bundledCandidate) => (
       canonicalExecutablePath(bundledCandidate) === canonicalCandidate
     ));
+  };
+
+  const supportsOpenCodeSqliteFinalizer = (candidate) => {
+    const canonicalCandidate = canonicalExecutablePath(candidate);
+    if (!canonicalCandidate) return false;
+    try {
+      return fs.statSync(path.join(path.dirname(canonicalCandidate), SQLITE_FINALIZER_MARKER)).isFile();
+    } catch {
+      return false;
+    }
   };
 
   const bundledOpenCodeCliFallback = () => {
@@ -1194,6 +1206,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
     getLoginShellEnvSnapshot,
     resolveOpencodeCliPath,
     isBundledOpenCodeCliPath,
+    supportsOpenCodeSqliteFinalizer,
     resolveManagedOpenCodeLaunchSpec,
     isExecutable,
     searchPathFor,

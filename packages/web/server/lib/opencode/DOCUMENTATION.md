@@ -23,7 +23,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/snippets.js`: opencode-snippets-compatible snippet file CRUD, discovery, and hashtag expansion.
 - `packages/web/server/lib/opencode/cli-options.js`: CLI/environment option parsing for server startup arguments.
 - `packages/web/server/lib/opencode/core-routes.js`: server status/system routes, auth/access guard routes, and settings utility route registration.
-- `packages/web/server/lib/opencode/shutdown-runtime.js`: graceful shutdown orchestration runtime for watcher/session/terminal/process/server teardown.
+- `packages/web/server/lib/opencode/shutdown-runtime.js`: graceful shutdown orchestration and the global request fence that rejects new work after shutdown begins.
 - `packages/web/server/lib/opencode/server-startup-runtime.js`: server listen/startup tunnel flow and process/signal handler orchestration runtime.
 - `packages/web/server/lib/opencode/static-routes-runtime.js`: static asset/SPA fallback route registration and manifest route wiring.
 - `packages/web/server/lib/opencode/feature-routes-runtime.js`: feature route composition runtime for dynamic import-backed config/skill/provider route registration.
@@ -128,6 +128,14 @@ The runtime maintains active-session count incrementally from idempotent activit
   - `startHealthMonitoring(healthCheckIntervalMs)`
   - `waitForPortRelease(port, timeoutMs, hostname?)`
   - `killProcessOnPort(port)`
+
+Desktop shutdown force-terminates the owned OpenCode process tree, confirms the
+process has exited, then invokes OpenCode's lightweight SQLite finalizer with the
+same launch environment when the selected CLI has the sibling
+`openchamber-sqlite-finalizer.capability` marker. A process that cannot be
+confirmed dead remains registered and rejects shutdown so the desktop host can
+launch its detached process-tree fallback. Finalizer failures are classified
+separately and never reuse a dead process's PID or port for fallback killing.
 
 Managed OpenCode launch also merges the environment returned by the agent-tool
 runtime. PATH and `OPENCODE_SERVER_PASSWORD` remain lifecycle-owned and cannot
@@ -271,7 +279,7 @@ Managed health failures are classified as `timeout`, `connection_refused`, `conn
 
 ## Public exports (lifecycle.js)
 - `createOpenCodeLifecycleRuntime(dependencies)`: manages owned OpenCode server startup, health, restart, and shutdown.
-- Managed OpenCode shutdown uses one 15-second deadline. It gives the authenticated `POST /global/dispose` at most two seconds, then closes the child stdin control pipe and spends the remaining budget waiting for `opencode serve` to close SQLite and exit. Process termination remains the fallback after the shared deadline expires.
+- Desktop-managed OpenCode shutdown uses one short deadline. It force-terminates the owned process tree, then runs the lightweight `__openchamber-sqlite-finalize` entrypoint for CLIs carrying the private capability marker, checkpointing and closing SQLite without loading the normal CLI, server, plugins, or application runtime.
 
 ## Public exports (core-routes.js)
 - `registerServerStatusRoutes(app, dependencies)`: registers status/system endpoints:

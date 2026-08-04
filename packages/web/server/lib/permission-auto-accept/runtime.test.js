@@ -143,4 +143,20 @@ describe('permission auto-accept runtime', () => {
     expect(fetchImpl.mock.calls.some(([url]) => new URL(url).searchParams.get('directory') === '/project')).toBe(true);
     expect(await runtime.load()).toEqual({ sessions: { root: true }, revision: 1 });
   });
+
+  it('rejects new work during shutdown', async () => {
+    const fetchImpl = vi.fn(async () => Response.json([]));
+    const { runtime } = createRuntime({
+      stored: { permissionAutoAccept: { sessions: { root: true } } },
+      fetchImpl,
+    });
+    await runtime.load();
+    await flush();
+    const requestsBeforeShutdown = fetchImpl.mock.calls.length;
+
+    runtime.shutdown();
+
+    await expect(runtime.processPermission({ id: 'later', sessionID: 'root' }, '/project')).resolves.toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(requestsBeforeShutdown);
+  });
 });
