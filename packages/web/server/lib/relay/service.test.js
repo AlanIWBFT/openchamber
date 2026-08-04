@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
 import crypto from 'node:crypto';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createRelayService } from './service.js';
 
@@ -33,10 +33,11 @@ const makeService = (options = {}) => {
     otherLiveClaimant: vi.fn(() => null),
     release: vi.fn(),
   };
+  const writeSettingsToDisk = vi.fn(async (next) => { settings = next; });
   const service = createRelayService({
     crypto,
     readSettingsFromDiskMigrated: async () => settings,
-    writeSettingsToDisk: async (next) => { settings = next; },
+    writeSettingsToDisk,
     relayKeyStore,
     getLocalPort: () => 0,
     hasRelayDemand: options.hasRelayDemand ?? (async () => true),
@@ -44,7 +45,7 @@ const makeService = (options = {}) => {
     allowPassiveHost: options.allowPassiveHost,
     logger: { warn: () => {} },
   });
-  return { service, hostLock, getSettings: () => settings };
+  return { service, hostLock, writeSettingsToDisk, getSettings: () => settings };
 };
 
 describe('relay service identity reset', () => {
@@ -121,5 +122,30 @@ describe('relay service passive hosting', () => {
     } finally {
       service.stop();
     }
+  });
+});
+
+describe('relay service shutdown', () => {
+  it('prevents an in-flight reconcile from starting the relay', async () => {
+    let resolveDemand;
+    const hasRelayDemand = vi.fn(() => new Promise((resolve) => {
+      resolveDemand = resolve;
+    }));
+    const { service, hostLock, writeSettingsToDisk } = makeService({
+      settings: {
+        privateRelay: { enabled: false, relayUrl: 'wss://relay.openchamber.dev/ws' },
+      },
+      hasRelayDemand,
+    });
+
+    const reconcile = service.reconcile();
+    await vi.waitFor(() => expect(resolveDemand).toBeTypeOf('function'));
+    service.shutdown();
+    resolveDemand(true);
+    await reconcile;
+
+    expect(writeSettingsToDisk).not.toHaveBeenCalled();
+    expect(hostLock.tryClaim).not.toHaveBeenCalled();
+    expect(await service.getStatus()).toMatchObject({ state: 'disabled' });
   });
 });

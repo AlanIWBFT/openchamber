@@ -75,6 +75,7 @@ export function createPermissionAutoAcceptRuntime({
   const inFlight = new Map<JsonValue, Promise<boolean>>();
   const reconcilePromises = new Map<string, Promise<void>>();
   const outcomes = new Map<JsonValue, Promise<PermissionOutcome>>();
+  let shuttingDown = false;
 
   const snapshot = () => {
     const legacySessions: PermissionPolicySnapshot['sessions'] = {};
@@ -87,7 +88,7 @@ export function createPermissionAutoAcceptRuntime({
     const stored = settings?.[SETTINGS_KEY];
     const legacyEnabledMode = hasLegacyEntries(readStoredPolicy(stored)) ? await resolveLegacyEnabledMode() : 'auto';
     const { policy: next, hadLegacy } = normalizePolicy(stored, legacyEnabledMode);
-    if (hadLegacy) await persistSettings({ [SETTINGS_KEY]: next });
+    if (hadLegacy && !shuttingDown) await persistSettings({ [SETTINGS_KEY]: next });
     return next;
   };
 
@@ -107,11 +108,12 @@ export function createPermissionAutoAcceptRuntime({
 
   const persistUpdate = (update: (current: PermissionPolicy) => PermissionPolicy) => {
     const result = writePromise.then(async () => {
+      if (shuttingDown) return snapshot();
       const next = update(policy);
       await persistSettings({ [SETTINGS_KEY]: next });
       policy = next;
       loaded = true;
-      broadcastGlobalUiEvent?.({
+      if (!shuttingDown) broadcastGlobalUiEvent?.({
         type: 'openchamber:permission-auto-accept.updated',
         properties: snapshot(),
       });
@@ -166,6 +168,7 @@ export function createPermissionAutoAcceptRuntime({
   };
 
   const request = async (path: string, { directory, method = 'GET', body }: { directory?: PermissionDirectory; method?: string; body?: JsonValue } = {}): Promise<JsonValue> => {
+    if (shuttingDown) throw new Error('Permission auto-accept runtime is shutting down');
     const url = new URL(buildOpenCodeUrl(path, ''));
     const headers: PermissionRequestHeaders = { Accept: 'application/json' };
     if (body) headers['Content-Type'] = 'application/json';
@@ -224,6 +227,7 @@ export function createPermissionAutoAcceptRuntime({
   const replyOnce = async (permission: JsonObject, directory: PermissionDirectory) => {
     if (!permission?.id || !permission?.sessionID) return 'ignored';
     const mode = await resolveLineageMode(permission.sessionID, directory);
+    if (shuttingDown) return 'ignored';
     if (mode === 'ask') return 'ignored';
     if (mode === 'safety') {
       const verdict = evaluatePermission ? await evaluatePermission(permission, directory) : null;
@@ -247,13 +251,15 @@ export function createPermissionAutoAcceptRuntime({
   };
 
   const processPermission = (permission: JsonValue | undefined, directory?: PermissionDirectory) => {
-    if (!isJsonObject(permission) || !permission.id) return Promise.resolve(false);
+    if (shuttingDown || !isJsonObject(permission) || !permission.id) return Promise.resolve(false);
     const key = permission.id;
     const existing = inFlight.get(key);
     if (existing) return existing;
     const outcome = (async (): Promise<PermissionOutcome> => {
       for (const delay of retryDelaysMs) {
+        if (shuttingDown) return 'ignored';
         if (delay > 0) await wait(delay);
+        if (shuttingDown) return 'ignored';
         try {
           return await replyOnce(permission, directory);
         } catch (error) {
@@ -300,6 +306,7 @@ export function createPermissionAutoAcceptRuntime({
   };
 
   async function reconcilePending({ directories = [] }: { directories?: PermissionDirectory[] } = {}) {
+    if (shuttingDown) return;
     const normalizedDirectories = Array.from(new Set(
       directories.filter(isDirectory).map((directory) => directory.trim()),
     ));
@@ -335,6 +342,7 @@ export function createPermissionAutoAcceptRuntime({
   }
 
   const processEvent = (event: GlobalStreamEvent) => {
+    if (shuttingDown) return;
     const directory = event.directory !== 'global' ? event.directory : undefined;
     for (const payload of event?.translated?.() ?? []) {
       if (payload.type === 'session.forked') {
@@ -385,6 +393,10 @@ export function createPermissionAutoAcceptRuntime({
     };
   };
 
+  const shutdown = () => {
+    shuttingDown = true;
+  };
+
   return {
     snapshot,
     load,
@@ -396,6 +408,7 @@ export function createPermissionAutoAcceptRuntime({
     reconcilePending,
     forgetSession: (sessionId: JsonValue) => sessions.delete(sessionId),
     start,
+    shutdown,
   };
 }
 

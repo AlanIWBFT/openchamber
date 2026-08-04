@@ -361,3 +361,5 @@ libraries discoverable.
 Idle shutdown releases the ONNX runtime's memory while speech is unused. TTS
 uses a longer request budget because long text on slow hardware can exceed the
 ordinary IPC deadline.
+
+Shutdown aborts model downloads and stops extraction before it drains the managed server.

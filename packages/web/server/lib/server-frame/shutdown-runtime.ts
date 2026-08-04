@@ -19,7 +19,6 @@ interface ShutdownDependencies {
   process: Pick<NodeJS.Process, 'exit'>;
   shutdownTimeoutMs: number;
   getExitOnShutdown: () => boolean;
-  getIsShuttingDown: () => boolean;
   setIsShuttingDown: (value: boolean) => void;
   syncToHmrState: Cleanup;
   openCodeWatcherRuntime: Stop;
@@ -46,12 +45,12 @@ interface ShutdownDependencies {
   setTerminalRuntime: (value: null) => void;
   getMessageStreamRuntime: () => Close | null;
   setMessageStreamRuntime: (value: null) => void;
-  shouldSkipOpenCodeStop: () => boolean;
-  getOpenCodePort: () => number | null;
-  getOpenCodeProcess: () => { close: (options?: Pick<ShutdownOptions, 'deadline'>) => Promise<void> } | null;
-  setOpenCodeProcess: (value: null) => void;
-  killProcessOnPort: (port: number | null, timeoutMs: number) => void;
-  waitForPortRelease: (port: number | null, timeoutMs: number) => Promise<boolean>;
+  stopManagedOpenCode: (options: Pick<ShutdownOptions, 'deadline'>) => Promise<unknown>;
+  stopPermissionAutoAccept?: Cleanup;
+  permissionAutoAcceptRuntime?: { shutdown: Cleanup };
+  globalMessageStreamHub?: Stop;
+  forceStopCloudflareTunnels?: Cleanup;
+  forceStopNgrokTunnels?: Cleanup;
   getServer: () => Server | null;
   getUiAuthController: () => { dispose: Cleanup } | null;
   setUiAuthController: (value: null) => void;
@@ -65,18 +64,26 @@ interface ShutdownDependencies {
   getGuestSurfaceRuntime: () => Stop | null;
   getRealtimeProxyRuntime: () => Stop | null;
   getDictationRuntime: () => Stop | null;
-  getRelayService: () => Stop | null;
+  getRelayService: () => { shutdown: Cleanup } | null;
   getRelayReconcileTimer: () => Timer | null;
   getSpacesHost?: () => Close | null;
   stopFolderWatches?: Cleanup;
 }
+
+export const createShutdownFence = (getIsShuttingDown: () => boolean): import('../shared/http-contracts.js').RequestHandler => (_req, res, next) => {
+  if (!getIsShuttingDown()) {
+    next();
+    return;
+  }
+  res.setHeader('Connection', 'close');
+  res.status(503).json({ error: 'OpenChamber is shutting down' });
+};
 
 export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies) => {
   const {
     process,
     shutdownTimeoutMs,
     getExitOnShutdown,
-    getIsShuttingDown,
     setIsShuttingDown,
     syncToHmrState,
     openCodeWatcherRuntime,
@@ -103,12 +110,12 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
     setTerminalRuntime,
     getMessageStreamRuntime,
     setMessageStreamRuntime,
-    shouldSkipOpenCodeStop,
-    getOpenCodePort,
-    getOpenCodeProcess,
-    setOpenCodeProcess,
-    killProcessOnPort,
-    waitForPortRelease,
+    stopManagedOpenCode,
+    stopPermissionAutoAccept,
+    permissionAutoAcceptRuntime,
+    globalMessageStreamHub,
+    forceStopCloudflareTunnels,
+    forceStopNgrokTunnels,
     getServer,
     getUiAuthController,
     setUiAuthController,
@@ -146,9 +153,8 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
   };
 
   const runShutdown = async (options: ShutdownOptions = {}) => {
-    if (getIsShuttingDown()) return;
-
     setIsShuttingDown(true);
+    closingHttpServer = true;
     beginGuestServiceShutdown();
     extensionSessionEvents?.stop?.();
     extensionServiceLifetime?.stop?.();
@@ -166,7 +172,7 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
       () => getGuestSurfaceRuntime()?.stop(),
       () => getRealtimeProxyRuntime()?.stop(),
       () => getSpacesHost()?.close(),
-      () => getRelayService()?.stop(),
+      () => getRelayService()?.shutdown(),
       () => getDictationRuntime()?.stop(),
       stopFolderWatches,
       () => chatDirectoryCleanupRuntime?.stop(),
@@ -183,19 +189,24 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
       () => mergeFollowRuntime?.stop?.(),
       () => messageQueueRuntime?.stop?.(),
       () => dispatchResultsRuntime?.stop?.(),
-      () => workflowRuntime?.shutdown(),
       () => messageSearchRuntime?.stop?.(),
       () => scheduledTasksRuntime?.stop?.(),
+      () => stopPermissionAutoAccept?.(),
+      () => permissionAutoAcceptRuntime?.shutdown(),
+      () => globalMessageStreamHub?.stop(),
+      () => forceStopCloudflareTunnels?.(),
+      () => forceStopNgrokTunnels?.(),
       stopAllGuestServices,
     ];
-    for (const cleanup of cleanupOperations) {
+    // Close each runtime's admission before yielding; asynchronous drains must
+    // not delay starting the managed CLI's own deadline-bound cleanup.
+    const cleanupPromises = cleanupOperations.map((cleanup) => {
       try {
-        await cleanup();
-      } catch {
-        continue;
+        return Promise.resolve(cleanup());
+      } catch (error) {
+        return Promise.reject(error);
       }
-    }
-
+    });
     const healthCheckInterval = getHealthCheckInterval();
     if (healthCheckInterval) {
       clearHealthCheckInterval(healthCheckInterval);
@@ -203,36 +214,33 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
 
     const terminalRuntime = getTerminalRuntime();
     const messageStreamRuntime = getMessageStreamRuntime();
-    await Promise.allSettled([
+    const closeBackend = async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const workflowDrain = workflowRuntime?.shutdown();
+        if (workflowDrain) {
+          await Promise.race([
+            workflowDrain,
+            new Promise<void>(resolve => { timer = setTimeout(resolve, Math.max(0, Math.min(2000, remaining() - SHUTDOWN_FINALIZATION_RESERVE_MS))); }),
+          ]);
+        }
+      } catch (error) {
+        console.warn('Workflow shutdown failed:', error);
+      } finally { clearTimeout(timer); }
+      await stopManagedOpenCode({ deadline: Math.max(Date.now(), deadline - SHUTDOWN_FINALIZATION_RESERVE_MS) });
+    };
+    const results = await Promise.allSettled([
+      ...cleanupPromises,
       Promise.resolve().then(() => terminalRuntime?.shutdown()),
       Promise.resolve().then(() => messageStreamRuntime?.close()),
+      Promise.resolve().then(closeBackend),
     ]).finally(() => {
       if (terminalRuntime) setTerminalRuntime(null);
       if (messageStreamRuntime) setMessageStreamRuntime(null);
     });
 
-    if (!shouldSkipOpenCodeStop()) {
-      const portToKill = getOpenCodePort();
-      const openCodeProcess = getOpenCodeProcess();
-
-      if (openCodeProcess) {
-        console.log('Stopping OpenCode process...');
-        try {
-          await openCodeProcess.close({
-            deadline: Math.max(Date.now(), deadline - SHUTDOWN_FINALIZATION_RESERVE_MS),
-          });
-        } catch (error) {
-          console.warn('Error closing OpenCode process:', error);
-        }
-        setOpenCodeProcess(null);
-      }
-
-      killProcessOnPort(portToKill, remaining());
-      if (!(await waitForPortRelease(portToKill, Math.min(5000, remaining())))) {
-        console.warn(`Timed out waiting for OpenCode port ${portToKill} to be released during shutdown`);
-      }
-    } else {
-      console.log('Skipping OpenCode shutdown (external server)');
+    for (const result of results) {
+      if (result.status === 'rejected') console.warn('Error stopping backend resources:', result.reason);
     }
 
     const server = getServer();

@@ -102,12 +102,15 @@ reachability from login time says little about later.
 `bun run profile:startup` measures a packaged build's launch in an isolated
 profile; see `scripts/perf/DOCUMENTATION.md`.
 
+Confirmed quit and relaunch hide the application windows immediately, then clean
+up background services without loading another page or waiting for a renderer.
 Quit, relaunch, and update installation await the in-process server's `stop()`
 before exiting Electron. This lets the backend release its terminals, managed
 OpenCode process, and guest services. `server-shutdown.mjs` bounds the server
 wait to 35 seconds, allowing the terminal runtime's 20-second grace plus the
-remaining backend cleanup. It uses the detached OpenCode killer only if normal
-shutdown fails or times out. An external OpenCode server remains externally
+remaining backend cleanup. The backend alone owns OpenCode termination and
+reports failures; Electron exits at its deadline without launching another killer.
+An external OpenCode server remains externally
 owned. Closing to the tray does not stop the backend.
 
 Update installation bounds the full background-service shutdown, including SSH,
@@ -292,7 +295,15 @@ Exiting Electron stops the development launcher and its Vite process. Closing to
 
 Unpackaged desktop and its HMR server default to `~/.config/openchamber-dev` for OpenChamber data. An explicit `OPENCHAMBER_DATA_DIR` takes precedence. OpenCode's own data is unchanged. The existing custom-data-directory migration copies projects, themes and speech models when they are absent from the new directory; it does not copy `settings.json`.
 
-The HMR launcher starts the Electron splash while it resolves the login-shell environment and starts the dev server. It passes the resolved data directory through a temporary start file after the API is healthy. Electron waits for that file before loading main, so its settings and the HMR server use the same directory without racing an in-process fallback server.
+The development launcher releases Electron's splash after preparing its data directory. Electron then starts the API; Vite runs separately.
+
+Desktop quit closes the managed server's `serve --stdio` input pipe. OpenCode then
+releases its server scope and database resources. The backend starts this cleanup
+alongside its other resource drains, waits within the shared 35-second deadline,
+and reserves time for force termination and exit confirmation. A failed termination
+is reported and retains ownership information. External OpenCode servers are never
+terminated. Confirmed quit replaces the application page with a closing page and
+rejects new IPC and HTTP work while cleanup runs.
 
 The Electron workspace package trusts Electron's install script so `bun install` downloads the platform runtime in fresh checkouts and worktrees.
 
@@ -477,7 +488,7 @@ Managed local Desktop startup prefers OpenCode binaries in this order:
 5. Known npm/Bun/Homebrew/Scoop/Chocolatey and other standard install locations.
 6. Platform discovery through `where opencode` on Windows or a login shell on macOS/Linux.
 
-Use an explicit override when testing a different OpenCode CLI build or when a user needs to point Desktop at a custom binary. The configured path must point to the standalone CLI, not the OpenCode Desktop app executable.
+Use an explicit override when testing a different OpenCode CLI build or when a user needs to point Desktop at a custom binary. The configured path must point to a compatible standalone CLI supporting `serve --stdio`, not the OpenCode Desktop app executable.
 
 ## Bundled ripgrep
 

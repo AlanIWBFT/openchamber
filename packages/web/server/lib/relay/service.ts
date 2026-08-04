@@ -103,6 +103,7 @@ export const createRelayService = ({
   let hostClient: ReturnType<typeof startRelayHost> | null = null;
   let status: RelayServiceStatus = { state: 'disabled', lastError: null, connectedClients: 0 };
   let claimWatchTimer: ReturnType<typeof setInterval> | null = null;
+  let stopped = false;
   const CLAIM_WATCH_INTERVAL_MS = 30_000;
   const CLAIM_TAKEOVER_GRACE_MS = 120_000;
   let claimFreeSinceMs: number | null = null;
@@ -142,7 +143,7 @@ export const createRelayService = ({
   });
 
   const ensureClaimWatch = (relayUrl: string) => {
-    if (!hostLock || claimWatchTimer) return;
+    if (stopped || !hostLock || claimWatchTimer) return;
     claimWatchTimer = setInterval(() => {
       void (async () => {
         try {
@@ -185,6 +186,7 @@ export const createRelayService = ({
   };
 
   const start = async (relayUrl: string, { claim = 'try' }: { claim?: 'try' | 'force' } = {}) => {
+    if (stopped) return;
     if (hostClient) return;
     if (relayBlockedByEnterprise()) {
       status = { state: 'disabled', lastError: RELAY_BLOCKED_ERROR, connectedClients: 0 };
@@ -207,6 +209,7 @@ export const createRelayService = ({
       }
     }
     const identity = await identityRuntime.getRelayIdentity();
+    if (stopped) return;
     const hostOptions = {
       relayUrl,
       identity,
@@ -229,6 +232,11 @@ export const createRelayService = ({
     status = { state: 'disabled', lastError: null, connectedClients: 0 };
   };
 
+  const shutdown = () => {
+    stopped = true;
+    stop();
+  };
+
   const startIfEnabled = async () => {
     try {
       const config = await readConfig();
@@ -241,9 +249,12 @@ export const createRelayService = ({
   };
 
   const reconcile = async () => {
+    if (stopped) return;
     try {
       const demand = await hasRelayDemand();
+      if (stopped) return;
       const config = await readConfig();
+      if (stopped) return;
       if (demand) {
         if (!config.enabled) await writeConfig({ enabled: true, relayUrl: config.relayUrl });
         if (!hostClient) {
@@ -373,6 +384,7 @@ export const createRelayService = ({
     startIfEnabled,
     reconcile,
     stop,
+    shutdown,
     getStatus,
     getServerId,
     resetIdentity,

@@ -1604,3 +1604,5 @@ starts, after failure, during shutdown, or for external OpenCode. Restart clears
 the previous result, and readers discard results from a replaced preflight.
 This checks CLI compatibility, not server health; the normal startup flow still
 owns connection readiness. Explicit user compatibility checks remain fresh.
+
+During desktop shutdown the server rejects new HTTP work with 503. Lifecycle closes owned child handles, including launches still in progress, and confirms exit; external servers are excluded. Electron does not start a second killer. A running workflow gets at most two seconds of the shared shutdown deadline to save and deliver its final report before stdin closes.

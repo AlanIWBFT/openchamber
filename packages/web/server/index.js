@@ -10,6 +10,9 @@ const runtime = await import('./runtime.js');
 
 export const {
   gracefulShutdown,
+  stopDesktopBackgroundResources,
+  getManagedOpenCodeProcessInfo,
+  stopManagedOpenCode,
   setupProxy,
   restartOpenCode,
   startWebUiServer,

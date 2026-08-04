@@ -14,6 +14,7 @@ declare const fetch: NodeFetch;
 export type ModelDownloadProgress = (downloadedBytes: number, totalBytes: number | null) => void;
 
 export interface EnsureLocalSttModelOptions {
+  signal?: AbortSignal;
   modelsDir: string;
   modelId: string;
   onProgress?: ModelDownloadProgress;
@@ -36,8 +37,8 @@ async function hasRequiredFiles(modelDir: string, requiredFiles: string[]) {
   return results.every(Boolean);
 }
 
-async function downloadToFile(url: string, outputPath: string, onProgress: ModelDownloadProgress | undefined) {
-  const res = await fetch(url);
+async function downloadToFile(url: string, outputPath: string, onProgress: ModelDownloadProgress | undefined, signal?: AbortSignal) {
+  const res = await fetch(url, { signal });
   if (!res.ok) {
     throw new Error(`Failed to download ${url}: ${res.status} ${res.statusText}`);
   }
@@ -60,7 +61,7 @@ async function downloadToFile(url: string, outputPath: string, onProgress: Model
   }
 
   try {
-    await pipeline(nodeStream, createWriteStream(tmpPath));
+    await pipeline(nodeStream, createWriteStream(tmpPath), { signal });
     await rename(tmpPath, outputPath);
   } catch (error) {
     await rm(tmpPath, { force: true }).catch(() => undefined);
@@ -77,7 +78,8 @@ export function describeTarFailure(code: number | null, stderr: string) {
   return lastLine ? `tar exited with code ${code}: ${lastLine}` : `tar exited with code ${code}`;
 }
 
-async function runArchiveTool(command: string, args: string[], describeFailure: (code: number | null, stderr: string) => string) {
+async function runArchiveTool(command: string, args: string[], describeFailure: (code: number | null, stderr: string) => string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: ['ignore', 'ignore', 'pipe'],
@@ -87,8 +89,18 @@ async function runArchiveTool(command: string, args: string[], describeFailure: 
     child.stderr.on('data', (chunk: Buffer) => {
       stderr = (stderr + chunk.toString()).slice(-4096);
     });
-    child.on('error', reject);
+    const abort = () => {
+      try { child.kill('SIGKILL'); } catch {}
+    };
+    const cleanup = () => signal?.removeEventListener('abort', abort);
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    child.on('error', (error) => {
+      cleanup();
+      reject(error);
+    });
     child.on('close', (code) => {
+      cleanup();
       if (code === 0) {
         resolve();
       } else {
@@ -98,7 +110,7 @@ async function runArchiveTool(command: string, args: string[], describeFailure: 
   });
 }
 
-async function extractTarArchive(archivePath: string, destDir: string) {
+async function extractTarArchive(archivePath: string, destDir: string, signal?: AbortSignal) {
   await mkdir(destDir, { recursive: true });
 
   let tarPath = archivePath;
@@ -108,11 +120,11 @@ async function extractTarArchive(archivePath: string, destDir: string) {
     await runArchiveTool(decoderPath, ['x', '-tbzip2', '-y', '-bso0', '-bsp0', archivePath, `-o${destDir}`], (code, stderr) => {
       const detail = stderr.trim();
       return detail ? `7-Zip exited with code ${code}: ${detail}` : `7-Zip exited with code ${code}`;
-    });
+    }, signal);
     tarPath = path.join(destDir, path.basename(archivePath, '.bz2'));
   }
 
-  await runArchiveTool('tar', ['xf', tarPath, '-C', destDir], describeTarFailure);
+  await runArchiveTool('tar', ['xf', tarPath, '-C', destDir], describeTarFailure, signal);
 }
 
 async function isNonEmptyFile(filePath: string) {
@@ -129,7 +141,8 @@ export async function isLocalSttModelInstalled(modelsDir: string, modelId: strin
   return hasRequiredFiles(path.join(modelsDir, spec.extractedDir), spec.requiredFiles);
 }
 
-export async function ensureLocalSttModel({ modelsDir, modelId, onProgress }: EnsureLocalSttModelOptions) {
+export async function ensureLocalSttModel({ modelsDir, modelId, onProgress, signal }: EnsureLocalSttModelOptions) {
+  signal?.throwIfAborted();
   const spec = getLocalSttModelSpec(modelId);
   const modelDir = path.join(modelsDir, spec.extractedDir);
   if (await hasRequiredFiles(modelDir, spec.requiredFiles)) {
@@ -143,12 +156,13 @@ export async function ensureLocalSttModel({ modelsDir, modelId, onProgress }: En
   const archivePath = path.join(downloadsDir, archiveFilename);
 
   if (!(await isNonEmptyFile(archivePath))) {
-    await downloadToFile(spec.archiveUrl, archivePath, onProgress);
+    await downloadToFile(spec.archiveUrl, archivePath, onProgress, signal);
   }
 
   const stagingDir = path.join(modelsDir, `.staging-${spec.extractedDir}-${Date.now()}`);
   try {
-    await extractTarArchive(archivePath, stagingDir);
+    await extractTarArchive(archivePath, stagingDir, signal);
+    signal?.throwIfAborted();
 
     const stagedModelDir = path.join(stagingDir, spec.extractedDir);
     if (!(await hasRequiredFiles(stagedModelDir, spec.requiredFiles))) {

@@ -155,7 +155,9 @@ import { createRoutingRuntime } from './lib/routing/runtime.js';
 import { createJevClient } from './lib/routing/jev.js';
 import { createSessionWorkRuntime } from './lib/session-work/runtime.js';
 import { createSessionLineage } from './lib/session-lineage.js';
-import { createGracefulShutdownRuntime } from './lib/server-frame/shutdown-runtime.js';
+import { createGracefulShutdownRuntime, createShutdownFence } from './lib/server-frame/shutdown-runtime.js';
+import { forceStopCloudflareTunnels } from './lib/cloudflare-tunnel.js';
+import { forceStopNgrokTunnels } from './lib/ngrok-tunnel.js';
 import { beginGuestServiceHost, beginGuestServiceShutdown, getServiceStatus, holdGuestService, onGuestServiceEnded, proxyGuestServiceRequest, stopAllGuestServices } from './lib/guests/service.js';
 import { guestMarks } from './lib/guests/marks.js';
 import { guestServiceRegistryDir } from './lib/guests/service-registry.js';
@@ -1316,7 +1318,7 @@ const permissionAutoAcceptRuntime = createPermissionAutoAcceptRuntime({
     ? () => readSpacePermissionDefault(spacePermissionDefaultFile)
     : undefined,
 });
-permissionAutoAcceptRuntime.start();
+const stopPermissionAutoAccept = permissionAutoAcceptRuntime.start();
 notificationTriggerRuntime.setGetIsSessionAutoAccepting(
   (sessionId, directory, permissionId) => permissionAutoAcceptRuntime.isPermissionAutoAnswered(sessionId, directory, permissionId),
 );
@@ -1773,9 +1775,9 @@ const tunnelWiringRuntime = createTunnelWiringRuntime({
   },
 });
 const startupPipelineRuntime = createStartupPipelineRuntime({
-  createTerminalRuntime,
-  createDictationRuntime,
-  createMessageStreamWsRuntime,
+  createTerminalRuntime: (options) => (terminalRuntime = createTerminalRuntime(options)),
+  createDictationRuntime: (options) => (dictationRuntime = createDictationRuntime(options)),
+  createMessageStreamWsRuntime: (options) => (messageStreamRuntime = createMessageStreamWsRuntime(options)),
   createServerStartupRuntime,
 });
 
@@ -2321,11 +2323,13 @@ const ensureGlobalWatcherStarted = async () => {
   return globalWatcherStartPromise;
 };
 const bootstrapOpenCodeAtStartup = async (...args: Parameters<typeof openCodeLifecycleRuntime.bootstrapOpenCodeAtStartup>) => {
+  if (isShuttingDown) return;
   await openCodeLifecycleRuntime.bootstrapOpenCodeAtStartup(...args);
   if (openCodeLifecycleRuntime.scheduleBootstrapRetry(bootstrapOpenCodeAtStartup, finishOpenCodeBootstrap)) return;
   finishOpenCodeBootstrap();
 };
 const finishOpenCodeBootstrap = () => {
+  if (isShuttingDown) return;
   scheduleOpenCodeApiDetection();
   if (openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) {
     startHealthMonitoring();
@@ -2340,15 +2344,13 @@ const finishOpenCodeBootstrap = () => {
     .then(() => openChamberSessionService.sessionArchive.migrateLegacy())
     .catch((error) => console.warn('[openchamber-sessions] session archive migration failed:', error?.message ?? error));
 };
-const killProcessOnPort: typeof openCodeLifecycleRuntime.killProcessOnPort = (...args) => openCodeLifecycleRuntime.killProcessOnPort(...args);
-const waitForPortRelease: typeof openCodeLifecycleRuntime.waitForPortRelease = (...args) => openCodeLifecycleRuntime.waitForPortRelease(...args);
+const { stopManagedOpenCode, getManagedOpenCodeProcessInfo } = openCodeLifecycleRuntime;
 
 const setupProxy: typeof serverUtilsRuntime.setupProxy = (...args) => serverUtilsRuntime.setupProxy(...args);
 const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   process,
   shutdownTimeoutMs: SHUTDOWN_TIMEOUT,
   getExitOnShutdown: () => exitOnShutdown,
-  getIsShuttingDown: () => isShuttingDown,
   setIsShuttingDown: (value) => {
     isShuttingDown = value;
   },
@@ -2380,14 +2382,12 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   setMessageStreamRuntime: (value) => {
     messageStreamRuntime = value;
   },
-  shouldSkipOpenCodeStop: () => ENV_SKIP_OPENCODE_START || isExternalOpenCode,
-  getOpenCodePort: () => openCodePort,
-  getOpenCodeProcess: () => openCodeProcess,
-  setOpenCodeProcess: (value) => {
-    openCodeProcess = value;
-  },
-  killProcessOnPort,
-  waitForPortRelease,
+  stopManagedOpenCode,
+  stopPermissionAutoAccept,
+  permissionAutoAcceptRuntime,
+  globalMessageStreamHub,
+  forceStopCloudflareTunnels,
+  forceStopNgrokTunnels,
   getServer: () => server,
   getUiAuthController: () => uiAuthController,
   setUiAuthController: (value) => {
@@ -2416,8 +2416,13 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
 });
 
 const gracefulShutdown: typeof gracefulShutdownRuntime.gracefulShutdown = (...args) => gracefulShutdownRuntime.gracefulShutdown(...args);
+const stopDesktopBackgroundResources = () => gracefulShutdown({ exitProcess: false });
+const checkStartupAdmission = () => {
+  if (isShuttingDown) throw new Error('OpenChamber server startup cancelled during shutdown');
+};
 
 async function main(options: WebUiServerOptions = {}) {
+  checkStartupAdmission();
   beginGuestServiceHost({ registryDir: guestServiceRegistryDir(OPENCHAMBER_DATA_DIR) });
   applyOutboundProxyFromEnv();
   const port = isNumber(options.port) && Number.isFinite(options.port) && options.port >= 0 ? Math.trunc(options.port) : DEFAULT_PORT;
@@ -2662,6 +2667,7 @@ async function main(options: WebUiServerOptions = {}) {
     extra: process.env.OPENCHAMBER_FRAME_ANCESTORS,
   });
   app.set('trust proxy', 'loopback, linklocal, uniquelocal');
+  app.use(createShutdownFence(() => isShuttingDown));
   app.use((req, res, next) => {
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     if (!req.path.startsWith('/api/preview/proxy/')) {
@@ -3061,6 +3067,7 @@ async function main(options: WebUiServerOptions = {}) {
     idleStopMs: BROWSER_PROVIDER_IDLE_MS,
   });
 
+  checkStartupAdmission();
   const startupPipelineResult = await startupPipelineRuntime.run({
     app,
     server,
@@ -3120,12 +3127,14 @@ async function main(options: WebUiServerOptions = {}) {
   terminalRuntime = startupPipelineResult.terminalRuntime;
   dictationRuntime = startupPipelineResult.dictationRuntime;
   messageStreamRuntime = startupPipelineResult.messageStreamRuntime;
+  checkStartupAdmission();
 
   try {
     await scheduledTasksRuntime.start();
   } catch (error) {
     console.warn('[ScheduledTasks] Failed to start runtime:', (isRecord(error) && error.message) || error);
   }
+  checkStartupAdmission();
   memoryDreaming.start();
 
   void relayService.reconcile();
@@ -3163,14 +3172,7 @@ async function main(options: WebUiServerOptions = {}) {
     isReady: () => isOpenCodeReady,
     getManagedOpenCodePreflight: () => openCodeLifecycleRuntime.getManagedOpenCodePreflight(),
     restartOpenCode: () => restartOpenCode(),
-    getOpenCodeProcessInfo: () => {
-      const managed = Boolean((openCodeProcess || openCodePort) && !ENV_SKIP_OPENCODE_START && !isExternalOpenCode);
-      return {
-        managed,
-        pid: managed && isNumber(openCodeProcess?.pid) ? openCodeProcess.pid : null,
-        port: managed ? openCodePort : null,
-      };
-    },
+    getOpenCodeProcessInfo: getManagedOpenCodeProcessInfo,
     stop: (shutdownOptions: { exitProcess?: boolean; deadline?: number } = {}) => gracefulShutdown({ ...shutdownOptions, exitProcess: shutdownOptions.exitProcess ?? false }),
   };
 }
@@ -3189,6 +3191,9 @@ runCliEntryIfMain({
 });
 export {
   gracefulShutdown,
+  stopDesktopBackgroundResources,
+  getManagedOpenCodeProcessInfo,
+  stopManagedOpenCode,
   setupProxy,
   restartOpenCode,
   main as startWebUiServer,

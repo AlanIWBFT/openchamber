@@ -23,7 +23,7 @@ export interface ManagedOpenCodeProcess {
   exitCode: number | null;
   signalCode: NodeJS.Signals | null;
   stderrTail: string;
-  close: (options?: { deadline?: number }) => Promise<void>;
+  close: (options?: { deadline?: number }) => Promise<boolean>;
 }
 
 export interface ManagedOpenCodeProcessSnapshot {
@@ -306,6 +306,12 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
 
   let managedPreflight: Promise<boolean> | null = null;
   let managedProcessEnv: ProcessEnvironment | null = null;
+  const ownedServers = new Set<ManagedOpenCodeProcess>();
+
+  const assertNotShuttingDown = () => {
+    if (!state.isShuttingDown) return;
+    throw Object.assign(new Error('OpenCode startup cancelled during shutdown'), { code: 'OPENCHAMBER_SHUTTING_DOWN' });
+  };
 
   const killProcessOnPort = (port: number | null, timeoutMs = 5000) => {
     if (!port || process.platform === 'win32') return;
@@ -492,6 +498,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
 
   const closeManagedOpenCodeChild = async (child: ChildProcess, options: { deadline?: number } = {}) => {
     const pid = child?.pid;
+    let graceful = hasChildProcessExited(child);
     const deadline = typeof options.deadline === 'number' && Number.isFinite(options.deadline)
       ? options.deadline
       : Date.now() + MANAGED_SHUTDOWN_TIMEOUT_MS;
@@ -506,7 +513,8 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
           try {
             child.stdin.end();
             const exited = await waitForChildProcessClose(child, Math.max(0, remaining() - MANAGED_FORCE_TERMINATION_RESERVE_MS));
-            if (exited && process.platform === 'win32') return;
+            graceful = exited;
+            if (exited && process.platform === 'win32') return true;
           } catch (error) {
             console.warn('OpenCode control pipe shutdown failed:', optionalErrorFields(error)?.message ?? error);
           }
@@ -515,11 +523,48 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
       if (!(await terminateChildProcess(child, remaining()))) {
         throw Object.assign(new Error(`OpenCode process ${pid || '(unknown)'} did not exit before the shutdown deadline`), { code: 'OPENCHAMBER_OPENCODE_EXIT_UNCONFIRMED' });
       }
+      return graceful;
     } finally {
       if (pid !== undefined && Number.isInteger(pid) && hasChildProcessExited(child)) {
         await unregisterManagedProcess(pid);
       }
     }
+  };
+
+  const getManagedOpenCodeProcessInfo = () => {
+    const managed = Boolean(state.openCodeProcess && !env.ENV_SKIP_OPENCODE_START && !state.isExternalOpenCode);
+    return {
+      managed,
+      pid: managed ? state.openCodeProcess?.pid ?? null : null,
+      port: managed && state.isOpenCodeReady ? state.openCodePort ?? null : null,
+    };
+  };
+
+  let managedShutdownPromise: Promise<{ graceful: boolean }> | null = null;
+  const stopManagedOpenCode = (options: { deadline?: number } = {}) => {
+    if (managedShutdownPromise) return managedShutdownPromise;
+    state.isShuttingDown = true;
+    state.isOpenCodeReady = false;
+    state.openCodeNotReadySince = Date.now();
+    syncToHmrState();
+    const owned = new Set(ownedServers);
+    // Include a ready handle inherited through HMR, but never an external server.
+    if (state.openCodeProcess && !env.ENV_SKIP_OPENCODE_START && !state.isExternalOpenCode) owned.add(state.openCodeProcess);
+    if (owned.size === 0) {
+      managedShutdownPromise = Promise.resolve({ graceful: false });
+      return managedShutdownPromise;
+    }
+    // The same handle owns startup, restart cleanup and application shutdown.
+    // Its close promise includes EOF, any force phase and exit confirmation.
+    const deadline = typeof options.deadline === 'number' && Number.isFinite(options.deadline) ? options.deadline : Date.now() + 35_000;
+    managedShutdownPromise = Promise.allSettled([...owned].map((server) => Promise.resolve().then(() => server.close({ deadline })))).then((results) => {
+      const failed = results.find((result) => result.status === 'rejected');
+      if (failed) throw failed.reason;
+      if (state.openCodeProcess && owned.has(state.openCodeProcess)) state.openCodeProcess = null;
+      syncToHmrState();
+      return { graceful: results.every((result) => result.status === 'fulfilled' && result.value === true) };
+    });
+    return managedShutdownPromise;
   };
 
   const formatCapturedOutput = ({ stdout, stderr }: { stdout: string; stderr: string }) => {
@@ -534,6 +579,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
   };
 
   const createManagedOpenCodeServerProcess = async ({ resolvedBinary, hostname, port, timeout, cwd, env: processEnv, shellEnvKeysCount = 0, attempt }: ManagedOpenCodeServerOptions) => {
+    assertNotShuttingDown();
     let binary = (resolvedBinary || process.env.OPENCODE_BINARY || 'opencode').trim() || 'opencode';
     const sourceBinary = binary;
     let args = ['serve', '--stdio', '--hostname', hostname, '--port', String(port)];
@@ -621,7 +667,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
       runtime: process.env.OPENCHAMBER_RUNTIME || 'web',
     });
 
-    let closePromise: Promise<void> | null = null;
+    let closePromise: Promise<boolean> | null = null;
     const serverProcess: ManagedOpenCodeProcess = {
       url: null,
       pid: child.pid || null,
@@ -629,10 +675,13 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
       get signalCode() { return observedSignalCode ?? child.signalCode; },
       get stderrTail() { return getManagedProcessSnapshot().stderrTail; },
       close(options) {
-        if (!closePromise) closePromise = registration.then(() => closeManagedOpenCodeChild(child, options));
+        if (!closePromise) closePromise = registration.then(() => closeManagedOpenCodeChild(child, options)).finally(() => {
+          if (hasChildProcessExited(child)) ownedServers.delete(serverProcess);
+        });
         return closePromise;
       },
     };
+    ownedServers.add(serverProcess);
 
     const readiness = new Promise<string | undefined>((resolve, reject) => {
       let stdout = '';
@@ -873,11 +922,13 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
   const isBinaryRejected = (cause: unknown) => cause instanceof UnsupportedOpenCodeVersionError || optionalErrorFields(cause)?.code === 'OPENCODE_BINARY_INVALID';
 
   const startOpenCodeOnce = async (attempt: number) => {
+    assertNotShuttingDown();
     const attemptStartedAt = performance.now();
     let phaseStartedAt = attemptStartedAt;
     recordStartupPerformance('opencode.attempt.start', { attempt });
     const desiredPort = env.ENV_CONFIGURED_OPENCODE_PORT ?? 0;
     const spawnPort = await resolveManagedOpenCodePort(desiredPort, env.ENV_CONFIGURED_OPENCODE_HOSTNAME);
+    assertNotShuttingDown();
     console.log(
       desiredPort > 0
         ? `Starting OpenCode on requested port ${desiredPort}...`
@@ -885,10 +936,12 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
     );
 
     await applyOpencodeBinaryFromSettings({ strict: true });
+    assertNotShuttingDown();
     const resolvedBinary = ensureOpencodeCliEnv();
     const preflight = checkOpenCodeBinary(resolveManagedOpenCodeLaunchSpec(resolvedBinary));
     managedPreflight = preflight.then(() => true, () => false);
     await preflight;
+    assertNotShuttingDown();
     recordStartupPerformance('opencode.binary.ready', {
       attempt,
       durationMs: performance.now() - phaseStartedAt,
@@ -896,6 +949,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
     });
     phaseStartedAt = performance.now();
     const openCodePassword = await ensureLocalOpenCodeServerPassword({ rotateManaged: true });
+    assertNotShuttingDown();
     let envPath = process.env.PATH;
     if (buildManagedOpenCodePath) {
       envPath = buildManagedOpenCodePath();
@@ -906,6 +960,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
       ? getManagedOpenCodeShellEnvSnapshot() || {}
       : {};
     const managedOpenCodeEnv = await getManagedOpenCodeEnv();
+    assertNotShuttingDown();
     recordStartupPerformance('opencode.environment.ready', {
       attempt,
       durationMs: performance.now() - phaseStartedAt,
@@ -937,7 +992,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
 
     let serverInstance;
     try {
-      if (state.isShuttingDown) throw new Error('OpenCode startup cancelled during shutdown');
+      assertNotShuttingDown();
       serverInstance = await createManagedOpenCodeServerProcess({
         resolvedBinary,
         attempt,
@@ -949,6 +1004,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
         env: processEnv,
       });
 
+      assertNotShuttingDown();
       if (!serverInstance || !serverInstance.url) {
         throw new Error('OpenCode server started but URL is missing');
       }
@@ -964,7 +1020,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
       const prefix = normalizeApiPrefix(url.pathname);
 
       const ready = await waitForReady(serverInstance.url, 10000);
-      if (state.isShuttingDown) throw new Error('OpenCode startup cancelled during shutdown');
+      assertNotShuttingDown();
       if (ready) {
         setOpenCodePort(port);
         setDetectedOpenCodeApiPrefix(prefix);
@@ -1004,11 +1060,15 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
   };
 
   const startOpenCode = async () => {
+    assertNotShuttingDown();
     managedPreflight = null;
     const lastError: LifecycleFailure = { cause: null };
     for (let attempt = 1; attempt <= START_OPEN_CODE_MAX_ATTEMPTS; attempt += 1) {
       try {
-        return await startOpenCodeOnce(attempt);
+        const serverInstance = await startOpenCodeOnce(attempt);
+        assertNotShuttingDown();
+        syncToHmrState();
+        return serverInstance;
       } catch (error) {
         lastError.cause = error;
         if (state.isShuttingDown || isBinaryRejected(error)
@@ -1060,6 +1120,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
         const probePort = state.openCodePort ?? env.ENV_EFFECTIVE_PORT ?? 4096;
         const probeOrigin = state.openCodeBaseUrl ?? env.ENV_CONFIGURED_OPENCODE_HOST?.origin;
         const healthy = await probeExternalOpenCode(probePort, probeOrigin);
+        assertNotShuttingDown();
         if (healthy) {
           console.log(`External OpenCode server on port ${probePort} is healthy`);
           state.openCodeBaseUrl = probeOrigin ?? null;
@@ -1127,7 +1188,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
       }
 
       state.lastOpenCodeError = null;
-      state.openCodeProcess = await startOpenCode();
+      await startOpenCode();
       diagnosticJournal.record('managed restart ready');
       syncToHmrState();
 
@@ -1344,6 +1405,8 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
     let unsupportedExternalVersion = null;
     recordStartupPerformance('opencode.bootstrap.start');
     try {
+      syncFromHmrState();
+      assertNotShuttingDown();
       try {
         const orphanReapStartedAt = performance.now();
         const { reaped } = await reapManagedOrphanedProcesses({ log: (msg: string) => console.log(msg) });
@@ -1356,8 +1419,10 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
         console.warn('[lifecycle] orphan reap failed:', optionalErrorFields(error)?.message ?? error);
       }
 
-      syncFromHmrState();
-      if (await isOpenCodeProcessHealthy()) {
+      assertNotShuttingDown();
+      const existingProcessHealthy = await isOpenCodeProcessHealthy();
+      assertNotShuttingDown();
+      if (existingProcessHealthy) {
         console.log(`[HMR] Reusing existing OpenCode process on port ${state.openCodePort}`);
       } else if (env.ENV_SKIP_OPENCODE_START && env.ENV_EFFECTIVE_PORT) {
         const label = env.ENV_CONFIGURED_OPENCODE_HOST ? env.ENV_CONFIGURED_OPENCODE_HOST.origin : `http://localhost:${env.ENV_EFFECTIVE_PORT}`;
@@ -1371,6 +1436,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
         state.openCodeNotReadySince = 0;
         syncToHmrState();
       } else if (env.ENV_EFFECTIVE_PORT && await probeExternalOpenCode(env.ENV_EFFECTIVE_PORT, env.ENV_CONFIGURED_OPENCODE_HOST?.origin)) {
+        assertNotShuttingDown();
         const label = env.ENV_CONFIGURED_OPENCODE_HOST ? env.ENV_CONFIGURED_OPENCODE_HOST.origin : `http://localhost:${env.ENV_EFFECTIVE_PORT}`;
         console.log(`Auto-detected existing OpenCode server at ${label}`);
         state.openCodeBaseUrl = env.ENV_CONFIGURED_OPENCODE_HOST?.origin ?? null;
@@ -1402,7 +1468,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
           syncToHmrState();
         }
 
-        state.openCodeProcess = await startOpenCode();
+        await startOpenCode();
         syncToHmrState();
       }
       await waitForOpenCodePort();
@@ -1430,7 +1496,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
         outcome: bootstrapError.cause ? 'error' : 'ready',
       },
     );
-    if (!bootstrapError.cause) {
+    if (!bootstrapError.cause && !state.isShuttingDown) {
       bootstrapRetryCount = 0;
       void warmOpenCodeDirectories();
     }
@@ -1537,6 +1603,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
 
     const warmedPort = state.openCodePort;
     for (const directory of directories.slice(0, WARMUP_DIRECTORY_LIMIT)) {
+      if (state.isShuttingDown) return;
       if (!directory) continue;
       if (!state.isOpenCodeReady || state.openCodePort !== warmedPort) return;
       let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -1687,6 +1754,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
   };
 
   const startHealthMonitoring = (healthCheckIntervalMs: number) => {
+    if (state.isShuttingDown) return;
     if (state.healthCheckInterval) {
       clearInterval(state.healthCheckInterval);
     }
@@ -1725,6 +1793,8 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
     refreshOpenCodeAfterConfigChange,
     bootstrapOpenCodeAtStartup,
     scheduleBootstrapRetry,
+    getManagedOpenCodeProcessInfo,
+    stopManagedOpenCode,
     startHealthMonitoring,
     triggerHealthCheck,
     waitForPortRelease,

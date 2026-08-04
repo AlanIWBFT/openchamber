@@ -404,6 +404,7 @@ export function createTerminalRuntime({
   let ptyProviderPromise: TerminalPtyProvider | Promise<TerminalPtyProvider> | null = null;
   let shutdownPromise: Promise<void> | null = null;
   let wsServer: TerminalWebSocketServer | null = new WebSocketServer({ noServer: true, maxPayload: TERMINAL_WS_MAX_PAYLOAD_BYTES });
+  let stopping = false;
   const shellResolver = createTerminalShellResolver({ fs, path, searchPathFor, isExecutable, buildAugmentedPath });
 
   const getPtyProvider = async () => {
@@ -414,13 +415,16 @@ export function createTerminalRuntime({
   };
 
   const spawnPty = async ({ cwd, cols, rows, themeMode, shell, loginShell, mode, command }: TerminalSpawnOptions) => {
+    if (stopping) throw new Error('Terminal runtime is shutting down');
     const provider = await getPtyProvider();
     const resolvedShell = await shellResolver.resolve(shell == null || isText(shell) ? shell : '');
+    if (stopping) throw new Error('Terminal runtime is shutting down');
     const hostEnv = { ...process.env, PATH: buildAugmentedPath() };
     const inheritedEnv = environmentRuntime ? await environmentRuntime.applyToDirectory(cwd, hostEnv, { refresh: true }) : hostEnv;
     let lastError = null;
     for (const executable of resolvedShell.executables) {
       try {
+        if (stopping) throw new Error('Terminal runtime is shutting down');
         const env: NodeJS.ProcessEnv = { ...inheritedEnv, TERM: 'xterm-256color', COLORTERM: 'truecolor', COLORFGBG: themeMode === 'light' ? '0;15' : '15;0' };
         delete env.NODE_CHANNEL_FD;
         delete env.BASH_XTRACEFD; delete env.BASH_ENV; delete env.ENV; delete env.ELECTRON_RUN_AS_NODE;
@@ -430,7 +434,12 @@ export function createTerminalRuntime({
         const launch = resolvePosixPtyLaunch(shellLaunch.executable, shellLaunch.args);
         const options: PtyOptions = { name: 'xterm-256color', cwd, cols, rows, env };
         if (process.platform === 'win32') options.useConpty = true;
-        return { process: await provider.spawn(launch.executable, launch.args, options), backend: provider.backend, shell: resolvedShell.id, shellExecutable: executable, loginShell };
+        const ptyProcess = await provider.spawn(launch.executable, launch.args, options);
+        if (stopping) {
+          killProcess(ptyProcess, true);
+          throw new Error('Terminal runtime is shutting down');
+        }
+        return { process: ptyProcess, backend: provider.backend, shell: resolvedShell.id, shellExecutable: executable, loginShell };
       } catch (error) { lastError = error; }
     }
     throw lastError ?? new Error('No executable shell found');
@@ -980,6 +989,7 @@ export function createTerminalRuntime({
   }, 5 * 60 * 1000);
 
   const stop = async () => {
+    stopping = true;
     server.off('upgrade', upgradeHandler); clearInterval(idleSweep);
     for (const session of sessions.values()) { session.retired = true; discardOutput(session); }
     for (const client of wsServer?.clients ?? []) client.terminate();
@@ -1010,5 +1020,16 @@ export function createTerminalRuntime({
     if (!shutdownPromise) shutdownPromise = stop();
     return shutdownPromise;
   };
-  return { shutdown, listTerminals, readTerminal };
+  const forceShutdown = () => {
+    stopping = true;
+    for (const pending of pendingSessionCreates.values()) pending.cancelled = true;
+    server.off('upgrade', upgradeHandler); clearInterval(idleSweep);
+    for (const session of sessions.values()) killProcess(session.process, true);
+    sessions.clear();
+    if (!wsServer) return;
+    for (const client of wsServer.clients) client.terminate();
+    try { wsServer.close(); } catch { /* already closed */ }
+    wsServer = null;
+  };
+  return { shutdown, forceShutdown, listTerminals, readTerminal };
 }

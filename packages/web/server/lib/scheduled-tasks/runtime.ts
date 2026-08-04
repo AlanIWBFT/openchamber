@@ -74,6 +74,7 @@ interface DispatchResult {
 }
 
 export interface ScheduledTaskRunResult {
+  stopped?: boolean;
   ok: boolean;
   skipped?: boolean;
   running?: boolean;
@@ -445,6 +446,7 @@ export const createScheduledTasksRuntime = (deps: ScheduledTasksDependencies) =>
   const runningCountByProject = new Map<string, number>();
   let runningGlobalCount = 0;
   const queue: { projectID: string; taskID: string; reason: RunReason; scheduledFor?: number }[] = [];
+  let stopping = false;
 
   const clearTimerForKey = (taskKey: string) => {
     const timer = timersByTaskKey.get(taskKey);
@@ -1405,7 +1407,7 @@ export const createScheduledTasksRuntime = (deps: ScheduledTasksDependencies) =>
   };
 
   const pumpQueue = () => {
-    if (!started) {
+    if (stopping) {
       return;
     }
 
@@ -1444,6 +1446,9 @@ export const createScheduledTasksRuntime = (deps: ScheduledTasksDependencies) =>
   };
 
   const runNow = async (projectID: string, taskID: string): Promise<ScheduledTaskRunResult> => {
+    if (!started) {
+      return { ok: false, stopped: true, error: 'scheduled task runtime is stopped' };
+    }
     const taskKey = buildTaskKey(projectID, taskID);
     if (runningTaskKeys.has(taskKey)) {
       return {
@@ -1467,6 +1472,7 @@ export const createScheduledTasksRuntime = (deps: ScheduledTasksDependencies) =>
     if (started) {
       return;
     }
+    stopping = false;
     started = true;
     let cleanups: ScheduledWorktreeCleanup[] = [];
     try {
@@ -1504,6 +1510,7 @@ export const createScheduledTasksRuntime = (deps: ScheduledTasksDependencies) =>
     started = false;
     for (const controller of pendingCleanups.values()) controller.abort();
     pendingCleanups.clear();
+    stopping = true;
     for (const timer of timersByTaskKey.values()) {
       clearTimeout(timer);
     }
