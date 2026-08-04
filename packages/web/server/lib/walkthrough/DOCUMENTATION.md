@@ -377,6 +377,21 @@ endpoint nothing calls is a maintenance surface that rots untested.
 Registered lazily from `feature-routes-runtime.js`. `/api/walkthrough` is in the
 JSON body-parser allowlist in `core-routes.js`.
 
+## A server that does not have these routes
+
+An `/api/*` path no OpenChamber route claims reaches the OpenCode proxy, and
+OpenCode answers any path it does not know with its embedded web UI — HTML, with
+status **200**. So a client newer than the server it is connected to is not told
+"no such route"; it is handed a web page. Parsing that as JSON is where
+`Unexpected token '<', "<!doctype "...` came from, a message that names neither
+the cause nor the remedy.
+
+The client therefore checks the content type before parsing. A non-JSON answer
+on 2xx or 404 becomes `server-unsupported`, which the panel renders as "this
+server is older than the app, update it". A non-JSON **5xx** keeps its own
+failure: a server that answered badly is not a server missing the feature, and
+telling someone to upgrade would send them after the wrong thing.
+
 ## Runtime availability
 
 Web, desktop, and hosted mobile reach these routes normally. VS Code serves Git

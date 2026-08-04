@@ -440,6 +440,9 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
     || entry.error?.code === 'empty-diff'
     || entry.error?.code === 'only-generated'
     || entry.error?.code === 'output-exhausted'
+    // Client-detected rather than reported: the server answered something that
+    // was not JSON, so it has no walkthrough routes at all.
+    || entry.error?.code === 'server-unsupported'
     ? entry.error.code
     : entry.readiness && !entry.readiness.ready && !view
       && entry.readiness.reason !== 'no-provider-login'

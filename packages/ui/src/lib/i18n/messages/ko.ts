@@ -1163,6 +1163,8 @@ export const dict: Record<I18nKey, string> = {
   'walkthrough.blocked.outputExhausted.descriptionUnknownModel': '스몰 모델이 출력 예산을 모두 추론에 쓰고 아무것도 반환하지 않았습니다. 추론 모델은 큰 diff에서 흔히 이렇게 됩니다. 덜 추론하는 모델을 고르거나 범위를 좁혀 보세요.',
   'walkthrough.blocked.onlyGenerated.title': '생성된 파일만 변경되었습니다',
   'walkthrough.blocked.onlyGenerated.description': '여기의 변경은 모두 잠금 파일이거나 도구가 만든 산출물이며, 리뷰는 이런 파일을 의도적으로 건너뜁니다.',
+  'walkthrough.blocked.serverUnsupported.title': '이 서버는 워크스루를 지원하지 않습니다',
+  'walkthrough.blocked.serverUnsupported.description': '이 앱이 연결된 OpenChamber 서버가 워크스루 API에 응답하지 않았습니다. 즉 앱보다 오래된 버전입니다. 서버를 1.18 이상으로 업데이트한 뒤 새로 고치세요.',
   'walkthrough.blocked.contextTooSmall.descriptionUnknownModel': '스몰 모델은 약 {available}천 자를 담을 수 있는데 이 diff에는 약 {required}천 자가 필요합니다. 잘라내지 않으니 컨텍스트가 더 큰 모델을 선택하세요.',
   'walkthrough.blocked.structuredOutput.descriptionUnknownModel': '스몰 모델은 워크스루에 필요한 구조화된 응답을 지원하지 않습니다.',
   'contextRail.surface.plan.description': '현재 계획 보기',

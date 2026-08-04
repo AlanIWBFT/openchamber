@@ -1163,6 +1163,8 @@ export const dict: Record<I18nKey, string> = {
   'walkthrough.blocked.outputExhausted.descriptionUnknownModel': '小模型把全部输出额度用在了推理上，没有返回结果。推理模型在大差异上经常如此——可以换一个少推理的模型，或缩小评审范围。',
   'walkthrough.blocked.onlyGenerated.title': '只有生成文件发生了改动',
   'walkthrough.blocked.onlyGenerated.description': '这里的改动全部是锁文件或其他工具生成的产物，评审会有意跳过它们。',
+  'walkthrough.blocked.serverUnsupported.title': '该服务器不支持 walkthrough',
+  'walkthrough.blocked.serverUnsupported.description': '此应用连接的 OpenChamber 服务器没有响应 walkthrough API，说明它比应用更旧。请将服务器升级到 1.18 或更高版本后刷新。',
   'walkthrough.blocked.contextTooSmall.descriptionUnknownModel': '小模型大约可容纳 {available} 千字符，而这份差异约需 {required} 千字符。我们不会截断内容，请改选上下文更大的模型。',
   'walkthrough.blocked.structuredOutput.descriptionUnknownModel': '小模型不支持导读所需的结构化响应。',
   'contextRail.surface.plan.description': '查看当前计划',

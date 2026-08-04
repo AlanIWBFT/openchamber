@@ -1163,6 +1163,8 @@ export const dict: Record<I18nKey, string> = {
   "walkthrough.blocked.outputExhausted.descriptionUnknownModel": "El modelo pequeño gastó todo su margen de salida razonando y no devolvió nada. Los modelos de razonamiento suelen hacerlo con diffs grandes: prueba con un modelo que razone menos o revisa un ámbito más reducido.",
   "walkthrough.blocked.onlyGenerated.title": "Solo cambiaron archivos generados",
   "walkthrough.blocked.onlyGenerated.description": "Todos los cambios son archivos de bloqueo u otra salida generada por herramientas, que la revisión omite a propósito.",
+  "walkthrough.blocked.serverUnsupported.title": "Este servidor no admite walkthroughs",
+  "walkthrough.blocked.serverUnsupported.description": "El servidor de OpenChamber al que está conectada esta app no respondió a la API de walkthrough, así que es más antiguo que la app. Actualiza el servidor a 1.18 o posterior y vuelve a intentarlo.",
   "walkthrough.blocked.contextTooSmall.descriptionUnknownModel": "El modelo pequeño admite unos {available} mil caracteres y este diff necesita unos {required} mil. No se recorta nada: elige un modelo con más contexto.",
   "walkthrough.blocked.structuredOutput.descriptionUnknownModel": "El modelo pequeño no admite las respuestas estructuradas que necesita un recorrido.",
   "contextRail.surface.plan.description": "Ver el plan actual",

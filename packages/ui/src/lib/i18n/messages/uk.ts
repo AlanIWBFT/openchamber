@@ -1163,6 +1163,8 @@ export const dict: Record<I18nKey, string> = {
   "walkthrough.blocked.outputExhausted.descriptionUnknownModel": "Small model витратила весь бюджет виводу на роздуми й нічого не повернула. Reasoning-моделі часто так поводяться на великих diff — допоможе модель, яка менше «думає», або вужча область огляду.",
   "walkthrough.blocked.onlyGenerated.title": "Змінились лише згенеровані файли",
   "walkthrough.blocked.onlyGenerated.description": "Усі зміни тут — це lock-файли чи інший результат роботи інструментів, які розбір свідомо пропускає.",
+  "walkthrough.blocked.serverUnsupported.title": "Цей сервер не підтримує walkthrough",
+  "walkthrough.blocked.serverUnsupported.description": "Сервер OpenChamber, до якого підключено застосунок, не відповів на walkthrough API — отже, він старіший за застосунок. Оновіть сервер до 1.18 або новішої версії та оновіть панель.",
   "walkthrough.blocked.contextTooSmall.descriptionUnknownModel": "Small model вміщає близько {available} тис. символів, а цьому diff потрібно близько {required} тис. Нічого не обрізається — оберіть модель із більшим контекстом.",
   "walkthrough.blocked.structuredOutput.descriptionUnknownModel": "Small model не підтримує структуровані відповіді, потрібні для розбору.",
   "contextRail.surface.plan.description": "Перегляд поточного плану",

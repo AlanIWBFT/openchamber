@@ -1162,6 +1162,8 @@ export const dict = {
   'walkthrough.blocked.outputExhausted.descriptionUnknownModel': 'The small model spent its whole output allowance on reasoning and returned nothing. Reasoning models often do this on large diffs — a model that thinks less, or reviewing a narrower scope, will get through.',
   'walkthrough.blocked.onlyGenerated.title': 'Only generated files changed',
   'walkthrough.blocked.onlyGenerated.description': 'Every change here is a lockfile or other tool-produced output, which the review deliberately skips.',
+  'walkthrough.blocked.serverUnsupported.title': 'This server has no walkthrough support',
+  'walkthrough.blocked.serverUnsupported.description': 'The OpenChamber server this app is connected to did not answer the walkthrough API, which means it is older than the app. Update the server to 1.18 or newer, then refresh.',
   'walkthrough.blocked.contextTooSmall.descriptionUnknownModel': 'The small model fits about {available}K characters and this diff needs about {required}K. Nothing gets truncated — pick a model with a larger context instead.',
   'walkthrough.blocked.structuredOutput.descriptionUnknownModel': 'The small model does not support the structured responses a walkthrough needs.',
   'contextRail.surface.plan.description': 'View the current plan',

@@ -1175,6 +1175,8 @@ export const dict: Record<I18nKey, string> = {
   'walkthrough.blocked.outputExhausted.descriptionUnknownModel': '小模型把全部輸出額度用在推理上，沒有回傳結果。推理模型在大型差異上經常如此——可以改用較少推理的模型，或縮小審閱範圍。',
   'walkthrough.blocked.onlyGenerated.title': '只有產生的檔案有變動',
   'walkthrough.blocked.onlyGenerated.description': '這裡的變更全部是鎖定檔或其他工具產生的輸出，審閱會刻意略過它們。',
+  'walkthrough.blocked.serverUnsupported.title': '該伺服器不支援 walkthrough',
+  'walkthrough.blocked.serverUnsupported.description': '此應用程式連線的 OpenChamber 伺服器沒有回應 walkthrough API，代表它比應用程式更舊。請將伺服器升級到 1.18 或更新版本後重新整理。',
   'walkthrough.blocked.contextTooSmall.descriptionUnknownModel': '小模型大約可容納 {available} 千字元，而這份差異約需 {required} 千字元。我們不會截斷內容，請改選上下文更大的模型。',
   'walkthrough.blocked.structuredOutput.descriptionUnknownModel': '小模型不支援導讀所需的結構化回應。',
   'contextRail.surface.plan.description': '檢視目前計畫',

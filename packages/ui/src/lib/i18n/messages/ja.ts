@@ -1159,6 +1159,8 @@ export const dict: Record<I18nKey, string> = {
   'walkthrough.blocked.outputExhausted.descriptionUnknownModel': 'スモールモデルは出力枠をすべて推論に使い、回答を返しませんでした。推論モデルは大きな差分でよくこうなります。推論の少ないモデルを選ぶか、対象範囲を絞ってください。',
   'walkthrough.blocked.onlyGenerated.title': '生成ファイルのみが変更されています',
   'walkthrough.blocked.onlyGenerated.description': 'ここでの変更はロックファイルなどツールが生成した出力だけで、レビューは意図的にこれらを対象外にしています。',
+  'walkthrough.blocked.serverUnsupported.title': 'このサーバーはウォークスルーに対応していません',
+  'walkthrough.blocked.serverUnsupported.description': 'このアプリが接続している OpenChamber サーバーはウォークスルー API に応答しませんでした。つまりアプリより古いバージョンです。サーバーを 1.18 以降に更新してから再読み込みしてください。',
   'walkthrough.blocked.contextTooSmall.descriptionUnknownModel': 'スモールモデルが扱えるのは約 {available} 千文字ですが、この差分には約 {required} 千文字が必要です。切り詰めは行いません。コンテキストの大きいモデルを選んでください。',
   'walkthrough.blocked.structuredOutput.descriptionUnknownModel': 'スモールモデルはウォークスルーに必要な構造化応答をサポートしていません。',
   'contextRail.surface.plan.description': '現在のプランを表示',
