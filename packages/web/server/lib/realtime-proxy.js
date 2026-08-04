@@ -272,7 +272,10 @@ export const attachRealtimeProxy = ({ app, server, getDesktopRuntimeConfig, getU
   return {
     stop: () => {
       server.off('upgrade', upgradeHandler);
-      wsServer.close();
+      for (const client of wsServer.clients) {
+        try { client.terminate(); } catch {}
+      }
+      try { wsServer.close(); } catch {}
     },
   };
 };

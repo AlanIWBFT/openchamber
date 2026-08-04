@@ -16,6 +16,9 @@ Policy inheritance uses the nearest explicit session value. A child `false` ther
 
 Unknown lineage and failed policy loads fail closed. A failed pending-permission fetch is distinct from an empty successful response and never clears policy state.
 
+Process shutdown unsubscribes the runtime and rejects later permission work
+before managed OpenCode is terminated.
+
 ## Routes
 
 - `GET /api/permission-auto-accept`

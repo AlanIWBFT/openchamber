@@ -446,4 +446,25 @@ describe('ElectronSshManager', () => {
     await manager.startRemoteServerManaged(parsed, '/tmp/control.sock', secured, 4321, '/bin/openchamber');
     expect(started).toContain('--hostname 0.0.0.0');
   });
+
+  test('force shutdown kills tracked SSH children and rejects new SSH work', () => {
+    const manager = new ElectronSshManager({
+      settingsFilePath: path.join(os.tmpdir(), 'unused-settings.json'),
+      appVersion: '0.0.0-test',
+      emit: () => undefined,
+      platform: 'win32',
+    });
+    const child = createChild();
+    const signals = [];
+    child.kill = (signal) => {
+      signals.push(signal);
+      return true;
+    };
+    manager.trackSshProcess(child, { destination: 'example.test', args: [] });
+
+    manager.forceShutdownAll();
+
+    expect(signals).toEqual(['SIGKILL']);
+    expect(() => manager.spawnSsh({ destination: 'example.test', args: [] }, [], {})).toThrow('SSH manager is shutting down');
+  });
 });

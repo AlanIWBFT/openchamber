@@ -91,7 +91,7 @@ import { createPushRuntime } from './lib/notifications/push-runtime.js';
 import { createApnsRuntime } from './lib/notifications/apns-runtime.js';
 import { createNotificationTemplateRuntime } from './lib/notifications/template-runtime.js';
 import { createPermissionAutoAcceptRuntime } from './lib/permission-auto-accept/runtime.js';
-import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.js';
+import { createGracefulShutdownRuntime, createShutdownFence } from './lib/opencode/shutdown-runtime.js';
 import { createProjectConfigRuntime } from './lib/projects/project-config.js';
 import { createProjectContextRuntime } from './lib/project-context/runtime.js';
 import { createAgentMemoryRuntime } from './lib/agent-memory/runtime.js';
@@ -104,6 +104,8 @@ import { createClientPairingRuntime } from './lib/client-auth/pairing.js';
 import { attachRealtimeProxy } from './lib/realtime-proxy.js';
 import { createRelayService } from './lib/relay/service.js';
 import { createRelayHostLock } from './lib/relay/host-lock.js';
+import { forceStopCloudflareTunnels } from './lib/cloudflare-tunnel.js';
+import { forceStopNgrokTunnels } from './lib/ngrok-tunnel.js';
 import { createAgentToolRuntime } from './lib/agent-tool/runtime.js';
 import { createBrowserControlBroker } from './lib/browser-control/broker.js';
 import { createDevServerScanner } from './lib/dev-servers/routes.js';
@@ -524,6 +526,7 @@ hmrStateRuntime.ensureUserProvidedOpenCodePassword(hmrState);
 // Non-HMR state (safe to reset on reload)
 let healthCheckInterval = null;
 let server = null;
+let serverSockets = new Set();
 let expressApp = null;
 let currentRestartPromise = null;
 let isRestartingOpenCode = false;
@@ -553,6 +556,9 @@ let runtimeManagedRemoteTunnelHostname = '';
 let terminalRuntime = null;
 let dictationRuntime = null;
 let messageStreamRuntime = null;
+let realtimeProxyRuntime = null;
+let relayService = null;
+let relayReconcileTimer = null;
 const userProvidedOpenCodePassword = hmrStateRuntime.getUserProvidedOpenCodePassword(hmrState);
 const initialOpenCodeAuthState = hmrStateRuntime.resolveOpenCodeAuthFromState({
   hmrState,
@@ -594,6 +600,7 @@ const syncFromHmrState = () => {
 // Module-level variables that shadow HMR state
 // These are synced to/from hmrState to survive HMR reloads
 let openCodeProcess = hmrState.openCodeProcess;
+let lastManagedOpenCodeLaunch = openCodeProcess?.launch ?? null;
 let openCodePort = hmrState.openCodePort;
 let openCodeBaseUrl = hmrState.openCodeBaseUrl ?? null;
 let isShuttingDown = hmrState.isShuttingDown;
@@ -716,6 +723,7 @@ const ensureOpencodeCliEnv = (...args) => openCodeEnvRuntime.ensureOpencodeCliEn
 const applyOpencodeBinaryFromSettings = (...args) => openCodeEnvRuntime.applyOpencodeBinaryFromSettings(...args);
 const resolveOpencodeCliPath = (...args) => openCodeEnvRuntime.resolveOpencodeCliPath(...args);
 const isBundledOpenCodeCliPath = (...args) => openCodeEnvRuntime.isBundledOpenCodeCliPath(...args);
+const supportsOpenCodeShutdownProtocol = (...args) => openCodeEnvRuntime.supportsOpenCodeShutdownProtocol(...args);
 const isExecutable = (...args) => openCodeEnvRuntime.isExecutable(...args);
 const searchPathFor = (...args) => openCodeEnvRuntime.searchPathFor(...args);
 const resolveGitBinaryForSpawn = (...args) => openCodeEnvRuntime.resolveGitBinaryForSpawn(...args);
@@ -873,7 +881,7 @@ const permissionAutoAcceptRuntime = createPermissionAutoAcceptRuntime({
   persistSettings,
   broadcastGlobalUiEvent,
 });
-permissionAutoAcceptRuntime.start();
+const stopPermissionAutoAccept = permissionAutoAcceptRuntime.start();
 notificationTriggerRuntime.setGetIsSessionAutoAccepting(
   (sessionId, directory) => permissionAutoAcceptRuntime.isSessionAutoAccepting(sessionId, directory),
 );
@@ -1098,6 +1106,8 @@ const startupPipelineRuntime = createStartupPipelineRuntime({
 const openCodeLifecycleState = {};
 Object.defineProperties(openCodeLifecycleState, {
   openCodeProcess: { get: () => openCodeProcess, set: (value) => { openCodeProcess = value; } },
+  startingOpenCodeProcess: { value: null, writable: true },
+  lastManagedOpenCodeLaunch: { get: () => lastManagedOpenCodeLaunch, set: (value) => { lastManagedOpenCodeLaunch = value; } },
   openCodePort: { get: () => openCodePort, set: (value) => { openCodePort = value; } },
   openCodeBaseUrl: { get: () => openCodeBaseUrl, set: (value) => { openCodeBaseUrl = value; } },
   openCodeWorkingDirectory: { get: () => openCodeWorkingDirectory, set: (value) => { openCodeWorkingDirectory = value; } },
@@ -1150,6 +1160,7 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   buildAugmentedPath,
   buildManagedOpenCodePath,
   getManagedOpenCodeShellEnvSnapshot: getLoginShellEnvSnapshot,
+  supportsOpenCodeShutdownProtocol,
   getActiveSessionCount,
   // Most-recently-used directories first: OpenCode initializes each directory
   // lazily on first request (seconds on large session stores), so the
@@ -1235,6 +1246,7 @@ const getOpenCodeUpgradeCapability = () => {
 };
 
 const restartOpenCode = (...args) => openCodeLifecycleRuntime.restartOpenCode(...args);
+const stopManagedOpenCode = (...args) => openCodeLifecycleRuntime.stopManagedOpenCode(...args);
 const waitForOpenCodeReady = (...args) => openCodeLifecycleRuntime.waitForOpenCodeReady(...args);
 const waitForAgentPresence = (...args) => openCodeLifecycleRuntime.waitForAgentPresence(...args);
 const refreshOpenCodeAfterConfigChange = (...args) => openCodeLifecycleRuntime.refreshOpenCodeAfterConfigChange(...args);
@@ -1467,6 +1479,54 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
 
 const gracefulShutdown = (...args) => gracefulShutdownRuntime.gracefulShutdown(...args);
 
+const stopDesktopBackgroundResources = () => {
+  isShuttingDown = true;
+  syncToHmrState();
+  try { server?.removeAllListeners?.('upgrade'); } catch {}
+  try { server?.close(); } catch {}
+  try { server?.closeAllConnections?.(); } catch {}
+  for (const socket of serverSockets) {
+    try { socket.destroy(); } catch {}
+  }
+  serverSockets.clear();
+  for (const stop of [
+    () => openCodeWatcherRuntime.stop(),
+    () => sessionRuntime.dispose(),
+    () => sessionAssistRuntime?.stop?.(),
+    () => sessionGoalRuntime?.stop?.(),
+    () => contextObligatoryRuntime?.stop?.(),
+    () => scheduledTasksRuntime?.stop?.(),
+    () => stopPermissionAutoAccept?.(),
+    () => permissionAutoAcceptRuntime.shutdown(),
+    () => globalMessageStreamHub.stop(),
+    () => terminalRuntime?.forceShutdown?.(),
+    () => dictationRuntime?.stop?.(),
+    () => { void messageStreamRuntime?.close?.(); },
+    () => realtimeProxyRuntime?.stop?.(),
+    () => relayService?.shutdown?.(),
+  ]) {
+    try { stop(); } catch {}
+  }
+  messageStreamRuntime = null;
+  realtimeProxyRuntime = null;
+  relayService = null;
+  if (relayReconcileTimer) {
+    clearInterval(relayReconcileTimer);
+    relayReconcileTimer = null;
+  }
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
+  }
+  const tunnelController = activeTunnelController;
+  try { tunnelController?.stop?.(); } catch {}
+  forceStopCloudflareTunnels();
+  forceStopNgrokTunnels();
+  activeTunnelController = null;
+};
+
+const getManagedOpenCodeProcessInfo = () => openCodeLifecycleRuntime.getManagedOpenCodeProcessInfo();
+
 async function main(options = {}) {
   const port = Number.isFinite(options.port) && options.port >= 0 ? Math.trunc(options.port) : DEFAULT_PORT;
   const host = typeof options.host === 'string' && options.host.length > 0 ? options.host : undefined;
@@ -1634,6 +1694,7 @@ async function main(options = {}) {
   ]);
   const isLocalDevClientOrigin = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
   app.set('trust proxy', true);
+  app.use(createShutdownFence(() => isShuttingDown));
   // Keep self-hosted instances out of search engines. The app shell is served
   // publicly (it loads before prompting for the UI password), so without this
   // even a password-protected instance gets crawled and indexed. Applies to
@@ -1670,7 +1731,12 @@ async function main(options = {}) {
   }));
   expressApp = app;
   server = http.createServer(app);
-  let realtimeProxyRuntime = { stop: () => {} };
+  serverSockets = new Set();
+  server.on('connection', (socket) => {
+    serverSockets.add(socket);
+    socket.once('close', () => serverSockets.delete(socket));
+  });
+  realtimeProxyRuntime = { stop: () => {} };
 
   // The relay service is constructed further below (it depends on the tunnel
   // runtime's active port). The pairing routes registered here only read the
@@ -1809,7 +1875,7 @@ async function main(options = {}) {
   // Private relay host service: config + management routes + host client
   // lifecycle. Loopback port comes from the same source the tunnel uses so
   // relay-tunneled requests hit the local Express app on 127.0.0.1.
-  const relayService = createRelayService({
+  relayService = createRelayService({
     crypto,
     os,
     readSettingsFromDiskMigrated,
@@ -1921,6 +1987,10 @@ async function main(options = {}) {
     writeSseEvent,
     permissionAutoAcceptRuntime,
   });
+  if (isShuttingDown) {
+    stopDesktopBackgroundResources();
+    throw new Error('OpenChamber server startup cancelled during shutdown');
+  }
 
   const startupPipelineResult = await startupPipelineRuntime.run({
     app,
@@ -1975,24 +2045,32 @@ async function main(options = {}) {
   terminalRuntime = startupPipelineResult.terminalRuntime;
   dictationRuntime = startupPipelineResult.dictationRuntime;
   messageStreamRuntime = startupPipelineResult.messageStreamRuntime;
+  if (isShuttingDown) {
+    stopDesktopBackgroundResources();
+    throw new Error('OpenChamber server startup cancelled during shutdown');
+  }
 
   try {
     await scheduledTasksRuntime.start();
   } catch (error) {
     console.warn('[ScheduledTasks] Failed to start runtime:', error?.message || error);
   }
+  if (isShuttingDown) {
+    stopDesktopBackgroundResources();
+    throw new Error('OpenChamber server startup cancelled during shutdown');
+  }
 
   // Only opens a relay control socket when the user opted in (config enabled).
   // Reconcile the relay lifecycle from demand on startup: run it if any relay
   // device/session exists, stop it (and clear a stale enabled flag) otherwise.
-  void relayService.reconcile();
+  void relayService?.reconcile?.();
 
   // Relay demand can change outside our routes: `openchamber connect-url
   // --relay` writes a pending relay session straight to the on-disk store, and
   // pending sessions expire without any request hitting us. Poll reconcile so a
   // headless instance picks the relay up (or drops it) within a minute.
-  const relayReconcileTimer = setInterval(() => {
-    void relayService.reconcile();
+  relayReconcileTimer = setInterval(() => {
+    void relayService?.reconcile?.();
   }, 60_000);
   relayReconcileTimer.unref?.();
 
@@ -2025,10 +2103,13 @@ async function main(options = {}) {
       };
     },
     stop: (shutdownOptions = {}) => {
-      realtimeProxyRuntime.stop();
-      clearInterval(relayReconcileTimer);
+      realtimeProxyRuntime?.stop?.();
+      if (relayReconcileTimer) {
+        clearInterval(relayReconcileTimer);
+        relayReconcileTimer = null;
+      }
       try {
-        relayService.stop();
+        relayService?.stop?.();
       } catch {
         // best-effort teardown of the relay host client
       }
@@ -2060,8 +2141,11 @@ runCliEntryIfMain({
 
 export {
   gracefulShutdown,
+  getManagedOpenCodeProcessInfo,
   setupProxy,
   restartOpenCode,
+  stopDesktopBackgroundResources,
+  stopManagedOpenCode,
   main as startWebUiServer,
   parseServeCliOptions as parseArgs,
 };

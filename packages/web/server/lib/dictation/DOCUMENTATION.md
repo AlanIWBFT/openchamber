@@ -98,3 +98,5 @@ user is still speaking, so only the tail is left to transcribe on stop.
 - Silence-only segments (peak < 300) are cleared, never committed, so
   Whisper-style providers do not hallucinate on silence.
 - Model files live under `~/.config/openchamber/speech-models`.
+- Runtime shutdown aborts in-flight model downloads and force-stops extraction
+  before the managed OpenCode shutdown window begins.
