@@ -89,6 +89,7 @@ export interface WalkthroughResult {
  */
 export type WalkthroughStage = 'collecting' | 'asking' | 'retrying' | 'assembling';
 
+/** Reasons the server reports for refusing to generate. */
 export type WalkthroughBlockedReason =
   | 'no-model'
   | 'no-provider-login'
@@ -97,6 +98,13 @@ export type WalkthroughBlockedReason =
   | 'context-too-small'
   | 'structured-output-unsupported'
   | 'output-exhausted';
+
+/**
+ * Everything the panel can render as a blocking screen. `server-unsupported` is
+ * never sent by a server — it is what the client concludes when the answer is
+ * not JSON at all, which is how a server too old to have these routes replies.
+ */
+export type WalkthroughBlockedState = WalkthroughBlockedReason | 'server-unsupported';
 
 export interface WalkthroughReadiness {
   ready: boolean;
@@ -116,7 +124,7 @@ export interface WalkthroughReadiness {
 }
 
 export class WalkthroughError extends Error {
-  readonly code?: WalkthroughBlockedReason | 'invalid-walkthrough' | 'github-not-connected' | 'no-github-remote';
+  readonly code?: WalkthroughBlockedState | 'invalid-walkthrough' | 'github-not-connected' | 'no-github-remote';
   readonly model?: WalkthroughModel;
   readonly requiredChars?: number;
   readonly availableChars?: number;
