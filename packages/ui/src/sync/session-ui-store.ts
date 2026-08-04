@@ -30,6 +30,7 @@ import { markPendingUserSendAnimation } from "@/lib/userSendAnimation"
 import { normalizePath } from "@/lib/pathNormalization"
 import { flattenAssistantTextParts } from "@/lib/messages/messageText"
 import { composeForkSessionMessage } from "@/lib/messages/executionMeta"
+import { findLatestUserModelChoice } from "@/lib/messages/userModelChoice"
 import { waitForPendingDraftWorktreeRequest } from "@/lib/worktrees/pendingDraftWorktree"
 import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap"
 import { getWorktreeSetupWaitEnabled } from "@/lib/openchamberConfig"
@@ -1713,33 +1714,19 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   getLastUserChoice: (sessionId) => {
     const directory = get().getDirectoryForSession(sessionId) ?? undefined
     const messages = getSyncMessages(sessionId, directory)
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const message = messages[i] as Message & {
-        model?: { providerID?: string; modelID?: string; variant?: string }
-        variant?: string
-        mode?: string
-      }
-      if (message.role !== "user") {
-        continue
-      }
-
-      const providerID = typeof message.model?.providerID === "string" && message.model.providerID.trim().length > 0
-        ? message.model.providerID
-        : undefined
-      const modelID = typeof message.model?.modelID === "string" && message.model.modelID.trim().length > 0
-        ? message.model.modelID
-        : undefined
-      const agent = typeof message.agent === "string" && message.agent.trim().length > 0
-        ? message.agent
-        : (typeof message.mode === "string" && message.mode.trim().length > 0 ? message.mode : undefined)
-      const variantCandidate = message.model?.variant ?? message.variant
-      const variant = typeof variantCandidate === "string" && variantCandidate.trim().length > 0
-        ? variantCandidate
-        : undefined
-
-      return { agent, providerID, modelID, variant }
+    const choice = findLatestUserModelChoice(
+      messages,
+      (messageId) => getSyncParts(messageId, directory),
+    )
+    if (!choice) {
+      return null
     }
-    return null
+    return {
+      agent: choice.agent,
+      providerID: choice.providerID,
+      modelID: choice.modelID,
+      variant: choice.variant,
+    }
   },
 
   getCurrentAgent: (sessionId) => {
