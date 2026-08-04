@@ -175,6 +175,7 @@ describe('terminal runtime', () => {
     const loadPtyProvider = async () => ({
       backend: 'fake-pty',
       spawn: async (shell, args, options) => {
+        overrides.spawnEntered?.resolve();
         await spawnDeferred?.promise;
         const dataHandlers = new Set();
         const exitHandlers = new Set();
@@ -233,10 +234,12 @@ describe('terminal runtime', () => {
 
   it('reaps a pending create during shutdown and rejects later creates', async () => {
     const gate = deferred();
-    const harness = createHarness({ spawnDeferred: gate });
+    const entered = deferred();
+    const harness = createHarness({ spawnDeferred: gate, spawnEntered: entered });
     const create = harness.routes.post.get('/api/terminal/create');
     const response = createResponse();
     const creation = create({ body: { sessionId: 'pending', cwd: '/repo' } }, response);
+    await entered.promise;
     const closing = harness.runtime.shutdown();
     gate.resolve();
     await Promise.all([creation, closing]);
@@ -414,6 +417,57 @@ describe('terminal runtime', () => {
       expect(env.TERM).toBe('xterm-256color');
       expect(env).not.toHaveProperty('NODE_CHANNEL_FD');
     } finally { await harness.runtime.shutdown(); }
+  });
+
+  it('does not publish a PTY that finishes spawning after force shutdown', async () => {
+    let releaseProvider;
+    const providerReady = new Promise((resolve) => { releaseProvider = resolve; });
+    const harness = createHarness({
+      loadPtyProvider: async () => {
+        await providerReady;
+        return {
+          backend: 'fake-pty',
+          spawn: () => { throw new Error('must not spawn after shutdown'); },
+        };
+      },
+    });
+    const response = createResponse();
+    const creating = harness.routes.post.get('/api/terminal/create')({
+      body: { sessionId: 'late', cwd: '/repo' },
+    }, response);
+
+    harness.runtime.forceShutdown();
+    releaseProvider();
+    await creating;
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: 'Terminal runtime is shutting down' });
+    expect(harness.processes).toHaveLength(0);
+  });
+
+  it('kills a PTY whose asynchronous spawn resolves after force shutdown', async () => {
+    const started = deferred();
+    const released = deferred();
+    const kill = vi.fn();
+    const harness = createHarness({
+      loadPtyProvider: async () => ({
+        backend: 'fake-pty',
+        spawn: async () => {
+          started.resolve();
+          await released.promise;
+          return { kill };
+        },
+      }),
+    });
+    const response = createResponse();
+    const creating = harness.routes.post.get('/api/terminal/create')({ body: { sessionId: 'late-spawn', cwd: '/repo' } }, response);
+    await started.promise;
+    harness.runtime.forceShutdown();
+    released.resolve();
+    await creating;
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: 'Terminal runtime is shutting down' });
   });
 
   it('creates client-identified sessions and forwards bounded resize operations', async () => {
