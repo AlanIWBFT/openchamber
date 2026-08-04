@@ -23,16 +23,15 @@ test('waits for backend-owned children before allowing Electron to exit', async 
 });
 
 for (const failure of ['error', 'deadline']) {
-  test(`uses the current managed process for fallback on ${failure}`, async () => {
+  test(`reports ${failure} without a second process termination owner`, async () => {
     const warnings = [];
     const kills = [];
-    const info = { managed: true, pid: 123, port: 45678 };
     await stopEmbeddedServer({
       stop: () => failure === 'error' ? Promise.reject(new Error('fixture')) : new Promise(() => {}),
-      getOpenCodeProcessInfo: () => info,
+      getOpenCodeProcessInfo: () => { assert.fail('Electron must not collect a PID for a second killer'); },
     }, { timeoutMs: 10, launchFallback: (value) => kills.push(value), warn: (error) => warnings.push(error) });
     assert.equal(warnings.length, 1);
-    assert.deepEqual(kills, [info]);
+    assert.deepEqual(kills, []);
   });
 }
 

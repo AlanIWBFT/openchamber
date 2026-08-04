@@ -32,6 +32,9 @@ Unknown lineage and failed policy loads fail closed (`ask`). A failed pending-pe
 
 Each request's outcome (`replied`, `held`, `ignored`, `failed`) is kept for a bounded while. `isPermissionAutoAnswered` lets notifications skip only a request that was actually answered: a held one still notifies.
 
+Process shutdown unsubscribes the runtime and rejects later permission work
+before managed OpenCode is terminated.
+
 ## Routes
 
 - `GET /api/permission-auto-accept` answers `{ sessions, modes, revision }`. `modes` is the policy; `sessions` is its on/off view (`ask` is off) for clients from before the modes.
