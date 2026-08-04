@@ -142,6 +142,77 @@ const createRuntime = (overrides = {}, stateOverrides = {}, envOverrides = {}) =
 };
 
 describe('OpenCode lifecycle', () => {
+  it('fences a pending V2 preflight before it can migrate or spawn', async () => {
+    const entered = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    const topUp = vi.fn();
+    const runtime = createRuntime({
+      checkOpenCodeBinary: () => { entered.resolve(); return release.promise; },
+      topUpV1SessionMigration: topUp,
+    });
+    const starting = runtime.startOpenCode();
+    const rejected = expect(starting).rejects.toMatchObject({ code: 'OPENCHAMBER_SHUTTING_DOWN' });
+    await entered.promise;
+    await expect(runtime.stopManagedOpenCode()).resolves.toEqual({ graceful: false });
+    release.resolve('2.0.15');
+    await rejected;
+    expect(topUp).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('shares one owned close and preserves its deadline until confirmed exit', async () => {
+    const release = Promise.withResolvers();
+    const owned = { pid: 12345, close: vi.fn(() => release.promise) };
+    const runtime = createRuntime({}, { openCodeProcess: owned, isOpenCodeReady: true, openCodePort: 45678 });
+    const deadline = Date.now() + 35_000;
+    const first = runtime.stopManagedOpenCode({ deadline });
+    expect(runtime.stopManagedOpenCode({ deadline: deadline + 5000 })).toBe(first);
+    await Promise.resolve();
+    expect(owned.close).toHaveBeenCalledExactlyOnceWith({ deadline });
+    expect(runtime.state.openCodeProcess).toBe(owned);
+    expect(runtime.state.isOpenCodeReady).toBe(false);
+    release.resolve(true);
+    await expect(first).resolves.toEqual({ graceful: true });
+    expect(runtime.state.openCodeProcess).toBeNull();
+    await expect(runtime.startOpenCode()).rejects.toMatchObject({ code: 'OPENCHAMBER_SHUTTING_DOWN' });
+  });
+
+  it('retains the owned handle if coordinated termination cannot confirm exit', async () => {
+    const error = Object.assign(new Error('not exited'), { code: 'OPENCHAMBER_OPENCODE_EXIT_UNCONFIRMED' });
+    const owned = { pid: 12345, close: vi.fn(async () => { throw error; }) };
+    const runtime = createRuntime({}, { openCodeProcess: owned });
+    await expect(runtime.stopManagedOpenCode()).rejects.toBe(error);
+    await expect(runtime.stopManagedOpenCode()).rejects.toBe(error);
+    expect(owned.close).toHaveBeenCalledOnce();
+    expect(runtime.state.openCodeProcess).toBe(owned);
+  });
+
+  it('retains every spawned owner when overlapping starts replace the routing handle', async () => {
+    const children = [createMockChild(), createMockChild()];
+    for (const child of children) {
+      // No real PID or registry entry is needed to exercise handle ownership.
+      child.pid = undefined;
+      spawnMock.mockImplementationOnce(() => {
+        queueMicrotask(() => child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n'));
+        return child;
+      });
+    }
+    const runtime = createRuntime();
+    await Promise.all([runtime.startOpenCode(), runtime.startOpenCode()]);
+    await expect(runtime.stopManagedOpenCode()).resolves.toEqual({ graceful: true });
+    for (const child of children) expect(child.stdin.end).toHaveBeenCalledOnce();
+    expect(runtime.state.openCodeProcess).toBeNull();
+  });
+
+  it('does not terminate an external OpenCode while fencing local startup', async () => {
+    const close = vi.fn();
+    const runtime = createRuntime({}, { isExternalOpenCode: true, openCodeProcess: { pid: 12345, close } });
+    await expect(runtime.stopManagedOpenCode()).resolves.toEqual({ graceful: false });
+    expect(close).not.toHaveBeenCalled();
+    expect(runtime.getManagedOpenCodeProcessInfo()).toEqual({ managed: false, pid: null, port: null });
+    await expect(runtime.startOpenCode()).rejects.toMatchObject({ code: 'OPENCHAMBER_SHUTTING_DOWN' });
+  });
+
   it('accepts a complete stdio JSON announcement across chunks and ignores unrelated output', async () => {
     const child = createMockChild();
     const waitForReady = vi.fn(async () => true);
