@@ -44,6 +44,13 @@ bun run electron:dev
 
 Closing the last Electron window exits the development launcher and its Vite process unless Windows "Minimize to tray" is enabled. When it is enabled, use **Quit** from the tray menu. `Ctrl+C` in the launcher terminal stops the complete Electron/Vite process tree.
 
+Desktop quit immediately terminates the managed OpenCode process tree. A local
+fork CLI staged with the `openchamber-sqlite-finalizer.capability` marker then
+runs its lightweight SQLite finalizer before Electron exits; upstream downloads
+and custom CLIs without that marker skip this private step. The finalizer
+checkpoints WAL without loading the normal OpenCode CLI or server runtime.
+External OpenCode servers are never terminated or finalized.
+
 The Electron workspace package trusts Electron's install script so `bun install` downloads the platform runtime in fresh checkouts and worktrees.
 
 Electron's postinstall (`node install.js`) is run by `bun install` with the system Node. Older Electron releases bundled `extract-zip@2.0.1`, which under Node 24 silently unpacked only the first entry of the Electron zip, leaving `dist/` without the binary and `path.txt` missing. Electron 43+ ships its own fixed extractor (`@electron-internal/extract-zip`), but to keep interrupted or wrong-architecture installs from blocking desktop work:
@@ -123,7 +130,7 @@ Managed local Desktop startup prefers OpenCode binaries in this order:
 5. Known npm/Bun/Homebrew/Scoop/Chocolatey and other standard install locations.
 6. Platform discovery through `where opencode` on Windows or a login shell on macOS/Linux.
 
-Use an explicit override when testing a different OpenCode CLI build or when a user needs to point Desktop at a custom binary. The configured path must point to the standalone CLI, not the OpenCode Desktop app executable.
+Use an explicit override when testing a different OpenCode CLI build or when a user needs to point Desktop at a custom binary. The configured path must point to the standalone CLI, not the OpenCode Desktop app executable. A custom CLI only participates in the private SQLite finalizer protocol when its directory intentionally contains `openchamber-sqlite-finalizer.capability`.
 
 ## Common Env Vars
 

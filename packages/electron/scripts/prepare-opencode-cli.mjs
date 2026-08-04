@@ -10,6 +10,7 @@ const workspaceRoot = path.resolve(electronRoot, '../..');
 const outputDir = path.join(electronRoot, 'resources', 'opencode-cli');
 const cacheRoot = path.join(electronRoot, '.cache', 'opencode-cli');
 const rootPackagePath = path.join(workspaceRoot, 'package.json');
+const sqliteFinalizerMarker = 'openchamber-sqlite-finalizer.capability';
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -151,7 +152,12 @@ const prepareFromLocalSource = ({ sourceRoot, version, targetArchitecture, outpu
 
   const artifact = localArtifactForPlatform(process.platform, targetArchitecture);
   const builtBinary = path.join(sourceRoot, 'packages', 'opencode', 'dist', artifact.directory, 'bin', artifact.binary);
+  const builtMarker = path.join(path.dirname(builtBinary), sqliteFinalizerMarker);
+  if (!fs.statSync(builtMarker, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Local OpenCode build is missing SQLite finalizer capability marker: ${builtMarker}`);
+  }
   stageBinary(builtBinary, outputBinary, version);
+  fs.copyFileSync(builtMarker, path.join(outputDir, sqliteFinalizerMarker));
   console.log(`[electron] prepared local OpenCode CLI ${version}: ${outputBinary}`);
 };
 
@@ -229,6 +235,7 @@ const main = async () => {
   }
   const existingVersion = readBinaryVersion(outputBinary);
   if (existingVersion === version) {
+    fs.rmSync(path.join(outputDir, sqliteFinalizerMarker), { force: true });
     console.log(`[electron] bundled OpenCode CLI already prepared: ${outputBinary} (${version})`);
     return;
   }
@@ -251,6 +258,7 @@ const main = async () => {
   }
 
   stageBinary(extractedBinary, outputBinary, version);
+  fs.rmSync(path.join(outputDir, sqliteFinalizerMarker), { force: true });
 
   const preparedVersion = readBinaryVersion(outputBinary);
   if (preparedVersion !== version) {

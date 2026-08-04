@@ -39,6 +39,7 @@ export function createTerminalRuntime({
   const runtime = typeof globalThis.Bun === 'undefined' ? 'node' : 'bun';
   let ptyProviderPromise = null;
   let wsServer = new WebSocketServer({ noServer: true, maxPayload: TERMINAL_WS_MAX_PAYLOAD_BYTES });
+  let stopping = false;
   const shellResolver = createTerminalShellResolver({ fs, path, searchPathFor, isExecutable, buildAugmentedPath });
 
   const getPtyProvider = async () => {
@@ -55,6 +56,7 @@ export function createTerminalRuntime({
   };
 
   const spawnPty = async ({ cwd, cols, rows, themeMode, shell, loginShell }) => {
+    if (stopping) throw new Error('Terminal runtime is shutting down');
     const provider = await getPtyProvider();
     const resolvedShell = await shellResolver.resolve(shell);
     let lastError = null;
@@ -62,6 +64,7 @@ export function createTerminalRuntime({
       const args = loginShell ? getTerminalShellLoginArgs(executable) : [];
       if (!args) throw new Error(`Terminal shell "${resolvedShell.id}" does not support login mode`);
       try {
+        if (stopping) throw new Error('Terminal runtime is shutting down');
         const env = { ...process.env, PATH: buildAugmentedPath(), TERM: 'xterm-256color', COLORTERM: 'truecolor', COLORFGBG: themeMode === 'light' ? '0;15' : '15;0' };
         // The daemon's IPC fd is closed inside the PTY. An explicit override is
         // required because bun-pty also inherits Bun's native process environment.
@@ -72,7 +75,12 @@ export function createTerminalRuntime({
         stripAppImageArgv0Leak(env);
         const launch = resolveLinuxPtyLaunch(executable, args);
         const options = { name: 'xterm-256color', cwd, cols, rows, env, ...(process.platform === 'win32' ? { useConpty: true } : {}) };
-        return { process: provider.spawn(launch.executable, launch.args, options), backend: provider.backend, shell: resolvedShell.id, loginShell };
+        const ptyProcess = provider.spawn(launch.executable, launch.args, options);
+        if (stopping) {
+          killProcess(ptyProcess, true);
+          throw new Error('Terminal runtime is shutting down');
+        }
+        return { process: ptyProcess, backend: provider.backend, shell: resolvedShell.id, loginShell };
       } catch (error) { lastError = error; }
     }
     throw lastError ?? new Error('No executable shell found');
@@ -374,6 +382,7 @@ export function createTerminalRuntime({
   }, 5 * 60 * 1000);
 
   const shutdown = async () => {
+    stopping = true;
     server.off('upgrade', upgradeHandler); clearInterval(idleSweep);
     await Promise.allSettled([...pendingSessionRestarts.values()]);
     for (const session of sessions.values()) void terminateProcess(session.process, true);
@@ -387,5 +396,15 @@ export function createTerminalRuntime({
     ]);
     wsServer = null;
   };
-  return { shutdown };
+  const forceShutdown = () => {
+    stopping = true;
+    server.off('upgrade', upgradeHandler); clearInterval(idleSweep);
+    for (const session of sessions.values()) killProcess(session.process, true);
+    sessions.clear();
+    if (!wsServer) return;
+    for (const client of wsServer.clients) client.terminate();
+    try { wsServer.close(); } catch { /* already closed */ }
+    wsServer = null;
+  };
+  return { shutdown, forceShutdown };
 }
