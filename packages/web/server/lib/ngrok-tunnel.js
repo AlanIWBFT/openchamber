@@ -11,6 +11,15 @@ const NGROK_API_URL = 'http://127.0.0.1:4040/api/tunnels';
 const NGROK_PUBLIC_URL_REGEX = /https:\/\/[^\s"']+/i;
 const NGROK_AUTHTOKEN_HELP = 'Run: ngrok config add-authtoken <your-ngrok-token>';
 const getNgrokInstallInfo = () => getTunnelDependencyInstallInfo(TUNNEL_PROVIDER_NGROK);
+const activeNgrokProcesses = new Set();
+let ngrokShutdownRequested = false;
+
+export function forceStopNgrokTunnels() {
+  ngrokShutdownRequested = true;
+  for (const child of activeNgrokProcesses) {
+    try { child.kill('SIGKILL'); } catch { /* already gone */ }
+  }
+}
 
 export async function checkNgrokAvailable() {
   const target = resolveExecutableLaunchTarget('ngrok');
@@ -88,12 +97,18 @@ export async function checkNgrokApiReachability({ fetchImpl = globalThis.fetch, 
   }
 }
 
-const spawnNgrok = (args, resolvedBinaryPath = 'ngrok') => spawn(resolvedBinaryPath, args, {
-  stdio: ['ignore', 'pipe', 'pipe'],
-  windowsHide: true,
-  env: createExecutableSearchEnv(),
-  killSignal: 'SIGINT',
-});
+const spawnNgrok = (args, resolvedBinaryPath = 'ngrok') => {
+  if (ngrokShutdownRequested) throw new Error('Ngrok startup cancelled during shutdown');
+  const child = spawn(resolvedBinaryPath, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+    env: createExecutableSearchEnv(),
+    killSignal: 'SIGINT',
+  });
+  activeNgrokProcesses.add(child);
+  child.once('close', () => activeNgrokProcesses.delete(child));
+  return child;
+};
 
 const normalizeNgrokPublicUrl = (value) => {
   if (typeof value !== 'string' || value.trim().length === 0) {

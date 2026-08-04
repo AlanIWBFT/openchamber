@@ -155,6 +155,7 @@ export const createScheduledTaskService = (dependencies) => {
     const normalizedTaskID = asNonEmptyString(taskID);
     if (!normalizedTaskID) throw new OpenChamberControlError('taskId is required', 400);
     const result = await scheduledTasksRuntime.runNow(id, normalizedTaskID);
+    if (result.stopped) throw new OpenChamberControlError(result.error || 'Scheduled task runtime is stopped', 503);
     if (result.running || result.queued) {
       throw new OpenChamberControlError(result.error || 'Task already running', 409);
     }

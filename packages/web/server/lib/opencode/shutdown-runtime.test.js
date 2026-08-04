@@ -3,14 +3,13 @@ import http from 'node:http';
 import net from 'node:net';
 import { once } from 'node:events';
 
-import { createGracefulShutdownRuntime } from './shutdown-runtime.js';
+import { createGracefulShutdownRuntime, createShutdownFence } from './shutdown-runtime.js';
 
 const createRuntime = (server, overrides = {}) => {
   const runtime = createGracefulShutdownRuntime({
     process: { exit: vi.fn() },
     shutdownTimeoutMs: 1000,
     getExitOnShutdown: () => false,
-    getIsShuttingDown: () => false,
     setIsShuttingDown: vi.fn(),
     syncToHmrState: vi.fn(),
     openCodeWatcherRuntime: { stop: vi.fn() },
@@ -22,12 +21,7 @@ const createRuntime = (server, overrides = {}) => {
     setTerminalRuntime: vi.fn(),
     getMessageStreamRuntime: () => null,
     setMessageStreamRuntime: vi.fn(),
-    shouldSkipOpenCodeStop: () => true,
-    getOpenCodePort: () => null,
-    getOpenCodeProcess: () => null,
-    setOpenCodeProcess: vi.fn(),
-    killProcessOnPort: vi.fn(),
-    waitForPortRelease: vi.fn(async () => true),
+    stopManagedOpenCode: vi.fn(async () => ({ graceful: false })),
     getServer: () => server,
     getUiAuthController: () => null,
     setUiAuthController: vi.fn(),
@@ -51,6 +45,27 @@ describe('graceful shutdown runtime', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('rejects new requests after shutdown begins', () => {
+    let shuttingDown = false;
+    const next = vi.fn();
+    const response = {
+      setHeader: vi.fn(),
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    };
+    const fence = createShutdownFence(() => shuttingDown);
+
+    fence({}, response, next);
+    expect(next).toHaveBeenCalledTimes(1);
+
+    shuttingDown = true;
+    fence({}, response, next);
+    expect(response.setHeader).toHaveBeenCalledWith('Connection', 'close');
+    expect(response.status).toHaveBeenCalledWith(503);
+    expect(response.json).toHaveBeenCalledWith({ error: 'OpenChamber is shutting down' });
+    expect(next).toHaveBeenCalledTimes(1);
   });
 
   it('clears the server close timeout when the server closes first', async () => {
@@ -130,7 +145,7 @@ describe('graceful shutdown runtime', () => {
     }
   });
 
-  it('drains processes before closing sockets accepted during cleanup, including after a cleanup failure', async () => {
+  it('starts managed cleanup without waiting for guests and rejects new sockets while draining existing ones', async () => {
     const server = http.createServer();
     const cleanupStarted = Promise.withResolvers();
     const finishCleanup = Promise.withResolvers();
@@ -151,27 +166,30 @@ describe('graceful shutdown runtime', () => {
         throw new Error('fixture cleanup failure');
       },
       getTerminalRuntime: () => ({ shutdown: terminalShutdown }),
-      shouldSkipOpenCodeStop: () => false,
-      getOpenCodeProcess: () => ({ close: processClose }),
+      stopManagedOpenCode: processClose,
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const closed = [];
+    for (let index = 0; index < 8; index += 1) {
+      const client = net.connect(server.address().port, '127.0.0.1');
+      clients.push(client);
+      client.resume();
+      closed.push(once(client, 'close'));
+      const upgraded = once(server, 'upgrade');
+      client.write('GET /api/global/event/ws HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n');
+      await upgraded;
+    }
     const shutdown = runtime.gracefulShutdown({ exitProcess: false });
     expect(runtime.gracefulShutdown({ exitProcess: false })).toBe(shutdown);
     await cleanupStarted.promise;
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      const closed = [];
-      for (let index = 0; index < 8; index += 1) {
-        const client = net.connect(server.address().port, '127.0.0.1');
-        clients.push(client);
-        client.resume();
-        closed.push(once(client, 'close'));
-        const upgraded = once(server, 'upgrade');
-        client.write('GET /api/global/event/ws HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n');
-        await upgraded;
-      }
+      const late = net.connect(server.address().port, '127.0.0.1');
+      clients.push(late);
+      late.on('error', () => {});
+      await new Promise((resolve) => late.once('close', resolve));
       expect(sockets.size).toBe(8);
-      expect(processClose).not.toHaveBeenCalled();
+      expect(processClose).toHaveBeenCalledOnce();
       finishCleanup.resolve();
       await shutdown;
       expect(processClose).toHaveBeenCalledOnce();
@@ -230,7 +248,7 @@ describe('graceful shutdown runtime', () => {
     const viewers = { stop: cleanup('viewers') };
     const proxy = { stop: cleanup('proxy') };
     const dictation = { stop: cleanup('dictation') };
-    const relay = { stop: cleanup('relay') };
+    const relay = { shutdown: cleanup('relay') };
     const gate = cleanup('gate');
     const guests = cleanup('guests');
     const reconcile = vi.fn();
@@ -263,7 +281,7 @@ describe('graceful shutdown runtime', () => {
     const runtime = createRuntime(null, {
       process,
       getGuestSurfaceRuntime: () => ({ stop }),
-      getRelayService: () => ({ stop }),
+      getRelayService: () => ({ shutdown: stop }),
       getDictationRuntime: () => dictation,
       stopAllGuestServices,
     });
@@ -274,12 +292,11 @@ describe('graceful shutdown runtime', () => {
     expect(process.exit).toHaveBeenCalledWith(0);
   });
 
-  it('reserves time after managed OpenCode shutdown for final fallback cleanup', async () => {
+  it('reserves time after managed OpenCode shutdown for HTTP finalization', async () => {
     const openCodeProcess = { close: vi.fn(async () => {}) };
     const deadline = Date.now() + 15000;
     const runtime = createRuntime(null, {
-      shouldSkipOpenCodeStop: () => false,
-      getOpenCodeProcess: () => openCodeProcess,
+      stopManagedOpenCode: openCodeProcess.close,
     });
 
     await runtime.gracefulShutdown({ exitProcess: false, deadline });
@@ -287,13 +304,12 @@ describe('graceful shutdown runtime', () => {
     expect(openCodeProcess.close).toHaveBeenCalledWith({ deadline: deadline - 500 });
   });
 
-  it('stops input sources before closing managed OpenCode', async () => {
+  it('initiates input drains before the managed OpenCode drain', async () => {
     const order = [];
     const runtime = createRuntime(null, {
-      shouldSkipOpenCodeStop: () => false,
       getTerminalRuntime: () => ({ shutdown: vi.fn(async () => order.push('terminal')) }),
       getMessageStreamRuntime: () => ({ close: vi.fn(async () => order.push('stream')) }),
-      getOpenCodeProcess: () => ({ close: vi.fn(async () => order.push('opencode')) }),
+      stopManagedOpenCode: vi.fn(async () => order.push('opencode')),
     });
 
     await runtime.gracefulShutdown({ exitProcess: false });
@@ -305,13 +321,12 @@ describe('graceful shutdown runtime', () => {
   it('still closes managed OpenCode when an input source throws synchronously', async () => {
     const openCodeProcess = { close: vi.fn(async () => {}) };
     const runtime = createRuntime(null, {
-      shouldSkipOpenCodeStop: () => false,
       getTerminalRuntime: () => ({
         shutdown: vi.fn(() => {
           throw new Error('terminal shutdown failed');
         }),
       }),
-      getOpenCodeProcess: () => openCodeProcess,
+      stopManagedOpenCode: openCodeProcess.close,
     });
 
     await runtime.gracefulShutdown({ exitProcess: false });
@@ -324,13 +339,14 @@ describe('graceful shutdown runtime', () => {
     const deadline = Date.now() + 35_000;
     const openCodeProcess = { close: vi.fn(async () => {}) };
     const runtime = createRuntime(null, {
-      shouldSkipOpenCodeStop: () => false,
       getTerminalRuntime: () => ({ shutdown: () => new Promise((resolve) => setTimeout(resolve, 20_000)) }),
-      getOpenCodeProcess: () => openCodeProcess,
+      stopManagedOpenCode: openCodeProcess.close,
     });
-    const shutdown = runtime.gracefulShutdown({ exitProcess: false, deadline });
+    let finished = false;
+    const shutdown = runtime.gracefulShutdown({ exitProcess: false, deadline }).then(() => { finished = true; });
     await vi.advanceTimersByTimeAsync(2_000);
-    expect(openCodeProcess.close).not.toHaveBeenCalled();
+    expect(openCodeProcess.close).toHaveBeenCalledWith({ deadline: deadline - 500 });
+    expect(finished).toBe(false);
     await vi.advanceTimersByTimeAsync(18_000);
     await shutdown;
     expect(openCodeProcess.close).toHaveBeenCalledWith({ deadline: deadline - 500 });

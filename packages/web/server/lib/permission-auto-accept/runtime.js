@@ -68,6 +68,7 @@ export function createPermissionAutoAcceptRuntime({
   // request the safety net held (the user must hear about it) from one it
   // accepted.
   const outcomes = new Map();
+  let shuttingDown = false;
 
   // `sessions` keeps the on/off shape clients from before the modes read;
   // `modes` is the policy itself.
@@ -84,7 +85,7 @@ export function createPermissionAutoAcceptRuntime({
     const { policy: next, hadLegacy } = normalizePolicy(stored, legacyEnabledMode);
     // Converted once: the answer to "was the safety net on" is gone after the
     // routing config is next saved.
-    if (hadLegacy) await persistSettings({ [SETTINGS_KEY]: next });
+    if (hadLegacy && !shuttingDown) await persistSettings({ [SETTINGS_KEY]: next });
     return next;
   };
 
@@ -104,11 +105,12 @@ export function createPermissionAutoAcceptRuntime({
 
   const persistUpdate = (update) => {
     writePromise = writePromise.then(async () => {
+      if (shuttingDown) return snapshot();
       const next = update(policy);
       await persistSettings({ [SETTINGS_KEY]: next });
       policy = next;
       loaded = true;
-      broadcastGlobalUiEvent?.({
+      if (!shuttingDown) broadcastGlobalUiEvent?.({
         type: 'openchamber:permission-auto-accept.updated',
         properties: snapshot(),
       });
@@ -175,6 +177,7 @@ export function createPermissionAutoAcceptRuntime({
   };
 
   const request = async (path, { directory, method = 'GET', body } = {}) => {
+    if (shuttingDown) throw new Error('Permission auto-accept runtime is shutting down');
     const url = new URL(buildOpenCodeUrl(path, ''));
     const response = await fetchImpl(url, {
       method,
@@ -235,6 +238,7 @@ export function createPermissionAutoAcceptRuntime({
   const replyOnce = async (permission, directory) => {
     if (!permission?.id || !permission?.sessionID) return 'ignored';
     const mode = await resolveSessionMode(permission.sessionID, directory);
+    if (shuttingDown) return 'ignored';
     if (mode === 'ask') return 'ignored';
     if (mode === 'safety') {
       const verdict = evaluatePermission ? await evaluatePermission(permission, directory) : null;
@@ -258,13 +262,16 @@ export function createPermissionAutoAcceptRuntime({
 
   /** Resolves to whether the request was handled here (replied to, or deliberately held). */
   const processPermission = (permission, directory) => {
+    if (shuttingDown) return Promise.resolve(false);
     if (!permission?.id) return Promise.resolve(false);
     const key = permission.id;
     const existing = inFlight.get(key);
     if (existing) return existing;
     const outcome = (async () => {
       for (const delay of retryDelaysMs) {
+        if (shuttingDown) return 'ignored';
         if (delay > 0) await wait(delay);
+        if (shuttingDown) return 'ignored';
         try {
           return await replyOnce(permission, directory);
         } catch (error) {
@@ -313,6 +320,7 @@ export function createPermissionAutoAcceptRuntime({
   };
 
   async function reconcilePending({ directories = [] } = {}) {
+    if (shuttingDown) return;
     const normalizedDirectories = Array.from(new Set(
       directories.filter((directory) => typeof directory === 'string' && directory.trim()).map((directory) => directory.trim()),
     ));
@@ -347,6 +355,7 @@ export function createPermissionAutoAcceptRuntime({
   }
 
   const processEvent = (event) => {
+    if (shuttingDown) return;
     const directory = typeof event?.directory === 'string' && event.directory !== 'global' ? event.directory : undefined;
     for (const payload of event?.translated?.() ?? []) {
       if (payload.type === 'session.created' || payload.type === 'session.updated') {
@@ -389,6 +398,10 @@ export function createPermissionAutoAcceptRuntime({
     };
   };
 
+  const shutdown = () => {
+    shuttingDown = true;
+  };
+
   return {
     snapshot,
     load,
@@ -399,6 +412,7 @@ export function createPermissionAutoAcceptRuntime({
     processPermission,
     reconcilePending,
     start,
+    shutdown,
   };
 }
 
