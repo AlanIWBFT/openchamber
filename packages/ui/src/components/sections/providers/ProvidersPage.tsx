@@ -179,10 +179,10 @@ export const ProvidersPage: React.FC = () => {
   }, [providers, selectedProviderId, setSelectedProvider]);
 
   React.useEffect(() => {
-    // Auth methods drive which credential UI to show (API key vs OAuth). Load
-    // them for add-provider and reconnect so OAuth-only providers never fall
+    // Auth methods drive which credential UI to show (API key vs OAuth). Keep
+    // them loaded for the active provider view so OAuth-only plugins never fall
     // back to an API key form merely because methods were never fetched.
-    if (!isAddMode && !showAuthPanel) {
+    if (!selectedProviderId) {
       return;
     }
 
@@ -213,7 +213,7 @@ export const ProvidersPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [isAddMode, showAuthPanel, t]);
+  }, [selectedProviderId, t]);
 
   React.useEffect(() => {
     if (!shouldLoadAvailableProviders(isAddMode)) {
@@ -299,6 +299,26 @@ export const ProvidersPage: React.FC = () => {
       setCustomAuthFailureHint(null);
     }
   }, [selectedProviderId, editingCustomProviderId]);
+
+  // Unauthenticated providers (OAuth-only plugins before login) should open the
+  // auth panel instead of a false "Connected" summary.
+  React.useEffect(() => {
+    if (!selectedProviderId || selectedProviderId === ADD_PROVIDER_ID) {
+      return;
+    }
+    const sources = providerSources[selectedProviderId];
+    if (!sources) {
+      return;
+    }
+    const provider = providers.find((entry) => entry.id === selectedProviderId);
+    const envEntries = Array.isArray(provider?.env)
+      ? provider.env.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      : [];
+    const hasCreds = Boolean(sources.auth.exists) || envEntries.length > 0;
+    if (!hasCreds) {
+      setShowAuthPanel(true);
+    }
+  }, [selectedProviderId, providerSources, providers]);
 
   React.useEffect(() => {
     if (!selectedProviderId || selectedProviderId === ADD_PROVIDER_ID) {
@@ -910,7 +930,11 @@ export const ProvidersPage: React.FC = () => {
   const hasStoredAuth = Boolean(selectedSources?.auth.exists);
   const hasEnvCredentials = providerEnv.length > 0;
   const hasCredentials = hasStoredAuth || hasEnvCredentials;
-  const authStatusIncomplete = isEditableCustomProvider && !hasCredentials;
+  const authStatusIncomplete = sourcesLoaded && !hasCredentials;
+  const showModelsSection = providerModels.length > 0 && (!sourcesLoaded || hasCredentials);
+  const incompleteAuthHint = !showApiKeyAuth && oauthAuthMethods.length > 0
+    ? t('settings.providers.page.auth.useReconnectHint')
+    : t('settings.providers.page.auth.incompleteHint');
 
   const filteredModels = providerModels.filter((model) => {
     const name = typeof model?.name === 'string' ? model.name : '';
@@ -993,7 +1017,7 @@ export const ProvidersPage: React.FC = () => {
                 <div className="flex items-center gap-1.5 py-1.5">
                   <Icon name="alert" className="w-4 h-4 text-[var(--status-warning)] shrink-0" />
                   <span className="typography-ui-label text-foreground">{t('settings.providers.page.auth.incomplete')}</span>
-                  <SettingsInfoHint>{t('settings.providers.page.auth.incompleteHint')}</SettingsInfoHint>
+                  <SettingsInfoHint>{incompleteAuthHint}</SettingsInfoHint>
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5 py-1.5">
@@ -1156,7 +1180,7 @@ export const ProvidersPage: React.FC = () => {
             </div>
       </SettingsSection>
 
-      {providerModels.length > 0 ? (
+      {showModelsSection ? (
       <SettingsSection
         title={t('settings.providers.page.models.title')}
         titleAccessory={
