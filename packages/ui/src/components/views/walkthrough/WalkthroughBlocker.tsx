@@ -150,7 +150,7 @@ export const WalkthroughBlocker = ({
             onChange={(providerId, modelId) => {
               void handleModelChange(providerId, modelId);
             }}
-            allowedProviderIds={providers}
+            allowedProviderIds={providers ?? []}
             isModelAllowed={isStructuredOutputCapable}
           />
         </div>

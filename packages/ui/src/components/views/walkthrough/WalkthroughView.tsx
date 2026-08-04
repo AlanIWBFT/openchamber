@@ -331,7 +331,9 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
 
   const providerIsAuthenticated = (providerId: string | undefined) => {
     if (!providerId) return false;
-    if (modelProviders === undefined) return true;
+    // Until the auth list loads, do not present a candidate as selected —
+    // otherwise an unauthenticated config model flashes in the picker.
+    if (modelProviders === undefined) return false;
     return modelProviders.includes(providerId);
   };
   const readinessModelRef = entry.readiness?.model
@@ -442,9 +444,9 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
   const blockedRequiredChars = entry.error?.requiredChars ?? entry.readiness?.requiredChars;
   const blockedAvailableChars = entry.error?.availableChars ?? entry.readiness?.availableChars;
 
-  // Not ready means Generate must not look actionable — including when the
-  // resolved model has no login (reason no-provider-login).
-  const generateDisabled = Boolean(entry.readiness && !entry.readiness.ready);
+  // Not ready, or no usable selected model, means Generate must not look
+  // actionable — including when the resolved model has no login.
+  const generateDisabled = !activeModel || Boolean(entry.readiness && !entry.readiness.ready);
 
   const handleGenerate = useCallback(
     (force: boolean) => {
@@ -571,7 +573,8 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
             onChange={(providerId, modelId) => {
               selectModel(directory, source, providerId && modelId ? `${providerId}/${modelId}` : null);
             }}
-            allowedProviderIds={modelProviders}
+            // While the auth list is loading, allow none — not every provider.
+            allowedProviderIds={modelProviders ?? []}
             isModelAllowed={isStructuredOutputCapable}
             tooltipsEnabled={false}
             dropdownPortalToBody
@@ -619,7 +622,10 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
               type="button"
               variant="outline"
               size="sm"
-              className={WALKTHROUGH_ACTION_CLASS}
+              className={cn(
+                WALKTHROUGH_ACTION_CLASS,
+                generateDisabled && 'border-border bg-transparent text-muted-foreground hover:bg-transparent hover:text-muted-foreground',
+              )}
               disabled={generateDisabled}
               aria-label={compactHeader
                 ? (view ? t('walkthrough.action.regenerate') : t('walkthrough.action.generate'))
