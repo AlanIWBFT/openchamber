@@ -18,6 +18,16 @@ belongs to one of them.
 | `attachments/` | Files: paths, drop payloads |
 | `ui/` | Presentation |
 | `text.ts` | How inserted text meets the text already there |
+| `largeTextPaste.ts` | Detect large plain-text pastes and build virtual `.txt` files |
+
+`ChatInput.handlePaste` owns paste orchestration: URL-over-selection markdown
+links, clipboard images (attach + citation), and large plain-text pastes.
+Large pastes (about 2,000 characters or 25 lines) follow the composer setting
+`largeTextPasteBehavior` (`ask` / `attach` / `inline`). Attaching creates an
+in-memory `text/plain` file named `pasted-context-N.txt`, inserts a bracket
+citation, and sends it through the same attachment pipeline as a manually
+picked `.txt` file. Short text, images, and URL wraps keep their existing
+paths.
 
 ## The prompt language
 
@@ -119,8 +129,8 @@ hardware.
 
 The package has no DOM test environment, so coverage stops at the state and
 logic layers: the language, the submit assembly, path and drop handling, text
-splicing, message history, and the CodeMirror language extension at the
-`EditorState` level.
+splicing, large-paste detection, message history, and the CodeMirror language
+extension at the `EditorState` level.
 
 Rendering, focus, keyboard behavior, IME and WKWebView are **not covered by
 tests** and are verified by hand. Do not report a change to them as validated

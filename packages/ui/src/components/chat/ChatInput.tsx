@@ -82,7 +82,13 @@ import { eventMatchesShortcut, getEffectiveShortcutCombo, normalizeCombo } from 
 import {
     assignImageAttachmentFilenames,
     buildAttachmentCitationText,
+    nextPastedContextFilename,
 } from './attachmentCitations';
+import {
+    createPastedContextFile,
+    isLargePlainTextPaste,
+} from './composer/largeTextPaste';
+import type { LargeTextPasteBehavior } from '@/stores/useUIStore';
 import type { FileMentionAutocompleteInputSource } from './fileMentionAutocompleteState';
 import {
     classifyMention,
@@ -288,6 +294,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const messageRef = React.useRef(message);
     const currentChatDraftIdentityRef = React.useRef<ChatDraftIdentity | null>(initialDraftIdentityRef.current);
     const pendingPastedAttachmentFilenamesRef = React.useRef<Set<string>>(new Set());
+    const largeTextPasteToastIdRef = React.useRef<string | number | null>(null);
+    const largeTextPasteOfferIdRef = React.useRef(0);
 
     // TODO: port sendMessage to session-actions (complex — creates sessions, handles attachments, etc.)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -358,6 +366,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const inputBarOffset = useUIStore((state) => state.inputBarOffset);
     const persistChatDraft = useUIStore((state) => state.persistChatDraft);
     const inputSpellcheckEnabled = useUIStore((state) => state.inputSpellcheckEnabled);
+    const largeTextPasteBehavior = useUIStore((state) => state.largeTextPasteBehavior);
     const isExpandedInput = useUIStore((state) => state.isExpandedInput);
     const setExpandedInput = useUIStore((state) => state.setExpandedInput);
     const setTimelineDialogOpen = useUIStore((state) => state.setTimelineDialogOpen);
@@ -1723,14 +1732,124 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
         const imageFiles = Array.from(fileMap.values());
         const pastedText = e.clipboardData.getData('text');
+        const sessionReady = Boolean(currentSessionId || newSessionDraftOpen);
+
         if (imageFiles.length === 0) {
-            if (pastedText.includes('@')) {
-                markFileMentionPasteSuppression();
+            const behavior: LargeTextPasteBehavior = largeTextPasteBehavior;
+            const shouldOfferLargePaste = sessionReady
+                && inputMode === 'normal'
+                && behavior !== 'inline'
+                && isLargePlainTextPaste(pastedText);
+
+            if (!shouldOfferLargePaste) {
+                if (pastedText.includes('@')) {
+                    markFileMentionPasteSuppression();
+                }
+                return;
             }
+
+            // Must run synchronously — ComposerEditor does not consume paste.
+            e.preventDefault();
+
+            const pasteInline = () => {
+                if (pastedText.includes('@')) {
+                    markFileMentionPasteSuppression();
+                }
+                insertTextAtSelection(
+                    pastedText,
+                    getFileMentionInputSourceForInsertedText(pastedText),
+                );
+            };
+
+            const attachAsFile = async () => {
+                const filename = nextPastedContextFilename([
+                    ...attachedFiles.map((file) => file.filename),
+                    ...pendingPastedAttachmentFilenamesRef.current,
+                ]);
+                const citationText = buildAttachmentCitationText([filename]);
+                const textarea = composerRef.current;
+                const selectionStart = textarea?.getSelection().start ?? message.length;
+                const selectionEnd = textarea?.getSelection().end ?? message.length;
+                const insertionText = withInlineInsertionBoundaries(
+                    citationText,
+                    message.slice(0, selectionStart),
+                    message.slice(selectionEnd),
+                );
+
+                insertTextAtSelection(
+                    insertionText,
+                    getFileMentionInputSourceForInsertedText(insertionText),
+                );
+
+                const file = createPastedContextFile(pastedText, filename);
+                pendingPastedAttachmentFilenamesRef.current.add(filename);
+                try {
+                    await addAttachedFile(file);
+                } catch (error) {
+                    console.error('Clipboard text attach failed', error);
+                    toast.error(
+                        error instanceof Error
+                            ? error.message
+                            : t('chat.chatInput.toast.clipboardTextAttachFailed'),
+                    );
+                } finally {
+                    pendingPastedAttachmentFilenamesRef.current.delete(filename);
+                }
+            };
+
+            if (behavior === 'attach') {
+                await attachAsFile();
+                return;
+            }
+
+            const offerId = largeTextPasteOfferIdRef.current + 1;
+            largeTextPasteOfferIdRef.current = offerId;
+
+            if (largeTextPasteToastIdRef.current !== null) {
+                // Invalidate first so a synchronous onDismiss from dismiss()
+                // cannot apply the superseded paste.
+                toast.dismiss(largeTextPasteToastIdRef.current);
+                largeTextPasteToastIdRef.current = null;
+            }
+
+            const resolveLargePaste = (action: 'attach' | 'inline') => {
+                if (offerId !== largeTextPasteOfferIdRef.current) {
+                    return;
+                }
+                // Invalidate this offer so a later onDismiss cannot double-apply.
+                largeTextPasteOfferIdRef.current += 1;
+                largeTextPasteToastIdRef.current = null;
+                if (action === 'attach') {
+                    void attachAsFile();
+                    return;
+                }
+                pasteInline();
+            };
+
+            largeTextPasteToastIdRef.current = toast.info(
+                t('chat.chatInput.toast.largeTextPaste.title'),
+                {
+                    description: t('chat.chatInput.toast.largeTextPaste.description'),
+                    duration: Infinity,
+                    action: {
+                        label: t('chat.chatInput.toast.largeTextPaste.attach'),
+                        onClick: () => resolveLargePaste('attach'),
+                    },
+                    cancel: {
+                        label: t('chat.chatInput.toast.largeTextPaste.inline'),
+                        onClick: () => resolveLargePaste('inline'),
+                    },
+                    onDismiss: () => {
+                        // Dismissing without a choice keeps the paste — insert inline
+                        // so clipboard content is not lost.
+                        resolveLargePaste('inline');
+                    },
+                },
+            );
             return;
         }
 
-        if (!currentSessionId && !newSessionDraftOpen) {
+        if (!sessionReady) {
             if (pastedText.includes('@')) {
                 markFileMentionPasteSuppression();
             }
@@ -1771,7 +1890,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 pendingPastedAttachmentFilenamesRef.current.delete(filename);
             }
         }
-    }, [addAttachedFile, attachedFiles, currentSessionId, inputMode, markFileMentionPasteSuppression, message, newSessionDraftOpen, insertTextAtSelection, setMessage, t, updateAutocompleteState]);
+    }, [addAttachedFile, attachedFiles, currentSessionId, inputMode, largeTextPasteBehavior, markFileMentionPasteSuppression, message, newSessionDraftOpen, insertTextAtSelection, setMessage, t, updateAutocompleteState]);
 
     const handleFileSelect = (file: { name: string; path: string; relativePath?: string }) => {
 
