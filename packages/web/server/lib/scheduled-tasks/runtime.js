@@ -270,6 +270,7 @@ export const createScheduledTasksRuntime = (deps) => {
   const runningCountByProject = new Map();
   let runningGlobalCount = 0;
   const queue = [];
+  let stopping = false;
 
   const clearTimerForKey = (taskKey) => {
     const timer = timersByTaskKey.get(taskKey);
@@ -1024,7 +1025,7 @@ export const createScheduledTasksRuntime = (deps) => {
   };
 
   const pumpQueue = () => {
-    if (!started) {
+    if (stopping) {
       return;
     }
 
@@ -1062,6 +1063,9 @@ export const createScheduledTasksRuntime = (deps) => {
   };
 
   const runNow = async (projectID, taskID) => {
+    if (!started) {
+      return { ok: false, stopped: true, error: 'scheduled task runtime is stopped' };
+    }
     const taskKey = buildTaskKey(projectID, taskID);
     if (runningTaskKeys.has(taskKey)) {
       return {
@@ -1085,6 +1089,7 @@ export const createScheduledTasksRuntime = (deps) => {
     if (started) {
       return;
     }
+    stopping = false;
     started = true;
     await syncAllProjects();
   };
@@ -1094,6 +1099,7 @@ export const createScheduledTasksRuntime = (deps) => {
       return;
     }
     started = false;
+    stopping = true;
     for (const timer of timersByTaskKey.values()) {
       clearTimeout(timer);
     }
