@@ -1829,8 +1829,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             largeTextPasteToastIdRef.current = toast.info(
                 t('chat.chatInput.toast.largeTextPaste.title'),
                 {
-                    description: t('chat.chatInput.toast.largeTextPaste.description'),
                     duration: Infinity,
+                    className: '!min-w-[22rem] !w-auto [&_[data-icon]]:!hidden',
                     action: {
                         label: t('chat.chatInput.toast.largeTextPaste.attach'),
                         onClick: () => resolveLargePaste('attach'),

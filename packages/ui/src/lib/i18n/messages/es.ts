@@ -2092,7 +2092,6 @@ export const dict: Record<I18nKey, string> = {
   "chat.chatInput.toast.clipboardAttachFailed": "No se pudo adjuntar la imagen desde el portapapeles",
   "chat.chatInput.toast.clipboardTextAttachFailed": "No se pudo adjuntar el texto pegado como archivo",
   "chat.chatInput.toast.largeTextPaste.title": "Pegado de texto grande",
-  "chat.chatInput.toast.largeTextPaste.description": "Adjunta como archivo para mantener el compositor despejado, o pega el texto en línea.",
   "chat.chatInput.toast.largeTextPaste.attach": "Adjuntar como archivo",
   "chat.chatInput.toast.largeTextPaste.inline": "Pegar en línea",
   "chat.chatInput.toast.addedFileMentions": "Se añadieron {count} mención(es) de archivo",

@@ -2122,7 +2122,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.clipboardAttachFailed': 'クリップボードからの画像添付に失敗しました',
   'chat.chatInput.toast.clipboardTextAttachFailed': '貼り付けたテキストのファイル添付に失敗しました',
   'chat.chatInput.toast.largeTextPaste.title': '大きなテキストの貼り付け',
-  'chat.chatInput.toast.largeTextPaste.description': '入力欄をすっきり保つためにファイルとして添付するか、そのまま貼り付けます。',
   'chat.chatInput.toast.largeTextPaste.attach': 'ファイルとして添付',
   'chat.chatInput.toast.largeTextPaste.inline': 'そのまま貼り付け',
   'chat.chatInput.toast.addedFileMentions': '{count}件のファイルメンションを追加しました',

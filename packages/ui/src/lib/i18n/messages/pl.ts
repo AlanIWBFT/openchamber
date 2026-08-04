@@ -1223,7 +1223,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.clipboardAttachFailed': 'Nie udało się dołączyć obrazu ze schowka',
   'chat.chatInput.toast.clipboardTextAttachFailed': 'Nie udało się dołączyć wklejonego tekstu jako pliku',
   'chat.chatInput.toast.largeTextPaste.title': 'Wklejanie dużego tekstu',
-  'chat.chatInput.toast.largeTextPaste.description': 'Dołącz jako plik, aby nie zaśmiecać pola wiadomości, albo wklej tekst w treści.',
   'chat.chatInput.toast.largeTextPaste.attach': 'Dołącz jako plik',
   'chat.chatInput.toast.largeTextPaste.inline': 'Wklej w treści',
   'chat.chatInput.toast.compactFailed': 'Nie udało się skompaktować sesji',

@@ -2126,7 +2126,6 @@ export const dict = {
   'chat.chatInput.toast.clipboardAttachFailed': 'Failed to attach image from clipboard',
   'chat.chatInput.toast.clipboardTextAttachFailed': 'Failed to attach pasted text as a file',
   'chat.chatInput.toast.largeTextPaste.title': 'Large text paste',
-  'chat.chatInput.toast.largeTextPaste.description': 'Attach as a file to keep the composer clear, or paste the text inline.',
   'chat.chatInput.toast.largeTextPaste.attach': 'Attach as file',
   'chat.chatInput.toast.largeTextPaste.inline': 'Paste inline',
   'chat.chatInput.toast.addedFileMentions': 'Added {count} file mention(s)',

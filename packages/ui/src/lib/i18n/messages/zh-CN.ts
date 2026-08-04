@@ -2092,7 +2092,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.clipboardAttachFailed': '从剪贴板附加图片失败',
   'chat.chatInput.toast.clipboardTextAttachFailed': '无法将粘贴的文本附加为文件',
   'chat.chatInput.toast.largeTextPaste.title': '粘贴大段文本',
-  'chat.chatInput.toast.largeTextPaste.description': '附加为文件以保持输入框简洁，或直接粘贴到输入框。',
   'chat.chatInput.toast.largeTextPaste.attach': '附加为文件',
   'chat.chatInput.toast.largeTextPaste.inline': '直接粘贴',
   'chat.chatInput.toast.addedFileMentions': '已添加 {count} 个文件提及',

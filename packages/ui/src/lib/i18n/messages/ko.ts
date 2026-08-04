@@ -2126,7 +2126,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.clipboardAttachFailed': '클립보드 이미지 첨부 실패',
   'chat.chatInput.toast.clipboardTextAttachFailed': '붙여넣은 텍스트를 파일로 첨부하지 못했습니다',
   'chat.chatInput.toast.largeTextPaste.title': '긴 텍스트 붙여넣기',
-  'chat.chatInput.toast.largeTextPaste.description': '입력창을 깔끔하게 유지하려면 파일로 첨부하거나, 본문에 붙여넣으세요.',
   'chat.chatInput.toast.largeTextPaste.attach': '파일로 첨부',
   'chat.chatInput.toast.largeTextPaste.inline': '본문에 붙여넣기',
   'chat.chatInput.toast.addedFileMentions': '파일 멘션 {count}개 추가됨',

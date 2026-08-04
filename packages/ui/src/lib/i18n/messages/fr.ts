@@ -1895,7 +1895,6 @@ export const dict = {
   'chat.chatInput.toast.clipboardAttachFailed': 'Échec de la pièce jointe de l\'image du presse-papiers',
   'chat.chatInput.toast.clipboardTextAttachFailed': 'Échec de la pièce jointe du texte collé comme fichier',
   'chat.chatInput.toast.largeTextPaste.title': 'Collage de texte volumineux',
-  'chat.chatInput.toast.largeTextPaste.description': 'Joindre comme fichier pour garder la zone de saisie claire, ou coller le texte en ligne.',
   'chat.chatInput.toast.largeTextPaste.attach': 'Joindre comme fichier',
   'chat.chatInput.toast.largeTextPaste.inline': 'Coller en ligne',
   'chat.chatInput.toast.addedFileMentions': 'Ajout des mentions du fichier {count}',
