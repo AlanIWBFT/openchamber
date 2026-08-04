@@ -259,11 +259,12 @@ const INSTALLED_APPS_CACHE_FILE = 'discovered-apps.json';
 // entries written by an older build are treated as stale and refresh immediately.
 const INSTALLED_APPS_CACHE_VERSION = 2;
 const LINUX_DESKTOP_ENTRIES_CACHE_TTL_MS = 30_000;
-const OPENCODE_SHUTDOWN_GRACE_MS = 100;
+const OPENCHAMBER_SHUTDOWN_TIMEOUT_MS = 35_000;
 const { autoUpdater } = updaterPkg;
 
 const state = {
   serverHandle: null,
+  serverModule: null,
   sidecarUrl: null,
   localUiUrl: null,
   localOrigin: null,
@@ -277,10 +278,11 @@ const state = {
   quitRequested: false,
   quitConfirmed: false,
   quitInProgress: false,
+  quitPrepared: false,
+  allowWindowClose: false,
   quitConfirmationPending: false,
   backgroundShutdownComplete: false,
   backgroundShutdownPromise: null,
-  sshShutdownPromise: null,
   installingUpdate: false,
   // Latched from the moment an update install starts until the installer has
   // been handed control or the install has failed. While it is set, no other
@@ -382,39 +384,36 @@ const quitConfirmationMessage = () => {
 };
 
 const shutdownBackgroundServices = () => {
-  if (!state.backgroundShutdownPromise) {
-    setDesktopKeepAwakeActive(false);
-    shellEnvironmentAbort.abort();
-    state.backgroundShutdownPromise = Promise.all([
-      startShellEnvironmentProbe().catch(() => {}),
-      killSidecar(),
-      shutdownSshSessions(),
-    ]).finally(() => {
+  if (state.backgroundShutdownPromise) return state.backgroundShutdownPromise;
+  if (state.backgroundShutdownComplete) return Promise.resolve();
+  setDesktopKeepAwakeActive(false);
+  shellEnvironmentAbort.abort();
+  state.backgroundShutdownPromise = Promise.allSettled([
+    Promise.resolve().then(closeAllDevTunnels),
+    Promise.resolve().then(startShellEnvironmentProbe).catch(() => {}),
+    Promise.resolve().then(killSidecar),
+  ])
+    .then((results) => {
+      for (const result of results) {
+        if (result.status === 'rejected') log.warn('[electron] background shutdown failed:', result.reason);
+      }
+    })
+    .catch((error) => {
+      log.warn('[electron] background shutdown failed:', error);
+    })
+    .finally(() => {
       state.backgroundShutdownComplete = true;
     });
-  }
   return state.backgroundShutdownPromise;
 };
 
-const shutdownSshSessions = async () => {
-  if (state.sshShutdownPromise) {
-    await state.sshShutdownPromise;
-    return;
-  }
-
-  state.sshShutdownPromise = sshManager.shutdownAll().catch((error) => {
-    log.warn('[electron] failed to stop SSH sessions:', error);
-  }).finally(() => {
-    state.sshShutdownPromise = null;
-  });
-
-  await state.sshShutdownPromise;
-};
-
-const prepareForQuit = () => {
+const prepareForQuit = ({ installingUpdate = false } = {}) => {
+  if (state.quitPrepared) return;
+  state.quitPrepared = true;
+  state.quitInProgress = true;
   state.quitRequested = true;
   state.quitConfirmed = true;
-  state.installingUpdate = false;
+  state.installingUpdate = installingUpdate;
   state.quitConfirmationPending = false;
 
   if (state.trayController) {
@@ -444,6 +443,10 @@ const prepareForQuit = () => {
     }
   }
 
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    if (!browserWindow.isDestroyed()) browserWindow.hide();
+  }
+
   setDesktopKeepAwakeActive(false);
 
   return shutdownBackgroundServices();
@@ -463,6 +466,7 @@ const performConfirmedQuit = async ({ relaunch = false } = {}) => {
     log.warn('[electron] background shutdown failed:', error);
   } finally {
     if (relaunch) app.relaunch();
+    state.allowWindowClose = true;
     app.exit(0);
   }
 };
@@ -470,26 +474,30 @@ const performConfirmedQuit = async ({ relaunch = false } = {}) => {
 // Hard-stop signals (`Ctrl+C` on `electron:dev`, an external `kill`/SIGTERM,
 // terminal close) bypass the normal app-quit flow — which would orphan the
 // in-process web server's managed OpenCode child. Run the same background
-// teardown the quit path uses (which kills the sidecar), then exit. The startup
-// reaper remains the backstop for an unhandled hard crash (SIGKILL).
+// teardown the quit path uses (which kills the sidecar), then exit.
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(signal, () => {
-    void performConfirmedQuit();
+    if (state.updateInstallPending) return;
+    state.quitInProgress = true;
+    void shutdownBackgroundServices()
+      .catch((error) => log.warn(`[electron] ${signal} shutdown failed:`, error))
+      .finally(() => {
+        state.allowWindowClose = true;
+        app.exit(0);
+      });
   });
 }
 
 const requestQuitWithConfirmation = async () => {
+  if (state.updateInstallPending || state.quitInProgress || state.quitConfirmationPending) return;
+  state.quitConfirmationPending = true;
   await refreshQuitRiskFlags();
 
   if (!shouldRequireQuitConfirmation()) {
+    state.quitConfirmationPending = false;
     performConfirmedQuit();
     return;
   }
-
-  if (state.quitConfirmationPending) {
-    return;
-  }
-  state.quitConfirmationPending = true;
 
   const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
   const visible = windows.find((window) => window.isVisible());
@@ -1520,9 +1528,11 @@ const spawnLocalServer = async () => {
   process.env.NO_PROXY = process.env.NO_PROXY || 'localhost,127.0.0.1';
   process.env.no_proxy = process.env.no_proxy || 'localhost,127.0.0.1';
 
-  const { startWebUiServer } = await import('@openchamber/web/server/index.js');
+  const serverModule = await import('@openchamber/web/server/index.js');
+  state.serverModule = serverModule;
+  if (state.quitInProgress) throw new Error('OpenChamber server startup cancelled during shutdown');
 
-  const handle = await startWebUiServer({
+  const handle = await serverModule.startWebUiServer({
     port: chosenPort,
     host: bindHost,
     uiPassword: desktopUiPassword || null,
@@ -1567,95 +1577,17 @@ const spawnLocalServer = async () => {
   return url;
 };
 
-const launchDetachedOpenCodeKiller = (processInfo) => {
-  if (!processInfo?.managed) return;
-  const pid = Number(processInfo.pid);
-  const port = Number(processInfo.port);
-  const hasPid = Number.isFinite(pid) && pid > 0;
-  const hasPort = Number.isFinite(port) && port > 0;
-  if (!hasPid && !hasPort) return;
-  const normalizedPid = hasPid ? String(Math.trunc(pid)) : '0';
-  const normalizedPort = Number.isFinite(port) && port > 0 ? String(Math.trunc(port)) : '0';
-
-  if (process.platform === 'win32') {
-    if (!hasPid) return;
-    const script = `
-$ErrorActionPreference = 'SilentlyContinue'
-$targetPid = ${normalizedPid}
-$graceMs = ${Math.max(0, Math.trunc(OPENCODE_SHUTDOWN_GRACE_MS))}
-function Stop-ProcessTree([int]$processId, [bool]$force) {
-  if ($processId -le 0) { return }
-  $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$processId"
-  foreach ($child in $children) {
-    Stop-ProcessTree ([int]$child.ProcessId) $force
-  }
-  if ($force) {
-    Stop-Process -Id $processId -Force
-  } else {
-    Stop-Process -Id $processId
-  }
-}
-Stop-ProcessTree $targetPid $false
-Start-Sleep -Milliseconds $graceMs
-Stop-ProcessTree $targetPid $true
-`;
-    const encodedScript = Buffer.from(script, 'utf16le').toString('base64');
-    const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-    const child = spawn(powershell, [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-WindowStyle',
-      'Hidden',
-      '-EncodedCommand',
-      encodedScript,
-    ], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    child.unref();
-    return;
-  }
-
-  if (hasPid) {
-    try {
-      process.kill(-pid, 'SIGTERM');
-    } catch {
-    }
-    try {
-      process.kill(pid, 'SIGTERM');
-    } catch {
-    }
-  }
-
-  const script = [
-    'pid="$1"',
-    'port="$2"',
-    'grace="$3"',
-    'if [ "$pid" -gt 0 ] 2>/dev/null; then kill -TERM "$pid" 2>/dev/null; kill -TERM "-$pid" 2>/dev/null; fi',
-    'sleep "$grace"',
-    'if [ "$pid" -gt 0 ] 2>/dev/null; then kill -KILL "-$pid" 2>/dev/null; kill -KILL "$pid" 2>/dev/null; fi',
-    'if [ "$port" -gt 0 ] 2>/dev/null && command -v lsof >/dev/null 2>&1; then for target in $(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null; lsof -ti ":$port" 2>/dev/null); do [ "$target" = "$$" ] || kill -KILL "$target" 2>/dev/null; done; fi',
-  ].join('; ');
-  const child = spawn('/bin/sh', ['-c', script, 'openchamber-opencode-killer', normalizedPid, normalizedPort, String(OPENCODE_SHUTDOWN_GRACE_MS / 1000)], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  });
-  child.unref();
-};
-
 const killSidecar = async () => {
   const handle = state.serverHandle;
+  const serverModule = state.serverModule;
   state.serverHandle = null;
   state.sidecarUrl = null;
-  if (!handle) return;
-
-  await stopEmbeddedServer(handle, {
-    launchFallback: launchDetachedOpenCodeKiller,
+  try { sshManager.forceShutdownAll(); } catch (error) {
+    log.warn('[electron] failed to stop SSH processes:', error);
+  }
+  const owner = handle ?? (serverModule ? { stop: (options) => serverModule.gracefulShutdown(options) } : null);
+  await stopEmbeddedServer(owner, {
+    timeoutMs: OPENCHAMBER_SHUTDOWN_TIMEOUT_MS,
     warn: (error) => log.warn('[electron] embedded server shutdown failed:', error),
   });
 };
@@ -2572,6 +2504,11 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
     debounceWindowStatePersist(browserWindow, false);
   });
   browserWindow.on('close', (event) => {
+    if (browserWindow === state.mainWindow && state.quitInProgress && !state.allowWindowClose) {
+      event.preventDefault();
+      return;
+    }
+
     if (!state.quitRequested && shouldHideMainWindowToTray(browserWindow)) {
       debounceWindowStatePersist(browserWindow, true);
       event.preventDefault();
@@ -2596,6 +2533,12 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
         browserWindow.hide();
         return;
       }
+    }
+
+    if (process.platform !== 'darwin' && browserWindow === state.mainWindow && !state.quitRequested) {
+      event.preventDefault();
+      void requestQuitWithConfirmation();
+      return;
     }
 
     debounceWindowStatePersist(browserWindow, true);
@@ -2763,6 +2706,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
 
   if (!adopt) {
     browserWindow.once('ready-to-show', () => {
+      if (state.quitInProgress) return;
       if (browserWindow.__ocLabel === 'main') {
         recordElectronStartupPerformance('electron.window.ready-to-show', {
           documentClass: classifyStartupDocument(browserWindow.webContents.getURL()),
@@ -2812,6 +2756,7 @@ const showMainWindowWithSplash = () => {
 };
 
 const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig = {}) => {
+  if (state.quitInProgress) return state.mainWindow;
   state.startupResolved = true;
   state.localOrigin = localOrigin;
   state.apiBaseUrl = typeof runtimeConfig.apiBaseUrl === 'string' ? runtimeConfig.apiBaseUrl : state.apiBaseUrl;
@@ -2837,6 +2782,7 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
     mainWindow.__ocRuntimeConfig = rendererRuntimeConfig;
     mainWindow.__ocInitScript = state.initScript;
     await navigateWindow(mainWindow, url, { allowAbort: true });
+    if (state.quitInProgress) return mainWindow;
     mainWindow.show();
     mainWindow.focus();
     return mainWindow;
@@ -2852,6 +2798,7 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
 };
 
 const openMainWindow = async () => {
+  if (state.quitInProgress) return state.mainWindow;
   if (!state.startupResolved) {
     const { initialUrl, localOrigin, bootOutcome, apiBaseUrl, clientToken, requestHeaders } = await resolveInitialUrl();
     return activateMainWindow(initialUrl, localOrigin, bootOutcome, { apiBaseUrl, clientToken, requestHeaders });
@@ -3127,6 +3074,7 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
   }
 
   browserWindow.once('ready-to-show', () => {
+    if (state.quitInProgress) return;
     browserWindow.show();
     browserWindow.focus();
   });
@@ -4150,13 +4098,17 @@ const getDevTunnelClient = async () => {
   return devTunnelClientPromise;
 };
 
-const closeAllDevTunnels = () => {
+const closeAllDevTunnels = async () => {
   relayDevTunnelBridge.closeAll();
   closeAllSpacePreviewPorts();
   if (!devTunnelClientPromise) return;
   const pending = devTunnelClientPromise;
   devTunnelClientPromise = null;
-  pending.then((client) => client.closeAll()).catch(() => {});
+  try {
+    const client = await pending;
+    await client.closeAll();
+  } catch {
+  }
 };
 
 const handleInvoke = async (browserWindow, command, args = {}) => {
@@ -5668,6 +5620,7 @@ const COMMANDS_SAFE_FOR_REMOTE = new Set([
 ]);
 
 ipcMain.handle('openchamber:invoke', async (event, command, args) => {
+  if (state.quitInProgress) throw new Error('OpenChamber is shutting down');
   if (!isLocalSender(event.sender) && !COMMANDS_SAFE_FOR_REMOTE.has(command)) {
     log.warn(`[ipc] rejected ${command} from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
     throw new Error('IPC not available for this origin');
@@ -5872,9 +5825,10 @@ const focusMainWindowWithSession = async (sessionId, directory) => {
 
 const dispatchTrayAction = async (action) => {
   if (!action || typeof action !== 'object') return;
+  if (state.quitInProgress) return;
 
   if (action.type === 'quit') {
-    app.quit();
+    void requestQuitWithConfirmation();
     return;
   }
 
@@ -5968,27 +5922,13 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', (event) => {
-  state.quitRequested = true;
-  // Loopback listeners would otherwise outlive the window that needed them.
-  closeAllDevTunnels();
-
-  if (state.installingUpdate) {
-    return;
-  }
-
-  if (process.platform === 'darwin' && !state.quitConfirmed) {
-    event.preventDefault();
-    void requestQuitWithConfirmation();
-    return;
-  }
-
-  if (!state.backgroundShutdownComplete) {
-    event.preventDefault();
-    performConfirmedQuit();
-  }
+  if (state.allowWindowClose || state.installingUpdate) return;
+  event.preventDefault();
+  void requestQuitWithConfirmation();
 });
 
 const handleSecondInstance = (argv) => {
+  if (state.quitInProgress) return;
   const urls = Array.isArray(argv)
     ? argv.filter((arg) => typeof arg === 'string' && arg.startsWith(`${DEEP_LINK_PROTOCOL}://`))
     : [];
@@ -6001,6 +5941,7 @@ const handleSecondInstance = (argv) => {
 };
 
 const handleOpenUrl = (url) => {
+  if (state.quitInProgress) return;
   handleDeepLinks([url]);
   if (BrowserWindow.getAllWindows().length === 0) {
     void openMainWindow();
@@ -6027,6 +5968,7 @@ const replayDeferredAppEvents = () => {
 };
 
 app.on('activate', async () => {
+  if (state.quitInProgress) return;
   const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
   // Only spawn a main window when there is genuinely nothing to come back to.
   if (windows.length === 0) {
@@ -6135,5 +6077,9 @@ app.whenReady().then(async () => {
 }).catch((error) => {
   if (state.quitInProgress) return;
   log.error('[electron] startup failed:', error);
-  void shutdownBackgroundServices().finally(() => app.exit(1));
+  state.quitInProgress = true;
+  void shutdownBackgroundServices().finally(() => {
+    state.allowWindowClose = true;
+    app.exit(1);
+  });
 });
