@@ -406,6 +406,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
   const blockedReason = entry.error?.code === 'context-too-small'
     || entry.error?.code === 'structured-output-unsupported'
     || entry.error?.code === 'no-model'
+    || entry.error?.code === 'no-provider-login'
     || entry.error?.code === 'empty-diff'
     || entry.error?.code === 'only-generated'
     || entry.error?.code === 'output-exhausted'

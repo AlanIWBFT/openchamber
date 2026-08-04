@@ -91,6 +91,7 @@ export type WalkthroughStage = 'collecting' | 'asking' | 'retrying' | 'assemblin
 
 export type WalkthroughBlockedReason =
   | 'no-model'
+  | 'no-provider-login'
   | 'empty-diff'
   | 'only-generated'
   | 'context-too-small'
