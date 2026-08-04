@@ -1,11 +1,19 @@
 const SHUTDOWN_FINALIZATION_RESERVE_MS = 500;
 
+export const createShutdownFence = (getIsShuttingDown) => (_req, res, next) => {
+  if (!getIsShuttingDown()) {
+    next();
+    return;
+  }
+  res.setHeader('Connection', 'close');
+  res.status(503).json({ error: 'OpenChamber is shutting down' });
+};
+
 export const createGracefulShutdownRuntime = (dependencies) => {
   const {
     process,
     shutdownTimeoutMs,
     getExitOnShutdown,
-    getIsShuttingDown,
     setIsShuttingDown,
     syncToHmrState,
     openCodeWatcherRuntime,
@@ -24,12 +32,12 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     setTerminalRuntime,
     getMessageStreamRuntime,
     setMessageStreamRuntime,
-    shouldSkipOpenCodeStop,
-    getOpenCodePort,
-    getOpenCodeProcess,
-    setOpenCodeProcess,
-    killProcessOnPort,
-    waitForPortRelease,
+    stopManagedOpenCode,
+    stopPermissionAutoAccept,
+    permissionAutoAcceptRuntime,
+    globalMessageStreamHub,
+    forceStopCloudflareTunnels,
+    forceStopNgrokTunnels,
     getServer,
     getUiAuthController,
     setUiAuthController,
@@ -66,9 +74,8 @@ export const createGracefulShutdownRuntime = (dependencies) => {
   };
 
   const runShutdown = async (options = {}) => {
-    if (getIsShuttingDown()) return;
-
     setIsShuttingDown(true);
+    closingHttpServer = true;
     beginGuestServiceShutdown();
     syncToHmrState();
     console.log('Starting graceful shutdown...');
@@ -86,7 +93,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       () => getRealtimeProxyRuntime()?.stop(),
       // The isolated-spaces host, when the switch is on: its connections into spaces end here.
       () => getSpacesHost()?.close(),
-      () => getRelayService()?.stop(),
+      () => getRelayService()?.shutdown(),
       () => getDictationRuntime()?.stop(),
       () => openCodeWatcherRuntime.stop(),
       () => sessionRuntime.dispose(),
@@ -98,16 +105,22 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       () => dispatchResultsRuntime?.stop?.(),
       () => messageSearchRuntime?.stop?.(),
       () => scheduledTasksRuntime?.stop?.(),
+      () => stopPermissionAutoAccept?.(),
+      () => permissionAutoAcceptRuntime?.shutdown(),
+      () => globalMessageStreamHub?.stop(),
+      () => forceStopCloudflareTunnels?.(),
+      () => forceStopNgrokTunnels?.(),
       stopAllGuestServices,
     ];
-    for (const cleanup of cleanupOperations) {
+    // Close each runtime's admission before yielding; asynchronous drains must
+    // not delay starting the managed CLI's own deadline-bound cleanup.
+    const cleanupPromises = cleanupOperations.map((cleanup) => {
       try {
-        await cleanup();
-      } catch {
-        // One failed runtime must not skip the rest of host teardown.
+        return Promise.resolve(cleanup());
+      } catch (error) {
+        return Promise.reject(error);
       }
-    }
-
+    });
     const healthCheckInterval = getHealthCheckInterval();
     if (healthCheckInterval) {
       clearHealthCheckInterval(healthCheckInterval);
@@ -115,36 +128,18 @@ export const createGracefulShutdownRuntime = (dependencies) => {
 
     const terminalRuntime = getTerminalRuntime();
     const messageStreamRuntime = getMessageStreamRuntime();
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
+      ...cleanupPromises,
       Promise.resolve().then(() => terminalRuntime?.shutdown()),
       Promise.resolve().then(() => messageStreamRuntime?.close()),
+      Promise.resolve().then(() => stopManagedOpenCode({ deadline: Math.max(Date.now(), deadline - SHUTDOWN_FINALIZATION_RESERVE_MS) })),
     ]).finally(() => {
       if (terminalRuntime) setTerminalRuntime(null);
       if (messageStreamRuntime) setMessageStreamRuntime(null);
     });
 
-    if (!shouldSkipOpenCodeStop()) {
-      const portToKill = getOpenCodePort();
-      const openCodeProcess = getOpenCodeProcess();
-
-      if (openCodeProcess) {
-        console.log('Stopping OpenCode process...');
-        try {
-          await openCodeProcess.close({
-            deadline: Math.max(Date.now(), deadline - SHUTDOWN_FINALIZATION_RESERVE_MS),
-          });
-        } catch (error) {
-          console.warn('Error closing OpenCode process:', error);
-        }
-        setOpenCodeProcess(null);
-      }
-
-      killProcessOnPort(portToKill, remaining());
-      if (!(await waitForPortRelease(portToKill, Math.min(5000, remaining())))) {
-        console.warn(`Timed out waiting for OpenCode port ${portToKill} to be released during shutdown`);
-      }
-    } else {
-      console.log('Skipping OpenCode shutdown (external server)');
+    for (const result of results) {
+      if (result.status === 'rejected') console.warn('Error stopping backend resources:', result.reason);
     }
 
     const server = getServer();
