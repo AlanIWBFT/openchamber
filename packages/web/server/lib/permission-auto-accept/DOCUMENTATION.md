@@ -24,6 +24,9 @@ request as handled without replying, so it stays on screen; `accept` replies as
 before. A `permission.replied` event is passed to `onPermissionReplied` so the
 routing runtime forgets its cached decision.
 
+Process shutdown unsubscribes the runtime and rejects later permission work
+before managed OpenCode is terminated.
+
 ## Routes
 
 - `GET /api/permission-auto-accept`

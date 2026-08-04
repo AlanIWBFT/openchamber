@@ -26,6 +26,24 @@ describe('scheduled-tasks runtime helpers', () => {
     }, Date.parse(now))).toBe(Date.parse(expected));
   });
 
+  it('rejects manual runs after the runtime stops', async () => {
+    const runtime = createScheduledTasksRuntime({
+      projectConfigRuntime: {},
+      listProjects: async () => [],
+      buildOpenCodeUrl: () => '',
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+
+    await runtime.start();
+    runtime.stop();
+
+    await expect(runtime.runNow('project', 'task')).resolves.toEqual({
+      ok: false,
+      stopped: true,
+      error: 'scheduled task runtime is stopped',
+    });
+  });
+
   it('computes next daily run in timezone', () => {
     const nowUtc = Date.UTC(2025, 0, 1, 8, 0, 0);
     const next = computeNextRunAt({

@@ -179,4 +179,20 @@ describe('permission auto-accept runtime', () => {
     await flush();
     expect(evaluatePermission).not.toHaveBeenCalled();
   });
+
+  it('rejects new work during shutdown', async () => {
+    const fetchImpl = vi.fn(async () => Response.json([]));
+    const { runtime } = createRuntime({
+      stored: { permissionAutoAccept: { sessions: { root: true } } },
+      fetchImpl,
+    });
+    await runtime.load();
+    await flush();
+    const requestsBeforeShutdown = fetchImpl.mock.calls.length;
+
+    runtime.shutdown();
+
+    await expect(runtime.processPermission({ id: 'later', sessionID: 'root' }, '/project')).resolves.toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(requestsBeforeShutdown);
+  });
 });
