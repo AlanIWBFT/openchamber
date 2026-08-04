@@ -30,8 +30,8 @@ async function hasRequiredFiles(modelDir, requiredFiles) {
   return results.every(Boolean);
 }
 
-async function downloadToFile(url, outputPath, onProgress) {
-  const res = await fetch(url);
+async function downloadToFile(url, outputPath, onProgress, signal) {
+  const res = await fetch(url, { signal });
   if (!res.ok) {
     throw new Error(`Failed to download ${url}: ${res.status} ${res.statusText}`);
   }
@@ -54,7 +54,7 @@ async function downloadToFile(url, outputPath, onProgress) {
   }
 
   try {
-    await pipeline(nodeStream, createWriteStream(tmpPath));
+    await pipeline(nodeStream, createWriteStream(tmpPath), { signal });
     await rename(tmpPath, outputPath);
   } catch (error) {
     await rm(tmpPath, { force: true }).catch(() => undefined);
@@ -62,7 +62,8 @@ async function downloadToFile(url, outputPath, onProgress) {
   }
 }
 
-async function extractTarArchive(archivePath, destDir) {
+async function extractTarArchive(archivePath, destDir, signal) {
+  signal?.throwIfAborted();
   await mkdir(destDir, { recursive: true });
 
   await new Promise((resolve, reject) => {
@@ -70,8 +71,18 @@ async function extractTarArchive(archivePath, destDir) {
       stdio: 'ignore',
       windowsHide: true,
     });
-    child.on('error', reject);
+    const abort = () => {
+      try { child.kill('SIGKILL'); } catch {}
+    };
+    const cleanup = () => signal?.removeEventListener('abort', abort);
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    child.on('error', (error) => {
+      cleanup();
+      reject(error);
+    });
     child.on('exit', (code) => {
+      cleanup();
       if (code === 0) {
         resolve();
       } else {
@@ -111,10 +122,12 @@ export async function isLocalSttModelInstalled(modelsDir, modelId) {
  * installed model forever ("Protobuf parsing failed" at load time).
  *
  * @param {{ modelsDir: string, modelId: string,
- *           onProgress?: (downloadedBytes: number, totalBytes: number | null) => void }} options
+ *           onProgress?: (downloadedBytes: number, totalBytes: number | null) => void,
+ *           signal?: AbortSignal }} options
  * @returns {Promise<string>}
  */
-export async function ensureLocalSttModel({ modelsDir, modelId, onProgress }) {
+export async function ensureLocalSttModel({ modelsDir, modelId, onProgress, signal }) {
+  signal?.throwIfAborted();
   const spec = getLocalSttModelSpec(modelId);
   const modelDir = path.join(modelsDir, spec.extractedDir);
   if (await hasRequiredFiles(modelDir, spec.requiredFiles)) {
@@ -130,12 +143,13 @@ export async function ensureLocalSttModel({ modelsDir, modelId, onProgress }) {
   const archivePath = path.join(downloadsDir, archiveFilename);
 
   if (!(await isNonEmptyFile(archivePath))) {
-    await downloadToFile(spec.archiveUrl, archivePath, onProgress);
+    await downloadToFile(spec.archiveUrl, archivePath, onProgress, signal);
   }
 
   const stagingDir = path.join(modelsDir, `.staging-${spec.extractedDir}-${Date.now()}`);
   try {
-    await extractTarArchive(archivePath, stagingDir);
+    await extractTarArchive(archivePath, stagingDir, signal);
+    signal?.throwIfAborted();
 
     const stagedModelDir = path.join(stagingDir, spec.extractedDir);
     if (!(await hasRequiredFiles(stagedModelDir, spec.requiredFiles))) {

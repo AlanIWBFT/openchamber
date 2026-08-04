@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createGracefulShutdownRuntime } from './shutdown-runtime.js';
+import { createGracefulShutdownRuntime, createShutdownFence } from './shutdown-runtime.js';
 
 const createRuntime = (server, overrides = {}) => createGracefulShutdownRuntime({
   process: { exit: vi.fn() },
@@ -37,6 +37,27 @@ describe('graceful shutdown runtime', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('rejects new requests after shutdown begins', () => {
+    let shuttingDown = false;
+    const next = vi.fn();
+    const response = {
+      setHeader: vi.fn(),
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    };
+    const fence = createShutdownFence(() => shuttingDown);
+
+    fence({}, response, next);
+    expect(next).toHaveBeenCalledTimes(1);
+
+    shuttingDown = true;
+    fence({}, response, next);
+    expect(response.setHeader).toHaveBeenCalledWith('Connection', 'close');
+    expect(response.status).toHaveBeenCalledWith(503);
+    expect(response.json).toHaveBeenCalledWith({ error: 'OpenChamber is shutting down' });
+    expect(next).toHaveBeenCalledTimes(1);
   });
 
   it('clears the server close timeout when the server closes first', async () => {

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
 const workspaceRoot = path.resolve(electronRoot, '../..');
+const shutdownProtocolMarker = 'openchamber-shutdown-protocol.capability';
 
 const readExpectedVersion = () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(workspaceRoot, 'package.json'), 'utf8'));
@@ -51,6 +52,13 @@ const assertBinary = (binaryPath, expectedVersion) => {
   console.log(`[electron] verified bundled OpenCode CLI ${actualVersion}: ${binaryPath}`);
 };
 
+const assertShutdownProtocolMarker = (binaryPath) => {
+  const marker = path.join(path.dirname(binaryPath), shutdownProtocolMarker);
+  if (!fs.statSync(marker, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Bundled OpenCode CLI is missing the shutdown protocol capability marker: ${marker}`);
+  }
+};
+
 const findPackagedBinaries = () => {
   const distDir = path.join(electronRoot, 'dist');
   if (!fs.existsSync(distDir)) return [];
@@ -86,7 +94,11 @@ const main = () => {
 
   const expectedVersion = readExpectedVersion();
   if (mode === '--staged') {
-    assertBinary(path.join(electronRoot, 'resources', 'opencode-cli', binaryName()), expectedVersion);
+    const binaryPath = path.join(electronRoot, 'resources', 'opencode-cli', binaryName());
+    assertBinary(binaryPath, expectedVersion);
+    if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) {
+      assertShutdownProtocolMarker(binaryPath);
+    }
     return;
   }
 
@@ -96,6 +108,9 @@ const main = () => {
   }
   for (const packagedBinary of packagedBinaries) {
     assertBinary(packagedBinary, expectedVersion);
+    if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) {
+      assertShutdownProtocolMarker(packagedBinary);
+    }
   }
 };
 
