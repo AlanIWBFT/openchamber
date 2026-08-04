@@ -30,8 +30,8 @@ async function hasRequiredFiles(modelDir, requiredFiles) {
   return results.every(Boolean);
 }
 
-async function downloadToFile(url, outputPath, onProgress) {
-  const res = await fetch(url);
+async function downloadToFile(url, outputPath, onProgress, signal) {
+  const res = await fetch(url, { signal });
   if (!res.ok) {
     throw new Error(`Failed to download ${url}: ${res.status} ${res.statusText}`);
   }
@@ -54,7 +54,7 @@ async function downloadToFile(url, outputPath, onProgress) {
   }
 
   try {
-    await pipeline(nodeStream, createWriteStream(tmpPath));
+    await pipeline(nodeStream, createWriteStream(tmpPath), { signal });
     await rename(tmpPath, outputPath);
   } catch (error) {
     await rm(tmpPath, { force: true }).catch(() => undefined);
@@ -77,7 +77,8 @@ export function describeTarFailure(code, stderr) {
   return lastLine ? `tar exited with code ${code}: ${lastLine}` : `tar exited with code ${code}`;
 }
 
-async function runArchiveTool(command, args, describeFailure) {
+async function runArchiveTool(command, args, describeFailure, signal) {
+  signal?.throwIfAborted();
   await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: ['ignore', 'ignore', 'pipe'],
@@ -88,8 +89,18 @@ async function runArchiveTool(command, args, describeFailure) {
       // Only the tail matters for the message; keep memory bounded.
       stderr = (stderr + chunk.toString()).slice(-4096);
     });
-    child.on('error', reject);
+    const abort = () => {
+      try { child.kill('SIGKILL'); } catch {}
+    };
+    const cleanup = () => signal?.removeEventListener('abort', abort);
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    child.on('error', (error) => {
+      cleanup();
+      reject(error);
+    });
     child.on('close', (code) => {
+      cleanup();
       if (code === 0) {
         resolve();
       } else {
@@ -99,7 +110,7 @@ async function runArchiveTool(command, args, describeFailure) {
   });
 }
 
-async function extractTarArchive(archivePath, destDir) {
+async function extractTarArchive(archivePath, destDir, signal) {
   await mkdir(destDir, { recursive: true });
 
   let tarPath = archivePath;
@@ -111,11 +122,11 @@ async function extractTarArchive(archivePath, destDir) {
     await runArchiveTool(decoderPath, ['x', '-tbzip2', '-y', '-bso0', '-bsp0', archivePath, `-o${destDir}`], (code, stderr) => {
       const detail = stderr.trim();
       return detail ? `7-Zip exited with code ${code}: ${detail}` : `7-Zip exited with code ${code}`;
-    });
+    }, signal);
     tarPath = path.join(destDir, path.basename(archivePath, '.bz2'));
   }
 
-  await runArchiveTool('tar', ['xf', tarPath, '-C', destDir], describeTarFailure);
+  await runArchiveTool('tar', ['xf', tarPath, '-C', destDir], describeTarFailure, signal);
 }
 
 async function isNonEmptyFile(filePath) {
@@ -148,10 +159,12 @@ export async function isLocalSttModelInstalled(modelsDir, modelId) {
  * installed model forever ("Protobuf parsing failed" at load time).
  *
  * @param {{ modelsDir: string, modelId: string,
- *           onProgress?: (downloadedBytes: number, totalBytes: number | null) => void }} options
+ *           onProgress?: (downloadedBytes: number, totalBytes: number | null) => void,
+ *           signal?: AbortSignal }} options
  * @returns {Promise<string>}
  */
-export async function ensureLocalSttModel({ modelsDir, modelId, onProgress }) {
+export async function ensureLocalSttModel({ modelsDir, modelId, onProgress, signal }) {
+  signal?.throwIfAborted();
   const spec = getLocalSttModelSpec(modelId);
   const modelDir = path.join(modelsDir, spec.extractedDir);
   if (await hasRequiredFiles(modelDir, spec.requiredFiles)) {
@@ -167,12 +180,13 @@ export async function ensureLocalSttModel({ modelsDir, modelId, onProgress }) {
   const archivePath = path.join(downloadsDir, archiveFilename);
 
   if (!(await isNonEmptyFile(archivePath))) {
-    await downloadToFile(spec.archiveUrl, archivePath, onProgress);
+    await downloadToFile(spec.archiveUrl, archivePath, onProgress, signal);
   }
 
   const stagingDir = path.join(modelsDir, `.staging-${spec.extractedDir}-${Date.now()}`);
   try {
-    await extractTarArchive(archivePath, stagingDir);
+    await extractTarArchive(archivePath, stagingDir, signal);
+    signal?.throwIfAborted();
 
     const stagedModelDir = path.join(stagingDir, spec.extractedDir);
     if (!(await hasRequiredFiles(stagedModelDir, spec.requiredFiles))) {

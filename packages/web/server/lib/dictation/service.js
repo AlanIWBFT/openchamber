@@ -35,11 +35,13 @@ import {
 } from './local/model-catalog.js';
 import { ensureLocalSttModel, isLocalSttModelInstalled } from './local/model-downloader.js';
 
-export function createDictationService({ modelsDir }) {
+export function createDictationService({ modelsDir, ensureModel = ensureLocalSttModel, isModelInstalled = isLocalSttModelInstalled }) {
   for (const dir of RETIRED_LOCAL_MODEL_DIRS) {
     void rm(path.join(modelsDir, dir), { recursive: true, force: true }).catch(() => undefined);
   }
   const workerClient = new DictationWorkerClient();
+  const shutdownController = new AbortController();
+  let shuttingDown = false;
   /** modelId -> 'downloading' | 'error' */
   const downloadStates = new Map();
   /** modelId -> last download error message */
@@ -50,6 +52,7 @@ export function createDictationService({ modelsDir }) {
   const downloadProgress = new Map();
 
   const startModelDownload = (modelId) => {
+    if (shuttingDown) return Promise.resolve();
     const existing = downloadPromises.get(modelId);
     if (existing) {
       return existing;
@@ -57,9 +60,10 @@ export function createDictationService({ modelsDir }) {
     downloadStates.set(modelId, 'downloading');
     downloadErrors.delete(modelId);
     downloadProgress.set(modelId, 0);
-    const promise = ensureLocalSttModel({
+    const promise = ensureModel({
       modelsDir,
       modelId,
+      signal: shutdownController.signal,
       onProgress: (downloadedBytes, totalBytes) => {
         downloadProgress.set(
           modelId,
@@ -73,6 +77,13 @@ export function createDictationService({ modelsDir }) {
         downloadProgress.delete(modelId);
       })
       .catch((error) => {
+        if (shuttingDown && shutdownController.signal.aborted) {
+          downloadStates.delete(modelId);
+          downloadErrors.delete(modelId);
+          downloadPromises.delete(modelId);
+          downloadProgress.delete(modelId);
+          return;
+        }
         downloadStates.set(modelId, 'error');
         downloadErrors.set(modelId, error?.message || String(error));
         downloadPromises.delete(modelId);
@@ -93,12 +104,12 @@ export function createDictationService({ modelsDir }) {
     if (isLocalSttModelId(requested)) {
       return requested;
     }
-    if (await isLocalSttModelInstalled(modelsDir, PREVIOUS_DEFAULT_LOCAL_STT_MODEL)) {
+    if (await isModelInstalled(modelsDir, PREVIOUS_DEFAULT_LOCAL_STT_MODEL)) {
       return PREVIOUS_DEFAULT_LOCAL_STT_MODEL;
     }
     if (
-      !(await isLocalSttModelInstalled(modelsDir, DEFAULT_LOCAL_STT_MODEL))
-      && (await isLocalSttModelInstalled(modelsDir, REPLACED_DEFAULT_LOCAL_STT_MODEL))
+      !(await isModelInstalled(modelsDir, DEFAULT_LOCAL_STT_MODEL))
+      && (await isModelInstalled(modelsDir, REPLACED_DEFAULT_LOCAL_STT_MODEL))
     ) {
       return REPLACED_DEFAULT_LOCAL_STT_MODEL;
     }
@@ -146,7 +157,7 @@ export function createDictationService({ modelsDir }) {
       && downloadStates.get(DEFAULT_LOCAL_STT_MODEL) !== 'error') {
       void startModelDownload(DEFAULT_LOCAL_STT_MODEL);
     }
-    const installed = await isLocalSttModelInstalled(modelsDir, modelId);
+    const installed = await isModelInstalled(modelsDir, modelId);
     if (!installed) {
       const state = downloadStates.get(modelId);
       if (state === 'error') {
@@ -208,7 +219,7 @@ export function createDictationService({ modelsDir }) {
     const describeModel = async (id, catalog) => ({
       id,
       description: catalog[id].description,
-      installed: await isLocalSttModelInstalled(modelsDir, id),
+      installed: await isModelInstalled(modelsDir, id),
       downloading: downloadStates.get(id) === 'downloading',
       downloadProgress: downloadProgress.get(id) ?? null,
       downloadError: downloadErrors.get(id) || null,
@@ -287,7 +298,7 @@ export function createDictationService({ modelsDir }) {
         speakerId = getLocalTtsDefaultSpeaker(modelId, resolvedLanguage);
       }
     }
-    const installed = await isLocalSttModelInstalled(modelsDir, modelId);
+    const installed = await isModelInstalled(modelsDir, modelId);
     if (!installed) {
       const state = downloadStates.get(modelId);
       if (state === 'error') {
@@ -325,7 +336,7 @@ export function createDictationService({ modelsDir }) {
     if (!isLocalModelId(modelId)) {
       return { ok: false, error: 'Unknown model id' };
     }
-    if (await isLocalSttModelInstalled(modelsDir, modelId)) {
+    if (await isModelInstalled(modelsDir, modelId)) {
       return { ok: true, installed: true };
     }
     void startModelDownload(modelId);
@@ -351,6 +362,8 @@ export function createDictationService({ modelsDir }) {
   };
 
   const shutdown = () => {
+    shuttingDown = true;
+    shutdownController.abort();
     workerClient.shutdown();
   };
 
