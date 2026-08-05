@@ -1,9 +1,11 @@
 import {
+  getShortcutConflict,
   isValidShortcutCombo,
   normalizeCombo,
   parseShortcut,
   UNASSIGNED_SHORTCUT,
   type ShortcutCombo,
+  type ShortcutConflict,
 } from './bindings';
 import { SHORTCUT_SCHEMA } from './config';
 
@@ -13,6 +15,10 @@ export type ShortcutAction = (typeof SHORTCUT_SCHEMA)[number];
 export type ShortcutActionId = ShortcutAction['id'];
 export type ShortcutCategory = ShortcutAction['category'];
 export type CustomizableShortcutAction = Extract<ShortcutAction, { customizable: true }>;
+export type ShortcutBindingConflict = {
+  action: ShortcutAction;
+  kind: ShortcutConflict;
+};
 
 export function getShortcutAction(id: string): ShortcutAction | undefined {
   return SHORTCUT_SCHEMA.find((action) => action.id === id);
@@ -30,6 +36,7 @@ export function getEffectiveShortcutCombo(
 ): ShortcutCombo {
   const action = getShortcutAction(actionId);
   if (!action) return '';
+  if (!action.customizable) return action.defaultBinding;
 
   const override = overrides?.[actionId];
   if (typeof override === 'string') {
@@ -47,6 +54,7 @@ export function getEffectiveShortcutPrefix(
 ): ShortcutCombo {
   const action = getShortcutAction(actionId);
   if (!action) return '';
+  if (!action.customizable) return action.defaultBinding;
 
   const override = overrides?.[actionId];
   if (typeof override === 'string' && override.trim() !== '') {
@@ -57,4 +65,21 @@ export function getEffectiveShortcutPrefix(
   }
 
   return action.defaultBinding;
+}
+
+export function getShortcutBindingConflicts(
+  actionId: ShortcutActionId,
+  combo: ShortcutCombo,
+  overrides?: Record<string, ShortcutCombo>,
+): ShortcutBindingConflict[] {
+  const conflicts: ShortcutBindingConflict[] = [];
+  for (const candidate of SHORTCUT_SCHEMA) {
+    if (candidate.id === actionId) continue;
+    const candidateCombo = candidate.id === 'switch_context_surface'
+      ? getEffectiveShortcutPrefix(candidate.id, overrides)
+      : getEffectiveShortcutCombo(candidate.id, overrides);
+    const kind = getShortcutConflict(combo, candidateCombo);
+    if (kind) conflicts.push({ action: candidate, kind });
+  }
+  return conflicts;
 }

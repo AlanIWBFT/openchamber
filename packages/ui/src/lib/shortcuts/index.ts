@@ -17,6 +17,7 @@ export { shortcutRegistry } from './registry';
 export type { ShortcutHandler } from './registry';
 export {
   getCustomizableShortcutActions,
+  getShortcutBindingConflicts,
   getEffectiveShortcutCombo,
   getEffectiveShortcutPrefix,
   getShortcutAction,
@@ -24,6 +25,7 @@ export {
 } from './schema';
 export type {
   CustomizableShortcutAction,
+  ShortcutBindingConflict,
   ShortcutActionId,
   ShortcutCategory,
 } from './schema';

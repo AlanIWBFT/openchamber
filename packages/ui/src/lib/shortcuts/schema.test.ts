@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   getCustomizableShortcutActions,
   getEffectiveShortcutCombo,
+  getShortcutBindingConflicts,
   getShortcutAction,
   parseShortcut,
   SHORTCUT_SCHEMA,
@@ -58,5 +59,26 @@ describe('shortcut schema', () => {
   test('preserves valid overrides and falls back from malformed bindings', () => {
     expect(getEffectiveShortcutCombo('new_chat', { new_chat: 'mod+k' })).toBe('mod+k');
     expect(getEffectiveShortcutCombo('new_chat', { new_chat: 'mod+k x y' })).toBe('mod+n');
+  });
+
+  test('keeps internal bindings authoritative over persisted overrides', () => {
+    expect(getEffectiveShortcutCombo('save_file', { save_file: 'mod+k' })).toBe('mod+s');
+    expect(getEffectiveShortcutCombo('save_file', { save_file: '__unassigned__' })).toBe('mod+s');
+  });
+
+  test('detects conflicts against customizable and internal bindings', () => {
+    const customizableConflict = getShortcutBindingConflicts('new_chat', 'mod+p')
+      .find((conflict) => conflict.action.id === 'open_command_palette');
+    const internalConflict = getShortcutBindingConflicts('new_chat', 'mod+f')
+      .find((conflict) => conflict.action.id === 'find_in_file');
+    const internalPrefixConflict = getShortcutBindingConflicts('new_chat', 'mod+s x')
+      .find((conflict) => conflict.action.id === 'save_file');
+
+    expect(customizableConflict?.kind).toBe('exact');
+    expect(customizableConflict?.action.customizable).toBe(true);
+    expect(internalConflict?.kind).toBe('exact');
+    expect(internalConflict?.action.customizable).toBe(false);
+    expect(internalPrefixConflict?.kind).toBe('prefix');
+    expect(internalPrefixConflict?.action.customizable).toBe(false);
   });
 });

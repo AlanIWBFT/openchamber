@@ -10,13 +10,12 @@ import {
 import { Button } from '@/components/ui/button';
 import {
   formatShortcutForDisplay,
-  getEffectiveShortcutCombo,
-  getEffectiveShortcutPrefix,
-  getShortcutConflict,
+  getShortcutBindingConflicts,
   isRiskyBrowserShortcut,
   keyToShortcutToken,
   normalizeCombo,
   type ShortcutActionId,
+  type ShortcutBindingConflict,
   type ShortcutCombo,
   type CustomizableShortcutAction,
 } from '@/lib/shortcuts';
@@ -39,11 +38,8 @@ interface ShortcutRecordingState {
   livePreview: ShortcutCombo | null;
 }
 
-type ShortcutRecordingAction = 'cancel' | 'none' | 'save';
-
 interface ShortcutRecordingDialogProps {
   action: CustomizableShortcutAction | null;
-  actions: ReadonlyArray<CustomizableShortcutAction>;
   overrides: Record<string, string>;
   onSave: (
     actionId: ShortcutActionId,
@@ -51,6 +47,12 @@ interface ShortcutRecordingDialogProps {
     replaceActionId?: ShortcutActionId,
   ) => void;
   onOpenChange: (open: boolean) => void;
+}
+
+function isCustomizableConflict(
+  conflict: ShortcutBindingConflict,
+): conflict is ShortcutBindingConflict & { action: CustomizableShortcutAction } {
+  return conflict.action.customizable;
 }
 
 function getModifierPreview(event: RecordingKeyboardEvent): ShortcutCombo | null {
@@ -91,35 +93,29 @@ export function updateShortcutRecordingState(
   state: ShortcutRecordingState,
   event: RecordingKeyboardEvent,
   phase: 'keydown' | 'keyup',
-): { action: ShortcutRecordingAction; state: ShortcutRecordingState } {
-  if (event.repeat || event.isComposing) return { action: 'none', state };
+): ShortcutRecordingState {
+  if (event.repeat || event.isComposing) return state;
   if (phase === 'keyup') {
-    return { action: 'none', state: { ...state, livePreview: getModifierPreview(event) } };
+    return { ...state, livePreview: getModifierPreview(event) };
   }
 
-  if (event.key === 'Escape') return { action: 'cancel', state };
-  if (event.key === 'Enter') return { action: 'save', state };
   if (event.key === 'Backspace') {
-    return { action: 'none', state: { chords: state.chords.slice(0, -1), livePreview: null } };
+    return { chords: state.chords.slice(0, -1), livePreview: null };
   }
 
   const chord = keyboardEventToCombo(event);
   if (chord) {
     return {
-      action: 'none',
-      state: {
-        chords: state.chords.length < 2 ? [...state.chords, chord] : state.chords,
-        livePreview: null,
-      },
+      chords: state.chords.length < 2 ? [...state.chords, chord] : state.chords,
+      livePreview: null,
     };
   }
 
-  return { action: 'none', state: { ...state, livePreview: getModifierPreview(event) } };
+  return { ...state, livePreview: getModifierPreview(event) };
 }
 
 export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = ({
   action,
-  actions,
   overrides,
   onSave,
   onOpenChange,
@@ -136,26 +132,19 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
   }, [action]);
 
   const combo = normalizeCombo(recording.chords.join(' '));
-  const conflicts = React.useMemo(() => {
-    if (!action || !combo) return [];
-    const result: Array<{ action: CustomizableShortcutAction; kind: 'exact' | 'prefix' }> = [];
-    for (const candidate of actions) {
-      if (candidate.id === action.id) continue;
-      const candidateCombo = candidate.id === 'switch_context_surface'
-        ? getEffectiveShortcutPrefix(candidate.id, overrides)
-        : getEffectiveShortcutCombo(candidate.id, overrides);
-      const kind = getShortcutConflict(combo, candidateCombo);
-      if (kind) result.push({ action: candidate, kind });
-    }
-    return result;
-  }, [action, actions, combo, overrides]);
-  const prefixConflict = conflicts.find((conflict) => conflict.kind === 'prefix');
-  const exactConflict = conflicts.find((conflict) => conflict.kind === 'exact');
+  const conflicts = React.useMemo(
+    () => action && combo ? getShortcutBindingConflicts(action.id, combo, overrides) : [],
+    [action, combo, overrides],
+  );
+  const protectedConflict = conflicts.find((conflict) => !conflict.action.customizable);
+  const customizableConflicts = conflicts.filter(isCustomizableConflict);
+  const prefixConflict = customizableConflicts.find((conflict) => conflict.kind === 'prefix');
+  const exactConflict = customizableConflicts.find((conflict) => conflict.kind === 'exact');
 
   const close = () => onOpenChange(false);
-  const save = () => {
-    if (!action || !combo || prefixConflict || exactConflict) return;
-    onSave(action.id, combo);
+  const confirm = () => {
+    if (!action || !combo || protectedConflict || prefixConflict) return;
+    onSave(action.id, combo, exactConflict?.action.id);
     close();
   };
   const handleRecordingEvent = (event: React.KeyboardEvent<HTMLDivElement>, phase: 'keydown' | 'keyup') => {
@@ -168,7 +157,7 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
         return;
       }
     }
-    const result = updateShortcutRecordingState(recording, {
+    const nextRecording = updateShortcutRecordingState(recording, {
       altKey: event.altKey,
       ctrlKey: event.ctrlKey,
       isComposing: event.nativeEvent.isComposing,
@@ -177,16 +166,21 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
       repeat: event.repeat,
       shiftKey: event.shiftKey,
     }, phase);
-    setRecording(action?.id === 'switch_context_surface' && result.state.chords.length > 1
-      ? { ...result.state, chords: result.state.chords.slice(0, 1) }
-      : result.state);
-    if (result.action === 'cancel') close();
-    if (result.action === 'save') save();
+    setRecording(action?.id === 'switch_context_surface' && nextRecording.chords.length > 1
+      ? { ...nextRecording, chords: nextRecording.chords.slice(0, 1) }
+      : nextRecording);
   };
 
   return (
-    <Dialog open={action !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md" initialFocus={recordingRef}>
+    <Dialog
+      open={action !== null}
+      onOpenChange={(open, eventDetails) => {
+        if (!open) {
+          eventDetails.cancel();
+        }
+      }}
+    >
+      <DialogContent className="max-w-md" initialFocus={recordingRef} showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>
             {action ? t('settings.openchamber.keyboardShortcuts.dialog.title', { action: actionLabel(action) }) : ''}
@@ -221,12 +215,16 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
           </div>
         </div>
 
-        {prefixConflict ? (
+        {protectedConflict ? (
+          <p className="typography-meta text-[var(--status-error)]">
+            {t('settings.openchamber.keyboardShortcuts.error.internalConflict')}
+          </p>
+        ) : prefixConflict ? (
           <p className="typography-meta text-[var(--status-error)]">
             {t('settings.openchamber.keyboardShortcuts.error.prefixConflict', { action: actionLabel(prefixConflict.action) })}
           </p>
         ) : null}
-        {exactConflict && !prefixConflict ? (
+        {exactConflict && !protectedConflict && !prefixConflict ? (
           <p className="typography-meta text-[var(--status-warning)]">
             {t('settings.openchamber.keyboardShortcuts.error.exactConflict', { action: actionLabel(exactConflict.action) })}
           </p>
@@ -237,17 +235,19 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
           </p>
         ) : null}
 
-        {exactConflict && !prefixConflict ? (
-          <DialogFooter>
-            <Button type="button" size="sm" onClick={() => {
-              if (!action) return;
-              onSave(action.id, combo, exactConflict.action.id);
-              close();
-            }}>
-              {t('settings.openchamber.keyboardShortcuts.actions.replaceAndSave')}
-            </Button>
-          </DialogFooter>
-        ) : null}
+        <DialogFooter>
+          <Button type="button" variant="ghost" size="sm" onClick={close}>
+            {t('settings.common.actions.cancel')}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={!combo || Boolean(protectedConflict) || Boolean(prefixConflict)}
+            onClick={confirm}
+          >
+            {t('settings.openchamber.keyboardShortcuts.actions.confirm')}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

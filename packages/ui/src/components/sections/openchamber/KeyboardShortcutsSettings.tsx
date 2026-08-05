@@ -121,7 +121,6 @@ export const KeyboardShortcutsSettings: React.FC = () => {
       })}
       <ShortcutRecordingDialog
         action={editingAction}
-        actions={actions}
         overrides={shortcutOverrides}
         onSave={save}
         onOpenChange={(open) => {

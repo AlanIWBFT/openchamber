@@ -29,9 +29,9 @@ Bindings remain persisted as `Record<string, string>`. Each binding has one chor
 
 Contextual internal commands may deliberately share a sequence leader. The single-chord handler gets the first chance to handle the event; returning `false` lets the dispatcher start the sequence. The active file editor therefore owns `mod+s` for saving, while a mounted but unfocused editor yields `mod+s p`, `mod+s g`, and `mod+s l` to the draft target pickers and session list.
 
-Runtime-specific commands may also share an exact binding when their handlers are mutually exclusive. `open_diff_panel` handles `mod+2` on desktop, while `switch_tab_2` handles it on mobile; each returns `false` outside its runtime so the dispatcher can try the next registered action.
+The internal `switch_tab_*` bindings remain available to mobile handlers. Desktop numeric context-surface switching is resolved by the configurable `switch_context_surface` prefix before normal dispatcher matching and falls through on mobile.
 
-The settings recorder also stops at two chords. It keeps the recording local until the user explicitly saves, allows an exact conflict to replace the previous assignment, and blocks prefix conflicts because they make dispatch ambiguous.
+The settings recorder also stops at two chords and checks the complete schema, not only customizable actions. It keeps the recording local until the user clicks Confirm, allows an exact customizable conflict to replace the previous assignment, and blocks prefix conflicts because they make dispatch ambiguous. Internal bindings are authoritative: persisted overrides cannot change or unassign them, and recorder conflicts with them cannot be replaced.
 
 # Dispatching
 
@@ -43,7 +43,7 @@ Shared `DropdownMenu` and `Select` can opt into this boundary with `disableGloba
 
 Terminal capture, Escape abort priming, and the shifted reverse-agent chord are input-boundary exceptions. They preserve their target-specific semantics and invoke the registered application handler rather than duplicating command behavior.
 
-Local key handling remains appropriate for text editing, IME composition, menu and list navigation, dialog confirmation, terminal input, and other interactions that do not represent configurable application commands.
+Local key handling remains appropriate for text editing, IME composition, menu and list navigation, dialog confirmation, terminal input, and other interactions that do not represent configurable application commands. The settings recorder treats Enter and Escape as recordable keys; only its explicit Confirm and Cancel buttons apply or discard a recording.
 
 # Adding shortcuts
 
