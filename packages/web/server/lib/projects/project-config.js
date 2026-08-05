@@ -313,6 +313,11 @@ const normalizeTaskForStorage = (value, options) => {
   const schedule = normalizeSchedule(value.schedule, existingTask?.schedule);
   const execution = normalizeExecution(value.execution);
 
+  // Loop provenance: absolute path of the `.agents/loops/*.md` file driving
+  // this task, when any. Preserved on every write so the scheduler can detect
+  // removed loop files across restarts. Unknown to the UI model.
+  const loopFile = asNonEmptyString(value.loopFile) ?? asNonEmptyString(existingTask?.loopFile);
+
   const nowMs = Math.max(0, Math.round(now));
   const baseState = normalizeState(value.state, existingTask?.state);
   const state = {
@@ -328,6 +333,7 @@ const normalizeTaskForStorage = (value, options) => {
     schedule,
     execution,
     state,
+    ...(loopFile ? { loopFile } : {}),
   };
 };
 
@@ -559,11 +565,106 @@ export const createProjectConfigRuntime = (deps) => {
     });
   };
 
+  /**
+   * Reconcile discovered `.agents/loops` definitions with the persisted JSON
+   * task list.
+   *
+   * Rules (documented in scheduled-tasks/DOCUMENTATION.md):
+   * - Identity is the task NAME. A loop whose name matches an existing task
+   *   takes that task over: its schedule/execution/enabled are overwritten
+   *   from the file while its id and runtime state are preserved (markdown
+   *   wins on conflict).
+   * - A task whose loopFile no longer matches any discovered loop file is
+   *   unscheduled (removed). JSON-configured tasks (no loopFile) are never
+   *   removed.
+   * - Loops with no matching task are created under a deterministic
+   *   `loop:<scope>:<name>` id, so runtime state survives restarts.
+   * - Malformed definitions are skipped with a warning and never block valid
+   *   loops; the scheduler passes only parsed definitions, and normalization
+   *   failures here are isolated per loop.
+   */
+  const reconcileLoopTasks = async (projectID, loops) => {
+    return withProjectWriteLock(projectID, async () => {
+      const now = Date.now();
+      const current = await readProjectConfigFromDisk(projectID);
+      const tasks = current.scheduledTasks;
+
+      const activeLoopFilePaths = new Set();
+      const pendingLoops = new Map();
+      for (const loop of loops) {
+        if (!loop || !loop.definition || typeof loop.definition !== 'object') {
+          continue;
+        }
+        activeLoopFilePaths.add(loop.filePath);
+        pendingLoops.set(loop.definition.name, loop);
+      }
+
+      const nextTasks = [];
+      for (const task of tasks) {
+        if (task.loopFile && !activeLoopFilePaths.has(task.loopFile)) {
+          // The driving loop file was removed (or renamed) — unschedule.
+          continue;
+        }
+
+        const loop = pendingLoops.get(task.name);
+        if (loop) {
+          try {
+            const adopted = normalizeTaskForStorage(
+              { ...task, ...loop.definition, loopFile: loop.filePath },
+              {
+                now,
+                createId: taskIDFactory,
+                existingTask: task,
+                allowCreate: false,
+                refreshUpdatedAt: false,
+              },
+            );
+            nextTasks.push(adopted);
+            pendingLoops.delete(loop.definition.name);
+          } catch (error) {
+            console.warn(`[scheduled-tasks] skipped loop ${loop.filePath} for task "${task.name}":`, error?.message ?? error);
+            nextTasks.push(task);
+          }
+          continue;
+        }
+
+        nextTasks.push(task);
+      }
+
+      for (const loop of pendingLoops.values()) {
+        try {
+          const id = `loop:${loop.scope}:${loop.definition.name}`;
+          const created = normalizeTaskForStorage(
+            { id, ...loop.definition, loopFile: loop.filePath },
+            {
+              now,
+              createId: taskIDFactory,
+              existingTask: null,
+              allowCreate: true,
+              refreshUpdatedAt: false,
+            },
+          );
+          nextTasks.push(created);
+        } catch (error) {
+          console.warn(`[scheduled-tasks] skipped loop ${loop.filePath}:`, error?.message ?? error);
+        }
+      }
+
+      await writeProjectConfigToDisk(projectID, {
+        version: PROJECT_CONFIG_VERSION,
+        scheduledTasks: nextTasks,
+      });
+
+      return nextTasks;
+    });
+  };
+
   return {
     listScheduledTasks,
     upsertScheduledTask,
     deleteScheduledTask,
     updateScheduledTaskState,
+    reconcileLoopTasks,
     resolveProjectConfigPath,
   };
 };
