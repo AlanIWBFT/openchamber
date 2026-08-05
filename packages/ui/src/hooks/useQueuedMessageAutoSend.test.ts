@@ -29,19 +29,93 @@ mock.module('@/sync/session-ui-store', () => ({
 
 import {
   buildQueuedAutoSendPayload,
+  createQueuedAutoSendRetryScheduler,
+  getQueuedAutoSendRetryDelayMs,
+  isQueuedAutoSendBackedOff,
   sendQueuedAutoSendPayload,
   shouldDispatchQueuedAutoSend,
 } from './useQueuedMessageAutoSend';
 
+describe('queued auto-send retry scheduler', () => {
+  test('wakes the queue when backoff expires', () => {
+    const callbacks = new Map<number, () => void>();
+    let nextTimer = 0;
+    let wakeups = 0;
+    const scheduler = createQueuedAutoSendRetryScheduler(
+      () => { wakeups += 1; },
+      () => 1_000,
+      (callback, delay) => {
+        callbacks.set(++nextTimer, callback);
+        expect(delay).toBe(500);
+        return nextTimer as unknown as ReturnType<typeof setTimeout>;
+      },
+      (timer) => { callbacks.delete(timer as unknown as number); },
+    );
+
+    scheduler.schedule(1_500);
+    expect(callbacks.size).toBe(1);
+    callbacks.values().next().value?.();
+    expect(wakeups).toBe(1);
+  });
+
+  test('keeps the earliest retry and cancels it on dispose', () => {
+    const callbacks = new Map<number, () => void>();
+    let nextTimer = 0;
+    const delays: number[] = [];
+    const scheduler = createQueuedAutoSendRetryScheduler(
+      () => undefined,
+      () => 1_000,
+      (callback, delay) => {
+        callbacks.set(++nextTimer, callback);
+        delays.push(delay);
+        return nextTimer as unknown as ReturnType<typeof setTimeout>;
+      },
+      (timer) => { callbacks.delete(timer as unknown as number); },
+    );
+
+    scheduler.schedule(3_000);
+    scheduler.schedule(4_000);
+    scheduler.schedule(2_000);
+
+    expect(delays).toEqual([2_000, 1_000]);
+    expect(callbacks.size).toBe(1);
+    scheduler.dispose();
+    expect(callbacks.size).toBe(0);
+  });
+});
+
 describe('shouldDispatchQueuedAutoSend', () => {
   test('dispatches only after an active session becomes idle', () => {
-    expect(shouldDispatchQueuedAutoSend('busy', 'idle')).toBe(true);
-    expect(shouldDispatchQueuedAutoSend('retry', 'idle')).toBe(true);
+    expect(shouldDispatchQueuedAutoSend('busy', 'idle', false)).toBe(true);
+    expect(shouldDispatchQueuedAutoSend('retry', 'idle', false)).toBe(true);
   });
 
   test('does not dispatch when idle is only first seen or status is missing', () => {
-    expect(shouldDispatchQueuedAutoSend(undefined, 'idle')).toBe(false);
-    expect(shouldDispatchQueuedAutoSend('idle', 'idle')).toBe(false);
+    expect(shouldDispatchQueuedAutoSend(undefined, 'idle', false)).toBe(false);
+    expect(shouldDispatchQueuedAutoSend('idle', 'idle', false)).toBe(false);
+  });
+
+  test('dispatches when idle→idle and queue has items', () => {
+    expect(shouldDispatchQueuedAutoSend('idle', 'idle', true)).toBe(true);
+  });
+});
+
+describe('queued auto-send retry backoff', () => {
+  test('delay grows exponentially and is capped', () => {
+    expect(getQueuedAutoSendRetryDelayMs(1)).toBe(2000);
+    expect(getQueuedAutoSendRetryDelayMs(2)).toBe(4000);
+    expect(getQueuedAutoSendRetryDelayMs(3)).toBe(8000);
+    expect(getQueuedAutoSendRetryDelayMs(10)).toBe(60000);
+    expect(getQueuedAutoSendRetryDelayMs(100)).toBe(60000);
+  });
+
+  test('backs off only the failed message within its window', () => {
+    const failure = { messageId: 'queued-1', failures: 1, nextAttemptAt: 10_000 };
+
+    expect(isQueuedAutoSendBackedOff(failure, 'queued-1', 9_999)).toBe(true);
+    expect(isQueuedAutoSendBackedOff(failure, 'queued-1', 10_000)).toBe(false);
+    expect(isQueuedAutoSendBackedOff(failure, 'queued-2', 9_999)).toBe(false);
+    expect(isQueuedAutoSendBackedOff(undefined, 'queued-1', 0)).toBe(false);
   });
 });
 
@@ -142,7 +216,7 @@ describe('buildQueuedAutoSendPayload', () => {
     ]);
 
     expect(payload).not.toBeNull();
-    await sendQueuedAutoSendPayload('session-original', payload!, {
+    await sendQueuedAutoSendPayload('session-original', '/repo', payload!, {
       providerID: 'provider-1',
       modelID: 'model-1',
       agent: 'agent-1',
@@ -160,7 +234,7 @@ describe('buildQueuedAutoSendPayload', () => {
       undefined,
       'variant-1',
       'normal',
-      { sessionId: 'session-original' },
+      { sessionId: 'session-original', directory: '/repo' },
     ]);
   });
 });

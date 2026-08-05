@@ -16,6 +16,8 @@ import { initializeLocale, I18nProvider } from '@/lib/i18n';
 import { initializeAppearancePreferences, syncDesktopSettings } from '@/lib/persistence';
 import { startModelPrefsAutoSave } from '@/lib/modelPrefsAutoSave';
 import { startTypographyWatcher } from '@/lib/typographyWatcher';
+import { preloadMarkdownRenderer } from '@/components/chat/markdownRendererLoader';
+import { SessionAuthGate } from '@/components/auth/SessionAuthGate';
 import { MobileApp } from './MobileApp';
 
 const initializeSharedPreferences = () => {
@@ -42,6 +44,11 @@ const initializeSharedPreferences = () => {
 };
 
 export function renderMobileApp(apis: RuntimeAPIs) {
+  // Stamp the surface before anything else reads it: perf tuning, sync paging,
+  // and device info all key off isMobileSurfaceRuntime(), and without the stamp
+  // a wide native device (iPad landscape) would fall out of the mobile branch.
+  window.__OPENCHAMBER_SURFACE__ = 'mobile';
+  preloadMarkdownRenderer();
   initializeSharedPreferences();
 
   // Expose the widget snapshot builder so the native shell can read the session overview
@@ -70,13 +77,19 @@ export function renderMobileApp(apis: RuntimeAPIs) {
     ? { ...apis, notifications: { notifyAgentCompletion: async () => false, canNotify: () => false } }
     : apis;
 
+  // Auth gating differs by shell: the native Capacitor app authenticates via
+  // its own instance-connect flow (MobileConnectionWelcome asks for the
+  // password per instance), while the plain mobile BROWSER against a
+  // --ui-password server must keep the classic SessionAuthGate unlock page.
+  const app = <MobileApp apis={resolvedApis} />;
+
   createRoot(rootElement).render(
     <StrictMode>
       <I18nProvider>
         <ThemeSystemProvider>
           <ThemeProvider>
             <DiffWorkerProvider>
-              <MobileApp apis={resolvedApis} />
+              {isNativeShell ? app : <SessionAuthGate>{app}</SessionAuthGate>}
             </DiffWorkerProvider>
           </ThemeProvider>
         </ThemeSystemProvider>

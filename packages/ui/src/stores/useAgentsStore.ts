@@ -39,7 +39,7 @@ const getCurrentDirectory = (): string | null => {
   return null;
 };
 
-const getConfigDirectory = (): string | null => {
+export const getConfigDirectory = (): string | null => {
   try {
     const projectsStore = useProjectsStore.getState();
     const activeProject = projectsStore.getActiveProject?.();
@@ -700,7 +700,9 @@ async function performConfigRefresh(options: {
       uiRefreshTasks.push(commandsStore.loadCommands().then(() => undefined));
     }
     if (refreshSkills) {
-      invalidateSkillsLoadCache(currentDirectory);
+      // Match loadSkills cache key (active-project-first). Passing client/directory-store
+      // path here misses the key when those diverge after getRequestDirectory().
+      invalidateSkillsLoadCache();
       uiRefreshTasks.push(skillsStore.loadSkills().then(() => undefined));
       uiRefreshTasks.push(skillsCatalogStore.loadCatalog({ refresh: true }).then(() => undefined));
     }

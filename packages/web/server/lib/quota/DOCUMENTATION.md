@@ -18,7 +18,9 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | --- | --- | --- | --- |
 | `claude` | Claude | `providers/claude.js` | `anthropic`, `claude` |
 | `codex` | Codex | `providers/codex.js` | `openai`, `codex`, `chatgpt` |
-| `cursor` | Cursor | `providers/cursor.js` | `CURSOR_TOKEN` / `CURSOR_ACCESS_TOKEN`, `CURSOR_REFRESH_TOKEN`, optional token files, or Cursor desktop SQLite DB |
+| `cursor` | Cursor | `providers/cursor.js` | Environment/token files, OpenChamber-managed credentials, or explicit one-time Cursor import |
+| `crof` | CrofAI | `providers/crof.js` | `crof` (API key under `key` or `token`) |
+| `deepseek` | DeepSeek | `providers/deepseek.js` | `deepseek` (API key under `key` or `token`) |
 | `google` | Google | `providers/google/index.js` | `google`, `google.oauth`, Antigravity accounts file |
 | `github-copilot` | GitHub Copilot | `providers/copilot.js` | `github-copilot`, `copilot` |
 | `github-copilot-addon` | GitHub Copilot Add-on | `providers/copilot.js` | `github-copilot`, `copilot` |
@@ -29,8 +31,10 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | `zhipuai-coding-plan` | Zhipu AI Coding Plan | `providers/zhipuai-coding-plan.js` | `zhipuai-coding-plan`, `zhipuai`, `zhipu` |
 | `minimax-coding-plan` | MiniMax Coding Plan (minimax.io) | `providers/minimax-coding-plan.js` / `providers/minimax-shared.js` | `minimax-coding-plan` |
 | `minimax-cn-coding-plan` | MiniMax Coding Plan (minimaxi.com) | `providers/minimax-cn-coding-plan.js` / `providers/minimax-shared.js` | `minimax-cn-coding-plan` |
-| `ollama-cloud` | Ollama Cloud | `providers/ollama-cloud.js` | Cookie file at `~/.config/ollama-quota/cookie` (raw session cookie string) |
+| `ollama-cloud` | Ollama Cloud | `providers/ollama-cloud.js` | Manual cookie stored under `~/.config/openchamber/quota/` |
 | `wafer` | Wafer.ai | `providers/wafer.js` | `wafer`, `wafer-ai`, `wafer_ai`, `wafer.ai` |
+| `opencode-go` | OpenCode Go | `providers/opencode-go.js` | Manual workspace ID and auth cookie stored under `~/.config/openchamber/quota/` |
+| `neuralwatt` | NeuralWatt | `providers/neuralwatt.js` | `neuralwatt` (API key under `key` or `token`) |
 
 ## Internal-only provider module
 - `providers/openai.js` exists for logic parity/reuse but is intentionally not registered for dispatcher ID routing.
@@ -43,6 +47,8 @@ All providers should return results via shared helpers to preserve API shape:
 
 Provider modules must export `providerId`, `providerName`, `aliases`, `isConfigured(auth?)`, and `fetchQuota()`.
 `fetchQuota()` should return a quota result with `usage.windows` keyed by window name (for example `5h`, `7d`, `daily`) and optional provider-specific `usage.models` data.
+
+OpenCode Go, Ollama Cloud, and Cursor credentials are explicitly managed through Settings. The server validates credentials before atomic `0600` writes and never returns secrets through its API. OpenChamber never scans browser cookie stores or automatically reads Cursor storage; Cursor import is an explicit one-time user action and never modifies Cursor's database.
 
 ## Add a new provider (quick steps)
 1. Choose module shape based on complexity:
@@ -65,7 +71,16 @@ In 2025/2026 MiniMax rebranded "Coding Plan" to "Token Plan" alongside the M3 mo
 - **model_remains array**: Now contains entries for multiple model categories (chat, speech, video, image). The provider selects the chat-model entry by matching `MiniMax-M*`, then `general`/`chat`/`text` by name, then any entry with a remaining percent.
 - **Window status**: The `current_interval_status` and `current_weekly_status` fields indicate whether a window is active. Status `3` means the window is not applicable for the current plan tier (e.g. legacy plans without weekly limits). The provider omits inactive windows.
 
+## Kimi for Coding field semantics
+
+`GET https://api.kimi.com/coding/v1/usages` is inconsistent about which field carries consumption:
+- The weekly `usage` block returns `used` (consumed) with no `remaining` field.
+- Each `limits[].detail` rate-limit block returns `remaining` (available) with no `used` field.
+
+The provider computes `usedPercent` from whichever of `used`/`remaining` is present (`used` takes precedence when both exist) rather than assuming one field name. Both `packages/web/server/lib/quota/providers/kimi.js` and `packages/vscode/src/quotaProviders.ts` (`fetchKimiQuota`) must stay in sync — the VS Code extension duplicates this parsing logic rather than importing it.
+
 ## Notes for contributors
 - Keep provider IDs stable; clients use them directly.
 - Avoid adding alias-based dispatch in `fetchQuotaForProvider`; dispatch currently expects exact provider IDs.
 - Keep Google behavior changes isolated and review `providers/google/*` together.
+- Z.ai Coding Plan exposes separate 5-hour and weekly `TOKENS_LIMIT` entries plus a monthly `TIME_LIMIT` for MCP tools; web and VS Code must preserve all three windows.

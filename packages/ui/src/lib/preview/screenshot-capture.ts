@@ -1,5 +1,3 @@
-import { snapdom } from '@zumer/snapdom';
-import { getFontEmbedCSS, toJpeg } from 'html-to-image';
 import { invokeDesktop } from '@/lib/desktop';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 
@@ -198,8 +196,9 @@ const TRANSPARENT_IMAGE_PLACEHOLDER = 'data:image/png;base64,iVBORw0KGgoAAAANSUh
 // switches, but intentionally does NOT survive a full page reload: the server
 // holds the target map in memory and the auth cookie is HttpOnly + scoped to
 // the proxy id, so a stale persisted entry would 404 after a server restart.
-// Entries are evicted on registration error (refetched) or when the upstream
-// returns 403 (cookie expired) / 404 (target unknown) at iframe load time.
+// Entries are evicted on registration error or when the preview proxy marks a
+// target as missing, expired, or unauthorized. Upstream 4xx responses are not
+// cache failures.
 export type CachedProxyTarget = { proxyBasePath: string; previewToken?: string; expiresAt: number };
 export const previewProxyTargetCache = new Map<string, CachedProxyTarget>();
 const previewProxyTargetRequests = new Map<string, Promise<CachedProxyTarget | null>>();
@@ -825,6 +824,9 @@ async function captureIframeSnapdomScreenshot(
       // Defensive: undo any nested-scroll drift from asset inlining before capture.
       nestedScroll.reapply();
 
+      // Lazy-load snapDOM: only needed when actually capturing a preview
+      // annotation screenshot, so keep it out of the eager app shell.
+      const { snapdom } = await import('@zumer/snapdom');
       const snapdomOptions = {
         backgroundColor: getCaptureBackgroundColor(document),
         cache: 'disabled' as const,
@@ -924,6 +926,8 @@ async function captureIframeDomScreenshot(
       await document.fonts?.ready.catch(() => undefined);
       restoreAssets = await inlineIframeCaptureAssets(document, viewportWidth, viewportHeight, { applyLayoutWorkarounds: true });
       frameWindow.scrollTo(scrollX, scrollY);
+      // Lazy-load html-to-image: only the fallback DOM-capture path needs it.
+      const { getFontEmbedCSS, toJpeg } = await import('html-to-image');
       const fontEmbedCSS = await getFontEmbedCSS(root).catch(() => '');
 
       dataUrl = await toJpeg(root, {
