@@ -2260,6 +2260,12 @@ export function SyncProvider(props: {
       props.sdk,
       childStores,
       () => opencodeClient.getDirectory() || props.directory,
+      (directory, sessionID, messageID) => {
+        enqueueSessionMaterialization(directory, sessionID, childStores, {
+          reason: "settled-running-tool",
+          messageID,
+        })
+      },
     )
     return () => {
       if (getImperativeSessionMessageLoader() === messageLoader) {
