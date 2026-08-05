@@ -179,6 +179,8 @@
     },
     "nsis": {
       "oneClick": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
       "perMachine": false,
       "include": "resources/installer.nsh",
       "installerIcon": "resources/icons/icon.ico",
