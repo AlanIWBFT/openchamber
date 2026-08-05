@@ -131,6 +131,8 @@
     },
     "nsis": {
       "oneClick": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
       "perMachine": false,
       "installerIcon": "resources/icons/icon.ico",
       "uninstallerIcon": "resources/icons/icon.ico",
