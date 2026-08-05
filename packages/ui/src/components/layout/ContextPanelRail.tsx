@@ -284,8 +284,8 @@ export const ContextPanelRail: React.FC = () => {
         <SortableContext items={surfaces.map((surface) => surface.id)} strategy={verticalListSortingStrategy}>
           {surfaces.map((surface, index) => {
             const label = t(surface.labelKey);
-            // The Git surface carries its changed-files count as a numeric
-            // badge; other surfaces keep the plain activity dot.
+            // Git shows a numeric badge instead of the old activity dot.
+            // Other surfaces never inherit git's changed-files signal.
             const gitChangedCount = surface.id === 'git' ? changedFilesCount : 0;
             const badgeCount = gitChangedCount > 0 ? gitChangedCount : null;
             return (
@@ -293,15 +293,25 @@ export const ContextPanelRail: React.FC = () => {
                 key={surface.id}
                 surface={surface}
                 isActive={activeMode === surface.mode}
-                showActivityDot={surface.id !== 'git' && changedFilesCount > 0}
+                showActivityDot={false}
                 label={label}
                 description={t(surface.descriptionKey)}
                 badgeCount={badgeCount}
                 badgeAriaLabel={badgeCount !== null
-                  ? t('contextRail.surface.git.changesCountAria', { label, count: badgeCount })
+                  ? t(
+                      badgeCount === 1
+                        ? 'contextRail.surface.git.changesCountAriaSingle'
+                        : 'contextRail.surface.git.changesCountAriaPlural',
+                      { label, count: badgeCount },
+                    )
                   : null}
                 badgeDescription={badgeCount !== null
-                  ? t('contextRail.surface.git.changesCountTooltip', { count: badgeCount })
+                  ? t(
+                      badgeCount === 1
+                        ? 'contextRail.surface.git.changesCountTooltipSingle'
+                        : 'contextRail.surface.git.changesCountTooltipPlural',
+                      { count: badgeCount },
+                    )
                   : null}
                 orderNumber={index + 1}
                 showOrderNumber={revealNumbers}
