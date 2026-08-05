@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Usage: GitHub Copilot now shows a single AI Credits window, matching Copilot's token-based quota, in place of the old Chat Requests and Completions windows (thanks to @jakoss).
 - Settings: fixed the Cloudflare Tunnel download link shown when cloudflared is not installed (thanks to @AyoubAchour).
 - Git: picking a remote branch such as `origin/main` in the branch selector now switches you to that branch instead of leaving the repository on a detached `HEAD` with no branch name.
+- Projects: the "Add project directory" picker now accepts multiple selections at once — each row has a checkbox (or press Space on the highlighted row) and the primary action adds every selected directory in a single store update, with per-entry validation, deduplication, and one persistence write (thanks to @herjarsa).
 - Desktop: "Restart to Update" no longer looks dead when the update cannot be installed — the update window now shows the reason, including when the running copy was not installed from an official signed release, and the button stays available to retry.
 
 ## [1.21.0] - 2026-08-26

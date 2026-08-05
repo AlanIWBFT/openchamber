@@ -49,7 +49,12 @@ interface ProjectsStore {
   activeProjectId: string | null;
   manualProjectOrder: string[];
 
+<<<<<<< HEAD
   addProject: (path: string, options?: { label?: string; id?: string }) => Promise<ProjectEntry | null>;
+=======
+  addProject: (path: string, options?: { label?: string; id?: string }) => ProjectEntry | null;
+  addProjects: (paths: string[]) => ProjectEntry[];
+>>>>>>> e7506d349 (feat(projects): support adding multiple projects at once in the directory picker)
   removeProject: (id: string) => void;
   setActiveProject: (id: string) => void;
   setActiveProjectIdOnly: (id: string) => void;
@@ -651,6 +656,55 @@ export const useProjectsStore = create<ProjectsStore>()(
       get().setActiveProject(entry.id);
       void get().discoverProjectIcon(entry.id);
       return entry;
+    },
+
+    addProjects: (paths: string[]) => {
+      if (isVSCodeProjectsRuntime) {
+        return [];
+      }
+      const current = get();
+      const existingPaths = new Set(current.projects.map((project) => project.path));
+      const now = Date.now();
+      const entries: ProjectEntry[] = [];
+      const seenPaths = new Set<string>();
+
+      for (const rawPath of paths) {
+        const validation = get().validateProjectPath(rawPath);
+        if (!validation.ok || !validation.normalizedPath) {
+          continue;
+        }
+        const normalizedPath = validation.normalizedPath;
+        if (existingPaths.has(normalizedPath) || seenPaths.has(normalizedPath)) {
+          continue;
+        }
+        seenPaths.add(normalizedPath);
+        entries.push({
+          id: createProjectIdFromPath(normalizedPath),
+          path: normalizedPath,
+          label: deriveProjectLabel(normalizedPath),
+          color: pickAutoColor([...current.projects, ...entries]),
+          addedAt: now,
+          lastOpenedAt: now,
+        });
+      }
+
+      if (entries.length === 0) {
+        return [];
+      }
+
+      const nextProjects = [...current.projects, ...entries];
+      set({ projects: nextProjects });
+
+      if (streamDebugEnabled()) {
+        console.info('[ProjectsStore] Added projects', entries);
+      }
+
+      // Mirror addProject: the first newly added project becomes active.
+      get().setActiveProject(entries[0].id);
+      for (const entry of entries) {
+        void get().discoverProjectIcon(entry.id);
+      }
+      return entries;
     },
 
     removeProject: (id: string) => {
