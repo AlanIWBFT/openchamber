@@ -57,11 +57,11 @@ const ALL_PARAMETER_PROPERTIES = {
   model: { type: 'string', description: 'Model in provider/model format. When the user names no model: for session.create pick a suitable one from models.list favorites or recents (omit if there are none); for send and fork omit it — the session reuses its previous model' },
   agent: { type: 'string', description: 'OpenCode agent name; new sessions default to the build agent and existing sessions keep their previous one. Set only when the user explicitly requests a different agent' },
   variant: { type: 'string', description: 'Model variant; use only when the user explicitly requests it' },
-  worktree: { type: 'string', description: 'New worktree name for session.create. Omit by default; use only when the user explicitly asks for an isolated worktree. Uncommitted changes do not carry over into a new worktree' },
+  worktree: { type: 'string', description: 'New isolated worktree name; branch, startRef, and setUpstream apply only with it. Uncommitted changes do not carry over. Set only when explicitly requested' },
   branch: { type: 'string', description: 'Branch name for the new worktree' },
   startRef: { type: 'string', description: 'Git ref used to create the new worktree' },
   setUpstream: { type: 'boolean', description: 'Make the new worktree branch track its upstream' },
-  goal: { type: 'boolean', description: 'Run the dispatched prompt in Goal Mode; use only when the user explicitly requests it' },
+  goal: { type: 'boolean', description: 'Run the dispatched prompt in Goal Mode; requires prompt. Set only when the user explicitly requests it' },
   goalTokenBudget: { type: 'integer', minimum: 1000, maximum: 100_000_000, description: 'Goal token budget; requires goal' },
   wait: { type: 'boolean', description: 'Wait for current session activity to become idle. Omit by default; use only when the user asks or the next step requires the completed result' },
   timeout: { type: 'integer', minimum: 1, maximum: 86_400, description: 'Wait timeout in seconds (default 600); requires wait' },
@@ -72,11 +72,11 @@ const ALL_PARAMETER_PROPERTIES = {
   withStatus: { type: 'boolean', description: 'Include authoritative status in session.list' },
   role: { type: 'string', enum: ['all', 'user', 'assistant'], description: 'Message role filter' },
   name: { type: 'string' },
-  daily: { type: 'string', description: 'Daily run time in HH:mm format' },
-  weekly: { type: 'string', description: 'Comma-separated weekdays; 0=Sunday and 6=Saturday' },
-  once: { type: 'string', description: 'One-time run date in YYYY-MM-DD format' },
-  time: { type: 'string', description: 'Weekly or one-time run time in HH:mm format' },
-  cron: { type: 'string', description: 'Cron expression' },
+  daily: { type: 'string' },
+  weekly: { type: 'string' },
+  once: { type: 'string' },
+  time: { type: 'string' },
+  cron: { type: 'string' },
   timezone: { type: 'string', description: 'IANA timezone' },
   disabled: { type: 'boolean', description: 'true disables and false enables; required for schedule.toggle' },
   url: { type: 'string', description: 'http(s) URL for browser.open' },
@@ -108,7 +108,7 @@ const MEMORY_PARAMETER_PROPERTIES = {
   ...MEMORY_PARAMETER_OVERRIDES,
 };
 
-const CONTROL_TOOL_DESCRIPTION = "Control OpenChamber projects, sessions, and scheduled tasks on the user's behalf. Sessions and scheduled tasks you create are for the user to follow and interact with; never use this tool to delegate parts of your own current task. Use one action per call. Scope with projectId or directory; omit both to use the current session directory. Session dispatches return immediately by default and you receive no notification when a dispatched session finishes, so never promise to report back on it; the user follows it in OpenChamber; a dispatched session needs no follow-up from you. If the user later asks how it went, use session.messages (add wait to block until it is idle, lastAssistant for just the final answer) — session.send always sends a NEW prompt and never just waits. Set wait only when the user asks or the next step requires the completed result. Session and worktree deletion are unavailable.";
+const CONTROL_TOOL_DESCRIPTION = "Control OpenChamber projects, sessions, and scheduled tasks on the user's behalf. Sessions and scheduled tasks you create are for the user to follow and interact with; never use this tool to delegate parts of your own current task. Use one action per call. Scope with projectId or directory, never both; omit both to use the current session directory. Scheduled-task scope must resolve to a configured project. Explicit model, agent, and variant must be valid for the scoped directory. Session dispatches return immediately by default and you receive no notification when a dispatched session finishes, so never promise to report back on it; the user follows it in OpenChamber; a dispatched session needs no follow-up from you. If the user later asks how it went, use session.messages (add wait to block until it is idle, lastAssistant for just the final answer) — session.send always sends a NEW prompt and never just waits. Set wait only when the user asks or the next step requires the completed result. Session and worktree deletion are unavailable.";
 
 const WEB_TOOL_DESCRIPTION = "Look at and interact with a web page in OpenChamber's browser panel, so you can check your own work rather than describing what you expect. Use one action per call. Open a page, snapshot it to read its text and its interactive elements, then click, type or scroll using the selectors the snapshot returned; snapshots also report any errors the page logged. Pass a selector to browser.snapshot to read one part of a long page. browser.inspect returns computed styles when the question is how something renders. Set viewport to check a layout at mobile, tablet or desktop size. The page runs with the user's real logins, so treat what you see as their live session.";
 
@@ -147,16 +147,20 @@ const isLoopbackAddress = (value) => {
 const createToolEntry = ({ name, description, actions, definitions, parameters }) => String.raw`    ${name}: {
       description: ${JSON.stringify(description)},
       args: {
-        action: { type: "string", enum: ${JSON.stringify(actions)}, oneOf: ${JSON.stringify(definitions.map((entry) => ({ const: entry.action, description: entry.description })))}, description: "OpenChamber action to perform" },
-        parameters: { type: "object", properties: ${JSON.stringify(parameters)}, additionalProperties: false, description: "Inputs for the action; use an empty object when none are needed" },
+        request: {
+          type: "object",
+          properties: ${JSON.stringify({
+            action: { type: 'string', enum: actions, oneOf: definitions.map((entry) => ({ const: entry.action, description: entry.description })), description: 'OpenChamber action to perform' },
+            ...parameters,
+          })},
+          required: ["action"],
+          additionalProperties: false,
+          description: "OpenChamber action and its inputs",
+        },
       },
       async execute(input, context) {
-        // Models routinely put the inputs next to the action instead of inside
-        // the parameters object, and dropping them there produced a
-        // "url is required" error for a call that plainly carried a url. Both
-        // shapes are accepted; an explicit parameters object wins on a conflict.
-        const { action: requestedAction, parameters, ...flattened } = input ?? {}
-        const args = { ...flattened, ...(parameters ?? {}), action: requestedAction }
+        const { request, parameters: legacyParameters, ...flattened } = input ?? {}
+        const args = { ...flattened, ...(legacyParameters ?? {}), ...(request ?? {}) }
         const actionTitles = ${JSON.stringify(AGENT_TOOL_ACTION_TITLES)}
         const title = Object.hasOwn(actionTitles, args.action) ? actionTitles[args.action] : args.action
         context.metadata({
