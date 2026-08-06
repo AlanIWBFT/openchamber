@@ -50,7 +50,7 @@ const createMockChild = () => {
   return child;
 };
 
-const createRuntime = (overrides = {}, stateOverrides = {}) => {
+const createRuntime = (overrides = {}, stateOverrides = {}, envOverrides = {}) => {
   const state = {
     openCodeWorkingDirectory: '/tmp/project',
     openCodeProcess: null,
@@ -83,6 +83,7 @@ const createRuntime = (overrides = {}, stateOverrides = {}) => {
       ENV_EFFECTIVE_PORT: 3001,
       ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
       ENV_SKIP_OPENCODE_START: false,
+      ...envOverrides,
     },
     syncToHmrState: vi.fn(),
     syncFromHmrState: vi.fn(),
@@ -307,6 +308,27 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
     expect(server.exitCode).toBeNull();
     expect(server.signalCode).toBeNull();
+
+    await server.close();
+    expect(server.signalCode).toBe('SIGTERM');
+  });
+
+  it('launches managed OpenCode on the configured bind hostname', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://0.0.0.0:45678\n');
+      });
+      return child;
+    });
+
+    const runtime = createRuntime({}, {}, { ENV_CONFIGURED_OPENCODE_HOSTNAME: '0.0.0.0' });
+    const server = await runtime.startOpenCode();
+    const [binary, args] = spawnMock.mock.calls[0];
+
+    expect(binary).toBe('opencode');
+    expect(args).toEqual(['serve', '--hostname', '0.0.0.0', '--port', '45678']);
 
     await server.close();
     expect(server.signalCode).toBe('SIGTERM');
