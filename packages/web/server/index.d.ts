@@ -6,6 +6,19 @@ export interface WebUiServerController {
   httpServer: Server;
   getPort: () => number | null;
   getOpenCodePort: () => number | null;
+  getQuitRiskStatus: () => {
+    tunnel: { active: boolean };
+    scheduledTasks: {
+      hasEnabledScheduledTasks: boolean;
+      hasRunningScheduledTasks: boolean;
+      enabledScheduledTasksCount: number;
+      runningScheduledTasksCount: number;
+    };
+    sessionActivity: {
+      hasRunningSessions: boolean;
+      runningSessionsCount: number;
+    };
+  };
   isReady: () => boolean;
   getManagedOpenCodePreflight: () => Promise<boolean>;
   restartOpenCode: () => Promise<void>;

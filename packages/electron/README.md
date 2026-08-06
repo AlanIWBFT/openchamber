@@ -297,6 +297,8 @@ Unpackaged desktop and its HMR server default to `~/.config/openchamber-dev` for
 
 The development launcher releases Electron's splash after preparing its data directory. Electron then starts the API; Vite runs separately.
 
+The native quit prompt also covers running conversations, active tunnels, and scheduled tasks.
+
 Desktop quit closes the managed server's `serve --stdio` input pipe. OpenCode then
 releases its server scope and database resources. The backend starts this cleanup
 alongside its other resource drains, waits within the shared 35-second deadline,
