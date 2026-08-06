@@ -103,7 +103,7 @@ const ALL_PARAMETER_PROPERTIES = {
   existingBranch: { type: 'string', description: 'session.moveToWorktree: check out this branch that already exists instead of making a new one; a local branch, or a remote one such as origin/feature, which gets a local branch tracking it. Do not combine with branch or startRef' },
   setUpstream: { type: 'boolean', description: 'Make the new worktree branch track its upstream' },
   pullRequest: { type: 'integer', minimum: 1, description: "Pull or merge request number in this project for session.create: the session starts in a new worktree on that request's branch, made the way the New worktree dialog makes it. worktree and branch only rename the folder and the local branch. Use only when the user asks to work on that pull request" },
-  goal: { type: 'boolean', description: 'Run the dispatched prompt in Goal Mode; use only when the user explicitly requests it' },
+  goal: { type: 'boolean', description: 'Run the dispatched prompt in Goal Mode; requires prompt. Set only when the user explicitly requests it' },
   goalTokenBudget: { type: 'integer', minimum: 1000, maximum: 100_000_000, description: 'Goal token budget; requires goal' },
   returnResult: { type: 'boolean', description: 'For session.create, send and fork with a prompt: deliver the session\'s final answer back to you as a message when it finishes, waking you to continue. The call still returns at once. Set only when the user wants the outcome back or your next step needs it' },
   lastAssistant: { type: 'boolean', description: 'session.messages: return only the last assistant message' },
@@ -113,11 +113,11 @@ const ALL_PARAMETER_PROPERTIES = {
   withStatus: { type: 'boolean', description: 'Include authoritative status in session.list' },
   role: { type: 'string', enum: ['all', 'user', 'assistant'], description: 'Message role filter' },
   name: { type: 'string' },
-  daily: { type: 'string', description: 'Daily run time in HH:mm format' },
-  weekly: { type: 'string', description: 'Comma-separated weekdays; 0=Sunday and 6=Saturday' },
-  once: { type: 'string', description: 'One-time run date in YYYY-MM-DD format' },
-  time: { type: 'string', description: 'Weekly or one-time run time in HH:mm format' },
-  cron: { type: 'string', description: 'Cron expression' },
+  daily: { type: 'string' },
+  weekly: { type: 'string' },
+  once: { type: 'string' },
+  time: { type: 'string' },
+  cron: { type: 'string' },
   timezone: { type: 'string', description: 'IANA timezone' },
   disabled: { type: 'boolean', description: 'true disables and false enables; required for schedule.toggle' },
   path: { type: 'string', description: 'File to show for file.open; absolute, or relative to the session directory' },
@@ -341,21 +341,23 @@ const createToolEntry = ({ name, description, definitions, parameters, codeMode,
       input: {
         type: "object",
         properties: {
-          action: { type: "string", oneOf: ${JSON.stringify(definitions.map((entry) => ({ const: entry.action, description: entry.description })))}, description: "OpenChamber action to perform" },
-          parameters: { type: "object", properties: ${JSON.stringify(parameters)}, additionalProperties: false, description: "Inputs for the action; use an empty object when none are needed" },
+          request: {
+            type: "object",
+            properties: ${JSON.stringify({
+              action: { type: 'string', oneOf: definitions.map((entry) => ({ const: entry.action, description: entry.description })), description: 'OpenChamber action to perform' },
+              ...parameters,
+            })},
+            required: ["action"],
+            additionalProperties: false,
+            description: "OpenChamber action and its inputs",
+          },
         },
-        required: ["action"],
-        // Models routinely put the inputs next to the action; the schema has to
-        // let that reach execute() instead of rejecting the call.
-        additionalProperties: true,
+        required: ["request"],
+        additionalProperties: false,
       },
       async execute(input, context) {
-        // Models routinely put the inputs next to the action instead of inside
-        // the parameters object, and dropping them there produced a
-        // "url is required" error for a call that plainly carried a url. Both
-        // shapes are accepted; an explicit parameters object wins on a conflict.
-        const { action: requestedAction, parameters, ...flattened } = input ?? {}
-        const args = { ...flattened, ...(parameters ?? {}), action: requestedAction }
+        const { request, parameters: legacyParameters, ...flattened } = input ?? {}
+        const args = { ...flattened, ...(legacyParameters ?? {}), ...(request ?? {}) }
         const actionTitles = ${JSON.stringify(AGENT_TOOL_ACTION_TITLES)}
         const title = Object.hasOwn(actionTitles, args.action) ? actionTitles[args.action] : args.action
         const progress = (extra) => context.progress({
@@ -413,7 +415,7 @@ const createPluginSource = ({ includeControl, includeWeb, includeMemory, include
   if (includeControl) {
     entries.push(createToolEntry({
       name: 'openchamber',
-      description: CONTROL_TOOL_DESCRIPTION,
+      description: `${CONTROL_TOOL_DESCRIPTION} Scheduled-task scope must resolve to a configured project. Explicit model, agent, and variant must be valid for the scoped directory.`,
       definitions: OPENCHAMBER_AGENT_TOOL_ACTION_DEFINITIONS,
       parameters: CONTROL_PARAMETER_PROPERTIES,
       codeMode,
