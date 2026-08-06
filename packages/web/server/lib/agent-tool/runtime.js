@@ -546,21 +546,20 @@ const createToolEntry = ({ name, description, definitions, parameters, codeMode,
       input: {
         type: "object",
         properties: {
-          action: ${JSON.stringify(actionSchema.property)},
-          parameters: { type: "object", properties: ${JSON.stringify(parameters)}, additionalProperties: false, description: "Inputs for the action; use an empty object when none are needed" },
+          request: {
+            type: "object",
+            properties: ${JSON.stringify({ action: actionSchema.property, ...parameters })},
+            required: ${JSON.stringify(actionSchema.required)},
+            additionalProperties: false,
+            description: "OpenChamber action and its inputs",
+          },
         },
-        required: ${JSON.stringify(actionSchema.required)},
-        // Models routinely put the inputs next to the action; the schema has to
-        // let that reach execute() instead of rejecting the call.
-        additionalProperties: true,
+        required: ["request"],
+        additionalProperties: false,
       },
       async execute(input, context) {
-        // Models routinely put the inputs next to the action instead of inside
-        // the parameters object, and dropping them there produced a
-        // "url is required" error for a call that plainly carried a url. Both
-        // shapes are accepted; an explicit parameters object wins on a conflict.
-        const { action: requestedAction, parameters, ...flattened } = input ?? {}
-        const args = { ...flattened, ...(parameters ?? {}), action: requestedAction }
+        const { request, parameters: legacyParameters, ...flattened } = input ?? {}
+        const args = { ...flattened, ...(legacyParameters ?? {}), ...(request ?? {}) }
         // Nested object values can arrive JSON-stringified (issue #4591). Only
         // 'link' is revived, once, and only into a plain object: free-form
         // strings such as prompts and titles must stay text. The field belongs
@@ -646,7 +645,7 @@ const createPluginSource = ({ includeControl, includeSchedule, includeWeb, inclu
   if (includeControl) {
     entries.push(createToolEntry({
       name: 'openchamber',
-      description: CONTROL_TOOL_DESCRIPTION,
+      description: `${CONTROL_TOOL_DESCRIPTION} Scheduled-task scope must resolve to a configured project. Explicit model, agent, and variant must be valid for the scoped directory.`,
       definitions: OPENCHAMBER_AGENT_TOOL_ACTION_DEFINITIONS,
       parameters: CONTROL_PARAMETER_PROPERTIES,
       codeMode,

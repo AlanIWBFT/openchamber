@@ -106,14 +106,9 @@ both settings are `false`.
   a page from that tool's own call (its input and stored result), and inside
   an `execute` script the call is only an entry in `execute`'s list, so the
   page never showed.
-- The plugin accepts the action's inputs either inside `parameters` or beside
-  `action`, because models produce both shapes; an explicit `parameters` object
-  wins on a conflict. Rejecting the flattened shape turned a call that plainly
-  carried a `url` into "url is required", which reads as a broken tool rather
-  than a malformed call. The schema declares the inputs only inside
-  `parameters`, and `additionalProperties: true` at the root lets flattened
-  inputs and unknown fields (a stale `wait` or `timeout`) through to the
-  adapter.
+- The advertised input is `{ request: { action, ...inputs } }`. The execution
+  adapter retains legacy flattened and `parameters` inputs, with `request`
+  taking precedence. New calls use the request schema.
 
 ### Why scheduling is its own tool and not part of `openchamber`
 
@@ -124,13 +119,6 @@ schedules, and each schema lists only the inputs its actions take. The rest of
 the control tool stays one tool: its actions share `sessionId`, `directory`,
 `prompt` and `model`, and split apart they would repeat them.
 
-### Why the inputs are declared once and not beside `action` too
-
-Copying every input to the schema root would let the descriptions reach a
-model that fills in the flattened shape, but outside Code Mode the schema
-ships with every request: the copy costs about 8.7k characters per turn when
-all tools are on, and the flattened calls already work through
-`additionalProperties`.
 
 ## Runtime flow
 
@@ -150,7 +138,7 @@ all tools are on, and the flattened calls already work through
    uses the bound address instead. The limit failover plugin
    (`../limit-failover/`) calls back with the same address and token, and its
    route checks them with `authorizeRequest`.
-4. The plugin calls `POST /api/openchamber/agent-tool` with its typed input and
+4. The plugin unwraps `request` and calls `POST /api/openchamber/agent-tool` with the action input and
    the session id OpenCode gives the tool; OpenChamber resolves the session's
    directory on its own side.
 5. The route delegates the fixed action allowlist directly to the shared
@@ -160,8 +148,8 @@ all tools are on, and the flattened calls already work through
    have one owner.
 6. Each action definition owns a short presentation title and a separate
    agent-facing description. The generated schema uses the description to state
-   required inputs or one non-obvious behavior, while completed calls use the
-   short title in native tool metadata.
+   required inputs, one non-obvious behavior, or one compact example, while
+   completed calls use the short title in native tool metadata.
 
 ## Agent context budget
 
@@ -178,12 +166,13 @@ default and when to set it. Field names and JSON types carry the rest.
   the user installed; the input schema reaches the model whole. A rule that
   only matters while writing one input, such as the page layout rules on
   `html`, is that input's description.
-- The tool exposes one shared parameter object rather than repeating parameters
-  in a large per-action union.
+- The tool exposes one shared `request` object rather than repeating parameters
+  in a large per-action union. Keeping it distinct from a parallel wrapper's
+  `parameters` prevents one layer from being mistaken for the other.
 - The action schema carries `oneOf` and no `enum`. A node combining `enum` and
   `oneOf` is valid JSON Schema, but some OpenAI-compatible gateways reject it
   and answer with an empty completion instead of an error.
-- A tool with a single action (render, notify) declares `action` as a plain,
+- A tool with a single action (render, notify) declares `request.action` as a plain,
   optional string and always runs its one action. A weaker model put the whole
   render call into `action` as a JSON string, title included, with the html
   beside it; the strict `oneOf` refused that before the tool ran, and every
@@ -224,6 +213,9 @@ default and when to set it. Field names and JSON types carry the rest.
   `subagent` when the agent delegates part of its own task and wants the
   answer for itself, `session.*` when the user asks for a separate session
   they will follow and talk to.
+- JSON Schema owns types, enums, and numeric ranges. Shared descriptions own
+  cross-action scope and selection rules; action descriptions own only their
+  distinctive dependencies and compact examples.
 - The tool exposes only agent-relevant actions
   (`OPENCHAMBER_AGENT_TOOL_ACTIONS`): `schedule.status` stays CLI-only because
   `schedule.list` already returns scheduler status, and enable/disable are one
@@ -258,9 +250,9 @@ default and when to set it. Field names and JSON types carry the rest.
   The session context names the branch (`../session-knowledge/`), and
   OpenCode tells the agent when it changed between its messages, which the
   agent cannot see for itself.
-- Detailed combination rules are enforced by the shared control service and
-  returned as actionable usage errors only after an invalid call. Per-action
-  examples and a repeated per-action parameter schema are intentionally omitted.
+- Combination rules that commonly cause avoidable retries are summarized in the
+  relevant action description. The shared control service still owns exhaustive
+  validation and returns actionable errors without a repeated per-action schema.
 
 ### Why the plugin removes some of OpenCode's own tools
 
