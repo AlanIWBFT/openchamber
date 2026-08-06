@@ -1027,7 +1027,7 @@ describe("optimisticSend target directory", () => {
     expect(targetStore.getState().part.msg_2).toEqual([revertedPart])
   })
 
-  test("allows callers to block final send when runtime changes after optimistic insert", async () => {
+  test("rolls back a captured send when the runtime changes after optimistic insert", async () => {
     const targetStore = createStore({})
     const childStores = createChildStores([["/target/project", targetStore]])
     let optimisticAdd: OptimisticAddCall | null = null
@@ -1052,15 +1052,15 @@ describe("optimisticSend target directory", () => {
       await optimisticSend({
         sessionId: "session-race",
         directory: "/target/project",
+        runtimeKey: "runtime-a",
         content: "hello",
         providerID: "provider",
         modelID: "model",
-        beforeOptimisticInsert: () => {
+        onOptimisticInsert: () => {
           expect(getRuntimeKey()).toBe("runtime-a")
+          switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-b.test", runtimeKey: "runtime-b" })
         },
         send: async () => {
-          switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-b.test", runtimeKey: "runtime-b" })
-          if (getRuntimeKey() !== "runtime-a") throw new Error("Auto-review stopped because the runtime changed.")
           finalSendCalled = true
         },
       })

@@ -269,6 +269,12 @@ class OpencodeService {
     this.client = createRuntimeOpencodeClient({ baseUrl: this.baseUrl });
   }
 
+  private assertRuntimeUnchanged(runtimeKey?: string): void {
+    if (runtimeKey && runtimeKey !== getRuntimeKey()) {
+      throw new Error('Message was not sent because the runtime changed.');
+    }
+  }
+
   getBaseUrl(): string {
     return this.baseUrl;
   }
@@ -744,6 +750,7 @@ class OpencodeService {
   }
 
   async sendMessage(params: {
+    runtimeKey?: string;
     id: string;
     providerID: string;
     modelID: string;
@@ -769,6 +776,8 @@ class OpencodeService {
     };
     directory?: string | null;
   }): Promise<string> {
+    this.assertRuntimeUnchanged(params.runtimeKey);
+
     // Use the optimistic/client-generated ID as the real user message ID so SSE
     // can reconcile the echoed server message in-place.
     const messageId = params.messageId ?? ascendingId("msg");
@@ -852,6 +861,7 @@ class OpencodeService {
     }
 
     assertProviderCircuitClosed(params.providerID);
+    this.assertRuntimeUnchanged(params.runtimeKey);
 
     let response: Response;
 
@@ -918,6 +928,7 @@ class OpencodeService {
   }
 
   async sendCommand(params: {
+    runtimeKey?: string;
     id: string;
     providerID: string;
     modelID: string;
@@ -929,6 +940,8 @@ class OpencodeService {
     messageId?: string;
     directory?: string | null;
   }): Promise<string> {
+    this.assertRuntimeUnchanged(params.runtimeKey);
+
     const tempMessageId = params.messageId ?? ascendingId("msg");
 
     const parts: FilePartInput[] = [];
@@ -939,6 +952,7 @@ class OpencodeService {
     }
 
     const requestDirectory = this.normalizeCandidatePath(params.directory ?? null) ?? this.currentDirectory;
+    this.assertRuntimeUnchanged(params.runtimeKey);
 
     const response = await this.client.session.command({
       sessionID: params.id,
@@ -968,6 +982,7 @@ class OpencodeService {
   }
 
   async shellSession(params: {
+    runtimeKey?: string;
     sessionId: string;
     command: string;
     agent: string;
@@ -975,6 +990,7 @@ class OpencodeService {
     messageId?: string;
     directory?: string | null;
   }): Promise<{ info: Message; parts: Part[] }> {
+    this.assertRuntimeUnchanged(params.runtimeKey);
     const requestDirectory = this.normalizeCandidatePath(params.directory ?? null) ?? this.currentDirectory;
     const response = await this.client.session.shell({
       sessionID: params.sessionId,
