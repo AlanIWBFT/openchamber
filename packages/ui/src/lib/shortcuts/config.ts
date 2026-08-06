@@ -5,6 +5,7 @@ type ShortcutCategory = 'session' | 'models' | 'panels' | 'navigation' | 'applic
 type ShortcutConfig = {
   id: string;
   defaultBinding: ShortcutCombo;
+  allowsSequenceFallback?: true;
 } & (
   | { customizable: false }
   | {
@@ -18,6 +19,7 @@ const SHORTCUT_GROUPS = {
     {
       id: 'add_selection_to_chat',
       defaultBinding: 'mod+l',
+      allowsSequenceFallback: true,
       customizable: true,
       settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.add_selection_to_chat.label',
@@ -190,7 +192,7 @@ const SHORTCUT_GROUPS = {
     },
   ],
   navigation: [
-    { id: 'save_file', defaultBinding: 'mod+s', customizable: false },
+    { id: 'save_file', defaultBinding: 'mod+s', customizable: false, allowsSequenceFallback: true },
     { id: 'find_in_file', defaultBinding: 'mod+f', customizable: false },
     {
       id: 'open_go_to_line',

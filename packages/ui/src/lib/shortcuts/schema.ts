@@ -15,10 +15,28 @@ export type ShortcutAction = (typeof SHORTCUT_SCHEMA)[number];
 export type ShortcutActionId = ShortcutAction['id'];
 export type ShortcutCategory = ShortcutAction['category'];
 export type CustomizableShortcutAction = Extract<ShortcutAction, { customizable: true }>;
+export type ShortcutBindingConflictKind = ShortcutConflict | 'contextual-prefix';
 export type ShortcutBindingConflict = {
   action: ShortcutAction;
-  kind: ShortcutConflict;
+  kind: ShortcutBindingConflictKind;
 };
+
+function allowsContextualPrefix(
+  action: ShortcutAction,
+  combo: ShortcutCombo,
+  candidate: ShortcutAction,
+  candidateCombo: ShortcutCombo,
+): boolean {
+  const chordCount = parseShortcut(combo)?.chords.length;
+  const candidateChordCount = parseShortcut(candidateCombo)?.chords.length;
+  if (chordCount === 1 && candidateChordCount === 2) {
+    return 'allowsSequenceFallback' in action && action.allowsSequenceFallback;
+  }
+  if (chordCount === 2 && candidateChordCount === 1) {
+    return 'allowsSequenceFallback' in candidate && candidate.allowsSequenceFallback;
+  }
+  return false;
+}
 
 export function getShortcutAction(id: string): ShortcutAction | undefined {
   return SHORTCUT_SCHEMA.find((action) => action.id === id);
@@ -73,13 +91,21 @@ export function getShortcutBindingConflicts(
   overrides?: Record<string, ShortcutCombo>,
 ): ShortcutBindingConflict[] {
   const conflicts: ShortcutBindingConflict[] = [];
+  const action = getShortcutAction(actionId);
+  if (!action) return conflicts;
   for (const candidate of SHORTCUT_SCHEMA) {
     if (candidate.id === actionId) continue;
     const candidateCombo = candidate.id === 'switch_context_surface'
       ? getEffectiveShortcutPrefix(candidate.id, overrides)
       : getEffectiveShortcutCombo(candidate.id, overrides);
     const kind = getShortcutConflict(combo, candidateCombo);
-    if (kind) conflicts.push({ action: candidate, kind });
+    if (!kind) continue;
+    conflicts.push({
+      action: candidate,
+      kind: kind === 'prefix' && allowsContextualPrefix(action, combo, candidate, candidateCombo)
+        ? 'contextual-prefix'
+        : kind,
+    });
   }
   return conflicts;
 }

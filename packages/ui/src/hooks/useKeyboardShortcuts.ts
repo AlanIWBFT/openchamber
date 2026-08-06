@@ -21,6 +21,7 @@ import {
   shortcutRegistry,
   type ShortcutActionId,
 } from '@/lib/shortcuts';
+import { ShortcutRegistry } from '@/lib/shortcuts/registry';
 import { getVisibleContextRailSurfaces } from '@/lib/surfaces/registry';
 import { readEmbeddedThemeSearchParams } from '@/contexts/theme-embedded-bootstrap';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -29,8 +30,14 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { getCycledPrimaryAgentName } from '@/components/chat/mobileControlsUtils';
 import { focusChatInput } from '@/components/chat/composer/editor/dom';
-import { addSelectionToChat } from '@/lib/addSelectionToChat';
-import { hasOpenDropdown } from './keyboard-shortcut-dom';
+import {
+  dismissActiveSelectionToolbar,
+  getActiveSelectionToolbarVersion,
+  hasActiveSelectionToolbar,
+  invokeActiveSelectionAddToChat,
+} from '@/lib/addSelectionToChat';
+import { isIMECompositionEvent } from '@/lib/ime';
+import { hasOpenDropdown, shouldStopDropdownImeEscape } from './keyboard-shortcut-dom';
 
 const dropdownTargetSelector = [
   '[data-slot="dropdown-menu-content"]', '[data-slot="select-content"]', '[role="combobox"]',
@@ -52,6 +59,8 @@ export const useKeyboardShortcuts = () => {
   const abortPrimedTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const themeModeRef = React.useRef(themeMode);
   const dispatcherRef = React.useRef<ShortcutDispatcher | null>(null);
+  const selectionToolbarDispatcherRef = React.useRef<ShortcutDispatcher | null>(null);
+  const selectionToolbarVersionRef = React.useRef(-1);
   const heldKeysRef = React.useRef<Set<string>>(new Set());
 
   if (!dispatcherRef.current) {
@@ -64,6 +73,18 @@ export const useKeyboardShortcuts = () => {
     });
   }
   const dispatcher = dispatcherRef.current;
+  if (!selectionToolbarDispatcherRef.current) {
+    const registry = new ShortcutRegistry();
+    registry.register('add_selection_to_chat', invokeActiveSelectionAddToChat);
+    selectionToolbarDispatcherRef.current = new ShortcutDispatcher({
+      registry,
+      getBinding: () => getEffectiveShortcutCombo(
+        'add_selection_to_chat',
+        useUIStore.getState().shortcutOverrides,
+      ),
+    });
+  }
+  const selectionToolbarDispatcher = selectionToolbarDispatcherRef.current;
 
   React.useEffect(() => { themeModeRef.current = themeMode; }, [themeMode]);
 
@@ -173,9 +194,7 @@ export const useKeyboardShortcuts = () => {
       const state = useUIStore.getState();
       state.setSettingsDialogOpen(!state.isSettingsDialogOpen);
     },
-    add_selection_to_chat: () => {
-      addSelectionToChat();
-    },
+    add_selection_to_chat: invokeActiveSelectionAddToChat,
     toggle_sidebar: () => {
       const state = useUIStore.getState();
       if (state.isMobile) state.setSessionSwitcherOpen(!state.isSessionSwitcherOpen);
@@ -332,6 +351,34 @@ export const useKeyboardShortcuts = () => {
         event.stopPropagation();
       }
     };
+    const handleSelectionToolbarKeyDownCapture = (event: KeyboardEvent) => {
+      const version = getActiveSelectionToolbarVersion();
+      if (selectionToolbarVersionRef.current !== version) {
+        selectionToolbarVersionRef.current = version;
+        selectionToolbarDispatcher.clear();
+      }
+      if (!hasActiveSelectionToolbar()) return;
+      if (isIMECompositionEvent(event)) {
+        selectionToolbarDispatcher.clear();
+        if (event.key === 'Escape') {
+          event.stopImmediatePropagation();
+        }
+        return;
+      }
+      if (event.key === 'Escape') {
+        selectionToolbarDispatcher.clear();
+        if (dismissActiveSelectionToolbar()) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          resetAbortPriming();
+        }
+        return;
+      }
+      if (selectionToolbarDispatcher.dispatch(event)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
     const handleEscapeKeyDownCapture = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       if (dispatcher.handleEscape()) {
@@ -343,11 +390,16 @@ export const useKeyboardShortcuts = () => {
       const state = useUIStore.getState();
       const isDropdownTarget = target instanceof Element
         && target.closest(dropdownTargetSelector);
+      const dropdownOpen = Boolean(isDropdownTarget || hasOpenDropdown());
+      if (shouldStopDropdownImeEscape(event, dropdownOpen)) {
+        event.stopImmediatePropagation();
+        resetAbortPriming();
+        return;
+      }
       if (
         target?.closest('[role="dialog"]')
         || isTerminalEventTarget(target)
-        || isDropdownTarget
-        || hasOpenDropdown()
+        || dropdownOpen
       ) {
         resetAbortPriming();
         return;
@@ -410,6 +462,7 @@ export const useKeyboardShortcuts = () => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (dispatcher.consumeCapturedPrefixEvent(event)) return;
       if (event.key === 'Escape' || isTerminalEventTarget(event.target)) return;
+      if (shortcutRegistry.isSuspended() || hasActiveSelectionToolbar()) return;
       const combo = getEffectiveShortcutCombo('cycle_agent', useUIStore.getState().shortcutOverrides);
       const backward = combo && !combo.includes('shift') ? normalizeCombo(`shift+${combo}`) : '';
       if (backward && eventMatchesShortcut(event, backward)) {
@@ -460,8 +513,10 @@ export const useKeyboardShortcuts = () => {
     const handleBlur = () => {
       heldKeysRef.current.clear();
       dispatcher.handleBlur();
+      selectionToolbarDispatcher.handleBlur();
     };
     window.addEventListener('keydown', handleKeyHoldDown, true);
+    window.addEventListener('keydown', handleSelectionToolbarKeyDownCapture, true);
     window.addEventListener('keyup', handleKeyUp, true);
     window.addEventListener('keydown', handleTerminalShortcutCapture, true);
     window.addEventListener('keydown', handleEscapeKeyDownCapture, true);
@@ -470,6 +525,7 @@ export const useKeyboardShortcuts = () => {
     window.addEventListener('blur', handleBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyHoldDown, true);
+      window.removeEventListener('keydown', handleSelectionToolbarKeyDownCapture, true);
       window.removeEventListener('keyup', handleKeyUp, true);
       window.removeEventListener('keydown', handleTerminalShortcutCapture, true);
       window.removeEventListener('keydown', handleEscapeKeyDownCapture, true);
@@ -477,7 +533,7 @@ export const useKeyboardShortcuts = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [armAbortPrompt, currentSessionId, dispatcher, effectiveDirectory, resetAbortPriming, sessionPhase]);
+  }, [armAbortPrompt, currentSessionId, dispatcher, effectiveDirectory, resetAbortPriming, selectionToolbarDispatcher, sessionPhase]);
 
   React.useEffect(() => () => resetAbortPriming(), [resetAbortPriming]);
 };

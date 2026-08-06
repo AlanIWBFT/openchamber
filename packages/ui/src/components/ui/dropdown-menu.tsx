@@ -4,8 +4,7 @@ import { Menu as BaseMenu } from "@base-ui/react/menu"
 import { cn } from "@/lib/utils"
 import { Icon } from "@/components/icon/Icon";
 import { shortcutRegistry } from "@/lib/shortcuts";
-import { isIMECompositionEvent } from "@/lib/ime";
-import { getDropdownNavigationKey } from "./dropdown-navigation";
+import { handleDropdownNavigationKey } from "./dropdown-navigation";
 import { dropdownMenuItemClass, dropdownMenuPopupClass, dropdownMenuSeparatorClass, dropdownMenuSubTriggerClass } from "./dropdown-menu.styles";
 
 type AsChildProps = { asChild?: boolean };
@@ -142,17 +141,13 @@ function DropdownMenuContent({
 
   const handleKeyDown: NonNullable<React.ComponentProps<typeof BaseMenu.Popup>['onKeyDown']> = (event) => {
     onKeyDown?.(event);
-    if (event.defaultPrevented || event.isPropagationStopped() || isIMECompositionEvent(event)) return;
-    const navigationKey = getDropdownNavigationKey(event);
-    if (!navigationKey) return;
-
-    event.currentTarget.dispatchEvent(new KeyboardEvent('keydown', {
-      key: navigationKey,
-      bubbles: true,
-      cancelable: true,
-    }));
-    event.preventDefault();
-    event.stopPropagation();
+    handleDropdownNavigationKey(event, (navigationKey) => {
+      event.currentTarget.dispatchEvent(new KeyboardEvent('keydown', {
+        key: navigationKey,
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
   };
 
   return (

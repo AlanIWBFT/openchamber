@@ -22,6 +22,8 @@ import {
 import { useI18n } from '@/lib/i18n';
 
 const MODIFIER_KEYS = new Set(['shift', 'control', 'alt', 'meta']);
+const MAX_SHORTCUT_KEY_COUNT = 3;
+const SECOND_CHORD_TIMEOUT_MS = 3000;
 
 interface RecordingKeyboardEvent {
   altKey: boolean;
@@ -36,6 +38,7 @@ interface RecordingKeyboardEvent {
 interface ShortcutRecordingState {
   chords: ShortcutCombo[];
   livePreview: ShortcutCombo | null;
+  settled: boolean;
 }
 
 interface ShortcutRecordingDialogProps {
@@ -49,6 +52,19 @@ interface ShortcutRecordingDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+function getPhysicalKeyCount(
+  event: Pick<RecordingKeyboardEvent, 'altKey' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'>,
+  includeEventKey = false,
+): number {
+  const keys = new Set<string>();
+  if (event.altKey) keys.add('alt');
+  if (event.ctrlKey) keys.add('control');
+  if (event.metaKey) keys.add('meta');
+  if (event.shiftKey) keys.add('shift');
+  if (includeEventKey) keys.add(event.key.toLowerCase());
+  return keys.size;
+}
+
 function isCustomizableConflict(
   conflict: ShortcutBindingConflict,
 ): conflict is ShortcutBindingConflict & { action: CustomizableShortcutAction } {
@@ -56,6 +72,7 @@ function isCustomizableConflict(
 }
 
 function getModifierPreview(event: RecordingKeyboardEvent): ShortcutCombo | null {
+  if (getPhysicalKeyCount(event) > MAX_SHORTCUT_KEY_COUNT) return null;
   const parts: string[] = [];
   if (event.metaKey || event.ctrlKey) parts.push('mod');
   if (event.shiftKey) parts.push('shift');
@@ -65,6 +82,7 @@ function getModifierPreview(event: RecordingKeyboardEvent): ShortcutCombo | null
 
 function keyboardEventToCombo(event: RecordingKeyboardEvent): ShortcutCombo | null {
   if (MODIFIER_KEYS.has(event.key.toLowerCase())) return null;
+  if (getPhysicalKeyCount(event, true) > MAX_SHORTCUT_KEY_COUNT) return null;
 
   const key = keyToShortcutToken(event.key);
   if (!key) return null;
@@ -80,12 +98,18 @@ function keyboardEventToCombo(event: RecordingKeyboardEvent): ShortcutCombo | nu
 function modifierKeyUpToCombo(event: React.KeyboardEvent<HTMLDivElement>): ShortcutCombo | null {
   const key = event.key.toLowerCase();
   if (!MODIFIER_KEYS.has(key)) return null;
+  if (getPhysicalKeyCount(event, true) > MAX_SHORTCUT_KEY_COUNT) return null;
 
   const parts: string[] = [];
   if (event.metaKey || event.ctrlKey || key === 'meta' || key === 'control') parts.push('mod');
   if (event.shiftKey || key === 'shift') parts.push('shift');
   if (event.altKey || key === 'alt') parts.push('alt');
   return parts.length > 0 ? normalizeCombo(parts.join('+')) : null;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- tested pure recording state transition
+export function settleShortcutRecordingState(state: ShortcutRecordingState): ShortcutRecordingState {
+  return state.chords.length > 0 ? { ...state, livePreview: null, settled: true } : state;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- tested pure recording state transition
@@ -100,14 +124,19 @@ export function updateShortcutRecordingState(
   }
 
   if (event.key === 'Backspace') {
-    return { chords: state.chords.slice(0, -1), livePreview: null };
+    return { chords: state.chords.slice(0, -1), livePreview: null, settled: false };
   }
 
   const chord = keyboardEventToCombo(event);
   if (chord) {
+    if (state.settled) {
+      return { chords: [chord], livePreview: null, settled: false };
+    }
+    const chords = state.chords.length < 2 ? [...state.chords, chord] : state.chords;
     return {
-      chords: state.chords.length < 2 ? [...state.chords, chord] : state.chords,
+      chords,
       livePreview: null,
+      settled: chords.length === 2,
     };
   }
 
@@ -122,27 +151,47 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
 }) => {
   const { t } = useI18n();
   const actionLabel = (shortcut: CustomizableShortcutAction) => t(shortcut.settingsLabelKey);
-  const [recording, setRecording] = React.useState<ShortcutRecordingState>({ chords: [], livePreview: null });
+  const conflictActionLabel = (conflict: ShortcutBindingConflict) => (
+    conflict.action.customizable
+      ? actionLabel(conflict.action)
+      : formatShortcutForDisplay(conflict.action.defaultBinding)
+  );
+  const [recording, setRecording] = React.useState<ShortcutRecordingState>({ chords: [], livePreview: null, settled: false });
   const recordingRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (!action) return;
-    setRecording({ chords: [], livePreview: null });
+    setRecording({ chords: [], livePreview: null, settled: false });
     recordingRef.current?.focus();
   }, [action]);
+
+  const waitingForSecondChord = recording.chords.length === 1 && !recording.settled;
+
+  React.useEffect(() => {
+    if (!waitingForSecondChord) return;
+    const timeout = window.setTimeout(
+      () => setRecording(settleShortcutRecordingState),
+      SECOND_CHORD_TIMEOUT_MS,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [waitingForSecondChord]);
 
   const combo = normalizeCombo(recording.chords.join(' '));
   const conflicts = React.useMemo(
     () => action && combo ? getShortcutBindingConflicts(action.id, combo, overrides) : [],
     [action, combo, overrides],
   );
-  const protectedConflict = conflicts.find((conflict) => !conflict.action.customizable);
+  const protectedConflict = conflicts.find((conflict) => (
+    !conflict.action.customizable && conflict.kind !== 'contextual-prefix'
+  ));
   const customizableConflicts = conflicts.filter(isCustomizableConflict);
   const prefixConflict = customizableConflicts.find((conflict) => conflict.kind === 'prefix');
   const exactConflict = customizableConflicts.find((conflict) => conflict.kind === 'exact');
+  const contextualPrefixConflict = conflicts.find((conflict) => conflict.kind === 'contextual-prefix');
 
   const close = () => onOpenChange(false);
   const confirm = () => {
+    if (!recording.settled) setRecording(settleShortcutRecordingState);
     if (!action || !combo || protectedConflict || prefixConflict) return;
     onSave(action.id, combo, exactConflict?.action.id);
     close();
@@ -150,10 +199,11 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
   const handleRecordingEvent = (event: React.KeyboardEvent<HTMLDivElement>, phase: 'keydown' | 'keyup') => {
     event.preventDefault();
     event.stopPropagation();
+
     if (phase === 'keyup' && action?.id === 'switch_context_surface' && recording.chords.length === 0) {
       const modifierCombo = modifierKeyUpToCombo(event);
       if (modifierCombo) {
-        setRecording({ chords: [modifierCombo], livePreview: null });
+        setRecording({ chords: [modifierCombo], livePreview: null, settled: true });
         return;
       }
     }
@@ -167,7 +217,7 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
       shiftKey: event.shiftKey,
     }, phase);
     setRecording(action?.id === 'switch_context_surface' && nextRecording.chords.length > 1
-      ? { ...nextRecording, chords: nextRecording.chords.slice(0, 1) }
+      ? recording
       : nextRecording);
   };
 
@@ -215,21 +265,28 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
           </div>
         </div>
 
-        {protectedConflict ? (
+        {recording.settled && protectedConflict ? (
           <p className="typography-meta text-[var(--status-error)]">
             {t('settings.openchamber.keyboardShortcuts.error.internalConflict')}
           </p>
-        ) : prefixConflict ? (
+        ) : recording.settled && prefixConflict ? (
           <p className="typography-meta text-[var(--status-error)]">
             {t('settings.openchamber.keyboardShortcuts.error.prefixConflict', { action: actionLabel(prefixConflict.action) })}
           </p>
         ) : null}
-        {exactConflict && !protectedConflict && !prefixConflict ? (
+        {recording.settled && exactConflict && !protectedConflict && !prefixConflict ? (
           <p className="typography-meta text-[var(--status-warning)]">
             {t('settings.openchamber.keyboardShortcuts.error.exactConflict', { action: actionLabel(exactConflict.action) })}
           </p>
         ) : null}
-        {combo && isRiskyBrowserShortcut(combo) ? (
+        {recording.settled && contextualPrefixConflict && !protectedConflict && !prefixConflict ? (
+          <p className="typography-meta text-[var(--status-warning)]">
+            {t('settings.openchamber.keyboardShortcuts.warning.contextualPrefix', {
+              action: conflictActionLabel(contextualPrefixConflict),
+            })}
+          </p>
+        ) : null}
+        {recording.settled && combo && isRiskyBrowserShortcut(combo) ? (
           <p className="typography-meta text-[var(--status-warning)]">
             {t('settings.openchamber.keyboardShortcuts.warning.riskyBrowserShortcut')}
           </p>
@@ -242,7 +299,7 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
           <Button
             type="button"
             size="sm"
-            disabled={!combo || Boolean(protectedConflict) || Boolean(prefixConflict)}
+            disabled={!combo || (recording.settled && (Boolean(protectedConflict) || Boolean(prefixConflict)))}
             onClick={confirm}
           >
             {t('settings.openchamber.keyboardShortcuts.actions.confirm')}

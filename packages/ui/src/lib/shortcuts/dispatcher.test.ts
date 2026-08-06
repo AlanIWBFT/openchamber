@@ -65,7 +65,9 @@ describe('ShortcutDispatcher', () => {
     const dispatcher = new ShortcutDispatcher({ registry, getBinding: () => 'g h', now: () => now });
 
     expect(dispatcher.dispatch(key('g'))).toBe(true);
-    now = 1500;
+    now = 2999;
+    expect(dispatcher.hasActivePrefix()).toBe(true);
+    now = 3000;
     expect(dispatcher.dispatch(key('h'))).toBe(false);
     expect(dispatcher.dispatch(key('g', { repeat: true }))).toBe(false);
     expect(dispatcher.dispatch(key('g', { isComposing: true }))).toBe(false);

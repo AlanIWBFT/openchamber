@@ -34,6 +34,7 @@ test('suspends all handlers until every idempotent cleanup completes', () => {
   const resumeFirst = registry.suspend();
   const resumeSecond = registry.suspend();
   expect(registry.get('open_settings')).toBe(undefined);
+  expect(registry.isSuspended()).toBe(true);
 
   resumeFirst();
   resumeFirst();
@@ -41,4 +42,5 @@ test('suspends all handlers until every idempotent cleanup completes', () => {
   resumeSecond();
   resumeSecond();
   expect(registry.get('open_settings')).toBe(handler);
+  expect(registry.isSuspended()).toBe(false);
 });

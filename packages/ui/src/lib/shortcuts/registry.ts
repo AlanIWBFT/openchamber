@@ -53,6 +53,10 @@ export class ShortcutRegistry {
     return this.suspensionVersion;
   }
 
+  isSuspended(): boolean {
+    return this.suspensionCount > 0;
+  }
+
   actionIds(): IterableIterator<ShortcutActionId> {
     return this.handlers.keys();
   }

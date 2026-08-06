@@ -12,6 +12,7 @@ import React from 'react';
 import { Icon } from '@/components/icon/Icon';
 import { Input } from '@/components/ui/input';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
+import { shouldDismissDropdown } from '@/components/ui/dropdown-navigation';
 import {
     Select,
     SelectContent,
@@ -107,6 +108,12 @@ export function DraftTargetSelectors(props: DraftTargetProps) {
     const [openPicker, setOpenPicker] = React.useState<'project' | 'worktree' | null>(null);
     const projectTriggerRef = React.useRef<HTMLButtonElement>(null);
     const worktreeTriggerRef = React.useRef<HTMLButtonElement>(null);
+    const handlePickerKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+        if (openPicker === null || !shouldDismissDropdown(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setOpenPicker(null);
+    };
 
     useKeybind('open_draft_project_picker', () => {
         projectTriggerRef.current?.focus();
@@ -139,6 +146,7 @@ export function DraftTargetSelectors(props: DraftTargetProps) {
             >
                 <SelectTrigger
                     ref={projectTriggerRef}
+                    onKeyDown={handlePickerKeyDown}
                     size="sm"
                     className="h-7 min-w-0 w-fit max-w-[42vw] sm:max-w-[18rem] border-transparent bg-transparent px-1.5 hover:bg-transparent data-[popup-open]:bg-transparent"
                 >
@@ -146,7 +154,7 @@ export function DraftTargetSelectors(props: DraftTargetProps) {
                         {<ProjectLabel project={selectedProject} theme={theme} />}
                     </SelectValue>
                 </SelectTrigger>
-                <SelectContent fitContent>
+                <SelectContent fitContent onKeyDown={handlePickerKeyDown}>
                     {projects.map((project) => (
                         <SelectItem key={project.id} value={project.id} showSelectedBackground={false} className="max-w-[24rem] truncate">
                             {<ProjectLabel project={project} theme={theme} />}
@@ -165,6 +173,7 @@ export function DraftTargetSelectors(props: DraftTargetProps) {
                 >
                     <SelectTrigger
                         ref={worktreeTriggerRef}
+                        onKeyDown={handlePickerKeyDown}
                         size="sm"
                         className="h-7 min-w-0 w-fit max-w-[48vw] sm:max-w-[20rem] border-transparent bg-transparent px-1.5 hover:bg-transparent data-[popup-open]:bg-transparent"
                     >
@@ -172,7 +181,7 @@ export function DraftTargetSelectors(props: DraftTargetProps) {
                             {selectedBranchLabel ?? t('chat.chatInput.branch')}
                         </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="w-max min-w-48">
+                    <SelectContent className="w-max min-w-48" onKeyDown={handlePickerKeyDown}>
                         {projectRootBranchOption ? (
                             <SelectGroup>
                                 <SelectLabel>{t('chat.chatInput.projectRoot')}</SelectLabel>

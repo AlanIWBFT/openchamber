@@ -73,12 +73,21 @@ describe('shortcut schema', () => {
       .find((conflict) => conflict.action.id === 'find_in_file');
     const internalPrefixConflict = getShortcutBindingConflicts('new_chat', 'mod+s x')
       .find((conflict) => conflict.action.id === 'save_file');
+    const contextualPrefixConflict = getShortcutBindingConflicts('focus_input', 'mod+l l')
+      .find((conflict) => conflict.action.id === 'add_selection_to_chat');
+    const contextualLeaderConflict = getShortcutBindingConflicts('add_selection_to_chat', 'mod+s')
+      .find((conflict) => conflict.action.id === 'open_draft_project_picker');
+    const blockingPrefixConflict = getShortcutBindingConflicts('new_chat', 'mod+p x')
+      .find((conflict) => conflict.action.id === 'open_command_palette');
 
     expect(customizableConflict?.kind).toBe('exact');
     expect(customizableConflict?.action.customizable).toBe(true);
     expect(internalConflict?.kind).toBe('exact');
     expect(internalConflict?.action.customizable).toBe(false);
-    expect(internalPrefixConflict?.kind).toBe('prefix');
+    expect(internalPrefixConflict?.kind).toBe('contextual-prefix');
     expect(internalPrefixConflict?.action.customizable).toBe(false);
+    expect(contextualPrefixConflict?.kind).toBe('contextual-prefix');
+    expect(contextualLeaderConflict?.kind).toBe('contextual-prefix');
+    expect(blockingPrefixConflict?.kind).toBe('prefix');
   });
 });

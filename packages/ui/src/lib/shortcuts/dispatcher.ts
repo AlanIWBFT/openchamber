@@ -9,7 +9,7 @@ import { type ShortcutHandler, ShortcutRegistry } from './registry';
 import type { ShortcutActionId } from './schema';
 import { isIMECompositionEvent } from '../ime';
 
-const SEQUENCE_TIMEOUT_MS = 1500;
+const SEQUENCE_TIMEOUT_MS = 3000;
 const MODIFIER_KEYS = new Set(['alt', 'control', 'meta', 'shift']);
 
 export interface ShortcutDispatcherOptions {
