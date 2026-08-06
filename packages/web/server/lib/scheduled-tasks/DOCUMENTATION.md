@@ -96,10 +96,11 @@ project write lock on every `syncProject` when the project path is known:
 - **UI edits** to a loop-sourced task are preserved in the config but the loop
   file remains authoritative: the next reconciliation re-applies the file's
   definition (including `enabled`). Use `enabled: false` in the file to
-  disable. Deleting a loop-sourced task through the API is rejected with a 400 —
-  the loop file is the removal surface. The scheduled-tasks UI marks loop tasks
-  as file-managed and disables their edit/enable/delete actions for the same
-  reason; `run now` remains available.
+  disable. Deleting a loop-sourced task through the API is rejected with a 400
+  while its loop file still exists on disk — the loop file is the removal
+  surface; once the file is gone, deleting the orphan task is allowed. The
+  scheduled-tasks UI marks loop tasks as file-managed and disables their
+  edit/enable/delete actions for the same reason; `run now` remains available.
 
 ## Public exports (runtime.js)
 
