@@ -1487,6 +1487,10 @@ async function main(options = {}) {
   // relay candidate lazily at request time, so a late-bound holder is enough.
   let relayServiceInstance = null;
 
+  // Same pattern for the tunnel runtime: created after the base routes so
+  // /api/system/info resolves port + tunnel URL lazily at request time.
+  let tunnelRuntimeContextHolder = null;
+
   const bootstrapResult = bootstrapRuntime.setupBaseRoutes(app, {
     process,
     openchamberVersion: OPENCHAMBER_VERSION,
@@ -1523,6 +1527,15 @@ async function main(options = {}) {
         apiOnly,
       };
     },
+    // Port this instance serves on and the active tunnel's public URL (if
+    // any), for /api/system/info. Resolved lazily because the tunnel runtime
+    // is created after these base routes are registered.
+    getServerPort: () => {
+      const activePort = tunnelRuntimeContextHolder?.getActivePort?.();
+      if (Number.isFinite(activePort) && activePort > 0) return activePort;
+      return Number.isFinite(port) && port > 0 ? port : null;
+    },
+    getTunnelUrl: () => tunnelRuntimeContextHolder?.tunnelService?.getPublicUrl?.() ?? null,
     verboseRequestLogs: OPENCHAMBER_VERBOSE_REQUEST_LOGS,
     uiPassword,
     tunnelAuthController,
@@ -1598,6 +1611,7 @@ async function main(options = {}) {
 
   const tunnelRuntimeContext = tunnelWiringRuntime.initialize(app, port);
   const { tunnelService, startTunnelWithNormalizedRequest } = tunnelRuntimeContext;
+  tunnelRuntimeContextHolder = tunnelRuntimeContext;
 
   // Private relay host service: config + management routes + host client
   // lifecycle. Loopback port comes from the same source the tunnel uses so
