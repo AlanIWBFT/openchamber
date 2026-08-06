@@ -44,6 +44,8 @@ bun run electron:dev
 
 Closing the last Electron window exits the development launcher and its Vite process unless Windows "Minimize to tray" is enabled. When it is enabled, use **Quit** from the tray menu. `Ctrl+C` in the launcher terminal stops the complete Electron/Vite process tree.
 
+Desktop quit requests reuse the native confirmation dialog when a conversation is still running, an active tunnel exists, or scheduled-task work could be interrupted.
+
 Desktop quit immediately terminates the managed OpenCode process tree. A local
 fork CLI staged with the `openchamber-sqlite-finalizer.capability` marker then
 runs its lightweight SQLite finalizer before Electron exits; upstream downloads
