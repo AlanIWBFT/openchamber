@@ -2,7 +2,7 @@ import { DateTime, IANAZone } from 'luxon';
 import parser from 'cron-parser';
 
 const PROJECT_CONFIG_VERSION = 1;
-const MAX_TASK_NAME_LENGTH = 80;
+export const MAX_TASK_NAME_LENGTH = 80;
 const MAX_TASK_PROMPT_LENGTH = 20_000;
 const MAX_CRON_LENGTH = 200;
 const MAX_LAST_ERROR_LENGTH = 2_000;

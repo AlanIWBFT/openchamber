@@ -41,6 +41,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { parseMdFile, getAncestors, findWorktreeRoot } from '../opencode/shared.js';
+import { MAX_TASK_NAME_LENGTH } from '../projects/project-config.js';
 
 const LOOP_DIR_NAME = 'loops';
 const USER_LOOP_ROOT = () => path.join(os.homedir(), '.agents', LOOP_DIR_NAME);
@@ -92,6 +93,12 @@ export const parseLoopDefinition = (filePath) => {
   const name = asNonEmptyString(frontmatter.name);
   if (!name) {
     console.warn(`[loops] skipped ${filePath}: frontmatter "name" is required`);
+    return null;
+  }
+  if (name.length > MAX_TASK_NAME_LENGTH) {
+    // Reject instead of clamping: task names are clamped to this length at
+    // storage time, so identity keys must match the stored value exactly.
+    console.warn(`[loops] skipped ${filePath}: frontmatter "name" exceeds ${MAX_TASK_NAME_LENGTH} characters`);
     return null;
   }
 

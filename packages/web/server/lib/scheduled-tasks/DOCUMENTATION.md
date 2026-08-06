@@ -48,7 +48,7 @@ Field mapping (model: `packages/ui/src/lib/scheduledTasksApi.ts`):
 
 | Frontmatter | Task field |
 |---|---|
-| `name` | `name` (required) |
+| `name` | `name` (required, max 80 characters — longer names are rejected as malformed) |
 | `schedule` | `schedule.kind: "cron"` + `schedule.cron` (required, cron-only in the portable format) |
 | `enabled` | `enabled` (default `false` — a loop only runs when the file explicitly enables it; add `enabled: true` to activate) |
 | `model` | split on the first `/` into `execution.providerID` / `execution.modelID` (required) |
@@ -97,7 +97,9 @@ project write lock on every `syncProject` when the project path is known:
   file remains authoritative: the next reconciliation re-applies the file's
   definition (including `enabled`). Use `enabled: false` in the file to
   disable. Deleting a loop-sourced task through the API is rejected with a 400 —
-  the loop file is the removal surface.
+  the loop file is the removal surface. The scheduled-tasks UI marks loop tasks
+  as file-managed and disables their edit/enable/delete actions for the same
+  reason; `run now` remains available.
 
 ## Public exports (runtime.js)
 

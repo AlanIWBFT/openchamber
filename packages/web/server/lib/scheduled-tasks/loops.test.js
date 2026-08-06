@@ -181,6 +181,33 @@ model: openai/gpt-5
       await cleanup();
     }
   });
+
+  it('rejects names longer than the storage limit', async () => {
+    const { projectPath, cleanup } = await createProject();
+    try {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        const filePath = path.join(projectPath, 'long-name.md');
+        await writeFile(filePath, `---
+name: ${'x'.repeat(81)}
+schedule: "0 9 * * *"
+model: openai/gpt-5
+---
+Run.
+`, 'utf8');
+
+        // Task names are clamped to 80 chars at storage time; a raw name that
+        // exceeds it could never match the stored task, so the file is treated
+        // as malformed rather than creating an unreachable definition.
+        expect(parseLoopDefinition(filePath)).toBeNull();
+        expect(warn).toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    } finally {
+      await cleanup();
+    }
+  });
 });
 
 describe('discoverLoops', () => {
