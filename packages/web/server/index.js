@@ -2076,12 +2076,19 @@ async function main(options = {}) {
     getPort: () => tunnelRuntimeContext.getActivePort(),
     getOpenCodePort: () => openCodePort,
     getTunnelUrl: () => tunnelService.getPublicUrl(),
-    getQuitRiskStatus: () => ({
-      tunnel: {
-        active: Boolean(tunnelService.getPublicUrl()),
-      },
-      scheduledTasks: scheduledTasksRuntime.getStatus(),
-    }),
+    getQuitRiskStatus: () => {
+      const runningSessionsCount = sessionRuntime.getActiveSessionCount();
+      return {
+        tunnel: {
+          active: Boolean(tunnelService.getPublicUrl()),
+        },
+        scheduledTasks: scheduledTasksRuntime.getStatus(),
+        sessionActivity: {
+          hasRunningSessions: runningSessionsCount > 0,
+          runningSessionsCount,
+        },
+      };
+    },
     isReady: () => isOpenCodeReady,
     restartOpenCode: () => restartOpenCode(),
     getOpenCodeProcessInfo: () => {
