@@ -287,6 +287,70 @@ describe('OpenCode lifecycle', () => {
     expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 
+  it('calls onOpenCodeRestarted after a successful managed restart', async () => {
+    const close = vi.fn(async () => {});
+    const replacement = createMockChild();
+    const onOpenCodeRestarted = vi.fn();
+    globalThis.fetch = vi.fn(async () => ({
+      ok: false,
+      json: async () => null,
+    }));
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        replacement.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return replacement;
+    });
+    const runtime = createRuntime({ onOpenCodeRestarted }, {
+      openCodePort: 45678,
+      openCodeProcess: {
+        pid: null,
+        exitCode: 1,
+        signalCode: null,
+        close,
+      },
+    });
+
+    await runtime.triggerHealthCheck();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    // The restart completed on a (possibly new) port — the event-stream
+    // upstreams must rebind so the UI keeps receiving events (#2638).
+    expect(onOpenCodeRestarted).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call onOpenCodeRestarted when a managed restart fails', async () => {
+    const close = vi.fn(async () => {});
+    const onOpenCodeRestarted = vi.fn();
+    globalThis.fetch = vi.fn(async () => ({
+      ok: false,
+      json: async () => null,
+    }));
+    spawnMock.mockImplementation(() => {
+      const child = createMockChild();
+      queueMicrotask(() => {
+        child.emit('error', new Error('spawn failed'));
+      });
+      return child;
+    });
+    const runtime = createRuntime({ onOpenCodeRestarted }, {
+      openCodePort: 45678,
+      openCodeProcess: {
+        pid: null,
+        exitCode: 1,
+        signalCode: null,
+        close,
+      },
+    });
+
+    // triggerHealthCheck logs instead of rethrowing; call restartOpenCode
+    // directly to observe the failure result.
+    await expect(runtime.restartOpenCode()).rejects.toThrow();
+
+    expect(onOpenCodeRestarted).not.toHaveBeenCalled();
+  });
+
   it('launches managed OpenCode with the managed PATH', async () => {
     delete process.env.OPENCODE_BINARY;
     const child = createMockChild();
