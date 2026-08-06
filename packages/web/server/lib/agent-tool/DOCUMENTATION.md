@@ -35,11 +35,9 @@ both settings are `false`.
   agents concluded the tool did not exist. `agentToolsCodeMode: true` (the
   "Run through Code Mode" checkbox in the same section, off by default) flips
   all of them to `codemode: true`.
-- The plugin accepts the action's inputs either inside `parameters` or beside
-  `action`, because models produce both shapes; an explicit `parameters` object
-  wins on a conflict. Rejecting the flattened shape turned a call that plainly
-  carried a `url` into "url is required", which reads as a broken tool rather
-  than a malformed call.
+- The advertised input is `{ request: { action, ...inputs } }`. The execution
+  adapter retains legacy flattened and `parameters` inputs, with `request`
+  taking precedence. New calls use the request schema.
 
 ## Runtime flow
 
@@ -54,7 +52,7 @@ both settings are `false`.
    points at loopback, except when the listener is bound to one concrete
    address (`--host <ip>`): that socket does not answer on loopback, so the URL
    uses the bound address instead.
-4. The plugin calls `POST /api/openchamber/agent-tool` with its typed input and
+4. The plugin unwraps `request` and calls `POST /api/openchamber/agent-tool` with the action input and
    the session id OpenCode gives the tool; OpenChamber resolves the session's
    directory on its own side.
 5. The route delegates the fixed action allowlist directly to the shared
@@ -64,17 +62,19 @@ both settings are `false`.
    have one owner.
 6. Each action definition owns a short presentation title and a separate
    agent-facing description. The generated schema uses the description to state
-   required inputs or one non-obvious behavior, while completed calls use the
-   short title in native tool metadata.
+   required inputs, one non-obvious behavior, or one compact example, while
+   completed calls use the short title in native tool metadata.
 
 ## Agent context budget
 
-- The tool exposes one shared parameter object rather than repeating parameters
-  in a large per-action union. Action descriptions carry only required inputs,
-  defaults, or one non-obvious semantic detail.
 - The action schema carries `oneOf` and no `enum`. A node combining `enum` and
   `oneOf` is valid JSON Schema, but some OpenAI-compatible gateways reject it
   and answer with an empty completion instead of an error.
+- The tool exposes one shared `request` object rather than repeating parameters
+  in a large per-action union. Keeping this object distinct from a generic
+  parallel wrapper's `parameters` field prevents one layer from being mistaken
+  for the other. Action descriptions carry only required inputs, defaults, or
+  one non-obvious semantic detail.
 - Obvious fields rely on their names and JSON types. Parameter descriptions are
   reserved for formats, dependencies, scope, and behavior that cannot be safely
   inferred from the field name.
@@ -91,6 +91,9 @@ both settings are `false`.
   `subagent` when the agent delegates part of its own task and wants the
   answer for itself, `session.*` when the user asks for a separate session
   they will follow and talk to.
+- JSON Schema owns types, enums, and numeric ranges. Shared descriptions own
+  cross-action scope and selection rules; action descriptions own only their
+  distinctive dependencies and compact examples.
 - The tool exposes only agent-relevant actions
   (`OPENCHAMBER_AGENT_TOOL_ACTIONS`): `schedule.status` stays CLI-only because
   `schedule.list` already returns scheduler status, and enable/disable are one
@@ -114,9 +117,9 @@ both settings are `false`.
   never linked it; with the rule at the head of the description and in the
   session context, the next agent linked the issue first thing (2026-10-02).
   Action descriptions say what the action does and takes.
-- Detailed combination rules are enforced by the shared control service and
-  returned as actionable usage errors only after an invalid call. Per-action
-  examples and a repeated per-action parameter schema are intentionally omitted.
+- Combination rules that commonly cause avoidable retries are summarized in the
+  relevant action description. The shared control service still owns exhaustive
+  validation and returns actionable errors without a repeated per-action schema.
 
 ## Security invariants
 

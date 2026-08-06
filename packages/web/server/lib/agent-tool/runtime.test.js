@@ -119,16 +119,32 @@ describe('managed agent tool runtime', () => {
     expect(tool.openchamber.description).toContain('final answer then arrives in this session as a message');
     // Agents also have OpenCode's own subagent tool; the line between the two is drawn up front.
     expect(tool.openchamber.description).toContain('use the subagent tool');
-    expect(tool.openchamber.input.properties.action.oneOf).toContainEqual({
+    const request = tool.openchamber.input.properties.request;
+    expect(tool.openchamber.input.required).toEqual(['request']);
+    expect(request.required).toEqual(['action']);
+    expect(request.properties.action.oneOf).toContainEqual({
       const: 'session.messages',
-      description: 'Read text-only messages and current sessionStatus for sessionId; directory and limit 10 are defaults',
+      description: 'Read sessionId text messages. Choose one mode: limit=N (newest; default 10), all=true (full history; select earliest locally), or last/lastAssistant=true',
     });
     // An agent never blocks on a session: no wait or timeout in its schema.
-    const controlParameters = tool.openchamber.input.properties.parameters.properties;
+    const controlParameters = request.properties;
     expect(controlParameters).not.toHaveProperty('wait');
     expect(controlParameters).not.toHaveProperty('timeout');
     expect(controlParameters.returnResult.type).toBe('boolean');
-    expect(tool.openchamber.input.properties.parameters.properties.sessionId).toEqual({ type: 'string' });
+    expect(request.properties.action.oneOf).toContainEqual({
+      const: 'session.fork',
+      description: 'Fork sessionId and send a required prompt; messageId optionally selects the boundary',
+    });
+    expect(request.properties.action.oneOf).toContainEqual({
+      const: 'schedule.create',
+      description: 'Requires name, prompt, model=provider/model, and one schedule: daily="09:00"; weekly="1,3" + time="09:00"; once="2026-08-07" + time="09:00"; or cron="0 9 * * *"',
+    });
+    expect(request.properties.sessionId).toEqual({ type: 'string' });
+    expect(request.properties.daily).toEqual({ type: 'string' });
+    expect(request.properties.goal.description).toContain('requires prompt');
+    expect(request.properties.worktree.description).toContain('branch, startRef, and setUpstream apply only with it');
+    expect(request.properties.worktree.description).toContain('Uncommitted changes do not carry over');
+    expect(tool.openchamber.input.properties.parameters).toBeUndefined();
     expect(source).not.toContain('title: "OpenChamber"');
     // Nothing resolves from the generated directory, so the file must not import.
     expect(source).not.toMatch(/\bimport\b/);
@@ -140,18 +156,24 @@ describe('managed agent tool runtime', () => {
     await prepareManagedEnv(runtime);
     const tool = await loadTools(dataDir, 'both');
 
-    const controlActions = tool.openchamber.input.properties.action.oneOf.map((entry) => entry.const);
-    const webActions = tool.openchamber_web.input.properties.action.oneOf.map((entry) => entry.const);
+    const controlRequest = tool.openchamber.input.properties.request;
+    const webRequest = tool.openchamber_web.input.properties.request;
+    const controlActions = controlRequest.properties.action.oneOf.map((entry) => entry.const);
+    const webActions = webRequest.properties.action.oneOf.map((entry) => entry.const);
     expect(webActions).toContain('browser.open');
     expect(controlActions).not.toContain('browser.open');
     expect(webActions).not.toContain('session.create');
 
     // Turning one tool off has to remove its inputs too, not just its actions.
-    expect(Object.keys(tool.openchamber_web.input.properties.parameters.properties)).toContain('url');
-    expect(Object.keys(tool.openchamber.input.properties.parameters.properties)).not.toContain('url');
-    expect(Object.keys(tool.openchamber.input.properties.parameters.properties)).toContain('sessionId');
-    expect(Object.keys(tool.openchamber.input.properties.parameters.properties)).toContain('path');
-    expect(Object.keys(tool.openchamber_web.input.properties.parameters.properties)).not.toContain('path');
+    expect(Object.keys(controlRequest.properties)).toContain('path');
+    expect(Object.keys(webRequest.properties)).not.toContain('path');
+    expect(Object.keys(webRequest.properties)).toContain('url');
+    expect(Object.keys(controlRequest.properties)).not.toContain('url');
+    expect(Object.keys(controlRequest.properties)).toContain('sessionId');
+    expect(controlRequest.required).toEqual(['action']);
+    expect(webRequest.required).toEqual(['action']);
+    expect(tool.openchamber.input.properties.parameters).toBeUndefined();
+    expect(tool.openchamber_web.input.properties.parameters).toBeUndefined();
   });
 
   it('keeps the action schema to one validator keyword', async () => {
@@ -164,12 +186,12 @@ describe('managed agent tool runtime', () => {
     const tool = await loadTools(dataDir, 'validator');
 
     for (const entry of Object.values(tool)) {
-      expect(entry.input.properties.action.oneOf).toBeInstanceOf(Array);
-      expect(entry.input.properties.action).not.toHaveProperty('enum');
+      expect(entry.input.properties.request.properties.action.oneOf).toBeInstanceOf(Array);
+      expect(entry.input.properties.request.properties.action).not.toHaveProperty('enum');
     }
   });
 
-  it('accepts inputs passed beside the action, not only inside parameters', async () => {
+  it('prefers request over legacy parameters and flattened inputs', async () => {
     const { runtime, dataDir } = await createRuntime();
     const prepared = await prepareManagedEnv(runtime);
     const tool = await loadTools(dataDir, 'flat');
@@ -187,12 +209,17 @@ describe('managed agent tool runtime', () => {
     const context = { sessionID: 'ses_1', agent: 'build', messageID: 'msg_1', id: 'call_1', progress: async () => {} };
 
     try {
-      // The shape a model actually produced: url and viewport next to action.
+      // The strict documented shape wins over both compatibility shapes.
       await tool.openchamber_web.execute(
-        { action: 'browser.open', url: 'https://example.test', viewport: 'mobile' },
+        {
+          action: 'browser.snapshot',
+          url: 'https://flattened.test',
+          parameters: { action: 'browser.click', url: 'https://parameters.test' },
+          request: { action: 'browser.open', url: 'https://request.test', viewport: 'mobile' },
+        },
         context,
       );
-      // The documented shape must keep working, and win when both are present.
+      // The preceding schema accepted parameters, so retain it below request.
       await tool.openchamber_web.execute(
         { action: 'browser.open', url: 'https://ignored.test', parameters: { url: 'https://example.test/nested' } },
         context,
@@ -208,7 +235,7 @@ describe('managed agent tool runtime', () => {
       process.env.OPENCHAMBER_AGENT_TOOL_TOKEN = originalToken;
     }
 
-    expect(sent[0].input).toEqual({ action: 'browser.open', url: 'https://example.test', viewport: 'mobile' });
+    expect(sent[0].input).toEqual({ action: 'browser.open', url: 'https://request.test', viewport: 'mobile' });
     expect(sent[1].input.url).toBe('https://example.test/nested');
     expect(sent[2].input).toEqual({ action: 'session.messages', sessionId: 'ses_1', limit: 3 });
     // v2 tools get no directory; the session id is what OpenChamber resolves from.
@@ -230,11 +257,11 @@ describe('managed agent tool runtime', () => {
     const tool = await loadTools(dataDir, 'memory');
 
     expect(Object.keys(tool)).toEqual(['openchamber', 'openchamber_memory']);
-    expect(Object.keys(tool.openchamber_memory.input.properties.parameters.properties).sort())
-      .toEqual(['body', 'memoryId', 'scope', 'title', 'type']);
+    expect(Object.keys(tool.openchamber_memory.input.properties.request.properties).sort())
+      .toEqual(['action', 'body', 'memoryId', 'scope', 'title', 'type']);
     // Memory inputs must not leak into the control tool's schema, which the
     // model pays for on every unrelated call.
-    expect(Object.keys(tool.openchamber.input.properties.parameters.properties)).not.toContain('memoryId');
+    expect(Object.keys(tool.openchamber.input.properties.request.properties)).not.toContain('memoryId');
   });
 
   it('omits memory entirely when the user turns it off', async () => {
@@ -572,9 +599,9 @@ describe('managed agent tool runtime', () => {
     }
   });
 
-  it('executes through the materialized plugin and authenticated callback', async () => {
+  it('executes a parallel-wrapper request through the materialized plugin and authenticated callback', async () => {
     let activePort = null;
-    const { runtime, dataDir } = await createRuntime({ getActivePort: () => activePort });
+    const { runtime, dataDir, executeAction } = await createRuntime({ getActivePort: () => activePort });
     const app = express();
     runtime.registerRoutes(app, express);
     const server = await new Promise((resolve) => {
@@ -590,9 +617,13 @@ describe('managed agent tool runtime', () => {
       process.env.OPENCHAMBER_AGENT_TOOL_TOKEN = env.OPENCHAMBER_AGENT_TOOL_TOKEN;
       const tool = await loadTools(dataDir, 'callback');
       const progress = vi.fn(async () => {});
+      const wrappedToolCall = {
+        recipient_name: 'functions.openchamber',
+        parameters: { request: { action: 'session.status', sessionId: 'session-1' } },
+      };
 
       const result = await tool.openchamber.execute(
-        { action: 'projects.list', parameters: {} },
+        wrappedToolCall.parameters,
         { sessionID: 'ses_1', agent: 'build', messageID: 'msg_1', id: 'call_1', progress },
       );
 
@@ -601,12 +632,18 @@ describe('managed agent tool runtime', () => {
       expect(JSON.parse(result.content)).toEqual({
         schemaVersion: 1,
         ok: true,
-        action: 'projects.list',
+        action: 'session.status',
         data: { projects: [] },
       });
-      expect(result.metadata.openchamber.description).toBe('List configured projects');
+      expect(result.metadata.openchamber.description).toBe('Check session status');
+      expect(executeAction).toHaveBeenCalledWith(
+        'session.status',
+        { action: 'session.status', sessionId: 'session-1' },
+        undefined,
+        { signal: expect.any(AbortSignal), contextSessionId: 'ses_1' },
+      );
       expect(progress).toHaveBeenCalledWith(expect.objectContaining({
-        openchamber: expect.objectContaining({ description: 'List configured projects' }),
+        openchamber: expect.objectContaining({ description: 'Check session status' }),
       }));
     } finally {
       if (previousUrl === undefined) delete process.env.OPENCHAMBER_AGENT_TOOL_URL;

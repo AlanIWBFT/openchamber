@@ -77,11 +77,11 @@ const ALL_PARAMETER_PROPERTIES = {
   model: { type: 'string', description: 'Model in provider/model format. When the user names no model: for session.create pick a suitable one from models.list favorites or recents (omit if there are none); for send and fork omit it — the session reuses its previous model' },
   agent: { type: 'string', description: 'OpenCode agent name; new sessions default to the build agent and existing sessions keep their previous one. Set only when the user explicitly requests a different agent' },
   variant: { type: 'string', description: 'Model variant; use only when the user explicitly requests it' },
-  worktree: { type: 'string', description: 'New worktree name for session.create. Omit by default; use only when the user explicitly asks for an isolated worktree. Uncommitted changes do not carry over into a new worktree' },
+  worktree: { type: 'string', description: 'New isolated worktree name; branch, startRef, and setUpstream apply only with it. Uncommitted changes do not carry over. Set only when explicitly requested' },
   branch: { type: 'string', description: 'Branch name for the new worktree' },
   startRef: { type: 'string', description: 'Git ref used to create the new worktree' },
   setUpstream: { type: 'boolean', description: 'Make the new worktree branch track its upstream' },
-  goal: { type: 'boolean', description: 'Run the dispatched prompt in Goal Mode; use only when the user explicitly requests it' },
+  goal: { type: 'boolean', description: 'Run the dispatched prompt in Goal Mode; requires prompt. Set only when the user explicitly requests it' },
   goalTokenBudget: { type: 'integer', minimum: 1000, maximum: 100_000_000, description: 'Goal token budget; requires goal' },
   returnResult: { type: 'boolean', description: 'For session.create, send and fork with a prompt: deliver the session\'s final answer back to you as a message when it finishes, waking you to continue. The call still returns at once. Set only when the user wants the outcome back or your next step needs it' },
   lastAssistant: { type: 'boolean', description: 'session.messages: return only the last assistant message' },
@@ -91,11 +91,11 @@ const ALL_PARAMETER_PROPERTIES = {
   withStatus: { type: 'boolean', description: 'Include authoritative status in session.list' },
   role: { type: 'string', enum: ['all', 'user', 'assistant'], description: 'Message role filter' },
   name: { type: 'string' },
-  daily: { type: 'string', description: 'Daily run time in HH:mm format' },
-  weekly: { type: 'string', description: 'Comma-separated weekdays; 0=Sunday and 6=Saturday' },
-  once: { type: 'string', description: 'One-time run date in YYYY-MM-DD format' },
-  time: { type: 'string', description: 'Weekly or one-time run time in HH:mm format' },
-  cron: { type: 'string', description: 'Cron expression' },
+  daily: { type: 'string' },
+  weekly: { type: 'string' },
+  once: { type: 'string' },
+  time: { type: 'string' },
+  cron: { type: 'string' },
   timezone: { type: 'string', description: 'IANA timezone' },
   disabled: { type: 'boolean', description: 'true disables and false enables; required for schedule.toggle' },
   path: { type: 'string', description: 'File to show for file.open; absolute, or relative to the session directory' },
@@ -214,21 +214,23 @@ const createToolEntry = ({ name, description, definitions, parameters, codeMode 
       input: {
         type: "object",
         properties: {
-          action: { type: "string", oneOf: ${JSON.stringify(definitions.map((entry) => ({ const: entry.action, description: entry.description })))}, description: "OpenChamber action to perform" },
-          parameters: { type: "object", properties: ${JSON.stringify(parameters)}, additionalProperties: false, description: "Inputs for the action; use an empty object when none are needed" },
+          request: {
+            type: "object",
+            properties: ${JSON.stringify({
+              action: { type: 'string', oneOf: definitions.map((entry) => ({ const: entry.action, description: entry.description })), description: 'OpenChamber action to perform' },
+              ...parameters,
+            })},
+            required: ["action"],
+            additionalProperties: false,
+            description: "OpenChamber action and its inputs",
+          },
         },
-        required: ["action"],
-        // Models routinely put the inputs next to the action; the schema has to
-        // let that reach execute() instead of rejecting the call.
-        additionalProperties: true,
+        required: ["request"],
+        additionalProperties: false,
       },
       async execute(input, context) {
-        // Models routinely put the inputs next to the action instead of inside
-        // the parameters object, and dropping them there produced a
-        // "url is required" error for a call that plainly carried a url. Both
-        // shapes are accepted; an explicit parameters object wins on a conflict.
-        const { action: requestedAction, parameters, ...flattened } = input ?? {}
-        const args = { ...flattened, ...(parameters ?? {}), action: requestedAction }
+        const { request, parameters: legacyParameters, ...flattened } = input ?? {}
+        const args = { ...flattened, ...(legacyParameters ?? {}), ...(request ?? {}) }
         const actionTitles = ${JSON.stringify(AGENT_TOOL_ACTION_TITLES)}
         const title = Object.hasOwn(actionTitles, args.action) ? actionTitles[args.action] : args.action
         const progress = (extra) => context.progress({
@@ -286,7 +288,7 @@ const createPluginSource = ({ includeControl, includeWeb, includeMemory, include
   if (includeControl) {
     entries.push(createToolEntry({
       name: 'openchamber',
-      description: CONTROL_TOOL_DESCRIPTION,
+      description: `${CONTROL_TOOL_DESCRIPTION} Scheduled-task scope must resolve to a configured project. Explicit model, agent, and variant must be valid for the scoped directory.`,
       definitions: OPENCHAMBER_AGENT_TOOL_ACTION_DEFINITIONS,
       parameters: CONTROL_PARAMETER_PROPERTIES,
       codeMode,
