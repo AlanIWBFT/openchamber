@@ -137,6 +137,8 @@ bun run electron:dev
 
 Exiting Electron stops the development launcher and its Vite process. Closing to the tray keeps them running; use **Quit** from the tray menu to exit. `Ctrl+C` in the launcher terminal stops the complete Electron/Vite process tree.
 
+Desktop quit requests reuse the native confirmation dialog when a conversation is still running, an active tunnel exists, or scheduled-task work could be interrupted.
+
 Desktop quit closes the managed CLI's `serve --stdio` input pipe. OpenCode then
 releases its server scope and database resources. The backend starts this cleanup
 alongside its other resource drains, waits within the shared 35-second deadline,
