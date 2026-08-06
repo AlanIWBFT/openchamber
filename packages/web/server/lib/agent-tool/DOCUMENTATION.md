@@ -319,6 +319,9 @@ default and when to set it. Field names and JSON types carry the rest.
   `subagent` when the agent delegates part of its own task and wants the
   answer for itself, `session.*` when the user asks for a separate session
   they will follow and talk to.
+- JSON Schema owns types, enums, and numeric ranges. Shared descriptions own
+  cross-action scope and selection rules; action descriptions own only their
+  distinctive dependencies and compact examples.
 - The tool exposes only agent-relevant actions
   (`OPENCHAMBER_AGENT_TOOL_ACTIONS`): `schedule.status` stays CLI-only because
   `schedule.list` already returns scheduler status, and enable/disable are one
