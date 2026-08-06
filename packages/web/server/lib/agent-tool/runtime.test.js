@@ -101,14 +101,30 @@ describe('managed agent tool runtime', () => {
     const hooks = await pluginModule.OpenChamberPlugin();
     expect(hooks.tool.openchamber.description).toContain('Session dispatches return immediately by default');
     expect(hooks.tool.openchamber.description).toContain('Set wait only when the user asks or the next step requires the completed result');
-    expect(hooks.tool.openchamber.args.action.oneOf).toContainEqual({
+    expect(hooks.tool.openchamber.description).toContain('Scheduled-task scope must resolve to a configured project');
+    expect(hooks.tool.openchamber.description).toContain('Explicit model, agent, and variant must be valid for the scoped directory');
+    expect(hooks.tool.openchamber.args.request.required).toEqual(['action']);
+    expect(hooks.tool.openchamber.args.request.properties.action.oneOf).toContainEqual({
       const: 'session.messages',
-      description: 'Read text-only messages and current sessionStatus for sessionId; directory and limit 10 are defaults',
+      description: 'Read sessionId text messages. Choose one mode: limit=N (newest; default 10), all=true (full history; select earliest locally), or last/lastAssistant=true',
     });
-    expect(hooks.tool.openchamber.args.parameters.properties.wait.description).toBe(
+    expect(hooks.tool.openchamber.args.request.properties.action.oneOf).toContainEqual({
+      const: 'session.fork',
+      description: 'Fork sessionId and send a required prompt; messageId optionally selects the boundary',
+    });
+    expect(hooks.tool.openchamber.args.request.properties.action.oneOf).toContainEqual({
+      const: 'schedule.create',
+      description: 'Requires name, prompt, model=provider/model, and one schedule: daily="09:00"; weekly="1,3" + time="09:00"; once="2026-08-07" + time="09:00"; or cron="0 9 * * *"',
+    });
+    expect(hooks.tool.openchamber.args.request.properties.wait.description).toBe(
       'Wait for current session activity to become idle. Omit by default; use only when the user asks or the next step requires the completed result',
     );
-    expect(hooks.tool.openchamber.args.parameters.properties.sessionId).toEqual({ type: 'string' });
+    expect(hooks.tool.openchamber.args.request.properties.sessionId).toEqual({ type: 'string' });
+    expect(hooks.tool.openchamber.args.request.properties.daily).toEqual({ type: 'string' });
+    expect(hooks.tool.openchamber.args.request.properties.goal.description).toContain('requires prompt');
+    expect(hooks.tool.openchamber.args.request.properties.worktree.description).toContain('branch, startRef, and setUpstream apply only with it');
+    expect(hooks.tool.openchamber.args.request.properties.worktree.description).toContain('Uncommitted changes do not carry over');
+    expect(hooks.tool.openchamber.args.parameters).toBeUndefined();
     expect(source).not.toContain('title: "OpenChamber"');
     expect(source).not.toContain('@opencode-ai/plugin');
     expect(source).not.toContain(preparedEnv.OPENCHAMBER_AGENT_TOOL_TOKEN);
@@ -121,19 +137,25 @@ describe('managed agent tool runtime', () => {
     const pluginModule = await import(`${pathToFileURL(pluginPath).href}?both=${Date.now()}`);
     const { tool } = await pluginModule.OpenChamberPlugin();
 
-    const controlActions = tool.openchamber.args.action.enum;
-    const webActions = tool.openchamber_web.args.action.enum;
+    const controlRequest = tool.openchamber.args.request;
+    const webRequest = tool.openchamber_web.args.request;
+    const controlActions = controlRequest.properties.action.enum;
+    const webActions = webRequest.properties.action.enum;
     expect(webActions).toContain('browser.open');
     expect(controlActions).not.toContain('browser.open');
     expect(webActions).not.toContain('session.create');
 
     // Turning one tool off has to remove its inputs too, not just its actions.
-    expect(Object.keys(tool.openchamber_web.args.parameters.properties)).toContain('url');
-    expect(Object.keys(tool.openchamber.args.parameters.properties)).not.toContain('url');
-    expect(Object.keys(tool.openchamber.args.parameters.properties)).toContain('sessionId');
+    expect(Object.keys(webRequest.properties)).toContain('url');
+    expect(Object.keys(controlRequest.properties)).not.toContain('url');
+    expect(Object.keys(controlRequest.properties)).toContain('sessionId');
+    expect(controlRequest.required).toEqual(['action']);
+    expect(webRequest.required).toEqual(['action']);
+    expect(tool.openchamber.args.parameters).toBeUndefined();
+    expect(tool.openchamber_web.args.parameters).toBeUndefined();
   });
 
-  it('accepts inputs passed beside the action, not only inside parameters', async () => {
+  it('prefers request over legacy parameters and flattened inputs', async () => {
     const { runtime, dataDir } = await createRuntime();
     const prepared = await runtime.prepareManagedOpenCodeEnv();
     const pluginPath = path.join(dataDir, 'agent-tool', 'openchamber-plugin.js');
@@ -153,12 +175,17 @@ describe('managed agent tool runtime', () => {
     const context = { directory: '/work/project', abort: new AbortController().signal, metadata: () => {} };
 
     try {
-      // The shape a model actually produced: url and viewport next to action.
+      // The strict documented shape wins over both compatibility shapes.
       await tool.openchamber_web.execute(
-        { action: 'browser.open', url: 'https://example.test', viewport: 'mobile' },
+        {
+          action: 'browser.snapshot',
+          url: 'https://flattened.test',
+          parameters: { action: 'browser.click', url: 'https://parameters.test' },
+          request: { action: 'browser.open', url: 'https://request.test', viewport: 'mobile' },
+        },
         context,
       );
-      // The documented shape must keep working, and win when both are present.
+      // The preceding schema accepted parameters, so retain it below request.
       await tool.openchamber_web.execute(
         { action: 'browser.open', url: 'https://ignored.test', parameters: { url: 'https://example.test/nested' } },
         context,
@@ -174,7 +201,7 @@ describe('managed agent tool runtime', () => {
       process.env.OPENCHAMBER_AGENT_TOOL_TOKEN = originalToken;
     }
 
-    expect(sent[0].input).toEqual({ action: 'browser.open', url: 'https://example.test', viewport: 'mobile' });
+    expect(sent[0].input).toEqual({ action: 'browser.open', url: 'https://request.test', viewport: 'mobile' });
     expect(sent[1].input.url).toBe('https://example.test/nested');
     expect(sent[2].input).toEqual({ action: 'session.messages', sessionId: 'ses_1', limit: 3 });
   });
@@ -354,9 +381,9 @@ describe('managed agent tool runtime', () => {
     expect(response.body).toEqual(expect.objectContaining({ ok: true, action: 'projects.list' }));
   });
 
-  it('executes through the materialized plugin and authenticated callback', async () => {
+  it('executes a parallel-wrapper request through the materialized plugin and authenticated callback', async () => {
     let activePort = null;
-    const { runtime, dataDir } = await createRuntime({ getActivePort: () => activePort });
+    const { runtime, dataDir, executeAction } = await createRuntime({ getActivePort: () => activePort });
     const app = express();
     runtime.registerRoutes(app, express);
     const server = await new Promise((resolve) => {
@@ -374,24 +401,34 @@ describe('managed agent tool runtime', () => {
       const pluginModule = await import(`${pathToFileURL(pluginPath).href}?test=${Date.now()}`);
       const hooks = await pluginModule.OpenChamberPlugin();
       const metadata = vi.fn();
+      const wrappedToolCall = {
+        recipient_name: 'functions.openchamber',
+        parameters: { request: { action: 'session.status', sessionId: 'session-1' } },
+      };
 
       const result = await hooks.tool.openchamber.execute(
-        { action: 'projects.list', parameters: {} },
+        wrappedToolCall.parameters,
         { directory: '/work/project', abort: new AbortController().signal, metadata },
       );
 
       expect(JSON.parse(result.output)).toEqual({
         schemaVersion: 1,
         ok: true,
-        action: 'projects.list',
+        action: 'session.status',
         data: { projects: [] },
       });
-      expect(result.title).toBe('List configured projects');
-      expect(result.metadata.openchamber.description).toBe('List configured projects');
+      expect(result.title).toBe('Check session status');
+      expect(result.metadata.openchamber.description).toBe('Check session status');
+      expect(executeAction).toHaveBeenCalledWith(
+        'session.status',
+        { action: 'session.status', sessionId: 'session-1' },
+        '/work/project',
+        { signal: expect.any(AbortSignal) },
+      );
       expect(metadata).toHaveBeenCalledWith(expect.objectContaining({
-        title: 'List configured projects',
+        title: 'Check session status',
         metadata: expect.objectContaining({
-          openchamber: expect.objectContaining({ description: 'List configured projects' }),
+          openchamber: expect.objectContaining({ description: 'Check session status' }),
         }),
       }));
     } finally {
