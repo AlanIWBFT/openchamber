@@ -1052,7 +1052,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
         </div>
       ) : null}
       {totalSessions > 0 && bootstrapFailureNotice ? (
-        <div className="py-1 pl-[26px] text-left typography-micro text-[var(--status-error-foreground)]">
+        <div className="py-1 pl-[26px] text-left typography-micro text-status-error">
           {bootstrapFailureNotice}
         </div>
       ) : null}

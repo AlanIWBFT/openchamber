@@ -616,7 +616,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
           </div>
         ) : browseErrorReason && browseErrorReason !== 'not-found' ? (
           <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
-            <div className="typography-ui-label text-[var(--status-error-foreground)]">
+            <div className="typography-ui-label text-status-error">
               {browseErrorReason === 'os-permission'
                 ? t('directoryExplorerDialog.browse.permissionDenied')
                 : t('directoryExplorerDialog.browse.loadFailed')}
