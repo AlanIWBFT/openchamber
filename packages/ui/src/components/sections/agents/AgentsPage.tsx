@@ -445,7 +445,7 @@ export const AgentsPage: React.FC = () => {
             inputMode="decimal"
             placeholder="—"
             emptyLabel="—"
-            className="w-16"
+            className="w-20"
           />
           {temperature !== undefined && (
             <Button
@@ -483,7 +483,7 @@ export const AgentsPage: React.FC = () => {
             inputMode="decimal"
             placeholder="—"
             emptyLabel="—"
-            className="w-16"
+            className="w-20"
           />
           {topP !== undefined && (
             <Button
