@@ -330,14 +330,17 @@ const quitRisk = {
   hasActiveTunnel: false,
   hasRunningScheduledTasks: false,
   hasEnabledScheduledTasks: false,
+  hasRunningSessions: false,
   runningScheduledTasksCount: 0,
   enabledScheduledTasksCount: 0,
+  runningSessionsCount: 0,
 };
 
 const shouldRequireQuitConfirmation = () =>
   quitRisk.hasActiveTunnel
   || quitRisk.hasRunningScheduledTasks
-  || quitRisk.hasEnabledScheduledTasks;
+  || quitRisk.hasEnabledScheduledTasks
+  || quitRisk.hasRunningSessions;
 
 const quitConfirmationMessage = () => {
   const reasons = [];
@@ -349,6 +352,11 @@ const quitConfirmationMessage = () => {
   }
   if (quitRisk.enabledScheduledTasksCount > 0) {
     reasons.push(`${quitRisk.enabledScheduledTasksCount} enabled scheduled task${quitRisk.enabledScheduledTasksCount === 1 ? '' : 's'}`);
+  }
+  if (quitRisk.hasRunningSessions) {
+    reasons.push(quitRisk.runningSessionsCount > 0
+      ? `${quitRisk.runningSessionsCount} running conversation${quitRisk.runningSessionsCount === 1 ? '' : 's'}`
+      : 'one or more running conversations');
   }
   if (reasons.length === 0) {
     return 'Background processes (sidecar, SSH sessions) will be stopped.';
@@ -519,6 +527,12 @@ const refreshQuitRiskFlags = async () => {
         quitRisk.hasRunningScheduledTasks = Boolean(scheduled.hasRunningScheduledTasks) || quitRisk.runningScheduledTasksCount > 0;
       }
       quitRisk.hasActiveTunnel = Boolean(status?.tunnel?.active);
+      const sessionActivity = status?.sessionActivity;
+      if (sessionActivity && typeof sessionActivity === 'object') {
+        const runningCount = Number(sessionActivity.runningSessionsCount ?? 0);
+        quitRisk.runningSessionsCount = Number.isFinite(runningCount) ? Math.max(0, Math.floor(runningCount)) : 0;
+        quitRisk.hasRunningSessions = Boolean(sessionActivity.hasRunningSessions) || quitRisk.runningSessionsCount > 0;
+      }
       return;
     } catch {
     }
@@ -529,6 +543,7 @@ const refreshQuitRiskFlags = async () => {
 
   const scheduledUrl = `${base}/api/openchamber/scheduled-tasks/status`;
   const tunnelUrl = `${base}/api/openchamber/tunnel/status`;
+  const sessionActivityUrl = `${base}/api/session-activity`;
 
   const fetchJson = async (url) => {
     try {
@@ -540,7 +555,11 @@ const refreshQuitRiskFlags = async () => {
     }
   };
 
-  const [scheduled, tunnel] = await Promise.all([fetchJson(scheduledUrl), fetchJson(tunnelUrl)]);
+  const [scheduled, tunnel, sessionActivity] = await Promise.all([
+    fetchJson(scheduledUrl),
+    fetchJson(tunnelUrl),
+    fetchJson(sessionActivityUrl),
+  ]);
 
   if (scheduled && typeof scheduled === 'object') {
     const enabledCount = Number(scheduled.enabledScheduledTasksCount ?? 0);
@@ -553,6 +572,13 @@ const refreshQuitRiskFlags = async () => {
 
   if (tunnel && typeof tunnel === 'object') {
     quitRisk.hasActiveTunnel = Boolean(tunnel.active);
+  }
+
+  if (sessionActivity && typeof sessionActivity === 'object') {
+    quitRisk.runningSessionsCount = Object.values(sessionActivity)
+      .filter((activity) => activity && typeof activity === 'object' && activity.type === 'busy')
+      .length;
+    quitRisk.hasRunningSessions = quitRisk.runningSessionsCount > 0;
   }
 };
 
