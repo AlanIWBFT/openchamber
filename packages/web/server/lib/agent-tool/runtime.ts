@@ -801,7 +801,7 @@ const createPluginSource = ({ includeControl, includeSchedule, includeWeb, inclu
   if (includeControl) {
     entries.push(createToolEntry({
       name: 'openchamber',
-      description: CONTROL_TOOL_DESCRIPTION,
+      description: `${CONTROL_TOOL_DESCRIPTION} Scheduled-task scope must resolve to a configured project. Explicit model, agent, and variant must be valid for the scoped directory.`,
       definitions: OPENCHAMBER_AGENT_TOOL_ACTION_DEFINITIONS,
       parameters: CONTROL_PARAMETER_PROPERTIES,
       codeMode: true,
