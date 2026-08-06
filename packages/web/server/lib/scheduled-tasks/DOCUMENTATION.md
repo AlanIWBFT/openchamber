@@ -50,7 +50,7 @@ Field mapping (model: `packages/ui/src/lib/scheduledTasksApi.ts`):
 |---|---|
 | `name` | `name` (required) |
 | `schedule` | `schedule.kind: "cron"` + `schedule.cron` (required, cron-only in the portable format) |
-| `enabled` | `enabled` (default `true`) |
+| `enabled` | `enabled` (default `false` — a loop only runs when the file explicitly enables it; add `enabled: true` to activate) |
 | `model` | split on the first `/` into `execution.providerID` / `execution.modelID` (required) |
 | `agent` | `execution.agent` (optional) |
 | `timezone` | `schedule.timezone` (optional, IANA; defaults to the server zone) |
@@ -67,24 +67,37 @@ the project config state store.
 `projectConfigRuntime.reconcileLoopTasks(projectID, loops)` runs inside the
 project write lock on every `syncProject` when the project path is known:
 
-- **Identity is the task name.** A loop whose name matches an existing task
-  takes that task over: its schedule/execution/enabled are overwritten from the
-  file while the task's `id` and runtime `state` are preserved (markdown wins
-  on conflict with JSON-configured tasks).
+- **Identity.** For loop-owned tasks (carrying the `loopFile` marker) identity
+  is the loop file path: a loop takes its task over regardless of the task's
+  current name, so renaming the loop (the `name` field, or a UI rename) renames
+  the task in place instead of leaving a stale duplicate behind. A loop whose
+  name matches a JSON task (no `loopFile`) takes that task over instead: its
+  schedule/execution/enabled are overwritten from the file while the task's
+  `id` and runtime `state` are preserved (markdown wins on conflict).
+- **UI-only fields survive adoption.** Execution fields the file format does
+  not define (`goalEnabled`, `goalTokenBudget`, `permissionAutoAccept`,
+  `variant`) are preserved from the task when a loop adopts it; only fields the
+  file defines are re-applied.
 - **Deletion.** A task carrying the `loopFile` marker whose loop file is no
   longer discovered (removed or renamed) is unscheduled (removed from the
   config). The marker is persisted in the config file, so removal is detected
   across restarts. JSON-configured tasks without the marker are never removed.
+  A task whose loop file still exists but is currently unparseable is KEPT with
+  its last good definition — a transiently malformed file (mid-edit, bad merge)
+  never deletes a task or its runtime state.
 - **Creation.** Loops without a matching task are created under a deterministic
-  `loop:<scope>:<name>` id so runtime state survives restarts.
+  `loop:<scope>:<name>` id so runtime state survives restarts. At most one task
+  is driven per loop file; orphan duplicates of the same file are unscheduled.
 - **Scope precedence.** Project-scope loops shadow user-scope loops with the
   same name; among project files the nearest ancestor wins.
 - **Malformed files** (missing `name`/`schedule`/`model`/body, invalid cron,
-  unreadable) are skipped with a warning and never block valid loops in the
-  same or other scopes.
+  unreadable) are reported to the scheduler as `definition: null` entries and
+  warned about; they never block valid loops in the same or other scopes.
 - **UI edits** to a loop-sourced task are preserved in the config but the loop
   file remains authoritative: the next reconciliation re-applies the file's
-  definition (including `enabled`). Use `enabled: false` in the file to disable.
+  definition (including `enabled`). Use `enabled: false` in the file to
+  disable. Deleting a loop-sourced task through the API is rejected with a 400 —
+  the loop file is the removal surface.
 
 ## Public exports (runtime.js)
 

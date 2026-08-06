@@ -78,6 +78,17 @@ export const createScheduledTaskService = (dependencies) => {
     await findProjectByID(projectID);
     const normalizedTaskID = asNonEmptyString(taskID);
     if (!normalizedTaskID) throw new OpenChamberControlError('taskId is required', 400);
+    const current = await projectConfigRuntime.listScheduledTasks(projectID);
+    const existing = current.find((task) => task.id === normalizedTaskID) || null;
+    if (existing?.loopFile) {
+      // Loop tasks are owned by their `.agents/loops` markdown file: deleting
+      // the JSON row would be silently undone by the next reconcile. The file
+      // itself is the removal surface.
+      throw new OpenChamberControlError(
+        'Loop task is managed by its .agents/loops markdown file; delete the file to remove the task',
+        400,
+      );
+    }
     const result = await projectConfigRuntime.deleteScheduledTask(projectID, normalizedTaskID);
     if (!result.deleted) throw new OpenChamberControlError('Task not found', 404);
     await scheduledTasksRuntime.syncProject(projectID);

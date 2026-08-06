@@ -73,13 +73,13 @@ Run weekly checks.
 
       expect(definition.execution.providerID).toBe('openai');
       expect(definition.execution.modelID).toBe('gpt-5');
-      expect(definition.enabled).toBe(true);
+      expect(definition.enabled).toBe(false);
     } finally {
       await cleanup();
     }
   });
 
-  it('defaults enabled to true and omits optional fields', async () => {
+  it('defaults enabled to false and omits optional fields', async () => {
     const { projectPath, cleanup } = await createProject();
     try {
       const filePath = path.join(projectPath, 'loop.md');
@@ -87,16 +87,36 @@ Run weekly checks.
 name: minimal
 schedule: "*/30 * * * *"
 model: openai/gpt-5
-enabled: false
 ---
 Run every half hour.
 `, 'utf8');
 
       const definition = parseLoopDefinition(filePath);
 
+      // Loops only run when the file explicitly enables them: discovery of
+      // repository content must never auto-execute scheduled sessions.
       expect(definition.enabled).toBe(false);
       expect(definition.schedule).toEqual({ kind: 'cron', cron: '*/30 * * * *' });
       expect(definition.execution.agent).toBeUndefined();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('honors an explicit enabled: true in the frontmatter', async () => {
+    const { projectPath, cleanup } = await createProject();
+    try {
+      const filePath = path.join(projectPath, 'loop.md');
+      await writeFile(filePath, `---
+name: explicit-enabled
+schedule: "*/30 * * * *"
+model: openai/gpt-5
+enabled: true
+---
+Run every half hour.
+`, 'utf8');
+
+      expect(parseLoopDefinition(filePath).enabled).toBe(true);
     } finally {
       await cleanup();
     }
@@ -272,7 +292,7 @@ Project version.
     }
   });
 
-  it('skips malformed files without blocking valid ones', async () => {
+  it('reports malformed files as unparsed entries without blocking valid ones', async () => {
     const { projectPath, cleanup } = await createProject();
     try {
       await writeLoop(projectPath, 'bad.md', `---
@@ -292,7 +312,14 @@ Valid.
       try {
         const loops = discoverLoops(projectPath);
 
-        expect(loops.map((loop) => loop.definition.name)).toEqual(['good']);
+        // The malformed file stays visible as a `definition: null` entry so
+        // the scheduler can keep its task alive while the file is fixed.
+        const bad = loops.find((loop) => loop.filePath.endsWith(path.join('.agents', 'loops', 'bad.md')));
+        expect(bad.definition).toBeNull();
+        expect(bad.scope).toBe('project');
+
+        const good = loops.find((loop) => loop.filePath.endsWith(path.join('.agents', 'loops', 'good.md')));
+        expect(good.definition.name).toBe('good');
         expect(warn).toHaveBeenCalled();
       } finally {
         warn.mockRestore();

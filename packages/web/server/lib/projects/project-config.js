@@ -570,18 +570,27 @@ export const createProjectConfigRuntime = (deps) => {
    * task list.
    *
    * Rules (documented in scheduled-tasks/DOCUMENTATION.md):
-   * - Identity is the task NAME. A loop whose name matches an existing task
-   *   takes that task over: its schedule/execution/enabled are overwritten
-   *   from the file while its id and runtime state are preserved (markdown
-   *   wins on conflict).
+   * - For loop-owned tasks (carrying the `loopFile` marker) identity is the
+   *   LOOP FILE PATH: a loop takes its task over regardless of the task's
+   *   current name, so renaming the loop (`name` field or a UI edit) renames
+   *   the task in place instead of leaving a stale duplicate behind.
+   * - A loop whose name matches a JSON task (no `loopFile`) takes that task
+   *   over: its schedule/execution/enabled are overwritten from the file while
+   *   its id and runtime state are preserved (markdown wins on conflict).
+   *   Execution fields the file format does not define (goalEnabled,
+   *   goalTokenBudget, permissionAutoAccept, variant) are preserved.
    * - A task whose loopFile no longer matches any discovered loop file is
    *   unscheduled (removed). JSON-configured tasks (no loopFile) are never
    *   removed.
+   * - A task whose loop file still exists but is currently unparseable is
+   *   KEPT with its last good definition: only a genuinely removed file
+   *   unschedules a task, so transiently malformed files (mid-edit, bad
+   *   merge) never delete tasks or their runtime state.
    * - Loops with no matching task are created under a deterministic
    *   `loop:<scope>:<name>` id, so runtime state survives restarts.
    * - Malformed definitions are skipped with a warning and never block valid
-   *   loops; the scheduler passes only parsed definitions, and normalization
-   *   failures here are isolated per loop.
+   *   loops; the scheduler passes them as `definition: null` entries, and
+   *   normalization failures here are isolated per loop.
    */
   const reconcileLoopTasks = async (projectID, loops) => {
     return withProjectWriteLock(projectID, async () => {
@@ -591,14 +600,19 @@ export const createProjectConfigRuntime = (deps) => {
 
       const activeLoopFilePaths = new Set();
       const pendingLoops = new Map();
+      const loopsByPath = new Map();
       for (const loop of loops) {
-        if (!loop || !loop.definition || typeof loop.definition !== 'object') {
+        if (!loop || typeof loop.filePath !== 'string' || !loop.filePath) {
           continue;
         }
         activeLoopFilePaths.add(loop.filePath);
-        pendingLoops.set(loop.definition.name, loop);
+        if (loop.definition && typeof loop.definition === 'object') {
+          pendingLoops.set(loop.definition.name, loop);
+          loopsByPath.set(loop.filePath, loop);
+        }
       }
 
+      const consumedLoopPaths = new Set();
       const nextTasks = [];
       for (const task of tasks) {
         if (task.loopFile && !activeLoopFilePaths.has(task.loopFile)) {
@@ -606,11 +620,22 @@ export const createProjectConfigRuntime = (deps) => {
           continue;
         }
 
-        const loop = pendingLoops.get(task.name);
+        // Loop-owned tasks adopt by file path (covers renames of the `name`
+        // field); JSON tasks adopt by name.
+        const loop = task.loopFile
+          ? loopsByPath.get(task.loopFile) || null
+          : pendingLoops.get(task.name) || null;
         if (loop) {
           try {
             const adopted = normalizeTaskForStorage(
-              { ...task, ...loop.definition, loopFile: loop.filePath },
+              {
+                ...task,
+                ...loop.definition,
+                // File-defined execution fields win; UI-only fields the file
+                // format does not define are preserved from the task.
+                execution: { ...task.execution, ...loop.definition.execution },
+                loopFile: loop.filePath,
+              },
               {
                 now,
                 createId: taskIDFactory,
@@ -621,10 +646,20 @@ export const createProjectConfigRuntime = (deps) => {
             );
             nextTasks.push(adopted);
             pendingLoops.delete(loop.definition.name);
+            if (task.loopFile) {
+              consumedLoopPaths.add(task.loopFile);
+              loopsByPath.delete(task.loopFile);
+            }
           } catch (error) {
             console.warn(`[scheduled-tasks] skipped loop ${loop.filePath} for task "${task.name}":`, error?.message ?? error);
             nextTasks.push(task);
           }
+          continue;
+        }
+
+        if (task.loopFile && consumedLoopPaths.has(task.loopFile)) {
+          // Orphan duplicate: another task already adopted this loop file
+          // (left over from a rename) — unschedule it.
           continue;
         }
 

@@ -21,7 +21,9 @@
  * Field mapping (see packages/ui/src/lib/scheduledTasksApi.ts):
  *   name     -> task.name
  *   schedule -> task.schedule.kind "cron" + task.schedule.cron
- *   enabled  -> task.enabled (default true)
+ *   enabled  -> task.enabled (default false — loops only run when the file
+ *               explicitly enables them, so discovery never auto-executes
+ *               repository content)
  *   model    -> split into task.execution.providerID / task.execution.modelID
  *   agent    -> task.execution.agent (optional)
  *   timezone -> task.schedule.timezone (optional, defaults to the server zone)
@@ -116,7 +118,7 @@ export const parseLoopDefinition = (filePath) => {
 
   return {
     name,
-    enabled: typeof frontmatter.enabled === 'boolean' ? frontmatter.enabled : true,
+    enabled: typeof frontmatter.enabled === 'boolean' ? frontmatter.enabled : false,
     schedule: {
       kind: 'cron',
       cron,
@@ -170,13 +172,21 @@ export const discoverLoopFiles = (projectPath) => {
 /**
  * Discover and parse all loops for a project. Project-scope loops shadow
  * user-scope loops with the same name; among project files the nearest
- * ancestor wins. Malformed files are skipped with a warning.
+ * ancestor wins.
+ *
+ * Unparseable files are reported as `{ scope, filePath, definition: null }`
+ * entries instead of being dropped: the scheduler must distinguish "file is
+ * gone" (unschedule its task) from "file exists but is currently malformed"
+ * (keep its task with the last good definition until the file is fixed).
+ * Malformed files never block valid ones in the same or other scopes.
  */
 export const discoverLoops = (projectPath) => {
   const byName = new Map();
+  const loops = [];
   for (const { filePath, scope } of discoverLoopFiles(projectPath)) {
     const definition = parseLoopDefinition(filePath);
     if (!definition) {
+      loops.push({ scope, filePath, definition: null });
       continue;
     }
     const existing = byName.get(definition.name);
@@ -185,5 +195,8 @@ export const discoverLoops = (projectPath) => {
     }
     byName.set(definition.name, { scope, filePath, definition });
   }
-  return [...byName.values()];
+  for (const entry of byName.values()) {
+    loops.push(entry);
+  }
+  return loops;
 };
