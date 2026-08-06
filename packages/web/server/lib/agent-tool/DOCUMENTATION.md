@@ -32,25 +32,31 @@ both settings are `false`.
    `OPENCODE_CONFIG_CONTENT` without replacing existing plugin entries.
 3. A random per-child token and loopback callback URL are added only to the
    managed OpenCode child environment.
-4. The plugin calls `POST /api/openchamber/agent-tool` with its typed input and
-   OpenCode's authoritative session directory.
+4. The plugin unwraps its typed `request` object and calls
+   `POST /api/openchamber/agent-tool` with the action input and OpenCode's
+   authoritative session directory.
 5. The route delegates the fixed action allowlist directly to the shared
    OpenChamber control service. The CLI uses the same service through its
    authenticated HTTP adapter, so Goal Mode ordering, wait behavior,
    partial-failure reporting, and scheduled-task contracts have one owner.
 6. Each action definition owns a short presentation title and a separate
    agent-facing description. The generated schema uses the description to state
-   required inputs or one non-obvious behavior, while completed calls use the
-   short title in native tool metadata.
+   required inputs, one non-obvious behavior, or one compact example, while
+   completed calls use the short title in native tool metadata.
 
 ## Agent context budget
 
-- The tool exposes one shared parameter object rather than repeating parameters
-  in a large per-action union. Action descriptions carry only required inputs,
-  defaults, or one non-obvious semantic detail.
+- The tool exposes one shared `request` object rather than repeating parameters
+  in a large per-action union. Keeping this object distinct from a generic
+  parallel wrapper's `parameters` field prevents one layer from being mistaken
+  for the other. Action descriptions carry only required inputs, defaults, or
+  one non-obvious semantic detail.
 - Obvious fields rely on their names and JSON types. Parameter descriptions are
   reserved for formats, dependencies, scope, and behavior that cannot be safely
   inferred from the field name.
+- JSON Schema owns types, enums, and numeric ranges. Shared descriptions own
+  cross-action scope and selection rules; action descriptions own only their
+  distinctive dependencies and compact examples.
 - Session dispatches do not wait by default. Agents are told to set `wait` only
   when the user asks or the next step requires the completed result.
 - The tool exposes only agent-relevant actions
@@ -63,9 +69,9 @@ both settings are `false`.
 - Optional behavior switches (`worktree`, `goal`, `agent`, `variant`, `wait`)
   state their default and an explicit "only when the user asks" rule so agents
   do not invent worktrees, goal mode, or waits the user never requested.
-- Detailed combination rules are enforced by the shared control service and
-  returned as actionable usage errors only after an invalid call. Per-action
-  examples and a repeated per-action parameter schema are intentionally omitted.
+- Combination rules that commonly cause avoidable retries are summarized in the
+  relevant action description. The shared control service still owns exhaustive
+  validation and returns actionable errors without a repeated per-action schema.
 
 ## Security invariants
 
