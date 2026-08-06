@@ -25,7 +25,7 @@ Component interaction keys that are not application commands, such as list navig
 
 # Binding rules
 
-Bindings remain persisted as `Record<string, string>`. Each binding has one chord or at most two space-separated chords, such as `mod+s p`. `normalizeCombo`, `parseShortcut`, `formatShortcutForDisplay`, and `getShortcutConflict` provide the shared parsing and validation behavior. A single chord conflicts with a sequence sharing its first chord; sibling sequences are valid.
+Bindings remain persisted as `Record<string, string>`. Each binding has one chord or at most two space-separated chords, such as `mod+s p`. `mod` is the platform-neutral primary modifier (Command on macOS, Control elsewhere), while `alt` is the platform-neutral alternate modifier (Option on macOS, Alt elsewhere); `command`, `cmd`, `meta`, and `option` are accepted input aliases but normalize to those canonical tokens. `normalizeCombo`, `parseShortcut`, `formatShortcutForDisplay`, and `getShortcutConflict` provide the shared parsing and validation behavior. Display formatting uses macOS keyboard symbols (`⌘`, `⌥`, `⌃`, `⇧`) on macOS and named modifiers (`Ctrl`, `Alt`, `Shift`) elsewhere, including tooltip and accessible text consumers. A single chord conflicts with a sequence sharing its first chord; sibling sequences are valid.
 
 Contextual internal commands may deliberately share a sequence leader. The single-chord handler gets the first chance to handle the event; returning `false` lets the dispatcher start the sequence. The active file editor therefore owns `mod+s` for saving, while a mounted but unfocused editor yields `mod+s p`, `mod+s g`, and `mod+s l` to the draft target pickers and session list.
 

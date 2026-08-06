@@ -53,7 +53,7 @@ import { getOutsideFileGrant } from '@/lib/outsideFileGrants';
 import { DiagramEditor } from '@/components/diagram';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useKeybind, useKeybinds } from '@/hooks/useKeybind';
-import { getModifierLabel } from '@/lib/shortcuts';
+import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import { EditorView } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
@@ -3167,6 +3167,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     }
 
     const docked = layout === 'docked';
+    const saveShortcut = formatShortcutForDisplay(getEffectiveShortcutCombo('save_file'));
     const wrapperCls = docked
       ? 'pointer-events-auto flex flex-wrap items-center gap-1'
       : 'pointer-events-auto flex items-center gap-1 rounded-lg border border-[var(--interactive-border)] bg-[var(--surface-elevated)] p-1 shadow-sm';
@@ -3196,14 +3197,14 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
                 <Icon name="check" className="size-3.5" />
                 {t('filesView.editor.saved')}
               </span>
-            ) : isDirty ? withTooltip(t(autoSaveEnabled ? 'filesView.editor.saveNowTitle' : 'filesView.editor.saveNowManualTitle', { shortcut: `${getModifierLabel()}+S` }),
+            ) : isDirty ? withTooltip(t(autoSaveEnabled ? 'filesView.editor.saveNowTitle' : 'filesView.editor.saveNowManualTitle', { shortcut: saveShortcut }),
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => void saveDraft()}
                 className="h-6 gap-1 px-1 text-muted-foreground opacity-80 hover:bg-transparent hover:opacity-100 focus-visible:bg-transparent active:bg-transparent"
-                title={t(autoSaveEnabled ? 'filesView.editor.saveNowTitle' : 'filesView.editor.saveNowManualTitle', { shortcut: `${getModifierLabel()}+S` })}
-                aria-label={t('filesView.editor.saveAria', { shortcut: `${getModifierLabel()}+S` })}
+                title={t(autoSaveEnabled ? 'filesView.editor.saveNowTitle' : 'filesView.editor.saveNowManualTitle', { shortcut: saveShortcut })}
+                aria-label={t('filesView.editor.saveAria', { shortcut: saveShortcut })}
               >
                 <Icon name="save-3" className="size-4" />
               </Button>

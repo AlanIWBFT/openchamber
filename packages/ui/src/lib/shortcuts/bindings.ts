@@ -3,6 +3,7 @@ import { isDesktopShell } from '@/lib/desktop';
 import { isMacOS } from '@/lib/utils';
 
 type ShortcutModifier = 'mod' | 'shift' | 'alt' | 'ctrl';
+type ShortcutDisplayPlatform = 'macos' | 'other';
 type ShortcutKey = string;
 
 export type ShortcutCombo = string;
@@ -30,11 +31,19 @@ const MODIFIER_KEY_MAP: Record<string, ShortcutModifier> = {
   command: 'mod',
 };
 
-const DISPLAY_LABEL_MAP: Record<ShortcutModifier, string> = {
-  mod: isMacOS() && isDesktopShell() ? '⌘' : 'Ctrl',
-  shift: '⇧',
-  alt: '⌥',
-  ctrl: '⌃',
+const MODIFIER_LABELS: Record<ShortcutDisplayPlatform, Record<ShortcutModifier, string>> = {
+  macos: {
+    mod: '⌘',
+    shift: '⇧',
+    alt: '⌥',
+    ctrl: '⌃',
+  },
+  other: {
+    mod: 'Ctrl',
+    shift: 'Shift',
+    alt: 'Alt',
+    ctrl: 'Ctrl',
+  },
 };
 
 const KEY_LABEL_MAP: Record<string, string> = {
@@ -176,19 +185,31 @@ export function parseShortcut(combo: ShortcutCombo): ParsedShortcut | undefined 
   };
 }
 
-export function formatShortcutForDisplay(combo: ShortcutCombo, unassignedLabel = 'Unassigned'): string {
+function getShortcutDisplayPlatform(): ShortcutDisplayPlatform {
+  return isMacOS() ? 'macos' : 'other';
+}
+
+export function formatShortcutForDisplay(
+  combo: ShortcutCombo,
+  unassignedLabel = 'Unassigned',
+  platform = getShortcutDisplayPlatform(),
+): string {
   if (isUnassignedShortcut(combo)) return unassignedLabel;
   const parsed = parseShortcut(combo);
   if (!parsed || parsed.chords.some((chord) => !chord.key && chord.modifiers.size === 0)) {
     return unassignedLabel;
   }
-  return parsed.chords.map(formatChordForDisplay).join(', ');
+  return parsed.chords.map((chord) => formatChordForDisplay(chord, platform)).join(', ');
 }
 
-function formatChordForDisplay(parsed: ParsedShortcutChord): string {
+function formatChordForDisplay(
+  parsed: ParsedShortcutChord,
+  platform: ShortcutDisplayPlatform,
+): string {
+  const modifierLabels = MODIFIER_LABELS[platform];
   const parts = MODIFIER_PRIORITY
     .filter((modifier) => parsed.modifiers.has(modifier))
-    .map((modifier) => DISPLAY_LABEL_MAP[modifier]);
+    .map((modifier) => modifierLabels[modifier]);
   if (parsed.key) {
     parts.push(KEY_LABEL_MAP[parsed.key.toLowerCase()] || parsed.key.toUpperCase());
   }
@@ -307,8 +328,4 @@ export function eventMatchesShortcutPrefix(
   }
 
   return !chord.key || Boolean(heldKeys?.has(chord.key.toLowerCase()));
-}
-
-export function getModifierLabel(): string {
-  return isMacOS() && isDesktopShell() ? '⌘' : 'Ctrl';
 }

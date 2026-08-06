@@ -2,7 +2,6 @@ export {
   eventMatchesShortcut,
   eventMatchesShortcutPrefix,
   formatShortcutForDisplay,
-  getModifierLabel,
   getShortcutConflict,
   isRiskyBrowserShortcut,
   isShortcutPrefixHeld,

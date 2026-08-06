@@ -11,7 +11,6 @@ import { useUIStore } from "@/stores/useUIStore";
 import {
   getEffectiveShortcutCombo,
   getShortcutAction,
-  getModifierLabel,
   formatShortcutForDisplay,
   type ShortcutActionId,
 } from "@/lib/shortcuts";
@@ -44,7 +43,6 @@ export const HelpDialog: React.FC = () => {
   const isHelpDialogOpen = useUIStore((state) => state.isHelpDialogOpen);
   const setHelpDialogOpen = useUIStore((state) => state.setHelpDialogOpen);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
-  const mod = getModifierLabel();
   const isVSCode = isVSCodeRuntime();
 
   const shortcuts: ShortcutSection[] = [
@@ -104,7 +102,7 @@ export const HelpDialog: React.FC = () => {
           keys: '',
         },
         {
-          keys: [`Shift + Alt + ${mod} + N`],
+          keys: [formatShortcutForDisplay('mod+shift+alt+n')],
           descriptionKey: "helpDialog.item.newWindow",
           icon: "window",
         },
@@ -195,7 +193,7 @@ export const HelpDialog: React.FC = () => {
           keys: '',
         },
         {
-          keys: [`${mod} + 1...0`],
+          keys: [`${formatShortcutForDisplay('mod')} + 1...0`],
           descriptionKey: "helpDialog.item.switchContextSurface",
           icon: "layout-right",
         },

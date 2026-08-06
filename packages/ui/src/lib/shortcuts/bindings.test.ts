@@ -106,3 +106,23 @@ describe('shortcut sequences', () => {
     expect(isRiskyBrowserShortcut('mod+s p')).toBe(true);
   });
 });
+
+describe('platform shortcut labels', () => {
+  test('normalizes Command and Option to platform-neutral modifiers', () => {
+    expect(normalizeCombo('command+option+n')).toBe('mod+alt+n');
+  });
+
+  test('uses macOS modifier symbols', () => {
+    expect(formatShortcutForDisplay('mod+ctrl+shift+alt+n', 'Unassigned', 'macos')).toBe(
+      '⌘ + ⌃ + ⇧ + ⌥ + N',
+    );
+    expect(formatShortcutForDisplay('alt', 'Unassigned', 'macos')).toBe('⌥');
+  });
+
+  test('uses named modifiers on other platforms', () => {
+    expect(formatShortcutForDisplay('mod+shift+alt+n', 'Unassigned', 'other')).toBe(
+      'Ctrl + Shift + Alt + N',
+    );
+    expect(formatShortcutForDisplay('alt', 'Unassigned', 'other')).toBe('Alt');
+  });
+});
