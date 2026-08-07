@@ -5,6 +5,8 @@ export interface AuthMethod {
   description?: string;
   help?: string;
   method?: number;
+  /** Inputs an OAuth method wants answered before authorize; see `provider-oauth.ts`. */
+  prompts?: unknown;
   [key: string]: unknown;
 }
 

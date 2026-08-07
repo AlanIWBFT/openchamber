@@ -114,7 +114,7 @@ This module provides OpenCode server integration utilities for the web server ru
 The runtime maintains active-session count incrementally from idempotent activity phase transitions. Upstream stall-timeout and lifecycle health checks read it in O(1); the hourly cleanup removes activity phases older than 24 hours without broadcasting synthetic state transitions. Snapshot generation remains reserved for the session-activity API.
 
 ## Public exports (lifecycle.js)
-- `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration.
+- `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration. The optional `onOpenCodeRestarted` dependency (default `null`) is fired after a successful managed restart; `index.js` wires it to `messageStreamRuntime.rebindUpstream()` so event-stream readers rebind to the possibly-new port (a restart can land on a new port while an orphaned process keeps the old one, which would otherwise leave the chat UI silent — issue #2638).
 - Returned API:
   - `startOpenCode()`
   - `restartOpenCode()`
@@ -356,6 +356,9 @@ an authoritative loopback callback URL even when OpenChamber binds port `0`.
 - `registerOpenChamberRoutes(app, dependencies)`: registers OpenChamber endpoints:
   - `GET /api/openchamber/update-check`
   - `POST /api/openchamber/update-install`
+    - Foreground servers running under a systemd user unit queue installation in
+      a separate transient unit and restart the configured service afterwards.
+      `OPENCHAMBER_SYSTEMD_UNIT` overrides the default `openchamber.service`.
   - `GET /api/openchamber/models-metadata`
   - `GET /api/zen/models`
 
@@ -388,6 +391,8 @@ an authoritative loopback callback URL even when OpenChamber binds port `0`.
   - SSE forwarders: `GET /api/global/event`, `GET /api/event`
     - Downstream heartbeats keep clients and intermediaries alive, while a separate upstream-only stall watchdog closes the downstream response when OpenCode stops producing bytes so clients reconnect instead of trusting synthetic heartbeats indefinitely. Each watchdog reset uses the current load-aware timeout, matching the shared event transport.
   - Session message forwarder: `POST /api/session/:sessionId/message`
+  - Interactive OAuth forwarder: `POST /api/provider/:providerID/oauth/callback`
+    - Upstream blocks inside this call for the whole browser sign-in (device-code polling or a loopback redirect), so it is exempt from the ordinary request deadline and uses a 15-minute proxy timeout instead of `LONG_REQUEST_TIMEOUT_MS`. All other `/api/provider/*` routes, including `oauth/authorize`, keep the ordinary deadline.
   - Generic `/api/*` forwarding with hop-by-hop header filtering
   - Windows `/session` merge fallback path behavior
   - OpenCode readiness gate for proxied `/api` requests

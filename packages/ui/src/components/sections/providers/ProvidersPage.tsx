@@ -19,8 +19,6 @@ import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
 import { noteDeferredRestartFromPayload, recordDeferredOpenCodeRestart } from '@/lib/opencode/deferredRestart';
 import { cn } from '@/lib/utils';
-import { copyTextToClipboard } from '@/lib/clipboard';
-import { openExternalUrl } from '@/lib/url';
 import type { ModelMetadata } from '@/types';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -31,8 +29,10 @@ import {
   parseAuthPayload,
   shouldShowApiKeyAuth,
   type AuthMethod,
+  type OAuthAuthMethodEntry,
 } from './providerAuth';
 import { CustomProviderForm } from './CustomProviderForm';
+import { ProviderOAuthMethods, type ProviderOAuthMethod } from './ProviderOAuthMethods';
 import {
   buildAuthSetRequest,
   buildProviderUpsertRequest,
@@ -84,6 +84,16 @@ interface ProviderSources {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
+
+const toOAuthMethods = (
+  entries: OAuthAuthMethodEntry[],
+  fallbackLabel: (index: number) => string,
+): ProviderOAuthMethod[] =>
+  entries.map(({ method, methodIndex }) => ({
+    index: methodIndex,
+    label: method.label || method.name || fallbackLabel(methodIndex),
+    prompts: method.prompts,
+  }));
 
 const normalizeProviderEntry = (entry: unknown): ProviderOption | null => {
   if (typeof entry === 'string') {
@@ -147,9 +157,6 @@ export const ProvidersPage: React.FC = () => {
   const [apiKeyInputs, setApiKeyInputs] = React.useState<Record<string, string>>({});
   const [authBusyKey, setAuthBusyKey] = React.useState<string | null>(null);
   const [modelQuery, setModelQuery] = React.useState('');
-  const [pendingOAuth, setPendingOAuth] = React.useState<{ providerId: string; methodIndex: number } | null>(null);
-  const [oauthCodes, setOauthCodes] = React.useState<Record<string, string>>({});
-  const [oauthDetails, setOauthDetails] = React.useState<Record<string, { url?: string; instructions?: string; userCode?: string }>>({});
   const [availableProviders, setAvailableProviders] = React.useState<ProviderOption[]>([]);
   const [availableLoading, setAvailableLoading] = React.useState(false);
   const [availableError, setAvailableError] = React.useState<string | null>(null);
@@ -181,7 +188,8 @@ export const ProvidersPage: React.FC = () => {
   React.useEffect(() => {
     // Auth methods drive which credential UI to show (API key vs OAuth). Keep
     // them loaded for the active provider view so OAuth-only plugins never fall
-    // back to an API key form merely because methods were never fetched.
+    // back to an API key form merely because methods were never fetched, and so
+    // an already-listed provider can still offer re-authentication.
     if (!selectedProviderId) {
       return;
     }
@@ -458,117 +466,13 @@ export const ProvidersPage: React.FC = () => {
     }
   };
 
-  const handleOAuthStart = async (providerId: string, methodIndex: number) => {
-    const busyKey = `oauth:${providerId}:${methodIndex}`;
-    setAuthBusyKey(busyKey);
+  const oauthMethodFallbackLabel = (index: number) =>
+    t('settings.providers.page.auth.oauthMethodFallback', { index: String(index + 1) });
 
-    try {
-      const result = await opencodeClient.getSdkClient().provider.oauth.authorize({
-        providerID: providerId,
-        method: methodIndex,
-      });
-      if (result.error) {
-        throw new Error(t('settings.providers.page.toast.oauthStartFailed'));
-      }
-
-      const payloadRecord: Record<string, unknown> = isRecord(result.data) ? result.data : {};
-      const nestedData = payloadRecord.data;
-      const dataRecord: Record<string, unknown> = isRecord(nestedData) ? nestedData : payloadRecord;
-      const urlCandidate =
-        (typeof dataRecord.url === 'string' && dataRecord.url) ||
-        (typeof dataRecord.verification_uri_complete === 'string' && dataRecord.verification_uri_complete) ||
-        (typeof dataRecord.verification_uri === 'string' && dataRecord.verification_uri) ||
-        undefined;
-      const instructions =
-        (typeof dataRecord.instructions === 'string' && dataRecord.instructions) ||
-        (typeof dataRecord.message === 'string' && dataRecord.message) ||
-        undefined;
-      const userCode =
-        (typeof dataRecord.user_code === 'string' && dataRecord.user_code) ||
-        (typeof dataRecord.code === 'string' && dataRecord.code) ||
-        (typeof dataRecord.userCode === 'string' && dataRecord.userCode) ||
-        undefined;
-
-      if (!urlCandidate && !instructions && !userCode) {
-        throw new Error(t('settings.providers.page.toast.oauthDetailsMissing'));
-      }
-
-      const detailsKey = `${providerId}:${methodIndex}`;
-      setOauthDetails((prev) => ({
-        ...prev,
-        [detailsKey]: {
-          url: urlCandidate,
-          instructions,
-          userCode,
-        },
-      }));
-
-      if (urlCandidate) {
-        void openExternalUrl(urlCandidate);
-      }
-      setPendingOAuth({ providerId, methodIndex });
-      toast.message(t('settings.providers.page.toast.completeOAuthInBrowser'));
-    } catch (error) {
-      console.error('Failed to start OAuth flow:', error);
-      toast.error(t('settings.providers.page.toast.oauthStartFailed'));
-    } finally {
-      setAuthBusyKey(null);
-    }
-  };
-
-  const handleOAuthComplete = async (providerId: string, methodIndex: number) => {
-    const codeKey = `${providerId}:${methodIndex}`;
-    const code = oauthCodes[codeKey]?.trim();
-
-    const busyKey = `oauth-complete:${providerId}:${methodIndex}`;
-    setAuthBusyKey(busyKey);
-
-    try {
-      const requestBody: { method: number; code?: string } = { method: methodIndex };
-      if (code) {
-        requestBody.code = code;
-      }
-
-      const result = await opencodeClient.getSdkClient().provider.oauth.callback({
-        providerID: providerId,
-        method: requestBody.method,
-        code: requestBody.code,
-      });
-      if (result.error) {
-        throw new Error(t('settings.providers.page.toast.oauthCompleteFailed'));
-      }
-
-      toast.success(t('settings.providers.page.toast.oauthCompleted'));
-      setOauthCodes((prev) => ({ ...prev, [codeKey]: '' }));
-      setPendingOAuth(null);
-      recordDeferredOpenCodeRestart('providers', { id: providerId });
-      setSelectedProvider(providerId);
-    } catch (error) {
-      console.error('Failed to complete OAuth flow:', error);
-      toast.error(t('settings.providers.page.toast.oauthCompleteFailed'));
-    } finally {
-      setAuthBusyKey(null);
-    }
-  };
-
-  const handleCopyOAuthLink = async (url: string) => {
-    const result = await copyTextToClipboard(url);
-    if (result.ok) {
-      toast.success(t('settings.providers.page.toast.oauthLinkCopied'));
-      return;
-    }
-    console.error('Failed to copy OAuth link:', result.error);
-    toast.error(t('settings.providers.page.toast.oauthLinkCopyFailed'));
-  };
-
-  const handleCopyOAuthCode = async (code: string) => {
-    const result = await copyTextToClipboard(code);
-    if (result.ok) {
-      toast.success(t('settings.providers.page.toast.deviceCodeCopied'));
-      return;
-    }
-    console.error('Failed to copy device code:', result.error);
-    toast.error(t('settings.providers.page.toast.deviceCodeCopyFailed'));
+  const handleOAuthConnected = (providerId: string) => {
+    setShowAuthPanel(false);
+    recordDeferredOpenCodeRestart('providers', { id: providerId });
+    setSelectedProvider(providerId);
   };
 
   const handleDisconnectProvider = async (providerId: string) => {
@@ -779,7 +683,10 @@ export const ProvidersPage: React.FC = () => {
                 <>
                   {(() => {
                     const candidateAuthMethods = authMethodsByProvider[candidateProviderId] ?? [];
-                    const candidateOAuthMethods = getOAuthAuthMethods(candidateAuthMethods);
+                    const candidateOAuthMethods = toOAuthMethods(
+                      getOAuthAuthMethods(candidateAuthMethods),
+                      oauthMethodFallbackLabel,
+                    );
                     const showApiKey = shouldShowApiKeyAuth(candidateAuthMethods);
 
                     return (
@@ -816,85 +723,13 @@ export const ProvidersPage: React.FC = () => {
                         ) : null}
 
                         {candidateOAuthMethods.length > 0 ? (
-                          <div className={cn('space-y-4', showApiKey && 'border-t border-[var(--surface-subtle)] pt-2')}>
-                            {candidateOAuthMethods.map(({ method, methodIndex }) => {
-                              const methodLabel = method.label || method.name || t('settings.providers.page.auth.oauthMethodFallback', { index: String(methodIndex + 1) });
-                              const codeKey = `${candidateProviderId}:${methodIndex}`;
-                              const isPending =
-                                pendingOAuth?.providerId === candidateProviderId && pendingOAuth?.methodIndex === methodIndex;
-
-                              return (
-                                <div key={`${candidateProviderId}-${methodIndex}-${methodLabel}`} className="space-y-3">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div>
-                                      <div className="typography-ui-label text-foreground">{methodLabel}</div>
-                                      {(method.description || method.help) && (
-                                        <div className="typography-meta text-muted-foreground">
-                                          {String(method.description || method.help)}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <Button
-                                      variant="outline"
-                                      size="xs"
-                                      className="!font-normal"
-                                      onClick={() => handleOAuthStart(candidateProviderId, methodIndex)}
-                                      disabled={authBusyKey === `oauth:${candidateProviderId}:${methodIndex}`}
-                                    >
-                                      {t('settings.providers.page.actions.connect')}
-                                    </Button>
-                                  </div>
-
-                                  {oauthDetails[codeKey]?.instructions && (
-                                    <p className="typography-meta text-[var(--primary-base)] bg-[var(--primary-base)]/10 px-2 py-1.5 rounded">
-                                      {oauthDetails[codeKey]?.instructions}
-                                    </p>
-                                  )}
-
-                                  {oauthDetails[codeKey]?.userCode && (
-                                    <div className="flex items-center gap-2 mt-2">
-                                      <Input value={oauthDetails[codeKey]?.userCode} readOnly className="font-mono text-center tracking-widest" />
-                                      <Button variant="outline" size="xs" className="!font-normal" onClick={() => handleCopyOAuthCode(oauthDetails[codeKey]?.userCode ?? '')}>{t('settings.providers.page.actions.copyCode')}</Button>
-                                    </div>
-                                  )}
-
-                                  {oauthDetails[codeKey]?.url && (
-                                    <div className="flex items-center gap-2 mt-2">
-                                      <Input value={oauthDetails[codeKey]?.url} readOnly className="text-xs text-muted-foreground" />
-                                      <div className="flex gap-1 shrink-0">
-                                        <Button variant="outline" size="xs" className="!font-normal" onClick={() => openExternalUrl(oauthDetails[codeKey]?.url ?? '')}>{t('settings.providers.page.actions.open')}</Button>
-                                        <Button variant="outline" size="xs" className="!font-normal" onClick={() => handleCopyOAuthLink(oauthDetails[codeKey]?.url ?? '')}>{t('settings.providers.page.actions.copy')}</Button>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {isPending && (
-                                    <div className="flex items-center gap-2 mt-2">
-                                      <Input
-                                        value={oauthCodes[codeKey] ?? ''}
-                                        onChange={(event) =>
-                                          setOauthCodes((prev) => ({
-                                            ...prev,
-                                            [codeKey]: event.target.value,
-                                          }))
-                                        }
-                                        placeholder={t('settings.providers.page.auth.pasteAuthorizationCodePlaceholder')}
-                                        className="font-mono text-xs"
-                                      />
-                                      <Button
-                                        size="xs"
-                                        className="!font-normal"
-                                        onClick={() => handleOAuthComplete(candidateProviderId, methodIndex)}
-                                        disabled={authBusyKey === `oauth-complete:${candidateProviderId}:${methodIndex}`}
-                                      >
-                                        {authBusyKey === `oauth-complete:${candidateProviderId}:${methodIndex}` ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.complete')}
-                                      </Button>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
+                          <ProviderOAuthMethods
+                            key={candidateProviderId}
+                            providerId={candidateProviderId}
+                            methods={candidateOAuthMethods}
+                            onConnected={() => handleOAuthConnected(candidateProviderId)}
+                            className={cn(showApiKey && 'border-t border-[var(--surface-subtle)] pt-2')}
+                          />
                         ) : null}
                       </>
                     );
@@ -921,7 +756,10 @@ export const ProvidersPage: React.FC = () => {
 
   const providerModels = Array.isArray(selectedProvider.models) ? selectedProvider.models : [];
   const providerAuthMethods = authMethodsByProvider[selectedProvider.id] ?? [];
-  const oauthAuthMethods = getOAuthAuthMethods(providerAuthMethods);
+  const oauthAuthMethods = toOAuthMethods(
+    getOAuthAuthMethods(providerAuthMethods),
+    oauthMethodFallbackLabel,
+  );
   const showApiKeyAuth = shouldShowApiKeyAuth(providerAuthMethods);
   const sourcesLoaded = Boolean(selectedSources);
   const isEditableCustomProvider = sourcesLoaded
@@ -1064,85 +902,13 @@ export const ProvidersPage: React.FC = () => {
                 ) : null}
 
                 {oauthAuthMethods.length > 0 && (
-                  <div className={cn('space-y-4', showApiKeyAuth && 'border-t border-[var(--surface-subtle)] pt-2')}>
-                    {oauthAuthMethods.map(({ method, methodIndex }) => {
-                      const methodLabel = method.label || method.name || t('settings.providers.page.auth.oauthMethodFallback', { index: String(methodIndex + 1) });
-                      const codeKey = `${selectedProvider.id}:${methodIndex}`;
-                      const isPending =
-                        pendingOAuth?.providerId === selectedProvider.id && pendingOAuth?.methodIndex === methodIndex;
-
-                      return (
-                        <div key={`${selectedProvider.id}-${methodIndex}-${methodLabel}`} className="space-y-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="typography-ui-label text-foreground">{methodLabel}</div>
-                              {(method.description || method.help) && (
-                                <div className="typography-meta text-muted-foreground">
-                                  {String(method.description || method.help)}
-                                </div>
-                              )}
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              className="!font-normal"
-                              onClick={() => handleOAuthStart(selectedProvider.id, methodIndex)}
-                              disabled={authBusyKey === `oauth:${selectedProvider.id}:${methodIndex}`}
-                            >
-                              {t('settings.providers.page.actions.connect')}
-                            </Button>
-                          </div>
-
-                          {oauthDetails[codeKey]?.instructions && (
-                            <p className="typography-meta text-[var(--primary-base)] bg-[var(--primary-base)]/10 px-2 py-1.5 rounded">
-                              {oauthDetails[codeKey]?.instructions}
-                            </p>
-                          )}
-
-                          {oauthDetails[codeKey]?.userCode && (
-                            <div className="flex items-center gap-2 mt-2">
-                              <Input value={oauthDetails[codeKey]?.userCode} readOnly className="font-mono text-center tracking-widest" />
-                              <Button variant="outline" size="xs" className="!font-normal" onClick={() => handleCopyOAuthCode(oauthDetails[codeKey]?.userCode ?? '')}>{t('settings.providers.page.actions.copyCode')}</Button>
-                            </div>
-                          )}
-
-                          {oauthDetails[codeKey]?.url && (
-                            <div className="flex items-center gap-2 mt-2">
-                              <Input value={oauthDetails[codeKey]?.url} readOnly className="text-xs text-muted-foreground" />
-                              <div className="flex gap-1 shrink-0">
-                                <Button variant="outline" size="xs" className="!font-normal" onClick={() => openExternalUrl(oauthDetails[codeKey]?.url ?? '')}>{t('settings.providers.page.actions.open')}</Button>
-                                <Button variant="outline" size="xs" className="!font-normal" onClick={() => handleCopyOAuthLink(oauthDetails[codeKey]?.url ?? '')}>{t('settings.providers.page.actions.copy')}</Button>
-                              </div>
-                            </div>
-                          )}
-
-                          {isPending && (
-                            <div className="flex items-center gap-2 mt-2">
-                              <Input
-                                value={oauthCodes[codeKey] ?? ''}
-                                onChange={(event) =>
-                                  setOauthCodes((prev) => ({
-                                    ...prev,
-                                    [codeKey]: event.target.value,
-                                  }))
-                                }
-                                placeholder={t('settings.providers.page.auth.pasteAuthorizationCodePlaceholder')}
-                                className="font-mono text-xs"
-                              />
-                              <Button
-                                size="xs"
-                                className="!font-normal"
-                                onClick={() => handleOAuthComplete(selectedProvider.id, methodIndex)}
-                                disabled={authBusyKey === `oauth-complete:${selectedProvider.id}:${methodIndex}`}
-                              >
-                                {authBusyKey === `oauth-complete:${selectedProvider.id}:${methodIndex}` ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.complete')}
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <ProviderOAuthMethods
+                    key={selectedProvider.id}
+                    providerId={selectedProvider.id}
+                    methods={oauthAuthMethods}
+                    onConnected={() => handleOAuthConnected(selectedProvider.id)}
+                    className={cn(showApiKeyAuth && 'border-t border-[var(--surface-subtle)] pt-2')}
+                  />
                 )}
               </div>
             )}
