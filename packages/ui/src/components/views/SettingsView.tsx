@@ -9,7 +9,7 @@ import { useSnippetsStore } from '@/stores/useSnippetsStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipTrigger } from '@/components/ui/tooltip';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AgentsSidebar } from '@/components/sections/agents/AgentsSidebar';
 import { AgentsPage } from '@/components/sections/agents/AgentsPage';
@@ -47,7 +47,11 @@ import { isWindowsArm64 as isWindowsArm64Platform } from '@/lib/platform';
 import { useI18n } from '@/lib/i18n';
 import { Icon } from "@/components/icon/Icon";
 import { McpIcon } from '@/components/icons/McpIcon';
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import { OpenCodeReloadFooterAction } from '@/components/views/OpenCodeReloadFooterAction';
+import {
+  selectPendingOpenCodeRestartCount,
+  usePendingOpenCodeRestartStore,
+} from '@/stores/usePendingOpenCodeRestartStore';
 import {
   SETTINGS_PAGE_METADATA,
   getSettingsNavIcon,
@@ -175,6 +179,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const { t } = useI18n();
   const deviceInfo = useDeviceInfo();
   const isMobile = forceMobile ?? deviceInfo.isMobile;
+  const pendingRestartCount = usePendingOpenCodeRestartStore(selectPendingOpenCodeRestartCount);
 
   const settingsPageRaw = useUIStore((state) => state.settingsPage);
   const isSettingsDialogOpen = useUIStore((state) => state.isSettingsDialogOpen);
@@ -913,29 +918,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
         {/* Footer */}
         <div className="overflow-hidden transition-opacity duration-150 opacity-100">
-          <div className="border-t border-border bg-background px-4 py-1 space-y-0.5 sm:bg-sidebar">
-            {!runtimeCtx.isVSCode && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      'flex h-11 w-full items-center gap-2 rounded-md px-3 overflow-hidden whitespace-nowrap sm:h-7 sm:px-2',
-                      'text-sm font-semibold text-sidebar-foreground/90',
-                      'hover:text-sidebar-foreground hover:bg-interactive-hover',
-                    )}
-                    onClick={() => void reloadOpenCodeConfiguration({ message: 'Restarting OpenCode…', mode: 'projects', scopes: ['all'] }).catch(() => undefined)}
-                  >
-                    <Icon name="restart" className="h-4 w-4 shrink-0" />
-                    <span>{t('settings.view.actions.reloadOpenCode')}</span>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t('settings.view.actions.reloadOpenCodeTooltip')}
-                </TooltipContent>
-              </Tooltip>
+          <div className="border-t border-border bg-background px-4 py-1.5 space-y-0.5 sm:bg-sidebar">
+            {(!runtimeCtx.isVSCode || pendingRestartCount > 0) && (
+              <OpenCodeReloadFooterAction />
             )}
-
           </div>
         </div>
       </div>
