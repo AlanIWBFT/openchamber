@@ -50,7 +50,7 @@ export const createScheduledTaskService = (dependencies) => {
 
   const list = async (projectID) => {
     await findProjectByID(projectID);
-    return projectConfigRuntime.listScheduledTasks(projectID);
+    return scheduledTasksRuntime.syncProject(projectID);
   };
 
   const upsert = async (projectID, taskInput) => {

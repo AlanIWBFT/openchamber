@@ -21,10 +21,11 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
 - `packages/web/server/lib/scheduled-tasks/loops.js`
   - Discovery of `.agents/loops/*.md` (project scope, ancestors up to the worktree root) and `~/.agents/loops/*.md` (user scope)
   - Frontmatter parsing into scheduled-task definitions
-  - `syncProject` reconciles discovered loops with the persisted task list on every project sync (startup, task save/delete)
+  - `syncProject` reconciles discovered loops with the persisted task list on every project sync (startup, task list load, task save/delete)
 
 - `packages/web/server/lib/scheduled-tasks/routes.js`
   - Scheduled task CRUD endpoints
+  - Listing tasks reconciles loop files first, so opening the Scheduled Tasks UI discovers file additions, edits, and removals without a server restart
   - Manual run endpoint
   - OpenChamber events SSE stream endpoint
 

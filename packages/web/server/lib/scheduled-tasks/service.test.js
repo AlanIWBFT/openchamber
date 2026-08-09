@@ -34,6 +34,36 @@ const loopTask = {
   execution: { prompt: 'digest', providerID: 'openai', modelID: 'gpt-4.1' },
 };
 
+describe('scheduled-task service list', () => {
+  it('reconciles loop files before returning tasks', async () => {
+    const syncedTasks = [loopTask];
+    const { service, projectConfigRuntime, scheduledTasksRuntime } = createService({
+      scheduledTasksRuntime: {
+        syncProject: vi.fn(async () => syncedTasks),
+      },
+    });
+
+    await expect(service.list('project-test')).resolves.toBe(syncedTasks);
+    expect(scheduledTasksRuntime.syncProject).toHaveBeenCalledOnce();
+    expect(scheduledTasksRuntime.syncProject).toHaveBeenCalledWith('project-test');
+    expect(projectConfigRuntime.listScheduledTasks).not.toHaveBeenCalled();
+  });
+
+  it('surfaces reconciliation failure instead of returning a stale list', async () => {
+    const syncError = new Error('loop reconciliation failed');
+    const { service, projectConfigRuntime } = createService({
+      scheduledTasksRuntime: {
+        syncProject: vi.fn(async () => {
+          throw syncError;
+        }),
+      },
+    });
+
+    await expect(service.list('project-test')).rejects.toBe(syncError);
+    expect(projectConfigRuntime.listScheduledTasks).not.toHaveBeenCalled();
+  });
+});
+
 describe('scheduled-task service remove', () => {
   it('rejects deleting a loop-sourced task while its loop file still exists', async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'oc-loop-delete-'));
