@@ -16,8 +16,66 @@ const withTempDir = async (fn) => {
   }
 };
 
-const makeAccessors = (dir) =>
-  createSettingsAccessors({ fsPromises: fs.promises, path, dataDir: dir, settingsFileName: 'settings.json' });
+const makeAccessors = (dir, overrides = {}) =>
+  createSettingsAccessors({
+    fsPromises: fs.promises,
+    path,
+    dataDir: dir,
+    settingsFileName: 'settings.json',
+    ...overrides,
+  });
+
+// Wraps writeFile so each write lands in two chunks with a pause in between —
+// a stand-in for a large, slow write on a real disk (one open handle, so the
+// file grows from the prefix to the full payload). With a non-atomic writer a
+// concurrent reader deterministically catches the half-written file in that
+// window; with the atomic tmp+rename writer the target only ever changes via a
+// complete rename, so the window is never observable.
+const makeSlowWriteFs = () => {
+  const realFs = fs.promises;
+  const slowWriteFile = async (filePath, data) => {
+    const handle = await realFs.open(filePath, 'w');
+    try {
+      const half = Math.floor(data.length / 2);
+      await handle.writeFile(data.slice(0, half), 'utf8');
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      await handle.writeFile(data.slice(half), 'utf8');
+    } finally {
+      await handle.close();
+    }
+  };
+  return { slowWriteFile, fsPromises: { ...realFs, writeFile: slowWriteFile } };
+};
+
+// Runs `writer` against filePath while a concurrent reader hammers it; returns
+// how many times the reader observed an unparseable (torn) payload. ENOENT
+// during the very first write is not a tear and is excluded.
+const countTornReads = async (filePath, writer, iterations) => {
+  const big = { theme: 'dark', filler: 'x'.repeat(4096) };
+  let torn = 0;
+  let stop = false;
+  const reader = (async () => {
+    while (!stop) {
+      try {
+        const parsed = JSON.parse(await fs.promises.readFile(filePath, 'utf8'));
+        if (parsed && typeof parsed === 'object') {
+          expect(parsed.theme).toBe('dark');
+        }
+      } catch (error) {
+        if (error?.code !== 'ENOENT') {
+          torn += 1;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  })();
+  for (let i = 0; i < iterations; i += 1) {
+    await writer({ ...big, n: i });
+  }
+  stop = true;
+  await reader;
+  return torn;
+};
 
 describe('cli settings accessors', () => {
   it('persists the full object atomically and cleans up its tmp file', async () => {
@@ -33,41 +91,36 @@ describe('cli settings accessors', () => {
     });
   });
 
-  it('never leaves a partial file observable by a concurrent reader during writes', async () => {
+  it('atomic writes: concurrent readers never observe a torn file, even under slow writes', async () => {
     await withTempDir(async (dir) => {
-      const accessors = makeAccessors(dir);
+      const { fsPromises } = makeSlowWriteFs();
+      const accessors = makeAccessors(dir, { fsPromises });
       const filePath = path.join(dir, 'settings.json');
 
-      // Hammer reads concurrently with writes; every observed payload must be a
-      // complete, parseable object (the old plain writeFile could surface a
-      // torn file mid-rename, which is what tripped the relay identity logic).
-      const stop = { value: false };
-      const reader = (async () => {
-        while (!stop.value) {
-          try {
-            const parsed = JSON.parse(await fs.promises.readFile(filePath, 'utf8'));
-            if (parsed && typeof parsed === 'object') {
-              // A complete object is always fine; anything else would be a tear.
-              expect(parsed.theme).toBe('dark');
-            }
-          } catch {
-            // ENOENT during the very first write is acceptable.
-          }
-          await new Promise((resolve) => setTimeout(resolve, 0));
-        }
-      })();
+      // Each write is chunked with a pause, yet the reader must never see a
+      // partial payload: the target only changes via a complete atomic rename.
+      const torn = await countTornReads(filePath, (settings) => accessors.writeSettingsToDisk(settings), 20);
+      expect(torn).toBe(0);
 
-      const big = { theme: 'dark', filler: 'x'.repeat(4096) };
-      await Promise.all(
-        Array.from({ length: 50 }, (_, i) =>
-          accessors.writeSettingsToDisk({ ...big, n: i }).catch(() => {}),
-        ),
+      const leftovers = fs.readdirSync(dir).filter((name) => name.startsWith('settings.json.tmp-'));
+      expect(leftovers).toEqual([]);
+    });
+  });
+
+  it('demonstrates the protected failure mode: a naive direct writer tears under the same slow write', async () => {
+    await withTempDir(async (dir) => {
+      const { slowWriteFile } = makeSlowWriteFs();
+      const filePath = path.join(dir, 'settings.json');
+
+      // The old CLI accessor wrote straight to settings.json with writeFile.
+      // The same slow-write load therefore MUST produce torn reads — proving
+      // the concurrency test above can actually fail on the pre-fix writer.
+      const torn = await countTornReads(
+        filePath,
+        (settings) => slowWriteFile(filePath, JSON.stringify(settings)),
+        20,
       );
-      stop.value = true;
-      await reader;
-
-      const final = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-      expect(final.theme).toBe('dark');
+      expect(torn).toBeGreaterThan(0);
     });
   });
 

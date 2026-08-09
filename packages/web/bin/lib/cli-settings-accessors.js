@@ -78,8 +78,10 @@ export const createSettingsAccessors = ({ fsPromises, path, dataDir, settingsFil
     }
 
     // Windows can transiently reject the atomic replace while another process
-    // briefly holds the target open. Copy the COMPLETE tmp file into place so
-    // persistence never wedges; a reader can still never see partial content.
+    // briefly holds the target open. Fall back to copying the COMPLETE tmp file
+    // so persistence never wedges. Note: copyFile is NOT atomic — this is a
+    // last-resort path confined to Windows, matching the settings runtime's
+    // fallback, not a substitute for the atomic rename used everywhere else.
     await fsPromises.copyFile(tmp, target);
     await fsPromises.rm(tmp, { force: true });
   };
