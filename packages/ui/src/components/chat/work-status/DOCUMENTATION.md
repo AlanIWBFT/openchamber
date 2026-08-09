@@ -85,7 +85,7 @@ endpoint and no polling of its own.
 | Block | Source | Notes |
 |---|---|---|
 | Context + cost | `contextUsage.ts` over `useSessionMessages`, `Session.cost` | see below — the store getters cannot serve this |
-| Branch, ahead/behind, attention | `useGitStore` directory state | warmed via `runBackgroundNetworkTask(ensureStatus)` |
+| Branch, ahead/behind, attention | `useGitStore` directory state | warmed via `runBackgroundNetworkTask(ensureStatus)` and refreshed from Git mutation hints |
 | Changed files | `useGitStore` status `files` + `diffStats` | working tree, not session-authored edits |
 | PR + checks | `usePrVisualSummary` | **read-only** |
 | Subagents | child sessions from `useAllLiveSessions` (`parentID`) + `useAllSessionStatuses` | |
@@ -325,6 +325,11 @@ The panel now performs these itself, silently and through the
 background-network gate, so it cannot compete with chat bootstrap traffic for
 sockets. A panel that reports a subsystem's state cannot depend on an unrelated
 component having been mounted or opened.
+
+The repository section follows the same ownership rule. It subscribes directly
+to `sessionEvents` Git refresh hints and refreshes its directory's shared Git
+cache, rather than relying on the composer's former changed-files row or on the
+Git context surface being opened first.
 
 ## Persisted panel state
 
