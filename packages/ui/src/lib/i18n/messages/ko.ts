@@ -234,6 +234,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.dialog.toast.started': '작업 시작됨',
   'sessions.scheduledTasks.dialog.toast.runFailed': '작업 실행 실패',
   'sessions.scheduledTasks.dialog.confirm.deleteTask': '예약 작업 "{taskName}" 삭제?',
+  'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': '루프 작업 "{taskName}" 및 해당 Markdown 파일을 삭제할까요?',
   'sessions.scheduledTasks.dialog.schedule.daily': '매일 {time}',
   'sessions.scheduledTasks.dialog.schedule.dailyWithTimezone': '매일 {time} ({timezone})',
   'sessions.scheduledTasks.dialog.schedule.weekly': '매주 {days} {time}',

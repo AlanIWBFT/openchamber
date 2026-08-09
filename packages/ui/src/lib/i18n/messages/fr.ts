@@ -70,6 +70,7 @@ export const dict = {
   'sessions.scheduledTasks.dialog.toast.started': 'Tâche démarrée',
   'sessions.scheduledTasks.dialog.toast.runFailed': 'Échec de l\'exécution de la tâche',
   'sessions.scheduledTasks.dialog.confirm.deleteTask': 'Supprimer la tâche planifiée « {taskName} » ?',
+  'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': 'Supprimer la tâche en boucle « {taskName} » et son fichier Markdown ?',
   'sessions.scheduledTasks.dialog.schedule.daily': 'Quotidien {time}',
   'sessions.scheduledTasks.dialog.schedule.dailyWithTimezone': 'Quotidien {time} ({timezone})',
   'sessions.scheduledTasks.dialog.schedule.weekly': 'Hebdomadaire {days} {time}',

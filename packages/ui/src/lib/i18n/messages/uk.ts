@@ -234,6 +234,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.scheduledTasks.dialog.toast.started": "Завдання розпочато",
   "sessions.scheduledTasks.dialog.toast.runFailed": "Не вдалося виконати завдання",
   "sessions.scheduledTasks.dialog.confirm.deleteTask": "Видалити заплановане завдання \"{taskName}\"?",
+  'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': 'Видалити циклічне завдання «{taskName}» і його Markdown-файл?',
   "sessions.scheduledTasks.dialog.schedule.daily": "Щодня {time}",
   "sessions.scheduledTasks.dialog.schedule.dailyWithTimezone": "Щодня {time} ({timezone})",
   "sessions.scheduledTasks.dialog.schedule.weekly": "Щотижня {days} {time}",

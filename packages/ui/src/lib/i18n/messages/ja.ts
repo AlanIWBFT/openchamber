@@ -234,6 +234,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.dialog.toast.started': 'タスクを開始しました',
   'sessions.scheduledTasks.dialog.toast.runFailed': 'タスクの実行に失敗しました',
   'sessions.scheduledTasks.dialog.confirm.deleteTask': 'スケジュールタスク「{taskName}」を削除しますか？',
+  'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': 'ループタスク「{taskName}」とその Markdown ファイルを削除しますか？',
   'sessions.scheduledTasks.dialog.schedule.daily': '毎日 {time}',
   'sessions.scheduledTasks.dialog.schedule.dailyWithTimezone': '毎日 {time}（{timezone}）',
   'sessions.scheduledTasks.dialog.schedule.weekly': '毎週 {days} {time}',

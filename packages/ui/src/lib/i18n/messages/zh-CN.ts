@@ -234,6 +234,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.dialog.toast.started': '任务已启动',
   'sessions.scheduledTasks.dialog.toast.runFailed': '运行任务失败',
   'sessions.scheduledTasks.dialog.confirm.deleteTask': '删除计划任务“{taskName}”？',
+  'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': '删除循环任务“{taskName}”及其 Markdown 文件？',
   'sessions.scheduledTasks.dialog.schedule.daily': '每天 {time}',
   'sessions.scheduledTasks.dialog.schedule.dailyWithTimezone': '每天 {time}（{timezone}）',
   'sessions.scheduledTasks.dialog.schedule.weekly': '每周 {days} {time}',

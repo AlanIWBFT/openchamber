@@ -234,6 +234,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.scheduledTasks.dialog.toast.started": "Tarea iniciada",
   "sessions.scheduledTasks.dialog.toast.runFailed": "No se pudo ejecutar la tarea",
   "sessions.scheduledTasks.dialog.confirm.deleteTask": "Eliminar tarea programada \"{taskName}\"?",
+  'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': '¿Eliminar la tarea de bucle «{taskName}» y su archivo Markdown?',
   "sessions.scheduledTasks.dialog.schedule.daily": "Cada día {time}",
   "sessions.scheduledTasks.dialog.schedule.dailyWithTimezone": "Cada día {time} ({timezone})",
   "sessions.scheduledTasks.dialog.schedule.weekly": "Cada semana {days} {time}",

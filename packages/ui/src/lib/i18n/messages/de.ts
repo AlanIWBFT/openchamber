@@ -213,6 +213,7 @@ export const dict = {
   'sessions.scheduledTasks.dialog.toast.started': 'Aufgabe gestartet',
   'sessions.scheduledTasks.dialog.toast.runFailed': 'Fehler beim Ausführen der Aufgabe',
   'sessions.scheduledTasks.dialog.confirm.deleteTask': 'Geplante Aufgabe "{taskName}" löschen?',
+  'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': 'Loop-Aufgabe „{taskName}“ und ihre Markdown-Datei löschen?',
   'sessions.scheduledTasks.dialog.schedule.daily': 'Täglich {time}',
   'sessions.scheduledTasks.dialog.schedule.dailyWithTimezone': 'Täglich {time} ({timezone})',
   'sessions.scheduledTasks.dialog.schedule.weekly': 'Wöchentlich {days} {time}',

@@ -361,6 +361,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.dialog.toast.started': 'Zadanie uruchomione',
   'sessions.scheduledTasks.dialog.toast.runFailed': 'Nie udało się uruchomić zadania',
   'sessions.scheduledTasks.dialog.confirm.deleteTask': 'Usunąć zaplanowane zadanie "{taskName}"?',
+  'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': 'Usunąć zadanie pętli „{taskName}” i jego plik Markdown?',
   'sessions.scheduledTasks.dialog.schedule.daily': 'Codziennie {time}',
   'sessions.scheduledTasks.dialog.schedule.dailyWithTimezone': 'Codziennie {time} ({timezone})',
   'sessions.scheduledTasks.dialog.schedule.weekly': 'Co tydzień {days} {time}',
