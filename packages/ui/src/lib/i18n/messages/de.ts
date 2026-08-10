@@ -3518,6 +3518,7 @@ export const dict = {
   'chat.workStatus.mcp.needsAuthHint': 'Melden Sie sich bei diesem MCP-Server unter Einstellungen → MCP an.',
   'chat.toolPart.unifiedExec.shellCommand': 'Shell-Befehl',
   'chat.toolPart.unifiedExec.processInput': 'Prozesseingabe',
+  'chat.toolPart.unifiedExec.processOutput': 'Prozessausgabe',
   'chat.toolPart.unifiedExec.processTermination': 'Prozessbeendigung',
   'chat.toolPart.unifiedExec.status.error': 'Fehler',
   'chat.toolPart.unifiedExec.status.errorWithDuration': 'Fehler · {duration}',

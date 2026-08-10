@@ -3526,6 +3526,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.workStatus.mcp.needsAuthHint': 'Inicia sesión en este servidor MCP desde Ajustes → MCP.',
   "chat.toolPart.unifiedExec.shellCommand": "Comando de shell",
   "chat.toolPart.unifiedExec.processInput": "Entrada del proceso",
+  "chat.toolPart.unifiedExec.processOutput": "Salida del proceso",
   "chat.toolPart.unifiedExec.processTermination": "Terminación del proceso",
   "chat.toolPart.unifiedExec.status.error": "Error",
   "chat.toolPart.unifiedExec.status.errorWithDuration": "Error · {duration}",

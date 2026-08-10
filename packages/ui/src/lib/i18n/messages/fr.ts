@@ -3523,6 +3523,7 @@ export const dict = {
   'chat.workStatus.mcp.needsAuthHint': 'Connectez-vous à ce serveur MCP depuis Paramètres → MCP.',
   'chat.toolPart.unifiedExec.shellCommand': 'Commande shell',
   'chat.toolPart.unifiedExec.processInput': 'Entrée du processus',
+  'chat.toolPart.unifiedExec.processOutput': 'Sortie du processus',
   'chat.toolPart.unifiedExec.processTermination': 'Arrêt du processus',
   'chat.toolPart.unifiedExec.status.error': 'Erreur',
   'chat.toolPart.unifiedExec.status.errorWithDuration': 'Erreur · {duration}',

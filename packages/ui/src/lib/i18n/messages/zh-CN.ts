@@ -3526,6 +3526,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.workStatus.mcp.needsAuthHint': '请在“设置 → MCP”中登录此 MCP 服务器。',
   'chat.toolPart.unifiedExec.shellCommand': 'Shell 命令',
   'chat.toolPart.unifiedExec.processInput': '进程输入',
+  'chat.toolPart.unifiedExec.processOutput': '进程输出',
   'chat.toolPart.unifiedExec.processTermination': '进程终止',
   'chat.toolPart.unifiedExec.status.error': '错误',
   'chat.toolPart.unifiedExec.status.errorWithDuration': '错误 · {duration}',
