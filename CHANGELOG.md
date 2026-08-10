@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2] - 2026-08-10
+
 - **Observability panel:** a new panel near to the chat brings the active goal, tasks, subagents, pinned context, MCP servers, and context usage into one live view. The session list also shows how long an agent has been working.
 - **Scheduled Tasks:** projects can now define recurring tasks as Markdown files in `.agents/loops`; opening the task list discovers file changes without a restart, and loop tasks can be edited, enabled, disabled, deleted, or run from the app (thanks to @makeittech).
 - **Settings:** OpenCode configuration changes now accumulate behind a single Apply & Restart action instead of restarting OpenCode after every edit; the confirmation warns when active chats will be stopped (thanks to @makeittech).
