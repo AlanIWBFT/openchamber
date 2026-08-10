@@ -3800,6 +3800,7 @@ export const dict = {
   'chat.modelControls.agentFavoriteAdd': 'Ajouter aux favoris. Avec des favoris, Tab ne passe que par eux',
   'chat.toolPart.unifiedExec.shellCommand': 'Commande shell',
   'chat.toolPart.unifiedExec.processInput': 'Entrée du processus',
+  'chat.toolPart.unifiedExec.processOutput': 'Sortie du processus',
   'chat.toolPart.unifiedExec.processTermination': 'Arrêt du processus',
   'chat.toolPart.unifiedExec.status.error': 'Erreur',
   'chat.toolPart.unifiedExec.status.errorWithDuration': 'Erreur · {duration}',
