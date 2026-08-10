@@ -2,6 +2,7 @@ import React from 'react';
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { SettingsCheckboxRow } from '@/components/sections/shared/SettingsSection';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -63,13 +64,14 @@ export const WorkStatusSectionsDialog: React.FC<{
             {noneVisible ? (
               <span className="text-xs text-destructive">{t('chat.workStatus.sections.noneWarning')}</span>
             ) : <span />}
-            <button
-              type="button"
+            <Button
+              variant="link"
+              size="xs"
               onClick={handleShowAll}
-              className="text-xs text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+              className="normal-case text-muted-foreground hover:text-foreground"
             >
               {t('chat.workStatus.sections.showAll')}
-            </button>
+            </Button>
           </div>
         ) : null}
       </DialogContent>

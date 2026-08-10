@@ -3,6 +3,7 @@ import {
   WORK_STATUS_SECTION_IDS,
   WORK_STATUS_SECTION_LABEL_KEYS,
   areAllWorkStatusSectionsHidden,
+  getWorkStatusPanelPresentation,
   isWorkStatusSectionVisible,
   sanitizeWorkStatusHiddenSections,
 } from './sections';
@@ -59,6 +60,44 @@ describe('areAllWorkStatusSectionsHidden', () => {
   test('returns true even with extra stale ids alongside all real ones', () => {
     const withExtra = [...WORK_STATUS_SECTION_IDS, 'removed_section'];
     expect(areAllWorkStatusSectionsHidden(withExtra)).toBe(true);
+  });
+});
+
+describe('getWorkStatusPanelPresentation', () => {
+  test('keeps a visible all-hidden panel interactive and renders its recovery state', () => {
+    expect(getWorkStatusPanelPresentation({
+      visible: true,
+      contentMounted: true,
+      renderedSections: 0,
+      allSectionsHidden: true,
+    })).toEqual({ interactive: true, showEmptyState: true });
+  });
+
+  test('covers the optimistic fresh-mount count when all sections are hidden', () => {
+    expect(getWorkStatusPanelPresentation({
+      visible: true,
+      contentMounted: true,
+      renderedSections: 1,
+      allSectionsHidden: true,
+    })).toEqual({ interactive: true, showEmptyState: true });
+  });
+
+  test('preserves collapse when no section has data but sections remain enabled', () => {
+    expect(getWorkStatusPanelPresentation({
+      visible: true,
+      contentMounted: true,
+      renderedSections: 0,
+      allSectionsHidden: false,
+    })).toEqual({ interactive: false, showEmptyState: false });
+  });
+
+  test('does not expose controls or the empty state during a hidden collapse', () => {
+    expect(getWorkStatusPanelPresentation({
+      visible: false,
+      contentMounted: false,
+      renderedSections: 0,
+      allSectionsHidden: true,
+    })).toEqual({ interactive: false, showEmptyState: false });
   });
 });
 

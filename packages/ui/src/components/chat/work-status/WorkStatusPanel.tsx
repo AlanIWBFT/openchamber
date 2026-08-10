@@ -2,6 +2,7 @@ import React from 'react';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
+import { Button } from '@/components/ui/button';
 import { useUIStore } from '@/stores/useUIStore';
 import { WORK_STATUS_PANEL_WIDTH } from './useWorkStatusVisibility';
 import { WorkStatusGoalRow } from './WorkStatusGoalRow';
@@ -13,7 +14,11 @@ import { WorkStatusMcpSection } from './WorkStatusMcpSection';
 import { WorkStatusPinnedSection } from './WorkStatusPinnedSection';
 import { WorkStatusContextSection } from './WorkStatusContextSection';
 import { WorkStatusSectionsDialog } from './WorkStatusSectionsDialog';
-import { areAllWorkStatusSectionsHidden, isWorkStatusSectionVisible } from './sections';
+import {
+  areAllWorkStatusSectionsHidden,
+  getWorkStatusPanelPresentation,
+  isWorkStatusSectionVisible,
+} from './sections';
 import { WorkStatusPresenceProvider } from './presence';
 import { Icon } from '@/components/icon/Icon';
 
@@ -89,7 +94,12 @@ export const WorkStatusPanel: React.FC<Props> = ({ sessionId, directory, visible
   // for the transient "no data yet" state so the panel doesn't flash a bare
   // bordered card on first mount.
   const allSectionsHidden = areAllWorkStatusSectionsHidden(hiddenSections);
-  const interactive = visible && (renderedSections > 0 || allSectionsHidden);
+  const { interactive, showEmptyState } = getWorkStatusPanelPresentation({
+    visible,
+    contentMounted,
+    renderedSections,
+    allSectionsHidden,
+  });
   React.useEffect(() => {
     if (visible) {
       setContentMounted(true);
@@ -251,16 +261,17 @@ export const WorkStatusPanel: React.FC<Props> = ({ sessionId, directory, visible
       </WorkStatusPresenceProvider>
       ) : null}
 
-      {contentMounted && allSectionsHidden ? (
+      {showEmptyState ? (
         <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
           <span className="text-sm text-muted-foreground">{t('chat.workStatus.sections.allHidden')}</span>
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="xs"
             onClick={() => setSectionsDialogOpen(true)}
-            className="mt-2 text-xs text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+            className="mt-2 normal-case text-muted-foreground hover:text-foreground"
           >
             {t('chat.workStatus.sections.open')}
-          </button>
+          </Button>
         </div>
       ) : null}
 

@@ -60,6 +60,21 @@ export const areAllWorkStatusSectionsHidden = (
 ): boolean =>
   hidden != null && WORK_STATUS_SECTION_IDS.every((id) => hidden.includes(id));
 
+export const getWorkStatusPanelPresentation = ({
+  visible,
+  contentMounted,
+  renderedSections,
+  allSectionsHidden,
+}: {
+  visible: boolean;
+  contentMounted: boolean;
+  renderedSections: number;
+  allSectionsHidden: boolean;
+}): { interactive: boolean; showEmptyState: boolean } => ({
+  interactive: visible && (renderedSections > 0 || allSectionsHidden),
+  showEmptyState: contentMounted && allSectionsHidden,
+});
+
 export const sanitizeWorkStatusHiddenSections = (value: unknown): WorkStatusSectionId[] => {
   if (!Array.isArray(value)) return [];
   const seen = new Set<WorkStatusSectionId>();

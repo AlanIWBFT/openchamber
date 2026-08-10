@@ -203,6 +203,11 @@ section decides for itself that it has nothing to say, so they report through
 `presenceContext.ts` and the panel collapses when none rendered. Deriving that
 at the panel level would mean duplicating every data source the sections read.
 
+There is one deliberate exception: when the user hides every section, the card
+stays visible with a localized empty state and section controls. Collapsing that
+state would also hide the only recovery path. A panel with enabled sections but
+no data still follows the presence reports and collapses as before.
+
 The scroll offset resets on session change: restoring one session's offset into
 another's shorter panel lands somewhere arbitrary.
 
