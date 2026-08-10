@@ -1862,8 +1862,6 @@ export const settingsDict = {
   "settings.openchamber.visual.field.selectTimeFormatAria": "Вибрати формат часу",
   "settings.openchamber.visual.field.selectWeekStartAria": "Вибрати початок тижня",
   "settings.openchamber.visual.actions.reloadThemes": "Перезавантажити теми",
-  "settings.openchamber.visual.field.macVibrancy": "Прозорість вікна",
-  "settings.openchamber.visual.field.macVibrancyHint": "Використовувати нативне розмиття macOS (vibrancy) під сайдбаром. Вимкніть для повністю непрозорих поверхонь.",
   "settings.openchamber.visual.field.dockBadge": "Лічильник у доку",
   "settings.openchamber.visual.field.dockBadgeHint": "Показувати на іконці в доку кількість чатів із непрочитаною активністю.",
   "settings.openchamber.visual.actions.saveAndRestart": "Зберегти та перезапустити",

@@ -178,13 +178,14 @@ export const WorkStatusPanel: React.FC<Props> = ({ sessionId, directory, visible
           // Beside the transcript the translucent fill reads as depth; on top
           // of it, message bubbles showed straight through the rows. Frosting
           // separates the two without going fully opaque.
-          'bg-[var(--surface-muted)]/80 backdrop-blur-md',
+          'oc-glass-panel',
         ],
         // An empty card is a border around a settings icon, which reads as a
         // fault rather than as "nothing to report".
         renderedSections === 0 && 'border-transparent bg-transparent shadow-none',
         'motion-reduce:transition-none',
-        'rounded-xl border border-[var(--interactive-border)] bg-[var(--surface-muted)]/40',
+        'rounded-xl border border-[var(--interactive-border)]',
+        !overlay && 'bg-[var(--surface-muted)]/40',
         // A lighter version of the composer's lift: the same shape, but this
         // card is taller, so the composer's spread reads as heavy here.
         'shadow-[0_2px_8px_-3px_rgb(0_0_0_/_0.08)]',

@@ -1886,8 +1886,6 @@ export const settingsDict = {
   'settings.openchamber.visual.field.selectWeekStartAria': 'Select week start',
   'settings.openchamber.visual.actions.reloadThemes': 'Reload themes',
   'settings.openchamber.visual.actions.reloadingThemes': 'Reloading themes...',
-  'settings.openchamber.visual.field.macVibrancy': 'Window transparency',
-  'settings.openchamber.visual.field.macVibrancyHint': 'Use the native macOS blur (vibrancy) behind the sidebar. Turn off for fully solid, opaque surfaces.',
   'settings.openchamber.visual.field.dockBadge': 'Dock badge',
   'settings.openchamber.visual.field.dockBadgeHint': 'Show a count of chats with unseen activity on the macOS dock icon.',
   'settings.openchamber.visual.actions.saveAndRestart': 'Save & restart',

@@ -1862,8 +1862,6 @@ export const settingsDict = {
   "settings.openchamber.visual.field.selectTimeFormatAria": "Seleccionar formato de hora",
   "settings.openchamber.visual.field.selectWeekStartAria": "Seleccionar inicio de la semana",
   "settings.openchamber.visual.actions.reloadThemes": "Recargar temas",
-  "settings.openchamber.visual.field.macVibrancy": "Transparencia de la ventana",
-  "settings.openchamber.visual.field.macVibrancyHint": "Usa el desenfoque nativo de macOS (vibrancy) detrás de la barra lateral. Desactívalo para superficies totalmente sólidas y opacas.",
   "settings.openchamber.visual.field.dockBadge": "Insignia en el Dock",
   "settings.openchamber.visual.field.dockBadgeHint": "Muestra en el icono del Dock de macOS el número de chats con actividad sin ver.",
   "settings.openchamber.visual.actions.saveAndRestart": "Guardar y reiniciar",

@@ -1900,36 +1900,6 @@ const emitToAllWindows = (event, detail) => {
   }
 };
 
-// macOS vibrancy: the native NSVisualEffectView needs a moment to settle after
-// the window is shown/restored. Until then the renderer keeps the sidebar solid
-// to avoid a flash of raw transparency; once ready it switches to the
-// translucent overlay. We toggle this readiness over the same IPC bridge.
-// Apply vibrancy to a live, on-screen window. Done after show (not in the
-// BrowserWindow constructor) because macOS otherwise leaves the material
-// uncomposited on a cold launch until the window gets a state change.
-const applyMacVibrancy = (browserWindow) => {
-  if (process.platform !== 'darwin' || !browserWindow || browserWindow.isDestroyed()) return;
-  try {
-    browserWindow.setVibrancy('sidebar');
-  } catch {}
-};
-
-const setMacVibrancyReady = (browserWindow, ready) => {
-  if (process.platform !== 'darwin' || !browserWindow || browserWindow.isDestroyed()) return;
-  emitToWindow(browserWindow, 'openchamber:vibrancy-ready', { ready });
-};
-
-const scheduleMacVibrancyReady = (browserWindow, delayMs = 160) => {
-  if (process.platform !== 'darwin' || !browserWindow || browserWindow.isDestroyed()) return;
-  setMacVibrancyReady(browserWindow, false);
-  const timer = setTimeout(() => {
-    if (browserWindow.isDestroyed() || browserWindow.isMinimized() || !browserWindow.isVisible()) return;
-    setMacVibrancyReady(browserWindow, true);
-  }, delayMs);
-  if (typeof timer?.unref === 'function') timer.unref();
-};
-
-
 const setTaskbarProgress = (value) => {
   if (process.platform !== 'win32') return;
   for (const browserWindow of BrowserWindow.getAllWindows()) {
@@ -2359,8 +2329,6 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
   const desktopMacosMajor = String(macosMajorVersion());
   const usesFramelessChrome = process.platform === 'win32' || process.platform === 'linux';
   const usesCustomTitleBar = process.platform === 'darwin' || usesFramelessChrome;
-  // macOS vibrancy, on by default; users can disable it (Appearance settings).
-  const useVibrancy = process.platform === 'darwin' && readSettingsRoot().desktopVibrancy !== false;
   const trayEnabled = process.platform !== 'darwin' || readSettingsRoot().desktopMacMenuBarEnabled !== false;
   const titleBarOverlayEnabled = false;
   const autoHidesNativeMenuBar = process.platform !== 'darwin';
@@ -2376,11 +2344,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     minHeight: MIN_WINDOW_HEIGHT,
     icon: windowIconPath,
     show: false,
-    backgroundColor: useVibrancy ? '#00000000' : '#151313',
-    // Vibrancy is applied after the window is shown (see applyMacVibrancy), not
-    // here: setting it in the constructor leaves the material uncomposited on a
-    // cold launch until a window event. No `transparent: true` either — vibrancy
-    // alone is enough and composites reliably once applied to a live window.
+    backgroundColor: '#151313',
     frame: usesFramelessChrome ? false : undefined,
     autoHideMenuBar: autoHidesNativeMenuBar,
     // Electron's hiddenInset adds its own extra inset, which leaves the controls
@@ -2396,7 +2360,6 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
         `--openchamber-runtime-headers=${JSON.stringify(desktopRequestHeaders)}`,
         `--openchamber-home=${desktopHome}`,
         `--openchamber-macos-major=${desktopMacosMajor}`,
-        `--openchamber-mac-vibrancy=${useVibrancy ? '1' : '0'}`,
         `--openchamber-tray-enabled=${trayEnabled ? '1' : '0'}`,
         `--openchamber-boot-outcome=${JSON.stringify(state.bootOutcome || null)}`,
         `--openchamber-relay-host-id=${rendererRuntimeConfig.relayHostId || ''}`,
@@ -2447,18 +2410,11 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     };
     browserWindow.on('minimize', () => {
       refreshTrafficLights();
-      setMacVibrancyReady(browserWindow, false);
     });
     browserWindow.on('restore', () => {
       refreshTrafficLights();
       setTimeout(refreshTrafficLights, 250);
-      scheduleMacVibrancyReady(browserWindow, 180);
     });
-    // Only suppress vibrancy around the minimize/restore cycle (it flashes raw
-    // transparency during the genie animation). A plain show — cold launch from
-    // the dock, un-hide — must NOT suppress, or the sidebar gets stuck solid
-    // when the post-show `ready` re-enable is skipped while the window is still
-    // animating in.
     browserWindow.on('show', refreshTrafficLights);
     browserWindow.on('focus', refreshTrafficLights);
   }
@@ -2613,7 +2569,6 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     }
     browserWindow.show();
     browserWindow.focus();
-    if (useVibrancy) applyMacVibrancy(browserWindow);
   });
 
   if (url) {
@@ -2777,8 +2732,6 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
   const desktopHome = os.homedir() || '';
   const desktopMacosMajor = String(macosMajorVersion());
   const usesFramelessChrome = process.platform === 'win32' || process.platform === 'linux';
-  // macOS vibrancy, on by default; users can disable it (Appearance settings).
-  const useVibrancy = process.platform === 'darwin' && readSettingsRoot().desktopVibrancy !== false;
   const trayEnabled = process.platform !== 'darwin' || readSettingsRoot().desktopMacMenuBarEnabled !== false;
   const browserWindow = new BrowserWindow({
     title: 'OpenChamber Mini Chat',
@@ -2788,11 +2741,7 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
     minHeight: MINI_CHAT_MIN_WINDOW_HEIGHT,
     icon: getWindowIconPath(),
     show: false,
-    backgroundColor: useVibrancy ? '#00000000' : '#151313',
-    // Vibrancy is applied after the window is shown (see applyMacVibrancy), not
-    // here: setting it in the constructor leaves the material uncomposited on a
-    // cold launch until a window event. No `transparent: true` either — vibrancy
-    // alone is enough and composites reliably once applied to a live window.
+    backgroundColor: '#151313',
     frame: usesFramelessChrome ? false : undefined,
     autoHideMenuBar: process.platform !== 'darwin',
     titleBarStyle: process.platform === 'darwin' || usesFramelessChrome ? 'hidden' : 'default',
@@ -2844,17 +2793,13 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
         browserWindow.setTrafficLightPosition({ x: 16, y: 17 });
       } catch {}
     };
-    // Suppress vibrancy only around minimize/restore, never on a plain show.
     browserWindow.on('show', refreshTrafficLights);
     browserWindow.on('focus', refreshTrafficLights);
-    browserWindow.on('minimize', () => setMacVibrancyReady(browserWindow, false));
-    browserWindow.on('restore', () => scheduleMacVibrancyReady(browserWindow, 180));
   }
 
   browserWindow.once('ready-to-show', () => {
     browserWindow.show();
     browserWindow.focus();
-    if (useVibrancy) applyMacVibrancy(browserWindow);
   });
 
   browserWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -4203,26 +4148,6 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         });
       }
       return null;
-    }
-
-    case 'desktop_set_vibrancy': {
-      // Vibrancy + transparent backing are window-creation options, so the
-      // change only takes effect on a fresh launch. Persist the preference,
-      // then relaunch the app.
-      const enabled = args.enabled === true;
-      await mutateSettingsRoot((root) => {
-        root.desktopVibrancy = enabled;
-      });
-      setImmediate(() => {
-        try {
-          prepareForQuit();
-          app.relaunch();
-          app.exit(0);
-        } catch (err) {
-          log.error('[electron] desktop_set_vibrancy relaunch failed', err);
-        }
-      });
-      return { enabled, requiresRestart: true };
     }
 
     case 'desktop_check_for_updates': {

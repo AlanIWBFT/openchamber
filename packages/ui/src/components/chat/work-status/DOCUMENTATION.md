@@ -25,6 +25,8 @@ It is **not** a context-panel surface. It is not registered in
 `lib/surfaces/registry.ts`, has no rail icon, no tab, no persisted width and no
 resizer. It is a card floating inside the chat column — rounded border, faint
 fill, its own margin — rather than a docked pane flush against the window edge.
+When it overlays the transcript, it uses the shared `oc-glass-panel` surface;
+the inline card keeps its lighter, non-blurred fill instead.
 
 ## Placement
 
