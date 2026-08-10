@@ -3216,6 +3216,7 @@ export const dict = {
   'settings.mcp.page.connection.hintLink': 'Connects to a server someone else hosts. Paste its https address.',
   'chat.toolPart.unifiedExec.shellCommand': 'Shell Command',
   'chat.toolPart.unifiedExec.processInput': 'Process Input',
+  'chat.toolPart.unifiedExec.processOutput': 'Process Output',
   'chat.toolPart.unifiedExec.processTermination': 'Process Termination',
   'chat.toolPart.unifiedExec.status.error': 'Error',
   'chat.toolPart.unifiedExec.status.errorWithDuration': 'Error {duration}',
