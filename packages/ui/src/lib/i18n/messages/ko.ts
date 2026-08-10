@@ -3151,6 +3151,7 @@ export const dict: Record<I18nKey, string> = {
   'settings.mcp.page.connection.hintLink': '다른 곳에서 호스팅하는 서버에 연결합니다. https 주소를 붙여넣으세요.',
   'chat.toolPart.unifiedExec.shellCommand': '셸 명령',
   'chat.toolPart.unifiedExec.processInput': '프로세스 입력',
+  'chat.toolPart.unifiedExec.processOutput': '프로세스 출력',
   'chat.toolPart.unifiedExec.processTermination': '프로세스 종료',
   'chat.toolPart.unifiedExec.status.error': '오류',
   'chat.toolPart.unifiedExec.status.errorWithDuration': '오류 · {duration}',

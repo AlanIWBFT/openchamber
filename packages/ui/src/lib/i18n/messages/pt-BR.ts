@@ -3152,6 +3152,7 @@ export const dict: Record<I18nKey, string> = {
   'settings.mcp.page.connection.hintLink': 'Conecta a um servidor hospedado por outra pessoa. Cole o endereço https dele.',
   "chat.toolPart.unifiedExec.shellCommand": "Comando do shell",
   "chat.toolPart.unifiedExec.processInput": "Entrada do processo",
+  "chat.toolPart.unifiedExec.processOutput": "Saída do processo",
   "chat.toolPart.unifiedExec.processTermination": "Encerramento do processo",
   "chat.toolPart.unifiedExec.status.error": "Erro",
   "chat.toolPart.unifiedExec.status.errorWithDuration": "Erro · {duration}",

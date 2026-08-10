@@ -3152,6 +3152,7 @@ export const dict: Record<I18nKey, string> = {
   'settings.mcp.page.connection.hintLink': 'Під’єднується до сервера, який хостить хтось інший. Вставте його https-адресу.',
   "chat.toolPart.unifiedExec.shellCommand": "Команда оболонки",
   "chat.toolPart.unifiedExec.processInput": "Введення в процес",
+  "chat.toolPart.unifiedExec.processOutput": "Вивід процесу",
   "chat.toolPart.unifiedExec.processTermination": "Завершення процесу",
   "chat.toolPart.unifiedExec.status.error": "Помилка",
   "chat.toolPart.unifiedExec.status.errorWithDuration": "Помилка · {duration}",

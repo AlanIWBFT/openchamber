@@ -293,7 +293,7 @@ describe('projectTurnRecords', () => {
             ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
             parts: [
                 { id: 'exec-1', type: 'tool', tool: 'exec_command', state: { status: 'completed', metadata: { processRunning: true } } },
-                { id: 'poll-1', type: 'tool', tool: 'write_stdin', state: { status: 'completed', metadata: { execDisplay: 'poll' } } },
+                { id: 'poll-1', type: 'tool', tool: 'poll_exec', state: { status: 'completed', metadata: { execDisplay: 'poll' } } },
                 { id: 'terminate-1', type: 'tool', tool: 'terminate_exec', state: { status: 'completed', metadata: { execError: 'not found' } } },
             ] as unknown as Part[],
         };
@@ -311,7 +311,7 @@ describe('projectTurnRecords', () => {
         const assistant = {
             ...createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 }),
             parts: [
-                { id: 'poll-1', type: 'tool', tool: 'write_stdin', state: { status: 'completed', metadata: { execDisplay: 'poll' } } },
+                { id: 'poll-1', type: 'tool', tool: 'poll_exec', state: { status: 'completed', metadata: { execDisplay: 'poll' } } },
                 { id: 'terminate-1', type: 'tool', tool: 'terminate_exec', state: { status: 'completed', metadata: { execDisplay: 'terminate' } } },
             ] as unknown as Part[],
         };
