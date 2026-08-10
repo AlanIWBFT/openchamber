@@ -85,6 +85,7 @@ import { getStreamingOutputAppend, getToolOutput } from './toolOutput';
 import { toAbsoluteFilePath } from '@/lib/path-utils';
 import {
     executeOutputTruncation,
+    OPENCODE_TOOLS,
     executeScript,
     isEditTool,
     isExecuteTool,
@@ -146,6 +147,14 @@ interface ToolPartProps {
     nestedTools?: ToolExpansionState;
 }
 
+const getLocalizedToolDisplayName = (toolName: string, t: ReturnType<typeof useI18n>['t']): string => {
+    if (toolName === OPENCODE_TOOLS.execCommand) return t('chat.toolPart.unifiedExec.shellCommand');
+    if (toolName === OPENCODE_TOOLS.pollExec) return t('chat.toolPart.unifiedExec.processOutput');
+    if (toolName === OPENCODE_TOOLS.writeStdin) return t('chat.toolPart.unifiedExec.processInput');
+    if (toolName === OPENCODE_TOOLS.terminateExec) return t('chat.toolPart.unifiedExec.processTermination');
+    return getToolMetadata(toolName).displayName;
+};
+
 const formatDuration = (start: number, end?: number, now: number = Date.now()) => {
     const duration = Math.max(0, (end ?? now) - start);
     const seconds = duration / 1000;
@@ -199,7 +208,7 @@ const UnifiedExecDuration: React.FC<{
     })();
 
     return (
-        <span style={status.error ? TOOL_ERROR_TITLE_STYLE : undefined}>
+        <span style={status.kind === 'error' || status.kind === 'exited' ? TOOL_ERROR_TITLE_STYLE : undefined}>
             {text}
         </span>
     );
@@ -1040,13 +1049,7 @@ const TaskSummaryEntryRow = React.memo(({
     const label = getTaskSummaryLabel(entry);
     const hasLabel = label.trim().length > 0;
     const status = entry.state?.status;
-    const displayName = toolName === 'exec_command'
-        ? t('chat.toolPart.unifiedExec.shellCommand')
-        : toolName === 'write_stdin'
-            ? t('chat.toolPart.unifiedExec.processInput')
-            : toolName === 'terminate_exec'
-                ? t('chat.toolPart.unifiedExec.processTermination')
-                : getToolMetadata(toolName).displayName;
+    const displayName = getLocalizedToolDisplayName(toolName, t);
 
     return (
         <ToolRevealOnMount animate={animateTailText} wipe>
@@ -2266,13 +2269,7 @@ const ToolPartContent: React.FC<ToolPartProps & { background?: BackgroundShellHe
     const description = guestHeader?.subtitle ?? builtInDescription;
     const displayName = guestHeader?.title ?? (isReadDirectory
         ? t('chat.toolPart.readDirectory')
-        : normalizedPartTool === 'exec_command'
-        ? t('chat.toolPart.unifiedExec.shellCommand')
-        : normalizedPartTool === 'write_stdin'
-            ? t('chat.toolPart.unifiedExec.processInput')
-            : normalizedPartTool === 'terminate_exec'
-                ? t('chat.toolPart.unifiedExec.processTermination')
-                : getToolMetadata(normalizedPartTool || part.tool).displayName);
+        : getLocalizedToolDisplayName(normalizedPartTool || part.tool, t));
     
     // Tool title/description — shown inline as context. A subtitle the
     // extension declared replaces it, since both land in the same slot.
@@ -2791,13 +2788,7 @@ const ToolPart: React.FC<ToolPartProps> = (props) => {
     const toolName = normalizeToolName(props.part.tool) || 'tool';
     const backgroundShellID = isShellTool(toolName) && !isUnifiedExecTool(toolName) ? readBackgroundShellID(props.part) : undefined;
     const backgroundChildID = backgroundShellID ? undefined : readBackgroundSubagentChildID(props.part);
-    const displayName = toolName === 'exec_command'
-        ? t('chat.toolPart.unifiedExec.shellCommand')
-        : toolName === 'write_stdin'
-            ? t('chat.toolPart.unifiedExec.processInput')
-            : toolName === 'terminate_exec'
-                ? t('chat.toolPart.unifiedExec.processTermination')
-                : getToolMetadata(toolName).displayName;
+    const displayName = getLocalizedToolDisplayName(toolName, t);
 
     return (
         <ToolPartErrorBoundary

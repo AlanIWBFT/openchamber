@@ -3762,6 +3762,7 @@ export const dict: Record<I18nKey, string> = {
   'multirun.overview.prompt.collapse': 'Згорнути',
   "chat.toolPart.unifiedExec.shellCommand": "Команда оболонки",
   "chat.toolPart.unifiedExec.processInput": "Введення в процес",
+  "chat.toolPart.unifiedExec.processOutput": "Вивід процесу",
   "chat.toolPart.unifiedExec.processTermination": "Завершення процесу",
   "chat.toolPart.unifiedExec.status.error": "Помилка",
   "chat.toolPart.unifiedExec.status.errorWithDuration": "Помилка · {duration}",

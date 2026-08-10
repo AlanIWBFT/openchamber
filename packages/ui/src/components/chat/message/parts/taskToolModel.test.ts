@@ -31,12 +31,12 @@ describe('taskToolModel', () => {
     test('filters and redacts Unified Exec controls in authoritative task summary metadata', () => {
         expect(parseTaskMetadataBlock(`result
 <task_metadata>{"calls":[
-  {"id":"poll","tool":"write_stdin","state":{"status":"completed","input":{"session_id":1}}},
-  {"id":"failed","tool":"write_stdin","state":{"status":"completed","input":{"session_id":1,"chars":"secret"},"metadata":{"execError":"stdin unavailable"}}}
+  {"id":"poll","tool":"poll_exec","state":{"status":"completed","input":{"exec_id":1}}},
+  {"id":"failed","tool":"write_stdin","state":{"status":"completed","input":{"exec_id":1,"chars":"secret"},"metadata":{"execError":"stdin unavailable"}}}
         ]}</task_metadata>`).summaryEntries).toEqual([{
             id: 'failed',
             tool: 'write_stdin',
-            state: { status: 'error', title: undefined, input: { session_id: 1 }, error: 'stdin unavailable' },
+            state: { status: 'error', title: undefined, input: { exec_id: 1 }, error: 'stdin unavailable' },
         }]);
     });
 
@@ -153,8 +153,8 @@ describe('taskToolModel', () => {
             info: { id: 'message-1', role: 'assistant', sessionID: 'session-1', agent: 'build', providerID: 'test', modelID: 'test', time: { created: 1 } } satisfies Message,
             parts: [
                 completed('exec-1', 'exec_command', { cmd: 'npm test' }),
-                completed('poll-1', 'write_stdin', { session_id: 1 }),
-                completed('stdin-error', 'write_stdin', { session_id: 1, chars: 'secret' }, { execError: 'stdin unavailable' }),
+                completed('poll-1', 'poll_exec', { exec_id: 1 }),
+                completed('stdin-error', 'write_stdin', { exec_id: 1, chars: 'secret' }, { execError: 'stdin unavailable' }),
             ],
         };
 
@@ -167,7 +167,7 @@ describe('taskToolModel', () => {
             {
                 id: 'stdin-error',
                 tool: 'write_stdin',
-                state: { status: 'error', title: undefined, input: { session_id: 1 }, error: 'stdin unavailable' },
+                state: { status: 'error', title: undefined, input: { exec_id: 1 }, error: 'stdin unavailable' },
             },
         ]);
     });

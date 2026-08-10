@@ -327,7 +327,7 @@ describe('projectTurnRecords', () => {
             ...createMessageEntry({ id: 'a1', role: 'assistant', createdAt: 2 }),
             parts: [
                 execPart('exec-1', 'exec_command', { processRunning: true }),
-                execPart('poll-1', 'write_stdin', { execDisplay: 'poll' }),
+                execPart('poll-1', 'poll_exec', { execDisplay: 'poll' }),
                 execPart('terminate-1', 'terminate_exec', { execError: 'not found' }),
             ],
         };
@@ -345,7 +345,7 @@ describe('projectTurnRecords', () => {
         const assistant = {
             ...createMessageEntry({ id: 'a1', role: 'assistant', createdAt: 2 }),
             parts: [
-                execPart('poll-1', 'write_stdin', { execDisplay: 'poll' }),
+                execPart('poll-1', 'poll_exec', { execDisplay: 'poll' }),
                 execPart('terminate-1', 'terminate_exec', { execDisplay: 'terminate' }),
             ],
         };

@@ -132,7 +132,7 @@ type ParsedStatusResult = {
 };
 
 const getToolStatusPhrase = (toolName: string): string => {
-    return TOOL_STATUS_PHRASES.get(isUnifiedExecTool(toolName) ? 'shell' : toolName) ?? `using ${toolName}`;
+    return TOOL_STATUS_PHRASES.get(toolName) ?? `using ${toolName}`;
 };
 
 /**
@@ -199,7 +199,7 @@ const createParsedStatus = (parts: Part[], genericKey: string): ParsedStatusResu
                 if ((toolStatus === 'running' || toolStatus === 'pending') && !activePartType) {
                     const toolName = getToolDisplayName(part);
                     writeStdinOperation = isWriteStdinTool(toolName)
-                        ? getWriteStdinOperation(toolStatus, part.state.input)
+                        ? getWriteStdinOperation(toolStatus)
                         : undefined;
                     if (EDITING_TOOLS.has(toolName)) {
                         activePartType = 'editing';
@@ -258,7 +258,7 @@ const decodeParsedStatus = (signature: string): ParsedStatusResult => {
             ? activePartType
             : undefined,
         activeToolName: activeToolName || undefined,
-        writeStdinOperation: writeStdinOperation === 'preparing' || writeStdinOperation === 'polling' || writeStdinOperation === 'sending'
+        writeStdinOperation: writeStdinOperation === 'preparing' || writeStdinOperation === 'sending'
             ? writeStdinOperation
             : undefined,
         statusText,
@@ -424,17 +424,17 @@ export function useAssistantStatus(): AssistantStatusSnapshot {
     const localizedParsedStatus = React.useMemo<ParsedStatusResult>(() => {
         const statusText = parsedStatus.activeToolName === 'exec_command'
             ? t('chat.assistantStatus.unifiedExec.runningCommand')
-            : parsedStatus.activeToolName === 'write_stdin'
-                ? parsedStatus.writeStdinOperation === 'preparing'
-                    ? t('chat.assistantStatus.unifiedExec.preparingProcessOperation')
-                    : parsedStatus.writeStdinOperation === 'polling'
-                        ? t('chat.assistantStatus.unifiedExec.pollingProcessOutput')
+            : parsedStatus.activeToolName === 'poll_exec'
+                ? t('chat.assistantStatus.unifiedExec.pollingProcessOutput')
+                : parsedStatus.activeToolName === 'write_stdin'
+                    ? parsedStatus.writeStdinOperation === 'preparing'
+                        ? t('chat.assistantStatus.unifiedExec.preparingProcessOperation')
                         : parsedStatus.writeStdinOperation === 'sending'
                             ? t('chat.assistantStatus.unifiedExec.sendingProcessInput')
                             : t('chat.assistantStatus.unifiedExec.runningCommand')
-                : parsedStatus.activeToolName === 'terminate_exec'
-                    ? t('chat.assistantStatus.unifiedExec.terminatingProcess')
-                    : parsedStatus.statusText;
+                    : parsedStatus.activeToolName === 'terminate_exec'
+                        ? t('chat.assistantStatus.unifiedExec.terminatingProcess')
+                        : parsedStatus.statusText;
         return statusText === parsedStatus.statusText ? parsedStatus : { ...parsedStatus, statusText };
     }, [parsedStatus, t]);
 

@@ -3761,6 +3761,7 @@ export const dict: Record<I18nKey, string> = {
   'multirun.overview.prompt.collapse': '접기',
   'chat.toolPart.unifiedExec.shellCommand': '셸 명령',
   'chat.toolPart.unifiedExec.processInput': '프로세스 입력',
+  'chat.toolPart.unifiedExec.processOutput': '프로세스 출력',
   'chat.toolPart.unifiedExec.processTermination': '프로세스 종료',
   'chat.toolPart.unifiedExec.status.error': '오류',
   'chat.toolPart.unifiedExec.status.errorWithDuration': '오류 · {duration}',
