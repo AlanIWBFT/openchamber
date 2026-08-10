@@ -3892,6 +3892,7 @@ export const dict: Record<I18nKey, string> = {
   'notifications.permission.title': 'Permissão necessária',
   "chat.toolPart.unifiedExec.shellCommand": "Comando do shell",
   "chat.toolPart.unifiedExec.processInput": "Entrada do processo",
+  "chat.toolPart.unifiedExec.processOutput": "Saída do processo",
   "chat.toolPart.unifiedExec.processTermination": "Encerramento do processo",
   "chat.toolPart.unifiedExec.status.error": "Erro",
   "chat.toolPart.unifiedExec.status.errorWithDuration": "Erro · {duration}",
