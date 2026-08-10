@@ -3285,6 +3285,7 @@ export const dict: Record<I18nKey, string> = {
   'settings.mcp.page.connection.hintLink': '連線到他人代管的伺服器。貼上其 https 位址。',
   'chat.toolPart.unifiedExec.shellCommand': 'Shell 命令',
   'chat.toolPart.unifiedExec.processInput': '程序輸入',
+  'chat.toolPart.unifiedExec.processOutput': '程序輸出',
   'chat.toolPart.unifiedExec.processTermination': '程序終止',
   'chat.toolPart.unifiedExec.status.error': '錯誤',
   'chat.toolPart.unifiedExec.status.errorWithDuration': '錯誤 · {duration}',
