@@ -28,12 +28,12 @@ describe('taskToolModel', () => {
     test('filters and redacts Unified Exec controls in authoritative task summary metadata', () => {
         expect(parseTaskMetadataBlock(`result
 <task_metadata>{"calls":[
-  {"id":"poll","tool":"write_stdin","state":{"status":"completed","input":{"session_id":1}}},
-  {"id":"failed","tool":"write_stdin","state":{"status":"completed","input":{"session_id":1,"chars":"secret"},"metadata":{"execError":"stdin unavailable"}}}
+  {"id":"poll","tool":"poll_exec","state":{"status":"completed","input":{"exec_id":1}}},
+  {"id":"failed","tool":"write_stdin","state":{"status":"completed","input":{"exec_id":1,"chars":"secret"},"metadata":{"execError":"stdin unavailable"}}}
         ]}</task_metadata>`).summaryEntries).toEqual([{
             id: 'failed',
             tool: 'write_stdin',
-            state: { status: 'error', title: undefined, input: { session_id: 1 }, error: 'stdin unavailable' },
+            state: { status: 'error', title: undefined, input: { exec_id: 1 }, error: 'stdin unavailable' },
         }]);
     });
 
@@ -74,8 +74,8 @@ describe('taskToolModel', () => {
             info: { id: 'message-1', role: 'assistant' } as Message,
             parts: [
                 { id: 'exec-1', type: 'tool', tool: 'exec_command', state: { status: 'completed', input: { cmd: 'npm test' } } },
-                { id: 'poll-1', type: 'tool', tool: 'write_stdin', state: { status: 'completed', input: { session_id: 1 } } },
-                { id: 'stdin-error', type: 'tool', tool: 'write_stdin', state: { status: 'completed', input: { session_id: 1, chars: 'secret' }, metadata: { execError: 'stdin unavailable' } } },
+                { id: 'poll-1', type: 'tool', tool: 'poll_exec', state: { status: 'completed', input: { exec_id: 1 } } },
+                { id: 'stdin-error', type: 'tool', tool: 'write_stdin', state: { status: 'completed', input: { exec_id: 1, chars: 'secret' }, metadata: { execError: 'stdin unavailable' } } },
             ] as unknown as Part[],
         };
 
@@ -88,7 +88,7 @@ describe('taskToolModel', () => {
             {
                 id: 'stdin-error',
                 tool: 'write_stdin',
-                state: { status: 'error', title: undefined, input: { session_id: 1 }, error: 'stdin unavailable' },
+                state: { status: 'error', title: undefined, input: { exec_id: 1 }, error: 'stdin unavailable' },
             },
         ]);
     });
