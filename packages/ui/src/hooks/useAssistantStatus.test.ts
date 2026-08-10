@@ -79,9 +79,8 @@ describe('assistant status signature', () => {
     test('preserves write_stdin operations through encoding', () => {
         const cases = [
             [writeStdinPart('pending', {}), 'preparing'],
-            [writeStdinPart('running', { session_id: 1 }), 'polling'],
-            [writeStdinPart('running', { session_id: 1, chars: '\n' }), 'sending'],
-            [writeStdinPart('running', { session_id: 1, close_stdin: true }), 'sending'],
+            [writeStdinPart('running', { exec_id: 1, chars: '\n' }), 'sending'],
+            [writeStdinPart('running', { exec_id: 1, close_stdin: true }), 'sending'],
         ] as const;
 
         for (const [part, expectedOperation] of cases) {
@@ -91,5 +90,21 @@ describe('assistant status signature', () => {
             expect(parsed.activeToolName).toBe('write_stdin');
             expect(parsed.writeStdinOperation).toBe(expectedOperation);
         }
+    });
+
+    test('preserves poll_exec as a distinct active operation', () => {
+        const part: ToolPart = {
+            id: 'poll-running',
+            sessionID: 'session-1',
+            messageID: 'message-1',
+            callID: 'call-1',
+            type: 'tool',
+            tool: 'poll_exec',
+            state: { status: 'running', input: { exec_id: 1 }, time: { start: 1 } },
+        };
+
+        const parsed = parseAssistantStatusSignature(createAssistantStatusSignature([part], 'session-1:message-1'));
+        expect(parsed.activeToolName).toBe('poll_exec');
+        expect(parsed.writeStdinOperation).toBe(undefined);
     });
 });

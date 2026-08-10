@@ -26,7 +26,7 @@ const deleteListeners = new Set<DeleteListener>();
 const createListeners = new Set<CreateListener>();
 const directoryListeners = new Set<DirectoryListener>();
 const gitRefreshListeners = new Set<GitRefreshListener>();
-const gitMutatingTools = new Set(['bash', 'edit', 'write', 'apply_patch', 'patch']);
+const gitMutatingTools = new Set(['bash', 'exec_command', 'edit', 'write', 'apply_patch', 'patch']);
 
 const normalizeToolName = (tool: string): string => {
   const parts = tool.trim().toLowerCase().split('.').filter(Boolean);

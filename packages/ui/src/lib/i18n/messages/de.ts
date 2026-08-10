@@ -3298,6 +3298,7 @@ export const dict = {
   'settings.mcp.page.connection.hintLink': 'Verbindet sich mit einem fremd gehosteten Server. Fügen Sie dessen https-Adresse ein.',
   'chat.toolPart.unifiedExec.shellCommand': 'Shell-Befehl',
   'chat.toolPart.unifiedExec.processInput': 'Prozesseingabe',
+  'chat.toolPart.unifiedExec.processOutput': 'Prozessausgabe',
   'chat.toolPart.unifiedExec.processTermination': 'Prozessbeendigung',
   'chat.toolPart.unifiedExec.status.error': 'Fehler',
   'chat.toolPart.unifiedExec.status.errorWithDuration': 'Fehler · {duration}',
