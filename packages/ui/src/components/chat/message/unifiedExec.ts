@@ -6,23 +6,16 @@ type UnifiedExecStatus = {
     kind: 'error' | 'running' | 'terminated' | 'exited' | 'completed';
     durationMs?: number;
     exitCode?: number;
-    error: boolean;
 };
 
-export type WriteStdinOperation = 'preparing' | 'polling' | 'sending';
-
-export const isWriteStdinPoll = (input: ToolInput | undefined): boolean => {
-    const parsed = readUnifiedExecInput(input);
-    return !parsed.chars?.length && parsed.close_stdin !== true;
-};
+export type WriteStdinOperation = 'preparing' | 'sending';
 
 export const getWriteStdinOperation = (
     status: string | undefined,
-    input: ToolInput | undefined,
 ): WriteStdinOperation | undefined => {
     if (status === 'pending') return 'preparing';
     if (status !== 'running') return undefined;
-    return isWriteStdinPoll(input) ? 'polling' : 'sending';
+    return 'sending';
 };
 
 export const getUnifiedExecMetadata = (part: ToolPart): UnifiedExecMetadata => {
@@ -88,7 +81,7 @@ export const getUnifiedExecStatus = (
     stateStatus?: ToolPart['state']['status'],
 ): UnifiedExecStatus | null => {
     if (stateStatus === 'error' || metadata.execError) {
-        return { kind: 'error', error: true };
+        return { kind: 'error' };
     }
     if (metadata.execDisplay !== 'root') return null;
     const sessionExposed = metadata.sessionExposed === true;
@@ -101,14 +94,14 @@ export const getUnifiedExecStatus = (
 
     if (metadata.processRunning === true && (metadata.execID ?? metadata.sessionID) !== undefined) {
         if (!sessionExposed) return null;
-        return { kind: 'running', ...durationField, error: false };
+        return { kind: 'running', ...durationField };
     }
-    if (metadata.terminationRequested === true) return { kind: 'terminated', ...durationField, error: false };
+    if (metadata.terminationRequested === true) return { kind: 'terminated', ...durationField };
     if (metadata.exitCode !== undefined && metadata.exitCode !== 0) {
-        return { kind: 'exited', exitCode: metadata.exitCode, ...durationField, error: true };
+        return { kind: 'exited', exitCode: metadata.exitCode, ...durationField };
     }
     if (sessionExposed && metadata.durationMs !== undefined) {
-        return { kind: 'completed', ...durationField, error: false };
+        return { kind: 'completed', ...durationField };
     }
     return null;
 };
