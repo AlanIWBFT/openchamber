@@ -84,6 +84,7 @@ import { hasTextSelectionInside } from '@/lib/textSelection';
 import { dispatchRowExpand } from '@/components/chat/lib/scroll/timelineScrollIntent';
 import {
     executeOutputTruncation,
+    OPENCODE_TOOLS,
     executeScript,
     isEditTool,
     isExecuteTool,
@@ -149,6 +150,14 @@ interface ToolPartProps {
     nestedTools?: ToolExpansionState;
 }
 
+const getLocalizedToolDisplayName = (toolName: string, t: ReturnType<typeof useI18n>['t']): string => {
+    if (toolName === OPENCODE_TOOLS.execCommand) return t('chat.toolPart.unifiedExec.shellCommand');
+    if (toolName === OPENCODE_TOOLS.pollExec) return t('chat.toolPart.unifiedExec.processOutput');
+    if (toolName === OPENCODE_TOOLS.writeStdin) return t('chat.toolPart.unifiedExec.processInput');
+    if (toolName === OPENCODE_TOOLS.terminateExec) return t('chat.toolPart.unifiedExec.processTermination');
+    return getToolMetadata(toolName).displayName;
+};
+
 // A finished run shows tenths; a running one counts whole seconds on the
 // shared 1 s tick, so a live row redraws once a second, in step with the
 // session list's counter.
@@ -205,7 +214,7 @@ const UnifiedExecDuration: React.FC<{
     })();
 
     return (
-        <span style={status.error ? TOOL_ERROR_TITLE_STYLE : undefined}>
+        <span style={status.kind === 'error' || status.kind === 'exited' ? TOOL_ERROR_TITLE_STYLE : undefined}>
             {text}
         </span>
     );
@@ -1975,13 +1984,7 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
     const description = guestHeader?.subtitle ?? builtInDescription;
     const displayName = guestHeader?.title ?? (isReadDirectory
         ? t('chat.toolPart.readDirectory')
-        : normalizedPartTool === 'exec_command'
-        ? t('chat.toolPart.unifiedExec.shellCommand')
-        : normalizedPartTool === 'write_stdin'
-            ? t('chat.toolPart.unifiedExec.processInput')
-            : normalizedPartTool === 'terminate_exec'
-                ? t('chat.toolPart.unifiedExec.processTermination')
-                : getToolMetadata(normalizedPartTool || part.tool).displayName);
+        : getLocalizedToolDisplayName(normalizedPartTool || part.tool, t));
 
     // Opened, the body already carries the whole error and output.
     const failureDetail = isError && !isExpanded ? failureReason : undefined;
@@ -2604,13 +2607,7 @@ const ToolPart: React.FC<ToolPartProps> = (props) => {
     const { t } = useI18n();
     const toolName = normalizeToolName(props.part.tool) || 'tool';
     const backgroundShellID = isShellTool(toolName) && !isUnifiedExecTool(toolName) ? readBackgroundShellID(props.part) : undefined;
-    const displayName = toolName === 'exec_command'
-        ? t('chat.toolPart.unifiedExec.shellCommand')
-        : toolName === 'write_stdin'
-            ? t('chat.toolPart.unifiedExec.processInput')
-            : toolName === 'terminate_exec'
-                ? t('chat.toolPart.unifiedExec.processTermination')
-                : getToolMetadata(toolName).displayName;
+    const displayName = getLocalizedToolDisplayName(toolName, t);
 
     return (
         <ToolPartErrorBoundary
