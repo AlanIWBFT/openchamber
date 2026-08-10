@@ -3,8 +3,7 @@ import type { ToolPart } from '@opencode-ai/sdk/v2';
 export type UnifiedExecMetadata = {
     command?: string;
     output?: string;
-    interactions?: Array<{ type: 'stdin' | 'terminate'; time: number }>;
-    sessionID?: number;
+    execID?: number;
     sessionExposed?: boolean;
     startedAt?: number;
     durationMs?: number;
@@ -21,12 +20,11 @@ export type UnifiedExecStatus = {
     kind: 'error' | 'running' | 'terminated' | 'exited' | 'completed';
     durationMs?: number;
     exitCode?: number;
-    error: boolean;
 };
 
-export type WriteStdinOperation = 'preparing' | 'polling' | 'sending';
+export type WriteStdinOperation = 'preparing' | 'sending';
 
-const FOLLOW_UP_TOOLS = new Set(['write_stdin', 'terminate_exec']);
+const FOLLOW_UP_TOOLS = new Set(['poll_exec', 'write_stdin', 'terminate_exec']);
 
 export const isExecCommandTool = (tool: unknown): boolean => tool === 'exec_command';
 
@@ -34,18 +32,12 @@ export const isUnifiedExecTool = (tool: unknown): boolean => (
     isExecCommandTool(tool) || FOLLOW_UP_TOOLS.has(typeof tool === 'string' ? tool : '')
 );
 
-export const isWriteStdinPoll = (input: Record<string, unknown> | undefined): boolean => {
-    const hasCharacters = typeof input?.chars === 'string' && input.chars.length > 0;
-    return !hasCharacters && input?.close_stdin !== true;
-};
-
 export const getWriteStdinOperation = (
     status: unknown,
-    input: Record<string, unknown> | undefined,
 ): WriteStdinOperation | undefined => {
     if (status === 'pending') return 'preparing';
     if (status !== 'running') return undefined;
-    return isWriteStdinPoll(input) ? 'polling' : 'sending';
+    return 'sending';
 };
 
 const isExecFollowUpTool = (tool: unknown): boolean => (
@@ -140,7 +132,7 @@ export const getUnifiedExecStatus = (
     stateStatus?: unknown,
 ): UnifiedExecStatus | null => {
     if (stateStatus === 'error' || (typeof metadata.execError === 'string' && metadata.execError.length > 0)) {
-        return { kind: 'error', error: true };
+        return { kind: 'error' };
     }
     if (metadata.execDisplay !== 'root') return null;
     const sessionExposed = metadata.sessionExposed === true;
@@ -151,16 +143,16 @@ export const getUnifiedExecStatus = (
         : undefined;
     const durationField = typeof duration === 'number' ? { durationMs: duration } : {};
 
-    if (metadata.processRunning === true && typeof metadata.sessionID === 'number') {
+    if (metadata.processRunning === true && typeof metadata.execID === 'number') {
         if (!sessionExposed) return null;
-        return { kind: 'running', ...durationField, error: false };
+        return { kind: 'running', ...durationField };
     }
-    if (metadata.terminationRequested === true) return { kind: 'terminated', ...durationField, error: false };
+    if (metadata.terminationRequested === true) return { kind: 'terminated', ...durationField };
     if (typeof metadata.exitCode === 'number' && metadata.exitCode !== 0) {
-        return { kind: 'exited', exitCode: metadata.exitCode, ...durationField, error: true };
+        return { kind: 'exited', exitCode: metadata.exitCode, ...durationField };
     }
     if (sessionExposed && typeof metadata.durationMs === 'number') {
-        return { kind: 'completed', ...durationField, error: false };
+        return { kind: 'completed', ...durationField };
     }
     return null;
 };

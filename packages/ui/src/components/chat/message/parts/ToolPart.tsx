@@ -129,6 +129,14 @@ const normalizeToolName = (toolName: string | undefined | null): string => {
     return trimmed;
 };
 
+const getLocalizedToolDisplayName = (toolName: string, t: ReturnType<typeof useI18n>['t']): string => {
+    if (toolName === 'exec_command') return t('chat.toolPart.unifiedExec.shellCommand');
+    if (toolName === 'poll_exec') return t('chat.toolPart.unifiedExec.processOutput');
+    if (toolName === 'write_stdin') return t('chat.toolPart.unifiedExec.processInput');
+    if (toolName === 'terminate_exec') return t('chat.toolPart.unifiedExec.processTermination');
+    return getToolMetadata(toolName).displayName;
+};
+
 const formatDuration = (start: number, end?: number, now: number = Date.now()) => {
     const duration = Math.max(0, (end ?? now) - start);
     const seconds = duration / 1000;
@@ -182,7 +190,7 @@ const UnifiedExecDuration: React.FC<{
     })();
 
     return (
-        <span style={status.error ? TOOL_ERROR_TITLE_STYLE : undefined}>
+        <span style={status.kind === 'error' || status.kind === 'exited' ? TOOL_ERROR_TITLE_STYLE : undefined}>
             {text}
         </span>
     );
@@ -1085,13 +1093,7 @@ const TaskSummaryEntryRow = React.memo(({
     const label = getTaskSummaryLabel(entry);
     const hasLabel = label.trim().length > 0;
     const status = entry.state?.status;
-    const displayName = toolName === 'exec_command'
-        ? t('chat.toolPart.unifiedExec.shellCommand')
-        : toolName === 'write_stdin'
-            ? t('chat.toolPart.unifiedExec.processInput')
-            : toolName === 'terminate_exec'
-                ? t('chat.toolPart.unifiedExec.processTermination')
-                : getToolMetadata(toolName).displayName;
+    const displayName = getLocalizedToolDisplayName(toolName, t);
 
     return (
         <ToolRevealOnMount animate={animateTailText} wipe>
@@ -2197,13 +2199,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const description = guestHeader?.subtitle ?? builtInDescription;
     const displayName = guestHeader?.title ?? (isReadDirectory
         ? t('chat.toolPart.readDirectory')
-        : normalizedPartTool === 'exec_command'
-        ? t('chat.toolPart.unifiedExec.shellCommand')
-        : normalizedPartTool === 'write_stdin'
-            ? t('chat.toolPart.unifiedExec.processInput')
-            : normalizedPartTool === 'terminate_exec'
-                ? t('chat.toolPart.unifiedExec.processTermination')
-                : getToolMetadata(normalizedPartTool || part.tool).displayName);
+        : getLocalizedToolDisplayName(normalizedPartTool || part.tool, t));
     
     // Tool title/description — shown inline as context. A subtitle the
     // extension declared replaces it, since both land in the same slot.
@@ -2650,13 +2646,7 @@ class ToolPartErrorBoundary extends React.Component<{
 const ToolPart: React.FC<ToolPartProps> = (props) => {
     const { t } = useI18n();
     const toolName = normalizeToolName(props.part.tool) || 'tool';
-    const displayName = toolName === 'exec_command'
-        ? t('chat.toolPart.unifiedExec.shellCommand')
-        : toolName === 'write_stdin'
-            ? t('chat.toolPart.unifiedExec.processInput')
-            : toolName === 'terminate_exec'
-                ? t('chat.toolPart.unifiedExec.processTermination')
-                : getToolMetadata(toolName).displayName;
+    const displayName = getLocalizedToolDisplayName(toolName, t);
 
     return (
         <ToolPartErrorBoundary
