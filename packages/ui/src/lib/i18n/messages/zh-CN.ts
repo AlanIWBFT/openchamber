@@ -3871,6 +3871,7 @@ export const dict: Record<I18nKey, string> = {
   'notifications.permission.title': '需要权限',
   'chat.toolPart.unifiedExec.shellCommand': 'Shell 命令',
   'chat.toolPart.unifiedExec.processInput': '进程输入',
+  'chat.toolPart.unifiedExec.processOutput': '进程输出',
   'chat.toolPart.unifiedExec.processTermination': '进程终止',
   'chat.toolPart.unifiedExec.status.error': '错误',
   'chat.toolPart.unifiedExec.status.errorWithDuration': '错误 · {duration}',

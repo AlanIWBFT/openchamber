@@ -3870,6 +3870,7 @@ export const dict = {
   'notifications.permission.title': 'Permission required',
   'chat.toolPart.unifiedExec.shellCommand': 'Shell Command',
   'chat.toolPart.unifiedExec.processInput': 'Process Input',
+  'chat.toolPart.unifiedExec.processOutput': 'Process Output',
   'chat.toolPart.unifiedExec.processTermination': 'Process Termination',
   'chat.toolPart.unifiedExec.status.error': 'Error',
   'chat.toolPart.unifiedExec.status.errorWithDuration': 'Error {duration}',

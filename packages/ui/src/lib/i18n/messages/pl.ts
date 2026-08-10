@@ -3875,6 +3875,7 @@ export const dict: Record<I18nKey, string> = {
   'notifications.permission.title': 'Wymagane uprawnienie',
   'chat.toolPart.unifiedExec.shellCommand': 'Polecenie powłoki',
   'chat.toolPart.unifiedExec.processInput': 'Dane wejściowe procesu',
+  'chat.toolPart.unifiedExec.processOutput': 'Dane wyjściowe procesu',
   'chat.toolPart.unifiedExec.processTermination': 'Zakończenie procesu',
   'chat.toolPart.unifiedExec.status.error': 'Błąd',
   'chat.toolPart.unifiedExec.status.errorWithDuration': 'Błąd · {duration}',
