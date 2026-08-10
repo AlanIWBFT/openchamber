@@ -20,5 +20,5 @@ export function UnifiedExecDuration({ metadata, active, stateStatus }: {
             case 'completed': return duration ? t('chat.toolPart.unifiedExec.status.completedWithDuration', { duration }) : t('chat.toolPart.unifiedExec.status.completed');
         }
     };
-    return <span style={status.error ? TOOL_ERROR_TITLE_STYLE : undefined}>{label()}</span>;
+    return <span style={status.kind === 'error' || status.kind === 'exited' ? TOOL_ERROR_TITLE_STYLE : undefined}>{label()}</span>;
 }
