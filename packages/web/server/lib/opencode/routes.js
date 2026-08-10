@@ -24,6 +24,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     refreshOpenCodeAfterConfigChange,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    fsPromises = fs.promises,
   } = dependencies;
 
   let authLibrary = null;
@@ -579,6 +580,10 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       const requestedPath = typeof req.body?.path === 'string' ? req.body.path.trim() : '';
       if (!requestedPath) {
         return res.status(400).json({ error: 'Path is required' });
+      }
+
+      if (req.body?.create === true) {
+        await fsPromises.mkdir(path.resolve(requestedPath), { recursive: true });
       }
 
       const validated = await validateDirectoryPath(requestedPath);
