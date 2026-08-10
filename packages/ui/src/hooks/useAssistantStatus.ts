@@ -381,7 +381,7 @@ export const createParsedStatus = (parts: Part[], genericKey: string, mcpServers
                     activeToolName = toolName;
                     activeToolStatus = getRunningToolStatus(part, toolName, runningToolCounts.get(bucket ?? toolName) ?? 1, mcpServers);
                     writeStdinOperation = isWriteStdinTool(toolName)
-                        ? getWriteStdinOperation(toolStatus, part.state.input)
+                        ? getWriteStdinOperation(toolStatus)
                         : undefined;
                 }
                 break;
@@ -450,7 +450,7 @@ const decodeParsedStatus = (signature: string): ParsedStatusResult => {
             : undefined,
         activeToolName: activeToolName || undefined,
         status: decodeStatus(encodedStatus),
-        writeStdinOperation: writeStdinOperation === 'preparing' || writeStdinOperation === 'polling' || writeStdinOperation === 'sending'
+        writeStdinOperation: writeStdinOperation === 'preparing' || writeStdinOperation === 'sending'
             ? writeStdinOperation
             : undefined,
         isGenericStatus: isGenericStatus === '1',
@@ -671,12 +671,12 @@ export function useAssistantStatus(): AssistantStatusSnapshot {
     const localizedParsedStatus = React.useMemo<ParsedStatusResult>(() => {
         const key = parsedStatus.activeToolName === 'exec_command'
             ? 'chat.assistantStatus.unifiedExec.runningCommand'
+            : parsedStatus.activeToolName === 'poll_exec'
+                ? 'chat.assistantStatus.unifiedExec.pollingProcessOutput'
             : parsedStatus.activeToolName === 'write_stdin'
                 ? parsedStatus.writeStdinOperation === 'preparing'
                     ? 'chat.assistantStatus.unifiedExec.preparingProcessOperation'
-                    : parsedStatus.writeStdinOperation === 'polling'
-                        ? 'chat.assistantStatus.unifiedExec.pollingProcessOutput'
-                        : parsedStatus.writeStdinOperation === 'sending'
+                    : parsedStatus.writeStdinOperation === 'sending'
                             ? 'chat.assistantStatus.unifiedExec.sendingProcessInput'
                             : 'chat.assistantStatus.unifiedExec.runningCommand'
                 : parsedStatus.activeToolName === 'terminate_exec'
