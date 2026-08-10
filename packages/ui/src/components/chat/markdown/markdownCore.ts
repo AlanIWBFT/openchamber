@@ -4,6 +4,7 @@ import katex from 'katex';
 import DOMPurify from 'dompurify';
 import { buildAgentMentionUrl, parseAgentHref, parseSkillHref } from '@/lib/messages/inlineMessageLinks';
 import { isVSCodeRuntime } from '@/lib/desktop';
+import { HighlightResultCache, stringPairSize } from './highlightResultCache';
 import { highlightCodeInWorker } from './markdown-worker';
 import { escapeRawMarkdownHtml, MARKDOWN_FORBIDDEN_TAGS } from './markdownSecurity';
 
@@ -317,11 +318,23 @@ const sanitize = (html: string): string => {
 
 
 // ---------------------------------------------------------------------------
-// Per-block HTML cache (LRU, mirrors OpenCode's checksum cache)
+// Per-block HTML cache (content-addressed LRU)
 // ---------------------------------------------------------------------------
+//
+// Keyed by content hash + mode + highlight flag — NOT by renderer instance id.
+// `SimpleMarkdownRenderer` historically used a shared `simple:${variant}` key,
+// so every same-variant instance fought over one cache slot and re-highlighted
+// unchanged content on every pass (openchamber/openchamber#2769). Content
+// addressing makes identical blocks share one entry and stops that thrash.
+// Bounds are high enough for long sessions; byte cap keeps memory bounded.
 
-const CACHE_MAX = 240;
-const htmlCache = new Map<string, { hash: string; html: string }>();
+const HTML_CACHE_MAX_ENTRIES = 2000;
+const HTML_CACHE_MAX_BYTES = 24 * 1024 * 1024;
+
+const htmlCache = new HighlightResultCache<string>(
+  { maxEntries: HTML_CACHE_MAX_ENTRIES, maxBytes: HTML_CACHE_MAX_BYTES },
+  stringPairSize,
+);
 
 // FNV-1a 32-bit hash of the block content.
 const hash = (value: string): string => {
@@ -333,12 +346,16 @@ const hash = (value: string): string => {
   return (h >>> 0).toString(36);
 };
 
-const touch = (key: string, entry: { hash: string; html: string }): void => {
-  htmlCache.delete(key);
-  htmlCache.set(key, entry);
-  if (htmlCache.size <= CACHE_MAX) return;
-  const oldest = htmlCache.keys().next().value;
-  if (oldest) htmlCache.delete(oldest);
+/** Content-addressed cache key for a markdown block (exported for tests). */
+export const markdownBlockCacheKey = (
+  contentHash: string,
+  mode: MarkdownBlock['mode'],
+  highlight: boolean,
+): string => `${contentHash}:${mode}:${highlight ? 1 : 0}`;
+
+/** Test-only: clear the render HTML cache between cases. */
+export const resetMarkdownHtmlCacheForTests = (): void => {
+  htmlCache.clear();
 };
 
 const parseBlock = async (block: MarkdownBlock): Promise<string> => {
@@ -377,27 +394,31 @@ export type RenderedBlock = {
  * splits into blocks, caches per-block, heals incomplete syntax. Returning
  * blocks (instead of one joined string) lets the renderer re-morph only the
  * block that changed, keeping per-step streaming cost ~O(last block).
+ *
+ * `cacheKey` is retained for call-site compatibility / debugging; the HTML
+ * cache itself is content-addressed so distinct renderers with identical
+ * blocks share results and cannot evict each other by identity collision.
  */
 export const renderMarkdownBlocks = async (
   text: string,
   streaming: boolean,
   cacheKey: string,
 ): Promise<RenderedBlock[]> => {
+  // Retained for call-site compatibility / debugging; lookup is content-addressed.
+  void cacheKey;
   if (!text) return [];
 
   const blocks = streamBlocks(text, streaming);
   return Promise.all(
-    blocks.map(async (block, index) => {
+    blocks.map(async (block) => {
       const contentHash = hash(block.raw);
-      const id = `${contentHash}:${block.mode}:${block.highlight ? 1 : 0}`;
-      const key = `${cacheKey}:${index}:${block.mode}`;
-      const cached = htmlCache.get(key);
-      if (cached && cached.hash === contentHash) {
-        touch(key, cached);
-        return { id, html: cached.html };
+      const id = markdownBlockCacheKey(contentHash, block.mode, block.highlight);
+      const cached = htmlCache.get(id);
+      if (cached !== undefined) {
+        return { id, html: cached };
       }
       const html = await parseBlock(block);
-      touch(key, { hash: contentHash, html });
+      htmlCache.set(id, html);
       return { id, html };
     }),
   );
