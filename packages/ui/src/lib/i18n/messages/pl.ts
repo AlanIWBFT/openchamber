@@ -3781,6 +3781,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.modelControls.agentFavoriteAdd': 'Dodaj do ulubionych. Gdy są ulubione, Tab przełącza tylko między nimi',
   'chat.toolPart.unifiedExec.shellCommand': 'Polecenie powłoki',
   'chat.toolPart.unifiedExec.processInput': 'Dane wejściowe procesu',
+  'chat.toolPart.unifiedExec.processOutput': 'Dane wyjściowe procesu',
   'chat.toolPart.unifiedExec.processTermination': 'Zakończenie procesu',
   'chat.toolPart.unifiedExec.status.error': 'Błąd',
   'chat.toolPart.unifiedExec.status.errorWithDuration': 'Błąd · {duration}',

@@ -3776,6 +3776,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.modelControls.agentFavoriteAdd': '加入最愛。有最愛時，Tab 只在最愛之間切換',
   'chat.toolPart.unifiedExec.shellCommand': 'Shell 命令',
   'chat.toolPart.unifiedExec.processInput': '程序輸入',
+  'chat.toolPart.unifiedExec.processOutput': '程序輸出',
   'chat.toolPart.unifiedExec.processTermination': '程序終止',
   'chat.toolPart.unifiedExec.status.error': '錯誤',
   'chat.toolPart.unifiedExec.status.errorWithDuration': '錯誤 · {duration}',

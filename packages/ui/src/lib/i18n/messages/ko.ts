@@ -3776,6 +3776,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.modelControls.agentFavoriteAdd': '즐겨찾기에 추가. 즐겨찾기가 있으면 Tab은 그 안에서만 전환합니다',
   'chat.toolPart.unifiedExec.shellCommand': '셸 명령',
   'chat.toolPart.unifiedExec.processInput': '프로세스 입력',
+  'chat.toolPart.unifiedExec.processOutput': '프로세스 출력',
   'chat.toolPart.unifiedExec.processTermination': '프로세스 종료',
   'chat.toolPart.unifiedExec.status.error': '오류',
   'chat.toolPart.unifiedExec.status.errorWithDuration': '오류 · {duration}',

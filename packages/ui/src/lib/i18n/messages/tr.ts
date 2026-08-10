@@ -24,6 +24,7 @@ export const dict = {
   "chat.toolPart.readDirectory": "Dizini oku",
   "chat.toolPart.unifiedExec.shellCommand": "Kabuk komutu",
   "chat.toolPart.unifiedExec.processInput": "Süreç girdisi",
+  "chat.toolPart.unifiedExec.processOutput": "Süreç çıktısı",
   "chat.toolPart.unifiedExec.processTermination": "Süreci sonlandırma",
   "chat.toolPart.unifiedExec.status.error": "Hata",
   "chat.toolPart.unifiedExec.status.errorWithDuration": "Hata {duration}",
