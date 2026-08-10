@@ -7,6 +7,7 @@
 - Chat: queued messages no longer send into a response that is still streaming, and tool cards left running by an interrupted response settle instead of remaining stuck (thanks to @makeittech).
 - Chat: shell command output is expanded by default, and adding a message to context returns focus to the composer (thanks to @pascalandr, @makeittech).
 - Chat: fresh messages no longer replay their entry animation after they have already been shown (thanks to @makeittech).
+- Chat: the composer caret is now easier to see.
 - MCP: authorization now handles browser callbacks more reliably, settings distinguish available and unavailable servers more clearly, and failed connections expose a retry action.
 - Usage: added xAI quota reporting (thanks to @iamhenry).
 - Terminal: default tab names remain unique after tabs are closed, and Escape reaches terminal applications instead of closing the context panel (thanks to @makeittech).
@@ -15,6 +16,7 @@
 - Notebooks: notebook links now open in the notebook editor when a compatible extension is installed (thanks to @TTTPOB).
 - Settings: rapid edits to notification templates no longer overwrite one another, and the collapsed-user-message preference now persists correctly (thanks to @AmanTahiliani, @pascalandr).
 - Security: updated archive extraction to address GHSA-xcpc-8h2w-3j85 (thanks to @mel0nyrame).
+- UI: dialogs, dropdowns, popovers, and tooltips now use consistent glass styling.
 
 ## [1.18.1] - 2026-08-04
 
