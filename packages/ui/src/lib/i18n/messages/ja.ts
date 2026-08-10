@@ -3088,6 +3088,7 @@ export const dict: Record<I18nKey, string> = {
   'quota.window.premiumInteractions': 'プレミアムインタラクション',
   'chat.toolPart.unifiedExec.shellCommand': 'シェルコマンド',
   'chat.toolPart.unifiedExec.processInput': 'プロセス入力',
+  'chat.toolPart.unifiedExec.processOutput': 'プロセス出力',
   'chat.toolPart.unifiedExec.processTermination': 'プロセス終了',
   'chat.toolPart.unifiedExec.status.error': 'エラー',
   'chat.toolPart.unifiedExec.status.errorWithDuration': 'エラー · {duration}',
