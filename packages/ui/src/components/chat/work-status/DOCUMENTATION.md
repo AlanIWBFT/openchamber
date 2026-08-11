@@ -50,10 +50,9 @@ exactly as it already does when the context panel opens.
   `WORK_STATUS_PANEL_WIDTH` of panel.
 
 `ChatContainer` additionally suppresses it in mini-chat and in expanded-input
-mode, and the panel does not appear on a new-session draft: that branch returns
-its own layout before the one that hosts the panel. The repository readouts
-would apply there — branch and working-tree state inform what to ask for — so
-this is a gap worth closing rather than a decision.
+mode. It remains available on a new-session draft: when the draft targets a
+project or pending worktree, the panel uses that directory for project, MCP,
+and usage readouts before a session exists.
 
 `rowRef` is a **callback ref, not an object ref**. An object ref gives no signal
 when the node attaches, so the measuring effect read `.current`, found nothing
