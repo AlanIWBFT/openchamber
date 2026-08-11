@@ -1117,18 +1117,14 @@ const SimpleMarkdownRendererImpl: React.FC<{
 
   const syntaxVars = React.useMemo(() => getMarkdownSyntaxVars(currentTheme), [currentTheme]);
   const ctx = useDecorateContext(currentTheme, false, undefined, mermaidControls);
-  // Content-addressed render cache (see markdownCore) ignores this string for
-  // lookup; keep a stable per-content key so effect deps stay aligned with text.
-  const cacheKey = React.useMemo(
-    () => `simple:${variant}:${renderedContent.length}:${renderedContent.slice(0, 64)}`,
-    [variant, renderedContent],
-  );
 
   useMorphdomMarkdown({
     containerRef,
     text: renderedContent,
     streaming: false,
-    cacheKey,
+    // Identity is unused for cache lookup (content-addressed in markdownCore);
+    // keep a stable per-variant key for effect deps alongside `text`.
+    cacheKey: `simple:${variant}`,
     syntaxVars,
     ctx,
   });

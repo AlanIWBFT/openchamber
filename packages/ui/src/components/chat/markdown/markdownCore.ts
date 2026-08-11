@@ -4,7 +4,7 @@ import katex from 'katex';
 import DOMPurify from 'dompurify';
 import { buildAgentMentionUrl, parseAgentHref, parseSkillHref } from '@/lib/messages/inlineMessageLinks';
 import { isVSCodeRuntime } from '@/lib/desktop';
-import { HighlightResultCache, stringPairSize } from './highlightResultCache';
+import { contentFingerprint, HighlightResultCache, utf16Bytes } from './highlightResultCache';
 import { highlightCodeInWorker } from './markdown-worker';
 import { escapeRawMarkdownHtml, MARKDOWN_FORBIDDEN_TAGS } from './markdownSecurity';
 
@@ -254,32 +254,37 @@ const highlightCodeBlocks = async (html: string): Promise<string> => {
 
   const lineLimit = isVSCodeRuntime() ? VSCODE_CODE_HIGHLIGHT_LINE_LIMIT : CODE_HIGHLIGHT_LINE_LIMIT;
 
-  let result = html;
-  for (const match of matches) {
-    const [full, rawLang, escapedCode] = match;
-    const requested = (rawLang || 'text').toLowerCase();
-    // Leave mermaid fences untouched so the decorate pass can render them as
-    // diagrams (highlighting would strip the `language-mermaid` class).
-    if (requested === 'mermaid') continue;
+  // Highlight all eligible fences concurrently — sequential await was O(n)
+  // worker round-trips for messages with multiple code blocks.
+  const replacements = await Promise.all(
+    matches.map(async (match) => {
+      const [full, rawLang, escapedCode] = match;
+      const requested = (rawLang || 'text').toLowerCase();
+      // Leave mermaid fences untouched so the decorate pass can render them as
+      // diagrams (highlighting would strip the `language-mermaid` class).
+      if (requested === 'mermaid') return null;
 
-    const code = unescapeHtml(escapedCode ?? '');
+      const code = unescapeHtml(escapedCode ?? '');
 
-    // Oversized block: skip highlight, keep plain code but stamp the language.
-    if (exceedsLineLimit(code, lineLimit)) {
-      result = result.replace(full, () => full.replace('<pre', `<pre data-md-lang="${requested}"`));
-      continue;
-    }
+      // Oversized block: skip highlight, keep plain code but stamp the language.
+      if (exceedsLineLimit(code, lineLimit)) {
+        return { full, next: full.replace('<pre', `<pre data-md-lang="${requested}"`) };
+      }
 
-    // Tokenize off the main thread. On failure the worker resolves to null and
-    // we keep the original escaped <pre><code> (no main-thread highlight).
-    const highlighted = await highlightCodeInWorker(code, requested);
-    if (highlighted) {
+      // Tokenize off the main thread. On failure the worker resolves to null and
+      // we keep the original escaped <pre><code> (no main-thread highlight).
+      const highlighted = await highlightCodeInWorker(code, requested);
+      if (!highlighted) return null;
       // Stamp the language so the decorate pass can show a header label.
-      const stamped = highlighted.replace(/^<pre/, `<pre data-md-lang="${requested}"`);
-      result = result.replace(full, () => stamped);
-    }
-  }
+      return { full, next: highlighted.replace(/^<pre/, `<pre data-md-lang="${requested}"`) };
+    }),
+  );
 
+  let result = html;
+  for (const replacement of replacements) {
+    if (!replacement) continue;
+    result = result.replace(replacement.full, () => replacement.next);
+  }
   return result;
 };
 
@@ -331,20 +336,10 @@ const sanitize = (html: string): string => {
 const HTML_CACHE_MAX_ENTRIES = 2000;
 const HTML_CACHE_MAX_BYTES = 24 * 1024 * 1024;
 
-const htmlCache = new HighlightResultCache<string>(
-  { maxEntries: HTML_CACHE_MAX_ENTRIES, maxBytes: HTML_CACHE_MAX_BYTES },
-  stringPairSize,
-);
-
-// FNV-1a 32-bit hash of the block content.
-const hash = (value: string): string => {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < value.length; i += 1) {
-    h ^= value.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(36);
-};
+const htmlCache = new HighlightResultCache<string>({
+  maxEntries: HTML_CACHE_MAX_ENTRIES,
+  maxBytes: HTML_CACHE_MAX_BYTES,
+});
 
 /** Content-addressed cache key for a markdown block (exported for tests). */
 export const markdownBlockCacheKey = (
@@ -411,14 +406,14 @@ export const renderMarkdownBlocks = async (
   const blocks = streamBlocks(text, streaming);
   return Promise.all(
     blocks.map(async (block) => {
-      const contentHash = hash(block.raw);
+      const contentHash = contentFingerprint(block.raw);
       const id = markdownBlockCacheKey(contentHash, block.mode, block.highlight);
       const cached = htmlCache.get(id);
       if (cached !== undefined) {
         return { id, html: cached };
       }
       const html = await parseBlock(block);
-      htmlCache.set(id, html);
+      htmlCache.set(id, html, utf16Bytes(id) + utf16Bytes(html));
       return { id, html };
     }),
   );

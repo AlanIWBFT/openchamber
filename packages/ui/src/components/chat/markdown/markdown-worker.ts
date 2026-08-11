@@ -1,8 +1,9 @@
 import MarkdownShikiWorkerUrl from './markdown-shiki.worker.ts?worker&url';
 import {
+  contentFingerprint,
+  estimateTokenRunsBytes,
   HighlightResultCache,
-  stringLinesSize,
-  stringPairSize,
+  utf16Bytes,
 } from './highlightResultCache';
 import type { MarkdownTokenRun, MarkdownWorkerRequest, MarkdownWorkerResponse } from './markdown-worker-protocol';
 
@@ -12,10 +13,11 @@ import type { MarkdownTokenRun, MarkdownWorkerRequest, MarkdownWorkerResponse } 
 // tokenization error) the promise resolves to `null` and the caller keeps the
 // escaped plain-text code — highlighting never falls back onto the main thread.
 //
-// Results are memoized by exact source (+ lang / theme). Unchanged content must
-// not re-enter the worker — that was the sustained ~40 msg/s re-highlight load
-// in openchamber/openchamber#2769. In-flight requests with the same key coalesce
-// so remount storms share one round-trip.
+// Results are memoized by content fingerprint (+ lang / theme). Unchanged
+// content must not re-enter the worker — that was the sustained ~40 msg/s
+// re-highlight load in openchamber/openchamber#2769. In-flight requests with
+// the same key coalesce so remount storms share one round-trip. Cache keys are
+// fingerprints (not full source) so large files are not duplicated in the Map.
 
 type PendingResolver = (response: MarkdownWorkerResponse | null) => void;
 
@@ -27,17 +29,10 @@ type CachedHighlight =
 const CLIENT_CACHE_MAX_ENTRIES = 2000;
 const CLIENT_CACHE_MAX_BYTES = 24 * 1024 * 1024;
 
-const cachedHighlightSize = (key: string, value: CachedHighlight): number => {
-  if (value.type === 'highlight') return stringPairSize(key, value.html);
-  if (value.type === 'highlightLines') return stringLinesSize(key, value.lines);
-  // Token runs: approximate as JSON length of the lines payload.
-  return stringPairSize(key, JSON.stringify(value.lines));
-};
-
-const resultCache = new HighlightResultCache<CachedHighlight>(
-  { maxEntries: CLIENT_CACHE_MAX_ENTRIES, maxBytes: CLIENT_CACHE_MAX_BYTES },
-  cachedHighlightSize,
-);
+const resultCache = new HighlightResultCache<CachedHighlight>({
+  maxEntries: CLIENT_CACHE_MAX_ENTRIES,
+  maxBytes: CLIENT_CACHE_MAX_BYTES,
+});
 
 const inflight = new Map<string, Promise<CachedHighlight | null>>();
 
@@ -47,6 +42,17 @@ const pending = new Map<number, PendingResolver>();
 // Theme names whose full definition we've already shipped to the live worker, so
 // repeat tokenization sends only the name (not the whole theme object) again.
 const sentThemes = new Set<string>();
+
+const entryBytes = (key: string, value: CachedHighlight): number => {
+  const keyBytes = utf16Bytes(key);
+  if (value.type === 'highlight') return keyBytes + utf16Bytes(value.html);
+  if (value.type === 'highlightLines') {
+    let total = keyBytes;
+    for (const line of value.lines) total += utf16Bytes(line);
+    return total;
+  }
+  return keyBytes + estimateTokenRunsBytes(value.lines);
+};
 
 const failAll = (): void => {
   pending.forEach((resolve) => resolve(null));
@@ -102,6 +108,11 @@ const coalesce = (
   return pendingRequest;
 };
 
+const cacheKeyFor = (kind: string, lang: string, code: string, themeName?: string): string => {
+  const fp = contentFingerprint(code);
+  return themeName === undefined ? `${kind}:${lang}:${fp}` : `${kind}:${themeName}:${lang}:${fp}`;
+};
+
 /** Test-only: clear client-side highlight memoization. */
 export const resetMarkdownWorkerClientCacheForTests = (): void => {
   resultCache.clear();
@@ -113,7 +124,7 @@ export const resetMarkdownWorkerClientCacheForTests = (): void => {
  * or `null` if highlighting is unavailable or failed (caller keeps plain code).
  */
 export const highlightCodeInWorker = async (code: string, lang: string): Promise<string | null> => {
-  const key = `highlight:${lang}:${code}`;
+  const key = cacheKeyFor('highlight', lang, code);
   const cached = resultCache.get(key);
   if (cached?.type === 'highlight') return cached.html;
 
@@ -121,7 +132,7 @@ export const highlightCodeInWorker = async (code: string, lang: string): Promise
     const response = await request((id) => ({ type: 'highlight', id, code, lang }));
     if (response?.type !== 'highlight') return null;
     const entry: CachedHighlight = { type: 'highlight', html: response.html };
-    resultCache.set(key, entry);
+    resultCache.set(key, entry, entryBytes(key, entry));
     return entry;
   });
   return result?.type === 'highlight' ? result.html : null;
@@ -133,7 +144,7 @@ export const highlightCodeInWorker = async (code: string, lang: string): Promise
  * round-trip instead of one per line. Resolves to `null` on failure.
  */
 export const highlightLinesInWorker = async (code: string, lang: string): Promise<string[] | null> => {
-  const key = `highlightLines:${lang}:${code}`;
+  const key = cacheKeyFor('highlightLines', lang, code);
   const cached = resultCache.get(key);
   if (cached?.type === 'highlightLines') return cached.lines;
 
@@ -141,7 +152,7 @@ export const highlightLinesInWorker = async (code: string, lang: string): Promis
     const response = await request((id) => ({ type: 'highlightLines', id, code, lang }));
     if (response?.type !== 'highlightLines') return null;
     const entry: CachedHighlight = { type: 'highlightLines', lines: response.lines };
-    resultCache.set(key, entry);
+    resultCache.set(key, entry, entryBytes(key, entry));
     return entry;
   });
   return result?.type === 'highlightLines' ? result.lines : null;
@@ -159,7 +170,7 @@ export const highlightTokensInWorker = async (
   themeName: string,
   theme: unknown,
 ): Promise<MarkdownTokenRun[][] | null> => {
-  const key = `highlightTokens:${themeName}:${lang}:${code}`;
+  const key = cacheKeyFor('highlightTokens', lang, code, themeName);
   const cached = resultCache.get(key);
   if (cached?.type === 'highlightTokens') return cached.lines;
 
@@ -176,7 +187,7 @@ export const highlightTokensInWorker = async (
     if (response?.type !== 'highlightTokens') return null;
     sentThemes.add(themeName);
     const entry: CachedHighlight = { type: 'highlightTokens', lines: response.lines };
-    resultCache.set(key, entry);
+    resultCache.set(key, entry, entryBytes(key, entry));
     return entry;
   });
   return result?.type === 'highlightTokens' ? result.lines : null;
