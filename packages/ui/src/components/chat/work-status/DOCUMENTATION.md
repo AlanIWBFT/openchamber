@@ -171,7 +171,7 @@ from aggregating message summaries, not from `Session.summary`.
 
 Ordering is by durability, not category:
 
-1. **Session** (goal, context, cost), **Repository** (attention, branch,
+1. **Session** (goal, context, cost), **Project** (attention, branch,
    changes, PR, checks) and **Usage** — true for as long as the session is
    open. Usage sits here rather than lower down because a spent quota stops the
    work outright;

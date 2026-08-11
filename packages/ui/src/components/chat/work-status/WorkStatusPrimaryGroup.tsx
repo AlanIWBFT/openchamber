@@ -242,7 +242,7 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
 
       {hasRepository ? (
         <WorkStatusSection
-          title={t('chat.workStatus.section.repository')}
+          title={t('chat.workStatus.section.project')}
           summary={projectLabel}
         >
           {attentionLabel ? <WorkStatusCallout>{attentionLabel}</WorkStatusCallout> : null}

@@ -2962,7 +2962,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.workStatus.mcp.failed': '失敗',
   'chat.workStatus.pinned.unavailable': 'ピン留めしたメッセージ',
   'chat.workStatus.section.session': 'セッション',
-  'chat.workStatus.section.repository': 'リポジトリ',
+  'chat.workStatus.section.project': 'プロジェクト',
   'chat.workStatus.section.subagents': 'サブエージェント',
   'chat.workStatus.section.mcp': 'MCP',
   'chat.workStatus.section.pinned': 'ピン留めしたメッセージ',
