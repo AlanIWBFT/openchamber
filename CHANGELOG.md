@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Remote access: pairing QR codes created while the app is open through a public domain (for example behind a reverse proxy) now include that domain as a connection address, so paired phones can reach the server over it instead of relying only on the local network address or the relay.
 - Usage: quota limits enabled for display now refresh every three minutes on desktop, mobile, and VS Code, with a manual refresh action available at any time.
 
 ## [1.18.2] - 2026-08-10
