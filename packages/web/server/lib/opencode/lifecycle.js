@@ -53,8 +53,35 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     now = Date.now,
   } = deps;
 
+  const killProcessOnPortWin32 = (port) => {
+    try {
+      const result = spawnSync('netstat', ['-ano'], { encoding: 'utf8', timeout: 5000, windowsHide: true });
+      const output = result.stdout || '';
+      const myPid = process.pid;
+      const listeningPidPattern = /^\s*TCP\s+\S*:(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$/gim;
+      const pids = new Set();
+      let match;
+      while ((match = listeningPidPattern.exec(output)) !== null) {
+        if (Number.parseInt(match[1], 10) !== port) continue;
+        const pid = Number.parseInt(match[2], 10);
+        if (pid && pid !== myPid) pids.add(pid);
+      }
+      for (const pid of pids) {
+        try {
+          spawnSync('taskkill', ['/PID', String(pid), '/F'], { stdio: 'ignore', timeout: 3000, windowsHide: true });
+        } catch {
+        }
+      }
+    } catch {
+    }
+  };
+
   const killProcessOnPort = (port) => {
-    if (!port || process.platform === 'win32') return;
+    if (!port) return;
+    if (process.platform === 'win32') {
+      killProcessOnPortWin32(port);
+      return;
+    }
     try {
       const result = spawnSync('lsof', ['-ti', `:${port}`], { encoding: 'utf8', timeout: 5000, windowsHide: true });
       const output = result.stdout || '';
@@ -698,10 +725,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       }
 
       // The restart may have landed on a NEW port (the old one can remain
-      // occupied by an orphaned process, e.g. Windows killProcessOnPort is a
-      // no-op). Upstream event readers pinned to the old process would keep
-      // the UI silent forever, so rebind them to the current port. Best
-      // effort: a failure here must not fail the restart itself.
+      // occupied if killProcessOnPort/waitForPortRelease didn't free it in
+      // time, on any platform). Upstream event readers pinned to the old
+      // process would keep the UI silent forever, so rebind them to the
+      // current port. Best effort: a failure here must not fail the restart
+      // itself.
       try {
         onOpenCodeRestarted?.();
       } catch (error) {

@@ -2,11 +2,12 @@ import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const spawnMock = vi.fn();
+const spawnSyncMock = vi.fn();
 const recordStartupPerformanceMock = vi.fn();
 
 vi.mock('node:child_process', () => ({
   spawn: spawnMock,
-  spawnSync: vi.fn(),
+  spawnSync: spawnSyncMock,
 }));
 vi.mock('./startup-performance.js', () => ({
   recordStartupPerformance: recordStartupPerformanceMock,
@@ -20,6 +21,7 @@ const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   spawnMock.mockReset();
+  spawnSyncMock.mockReset();
   recordStartupPerformanceMock.mockReset();
   globalThis.fetch = originalFetch;
   if (typeof originalOpencodeBinary === 'string') {
@@ -611,5 +613,77 @@ describe('OpenCode lifecycle', () => {
 
     expect(spawnMock).toHaveBeenCalledTimes(2);
     await server.close();
+  });
+});
+
+describe('killProcessOnPort on Windows', () => {
+  const originalPlatform = process.platform;
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  const setPlatform = (platform) => {
+    Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+  };
+
+  const netstatOutput = (port, pid) => [
+    '',
+    'Active Connections',
+    '',
+    '  Proto  Local Address          Foreign Address        State           PID',
+    `  TCP    0.0.0.0:${port}            0.0.0.0:0              LISTENING       ${pid}`,
+    '',
+  ].join('\r\n');
+
+  it('force-kills the process listening on the target port via taskkill', () => {
+    setPlatform('win32');
+    const orphanPid = 54321;
+    spawnSyncMock.mockImplementation((cmd) => {
+      if (cmd === 'netstat') {
+        return { stdout: netstatOutput(45678, orphanPid) };
+      }
+      return { stdout: '' };
+    });
+
+    const runtime = createRuntime();
+    runtime.killProcessOnPort(45678);
+
+    expect(spawnSyncMock).toHaveBeenCalledWith('netstat', ['-ano'], expect.objectContaining({ windowsHide: true }));
+    expect(spawnSyncMock).toHaveBeenCalledWith(
+      'taskkill',
+      ['/PID', String(orphanPid), '/F'],
+      expect.objectContaining({ windowsHide: true })
+    );
+  });
+
+  it('never force-kills its own process id', () => {
+    setPlatform('win32');
+    spawnSyncMock.mockImplementation((cmd) => {
+      if (cmd === 'netstat') {
+        return { stdout: netstatOutput(45678, process.pid) };
+      }
+      return { stdout: '' };
+    });
+
+    const runtime = createRuntime();
+    runtime.killProcessOnPort(45678);
+
+    expect(spawnSyncMock).not.toHaveBeenCalledWith('taskkill', expect.anything(), expect.anything());
+  });
+
+  it('does nothing when no process is listening on the target port', () => {
+    setPlatform('win32');
+    spawnSyncMock.mockImplementation((cmd) => {
+      if (cmd === 'netstat') {
+        return { stdout: netstatOutput(9999, 54321) };
+      }
+      return { stdout: '' };
+    });
+
+    const runtime = createRuntime();
+    runtime.killProcessOnPort(45678);
+
+    expect(spawnSyncMock).not.toHaveBeenCalledWith('taskkill', expect.anything(), expect.anything());
   });
 });
