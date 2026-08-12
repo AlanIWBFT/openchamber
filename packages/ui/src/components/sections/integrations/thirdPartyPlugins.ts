@@ -7,6 +7,8 @@ export interface ThirdPartyPluginDefinition {
   packageName: string;
   providerId: string;
   icon: IconName;
+  /** Brand mark tint (e.g. Claude orange); neutral marks use text-foreground. */
+  brandClassName: string;
   nameKey: I18nKey;
   descriptionKey: I18nKey;
   homepage: string;
@@ -17,7 +19,8 @@ export const THIRD_PARTY_PLUGINS: readonly ThirdPartyPluginDefinition[] = [
     id: 'opencode-claude',
     packageName: '@otto-assistant/opencode-claude',
     providerId: 'claude-code',
-    icon: 'sparkling',
+    icon: 'claude-code',
+    brandClassName: 'text-[#D97757]',
     nameKey: 'settings.integrations.thirdParty.opencodeClaude.name',
     descriptionKey: 'settings.integrations.thirdParty.opencodeClaude.description',
     homepage: 'https://github.com/otto-assistant/opencode-claude',
@@ -26,7 +29,8 @@ export const THIRD_PARTY_PLUGINS: readonly ThirdPartyPluginDefinition[] = [
     id: 'opencode-commandcode',
     packageName: '@otto-assistant/opencode-commandcode',
     providerId: 'command-code',
-    icon: 'terminal-box',
+    icon: 'command-code',
+    brandClassName: 'text-foreground',
     nameKey: 'settings.integrations.thirdParty.opencodeCommandcode.name',
     descriptionKey: 'settings.integrations.thirdParty.opencodeCommandcode.description',
     homepage: 'https://github.com/otto-assistant/opencode-commandcode',
@@ -36,6 +40,7 @@ export const THIRD_PARTY_PLUGINS: readonly ThirdPartyPluginDefinition[] = [
     packageName: '@otto-assistant/opencode-cursor-oauth',
     providerId: 'cursor',
     icon: 'cursor',
+    brandClassName: 'text-foreground',
     nameKey: 'settings.integrations.thirdParty.opencodeCursorOauth.name',
     descriptionKey: 'settings.integrations.thirdParty.opencodeCursorOauth.description',
     homepage: 'https://github.com/otto-assistant/opencode-cursor',

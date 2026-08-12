@@ -315,7 +315,7 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
             className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[var(--interactive-hover)]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
           >
             <div className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-[var(--surface-muted)]">
-              <Icon name={plugin.icon} className="size-5 text-foreground" />
+              <Icon name={plugin.icon} className={cn('size-5', plugin.brandClassName)} />
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold text-foreground">{t(plugin.nameKey)}</div>
