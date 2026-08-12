@@ -312,7 +312,6 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
         || presentation.status === 'provider-unavailable'
         ? 'bg-[var(--status-warning)]/15 text-[var(--status-warning)]'
         : 'bg-[var(--surface-muted)] text-muted-foreground';
-    const hasUpdate = presentation.status === 'update-available';
 
     const primaryLabel = {
       install: t('settings.integrations.thirdParty.actions.install'),
@@ -363,20 +362,12 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
             />
           </button>
           <CollapsibleContent className="border-t border-[var(--interactive-border)] px-4 py-4">
-            <div className="space-y-4">
-              <div
-                className={cn(
-                  'rounded-lg border border-border/60 bg-background/50 px-3 py-2.5',
-                  hasUpdate && 'border-[var(--status-warning)]/35 bg-[var(--status-warning)]/10',
-                )}
-              >
-                <p aria-live="polite" className="text-sm font-medium text-foreground">{status}</p>
-                {state.projectEntries.length > 0 ? (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t('settings.integrations.thirdParty.status.projectInstalled')}
-                  </p>
-                ) : null}
-              </div>
+            <div className="space-y-3">
+              {state.projectEntries.length > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {t('settings.integrations.thirdParty.status.projectInstalled')}
+                </p>
+              ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
