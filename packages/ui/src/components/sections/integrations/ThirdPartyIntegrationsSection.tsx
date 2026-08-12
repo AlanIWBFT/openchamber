@@ -52,7 +52,6 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
   const {
     entries,
     registryInfo,
-    isLoadingRegistry,
     loadPlugins,
     loadRegistryInfo,
     createEntry,
@@ -62,7 +61,6 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
     useShallow((state) => ({
       entries: state.entries,
       registryInfo: state.registryInfo,
-      isLoadingRegistry: state.isLoadingRegistry,
       loadPlugins: state.loadPlugins,
       loadRegistryInfo: state.loadRegistryInfo,
       createEntry: state.createEntry,
@@ -71,7 +69,6 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
     })),
   );
 
-  const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [registryLoadFailed, setRegistryLoadFailed] = React.useState(false);
   const [pendingAction, setPendingAction] = React.useState<{
     pluginId: string;
@@ -87,26 +84,21 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
   const [openPluginIds, setOpenPluginIds] = React.useState<ReadonlySet<string>>(() => new Set());
 
   const refresh = React.useCallback(async () => {
-    setIsRefreshing(true);
-    try {
-      const pluginsLoaded = await loadPlugins({ force: true });
-      if (!pluginsLoaded) {
-        setRegistryLoadFailed(true);
-        return;
-      }
-
-      const latestEntries = usePluginsStore.getState().entries;
-      const specs = new Set(THIRD_PARTY_PLUGINS.map((plugin) => plugin.packageName));
-      for (const entry of latestEntries) {
-        if (THIRD_PARTY_PLUGINS.some((plugin) => entry.spec === plugin.packageName || entry.spec.startsWith(`${plugin.packageName}@`))) {
-          specs.add(entry.spec);
-        }
-      }
-      const registryLoaded = await loadRegistryInfo({ specs: [...specs], force: true });
-      setRegistryLoadFailed(!registryLoaded);
-    } finally {
-      setIsRefreshing(false);
+    const pluginsLoaded = await loadPlugins({ force: true });
+    if (!pluginsLoaded) {
+      setRegistryLoadFailed(true);
+      return;
     }
+
+    const latestEntries = usePluginsStore.getState().entries;
+    const specs = new Set(THIRD_PARTY_PLUGINS.map((plugin) => plugin.packageName));
+    for (const entry of latestEntries) {
+      if (THIRD_PARTY_PLUGINS.some((plugin) => entry.spec === plugin.packageName || entry.spec.startsWith(`${plugin.packageName}@`))) {
+        specs.add(entry.spec);
+      }
+    }
+    const registryLoaded = await loadRegistryInfo({ specs: [...specs], force: true });
+    setRegistryLoadFailed(!registryLoaded);
   }, [loadPlugins, loadRegistryInfo]);
 
   React.useEffect(() => {
@@ -383,18 +375,6 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
                   ) : null}
                   {primaryLabel}
                 </Button>
-                {registryUnavailable ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void refresh()}
-                    disabled={isRefreshing || isLoadingRegistry || isPending}
-                  >
-                    {isRefreshing || isLoadingRegistry ? <Icon name="loader-4" className="size-3.5 animate-spin" /> : null}
-                    {t('settings.integrations.thirdParty.actions.refresh')}
-                  </Button>
-                ) : null}
                 <Button
                   type="button"
                   size="sm"
@@ -431,18 +411,6 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
         info={t('settings.integrations.thirdParty.info')}
         divider={false}
         settingsItem="integrations.third-party"
-        headerAction={(
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            onClick={() => void refresh()}
-            disabled={isRefreshing || isLoadingRegistry}
-          >
-            {isRefreshing || isLoadingRegistry ? <Icon name="loader-4" className="size-3.5 animate-spin" /> : null}
-            {t('settings.integrations.thirdParty.actions.refresh')}
-          </Button>
-        )}
         contentClassName="space-y-3"
       >
         {THIRD_PARTY_PLUGINS.map(renderPlugin)}
