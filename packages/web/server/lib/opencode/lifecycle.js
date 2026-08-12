@@ -55,15 +55,25 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
   const killProcessOnPortWin32 = (port) => {
     try {
-      const result = spawnSync('netstat', ['-ano'], { encoding: 'utf8', timeout: 5000, windowsHide: true });
+      // Get-NetTCPConnection reads the same locale-independent WinNT API
+      // netstat's display layer translates (e.g. "LISTENING" renders as
+      // "ABHÖREN"/"ÉCOUTE"/"ESCUTANDO" on non-English Windows), so this
+      // works regardless of the OS display language.
+      const result = spawnSync(
+        'powershell',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `Get-NetTCPConnection -State Listen -LocalPort ${Number.parseInt(port, 10)} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess`,
+        ],
+        { encoding: 'utf8', timeout: 5000, windowsHide: true }
+      );
       const output = result.stdout || '';
       const myPid = process.pid;
-      const listeningPidPattern = /^\s*TCP\s+\S*:(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$/gim;
       const pids = new Set();
-      let match;
-      while ((match = listeningPidPattern.exec(output)) !== null) {
-        if (Number.parseInt(match[1], 10) !== port) continue;
-        const pid = Number.parseInt(match[2], 10);
+      for (const line of output.split(/\r?\n/)) {
+        const pid = Number.parseInt(line.trim(), 10);
         if (pid && pid !== myPid) pids.add(pid);
       }
       for (const pid of pids) {

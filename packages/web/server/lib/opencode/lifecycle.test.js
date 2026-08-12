@@ -627,21 +627,12 @@ describe('killProcessOnPort on Windows', () => {
     Object.defineProperty(process, 'platform', { value: platform, configurable: true });
   };
 
-  const netstatOutput = (port, pid) => [
-    '',
-    'Active Connections',
-    '',
-    '  Proto  Local Address          Foreign Address        State           PID',
-    `  TCP    0.0.0.0:${port}            0.0.0.0:0              LISTENING       ${pid}`,
-    '',
-  ].join('\r\n');
-
   it('force-kills the process listening on the target port via taskkill', () => {
     setPlatform('win32');
     const orphanPid = 54321;
     spawnSyncMock.mockImplementation((cmd) => {
-      if (cmd === 'netstat') {
-        return { stdout: netstatOutput(45678, orphanPid) };
+      if (cmd === 'powershell') {
+        return { stdout: `${orphanPid}\r\n` };
       }
       return { stdout: '' };
     });
@@ -649,7 +640,11 @@ describe('killProcessOnPort on Windows', () => {
     const runtime = createRuntime();
     runtime.killProcessOnPort(45678);
 
-    expect(spawnSyncMock).toHaveBeenCalledWith('netstat', ['-ano'], expect.objectContaining({ windowsHide: true }));
+    expect(spawnSyncMock).toHaveBeenCalledWith(
+      'powershell',
+      expect.arrayContaining([expect.stringContaining('-LocalPort 45678')]),
+      expect.objectContaining({ windowsHide: true })
+    );
     expect(spawnSyncMock).toHaveBeenCalledWith(
       'taskkill',
       ['/PID', String(orphanPid), '/F'],
@@ -660,8 +655,8 @@ describe('killProcessOnPort on Windows', () => {
   it('never force-kills its own process id', () => {
     setPlatform('win32');
     spawnSyncMock.mockImplementation((cmd) => {
-      if (cmd === 'netstat') {
-        return { stdout: netstatOutput(45678, process.pid) };
+      if (cmd === 'powershell') {
+        return { stdout: `${process.pid}\r\n` };
       }
       return { stdout: '' };
     });
@@ -675,8 +670,8 @@ describe('killProcessOnPort on Windows', () => {
   it('does nothing when no process is listening on the target port', () => {
     setPlatform('win32');
     spawnSyncMock.mockImplementation((cmd) => {
-      if (cmd === 'netstat') {
-        return { stdout: netstatOutput(9999, 54321) };
+      if (cmd === 'powershell') {
+        return { stdout: '' };
       }
       return { stdout: '' };
     });
