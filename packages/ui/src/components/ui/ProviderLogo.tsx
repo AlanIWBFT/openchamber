@@ -1,8 +1,6 @@
 import React from 'react';
-import { Icon } from '@/components/icon/Icon';
 import { useProviderLogo } from '@/hooks/useProviderLogo';
 import { cn } from '@/lib/utils';
-import { getProviderLogoFallbackIcon } from './providerLogoFallback';
 
 interface ProviderLogoProps {
     providerId: string;
@@ -18,7 +16,6 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
     onError: externalOnError
 }) => {
     const { src, onError: handleInternalError, hasLogo } = useProviderLogo(providerId);
-    const fallbackIcon = getProviderLogoFallbackIcon(providerId);
 
     const handleError = React.useCallback(() => {
         handleInternalError();
@@ -26,7 +23,7 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
     }, [handleInternalError, externalOnError]);
 
     if (!hasLogo || !src) {
-        return fallbackIcon ? <Icon name={fallbackIcon} className={cn('text-muted-foreground', className)} /> : null;
+        return null;
     }
 
     return (

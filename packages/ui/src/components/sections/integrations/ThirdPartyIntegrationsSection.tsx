@@ -12,6 +12,7 @@ import {
 import { toast } from '@/components/ui';
 import { Icon } from '@/components/icon/Icon';
 import { SettingsSection } from '@/components/sections/shared/SettingsSection';
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import { useI18n } from '@/lib/i18n';
 import { openExternalUrl } from '@/lib/url';
 import { cn } from '@/lib/utils';
@@ -27,7 +28,6 @@ import {
   THIRD_PARTY_PLUGINS,
   type ThirdPartyPluginDefinition,
 } from './thirdPartyPlugins';
-import { IntegrationCard } from './IntegrationCard';
 
 type PendingAction = 'install' | 'update' | 'setup' | 'remove';
 
@@ -296,16 +296,26 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
       manage: t('settings.integrations.thirdParty.actions.managePlugins'),
     }[primaryAction];
 
+    const open = openPluginIds.has(plugin.id);
+
     return (
-      <IntegrationCard
+      <Collapsible
         key={plugin.id}
-        open={openPluginIds.has(plugin.id)}
-        onOpenChange={(open) => setPluginOpen(plugin.id, open)}
-        settingsItem={`integrations.third-party.${plugin.id}`}
-        header={(
-          <div className="flex min-w-0 flex-1 items-center gap-3">
+        open={open}
+        onOpenChange={(nextOpen) => setPluginOpen(plugin.id, nextOpen)}
+      >
+        <div
+          data-settings-item={`integrations.third-party.${plugin.id}`}
+          className="overflow-hidden rounded-xl border border-[var(--interactive-border)] bg-[var(--surface-elevated)]"
+        >
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setPluginOpen(plugin.id, !open)}
+            className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[var(--interactive-hover)]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
+          >
             <div className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-[var(--surface-muted)]">
-              <Icon name={plugin.icon} className={cn('size-5', plugin.brandClassName)} />
+              <Icon name={plugin.icon} className="size-5 text-foreground" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold text-foreground">{t(plugin.nameKey)}</div>
@@ -322,74 +332,79 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
             >
               {status}
             </span>
-          </div>
-        )}
-      >
-        <div className="space-y-4">
-          <div
-            className={cn(
-              'rounded-lg border border-border/60 bg-background/50 px-3 py-2.5',
-              hasUpdate && 'border-[var(--status-warning)]/35 bg-[var(--status-warning)]/10',
-            )}
-          >
-            <p aria-live="polite" className="text-sm font-medium text-foreground">{status}</p>
-            {state.projectEntries.length > 0 ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t('settings.integrations.thirdParty.status.projectInstalled')}
-              </p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={primaryAction === 'manage' ? 'outline' : 'default'}
-              onClick={() => void handlePrimaryAction(plugin)}
-              disabled={actionDisabled}
-            >
-              {isPending ? (
-                <Icon name="loader-4" className="size-3.5 animate-spin" />
-              ) : primaryAction === 'setup' ? (
-                <Icon name="plug-2" className="size-3.5" />
-              ) : null}
-              {primaryLabel}
-            </Button>
-            {registryUnavailable ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => void refresh()}
-                disabled={isRefreshing || isLoadingRegistry || isPending}
+            <Icon
+              name={open ? 'arrow-up-s' : 'arrow-down-s'}
+              className="size-4 shrink-0 text-muted-foreground"
+            />
+          </button>
+          <CollapsibleContent className="border-t border-[var(--interactive-border)] px-4 py-4">
+            <div className="space-y-4">
+              <div
+                className={cn(
+                  'rounded-lg border border-border/60 bg-background/50 px-3 py-2.5',
+                  hasUpdate && 'border-[var(--status-warning)]/35 bg-[var(--status-warning)]/10',
+                )}
               >
-                {isRefreshing || isLoadingRegistry ? <Icon name="loader-4" className="size-3.5 animate-spin" /> : null}
-                {t('settings.integrations.thirdParty.actions.refresh')}
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => void openExternalUrl(plugin.homepage)}
-            >
-              <Icon name="external-link" className="size-3.5" />
-              {t('settings.integrations.thirdParty.actions.docs')}
-            </Button>
-            {state.userEntry && !state.userEntryIsAmbiguous ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="destructive"
-                onClick={() => setRemoveTarget(plugin)}
-                disabled={isPending}
-              >
-                <Icon name="delete-bin" className="size-3.5" />
-                {t('settings.integrations.thirdParty.actions.remove')}
-              </Button>
-            ) : null}
-          </div>
+                <p aria-live="polite" className="text-sm font-medium text-foreground">{status}</p>
+                {state.projectEntries.length > 0 ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t('settings.integrations.thirdParty.status.projectInstalled')}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={primaryAction === 'manage' ? 'outline' : 'default'}
+                  onClick={() => void handlePrimaryAction(plugin)}
+                  disabled={actionDisabled}
+                >
+                  {isPending ? (
+                    <Icon name="loader-4" className="size-3.5 animate-spin" />
+                  ) : primaryAction === 'setup' ? (
+                    <Icon name="plug-2" className="size-3.5" />
+                  ) : null}
+                  {primaryLabel}
+                </Button>
+                {registryUnavailable ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void refresh()}
+                    disabled={isRefreshing || isLoadingRegistry || isPending}
+                  >
+                    {isRefreshing || isLoadingRegistry ? <Icon name="loader-4" className="size-3.5 animate-spin" /> : null}
+                    {t('settings.integrations.thirdParty.actions.refresh')}
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void openExternalUrl(plugin.homepage)}
+                >
+                  <Icon name="external-link" className="size-3.5" />
+                  {t('settings.integrations.thirdParty.actions.docs')}
+                </Button>
+                {state.userEntry && !state.userEntryIsAmbiguous ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => setRemoveTarget(plugin)}
+                    disabled={isPending}
+                  >
+                    <Icon name="delete-bin" className="size-3.5" />
+                    {t('settings.integrations.thirdParty.actions.remove')}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </CollapsibleContent>
         </div>
-      </IntegrationCard>
+      </Collapsible>
     );
   };
 
