@@ -933,6 +933,34 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['background', 'push'],
     isAvailable: (ctx) => ctx.isWeb && !ctx.isDesktop && !ctx.isVSCode,
   },
+
+  {
+    id: 'integrations.third-party',
+    page: 'integrations',
+    titleKey: 'settings.integrations.thirdParty.title',
+    keywords: ['plugin', 'provider', 'oauth', 'install', 'update', 'remove'],
+  },
+  {
+    id: 'integrations.third-party.opencode-claude',
+    page: 'integrations',
+    titleKey: 'settings.integrations.thirdParty.opencodeClaude.name',
+    descriptionKey: 'settings.integrations.thirdParty.opencodeClaude.description',
+    keywords: ['claude', 'anthropic', 'claude code', 'pro', 'max', 'agent sdk'],
+  },
+  {
+    id: 'integrations.third-party.opencode-commandcode',
+    page: 'integrations',
+    titleKey: 'settings.integrations.thirdParty.opencodeCommandcode.name',
+    descriptionKey: 'settings.integrations.thirdParty.opencodeCommandcode.description',
+    keywords: ['command code', 'commandcode', 'laguna', 'poolside', 'gateway'],
+  },
+  {
+    id: 'integrations.third-party.opencode-cursor-oauth',
+    page: 'integrations',
+    titleKey: 'settings.integrations.thirdParty.opencodeCursorOauth.name',
+    descriptionKey: 'settings.integrations.thirdParty.opencodeCursorOauth.description',
+    keywords: ['cursor', 'oauth', 'subscription', 'openai compatible'],
+  },
 ] as const;
 
 interface BuildSettingsSearchResultsOptions {
