@@ -6,6 +6,9 @@ const locales = ['en', 'de', 'fr', 'es', 'ja', 'pt-BR', 'uk', 'ko', 'pl', 'zh-CN
 const requiredKeys = [
   'settings.page.integrations.title',
   'settings.page.integrations.description',
+  'settings.integrations.messengers.title',
+  'settings.integrations.messengers.discord.name',
+  'settings.integrations.messengers.telegram.name',
   'settings.integrations.thirdParty.title',
   'settings.integrations.thirdParty.actions.install',
   'settings.integrations.thirdParty.actions.update',
