@@ -14,12 +14,32 @@ const MarkdownImageThumbnail: React.FC<{
   directory: string;
   onShowPopup?: (content: ToolPopupContent) => void;
 }> = ({ candidate, directory, onShowPopup }) => {
+  const thumbnailRef = React.useRef<HTMLButtonElement>(null);
+  const [shouldLoad, setShouldLoad] = React.useState(false);
   const [image, setImage] = React.useState<{
     url: string;
     status: 'loading' | 'ready' | 'error';
   }>({ url: '', status: 'loading' });
 
   React.useEffect(() => {
+    const thumbnail = thumbnailRef.current;
+    if (!thumbnail || shouldLoad) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setShouldLoad(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      setShouldLoad(true);
+      observer.disconnect();
+    }, { rootMargin: '200px' });
+    observer.observe(thumbnail);
+    return () => observer.disconnect();
+  }, [shouldLoad]);
+
+  React.useEffect(() => {
+    if (!shouldLoad) return;
     const controller = new AbortController();
     setImage({ url: '', status: 'loading' });
     void resolveMarkdownImageSource(candidate.source, directory, controller.signal)
@@ -30,7 +50,7 @@ const MarkdownImageThumbnail: React.FC<{
         if (!controller.signal.aborted) setImage({ url: '', status: 'error' });
       });
     return () => controller.abort();
-  }, [candidate.source, directory]);
+  }, [candidate.source, directory, shouldLoad]);
 
   const openPreview = React.useCallback(() => {
     if (image.status !== 'ready' || !onShowPopup) return;
@@ -45,6 +65,7 @@ const MarkdownImageThumbnail: React.FC<{
 
   return (
     <button
+      ref={thumbnailRef}
       type="button"
       className="w-[100px] shrink-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]"
       aria-label={candidate.filename}

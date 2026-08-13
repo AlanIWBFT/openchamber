@@ -68,6 +68,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   large inline image. A
   completed assistant message hydrates at most 12 unique image candidates,
   including persisted text parts that omit their optional part-level end time.
+  Thumbnail assets begin loading only when their gallery items approach the
+  viewport, so mounted historical messages do not eagerly read every image.
   Gallery clicks do not introduce or alter preview chrome: desktop and mobile
   both reuse the pre-existing attachment image preview overlay.
 - `read` and `skill` are **static navigation tools** and render via `StaticToolRow`.
