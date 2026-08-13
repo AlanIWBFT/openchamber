@@ -38,6 +38,7 @@ import { createMermaidViewerRegistry, MERMAID_BLOCK_SELECTOR, shouldRefreshMerma
 import {
   BLOCK_PATH_TOKEN_RE,
   isAbsoluteReferencePath,
+  localPathFromFileUrl,
   normalizeReferencePath,
   parseFileReference,
   type ParsedFileReference,
@@ -300,6 +301,10 @@ const unwrapBlockCodePathTokens = (container: HTMLElement): void => {
 const extractPathCandidateFromElement = (element: HTMLElement): string => {
   if (element.tagName.toLowerCase() === 'a') {
     const href = element.getAttribute('href')?.trim();
+    const fileUrlPath = href ? localPathFromFileUrl(href) : null;
+    if (fileUrlPath) {
+      return fileUrlPath;
+    }
     if (href && isLikelyFilePath(href)) {
       return href;
     }

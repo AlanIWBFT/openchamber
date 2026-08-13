@@ -11,7 +11,7 @@ mock.module('./markdown-worker', () => ({
   highlightCodeInWorker: async () => null,
 }));
 
-import { escapeRawMarkdownHtml, MARKDOWN_FORBIDDEN_TAGS } from './markdownSecurity';
+import { escapeRawMarkdownHtml, isLocalFileUrl, MARKDOWN_FORBIDDEN_TAGS } from './markdownSecurity';
 
 const { extractMarkdownImageCandidates, renderMarkdownSync } = await import('./markdownCore');
 const { resolveMarkdownImageSource } = await import('./markdownImageAssets');
@@ -28,6 +28,13 @@ describe('markdown sanitization', () => {
   test('forbids script and stylesheet elements as active content', () => {
     expect(MARKDOWN_FORBIDDEN_TAGS).toContain('script');
     expect(MARKDOWN_FORBIDDEN_TAGS).toContain('style');
+  });
+
+  test('allows only local file URLs through the sanitizer policy', () => {
+    expect(isLocalFileUrl('file:///private/tmp/report%20viewer.html')).toBe(true);
+    expect(isLocalFileUrl('file://localhost/private/tmp/REPORT.md')).toBe(true);
+    expect(isLocalFileUrl('file://remote-host/share/report.html')).toBe(false);
+    expect(isLocalFileUrl('javascript:alert(1)')).toBe(false);
   });
 });
 

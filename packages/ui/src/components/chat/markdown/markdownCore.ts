@@ -5,7 +5,7 @@ import DOMPurify from 'dompurify';
 import { buildAgentMentionUrl, parseAgentHref, parseSkillHref } from '@/lib/messages/inlineMessageLinks';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { highlightCodeInWorker } from './markdown-worker';
-import { escapeRawMarkdownHtml, MARKDOWN_FORBIDDEN_TAGS } from './markdownSecurity';
+import { escapeRawMarkdownHtml, isLocalFileUrl, MARKDOWN_FORBIDDEN_TAGS } from './markdownSecurity';
 
 const escapeAttr = (value: string): string =>
   value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -400,6 +400,10 @@ const ensureSanitizeHook = (): void => {
   if (sanitizeHookInstalled) return;
   if (typeof window === 'undefined' || !DOMPurify.isSupported) return;
   sanitizeHookInstalled = true;
+  DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+    if (!(node instanceof HTMLAnchorElement) || data.attrName !== 'href') return;
+    if (isLocalFileUrl(data.attrValue)) data.forceKeepAttr = true;
+  });
   DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     if (!(node instanceof HTMLAnchorElement)) return;
     if (node.target !== '_blank') return;
