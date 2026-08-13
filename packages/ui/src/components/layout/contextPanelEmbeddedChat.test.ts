@@ -128,6 +128,17 @@ describe('embedded session chat URL', () => {
     expect(new URL(second).searchParams.get('themeVariant')).toBe('dark');
   });
 
+  test('bootstraps subagent prompting before the embedded chat first renders', () => {
+    const src = buildEmbeddedSessionChatURL('ses_1', '/repo', false, {
+      mode: 'system',
+      lightThemeId: 'light-a',
+      darkThemeId: 'dark-a',
+      currentTheme: makeTheme('dark-a', 'dark'),
+    }, { allowPromptingSubagentSessions: true });
+
+    expect(new URL(src).searchParams.get('allowPromptingSubagentSessions')).toBe('1');
+  });
+
   test('rebuilds cached src when readOnly changes for an existing tab', () => {
     const cache = new Map<string, EmbeddedSessionChatURLCacheEntry>();
     const theme = {

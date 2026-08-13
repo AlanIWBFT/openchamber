@@ -2528,8 +2528,8 @@ export const ContextPanel: React.FC = () => {
       lightThemeId,
       darkThemeId,
       currentTheme,
-    });
-  }, [currentTheme, darkThemeId, directoryKey, lightThemeId, themeMode]);
+    }, { allowPromptingSubagentSessions });
+  }, [allowPromptingSubagentSessions, currentTheme, darkThemeId, directoryKey, lightThemeId, themeMode]);
 
   const activeChatSrc = activeChatTab && activeChatSessionID
     ? getEmbeddedChatSrc(activeChatTab.id, activeChatSessionID, activeChatTab.readOnly)
