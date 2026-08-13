@@ -37,7 +37,7 @@ const getCatalogPluginPresentation = (
   }
 ).getCatalogPluginPresentation;
 
-const claudePackage = '@otto-assistant/opencode-claude';
+const claudePackage = '@openchamber/opencode-claude';
 
 const entry = (spec: string, scope: PluginEntry['scope'] = 'user'): PluginEntry => ({
   id: `config:${scope}:${spec}`,
@@ -117,7 +117,31 @@ describe('third-party plugin catalog helpers', () => {
   test('matches only a package or its versioned spec', () => {
     expect(specMatchesPackage(claudePackage, claudePackage)).toBe(true);
     expect(specMatchesPackage(`${claudePackage}@0.6.0`, claudePackage)).toBe(true);
-    expect(specMatchesPackage('@otto-assistant/opencode-claude-extra@0.6.0', claudePackage)).toBe(false);
+    expect(specMatchesPackage('@openchamber/opencode-claude-extra@0.6.0', claudePackage)).toBe(false);
+  });
+
+  test('points catalog plugins at the OpenChamber GitHub and npm packages', () => {
+    expect(thirdPartyCatalog.THIRD_PARTY_PLUGINS.map((plugin) => ({
+      id: plugin.id,
+      packageName: plugin.packageName,
+      homepage: plugin.homepage,
+    }))).toEqual([
+      {
+        id: 'opencode-claude',
+        packageName: '@openchamber/opencode-claude',
+        homepage: 'https://github.com/openchamber/opencode-claude',
+      },
+      {
+        id: 'opencode-commandcode',
+        packageName: '@openchamber/opencode-commandcode',
+        homepage: 'https://github.com/openchamber/opencode-commandcode',
+      },
+      {
+        id: 'opencode-cursor-oauth',
+        packageName: '@openchamber/opencode-cursor',
+        homepage: 'https://github.com/openchamber/opencode-cursor',
+      },
+    ]);
   });
 
   test('uses the configured user entry and its registry result', () => {
