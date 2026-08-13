@@ -962,6 +962,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         const queuedMessageId = options?.queuedMessageId;
         const delivery = options?.delivery === 'steer' && sessionPhase !== 'idle' ? 'steer' : undefined;
         const capturedTarget = messageQueueTarget;
+        // Snapshot the draft and current-session identity before the first
+        // async gap so a later sidebar selection cannot reroute the send.
+        const capturedDraftSnapshot = newSessionDraftOpen ? { ...newSessionDraft } : null;
         const inputSnapshot = options?.presetText != null
             ? {
                 message: options.presetText,
@@ -1034,9 +1037,17 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             }
         }
 
-        const sendMessageOptions = capturedTarget
-            ? { target: capturedTarget, ...(delivery ? { delivery } : {}) }
-            : delivery ? { delivery } : undefined;
+        const sendMessageOptions: {
+            target?: NonNullable<typeof capturedTarget>;
+            draftSnapshot?: NonNullable<typeof capturedDraftSnapshot>;
+            delivery?: 'steer';
+        } | undefined = (capturedTarget || capturedDraftSnapshot || delivery)
+            ? {
+                ...(capturedTarget ? { target: capturedTarget } : {}),
+                ...(capturedDraftSnapshot ? { draftSnapshot: capturedDraftSnapshot } : {}),
+                ...(delivery ? { delivery } : {}),
+            }
+            : undefined;
 
         // Inline review comments and synthetic context are consumed before
         // assembly so a failed send can restore exactly what it took.
