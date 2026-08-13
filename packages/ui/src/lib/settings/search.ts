@@ -476,9 +476,17 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   {
     id: 'sessions.agent-control-tool',
     page: 'general',
-    titleKey: 'settings.openchamber.opencodeCli.field.agentControlTool',
-    descriptionKey: 'settings.openchamber.opencodeCli.field.agentControlToolInfo',
+    titleKey: 'settings.openchamber.tools.field.agentControlTool',
+    descriptionKey: 'settings.openchamber.tools.field.agentControlToolInfo',
     keywords: ['agent', 'tool', 'orchestration', 'openchamber', 'sessions', 'schedule', 'control'],
+    isAvailable: (ctx) => !ctx.isVSCode,
+  },
+  {
+    id: 'sessions.agent-web-tool',
+    page: 'general',
+    titleKey: 'settings.openchamber.tools.field.agentWebTool',
+    descriptionKey: 'settings.openchamber.tools.field.agentWebToolInfo',
+    keywords: ['agent', 'tool', 'web', 'browser', 'page', 'preview', 'openchamber'],
     isAvailable: (ctx) => !ctx.isVSCode,
   },
   {
