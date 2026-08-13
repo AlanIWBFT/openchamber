@@ -1,5 +1,5 @@
 import React from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { File as PierreFile, PatchDiff } from '@pierre/diffs/react';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 import { createPortal } from 'react-dom';
@@ -29,6 +29,11 @@ import { Icon } from "@/components/icon/Icon";
 import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { MermaidLoadFailure, getMermaidDataUrlSourcePromise, isCurrentMermaidLoadRequest, isMermaidLoadFailure, nextMermaidLoadRequestId } from './toolOutputDialogMermaid';
+import {
+    getImagePreviewBounds,
+    getImagePreviewDialogLayout,
+    type ImagePreviewViewport,
+} from './imagePreviewSizing';
 
 interface ToolOutputDialogProps {
     popup: ToolPopupContent;
@@ -158,7 +163,7 @@ const usePierreThemeConfig = (): PierreThemeConfig => {
     };
 };
 
-type ViewportSize = { width: number; height: number };
+type ViewportSize = ImagePreviewViewport;
 
 const getWindowViewport = (): ViewportSize => ({
     width: typeof window !== 'undefined' ? window.innerWidth : 0,
@@ -331,8 +336,11 @@ const ImagePreviewDialog: React.FC<{
     }, [popup.image]);
 
     const [currentIndex, setCurrentIndex] = React.useState(0);
-    const [imageNaturalSize, setImageNaturalSize] = React.useState<{ width: number; height: number } | null>(null);
-    const { isRendered, isVisible, isTransitioning } = usePreviewOverlayState(popup.open);
+    const [loadedImageSize, setLoadedImageSize] = React.useState<{
+        url: string;
+        width: number;
+        height: number;
+    } | null>(null);
     const viewport = usePreviewViewport(popup.open);
 
     React.useEffect(() => {
@@ -352,9 +360,10 @@ const ImagePreviewDialog: React.FC<{
         setCurrentIndex(matchingIndex >= 0 ? matchingIndex : 0);
     }, [gallery, popup.image?.index, popup.image?.url, popup.open]);
 
-    const currentImage = gallery[currentIndex] ?? gallery[0] ?? popup.image;
+    const currentImage = gallery[currentIndex] ?? gallery[0];
     const imageTitle = currentImage?.filename || popup.title || 'Image preview';
     const hasMultipleImages = gallery.length > 1;
+    const markdownImage = popup.metadata?.tool === 'markdown-image-preview';
 
     const showPrevious = React.useCallback(() => {
         if (gallery.length <= 1) return;
@@ -372,11 +381,6 @@ const ImagePreviewDialog: React.FC<{
         }
 
         const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                onOpenChange(false);
-                return;
-            }
-
             if (event.key === 'ArrowLeft' && hasMultipleImages) {
                 event.preventDefault();
                 showPrevious();
@@ -393,126 +397,108 @@ const ImagePreviewDialog: React.FC<{
         return () => {
             window.removeEventListener('keydown', onKeyDown);
         };
-    }, [hasMultipleImages, onOpenChange, popup.open, showNext, showPrevious]);
+    }, [hasMultipleImages, popup.open, showNext, showPrevious]);
 
-    React.useEffect(() => {
-        setImageNaturalSize(null);
-    }, [currentImage?.url]);
+    const imageNaturalSize = loadedImageSize?.url === currentImage?.url
+        ? loadedImageSize
+        : null;
 
-    const imageDisplaySize = React.useMemo(() => {
-        const maxWidth = Math.max(160, viewport.width * (isMobile ? 0.86 : 0.75));
-        const maxHeight = Math.max(160, viewport.height * (isMobile ? 0.72 : 0.75));
-
-        if (!imageNaturalSize) {
-            return {
-                width: Math.round(maxWidth),
-                height: Math.round(maxHeight),
-            };
-        }
-
+    const { maxWidth, maxHeight } = getImagePreviewBounds(viewport, isMobile, markdownImage);
+    let imageDisplaySize = {
+        width: Math.round(maxWidth),
+        height: Math.round(maxHeight),
+    };
+    if (imageNaturalSize) {
         const widthScale = maxWidth / imageNaturalSize.width;
         const heightScale = maxHeight / imageNaturalSize.height;
         const scale = Math.min(widthScale, heightScale);
-
-        return {
+        imageDisplaySize = {
             width: Math.max(1, Math.round(imageNaturalSize.width * scale)),
             height: Math.max(1, Math.round(imageNaturalSize.height * scale)),
         };
-    }, [imageNaturalSize, isMobile, viewport.height, viewport.width]);
+    }
 
-    if (!isRendered || !currentImage || typeof document === 'undefined') {
+    const handleImageLoad = React.useCallback((event: React.SyntheticEvent<HTMLImageElement>) => {
+        const element = event.currentTarget;
+        const width = element.naturalWidth;
+        const height = element.naturalHeight;
+        if (width <= 0 || height <= 0) return;
+
+        const url = element.getAttribute('src') ?? '';
+        setLoadedImageSize((previous) => {
+            if (previous && previous.url === url && previous.width === width && previous.height === height) {
+                return previous;
+            }
+            return { url, width, height };
+        });
+    }, []);
+
+    if (!currentImage) {
         return null;
     }
 
-    const content = (
-        <div className={cn('fixed inset-0 z-50', popup.open ? 'pointer-events-auto' : 'pointer-events-none')}>
-            <div
-                aria-hidden="true"
-                className={cn(
-                    'absolute inset-0 bg-black/40',
-                    isTransitioning && 'transition-opacity duration-150 ease-out',
-                    isVisible ? 'opacity-100' : 'opacity-0'
-                )}
-                onMouseDown={() => onOpenChange(false)}
-            />
+    const dialogLayout = getImagePreviewDialogLayout(imageDisplaySize, viewport, isMobile);
 
-            {hasMultipleImages && (
-                <>
-                    <button
-                        type="button"
-                        onMouseDown={(event) => event.stopPropagation()}
-                        onClick={showPrevious}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 z-10 h-10 w-10 flex items-center justify-center rounded-full bg-black/40 text-foreground/90 hover:bg-black/55 focus:outline-none focus:ring-2 focus:ring-primary/60"
-                        aria-label={t('chat.toolOutputDialog.image.previousAria')}
-                    >
-                        <Icon name="arrow-left-s" className="h-6 w-6" />
-                    </button>
-                    <button
-                        type="button"
-                        onMouseDown={(event) => event.stopPropagation()}
-                        onClick={showNext}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 z-10 h-10 w-10 flex items-center justify-center rounded-full bg-black/40 text-foreground/90 hover:bg-black/55 focus:outline-none focus:ring-2 focus:ring-primary/60"
-                        aria-label={t('chat.toolOutputDialog.image.nextAria')}
-                    >
-                        <Icon name="arrow-right-s" className="h-6 w-6" />
-                    </button>
-                </>
-            )}
-
-            <div
+    return (
+        <Dialog open={popup.open} onOpenChange={onOpenChange}>
+            <DialogContent
                 className={cn(
-                    'absolute inset-0 flex items-center justify-center pointer-events-none',
-                    isMobile ? 'p-2.5' : 'p-4'
+                    'max-w-none gap-3 overflow-hidden p-4',
+                    '[&>button]:right-3 [&>button]:top-3',
                 )}
+                style={{
+                    width: `${dialogLayout.dialogWidth}px`,
+                    maxWidth: isMobile ? 'calc(100vw - 1rem)' : 'calc(100vw - 2rem)',
+                    maxHeight: isMobile ? 'calc(100vh - 1rem)' : 'calc(100vh - 2rem)',
+                }}
+                data-openchamber-image-preview-dialog="true"
+                data-openchamber-markdown-image-dialog={markdownImage ? 'true' : undefined}
+                aria-modal="true"
             >
-                <div
-                    className={cn(
-                        'pointer-events-auto flex flex-col gap-2',
-                        isTransitioning && 'transition-opacity duration-150 ease-out',
-                        isVisible ? 'opacity-100' : 'opacity-0'
-                    )}
-                    style={{ width: `${imageDisplaySize.width}px` }}
-                >
-                    <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0 flex-1 text-foreground typography-ui-header font-semibold truncate" title={imageTitle}>
-                            {imageTitle}
-                        </div>
-                        <button
-                            type="button"
-                            className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground/80 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60"
-                            onClick={() => onOpenChange(false)}
-                            aria-label={t('chat.toolOutputDialog.image.closeAria')}
-                        >
-                            <Icon name="close" className="h-4 w-4" />
-                        </button>
-                    </div>
+                <DialogHeader className="min-w-0 pr-8">
+                    <DialogTitle className="flex min-w-0 items-center gap-2 text-left">
+                        <Icon name="file-image" className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 truncate" title={imageTitle}>{imageTitle}</span>
+                    </DialogTitle>
+                </DialogHeader>
 
+                <div
+                    className="relative flex min-h-0 max-w-full self-center items-center justify-center overflow-hidden rounded-lg bg-muted/20"
+                    style={{ width: `${dialogLayout.imageWidth}px`, height: `${dialogLayout.imageHeight}px` }}
+                >
+                    {hasMultipleImages ? (
+                        <>
+                            <button
+                                type="button"
+                                onClick={showPrevious}
+                                className="absolute left-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/85 text-foreground shadow-sm hover:bg-background focus:outline-none focus:ring-2 focus:ring-primary/60"
+                                aria-label={t('chat.toolOutputDialog.image.previousAria')}
+                            >
+                                <Icon name="arrow-left-s" className="h-6 w-6" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={showNext}
+                                className="absolute right-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/85 text-foreground shadow-sm hover:bg-background focus:outline-none focus:ring-2 focus:ring-primary/60"
+                                aria-label={t('chat.toolOutputDialog.image.nextAria')}
+                            >
+                                <Icon name="arrow-right-s" className="h-6 w-6" />
+                            </button>
+                        </>
+                    ) : null}
                     <img
                         src={currentImage.url}
                         alt={imageTitle}
-                        className="block object-contain"
-                        style={{ width: `${imageDisplaySize.width}px`, height: `${imageDisplaySize.height}px` }}
+                        className="block h-full w-full object-contain"
                         loading="lazy"
-                        onLoad={(event) => {
-                            const element = event.currentTarget;
-                            const width = element.naturalWidth;
-                            const height = element.naturalHeight;
-                            if (width > 0 && height > 0) {
-                                setImageNaturalSize((previous) => {
-                                    if (previous && previous.width === width && previous.height === height) {
-                                        return previous;
-                                    }
-                                    return { width, height };
-                                });
-                            }
-                        }}
+                        onLoad={handleImageLoad}
+                        data-openchamber-markdown-image-preview={markdownImage ? 'true' : undefined}
                     />
                 </div>
-            </div>
-        </div>
+                <div aria-hidden="true" className="h-4 shrink-0" />
+            </DialogContent>
+        </Dialog>
     );
-
-    return createPortal(content, document.body);
 };
 
 // ── PERF-007: Virtualised sub-components for dialog ──────────────────
