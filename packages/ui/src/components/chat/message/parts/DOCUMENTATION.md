@@ -68,6 +68,9 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   completed assistant message hydrates at most 12 unique image candidates,
   including persisted text parts that omit their optional part-level end time.
   The image modal reserves readable title width even for narrow portrait media.
+  Markdown image previews use the 60vw contained dialog on desktop and a
+  full-height mobile dialog with 1x-4x pinch zoom, zoom controls, and panning
+  when zoomed.
 - `read` and `skill` are **static navigation tools** and render via `StaticToolRow`.
 - Every other tool, including search/fetch, OpenCode built-ins, custom tools, plugins, and MCP tools, is **expandable** and renders through `ToolPart`.
 - The managed `openchamber` plugin tool uses the expandable path and hides its broad protocol input. The plugin supplies the selected action's human description as the native tool title; the UI renders that metadata without owning an action map. The full versioned result envelope renders through the same neutral JSON summary/tree/raw views as other tools, without a tool-specific output card.

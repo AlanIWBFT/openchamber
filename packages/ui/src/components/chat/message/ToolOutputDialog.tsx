@@ -30,8 +30,14 @@ import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { MermaidLoadFailure, getMermaidDataUrlSourcePromise, isCurrentMermaidLoadRequest, isMermaidLoadFailure, nextMermaidLoadRequestId } from './toolOutputDialogMermaid';
 import {
+    clampImagePreviewTransform,
+    getContainedImagePreviewSize,
+    getImagePreviewGestureTransform,
     getImagePreviewBounds,
     getImagePreviewDialogLayout,
+    getLocalImagePreviewPoints,
+    IDENTITY_IMAGE_PREVIEW_TRANSFORM,
+    type ImagePreviewPoint,
     type ImagePreviewViewport,
 } from './imagePreviewSizing';
 
@@ -364,6 +370,76 @@ const ImagePreviewDialog: React.FC<{
     const imageTitle = currentImage?.filename || popup.title || 'Image preview';
     const hasMultipleImages = gallery.length > 1;
     const markdownImage = popup.metadata?.tool === 'markdown-image-preview';
+    const mobileMarkdownViewer = isMobile && markdownImage;
+    const imageViewportRef = React.useRef<HTMLDivElement | null>(null);
+    const activePointersRef = React.useRef(new Map<number, ImagePreviewPoint>());
+    const previousPointsRef = React.useRef<ImagePreviewPoint[]>([]);
+    const [imageTransform, setImageTransform] = React.useState(IDENTITY_IMAGE_PREVIEW_TRANSFORM);
+
+    React.useEffect(() => {
+        activePointersRef.current.clear();
+        previousPointsRef.current = [];
+        setImageTransform(IDENTITY_IMAGE_PREVIEW_TRANSFORM);
+    }, [currentImage?.url, popup.open]);
+
+    const handleImagePointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        if (!mobileMarkdownViewer || event.pointerType !== 'touch') return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        activePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        previousPointsRef.current = Array.from(activePointersRef.current.values());
+    }, [mobileMarkdownViewer]);
+
+    const handleImagePointerMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        if (!mobileMarkdownViewer || !activePointersRef.current.has(event.pointerId)) return;
+        event.preventDefault();
+        activePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        const currentPoints = Array.from(activePointersRef.current.values());
+        const previousPoints = previousPointsRef.current;
+        const imageViewport = imageViewportRef.current;
+        if (imageViewport) {
+            const bounds = imageViewport.getBoundingClientRect();
+            const viewportSize = { width: bounds.width, height: bounds.height };
+            const image = imageViewport.querySelector('img');
+            const contentSize = getContainedImagePreviewSize({
+                width: image?.naturalWidth || bounds.width,
+                height: image?.naturalHeight || bounds.height,
+            }, viewportSize);
+            setImageTransform((current) => getImagePreviewGestureTransform(
+                current,
+                getLocalImagePreviewPoints(previousPoints, { x: bounds.left, y: bounds.top }),
+                getLocalImagePreviewPoints(currentPoints, { x: bounds.left, y: bounds.top }),
+                viewportSize,
+                contentSize,
+            ));
+        }
+        previousPointsRef.current = currentPoints;
+    }, [mobileMarkdownViewer]);
+
+    const handleImagePointerEnd = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        if (!mobileMarkdownViewer) return;
+        activePointersRef.current.delete(event.pointerId);
+        previousPointsRef.current = Array.from(activePointersRef.current.values());
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+    }, [mobileMarkdownViewer]);
+
+    const adjustImageScale = React.useCallback((delta: number) => {
+        const imageViewport = imageViewportRef.current;
+        if (!imageViewport) return;
+        const bounds = imageViewport.getBoundingClientRect();
+        const viewportSize = { width: bounds.width, height: bounds.height };
+        const image = imageViewport.querySelector('img');
+        const contentSize = getContainedImagePreviewSize({
+            width: image?.naturalWidth || bounds.width,
+            height: image?.naturalHeight || bounds.height,
+        }, viewportSize);
+        setImageTransform((current) => clampImagePreviewTransform({
+            ...current,
+            scale: current.scale + delta,
+        }, viewportSize, contentSize));
+    }, []);
 
     const showPrevious = React.useCallback(() => {
         if (gallery.length <= 1) return;
@@ -443,10 +519,17 @@ const ImagePreviewDialog: React.FC<{
         <Dialog open={popup.open} onOpenChange={onOpenChange}>
             <DialogContent
                 className={cn(
-                    'max-w-none gap-3 overflow-hidden p-4',
+                    'max-w-none overflow-hidden',
+                    mobileMarkdownViewer
+                        ? 'h-[calc(100dvh-2rem)] gap-3 p-3'
+                        : 'gap-3 p-4',
                     '[&>button]:right-3 [&>button]:top-3',
                 )}
-                style={{
+                style={mobileMarkdownViewer ? {
+                    width: 'calc(100vw - 2rem)',
+                    maxWidth: 'none',
+                    maxHeight: 'none',
+                } : {
                     width: `${dialogLayout.dialogWidth}px`,
                     maxWidth: isMobile ? 'calc(100vw - 1rem)' : 'calc(100vw - 2rem)',
                     maxHeight: isMobile ? 'calc(100vh - 1rem)' : 'calc(100vh - 2rem)',
@@ -463,8 +546,19 @@ const ImagePreviewDialog: React.FC<{
                 </DialogHeader>
 
                 <div
-                    className="relative flex min-h-0 max-w-full self-center items-center justify-center overflow-hidden rounded-lg bg-muted/20"
-                    style={{ width: `${dialogLayout.imageWidth}px`, height: `${dialogLayout.imageHeight}px` }}
+                    ref={imageViewportRef}
+                    className={cn(
+                        'relative flex min-h-0 max-w-full self-center items-center justify-center overflow-hidden rounded-lg bg-muted/20',
+                        mobileMarkdownViewer && 'w-full flex-1 touch-none',
+                    )}
+                    style={mobileMarkdownViewer
+                        ? { touchAction: 'none' }
+                        : { width: `${dialogLayout.imageWidth}px`, height: `${dialogLayout.imageHeight}px` }}
+                    onPointerDown={handleImagePointerDown}
+                    onPointerMove={handleImagePointerMove}
+                    onPointerUp={handleImagePointerEnd}
+                    onPointerCancel={handleImagePointerEnd}
+                    onLostPointerCapture={handleImagePointerEnd}
                 >
                     {hasMultipleImages ? (
                         <>
@@ -490,12 +584,51 @@ const ImagePreviewDialog: React.FC<{
                         src={currentImage.url}
                         alt={imageTitle}
                         className="block h-full w-full object-contain"
+                        style={mobileMarkdownViewer ? {
+                            transform: `translate3d(${imageTransform.x}px, ${imageTransform.y}px, 0) scale(${imageTransform.scale})`,
+                            transformOrigin: 'center',
+                        } : undefined}
                         loading="lazy"
                         onLoad={handleImageLoad}
                         data-openchamber-markdown-image-preview={markdownImage ? 'true' : undefined}
+                        data-openchamber-image-preview-scale={mobileMarkdownViewer ? imageTransform.scale : undefined}
                     />
+                    {mobileMarkdownViewer ? (
+                        <div
+                            className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-border/60 bg-background/90 p-1"
+                            onPointerDown={(event) => event.stopPropagation()}
+                        >
+                            <button
+                                type="button"
+                                className="flex h-9 w-9 items-center justify-center rounded-md text-foreground hover:bg-interactive-hover focus:outline-none focus:ring-2 focus:ring-primary/60"
+                                onClick={() => adjustImageScale(-0.5)}
+                                aria-label={t('markdownRenderer.mermaid.actions.zoomOutTitle')}
+                                data-openchamber-image-preview-zoom="out"
+                            >
+                                <Icon name="subtract" className="h-4 w-4" />
+                            </button>
+                            <button
+                                type="button"
+                                className="flex h-9 w-9 items-center justify-center rounded-md text-foreground hover:bg-interactive-hover focus:outline-none focus:ring-2 focus:ring-primary/60"
+                                onClick={() => setImageTransform(IDENTITY_IMAGE_PREVIEW_TRANSFORM)}
+                                aria-label={t('markdownRenderer.mermaid.actions.resetViewTitle')}
+                                data-openchamber-image-preview-zoom="reset"
+                            >
+                                <Icon name="restart" className="h-4 w-4" />
+                            </button>
+                            <button
+                                type="button"
+                                className="flex h-9 w-9 items-center justify-center rounded-md text-foreground hover:bg-interactive-hover focus:outline-none focus:ring-2 focus:ring-primary/60"
+                                onClick={() => adjustImageScale(0.5)}
+                                aria-label={t('markdownRenderer.mermaid.actions.zoomInTitle')}
+                                data-openchamber-image-preview-zoom="in"
+                            >
+                                <Icon name="add" className="h-4 w-4" />
+                            </button>
+                        </div>
+                    ) : null}
                 </div>
-                <div aria-hidden="true" className="h-4 shrink-0" />
+                {!mobileMarkdownViewer ? <div aria-hidden="true" className="h-4 shrink-0" /> : null}
             </DialogContent>
         </Dialog>
     );
