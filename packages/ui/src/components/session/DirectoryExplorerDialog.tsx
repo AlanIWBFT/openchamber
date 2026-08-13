@@ -497,7 +497,6 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
       } else if (shouldCreateTarget && normalizeDirectoryPath(target) === normalizeDirectoryPath(targetPath)) {
         await opencodeClient.createDirectory(target);
       }
-      }
       const project = await addProject(selectedTarget);
       if (!project) {
         toast.error(t('directoryExplorerDialog.toast.failedToAddProject'), {
