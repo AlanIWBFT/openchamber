@@ -164,7 +164,7 @@ type PairingRedeemResponse = {
 // URL helpers
 // ---------------------------------------------------------------------------
 
-export const normalizeConnectionUrl = (value: string): string => {
+const normalizeConnectionUrl = (value: string): string => {
   const trimmed = value.trim();
   if (!trimmed) return '';
   const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
@@ -175,7 +175,7 @@ export const normalizeConnectionUrl = (value: string): string => {
   return url.toString().replace(/\/+$/, '');
 };
 
-export const getConnectionLabel = (url: string): string => {
+const getConnectionLabel = (url: string): string => {
   try {
     return new URL(url).host;
   } catch {
@@ -191,7 +191,7 @@ const getConnectionStorageKey = (url: string): string => {
   }
 };
 
-export const isSameConnectionUrl = (left: string, right: string): boolean =>
+const isSameConnectionUrl = (left: string, right: string): boolean =>
   getConnectionStorageKey(left) === getConnectionStorageKey(right);
 
 // ---------------------------------------------------------------------------
@@ -201,7 +201,7 @@ export const isSameConnectionUrl = (left: string, right: string): boolean =>
 // Stable identity for a relay connection. Also used as the runtime key passed
 // to switchRuntimeEndpoint so "is this saved entry the active runtime?" checks
 // can compare against getRuntimeKey().
-export const relayConnectionRuntimeKey = (relay: MobileRelayConfig): string =>
+const relayConnectionRuntimeKey = (relay: MobileRelayConfig): string =>
   `relay:${relay.serverId}@${relay.relayUrl.trim()}`;
 
 // Stable, non-fetchable pseudo-URL for a relay-only device (display only).
@@ -790,7 +790,7 @@ export const upsertMobileConnection = async (
   return next;
 };
 
-export const deleteMobileConnection = async (id: string): Promise<MobileSavedConnection[]> => {
+const deleteMobileConnection = async (id: string): Promise<MobileSavedConnection[]> => {
   const connections = readConnections();
   const removed = connections.find((connection) => connection.id === id) ?? null;
   const next = connections.filter((connection) => connection.id !== id);
@@ -1147,7 +1147,7 @@ const establishLiveTransport = async (
 // tunnel via runtimeFetch. A transport failure/timeout is transient (the tunnel
 // reconnects on its own) and must not masquerade as a revoked session, so only
 // an explicit auth rejection reports invalid.
-export const validateActiveRuntimeSession = async (input: {
+const validateActiveRuntimeSession = async (input: {
   url: string;
   clientToken?: string | null;
 }, options?: { fast?: boolean }): Promise<boolean> => {
@@ -1283,7 +1283,7 @@ let candidateRefreshInFlight = false;
 // Only runs for relay-paired connections: their token/runtime key derives from
 // the stable relay identity, so rewriting direct URLs cannot orphan the stored
 // token. The response must echo the connection's serverId or it is ignored.
-export const refreshActiveConnectionCandidates = async (): Promise<CandidateRefreshResult> => {
+const refreshActiveConnectionCandidates = async (): Promise<CandidateRefreshResult> => {
   if (candidateRefreshInFlight) return 'skipped';
   const active = findActiveConnection();
   if (!active) {

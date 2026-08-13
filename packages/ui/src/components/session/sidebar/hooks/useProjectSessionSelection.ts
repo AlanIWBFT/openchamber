@@ -254,7 +254,6 @@ export const useProjectSessionSelection = (args: Args): void => {
       return next;
     });
   }, [activeProjectId, currentSessionId, projectSessionMeta, setActiveSessionByProject]);
-
 };
 
 type ProjectSessionSelectionEffectProps = Omit<
