@@ -15,6 +15,8 @@ All notable changes to this project will be documented in this file.
 - Mobile: a brief network hiccup when opening or returning to the app no longer bounces a working connection to the connect screen — the app retries in the background and reconnects on its own, while an unreachable server shows the connect screen within a few seconds.
 - Mobile: long-pressing the logo on the connect screen (or the instances list) opens a connection log with a copy button, for reporting connection problems.
 - Usage: quota limits enabled for display now refresh every three minutes on desktop, mobile, and VS Code, with a manual refresh action available at any time.
+- Usage: OpenCode Go quota tracking now uses the existing OpenCode API key instead of requiring separate browser cookies and a workspace ID.
+- Scheduled Tasks: when two OpenChamber servers use the same project configuration, a scheduled occurrence now runs only once instead of both servers starting duplicate sessions (thanks to @makeittech).
 - Desktop/Windows/Linux: minimizing the window now always keeps it in the taskbar; the tray background setting, renamed "Close to the system tray", applies when you close the window.
 - Performance: closed context panels no longer keep embedded chats running, and an open panel mounts only its active chat instead of every saved chat tab (thanks to @karimodm).
 - Chat: opening subagent and code-review sessions in the context panel no longer steals focus from the main composer; subagent prompting is available immediately when enabled, and code-review sessions are no longer mistaken for read-only subagent sessions.
