@@ -1,7 +1,7 @@
-## [Unreleased]
+## [1.18.3] - 2026-08-14
 
-- **Chat images:** completed assistant replies now collect Markdown images into a compact gallery with thumbnails and full-screen previews, including workspace-local images across multi-root workspaces (thanks to @ChangeHow).
-- **Sessions:** switching projects now selects a session owned by the new workspace, and a message already being prepared stays with the session where it was submitted instead of being rerouted by a later project switch (thanks to @makeittech).
+- Chat images: completed assistant replies now collect Markdown images into a compact gallery with thumbnails and full-screen previews, including workspace-local images across multi-root workspaces (thanks to @ChangeHow).
+- Sessions: switching projects now selects a session owned by the new workspace, and a message already being prepared stays with the session where it was submitted instead of being rerouted by a later project switch (thanks to @makeittech).
 - Usage: quota limits enabled for display now refresh every three minutes, with a manual refresh action available at any time.
 - Usage: OpenCode Go quota tracking now uses the existing OpenCode API key instead of requiring separate browser cookies and a workspace ID.
 - Chat: the Focus Chat command and Add to Context action now place the cursor in the chat input so typing can continue immediately.
