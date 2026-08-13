@@ -237,6 +237,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.dialog.toast.deleted': '예약 작업 삭제됨',
   'sessions.scheduledTasks.dialog.toast.deleteFailed': '작업 삭제 실패',
   'sessions.scheduledTasks.dialog.toast.started': '작업 시작됨',
+  'sessions.scheduledTasks.dialog.toast.startedPersistWarning': '작업은 시작되었지만 상태를 저장하지 못했습니다. 다음 성공 실행까지 계속 실행 중으로 표시될 수 있습니다.',
   'sessions.scheduledTasks.dialog.toast.runFailed': '작업 실행 실패',
   'sessions.scheduledTasks.dialog.confirm.deleteTask': '예약 작업 "{taskName}" 삭제?',
   'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': '루프 작업 "{taskName}" 및 해당 Markdown 파일을 삭제할까요?',

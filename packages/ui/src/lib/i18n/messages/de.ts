@@ -216,6 +216,7 @@ export const dict = {
   'sessions.scheduledTasks.dialog.toast.deleted': 'Geplante Aufgabe gelöscht',
   'sessions.scheduledTasks.dialog.toast.deleteFailed': 'Fehler beim Löschen der Aufgabe',
   'sessions.scheduledTasks.dialog.toast.started': 'Aufgabe gestartet',
+  'sessions.scheduledTasks.dialog.toast.startedPersistWarning': 'Aufgabe gestartet, aber der Status konnte nicht gespeichert werden. Sie wird möglicherweise weiterhin als laufend angezeigt, bis der nächste erfolgreiche Lauf abgeschlossen ist.',
   'sessions.scheduledTasks.dialog.toast.runFailed': 'Fehler beim Ausführen der Aufgabe',
   'sessions.scheduledTasks.dialog.confirm.deleteTask': 'Geplante Aufgabe "{taskName}" löschen?',
   'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': 'Loop-Aufgabe „{taskName}“ und ihre Markdown-Datei löschen?',

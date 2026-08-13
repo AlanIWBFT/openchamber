@@ -237,6 +237,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.scheduledTasks.dialog.toast.deleted": "Tarefa agendada excluída",
   "sessions.scheduledTasks.dialog.toast.deleteFailed": "Não foi possível excluir a tarefa",
   "sessions.scheduledTasks.dialog.toast.started": "Tarefa iniciada",
+  "sessions.scheduledTasks.dialog.toast.startedPersistWarning": "A tarefa foi iniciada, mas o status não pôde ser salvo. Ela pode continuar aparecendo como em execução até a próxima execução bem-sucedida.",
   "sessions.scheduledTasks.dialog.toast.runFailed": "Não foi possível executar a tarefa",
   "sessions.scheduledTasks.dialog.confirm.deleteTask": "Excluir tarefa agendada \"{taskName}\"?",
   'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': 'Excluir a tarefa de loop “{taskName}” e seu arquivo Markdown?',

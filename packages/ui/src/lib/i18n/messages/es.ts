@@ -237,6 +237,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.scheduledTasks.dialog.toast.deleted": "Tarea programada eliminada",
   "sessions.scheduledTasks.dialog.toast.deleteFailed": "No se pudo eliminar la tarea",
   "sessions.scheduledTasks.dialog.toast.started": "Tarea iniciada",
+  "sessions.scheduledTasks.dialog.toast.startedPersistWarning": "La tarea se inició, pero no se pudo guardar su estado. Puede seguir apareciendo como en ejecución hasta el siguiente inicio correcto.",
   "sessions.scheduledTasks.dialog.toast.runFailed": "No se pudo ejecutar la tarea",
   "sessions.scheduledTasks.dialog.confirm.deleteTask": "Eliminar tarea programada \"{taskName}\"?",
   'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': '¿Eliminar la tarea de bucle «{taskName}» y su archivo Markdown?',

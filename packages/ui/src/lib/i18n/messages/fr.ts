@@ -68,6 +68,7 @@ export const dict = {
   'sessions.scheduledTasks.dialog.toast.deleted': 'Tâche planifiée supprimée',
   'sessions.scheduledTasks.dialog.toast.deleteFailed': 'Échec de la suppression de la tâche',
   'sessions.scheduledTasks.dialog.toast.started': 'Tâche démarrée',
+  'sessions.scheduledTasks.dialog.toast.startedPersistWarning': 'Tâche démarrée, mais son statut n’a pas pu être enregistré. Elle peut encore apparaître comme en cours jusqu’à la prochaine exécution réussie.',
   'sessions.scheduledTasks.dialog.toast.runFailed': 'Échec de l\'exécution de la tâche',
   'sessions.scheduledTasks.dialog.confirm.deleteTask': 'Supprimer la tâche planifiée « {taskName} » ?',
   'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': 'Supprimer la tâche en boucle « {taskName} » et son fichier Markdown ?',

@@ -237,6 +237,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.scheduledTasks.dialog.toast.deleted": "Заплановане завдання видалено",
   "sessions.scheduledTasks.dialog.toast.deleteFailed": "Не вдалося видалити завдання",
   "sessions.scheduledTasks.dialog.toast.started": "Завдання розпочато",
+  "sessions.scheduledTasks.dialog.toast.startedPersistWarning": "Завдання запущено, але його стан не вдалося зберегти. Воно може й надалі відображатися як виконуване до наступного успішного запуску.",
   "sessions.scheduledTasks.dialog.toast.runFailed": "Не вдалося виконати завдання",
   "sessions.scheduledTasks.dialog.confirm.deleteTask": "Видалити заплановане завдання \"{taskName}\"?",
   'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': 'Видалити циклічне завдання «{taskName}» і його Markdown-файл?',

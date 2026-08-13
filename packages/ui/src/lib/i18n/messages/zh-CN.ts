@@ -237,6 +237,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.dialog.toast.deleted': '计划任务已删除',
   'sessions.scheduledTasks.dialog.toast.deleteFailed': '删除任务失败',
   'sessions.scheduledTasks.dialog.toast.started': '任务已启动',
+  'sessions.scheduledTasks.dialog.toast.startedPersistWarning': '任务已启动，但未能保存其状态。在下一次成功运行之前，它可能仍显示为正在运行。',
   'sessions.scheduledTasks.dialog.toast.runFailed': '运行任务失败',
   'sessions.scheduledTasks.dialog.confirm.deleteTask': '删除计划任务“{taskName}”？',
   'sessions.scheduledTasks.dialog.confirm.deleteLoopFile': '删除循环任务“{taskName}”及其 Markdown 文件？',
