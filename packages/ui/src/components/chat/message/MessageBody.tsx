@@ -1212,10 +1212,10 @@ const AssistantMessageBody = React.memo(({
         return visibleParts.filter((part) => part.type === 'text');
     }, [visibleParts]);
     const finalizedAssistantMarkdownContents = React.useMemo(() => (
-        isMessageCompleted
+        isMessageCompleted && !isMobile
             ? assistantTextParts.map(extractTextContent).filter((text) => text.trim().length > 0)
             : []
-    ), [assistantTextParts, isMessageCompleted]);
+    ), [assistantTextParts, isMessageCompleted, isMobile]);
     const assistantPlanText = React.useMemo(() => flattenAssistantTextParts(assistantTextParts), [assistantTextParts]);
     const suggestedPlanTitle = React.useMemo(() => suggestPlanTitleFromText(assistantPlanText), [assistantPlanText]);
 
@@ -1868,7 +1868,7 @@ const AssistantMessageBody = React.memo(({
                             chatRenderMode={chatRenderMode}
                             onContentChange={onContentChange}
                             onShowPopup={onShowPopup}
-                            enableMarkdownImages={isMessageCompleted}
+                            enableMarkdownImages={isMessageCompleted && !isMobile}
                         />
                     </div>
                 );
