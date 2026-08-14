@@ -40,6 +40,13 @@ Examples:
 
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
 
+Context-panel session chats mount only the active chat iframe. After installing
+its message listener, the iframe requests its authoritative visibility from the
+parent. The parent accepts requests only from a currently mounted chat frame and
+answers from the current active tab. Do not rely only on a parent `onLoad`
+notification: it can arrive before the iframe listener exists and leave a
+visible chat with background work and message subscriptions disabled.
+
 ### Session / project coordination stores
 
 Examples:

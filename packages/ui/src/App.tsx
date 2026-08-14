@@ -54,7 +54,11 @@ import { MCP_OAUTH_CALLBACK_PATH } from '@/components/sections/mcp/mcpOAuth';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { useI18n } from '@/lib/i18n';
 import { applyMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
-import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
+import {
+  EMBEDDED_VISIBILITY_UPDATE,
+  isEmbeddedSessionChat,
+  requestEmbeddedSessionVisibility,
+} from '@/components/layout/contextPanelEmbeddedChat';
 import { SyncAppEffects } from '@/apps/AppEffects';
 import { resetAppForRuntimeEndpointChange } from '@/apps/runtimeEndpointReset';
 import { useAppFontEffects } from '@/apps/useAppFontEffects';
@@ -538,17 +542,16 @@ function App({ apis }: AppProps) {
     }
 
     const applyVisibility = (payload?: EmbeddedVisibilityPayload) => {
-      const nextVisible = payload?.visible === true;
-      setIsEmbeddedVisible(nextVisible);
+      setIsEmbeddedVisible(payload?.visible === true);
     };
 
     const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) {
+      if (event.origin !== window.location.origin || event.source !== window.parent) {
         return;
       }
 
       const data = event.data as { type?: unknown; payload?: EmbeddedVisibilityPayload };
-      if (data?.type !== 'openchamber:embedded-visibility') {
+      if (data?.type !== EMBEDDED_VISIBILITY_UPDATE) {
         return;
       }
 
@@ -561,6 +564,7 @@ function App({ apis }: AppProps) {
 
     scopedWindow.__openchamberSetEmbeddedVisibility = applyVisibility;
     window.addEventListener('message', handleMessage);
+    requestEmbeddedSessionVisibility();
 
     return () => {
       window.removeEventListener('message', handleMessage);
