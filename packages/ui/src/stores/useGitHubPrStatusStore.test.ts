@@ -408,4 +408,36 @@ describe("GitHub PR status stale terminal associations", () => {
     expect(useGitHubPrStatusStore.getState().entries[originKey]?.status).toBeNull()
     expect(useGitHubPrStatusStore.getState().entries[originKey]?.isInitialStatusResolved).toBe(false)
   })
+
+  test("keeps a cached PR when a forced refresh fails", async () => {
+    const merged: GitHubPullRequestStatus = {
+      connected: true,
+      fetchedAt: 1_000,
+      pr: { number: 12, title: "old", url: "u12", state: "merged", draft: false, base: "main", head: "feature" },
+    }
+    const github = {
+      prStatus: async () => {
+        throw new Error("GitHub unavailable")
+      },
+    } as unknown as RuntimeAPIs["github"]
+    const key = getGitHubPrStatusKey("/repo", "feature", "origin")
+    useGitHubPrStatusStore.getState().ensureEntry(key)
+    useGitHubPrStatusStore.setState((state) => ({
+      entries: {
+        ...state.entries,
+        [key]: {
+          ...state.entries[key]!,
+          status: merged,
+          isInitialStatusResolved: true,
+          lastRefreshAt: Date.now(),
+        },
+      },
+    }))
+    useGitHubPrStatusStore.getState().setParams(key, params(github, "feature"))
+
+    await useGitHubPrStatusStore.getState().refresh(key, { force: true })
+
+    expect(useGitHubPrStatusStore.getState().entries[key]?.status?.pr?.number).toBe(12)
+    expect(useGitHubPrStatusStore.getState().entries[key]?.error).toBe("GitHub unavailable")
+  })
 })

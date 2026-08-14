@@ -501,6 +501,8 @@ export const useGitHubPrStatusStore = create<GitHubPrStatusStore>()(
             if (!entry || entry.watchers <= 0) {
               return;
             }
+            // Bootstrap retries only help discovery before any PR is known. Once a
+            // terminal PR is cached, the discovery interval owns revalidation.
             if (entry.status?.pr) {
               return;
             }

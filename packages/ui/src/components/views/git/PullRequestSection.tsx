@@ -1169,16 +1169,20 @@ export const PullRequestSection: React.FC<{
   React.useEffect(() => {
     // Terminal (closed/merged) status must still revalidate on focus/visibility:
     // the branch may now have a newer open PR, or the association may clear.
-    const lastRefreshAt = statusEntry?.lastRefreshAt ?? 0;
-    const isStale = Date.now() - lastRefreshAt > 60_000;
-
+    // Recompute staleness inside the handlers — a captured boolean freezes after
+    // the first fresh refresh until lastRefreshAt changes again.
     const onFocus = () => {
-      if (isStale) {
+      const lastRefreshAt = statusEntry?.lastRefreshAt ?? 0;
+      if (Date.now() - lastRefreshAt > 60_000) {
         void refresh({ force: true, silent: true });
       }
     };
     const onVisibility = () => {
-      if (document.visibilityState === 'visible' && isStale) {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+      const lastRefreshAt = statusEntry?.lastRefreshAt ?? 0;
+      if (Date.now() - lastRefreshAt > 60_000) {
         void refresh({ force: true, silent: true });
       }
     };
