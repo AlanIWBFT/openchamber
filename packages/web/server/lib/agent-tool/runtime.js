@@ -425,7 +425,7 @@ const ANSWER_FETCH_TIMEOUT = String.raw`
 
 // The answer also lands in the call's metadata, which OpenCode stores and
 // syncs, so every client shows the page as answered after a reload.
-const ANSWER_METADATA = String.raw`, ...(result.ok === true && result.data && typeof result.data.answer === "object" && result.data.answer !== null ? { answer: result.data.answer } : {})`;
+const ANSWER_METADATA = String.raw`, ...(result.ok === true && typeof result.data?.title === "string" ? { title: result.data.title } : {}), ...(result.ok === true && result.data && typeof result.data.answer === "object" && result.data.answer !== null ? { answer: result.data.answer } : {})`;
 
 const ANSWER_WAIT_RELEASE = String.raw` finally {
           releaseWait()
