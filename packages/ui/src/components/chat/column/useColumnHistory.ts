@@ -2,7 +2,7 @@ import React from 'react';
 import type { Message, Part } from '@/lib/opencode/model';
 import { keepCommandSubagentReports } from '@/lib/opencode/subagent-run';
 import { dropReplyCommandRows } from '@/lib/opencode/reply-command';
-import { useSessionStartTimes, useSessionMessageLoader } from '@/sync/sync-context';
+import { useSession, useSessionStartTimes, useSessionMessageLoader } from '@/sync/sync-context';
 import { useChatTimelineController } from '../hooks/useChatTimelineController';
 import type { MessageListHandle } from '../MessageList';
 
@@ -52,6 +52,16 @@ export const useColumnHistory = ({
     loadHistoryUntilMessageRef: React.MutableRefObject<(messageId: string, maxBatches: number) => Promise<boolean>>;
 }) => {
     const sessionStartTimes = useSessionStartTimes(effectiveSessionDirectory);
+    const marker = useSession(currentSessionId, effectiveSessionDirectory)?.revert?.messageID;
+    React.useEffect(() => {
+        if (!active || !marker || !currentSessionId || !effectiveSessionDirectory) return;
+        const controller = new AbortController();
+        void messageLoader.loadUntil({ directory: effectiveSessionDirectory, sessionID: currentSessionId },
+            { kind: 'message', messageID: marker }, { signal: controller.signal }).catch(error => {
+                if (!controller.signal.aborted) console.error('[chat] Failed to resolve revert boundary', error);
+            });
+        return () => controller.abort();
+    }, [active, currentSessionId, effectiveSessionDirectory, marker, messageLoader]);
     const viewportMessages = React.useMemo(
         () => dropReplyCommandRows(keepCommandSubagentReports(sessionMessages, (childSessionID) => sessionStartTimes.get(childSessionID))),
         [sessionStartTimes, sessionMessages],

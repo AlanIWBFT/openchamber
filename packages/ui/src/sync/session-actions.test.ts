@@ -41,6 +41,7 @@ let gatedSessionReadStarted = false
 let commitRevertError: Error | null = null
 let commitRevertCalls = 0
 let commitRevertGate: Promise<void> | null = null
+let sessionMessageResult: Awaited<ReturnType<typeof import("@/lib/opencode/client").opencodeClient.getSessionMessage>> | Error | undefined
 let sessionDeleteError: unknown | null = null
 let sessionForkResult: Session | null = null
 let sessionForkError: Error | null = null
@@ -125,8 +126,11 @@ mock.module("@/lib/opencode/client", () => ({
     }),
     getSessionMessage: mock(async (sessionId: string, messageId: string, directory?: string | null) => {
       replyCalls.push({ method: "session.message", params: { sessionID: sessionId, messageID: messageId, directory } })
-      if (!sessionMessageRead) throw notFound("Message")
-      return sessionMessageRead(sessionId, messageId)
+      if (sessionMessageRead) return sessionMessageRead(sessionId, messageId)
+      if (refreshGate) { refreshStarted = true; await refreshGate }
+      if (sessionMessageResult instanceof Error) throw sessionMessageResult
+      if (!sessionMessageResult) throw notFound("Message")
+      return sessionMessageResult
     }),
     getSessionMessages: mock(async (
       sessionId: string,
@@ -527,16 +531,6 @@ mock.module("./global-session-status", () => ({
   },
 }))
 
-mock.module("./session-message-loader", () => ({
-  getImperativeSessionMessageLoader: () => ({
-    invalidateSession: () => {},
-    ensure: async () => {},
-    refreshTail: async () => { refreshStarted = true; await refreshGate },
-    initializeCreatedSession: () => {},
-    getSnapshot: () => ({ status: "ready" as const }),
-  }),
-}))
-
 mock.module("../lib/runtime-switch", () => ({
   getRuntimeApiBaseUrl: () => "http://session-actions.test",
   getRuntimeKey: () => runtimeKey,
@@ -682,6 +676,24 @@ function createChildStores(entries: Array<[string, TestStoreApi<DirectoryStore>]
     },
     getChild: (dir: string) => new Map(entries).get(dir),
   } as unknown as import("./child-store").ChildStoreManager
+}
+
+beforeEach(async () => {
+  const { getImperativeSessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+  getImperativeSessionMessageLoader()?.dispose()
+  setImperativeSessionMessageLoader(null)
+  const { clearRuntimeSessionPrefetch } = await import("./session-prefetch-cache")
+  clearRuntimeSessionPrefetch(runtimeKey)
+  clearRuntimeSessionPrefetch("default-runtime")
+})
+
+async function bindCompleteHistory(childStores: ReturnType<typeof createChildStores>, directory: string, sessionID: string) {
+  const { SessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+  const { setSessionPrefetch } = await import("./session-prefetch-cache")
+  const { opencodeClient } = await import("@/lib/opencode/client")
+  // These fixtures explicitly represent a complete cached transcript.
+  setSessionPrefetch({ directory, sessionID, limit: 100, complete: true, runtimeKey })
+  setImperativeSessionMessageLoader(new SessionMessageLoader(childStores, { sdk: opencodeClient, runtimeKey }))
 }
 
 describe("moveSessionToDirectory", () => {
@@ -1902,6 +1914,7 @@ describe("explicit session stop", () => {
 
     expect(replyCalls.findIndex((call) => call.method === "session.stop"))
       .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.revert.clear"))
+    expect(replyCalls.some((call) => call.method === "session.messages")).toBe(false)
     expect(replyCalls.some((call) => call.method === "session.abort")).toBe(false)
   })
 
@@ -2099,6 +2112,112 @@ describe("optimisticSend target directory", () => {
     expect(targetStore.getState().part[revertedMessage.id]).toBe(undefined)
     expect(optimisticShadow.has(revertedMessage.id)).toBe(false)
     expect(optimisticShadow.has((optimisticMessage as unknown as Message).id)).toBe(true)
+  })
+
+  test("loads a missing revert boundary before committing a new branch", async () => {
+    const retainedMessage: Message = { id: "msg_1", role: "user", sessionID: "session-reverted", time: { created: 1 }, seq: 1 }
+    const revertMessage: Message = { id: "msg_2", role: "user", sessionID: "session-reverted", time: { created: 2 }, seq: 2 }
+    const revertedTail: Message = { id: "msg_3", role: "assistant", sessionID: "session-reverted", time: { created: 3 }, seq: 3, agent: "build", providerID: "provider", modelID: "model" }
+    const targetStore = createStore({}, {
+      session: [{ ...sessionFixture("session-reverted"), revert: { messageID: revertMessage.id } }],
+      message: { "session-reverted": [revertedTail] },
+    })
+    const childStores = createChildStores([["/target/project", targetStore]])
+    sessionMessageRecords.set("session-reverted", [
+        {
+          info: { ...retainedMessage, seq: 1 },
+          parts: [{ id: "part_1", messageID: retainedMessage.id, sessionID: "session-reverted", type: "text", text: "retained" }],
+        },
+        {
+          info: { ...revertMessage, seq: 2 },
+          parts: [{ id: "part_2", messageID: revertMessage.id, sessionID: "session-reverted", type: "text", text: "reverted" }],
+        },
+        {
+          info: { ...revertedTail, seq: 3 },
+          parts: [{ id: "part_3", messageID: revertedTail.id, sessionID: "session-reverted", type: "text", text: "old response" }],
+        },
+    ])
+    let messagesAtSend: string[] = []
+
+    const { getRuntimeKey } = await import("../lib/runtime-switch")
+    const { SessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+    const { optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    const { opencodeClient } = await import("@/lib/opencode/client")
+    const loader = new SessionMessageLoader(childStores, { sdk: opencodeClient, runtimeKey: getRuntimeKey() })
+    setImperativeSessionMessageLoader(loader)
+    setActionRefs(childStores, () => "/target/project")
+    setOptimisticRefs(
+      (input) => targetStore.setState((state) => ({
+        message: { ...state.message, [input.sessionID]: [...(state.message[input.sessionID] ?? []), input.message] },
+        part: { ...state.part, [input.message.id]: input.parts },
+      })),
+      () => {},
+    )
+
+    try {
+      await optimisticSend({
+        sessionId: "session-reverted",
+        directory: "/target/project",
+        content: "new branch",
+        send: async () => {
+          messagesAtSend = (targetStore.getState().message["session-reverted"] ?? []).map((message) => message.id)
+        },
+      })
+    } finally {
+      setImperativeSessionMessageLoader(null)
+      loader.dispose()
+    }
+
+    expect(replyCalls.filter((call) => call.method === "session.messages").map((call) => call.params.limit)).toEqual([100])
+    expect(messagesAtSend).toHaveLength(2)
+    expect(messagesAtSend[0]).toBe(retainedMessage.id)
+    expect(messagesAtSend).not.toContain(revertMessage.id)
+    expect(messagesAtSend).not.toContain(revertedTail.id)
+    expect(targetStore.getState().session[0].revert).toBe(undefined)
+  })
+
+  test("does not send when a missing revert boundary cannot be loaded", async () => {
+    const cachedTail: Message = { id: "msg_3", role: "assistant", sessionID: "session-reverted", time: { created: 3 }, seq: 3, agent: "build", providerID: "provider", modelID: "model" }
+    const targetStore = createStore({}, {
+      session: [{ ...sessionFixture("session-reverted"), revert: { messageID: "msg_missing" } }],
+      message: { "session-reverted": [cachedTail] },
+    })
+    const childStores = createChildStores([["/target/project", targetStore]])
+    sessionMessageRecords.set("session-reverted", [{
+        info: { ...cachedTail, seq: 1 },
+        parts: [{ id: "part_3", messageID: cachedTail.id, sessionID: "session-reverted", type: "text", text: "old response" }],
+    }])
+    let sendCalled = false
+    let optimisticAddCalled = false
+
+    const { getRuntimeKey } = await import("../lib/runtime-switch")
+    const { SessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+    const { optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    const { opencodeClient } = await import("@/lib/opencode/client")
+    const loader = new SessionMessageLoader(childStores, { sdk: opencodeClient, runtimeKey: getRuntimeKey() })
+    setImperativeSessionMessageLoader(loader)
+    setActionRefs(childStores, () => "/target/project")
+    setOptimisticRefs(
+      () => { optimisticAddCalled = true },
+      () => {},
+    )
+
+    try {
+      await expect(optimisticSend({
+        sessionId: "session-reverted",
+        directory: "/target/project",
+        content: "new branch",
+        send: async () => { sendCalled = true },
+      })).rejects.toThrow("Reverted session history could not be loaded")
+    } finally {
+      setImperativeSessionMessageLoader(null)
+      loader.dispose()
+    }
+
+    expect(sendCalled).toBe(false)
+    expect(optimisticAddCalled).toBe(false)
+    expect(targetStore.getState().session[0].revert?.messageID).toBe("msg_missing")
+    expect(targetStore.getState().message["session-reverted"]?.map((message) => message.id)).toEqual([cachedTail.id])
   })
 
   // A failed send puts the revert back only while the server still has it staged.
@@ -3304,6 +3423,7 @@ describe("revertToMessage passes session directory", () => {
     gatedSessionReadStarted = false
     commitRevertCalls = 0
     commitRevertGate = null
+    sessionMessageResult = undefined
     Object.assign(inputState, {
       pendingInputText: "previous draft",
       pendingInputMode: "replace",
@@ -3313,13 +3433,22 @@ describe("revertToMessage passes session directory", () => {
     })
   })
 
+  async function bindRevertStore(store: ReturnType<typeof createStore>) {
+    const children = createChildStores([["/test/project", store]])
+    const { setActionRefs } = await import("./session-actions")
+    const { setSessionPrefetch } = await import("./session-prefetch-cache")
+    const ids = Object.keys(store.getState().message)
+    for (const id of ids) setSessionPrefetch({ directory: "/test/project", sessionID: id, limit: 100, complete: true, runtimeKey })
+    setActionRefs(children, () => "/test/project")
+    await bindCompleteHistory(children, "/test/project", ids[0] ?? "root")
+  }
   test("waits for the pending revert before sending a new prompt", async () => {
     const session = sessionFixture("session-a")
     sessionRecords.set(session.id, session)
     const message: Message = { id: "msg_2", sessionID: session.id, role: "user", time: { created: 2 } }
     const store = createStore({}, { session: [session], message: { [session.id]: [message] } })
-    const { setActionRefs, setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
+    await bindRevertStore(store)
     setOptimisticRefs(() => {}, () => {})
     let releaseStage = () => {}
     stageRevertGate = new Promise<void>((resolve) => { releaseStage = resolve })
@@ -3346,8 +3475,8 @@ describe("revertToMessage passes session directory", () => {
     sessionRecords.set(session.id, session)
     const message: Message = { id: "msg_2", sessionID: session.id, role: "user", time: { created: 2 } }
     const store = createStore({}, { session: [session], message: { [session.id]: [message] } })
-    const { setActionRefs, revertToMessage, commitStagedRevert } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { revertToMessage, commitStagedRevert } = await import("./session-actions")
+    await bindRevertStore(store)
     let releaseStage = () => {}
     stageRevertGate = new Promise<void>((resolve) => { releaseStage = resolve })
     const reverting = revertToMessage(session.id, message.id)
@@ -3367,8 +3496,8 @@ describe("revertToMessage passes session directory", () => {
     const session = sessionFixture("session-a")
     const message: Message = { id: "msg_2", sessionID: session.id, role: "user", time: { created: 2 } }
     const store = createStore({}, { session: [session], message: { [session.id]: [message] } })
-    const { setActionRefs, setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
+    await bindRevertStore(store)
     setOptimisticRefs(() => {}, () => {})
     failingRevertSessionIds.add(session.id)
     let releaseStage = () => {}
@@ -3386,13 +3515,13 @@ describe("revertToMessage passes session directory", () => {
     expect(sent).toBe(false)
   })
 
-  test("waits for history refresh before sending", async () => {
+  test("waits for the target read before sending", async () => {
     const session = sessionFixture("session-a")
     sessionRecords.set(session.id, session)
     const message: Message = { id: "msg_2", sessionID: session.id, role: "user", time: { created: 2 } }
     const store = createStore({}, { session: [session], message: { [session.id]: [message] } })
-    const { setActionRefs, setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
+    await bindRevertStore(store)
     setOptimisticRefs(() => {}, () => {})
     let releaseRead = () => {}
     refreshGate = new Promise<void>((resolve) => { releaseRead = resolve })
@@ -3415,8 +3544,8 @@ describe("revertToMessage passes session directory", () => {
     sessionRecords.set(child.id, child)
     const message: Message = { id: "msg_2", sessionID: parent.id, role: "user", time: { created: 2 } }
     const store = createStore({}, { session: [parent, child], message: { [parent.id]: [message] } })
-    const { setActionRefs, setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
+    await bindRevertStore(store)
     setOptimisticRefs(() => {}, () => {})
     let releaseRead = () => {}
     messageReadGate = new Promise<void>((resolve) => { releaseRead = resolve })
@@ -3432,7 +3561,7 @@ describe("revertToMessage passes session directory", () => {
     expect(sent).toBe(true)
   })
 
-  test("includes a child created during history refresh and holds its input", async () => {
+  test("includes a child created during the target read and holds its input", async () => {
     const parent = sessionFixture("parent")
     const child: Session = { ...sessionFixture("child"), parentID: parent.id }
     const parentMessage: Message = { id: "parent-message", sessionID: parent.id, role: "user", time: { created: 2 } }
@@ -3441,8 +3570,8 @@ describe("revertToMessage passes session directory", () => {
     sessionRecords.set(child.id, child)
     sessionMessageRecords.set(child.id, [{ info: childMessage, parts: [] }])
     const store = createStore({}, { session: [parent], message: { [parent.id]: [parentMessage], [child.id]: [childMessage] } })
-    const { setActionRefs, setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
+    await bindRevertStore(store)
     setOptimisticRefs(() => {}, () => {})
     let releaseRead = () => {}
     refreshGate = new Promise<void>((resolve) => { releaseRead = resolve })
@@ -3465,8 +3594,8 @@ describe("revertToMessage passes session directory", () => {
     sessionRecords.set(session.id, session)
     const message: Message = { id: "msg_2", sessionID: session.id, role: "user", time: { created: 2 } }
     const store = createStore({}, { session: [session], message: { [session.id]: [message] } })
-    const { setActionRefs, setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
+    await bindRevertStore(store)
     setOptimisticRefs(() => {}, () => {})
     let releaseStage = () => {}
     stageRevertGate = new Promise<void>((resolve) => { releaseStage = resolve })
@@ -3493,8 +3622,8 @@ describe("revertToMessage passes session directory", () => {
     const first: Message = { id: "msg_1", sessionID: session.id, role: "user", time: { created: 1 } }
     const second: Message = { id: "msg_2", sessionID: session.id, role: "user", time: { created: 2 } }
     const store = createStore({}, { session: [session], message: { [session.id]: [first, second] } })
-    const { setActionRefs, setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
+    await bindRevertStore(store)
     setOptimisticRefs(() => {}, () => {})
     let releaseStage = () => {}
     stageRevertGate = new Promise<void>((resolve) => { releaseStage = resolve })
@@ -3521,8 +3650,8 @@ describe("revertToMessage passes session directory", () => {
     sessionRecords.set(session.id, session)
     const message: Message = { id: "msg_1", sessionID: session.id, role: "user", time: { created: 1 } }
     const store = createStore({}, { session: [session], message: { [session.id]: [message] } })
-    const { setActionRefs, setOptimisticRefs, revertToMessage, clearStagedRevert, optimisticSend } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { setOptimisticRefs, revertToMessage, clearStagedRevert, optimisticSend } = await import("./session-actions")
+    await bindRevertStore(store)
     setOptimisticRefs(() => {}, () => {})
     let releaseStage = () => {}
     stageRevertGate = new Promise<void>((resolve) => { releaseStage = resolve })
@@ -3546,8 +3675,8 @@ describe("revertToMessage passes session directory", () => {
     sessionRecords.set(session.id, session)
     const message: Message = { id: "msg_1", sessionID: session.id, role: "user", time: { created: 1 } }
     const store = createStore({}, { session: [session], message: { [session.id]: [message] } })
-    const { setActionRefs, revertToMessage, commitStagedRevert } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { revertToMessage, commitStagedRevert } = await import("./session-actions")
+    await bindRevertStore(store)
     lostStageResponseSessionIds.add(session.id)
 
     expect(await revertToMessage(session.id, message.id).catch((error: Error) => error)).toBeInstanceOf(Error)
@@ -3566,8 +3695,8 @@ describe("revertToMessage passes session directory", () => {
     sessionRecords.set(session.id, session)
     const message: Message = { id: "msg_1", sessionID: session.id, role: "user", time: { created: 1 } }
     const store = createStore({}, { session: [session], message: { [session.id]: [message] } })
-    const { setActionRefs, revertToMessage, commitStagedRevert } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { revertToMessage, commitStagedRevert } = await import("./session-actions")
+    await bindRevertStore(store)
     lostStageResponseSessionIds.add(session.id)
     await revertToMessage(session.id, message.id).catch(() => undefined)
 
@@ -3586,8 +3715,8 @@ describe("revertToMessage passes session directory", () => {
     sessionRecords.set(session.id, session)
     const message: Message = { id: "msg_1", sessionID: session.id, role: "user", time: { created: 1 } }
     const store = createStore({}, { session: [session], message: { [session.id]: [message] } })
-    const { setActionRefs, setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
+    await bindRevertStore(store)
     setOptimisticRefs(() => {}, () => {})
     let releaseStage = () => {}
     stageRevertGate = new Promise<void>((resolve) => { releaseStage = resolve })
@@ -3617,8 +3746,8 @@ describe("revertToMessage passes session directory", () => {
     const message: Message = { id: "child-message", sessionID: child.id, role: "user", time: { created: 2 } }
     sessionRecords.set(child.id, child)
     const store = createStore({}, { session: [parent, child], message: { [child.id]: [message] } })
-    const { setActionRefs, revertToMessage, commitSessionRevert } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { revertToMessage, commitSessionRevert } = await import("./session-actions")
+    await bindRevertStore(store)
     let releaseChild = () => {}
     stageRevertGate = new Promise<void>((resolve) => { releaseChild = resolve })
     failingRevertSessionIds.add(child.id)
@@ -3638,8 +3767,8 @@ describe("revertToMessage passes session directory", () => {
     const parent = sessionFixture("parent")
     const child: Session = { ...sessionFixture("child"), parentID: parent.id }
     const store = createStore({}, { session: [parent, child] })
-    const { setActionRefs, setOptimisticRefs, commitSessionRevert, optimisticSend } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { setOptimisticRefs, commitSessionRevert, optimisticSend } = await import("./session-actions")
+    await bindRevertStore(store)
     setOptimisticRefs(() => {}, () => {})
     let releaseCommit = () => {}
     commitRevertGate = new Promise<void>((resolve) => { releaseCommit = resolve })
@@ -3661,8 +3790,8 @@ describe("revertToMessage passes session directory", () => {
     const message = (id: string): Message => ({ id: `msg-${id}`, sessionID: id, role: "user", time: { created: 2 } })
     for (const session of [parent, a, b]) sessionRecords.set(session.id, session)
     const store = createStore({}, { session: [parent, a, b], message: { parent: [message("parent")], a: [message("a")], b: [message("b")] } })
-    const { setActionRefs, setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", store]]), () => "/test/project")
+    const { setOptimisticRefs, revertToMessage, optimisticSend } = await import("./session-actions")
+    await bindRevertStore(store)
     setOptimisticRefs(() => {}, () => {})
     let releaseA = () => {}
     let releaseB = () => {}
@@ -3707,6 +3836,7 @@ describe("revertToMessage passes session directory", () => {
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(childStores, () => "/current/project")
 
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
     await revertToMessage("session-a", "msg_2")
 
     expect(replyCalls.find((call) => call.method === "session.revert.stage")?.params.directory).toBe("/test/project")
@@ -3714,6 +3844,8 @@ describe("revertToMessage passes session directory", () => {
       sessionID: "session-a",
       directory: "/test/project",
     })
+    expect(replyCalls.find((call) => call.method === "session.revert.stage")?.params.directory).toBe("/test/project")
+    expect(replyCalls.some((call) => call.method === "session.messages")).toBe(false)
     expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_2")
     expect(currentStore.getState().session).toHaveLength(0)
     expect(inputState.pendingSessionRestores.get("session-a")).toBe("edit this")
@@ -3727,24 +3859,124 @@ describe("revertToMessage passes session directory", () => {
   test("cuts the transcript at the message's context carriers so they leave with it", async () => {
     const session = sessionFixture("session-a")
     sessionRecords.set(session.id, session)
-    const earlier = { id: "msg_1", sessionID: "session-a", role: "user", time: { created: 1 } } as Message
-    const firstCarrier = { id: "msg_ctx_1", sessionID: "session-a", role: "synthetic", time: { created: 2 }, text: "quoted selection" } as Message
-    const secondCarrier = { id: "msg_ctx_2", sessionID: "session-a", role: "synthetic", time: { created: 3 }, text: "review comment" } as Message
-    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 4 } } as Message
+    const earlier: Message = { id: "msg_1", sessionID: "session-a", role: "user", time: { created: 1 }, seq: 1 }
+    const firstCarrier: Message = { id: "msg_ctx_1", sessionID: "session-a", role: "synthetic", text: "first", time: { created: 2 }, seq: 2 }
+    const secondCarrier: Message = { id: "msg_ctx_2", sessionID: "session-a", role: "synthetic", text: "second", time: { created: 3 }, seq: 3 }
+    const targetMessage: Message = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 4 }, seq: 4 }
     const sessionStore = createStore({}, {
       session: [session],
       message: { "session-a": [earlier, firstCarrier, secondCarrier, targetMessage] },
       part: { "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part] },
     })
     const { setActionRefs, revertToMessage } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", sessionStore]]), () => "/test/project")
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    setActionRefs(childStores, () => "/test/project")
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
     openchamberRouteRequests.length = 0
-
     await revertToMessage("session-a", "msg_2")
 
     expect(replyCalls.find((call) => call.method === "session.revert.stage")?.params.messageID).toBe("msg_ctx_1")
     expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_ctx_1")
     expect(inputState.pendingSessionRestores.get("session-a")).toBe("edit this")
+  })
+
+  test("reads only the exact target when its cached parts are missing", async () => {
+    const session = sessionFixture("session-a")
+    const targetMessage: Message = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 }, seq: 2 }
+    const targetPart: Part = { id: "prt_2", messageID: "msg_2", sessionID: "session-a", type: "text", text: "recovered text" }
+    sessionMessageResult = { info: { ...targetMessage, seq: 2 }, parts: [targetPart] }
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: {},
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(childStores, () => "/test/project")
+
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.filter((call) => call.method === "session.message")).toHaveLength(1)
+    expect(replyCalls.some((call) => call.method === "session.messages")).toBe(false)
+    expect(replyCalls.find((call) => call.method === "session.message")?.params).toEqual({
+      sessionID: "session-a",
+      messageID: "msg_2",
+      directory: "/test/project",
+    })
+    expect(inputState.pendingInputText).toBe("recovered text")
+    expect(sessionStore.getState().part.msg_2).toBe(undefined)
+    expect(replyCalls.findIndex((call) => call.method === "session.stop"))
+      .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.message"))
+    expect(replyCalls.findIndex((call) => call.method === "session.message"))
+      .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.revert.stage"))
+  })
+
+  test("does not read the target when an authoritative empty part bucket is cached", async () => {
+    const session = sessionFixture("session-a")
+    const targetMessage: Message = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 }, seq: 2 }
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: { "msg_2": [] },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(childStores, () => "/test/project")
+
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.some((call) => call.method === "session.message")).toBe(false)
+    expect(replyCalls.some((call) => call.method === "session.revert.stage")).toBe(true)
+    expect(inputState.pendingInputText).toBe("previous draft")
+  })
+
+  test("continues without retrying when the exact target read fails", async () => {
+    const session = sessionFixture("session-a")
+    const targetMessage: Message = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 }, seq: 2 }
+    sessionMessageResult = Object.assign(new Error("unavailable"), { status: 503 })
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: {},
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(childStores, () => "/test/project")
+
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.filter((call) => call.method === "session.message")).toHaveLength(1)
+    expect(replyCalls.some((call) => call.method === "session.messages")).toBe(false)
+    expect(replyCalls.some((call) => call.method === "session.revert.stage")).toBe(true)
+    expect(inputState.pendingInputText).toBe("previous draft")
+  })
+
+  test("continues after one exact read when the server confirms empty parts", async () => {
+    const session = sessionFixture("session-a")
+    const targetMessage: Message = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 }, seq: 2 }
+    sessionMessageResult = { info: { ...targetMessage, seq: 2 }, parts: [] }
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: {},
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(childStores, () => "/test/project")
+
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.filter((call) => call.method === "session.message")).toHaveLength(1)
+    expect(replyCalls.some((call) => call.method === "session.revert.stage")).toBe(true)
+    expect(inputState.pendingInputText).toBe("previous draft")
   })
 
   test("rolls back optimistic revert when the SDK returns an error", async () => {
@@ -3765,6 +3997,7 @@ describe("revertToMessage passes session directory", () => {
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(childStores, () => "/test/project")
 
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
     let thrown: unknown
     try {
       await revertToMessage("session-a", "msg_2")
@@ -3806,6 +4039,7 @@ describe("revertToMessage passes session directory", () => {
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(createChildStores([["/tree", store]]), () => "/tree")
 
+    await bindCompleteHistory(createChildStores([["/tree", store]]), "/tree", "root")
     await revertToMessage("root", "root-cutoff")
 
     expect(replyCalls.filter((call) => call.method === "session.revert.stage").map((call) => [
@@ -3875,6 +4109,7 @@ describe("revertToMessage passes session directory", () => {
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(createChildStores([["/tree", store]]), () => "/tree")
 
+    await bindCompleteHistory(createChildStores([["/tree", store]]), "/tree", "root")
     await expect(revertToMessage("root", "root-cutoff")).rejects.toThrow("failing-child")
 
     expect(replyCalls.filter((call) => call.method === "session.revert.stage").map((call) => call.params.sessionID)).toEqual([
@@ -3907,6 +4142,7 @@ describe("revertToMessage passes session directory", () => {
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(createChildStores([["/tree", store]]), () => "/tree")
 
+    await bindCompleteHistory(createChildStores([["/tree", store]]), "/tree", "root")
     await revertToMessage("root", "root-cutoff")
 
     expect(replyCalls.filter((call) => call.method === "session.stop").map((call) => call.params.sessionID))
@@ -3937,6 +4173,65 @@ describe("revertToMessage passes session directory", () => {
     expect(replyCalls.some((call) => call.method === "session.revert.stage")).toBe(false)
     expect(replyCalls.some((call) => call.method === "session.stop")).toBe(false)
     expect(inputState.pendingInputText).toBe("previous draft")
+  })
+
+  test("keeps the composer and revert marker when the context prefix cannot be loaded", async () => {
+    const session = sessionFixture("session-a")
+    const target: Message = { id: "target", sessionID: session.id, role: "user", seq: 2, time: { created: 2 } }
+    const store = createStore({}, {
+      session: [session],
+      message: { [session.id]: [target] },
+      part: { [target.id]: [{ id: "text", sessionID: session.id, messageID: target.id, type: "text", text: "replacement" }] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { SessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    const loader = new SessionMessageLoader(childStores, {
+      runtimeKey,
+      sdk: { getSessionMessages: async () => { throw Object.assign(new Error("context unavailable"), { status: 400 }) } },
+    })
+    setImperativeSessionMessageLoader(loader)
+    setActionRefs(childStores, () => "/test/project")
+    try {
+      await expect(revertToMessage(session.id, target.id)).rejects.toThrow("context unavailable")
+      expect(replyCalls.some((call) => call.method === "session.stop")).toBe(true)
+      expect(replyCalls.some((call) => call.method === "session.revert.stage")).toBe(false)
+      expect(store.getState().session[0].revert).toBeUndefined()
+      expect(inputState.pendingInputText).toBe("previous draft")
+    } finally {
+      setImperativeSessionMessageLoader(null)
+      loader.dispose()
+    }
+  })
+
+  test("does not continue reverting after a runtime switch during context loading", async () => {
+    const previousRuntime = runtimeKey
+    const session = sessionFixture("session-a")
+    const target: Message = { id: "target", sessionID: session.id, role: "user", seq: 2, time: { created: 2 } }
+    const store = createStore({}, { session: [session], message: { [session.id]: [target] }, part: { [target.id]: [] } })
+    const childStores = createChildStores([["/test/project", store]])
+    const { SessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    const loader = new SessionMessageLoader(childStores, {
+      runtimeKey,
+      sdk: { getSessionMessages: async () => {
+        runtimeKey = "replacement-runtime"
+        inputState.pendingInputText = "new runtime draft"
+        return { items: [{ info: { ...target, seq: 2 }, parts: [] }], cursor: {} }
+      } },
+    })
+    setImperativeSessionMessageLoader(loader)
+    setActionRefs(childStores, () => "/test/project")
+    try {
+      await expect(revertToMessage(session.id, target.id)).rejects.toThrow("invalidated")
+      expect(replyCalls.some((call) => call.method === "session.revert.stage")).toBe(false)
+      expect(store.getState().session[0].revert).toBeUndefined()
+      expect(inputState.pendingInputText).toBe("new runtime draft")
+    } finally {
+      runtimeKey = previousRuntime
+      setImperativeSessionMessageLoader(null)
+      loader.dispose()
+    }
   })
 })
 
