@@ -1079,6 +1079,7 @@ export const settingsDict = {
   'settings.usage.page.header.providerUsage': 'Utilisation de {provider}',
   'settings.usage.page.header.refreshing': 'Utilisation rafraîchissante...',
   'settings.usage.page.header.lastUpdated': 'Dernière mise à jour : {time}',
+  'settings.usage.page.header.lastUpdatedWithPlan': 'Forfait : {plan} · Dernière mise à jour : {time}',
   'settings.usage.page.options.showInWorkStatusAria': 'Afficher dans le panneau d’état du travail',
   'settings.usage.page.options.showInWorkStatus': 'Afficher dans le panneau d’état du travail',
   'settings.usage.page.options.showInWorkStatusTooltip': 'Lorsqu’elle est activée, l’utilisation de ce fournisseur sera visible dans le panneau d’état du travail.',
