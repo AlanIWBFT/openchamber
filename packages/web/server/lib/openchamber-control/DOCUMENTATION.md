@@ -27,7 +27,11 @@ other.
 ## Invariants
 
 - Session status and messages come from official directory-scoped OpenCode
-  APIs. Message output includes only ordered `text` parts.
+  APIs. Message output includes ordered `text` parts and completed `question`
+  answers projected from structured metadata as user messages; every other tool
+  part remains excluded. A projected answer has a unique synthetic `id` for
+  result-list identity only; it is not a durable OpenCode message ID and cannot
+  be used as a session fork boundary.
 - Wait never treats an initial idle response as completion after dispatch. It
   requires observed activity or a newly completed assistant message.
 - Timeout and cancellation are failures, never authoritative idle results.
