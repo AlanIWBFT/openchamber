@@ -30,8 +30,12 @@ export function previousUserMessage(messages: readonly Message[], messageID: str
 export function nextUserMessage(messages: readonly Message[], messageID: string): Message | undefined {
   const boundary = findMessageBoundary(messages, messageID)
   if (boundary < 0) return undefined
-  for (let index = boundary + 1; index < messages.length; index += 1) {
-    if (messages[index]?.role === "user") return messages[index]
+  // A revert marker can precede its user message on attached synthetic context.
+  let foundRevertedUser = false
+  for (let index = boundary; index < messages.length; index += 1) {
+    if (messages[index]?.role !== "user") continue
+    if (foundRevertedUser) return messages[index]
+    foundRevertedUser = true
   }
   return undefined
 }

@@ -13,6 +13,7 @@ let permissionReplyError: unknown | null = null
 const sessionMessageRecords = new Map<string, Array<{ info: Message; parts: Part[] }>>()
 const sessionRecords = new Map<string, Session>()
 const failingRevertSessionIds = new Set<string>()
+let sessionMessageResult: Awaited<ReturnType<typeof import("@/lib/opencode/client").opencodeClient.getSessionMessage>> | Error | undefined
 let sessionDeleteError: unknown | null = null
 let sessionForkResult: Session | null = null
 let sessionForkError: Error | null = null
@@ -78,6 +79,12 @@ mock.module("@/lib/opencode/client", () => ({
         ...record, info: { ...record.info, seq: record.info.seq ?? index + 1 },
       }))
       return { items, cursor: {} }
+    }),
+    getSessionMessage: mock(async (sessionId: string, messageId: string, directory?: string | null) => {
+      replyCalls.push({ method: "session.message", params: { sessionID: sessionId, messageID: messageId, directory } })
+      if (sessionMessageResult instanceof Error) throw sessionMessageResult
+      if (!sessionMessageResult) throw notFound("Message")
+      return sessionMessageResult
     }),
     createSession: mock(async (params: Record<string, unknown>, directory?: string | null): Promise<Session> => {
       replyCalls.push({ method: "session.create", params: { ...params, directory } })
@@ -307,10 +314,6 @@ mock.module("./global-session-status", () => ({
   },
 }))
 
-mock.module("./session-message-loader", () => ({
-  getImperativeSessionMessageLoader: () => null,
-}))
-
 mock.module("../lib/runtime-switch", () => ({
   getRuntimeApiBaseUrl: () => "http://session-actions.test",
   getRuntimeKey: () => runtimeKey,
@@ -436,6 +439,24 @@ function createChildStores(entries: Array<[string, TestStoreApi<DirectoryStore>]
     },
     getChild: (dir: string) => new Map(entries).get(dir),
   } as unknown as import("./child-store").ChildStoreManager
+}
+
+beforeEach(async () => {
+  const { getImperativeSessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+  getImperativeSessionMessageLoader()?.dispose()
+  setImperativeSessionMessageLoader(null)
+  const { clearRuntimeSessionPrefetch } = await import("./session-prefetch-cache")
+  clearRuntimeSessionPrefetch(runtimeKey)
+  clearRuntimeSessionPrefetch("default-runtime")
+})
+
+async function bindCompleteHistory(childStores: ReturnType<typeof createChildStores>, directory: string, sessionID: string) {
+  const { SessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+  const { setSessionPrefetch } = await import("./session-prefetch-cache")
+  const { opencodeClient } = await import("@/lib/opencode/client")
+  // These fixtures explicitly represent a complete cached transcript.
+  setSessionPrefetch({ directory, sessionID, limit: 100, complete: true, runtimeKey })
+  setImperativeSessionMessageLoader(new SessionMessageLoader(childStores, { sdk: opencodeClient, runtimeKey }))
 }
 
 describe("moveSessionToDirectory", () => {
@@ -1383,6 +1404,7 @@ describe("explicit session stop", () => {
 
     expect(replyCalls.findIndex((call) => call.method === "session.stop"))
       .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.revert.clear"))
+    expect(replyCalls.some((call) => call.method === "session.messages")).toBe(false)
     expect(replyCalls.some((call) => call.method === "session.abort")).toBe(false)
   })
 
@@ -1551,6 +1573,112 @@ describe("optimisticSend target directory", () => {
     expect(targetStore.getState().part[revertedMessage.id]).toBe(undefined)
     expect(optimisticShadow.has(revertedMessage.id)).toBe(false)
     expect(optimisticShadow.has((optimisticMessage as unknown as Message).id)).toBe(true)
+  })
+
+  test("loads a missing revert boundary before committing a new branch", async () => {
+    const retainedMessage: Message = { id: "msg_1", role: "user", sessionID: "session-reverted", time: { created: 1 }, seq: 1 }
+    const revertMessage: Message = { id: "msg_2", role: "user", sessionID: "session-reverted", time: { created: 2 }, seq: 2 }
+    const revertedTail: Message = { id: "msg_3", role: "assistant", sessionID: "session-reverted", time: { created: 3 }, seq: 3, agent: "build", providerID: "provider", modelID: "model" }
+    const targetStore = createStore({}, {
+      session: [{ ...sessionFixture("session-reverted"), revert: { messageID: revertMessage.id } }],
+      message: { "session-reverted": [revertedTail] },
+    })
+    const childStores = createChildStores([["/target/project", targetStore]])
+    sessionMessageRecords.set("session-reverted", [
+        {
+          info: { ...retainedMessage, seq: 1 },
+          parts: [{ id: "part_1", messageID: retainedMessage.id, sessionID: "session-reverted", type: "text", text: "retained" }],
+        },
+        {
+          info: { ...revertMessage, seq: 2 },
+          parts: [{ id: "part_2", messageID: revertMessage.id, sessionID: "session-reverted", type: "text", text: "reverted" }],
+        },
+        {
+          info: { ...revertedTail, seq: 3 },
+          parts: [{ id: "part_3", messageID: revertedTail.id, sessionID: "session-reverted", type: "text", text: "old response" }],
+        },
+    ])
+    let messagesAtSend: string[] = []
+
+    const { getRuntimeKey } = await import("../lib/runtime-switch")
+    const { SessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+    const { optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    const { opencodeClient } = await import("@/lib/opencode/client")
+    const loader = new SessionMessageLoader(childStores, { sdk: opencodeClient, runtimeKey: getRuntimeKey() })
+    setImperativeSessionMessageLoader(loader)
+    setActionRefs(childStores, () => "/target/project")
+    setOptimisticRefs(
+      (input) => targetStore.setState((state) => ({
+        message: { ...state.message, [input.sessionID]: [...(state.message[input.sessionID] ?? []), input.message] },
+        part: { ...state.part, [input.message.id]: input.parts },
+      })),
+      () => {},
+    )
+
+    try {
+      await optimisticSend({
+        sessionId: "session-reverted",
+        directory: "/target/project",
+        content: "new branch",
+        send: async () => {
+          messagesAtSend = (targetStore.getState().message["session-reverted"] ?? []).map((message) => message.id)
+        },
+      })
+    } finally {
+      setImperativeSessionMessageLoader(null)
+      loader.dispose()
+    }
+
+    expect(replyCalls.filter((call) => call.method === "session.messages").map((call) => call.params.limit)).toEqual([100])
+    expect(messagesAtSend).toHaveLength(2)
+    expect(messagesAtSend[0]).toBe(retainedMessage.id)
+    expect(messagesAtSend).not.toContain(revertMessage.id)
+    expect(messagesAtSend).not.toContain(revertedTail.id)
+    expect(targetStore.getState().session[0].revert).toBe(undefined)
+  })
+
+  test("does not send when a missing revert boundary cannot be loaded", async () => {
+    const cachedTail: Message = { id: "msg_3", role: "assistant", sessionID: "session-reverted", time: { created: 3 }, seq: 3, agent: "build", providerID: "provider", modelID: "model" }
+    const targetStore = createStore({}, {
+      session: [{ ...sessionFixture("session-reverted"), revert: { messageID: "msg_missing" } }],
+      message: { "session-reverted": [cachedTail] },
+    })
+    const childStores = createChildStores([["/target/project", targetStore]])
+    sessionMessageRecords.set("session-reverted", [{
+        info: { ...cachedTail, seq: 1 },
+        parts: [{ id: "part_3", messageID: cachedTail.id, sessionID: "session-reverted", type: "text", text: "old response" }],
+    }])
+    let sendCalled = false
+    let optimisticAddCalled = false
+
+    const { getRuntimeKey } = await import("../lib/runtime-switch")
+    const { SessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+    const { optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    const { opencodeClient } = await import("@/lib/opencode/client")
+    const loader = new SessionMessageLoader(childStores, { sdk: opencodeClient, runtimeKey: getRuntimeKey() })
+    setImperativeSessionMessageLoader(loader)
+    setActionRefs(childStores, () => "/target/project")
+    setOptimisticRefs(
+      () => { optimisticAddCalled = true },
+      () => {},
+    )
+
+    try {
+      await expect(optimisticSend({
+        sessionId: "session-reverted",
+        directory: "/target/project",
+        content: "new branch",
+        send: async () => { sendCalled = true },
+      })).rejects.toThrow("Reverted session history could not be loaded")
+    } finally {
+      setImperativeSessionMessageLoader(null)
+      loader.dispose()
+    }
+
+    expect(sendCalled).toBe(false)
+    expect(optimisticAddCalled).toBe(false)
+    expect(targetStore.getState().session[0].revert?.messageID).toBe("msg_missing")
+    expect(targetStore.getState().message["session-reverted"]?.map((message) => message.id)).toEqual([cachedTail.id])
   })
 
   test("restores the reverted branch when sending fails", async () => {
@@ -2441,6 +2569,7 @@ describe("revertToMessage passes session directory", () => {
     sessionMessageRecords.clear()
     sessionRecords.clear()
     failingRevertSessionIds.clear()
+    sessionMessageResult = undefined
     Object.assign(inputState, {
       pendingInputText: "previous draft",
       pendingInputMode: "replace",
@@ -2467,6 +2596,7 @@ describe("revertToMessage passes session directory", () => {
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(childStores, () => "/current/project")
 
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
     await revertToMessage("session-a", "msg_2")
 
     expect(replyCalls.find((call) => call.method === "session.revert.stage")?.params.directory).toBe("/test/project")
@@ -2474,6 +2604,8 @@ describe("revertToMessage passes session directory", () => {
       sessionID: "session-a",
       directory: "/test/project",
     })
+    expect(replyCalls.find((call) => call.method === "session.revert.stage")?.params.directory).toBe("/test/project")
+    expect(replyCalls.some((call) => call.method === "session.messages")).toBe(false)
     expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_2")
     expect(currentStore.getState().session).toHaveLength(0)
     expect(inputState.pendingInputText).toBe("edit this")
@@ -2484,23 +2616,123 @@ describe("revertToMessage passes session directory", () => {
   test("cuts the transcript at the message's context carriers so they leave with it", async () => {
     const session = sessionFixture("session-a")
     sessionRecords.set(session.id, session)
-    const earlier = { id: "msg_1", sessionID: "session-a", role: "user", time: { created: 1 } } as Message
-    const firstCarrier = { id: "msg_ctx_1", sessionID: "session-a", role: "synthetic", time: { created: 2 } } as Message
-    const secondCarrier = { id: "msg_ctx_2", sessionID: "session-a", role: "synthetic", time: { created: 3 } } as Message
-    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 4 } } as Message
+    const earlier: Message = { id: "msg_1", sessionID: "session-a", role: "user", time: { created: 1 }, seq: 1 }
+    const firstCarrier: Message = { id: "msg_ctx_1", sessionID: "session-a", role: "synthetic", text: "first", time: { created: 2 }, seq: 2 }
+    const secondCarrier: Message = { id: "msg_ctx_2", sessionID: "session-a", role: "synthetic", text: "second", time: { created: 3 }, seq: 3 }
+    const targetMessage: Message = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 4 }, seq: 4 }
     const sessionStore = createStore({}, {
       session: [session],
       message: { "session-a": [earlier, firstCarrier, secondCarrier, targetMessage] },
       part: { "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part] },
     })
     const { setActionRefs, revertToMessage } = await import("./session-actions")
-    setActionRefs(createChildStores([["/test/project", sessionStore]]), () => "/test/project")
-
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    setActionRefs(childStores, () => "/test/project")
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
     await revertToMessage("session-a", "msg_2")
 
     expect(replyCalls.find((call) => call.method === "session.revert.stage")?.params.messageID).toBe("msg_ctx_1")
     expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_ctx_1")
     expect(inputState.pendingInputText).toBe("edit this")
+  })
+
+  test("reads only the exact target when its cached parts are missing", async () => {
+    const session = sessionFixture("session-a")
+    const targetMessage: Message = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 }, seq: 2 }
+    const targetPart: Part = { id: "prt_2", messageID: "msg_2", sessionID: "session-a", type: "text", text: "recovered text" }
+    sessionMessageResult = { info: { ...targetMessage, seq: 2 }, parts: [targetPart] }
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: {},
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(childStores, () => "/test/project")
+
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.filter((call) => call.method === "session.message")).toHaveLength(1)
+    expect(replyCalls.some((call) => call.method === "session.messages")).toBe(false)
+    expect(replyCalls.find((call) => call.method === "session.message")?.params).toEqual({
+      sessionID: "session-a",
+      messageID: "msg_2",
+      directory: "/test/project",
+    })
+    expect(inputState.pendingInputText).toBe("recovered text")
+    expect(sessionStore.getState().part.msg_2).toBe(undefined)
+    expect(replyCalls.findIndex((call) => call.method === "session.stop"))
+      .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.message"))
+    expect(replyCalls.findIndex((call) => call.method === "session.message"))
+      .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.revert.stage"))
+  })
+
+  test("does not read the target when an authoritative empty part bucket is cached", async () => {
+    const session = sessionFixture("session-a")
+    const targetMessage: Message = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 }, seq: 2 }
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: { "msg_2": [] },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(childStores, () => "/test/project")
+
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.some((call) => call.method === "session.message")).toBe(false)
+    expect(replyCalls.some((call) => call.method === "session.revert.stage")).toBe(true)
+    expect(inputState.pendingInputText).toBe("previous draft")
+  })
+
+  test("continues without retrying when the exact target read fails", async () => {
+    const session = sessionFixture("session-a")
+    const targetMessage: Message = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 }, seq: 2 }
+    sessionMessageResult = Object.assign(new Error("unavailable"), { status: 503 })
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: {},
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(childStores, () => "/test/project")
+
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.filter((call) => call.method === "session.message")).toHaveLength(1)
+    expect(replyCalls.some((call) => call.method === "session.messages")).toBe(false)
+    expect(replyCalls.some((call) => call.method === "session.revert.stage")).toBe(true)
+    expect(inputState.pendingInputText).toBe("previous draft")
+  })
+
+  test("continues after one exact read when the server confirms empty parts", async () => {
+    const session = sessionFixture("session-a")
+    const targetMessage: Message = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 }, seq: 2 }
+    sessionMessageResult = { info: { ...targetMessage, seq: 2 }, parts: [] }
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: {},
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(childStores, () => "/test/project")
+
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.filter((call) => call.method === "session.message")).toHaveLength(1)
+    expect(replyCalls.some((call) => call.method === "session.revert.stage")).toBe(true)
+    expect(inputState.pendingInputText).toBe("previous draft")
   })
 
   test("rolls back optimistic revert when the SDK returns an error", async () => {
@@ -2519,6 +2751,7 @@ describe("revertToMessage passes session directory", () => {
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(childStores, () => "/test/project")
 
+    await bindCompleteHistory(childStores, "/test/project", "session-a")
     let thrown: unknown
     try {
       await revertToMessage("session-a", "msg_2")
@@ -2558,6 +2791,7 @@ describe("revertToMessage passes session directory", () => {
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(createChildStores([["/tree", store]]), () => "/tree")
 
+    await bindCompleteHistory(createChildStores([["/tree", store]]), "/tree", "root")
     await revertToMessage("root", "root-cutoff")
 
     expect(replyCalls.filter((call) => call.method === "session.revert.stage").map((call) => [
@@ -2627,6 +2861,7 @@ describe("revertToMessage passes session directory", () => {
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(createChildStores([["/tree", store]]), () => "/tree")
 
+    await bindCompleteHistory(createChildStores([["/tree", store]]), "/tree", "root")
     await revertToMessage("root", "root-cutoff")
 
     expect(replyCalls.filter((call) => call.method === "session.revert.stage").map((call) => call.params.sessionID)).toEqual([
@@ -2659,6 +2894,7 @@ describe("revertToMessage passes session directory", () => {
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(createChildStores([["/tree", store]]), () => "/tree")
 
+    await bindCompleteHistory(createChildStores([["/tree", store]]), "/tree", "root")
     await revertToMessage("root", "root-cutoff")
 
     expect(replyCalls.filter((call) => call.method === "session.stop").map((call) => call.params.sessionID))
@@ -2689,6 +2925,65 @@ describe("revertToMessage passes session directory", () => {
     expect(replyCalls.some((call) => call.method === "session.revert.stage")).toBe(false)
     expect(replyCalls.some((call) => call.method === "session.stop")).toBe(false)
     expect(inputState.pendingInputText).toBe("previous draft")
+  })
+
+  test("keeps the composer and revert marker when the context prefix cannot be loaded", async () => {
+    const session = sessionFixture("session-a")
+    const target: Message = { id: "target", sessionID: session.id, role: "user", seq: 2, time: { created: 2 } }
+    const store = createStore({}, {
+      session: [session],
+      message: { [session.id]: [target] },
+      part: { [target.id]: [{ id: "text", sessionID: session.id, messageID: target.id, type: "text", text: "replacement" }] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { SessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    const loader = new SessionMessageLoader(childStores, {
+      runtimeKey,
+      sdk: { getSessionMessages: async () => { throw Object.assign(new Error("context unavailable"), { status: 400 }) } },
+    })
+    setImperativeSessionMessageLoader(loader)
+    setActionRefs(childStores, () => "/test/project")
+    try {
+      await expect(revertToMessage(session.id, target.id)).rejects.toThrow("context unavailable")
+      expect(replyCalls.some((call) => call.method === "session.stop")).toBe(true)
+      expect(replyCalls.some((call) => call.method === "session.revert.stage")).toBe(false)
+      expect(store.getState().session[0].revert).toBeUndefined()
+      expect(inputState.pendingInputText).toBe("previous draft")
+    } finally {
+      setImperativeSessionMessageLoader(null)
+      loader.dispose()
+    }
+  })
+
+  test("does not continue reverting after a runtime switch during context loading", async () => {
+    const previousRuntime = runtimeKey
+    const session = sessionFixture("session-a")
+    const target: Message = { id: "target", sessionID: session.id, role: "user", seq: 2, time: { created: 2 } }
+    const store = createStore({}, { session: [session], message: { [session.id]: [target] }, part: { [target.id]: [] } })
+    const childStores = createChildStores([["/test/project", store]])
+    const { SessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    const loader = new SessionMessageLoader(childStores, {
+      runtimeKey,
+      sdk: { getSessionMessages: async () => {
+        runtimeKey = "replacement-runtime"
+        inputState.pendingInputText = "new runtime draft"
+        return { items: [{ info: { ...target, seq: 2 }, parts: [] }], cursor: {} }
+      } },
+    })
+    setImperativeSessionMessageLoader(loader)
+    setActionRefs(childStores, () => "/test/project")
+    try {
+      await expect(revertToMessage(session.id, target.id)).rejects.toThrow("invalidated")
+      expect(replyCalls.some((call) => call.method === "session.revert.stage")).toBe(false)
+      expect(store.getState().session[0].revert).toBeUndefined()
+      expect(inputState.pendingInputText).toBe("new runtime draft")
+    } finally {
+      runtimeKey = previousRuntime
+      setImperativeSessionMessageLoader(null)
+      loader.dispose()
+    }
   })
 })
 

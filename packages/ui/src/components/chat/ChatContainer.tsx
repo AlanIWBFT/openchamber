@@ -1067,6 +1067,23 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
     const currentSession = useSession(currentSessionId, effectiveSessionDirectory);
     const parentSession = useParentSession(currentSessionId, effectiveSessionDirectory);
+    const revertMessageID = currentSession?.revert?.messageID;
+
+    React.useEffect(() => {
+        if (!active || !currentSessionId || !effectiveSessionDirectory || !revertMessageID) return;
+        const controller = new AbortController();
+        void sync.ensureMessage(
+            currentSessionId,
+            revertMessageID,
+            effectiveSessionDirectory,
+            controller.signal,
+        ).catch((error) => {
+            if (!controller.signal.aborted) {
+                console.error('[chat] Failed to resolve revert boundary', error);
+            }
+        });
+        return () => controller.abort();
+    }, [active, currentSessionId, effectiveSessionDirectory, revertMessageID, sync]);
 
     // A pinned column hides "Return to parent" on the session it was opened
     // on: going up from there would show the session the main chat already
