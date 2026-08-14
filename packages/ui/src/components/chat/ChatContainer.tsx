@@ -834,6 +834,23 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
     const currentSession = useSession(currentSessionId, effectiveSessionDirectory);
     const parentSession = useParentSession(currentSessionId, effectiveSessionDirectory);
+    const revertMessageID = (currentSession as Session & { revert?: { messageID?: string } } | undefined)?.revert?.messageID;
+
+    React.useEffect(() => {
+        if (!active || !currentSessionId || !effectiveSessionDirectory || !revertMessageID) return;
+        const controller = new AbortController();
+        void sync.ensureMessage(
+            currentSessionId,
+            revertMessageID,
+            effectiveSessionDirectory,
+            controller.signal,
+        ).catch((error) => {
+            if (!controller.signal.aborted) {
+                console.error('[chat] Failed to resolve revert boundary', error);
+            }
+        });
+        return () => controller.abort();
+    }, [active, currentSessionId, effectiveSessionDirectory, revertMessageID, sync]);
 
     // In the embedded session-chat iframe, hide "Return to parent" when
     // viewing the panel's anchor session (the one recorded in the URL). Going

@@ -17,6 +17,7 @@ const sessionMessageRecords = new Map<string, Array<{ info: Message; parts: Part
 const failingRevertSessionIds = new Set<string>()
 const failingUnrevertSessionIds = new Set<string>()
 let afterUnrevertCall: ((sessionId: string) => void) | null = null
+let sessionMessageResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {}
 let sessionDeleteError: unknown | null = null
 let beforeSessionUpdateResolve: ((sessionId: string) => void) | null = null
 let beforeSessionDeleteResolve: ((sessionId: string) => void) | null = null
@@ -70,6 +71,10 @@ const mockSdk = {
     messages: mock((params: Record<string, unknown>) => {
       replyCalls.push({ method: "session.messages", params })
       return Promise.resolve(sessionMessagesResult)
+    }),
+    message: mock((params: Record<string, unknown>) => {
+      replyCalls.push({ method: "session.message", params })
+      return Promise.resolve(sessionMessageResult)
     }),
     revert: mock((params: Record<string, unknown>) => {
       replyCalls.push({ method: "session.revert", params })
@@ -838,6 +843,7 @@ describe("explicit session stop", () => {
 
     expect(replyCalls.findIndex((call) => call.method === "session.stop"))
       .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.unrevert"))
+    expect(replyCalls.some((call) => call.method === "session.messages")).toBe(false)
     expect(replyCalls.some((call) => call.method === "session.abort")).toBe(false)
   })
 
@@ -1115,6 +1121,118 @@ describe("optimisticSend target directory", () => {
     expect(optimisticShadow.has((optimisticMessage as unknown as Message).id)).toBe(true)
   })
 
+  test("loads a missing revert boundary before committing a new branch", async () => {
+    const retainedMessage = { id: "msg_1", role: "user", sessionID: "session-reverted" } as Message
+    const revertMessage = { id: "msg_2", role: "user", sessionID: "session-reverted" } as Message
+    const revertedTail = { id: "msg_3", role: "assistant", sessionID: "session-reverted" } as Message
+    const targetStore = createStore({}, {
+      session: [{ id: "session-reverted", revert: { messageID: revertMessage.id } } as Session],
+      message: { "session-reverted": [revertedTail] },
+    })
+    const childStores = createChildStores([["/target/project", targetStore]])
+    sessionMessagesResult = {
+      data: [
+        {
+          info: { ...retainedMessage, seq: 1 },
+          parts: [{ id: "part_1", messageID: retainedMessage.id, sessionID: "session-reverted", type: "text", text: "retained", seq: 1 }],
+        },
+        {
+          info: { ...revertMessage, seq: 2 },
+          parts: [{ id: "part_2", messageID: revertMessage.id, sessionID: "session-reverted", type: "text", text: "reverted", seq: 2 }],
+        },
+        {
+          info: { ...revertedTail, seq: 3 },
+          parts: [{ id: "part_3", messageID: revertedTail.id, sessionID: "session-reverted", type: "text", text: "old response", seq: 3 }],
+        },
+      ],
+    }
+    let messagesAtSend: string[] = []
+
+    const { getRuntimeKey } = await import("../lib/runtime-switch")
+    const { SessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+    const { optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    const loader = new SessionMessageLoader(childStores, { sdk: mockSdk as unknown as OpencodeClient, runtimeKey: getRuntimeKey() })
+    setImperativeSessionMessageLoader(loader)
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/target/project")
+    setOptimisticRefs(
+      (input) => targetStore.setState((state) => ({
+        message: { ...state.message, [input.sessionID]: [...(state.message[input.sessionID] ?? []), input.message] },
+        part: { ...state.part, [input.message.id]: input.parts },
+      })),
+      () => {},
+    )
+
+    try {
+      await optimisticSend({
+        sessionId: "session-reverted",
+        directory: "/target/project",
+        content: "new branch",
+        providerID: "provider",
+        modelID: "model",
+        send: async () => {
+          messagesAtSend = (targetStore.getState().message["session-reverted"] ?? []).map((message) => message.id)
+        },
+      })
+    } finally {
+      setImperativeSessionMessageLoader(null)
+      loader.dispose()
+    }
+
+    expect(replyCalls.filter((call) => call.method === "session.messages").map((call) => call.params.limit)).toEqual([50])
+    expect(messagesAtSend).toHaveLength(2)
+    expect(messagesAtSend[0]).toBe(retainedMessage.id)
+    expect(messagesAtSend).not.toContain(revertMessage.id)
+    expect(messagesAtSend).not.toContain(revertedTail.id)
+    expect(targetStore.getState().session[0].revert).toBe(undefined)
+  })
+
+  test("does not send when a missing revert boundary cannot be loaded", async () => {
+    const cachedTail = { id: "msg_3", role: "assistant", sessionID: "session-reverted" } as Message
+    const targetStore = createStore({}, {
+      session: [{ id: "session-reverted", revert: { messageID: "msg_missing" } } as Session],
+      message: { "session-reverted": [cachedTail] },
+    })
+    const childStores = createChildStores([["/target/project", targetStore]])
+    sessionMessagesResult = {
+      data: [{
+        info: { ...cachedTail, seq: 1 },
+        parts: [{ id: "part_3", messageID: cachedTail.id, sessionID: "session-reverted", type: "text", text: "old response", seq: 1 }],
+      }],
+    }
+    let sendCalled = false
+    let optimisticAddCalled = false
+
+    const { getRuntimeKey } = await import("../lib/runtime-switch")
+    const { SessionMessageLoader, setImperativeSessionMessageLoader } = await import("./session-message-loader")
+    const { optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    const loader = new SessionMessageLoader(childStores, { sdk: mockSdk as unknown as OpencodeClient, runtimeKey: getRuntimeKey() })
+    setImperativeSessionMessageLoader(loader)
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/target/project")
+    setOptimisticRefs(
+      () => { optimisticAddCalled = true },
+      () => {},
+    )
+
+    try {
+      await expect(optimisticSend({
+        sessionId: "session-reverted",
+        directory: "/target/project",
+        content: "new branch",
+        providerID: "provider",
+        modelID: "model",
+        send: async () => { sendCalled = true },
+      })).rejects.toThrow("Reverted session history could not be loaded")
+    } finally {
+      setImperativeSessionMessageLoader(null)
+      loader.dispose()
+    }
+
+    expect(sendCalled).toBe(false)
+    expect(optimisticAddCalled).toBe(false)
+    expect(targetStore.getState().session[0].revert?.messageID).toBe("msg_missing")
+    expect(targetStore.getState().message["session-reverted"]?.map((message) => message.id)).toEqual([cachedTail.id])
+  })
+
   test("restores the reverted branch when sending fails", async () => {
     const retainedMessage = { id: "msg_ffffffffffffRetained", role: "user", sessionID: "session-reverted", time: { created: 1 } } as Message
     const revertedMessage = { id: "msg_000000000000Reverted", role: "user", sessionID: "session-reverted", time: { created: 2 } } as Message
@@ -1346,6 +1464,7 @@ describe("respondToPermission passes directory", () => {
     replyCalls.length = 0
     scopedClientDirectories.length = 0
     sessionRevertResult = {}
+    sessionMessageResult = {}
     sessionStopResult = { data: { sessions: 1, matched: 0, terminated: 0, failed: 0 } }
   })
 
@@ -1421,6 +1540,7 @@ describe("revertToMessage passes session directory", () => {
     sessionRevertResult = {}
     sessionMessageRecords.clear()
     failingRevertSessionIds.clear()
+    sessionMessageResult = {}
     Object.assign(inputState, {
       pendingInputText: "previous draft",
       pendingInputMode: "normal" as const,
@@ -1456,11 +1576,111 @@ describe("revertToMessage passes session directory", () => {
       body: { scope: "reverted-branch", messageID: "msg_2" },
     })
     expect(replyCalls.find((call) => call.method === "session.revert")?.params.directory).toBe("/test/project")
+    expect(replyCalls.some((call) => call.method === "session.messages")).toBe(false)
     expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_2")
     expect(currentStore.getState().session).toHaveLength(0)
     expect(inputState.pendingInputText).toBe("edit this")
     expect(replyCalls.findIndex((call) => call.method === "session.stop"))
       .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.revert"))
+  })
+
+  test("reads only the exact target when its cached parts are missing", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const targetPart = { id: "prt_2", messageID: "msg_2", sessionID: "session-a", type: "text", text: "recovered text" } as Part
+    sessionMessageResult = { data: { info: targetMessage, parts: [targetPart] } }
+    sessionRevertResult = { data: { ...session, revert: { messageID: "msg_2" } } }
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: {},
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.filter((call) => call.method === "session.message")).toHaveLength(1)
+    expect(replyCalls.some((call) => call.method === "session.messages")).toBe(false)
+    expect(replyCalls.find((call) => call.method === "session.message")?.params).toEqual({
+      sessionID: "session-a",
+      messageID: "msg_2",
+      directory: "/test/project",
+    })
+    expect(inputState.pendingInputText).toBe("recovered text")
+    expect(sessionStore.getState().part.msg_2).toBe(undefined)
+    expect(replyCalls.findIndex((call) => call.method === "session.stop"))
+      .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.message"))
+    expect(replyCalls.findIndex((call) => call.method === "session.message"))
+      .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.revert"))
+  })
+
+  test("does not read the target when an authoritative empty part bucket is cached", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    sessionRevertResult = { data: { ...session, revert: { messageID: "msg_2" } } }
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: { "msg_2": [] },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.some((call) => call.method === "session.message")).toBe(false)
+    expect(replyCalls.some((call) => call.method === "session.revert")).toBe(true)
+    expect(inputState.pendingInputText).toBe("previous draft")
+  })
+
+  test("continues without retrying when the exact target read fails", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    sessionMessageResult = { error: { message: "unavailable" }, response: { status: 503 } }
+    sessionRevertResult = { data: { ...session, revert: { messageID: "msg_2" } } }
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: {},
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.filter((call) => call.method === "session.message")).toHaveLength(1)
+    expect(replyCalls.some((call) => call.method === "session.messages")).toBe(false)
+    expect(replyCalls.some((call) => call.method === "session.revert")).toBe(true)
+    expect(inputState.pendingInputText).toBe("previous draft")
+  })
+
+  test("continues after one exact read when the server confirms empty parts", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    sessionMessageResult = { data: { info: targetMessage, parts: [] } }
+    sessionRevertResult = { data: { ...session, revert: { messageID: "msg_2" } } }
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: {},
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.filter((call) => call.method === "session.message")).toHaveLength(1)
+    expect(replyCalls.some((call) => call.method === "session.revert")).toBe(true)
+    expect(inputState.pendingInputText).toBe("previous draft")
   })
 
   test("rolls back optimistic revert when the SDK returns an error", async () => {
@@ -1598,7 +1818,7 @@ describe("revertToMessage passes session directory", () => {
     ])
   })
 
-  test("does not call revert when the target is absent from complete history", async () => {
+  test("does not call revert when the target is absent from available history", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const sessionStore = createStore({}, { session: [session] })
     const childStores = createChildStores([["/test/project", sessionStore]])
