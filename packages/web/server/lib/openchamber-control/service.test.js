@@ -286,11 +286,11 @@ describe('OpenChamber control service', () => {
     const { service, client } = createService();
     client.message.list.mockResolvedValue({ data: [
       {
-        id: 'msg_assistant', type: 'assistant', model: { providerID: 'openai', id: 'gpt-5.4-mini' }, time: { created: 20, completed: 30 },
+        id: 'msg_assistant', type: 'assistant', seq: 3, model: { providerID: 'openai', id: 'gpt-5.4-mini' }, time: { created: 20, completed: 30 },
         content: [{ type: 'reasoning', text: 'hidden' }, { type: 'text', text: 'First ' }, { type: 'tool' }, { type: 'text', text: 'answer' }],
       },
-      { id: 'msg_user', type: 'user', time: { created: 10 }, text: 'Question' },
-      { id: 'msg_tool', type: 'assistant', time: { created: 15 }, content: [{ type: 'tool' }] },
+      { id: 'msg_user', type: 'user', seq: 1, time: { created: 10 }, text: 'Question' },
+      { id: 'msg_tool', type: 'assistant', seq: 2, time: { created: 15 }, content: [{ type: 'tool' }] },
     ] });
 
     await expect(service.execute('session.messages', {
@@ -308,6 +308,175 @@ describe('OpenChamber control service', () => {
         { id: 'msg_assistant', role: 'assistant', createdAt: 20, completedAt: 30, model: 'openai/gpt-5.4-mini', text: 'First answer' },
       ],
     });
+  });
+
+  it('projects completed question selections with unique non-forkable IDs', async () => {
+    const { service, client, sessionService } = createService();
+    client.message.list.mockResolvedValue({ data: [
+      {
+        id: 'msg_question', type: 'assistant', seq: 1, time: { created: 20, completed: 40 },
+        content: [
+          { type: 'text', text: 'Please choose.' },
+          {
+            id: 'prt_question',
+            type: 'tool',
+            name: 'question',
+            time: { created: 21, completed: 30 },
+            state: {
+              status: 'completed',
+              input: {
+                questions: [
+                  { question: 'Which environments?' },
+                  { question: 'Anything else?' },
+                  { question: 'Optional?' },
+                ],
+              },
+              content: [{ type: 'text', text: 'Generated tool prose is not used' }],
+              metadata: { answers: [['Staging', 'Production'], ['Deploy canary first\nthen promote'], []] },
+            },
+          },
+          {
+            id: 'prt_other',
+            type: 'tool',
+            name: 'exec_command',
+            time: { created: 31, completed: 32 },
+            state: {
+              status: 'completed',
+              input: {},
+              content: [{ type: 'text', text: 'Not a user answer' }],
+              metadata: { answers: [['ignored']] },
+            },
+          },
+          {
+            id: 'prt_pending',
+            type: 'tool',
+            name: 'question',
+            time: { created: 33 },
+            state: {
+              status: 'running',
+              input: { questions: [{ question: 'Still waiting?' }] },
+              metadata: { answers: [['ignored']] },
+            },
+          },
+        ],
+      },
+      {
+        id: 'msg_final_question', type: 'assistant', seq: 2, time: { created: 50, completed: 70 },
+        content: [{
+          id: 'prt_final_question',
+          type: 'tool',
+          name: 'question',
+          time: { created: 51, completed: 60 },
+          state: {
+            status: 'completed',
+            input: { questions: [{ question: 'Ready to finish?' }] },
+            content: [{ type: 'text', text: 'Generated tool prose is not used' }],
+            metadata: { answers: [['Yes']] },
+          },
+        }],
+      },
+    ] });
+
+    const expectedMessage = {
+      id: 'question-answer:msg_question:prt_question',
+      role: 'user',
+      createdAt: 30,
+      completedAt: null,
+      model: null,
+      text: 'Question: Which environments?\nAnswer: Staging\nAnswer: Production\n\nQuestion: Anything else?\nAnswer: Deploy canary first\nthen promote',
+    };
+    const expectedAssistantMessage = {
+      id: 'msg_question',
+      role: 'assistant',
+      createdAt: 20,
+      completedAt: 40,
+      model: null,
+      text: 'Please choose.',
+    };
+    const expectedFinalMessage = {
+      id: 'question-answer:msg_final_question:prt_final_question',
+      role: 'user',
+      createdAt: 60,
+      completedAt: null,
+      model: null,
+      text: 'Question: Ready to finish?\nAnswer: Yes',
+    };
+
+    await expect(service.execute('session.messages', {
+      sessionId: 'ses_1',
+      directory: '/repo',
+      all: true,
+    })).resolves.toEqual({
+      sessionId: 'ses_1',
+      directory: '/repo',
+      role: 'all',
+      sessionStatus: { type: 'idle' },
+      messages: [expectedAssistantMessage, expectedMessage, expectedFinalMessage],
+    });
+    await expect(service.execute('session.messages', {
+      sessionId: 'ses_1', directory: '/repo', role: 'user', all: true,
+    })).resolves.toEqual(expect.objectContaining({ role: 'user', messages: [expectedMessage, expectedFinalMessage] }));
+    await expect(service.execute('session.messages', {
+      sessionId: 'ses_1', directory: '/repo', role: 'assistant', all: true,
+    })).resolves.toEqual(expect.objectContaining({ role: 'assistant', messages: [expectedAssistantMessage] }));
+    await expect(service.execute('session.messages', {
+      sessionId: 'ses_1', directory: '/repo', last: true,
+    })).resolves.toEqual(expect.objectContaining({ messages: [expectedFinalMessage] }));
+    await expect(service.execute('session.messages', {
+      sessionId: 'ses_1', directory: '/repo', lastAssistant: true,
+    })).resolves.toEqual(expect.objectContaining({ role: 'assistant', messages: [expectedAssistantMessage] }));
+
+    await expect(service.execute('session.fork', {
+      sessionId: 'ses_1', directory: '/repo', messageId: expectedMessage.id, prompt: 'Continue',
+    })).rejects.toThrow('question-answer IDs are synthetic and cannot be used as session.fork messageId');
+    expect(sessionService.fork).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('pages past filtered records and preserves durable order (all=%s)', async (all) => {
+    const { service, client } = createService();
+    client.message.list
+      .mockResolvedValueOnce({
+        data: Array.from({ length: 100 }, (_, index) => ({ id: `assistant_${index}`, type: 'assistant', seq: 102 - index, time: { created: index }, content: [] })),
+        cursor: { next: 'older' },
+      })
+      .mockResolvedValueOnce({
+        data: [
+          { id: 'newer', type: 'user', seq: 2, time: { created: 1 }, text: 'newer user' },
+          { id: 'older', type: 'user', seq: 1, time: { created: 5000 }, text: 'older user' },
+        ],
+        cursor: { next: 'end' },
+      });
+    const result = await service.execute('session.messages', { sessionId: 'ses_1', directory: '/repo', role: 'user', ...(all ? { all: true } : { limit: 1 }) });
+    expect(result.messages.map((message) => message.id)).toEqual(all ? ['older', 'newer'] : ['newer']);
+    expect(client.message.list).toHaveBeenNthCalledWith(1, { sessionID: 'ses_1', limit: 100, order: 'desc' });
+    expect(client.message.list).toHaveBeenNthCalledWith(2, { sessionID: 'ses_1', limit: 100, cursor: 'older' });
+    expect(client.message.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not return a partial full history after a later page fails', async () => {
+    const { service, client } = createService();
+    client.message.list
+      .mockResolvedValueOnce({
+        data: Array.from({ length: 100 }, (_, index) => ({ id: `user_${index}`, type: 'user', seq: 100 - index, time: { created: index }, text: 'user' })),
+        cursor: { next: 'older' },
+      })
+      .mockRejectedValueOnce(new Error('history unavailable'));
+    await expect(service.execute('session.messages', { sessionId: 'ses_1', directory: '/repo', all: true })).rejects.toThrow('history unavailable');
+  });
+
+  it('stops pagination without publishing partial history when the caller cancels', async () => {
+    const { service, client } = createService();
+    const controller = new AbortController();
+    client.message.list.mockImplementationOnce(async () => {
+      controller.abort();
+      return {
+        data: Array.from({ length: 100 }, (_, index) => ({ id: `user_${index}`, type: 'user', seq: 100 - index, time: { created: index }, text: 'user' })),
+        cursor: { next: 'older' },
+      };
+    });
+    await expect(service.execute('session.messages', { sessionId: 'ses_1', directory: '/repo', all: true }, undefined, { signal: controller.signal }))
+      .rejects.toMatchObject({ statusCode: 499 });
+    expect(client.message.list).toHaveBeenCalledTimes(1);
   });
 
   it('rejects actions outside the fixed contract', async () => {
