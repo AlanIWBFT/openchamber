@@ -21,6 +21,7 @@ import { isPinnedMetadata, userStatePatch } from '../session-work/state.js';
 import { z } from 'zod';
 import { resolveUploadFiles, UploadRefusedError } from '../browser-control/uploads.js';
 import type { SessionInfo, ModelInfo, SessionListInput, PermissionReplyInput, SessionFormCancelInput, FormInfo } from '@opencode/client';
+import { projectSessionMessages, type StoredRecord } from './session-message-projection.js';
 import type { ControlClient } from './opencode-client.js';
 import type { FormValues } from './form-answer.js';
 import type { PageAnswerInput } from './render-page.js';
@@ -114,19 +115,10 @@ export interface ControlDependencies {
 
 const hasText = (value: unknown): value is string => Boolean(asNonEmptyString(value));
 const isSafeInteger = (value: unknown): value is number => Number.isSafeInteger(value);
-const isFiniteNumber = (value: unknown): value is number => Number.isFinite(value);
 const isIntegerNumber = (value: unknown): value is number => Number.isInteger(value);
 const isText = (value: unknown): value is string => typeof value === 'string';
 type Mutable<Value> = { -readonly [Key in keyof Value]: Value[Key] };
 type ControlSession = SessionInfo & { directory?: string; time: SessionInfo['time'] & { archived?: number } };
-interface MessageRecord {
-  id: string;
-  type: string;
-  text?: unknown;
-  content?: { type: string; text?: unknown }[];
-  model?: { providerID?: unknown; id?: unknown };
-  time: { created: number; completed?: number };
-}
 export interface TextMessage {
   id: string;
   role: string;
@@ -225,36 +217,6 @@ const normalizeWaitTimeoutMs = (value: ControlInput['timeout']) => {
     throw new OpenChamberControlError(`timeout must be from 1 to ${MAX_WAIT_TIMEOUT_SECONDS} seconds`, 400);
   }
   return seconds * 1000;
-};
-
-const messageText = (record: MessageRecord) => {
-  if (record.type === 'user') return isText(record.text) ? record.text.trim() : '';
-  return (Array.isArray(record.content) ? record.content : [])
-    .filter((item) => item?.type === 'text' && isText(item.text))
-    .map((item) => item.text)
-    .join('')
-    .trim();
-};
-
-const extractTextMessages = (messages: MessageRecord[], role = 'all') => {
-  const result: TextMessage[] = [];
-  for (const record of Array.isArray(messages) ? messages : []) {
-    const messageRole = record?.type;
-    if ((messageRole !== 'user' && messageRole !== 'assistant') || (role !== 'all' && role !== messageRole)) continue;
-    const text = messageText(record);
-    if (!text) continue;
-    const providerID = asNonEmptyString(record.model?.providerID);
-    const modelID = asNonEmptyString(record.model?.id);
-    result.push({
-      id: asNonEmptyString(record.id) || '',
-      role: messageRole,
-      createdAt: isFiniteNumber(record?.time?.created) ? record.time.created : null,
-      completedAt: isFiniteNumber(record?.time?.completed) ? record.time.completed : null,
-      model: providerID && modelID ? `${providerID}/${modelID}` : null,
-      text,
-    });
-  }
-  return result.sort((left, right) => (left.createdAt || 0) - (right.createdAt || 0));
 };
 
 const parseModel = (value: ControlInput['model']) => {
@@ -798,27 +760,23 @@ export const createOpenChamberControlService = (dependencies: ControlDependencie
     return { sessionId: sessionID, directory, title: asNonEmptyString(session?.title), inWork: state === 'open', changed };
   };
 
-  const MESSAGE_PAGE_LIMIT = 200;
-  const sessionMessages = async (client: ControlClient, sessionID: string, role: string, limit: number | undefined) => {
-    const fetchLimit = limit === undefined ? undefined : Math.max(100, limit * 4);
-    const collected: MessageRecord[] = [];
-    const seenCursors = new Set();
-    let cursor;
-    for (;;) {
-      const response = await client.message.list({
-        sessionID,
-        limit: fetchLimit ?? MESSAGE_PAGE_LIMIT,
-        ...(cursor ? { cursor } : fetchLimit ? { order: 'desc' } : {}),
-      });
-      const raw = Array.isArray(response?.data) ? response.data : [];
-      collected.push(...raw);
-      const next = asNonEmptyString(response?.cursor?.next);
-      if (!next || raw.length === 0 || seenCursors.has(next)) break;
-      if (limit !== undefined && extractTextMessages(collected, role).length >= limit) break;
-      seenCursors.add(next);
+  const sessionMessages = async (client: ControlClient, sessionID: string, role: string, limit: number | undefined, signal?: AbortSignal) => {
+    const records = new Map<string, StoredRecord>();
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    while (true) {
+      if (signal?.aborted) throw new OpenChamberControlError('OpenChamber action was cancelled', 499);
+      const response = await client.message.list({ sessionID, limit: 100, ...(cursor ? { cursor } : { order: 'desc' }) });
+      if (signal?.aborted) throw new OpenChamberControlError('OpenChamber action was cancelled', 499);
+      for (const record of response.data) records.set(record.id, record);
+      if (limit !== undefined && projectSessionMessages(records.values(), role).length >= limit) break;
+      const next = response.cursor?.next;
+      if (response.data.length === 0 || !next) break;
+      if (cursors.has(next)) throw new OpenChamberControlError('Session message cursor did not advance', 500);
+      cursors.add(next);
       cursor = next;
     }
-    const messages = extractTextMessages(collected, role);
+    const messages = projectSessionMessages(records.values(), role);
     return limit === undefined ? messages : messages.slice(-limit);
   };
 
@@ -834,7 +792,7 @@ export const createOpenChamberControlService = (dependencies: ControlDependencie
       } else if (!requireActivity || observedActivity) {
         return status;
       } else {
-        const messages = await sessionMessages(client, sessionID, 'assistant', 1);
+        const messages = await sessionMessages(client, sessionID, 'assistant', 1, signal);
         const message = messages[0];
         if (message?.completedAt && (baselineMessageID ? message.id !== baselineMessageID : message.completedAt >= startedAt)) {
           return status;
@@ -1008,6 +966,13 @@ export const createOpenChamberControlService = (dependencies: ControlDependencie
       const resolvedSessionDirectory = await resolveSessionDirectory(sessionID);
       if (resolvedSessionDirectory) directory = resolvedSessionDirectory;
     }
+    const messageID = asNonEmptyString(input.messageId);
+    if (action === 'session.fork' && messageID?.startsWith('question-answer:')) {
+      throw new OpenChamberControlError('question-answer IDs are synthetic and cannot be used as session.fork messageId', 400);
+    }
+    if (action === 'session.fork' && messageID?.startsWith('page-answer:')) {
+      throw new OpenChamberControlError('page-answer IDs are synthetic and cannot be used as session.fork messageId', 400);
+    }
     const payload: SessionPayload = {};
     if (directory) payload.directory = directory;
     if (hasText(input.projectId)) payload.projectId = input.projectId.trim();
@@ -1024,7 +989,6 @@ export const createOpenChamberControlService = (dependencies: ControlDependencie
       if (hasText(input.startRef)) payload.worktree.startRef = input.startRef.trim();
     }
     if (isBoolean(input.setUpstream)) payload.setUpstream = input.setUpstream;
-    if (hasText(input.messageId)) payload.messageId = input.messageId.trim();
     if (input.pullRequest !== undefined) {
       payload.pullRequest = input.pullRequest;
       if (!payload.worktree) {
@@ -1036,6 +1000,7 @@ export const createOpenChamberControlService = (dependencies: ControlDependencie
     if (parentSessionID && !(action === 'session.send' && sessionID === parentSessionID)) {
       payload.promptedBySessionId = parentSessionID;
     }
+    if (messageID) payload.messageId = messageID;
     const startedAt = now();
     let result: SessionActionResult;
     if (action === 'session.create') {
@@ -1078,7 +1043,7 @@ export const createOpenChamberControlService = (dependencies: ControlDependencie
     delete publicResult.baselineAssistantMessageId;
     delete publicResult.baselineIdleRecordId;
     if (input.lastAssistant === true) {
-      publicResult.lastAssistantMessage = (await sessionMessages(client, result.sessionId, 'assistant', 1))[0] || null;
+      publicResult.lastAssistantMessage = (await sessionMessages(client, result.sessionId, 'assistant', 1, signal))[0] || null;
     }
     return publicResult;
   };
@@ -1508,7 +1473,7 @@ export const createOpenChamberControlService = (dependencies: ControlDependencie
             ? await waitForIdle({ client, sessionID, directory, timeoutMs: normalizeWaitTimeoutMs(input.timeout), requireActivity: false, startedAt: now(), signal: options.signal })
             : await sessionStatus(client, sessionID);
           const limit = input.all === true ? undefined : (last ? 1 : positiveInteger(input.limit, 10, 'limit'));
-          return { sessionId: sessionID, directory, role, sessionStatus: currentStatus, messages: await sessionMessages(client, sessionID, role, limit) } satisfies SessionMessagesResult;
+          return { sessionId: sessionID, directory, role, sessionStatus: currentStatus, messages: await sessionMessages(client, sessionID, role, limit, options.signal) } satisfies SessionMessagesResult;
         }
       }
       throw new OpenChamberControlError(`Unsupported OpenChamber action: ${action || 'missing'}`, 400);

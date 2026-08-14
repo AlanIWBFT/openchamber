@@ -281,8 +281,12 @@ metadata and failure handling identical, which is what the caller depends on.
    have one owner.
 6. Each action definition owns a short presentation title and a separate
    agent-facing description. The generated schema uses the description to state
-   required inputs or one non-obvious behavior, while completed calls use the
-   short title in native tool metadata.
+   required inputs, one non-obvious behavior, or one compact example, while
+   completed calls use the short title in native tool metadata.
+   Render results also retain the server-resolved page title in
+   `metadata.openchamber.title`. Session message projection and OpenCode's
+   compacted-answer recovery prefer that title, falling back to legacy input
+   titles; omitting a page's input title must not lose its submitted answer.
 
 ## Agent context budget
 

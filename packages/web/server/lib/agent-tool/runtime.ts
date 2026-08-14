@@ -587,7 +587,7 @@ const answerWaitSetup = (waitsWhen: string) => String.raw`        const chatCont
 const ANSWER_FETCH_TIMEOUT = String.raw`
             ...(waiting ? { timeout: false } : {}),`;
 
-const ANSWER_METADATA = String.raw`, ...(result.ok === true && result.data && typeof result.data.answer === "object" && result.data.answer !== null ? { answer: result.data.answer } : {})`;
+const ANSWER_METADATA = String.raw`, ...(result.ok === true && typeof result.data?.title === "string" ? { title: result.data.title } : {}), ...(result.ok === true && result.data && typeof result.data.answer === "object" && result.data.answer !== null ? { answer: result.data.answer } : {})`;
 
 const ANSWER_WAIT_RELEASE = String.raw` finally {
           releaseWait()
