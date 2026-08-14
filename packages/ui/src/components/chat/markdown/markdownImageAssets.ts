@@ -1,5 +1,6 @@
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeUrlResolver, type RuntimeUrlResolver } from '@/lib/runtime-url';
+import { isFilePathWithinDirectory, toAbsoluteFilePath } from '@/lib/path-utils';
 
 const MAX_MARKDOWN_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_PREPARE_CACHE_ENTRIES = 1024;
@@ -26,19 +27,60 @@ const throwIfAborted = (signal: AbortSignal): void => {
   if (signal.aborted) throw new DOMException('Image load aborted', 'AbortError');
 };
 
+const parseLocalImagePath = (source: string): string => {
+  let value = source;
+  if (/^file:\/\//i.test(value)) {
+    try {
+      const fileUrl = new URL(value);
+      if (fileUrl.protocol !== 'file:') return '';
+      value = fileUrl.host && fileUrl.host !== 'localhost'
+        ? `//${fileUrl.host}${fileUrl.pathname}`
+        : fileUrl.pathname;
+      if (/^\/[A-Za-z]:\//.test(value)) value = value.slice(1);
+    } catch {
+      return '';
+    }
+  }
+
+  const path = value.split(/[?#]/, 1)[0] ?? '';
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+};
+
+const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (typeof reader.result === 'string') {
+      resolve(reader.result);
+    } else {
+      reject(new Error('Unable to encode image'));
+    }
+  };
+  reader.onerror = () => reject(reader.error ?? new Error('Unable to encode image'));
+  reader.readAsDataURL(blob);
+});
+
 const hasImageSignature = async (blob: Blob, mimeType: string): Promise<boolean> => {
   const bytes = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
   const ascii = (start: number, end: number) => String.fromCharCode(...bytes.slice(start, end));
-  if (mimeType === 'image/png') {
-    return bytes[0] === 0x89 && ascii(1, 4) === 'PNG'
-      && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+  switch (mimeType) {
+    case 'image/png':
+      return bytes[0] === 0x89 && ascii(1, 4) === 'PNG'
+        && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+    case 'image/jpeg':
+      return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    case 'image/gif': {
+      const gif = ascii(0, 6);
+      return gif === 'GIF87a' || gif === 'GIF89a';
+    }
+    case 'image/webp':
+      return ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP';
+    default:
+      return false;
   }
-  if (mimeType === 'image/jpeg') return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  if (mimeType === 'image/gif') {
-    const gif = ascii(0, 6);
-    return gif === 'GIF87a' || gif === 'GIF89a';
-  }
-  return mimeType === 'image/webp' && ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP';
 };
 
 const validateImageBlob = async (blob: Blob, mimeType: string): Promise<void> => {
@@ -156,6 +198,52 @@ export const resolveMarkdownImageSource = async (
     return source;
   }
   throw new Error('Local image has not been prepared');
+};
+
+/**
+ * VS Code has no OpenChamber server route for message-scoped temporary-file
+ * grants. Preserve its existing workspace-only gallery path through the local
+ * filesystem bridge, including the same size and signature validation.
+ */
+export const resolveWorkspaceMarkdownImageSource = async (
+  source: string,
+  directory: string,
+  signal: AbortSignal,
+): Promise<string> => {
+  throwIfAborted(signal);
+  const localPath = parseLocalImagePath(source);
+  const absolutePath = toAbsoluteFilePath(directory, localPath);
+  if (!directory || !localPath || !isFilePathWithinDirectory(absolutePath, directory)) {
+    throw new Error('Image path is outside the active workspace');
+  }
+
+  const statResponse = await runtimeFetch('/api/fs/stat', {
+    query: { path: absolutePath, directory, optional: 'true' },
+    signal,
+  });
+  if (!statResponse.ok) throw new Error(`Unable to inspect image (${statResponse.status})`);
+  const stat = await statResponse.json() as { isFile?: boolean; size?: number };
+  if (!stat.isFile) throw new Error('Image path is not a file');
+  if (typeof stat.size === 'number' && stat.size > MAX_MARKDOWN_IMAGE_BYTES) {
+    throw new Error('Image is too large');
+  }
+
+  const response = await runtimeFetch('/api/fs/raw', {
+    query: { path: absolutePath, directory },
+    signal,
+  });
+  if (!response.ok) throw new Error(`Unable to load image (${response.status})`);
+
+  const mimeType = (response.headers.get('content-type') ?? '').split(';', 1)[0]?.toLowerCase() ?? '';
+  const contentLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > MAX_MARKDOWN_IMAGE_BYTES) {
+    throw new Error('Image is too large');
+  }
+
+  const blob = await response.blob();
+  await validateImageBlob(blob, mimeType);
+  throwIfAborted(signal);
+  return blobToDataUrl(blob);
 };
 
 export const getPreparedMarkdownImageUrl = (

@@ -129,6 +129,52 @@ describe('session image assets', () => {
     ]);
   });
 
+  it('authorizes reference-style image syntax using its resolved destination', async () => {
+    const source = 'reference.png';
+    const fixture = await createFixture({
+      sources: [source],
+      markdown: '![screenshot][result]\n\n[result]: reference.png',
+    });
+    await fs.writeFile(path.join(fixture.directory, source), PNG);
+
+    const response = await prepare(fixture.app, fixture.directory, fixture.sources);
+
+    expect(response.body.results).toEqual([
+      expect.objectContaining({ source, status: 'ready' }),
+    ]);
+  });
+
+  it('authorizes inline image destinations containing balanced parentheses', async () => {
+    const source = 'screen(1).png';
+    const fixture = await createFixture({
+      sources: [source],
+      markdown: `![screenshot](${source})`,
+    });
+    await fs.writeFile(path.join(fixture.directory, source), PNG);
+
+    const response = await prepare(fixture.app, fixture.directory, fixture.sources);
+
+    expect(response.body.results).toEqual([
+      expect.objectContaining({ source, status: 'ready' }),
+    ]);
+  });
+
+  it('requires inline image destinations with titles to close', async () => {
+    const sources = ['valid.png', 'malformed.png'];
+    const fixture = await createFixture({
+      sources,
+      markdown: '![valid](valid.png "preview")\n![malformed](malformed.png "preview"',
+    });
+    await Promise.all(sources.map((source) => fs.writeFile(path.join(fixture.directory, source), PNG)));
+
+    const response = await prepare(fixture.app, fixture.directory, sources);
+
+    expect(response.body.results).toEqual([
+      expect.objectContaining({ source: 'valid.png', status: 'ready' }),
+      { source: 'malformed.png', status: 'error' },
+    ]);
+  });
+
   it('rejects a source that the message does not reference', async () => {
     const fixture = await createFixture({ markdown: 'No image here.' });
     const response = await prepare(fixture.app, fixture.directory, fixture.sources);

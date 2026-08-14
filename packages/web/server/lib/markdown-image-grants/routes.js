@@ -42,25 +42,150 @@ const hasImageSignature = (bytes) => {
     || (header.startsWith('RIFF') && header.slice(8, 12) === 'WEBP');
 };
 
-const markdownImageSources = (message) => {
-  const sources = new Set();
+const normalizeReferenceLabel = (value) => value.trim().replace(/\s+/g, ' ').toLowerCase();
+
+const unescapeMarkdownDestination = (value) => value.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\]^_`{|}~\\])/g, '$1');
+
+const isEscapedAt = (value, index) => {
+  let slashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === '\\'; cursor -= 1) slashes += 1;
+  return slashes % 2 === 1;
+};
+
+const findClosingBracket = (value, start) => {
+  for (let cursor = start; cursor < value.length; cursor += 1) {
+    if (value[cursor] === ']' && !isEscapedAt(value, cursor)) return cursor;
+  }
+  return -1;
+};
+
+const findInlineImageEnd = (value, start) => {
+  let cursor = start;
+  while (/\s/.test(value[cursor] || '')) cursor += 1;
+  if (value[cursor] === ')') return cursor;
+
+  const opener = value[cursor];
+  const closer = opener === '"' ? '"' : opener === "'" ? "'" : opener === '(' ? ')' : '';
+  if (!closer) return -1;
+  cursor += 1;
+  for (; cursor < value.length; cursor += 1) {
+    if (value[cursor] !== closer || isEscapedAt(value, cursor)) continue;
+    cursor += 1;
+    while (/\s/.test(value[cursor] || '')) cursor += 1;
+    return value[cursor] === ')' ? cursor : -1;
+  }
+  return -1;
+};
+
+const parseInlineDestination = (value, start) => {
+  let cursor = start;
+  while (/\s/.test(value[cursor] || '')) cursor += 1;
+  if (value[cursor] === '<') {
+    const end = value.indexOf('>', cursor + 1);
+    if (end < 0) return null;
+    const imageEnd = findInlineImageEnd(value, end + 1);
+    return imageEnd < 0
+      ? null
+      : { source: unescapeMarkdownDestination(value.slice(cursor + 1, end)), end: imageEnd };
+  }
+
+  let source = '';
+  let depth = 0;
+  for (; cursor < value.length; cursor += 1) {
+    const char = value[cursor];
+    if (char === '\\' && cursor + 1 < value.length) {
+      source += char + value[cursor + 1];
+      cursor += 1;
+      continue;
+    }
+    if (char === '(') {
+      depth += 1;
+      source += char;
+      continue;
+    }
+    if (char === ')') {
+      if (depth === 0) return { source: unescapeMarkdownDestination(source), end: cursor };
+      depth -= 1;
+      source += char;
+      continue;
+    }
+    if (/\s/.test(char) && depth === 0) {
+      const imageEnd = findInlineImageEnd(value, cursor);
+      return imageEnd < 0 ? null : { source: unescapeMarkdownDestination(source), end: imageEnd };
+    }
+    source += char;
+  }
+  return null;
+};
+
+const parseDefinitionDestination = (value) => {
+  const trimmed = value.trimStart();
+  if (trimmed.startsWith('<')) {
+    const end = trimmed.indexOf('>', 1);
+    return end < 0 ? '' : unescapeMarkdownDestination(trimmed.slice(1, end));
+  }
+  const match = /^(?:\\.|\S)+/.exec(trimmed);
+  return match ? unescapeMarkdownDestination(match[0]) : '';
+};
+
+const collectMarkdownLinesOutsideCode = (message) => {
+  const lines = [];
   for (const part of Array.isArray(message?.parts) ? message.parts : []) {
     if (part?.type !== 'text' || typeof part.text !== 'string') continue;
-    // Code examples must never authorize file access, even when they contain image syntax.
-    let fenced = false;
+    let fence = null;
     for (const line of part.text.split('\n')) {
-      if (/^\s{0,3}(?:```|~~~)/.test(line)) {
-        fenced = !fenced;
+      const fenceMatch = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+      if (fenceMatch) {
+        const marker = fenceMatch[1];
+        if (!fence) {
+          fence = { char: marker[0], size: marker.length };
+        } else if (marker[0] === fence.char && marker.length >= fence.size) {
+          fence = null;
+        }
         continue;
       }
-      if (fenced) continue;
-      const visible = line.replace(/`+[^`]*`+/g, '');
-      const pattern = /(?<!\\)!\[[^\]]*]\(\s*(?:<([^>\n]+)>|([^\s)\n]+))/g;
-      let match = pattern.exec(visible);
-      while (match) {
-        sources.add(match[1] || match[2]);
-        match = pattern.exec(visible);
+      if (fence) continue;
+      lines.push(line.replace(/`+[^`]*`+/g, ''));
+    }
+  }
+  return lines;
+};
+
+const markdownImageSources = (message) => {
+  const sources = new Set();
+  const markdownLines = collectMarkdownLinesOutsideCode(message);
+  const definitions = new Map();
+  for (const line of markdownLines) {
+    const match = /^\s{0,3}\[([^\]]+)]\s*:\s*(.*)$/.exec(line);
+    if (!match) continue;
+    const source = parseDefinitionDestination(match[2]);
+    if (source) definitions.set(normalizeReferenceLabel(match[1]), source);
+  }
+
+  for (const line of markdownLines) {
+    for (let cursor = 0; cursor < line.length; cursor += 1) {
+      if (line[cursor] !== '!' || line[cursor + 1] !== '[' || isEscapedAt(line, cursor)) continue;
+      const altEnd = findClosingBracket(line, cursor + 2);
+      if (altEnd < 0) continue;
+      const alt = line.slice(cursor + 2, altEnd);
+      const next = line[altEnd + 1];
+      if (next === '(') {
+        const parsed = parseInlineDestination(line, altEnd + 2);
+        if (parsed?.source) sources.add(parsed.source);
+        cursor = parsed?.end ?? altEnd;
+        continue;
       }
+      let label = alt;
+      if (next === '[') {
+        const labelEnd = findClosingBracket(line, altEnd + 2);
+        if (labelEnd < 0) continue;
+        label = line.slice(altEnd + 2, labelEnd) || alt;
+        cursor = labelEnd;
+      } else {
+        cursor = altEnd;
+      }
+      const source = definitions.get(normalizeReferenceLabel(label));
+      if (source) sources.add(source);
     }
   }
   return sources;

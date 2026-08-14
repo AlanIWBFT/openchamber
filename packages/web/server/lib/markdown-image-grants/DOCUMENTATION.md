@@ -14,6 +14,9 @@ different machine.
 - `POST /api/openchamber/sessions/:sessionId/markdown-image-grants` prepares up to 12
   local images in one message-level request. The server fetches the assistant
   message once and verifies every exact image source before reading files.
+- Authorization recognizes the same common inline and reference-style image
+  destinations collected by the UI, including balanced parentheses, while
+  excluding fenced and inline code.
 - Relative and workspace-contained absolute paths resolve against the active
   directory. Other absolute paths are accepted only inside
   `os.tmpdir()/opencode` after `realpath` resolution.
@@ -27,4 +30,7 @@ different machine.
 
 The routes are OpenChamber-owned and must be registered before the generic
 OpenCode proxy. Web, Electron, hosted mobile, and Capacitor use the shared
-server implementation. VS Code returns an explicit unsupported response.
+server implementation. VS Code does not call this route for workspace images;
+those use its local filesystem bridge. If called, the grant route returns an
+explicit unsupported response because OpenCode temporary images are not
+supported there.

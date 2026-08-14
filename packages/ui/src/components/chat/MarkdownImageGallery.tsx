@@ -9,6 +9,7 @@ import {
   subscribeRuntimeUrlAuthToken,
 } from '@/lib/runtime-auth';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
+import { isVSCodeRuntime } from '@/lib/desktop';
 import type { ToolPopupContent } from './message/types';
 import {
   extractMarkdownImageCandidates,
@@ -20,6 +21,7 @@ import {
   isLocalMarkdownImageSource,
   prepareLocalMarkdownImages,
   resolveMarkdownImageSource,
+  resolveWorkspaceMarkdownImageSource,
   type PreparedMarkdownImage,
 } from './markdown/markdownImageAssets';
 
@@ -66,8 +68,17 @@ const MarkdownImageThumbnail: React.FC<{
   directory: string;
   assetAuthReady: boolean;
   assetAuthNonce: number;
+  useWorkspaceFsBridge: boolean;
   onShowPopup?: (content: ToolPopupContent) => void;
-}> = ({ candidate, preparation, directory, assetAuthReady, assetAuthNonce, onShowPopup }) => {
+}> = ({
+  candidate,
+  preparation,
+  directory,
+  assetAuthReady,
+  assetAuthNonce,
+  useWorkspaceFsBridge,
+  onShowPopup,
+}) => {
   const { t } = useI18n();
   const thumbnailRef = React.useRef<HTMLButtonElement>(null);
   const [shouldLoad, setShouldLoad] = React.useState(false);
@@ -94,7 +105,19 @@ const MarkdownImageThumbnail: React.FC<{
   }, [shouldLoad]);
 
   React.useEffect(() => {
-    if (!shouldLoad || (local && !preparation)) return;
+    if (!shouldLoad || (local && !useWorkspaceFsBridge && !preparation)) return;
+    if (local && useWorkspaceFsBridge) {
+      const controller = new AbortController();
+      setImage({ url: '', status: 'loading' });
+      void resolveWorkspaceMarkdownImageSource(candidate.source, directory, controller.signal).then((url) => {
+        if (controller.signal.aborted) return;
+        setImage({ url, status: 'loading' });
+      }).catch(() => {
+        if (controller.signal.aborted) return;
+        setImage({ url: '', status: 'error' });
+      });
+      return () => controller.abort();
+    }
     if (local) {
       if (preparation?.status !== 'ready') {
         setImage({ url: '', status: 'error' });
@@ -114,7 +137,7 @@ const MarkdownImageThumbnail: React.FC<{
       setImage({ url: '', status: 'error' });
     });
     return () => controller.abort();
-  }, [assetAuthNonce, assetAuthReady, candidate.source, directory, local, preparation, shouldLoad]);
+  }, [assetAuthNonce, assetAuthReady, candidate.source, directory, local, preparation, shouldLoad, useWorkspaceFsBridge]);
 
   const openPreview = React.useCallback(() => {
     if (image.status === 'error') {
@@ -185,16 +208,21 @@ export const MarkdownImageGallery: React.FC<{
   const [shouldPrepare, setShouldPrepare] = React.useState(false);
   const [prepared, setPrepared] = React.useState<Map<string, PreparedMarkdownImage> | null>(null);
   const [prepareEpoch, setPrepareEpoch] = React.useState(0);
+  const useWorkspaceFsBridge = isVSCodeRuntime();
   const candidates = React.useMemo(
     () => extractMarkdownImageCandidates(contents, MAX_MARKDOWN_IMAGE_COUNT),
     [contents],
   );
-  const localSources = React.useMemo(
-    () => candidates.filter((candidate) => isLocalMarkdownImageSource(candidate.source)).map((candidate) => candidate.source),
-    [candidates],
+  const serverPreparationSources = React.useMemo(
+    () => useWorkspaceFsBridge
+      ? []
+      : candidates
+        .filter((candidate) => isLocalMarkdownImageSource(candidate.source))
+        .map((candidate) => candidate.source),
+    [candidates, useWorkspaceFsBridge],
   );
   React.useEffect(() => {
-    if (localSources.length === 0 || shouldPrepare) return;
+    if (serverPreparationSources.length === 0 || shouldPrepare) return;
     const gallery = galleryRef.current;
     if (!gallery || typeof IntersectionObserver === 'undefined') {
       setShouldPrepare(true);
@@ -207,13 +235,13 @@ export const MarkdownImageGallery: React.FC<{
     }, { rootMargin: '200px' });
     observer.observe(gallery);
     return () => observer.disconnect();
-  }, [localSources.length, shouldPrepare]);
+  }, [serverPreparationSources.length, shouldPrepare]);
 
   React.useEffect(() => {
-    if (!shouldPrepare || !sessionId || localSources.length === 0) return;
+    if (!shouldPrepare || !sessionId || serverPreparationSources.length === 0) return;
     const controller = new AbortController();
     void prepareLocalMarkdownImages({
-      sources: localSources,
+      sources: serverPreparationSources,
       directory,
       sessionId,
       messageId,
@@ -223,11 +251,11 @@ export const MarkdownImageGallery: React.FC<{
       setPrepared(result);
     }).catch(() => {
       if (!controller.signal.aborted) {
-        setPrepared(new Map(localSources.map((source) => [source, { status: 'error' }])));
+        setPrepared(new Map(serverPreparationSources.map((source) => [source, { status: 'error' }])));
       }
     });
     return () => controller.abort();
-  }, [directory, localSources, messageId, prepareEpoch, sessionId, shouldPrepare]);
+  }, [directory, messageId, prepareEpoch, serverPreparationSources, sessionId, shouldPrepare]);
 
   React.useEffect(() => {
     const nextExpiry = Math.min(...[...(prepared?.values() ?? [])]
@@ -257,6 +285,7 @@ export const MarkdownImageGallery: React.FC<{
           directory={directory}
           assetAuthReady={assetAuth.ready}
           assetAuthNonce={assetAuth.nonce}
+          useWorkspaceFsBridge={useWorkspaceFsBridge}
           onShowPopup={onShowPopup}
         />
       ))}
