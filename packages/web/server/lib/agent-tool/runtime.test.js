@@ -106,7 +106,7 @@ describe('managed agent tool runtime', () => {
     expect(hooks.tool.openchamber.args.request.required).toEqual(['action']);
     expect(hooks.tool.openchamber.args.request.properties.action.oneOf).toContainEqual({
       const: 'session.messages',
-      description: 'Read sessionId text messages. Choose one mode: limit=N (newest; default 10), all=true (full history; select earliest locally), or last/lastAssistant=true',
+      description: 'Read sessionId text messages and completed question answers. Question-answer rows have synthetic IDs and cannot be used as session.fork boundaries. Choose one mode: limit=N (newest; default 10), all=true (full history; select earliest locally), or last/lastAssistant=true',
     });
     expect(hooks.tool.openchamber.args.request.properties.action.oneOf).toContainEqual({
       const: 'session.fork',
