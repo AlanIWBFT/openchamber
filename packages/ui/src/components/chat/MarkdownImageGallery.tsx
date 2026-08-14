@@ -1,25 +1,81 @@
 import React from 'react';
+import { toast } from 'sonner';
 import { Icon } from '@/components/icon/Icon';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { useI18n } from '@/lib/i18n';
+import {
+  acquireRuntimeUrlAuthToken,
+  refreshRuntimeUrlAuthToken,
+  subscribeRuntimeUrlAuthToken,
+} from '@/lib/runtime-auth';
+import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 import type { ToolPopupContent } from './message/types';
 import {
   extractMarkdownImageCandidates,
   MAX_MARKDOWN_IMAGE_COUNT,
   type MarkdownImageCandidate,
 } from './markdown/markdownCore';
-import { resolveMarkdownImageSource } from './markdown/markdownImageAssets';
+import {
+  getPreparedMarkdownImageUrl,
+  isLocalMarkdownImageSource,
+  prepareLocalMarkdownImages,
+  resolveMarkdownImageSource,
+  type PreparedMarkdownImage,
+} from './markdown/markdownImageAssets';
+
+const useAssetAuth = (enabled: boolean): { ready: boolean; nonce: number } => {
+  const [ready, setReady] = React.useState(false);
+  const [nonce, setNonce] = React.useState(0);
+  const apiBaseUrl = getRuntimeApiBaseUrl();
+
+  React.useEffect(() => {
+    if (!enabled) {
+      setReady(false);
+      return;
+    }
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const release = acquireRuntimeUrlAuthToken(apiBaseUrl);
+    const unsubscribe = subscribeRuntimeUrlAuthToken(() => {
+      if (!cancelled) setNonce((current) => current + 1);
+    });
+    const refresh = () => {
+      void refreshRuntimeUrlAuthToken(apiBaseUrl)
+        .then(() => {
+          if (!cancelled) setReady(true);
+        })
+        .catch(() => {
+          if (!cancelled) retryTimer = setTimeout(refresh, 1000);
+        });
+    };
+    refresh();
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      release();
+      unsubscribe();
+    };
+  }, [apiBaseUrl, enabled]);
+
+  return { ready: !enabled || ready, nonce };
+};
 
 const MarkdownImageThumbnail: React.FC<{
   candidate: MarkdownImageCandidate;
+  preparation?: PreparedMarkdownImage;
   directory: string;
+  assetAuthReady: boolean;
+  assetAuthNonce: number;
   onShowPopup?: (content: ToolPopupContent) => void;
-}> = ({ candidate, directory, onShowPopup }) => {
+}> = ({ candidate, preparation, directory, assetAuthReady, assetAuthNonce, onShowPopup }) => {
+  const { t } = useI18n();
   const thumbnailRef = React.useRef<HTMLButtonElement>(null);
   const [shouldLoad, setShouldLoad] = React.useState(false);
-  const [image, setImage] = React.useState<{
-    url: string;
-    status: 'loading' | 'ready' | 'error';
-  }>({ url: '', status: 'loading' });
+  const [image, setImage] = React.useState<{ url: string; status: 'loading' | 'ready' | 'error' }>({
+    url: '',
+    status: 'loading',
+  });
+  const local = isLocalMarkdownImageSource(candidate.source);
 
   React.useEffect(() => {
     const thumbnail = thumbnailRef.current;
@@ -28,7 +84,6 @@ const MarkdownImageThumbnail: React.FC<{
       setShouldLoad(true);
       return;
     }
-
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return;
       setShouldLoad(true);
@@ -39,20 +94,33 @@ const MarkdownImageThumbnail: React.FC<{
   }, [shouldLoad]);
 
   React.useEffect(() => {
-    if (!shouldLoad) return;
+    if (!shouldLoad || (local && !preparation)) return;
+    if (local) {
+      if (preparation?.status !== 'ready') {
+        setImage({ url: '', status: 'error' });
+        return;
+      }
+      if (!assetAuthReady) return;
+      setImage({ url: getPreparedMarkdownImageUrl(preparation, directory), status: 'loading' });
+      return;
+    }
     const controller = new AbortController();
     setImage({ url: '', status: 'loading' });
-    void resolveMarkdownImageSource(candidate.source, directory, controller.signal)
-      .then((url) => {
-        if (!controller.signal.aborted) setImage({ url, status: 'loading' });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setImage({ url: '', status: 'error' });
-      });
+    void resolveMarkdownImageSource(candidate.source, controller.signal).then((url) => {
+      if (controller.signal.aborted) return;
+      setImage({ url, status: 'loading' });
+    }).catch(() => {
+      if (controller.signal.aborted) return;
+      setImage({ url: '', status: 'error' });
+    });
     return () => controller.abort();
-  }, [candidate.source, directory, shouldLoad]);
+  }, [assetAuthNonce, assetAuthReady, candidate.source, directory, local, preparation, shouldLoad]);
 
   const openPreview = React.useCallback(() => {
+    if (image.status === 'error') {
+      toast.error(t('filesView.error.previewUnavailable'));
+      return;
+    }
     if (image.status !== 'ready' || !onShowPopup) return;
     onShowPopup({
       open: true,
@@ -61,7 +129,7 @@ const MarkdownImageThumbnail: React.FC<{
       metadata: { tool: 'markdown-image-preview', filename: candidate.filename },
       image: { url: image.url, filename: candidate.filename },
     });
-  }, [candidate.filename, image, onShowPopup]);
+  }, [candidate.filename, image, onShowPopup, t]);
 
   return (
     <button
@@ -69,7 +137,7 @@ const MarkdownImageThumbnail: React.FC<{
       type="button"
       className="w-[100px] shrink-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]"
       aria-label={candidate.filename}
-      disabled={image.status !== 'ready'}
+      disabled={image.status === 'loading'}
       onClick={openPreview}
       data-openchamber-markdown-image-action="true"
       data-openchamber-markdown-image-source={candidate.source}
@@ -107,27 +175,88 @@ const MarkdownImageThumbnail: React.FC<{
 };
 
 export const MarkdownImageGallery: React.FC<{
+  sessionId?: string;
+  messageId: string;
   contents: readonly string[];
   onShowPopup?: (content: ToolPopupContent) => void;
-}> = ({ contents, onShowPopup }) => {
+}> = ({ sessionId, messageId, contents, onShowPopup }) => {
   const directory = useEffectiveDirectory() ?? '';
+  const galleryRef = React.useRef<HTMLDivElement>(null);
+  const [shouldPrepare, setShouldPrepare] = React.useState(false);
+  const [prepared, setPrepared] = React.useState<Map<string, PreparedMarkdownImage> | null>(null);
+  const [prepareEpoch, setPrepareEpoch] = React.useState(0);
   const candidates = React.useMemo(
     () => extractMarkdownImageCandidates(contents, MAX_MARKDOWN_IMAGE_COUNT),
     [contents],
   );
+  const localSources = React.useMemo(
+    () => candidates.filter((candidate) => isLocalMarkdownImageSource(candidate.source)).map((candidate) => candidate.source),
+    [candidates],
+  );
+  React.useEffect(() => {
+    if (localSources.length === 0 || shouldPrepare) return;
+    const gallery = galleryRef.current;
+    if (!gallery || typeof IntersectionObserver === 'undefined') {
+      setShouldPrepare(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      setShouldPrepare(true);
+      observer.disconnect();
+    }, { rootMargin: '200px' });
+    observer.observe(gallery);
+    return () => observer.disconnect();
+  }, [localSources.length, shouldPrepare]);
 
-  if (candidates.length === 0) return null;
+  React.useEffect(() => {
+    if (!shouldPrepare || !sessionId || localSources.length === 0) return;
+    const controller = new AbortController();
+    void prepareLocalMarkdownImages({
+      sources: localSources,
+      directory,
+      sessionId,
+      messageId,
+      signal: controller.signal,
+    }).then((result) => {
+      if (controller.signal.aborted) return;
+      setPrepared(result);
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        setPrepared(new Map(localSources.map((source) => [source, { status: 'error' }])));
+      }
+    });
+    return () => controller.abort();
+  }, [directory, localSources, messageId, prepareEpoch, sessionId, shouldPrepare]);
+
+  React.useEffect(() => {
+    const nextExpiry = Math.min(...[...(prepared?.values() ?? [])]
+      .filter((value): value is Extract<PreparedMarkdownImage, { status: 'ready' }> => value.status === 'ready')
+      .map((value) => value.expiresAt ?? Number.POSITIVE_INFINITY));
+    if (!Number.isFinite(nextExpiry)) return;
+    const timer = setTimeout(() => setPrepareEpoch((current) => current + 1), Math.max(0, nextExpiry - Date.now()));
+    return () => clearTimeout(timer);
+  }, [prepared]);
+
+  const visibleCandidates = candidates.filter((candidate) => prepared?.get(candidate.source)?.status !== 'missing');
+  const hasPreparedAssets = [...(prepared?.values() ?? [])].some((value) => value.status === 'ready');
+  const assetAuth = useAssetAuth(hasPreparedAssets);
+  if (visibleCandidates.length === 0) return null;
 
   return (
     <div
+      ref={galleryRef}
       className="mt-3 flex max-w-full gap-2 overflow-x-auto pb-1"
       data-openchamber-markdown-image-gallery="true"
     >
-      {candidates.map((candidate) => (
+      {visibleCandidates.map((candidate) => (
         <MarkdownImageThumbnail
           key={candidate.source}
           candidate={candidate}
+          preparation={prepared?.get(candidate.source)}
           directory={directory}
+          assetAuthReady={assetAuth.ready}
+          assetAuthNonce={assetAuth.nonce}
           onShowPopup={onShowPopup}
         />
       ))}
