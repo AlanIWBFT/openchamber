@@ -44,4 +44,12 @@ describe("message boundaries", () => {
     expect(previousUserMessage(messages, "msg_missing")).toBe(undefined)
     expect(nextUserMessage(messages, "msg_missing")).toBe(undefined)
   })
+
+  test("undo and redo skip the user prompt owned by a synthetic revert marker", () => {
+    const carrier: Message = { id: "ctx", sessionID: "ses_1", role: "synthetic", text: "context", time: { created: 1 } }
+    const withContext = [...messages.slice(0, 2), carrier, ...messages.slice(2)]
+    expect(previousUserMessage(withContext, carrier.id)?.id).toBe("msg_z_first")
+    expect(nextUserMessage(withContext, carrier.id)?.id).toBe("msg_a_last")
+    expect(nextUserMessage([...messages.slice(0, 2), carrier, messages[2]], carrier.id)).toBeUndefined()
+  })
 })
