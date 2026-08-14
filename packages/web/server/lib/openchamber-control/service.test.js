@@ -260,6 +260,127 @@ describe('OpenChamber control service', () => {
     });
   });
 
+  it('projects completed question selections with unique non-forkable IDs', async () => {
+    const { service, client, sessionService } = createService();
+    client.session.messages.mockResolvedValue({ data: [
+      {
+        info: { id: 'msg_question', role: 'assistant', time: { created: 20, completed: 40 } },
+        parts: [
+          { type: 'text', text: 'Please choose.' },
+          {
+            id: 'prt_question',
+            type: 'tool',
+            tool: 'question',
+            callID: 'call_question',
+            state: {
+              status: 'completed',
+              input: {
+                questions: [
+                  { question: 'Which environments?' },
+                  { question: 'Anything else?' },
+                  { question: 'Optional?' },
+                ],
+              },
+              output: 'Generated tool prose is not used',
+              title: 'Asked 3 questions',
+              metadata: { answers: [['Staging', 'Production'], ['Deploy canary first\nthen promote'], []] },
+              time: { start: 21, end: 30 },
+            },
+          },
+          {
+            id: 'prt_other',
+            type: 'tool',
+            tool: 'bash',
+            state: {
+              status: 'completed',
+              input: {},
+              output: 'Not a user answer',
+              title: 'Command',
+              metadata: { answers: [['ignored']] },
+              time: { start: 31, end: 32 },
+            },
+          },
+          {
+            id: 'prt_pending',
+            type: 'tool',
+            tool: 'question',
+            state: {
+              status: 'running',
+              input: { questions: [{ question: 'Still waiting?' }] },
+              metadata: { answers: [['ignored']] },
+              time: { start: 33 },
+            },
+          },
+        ],
+      },
+      {
+        info: { id: 'msg_final_question', role: 'assistant', time: { created: 50, completed: 70 } },
+        parts: [{
+          id: 'prt_final_question',
+          type: 'tool',
+          tool: 'question',
+          callID: 'call_final_question',
+          state: {
+            status: 'completed',
+            input: { questions: [{ question: 'Ready to finish?' }] },
+            output: 'Generated tool prose is not used',
+            title: 'Asked 1 question',
+            metadata: { answers: [['Yes']] },
+            time: { start: 51, end: 60 },
+          },
+        }],
+      },
+    ] });
+
+    const expectedMessage = {
+      id: 'question-answer:msg_question:prt_question',
+      role: 'user',
+      createdAt: 30,
+      completedAt: null,
+      model: null,
+      text: 'Question: Which environments?\nAnswer: Staging\nAnswer: Production\n\nQuestion: Anything else?\nAnswer: Deploy canary first\nthen promote',
+    };
+    const expectedAssistantMessage = {
+      id: 'msg_question',
+      role: 'assistant',
+      createdAt: 20,
+      completedAt: 40,
+      model: null,
+      text: 'Please choose.',
+    };
+    const expectedFinalMessage = {
+      id: 'question-answer:msg_final_question:prt_final_question',
+      role: 'user',
+      createdAt: 60,
+      completedAt: null,
+      model: null,
+      text: 'Question: Ready to finish?\nAnswer: Yes',
+    };
+
+    await expect(service.execute('session.messages', {
+      sessionId: 'ses_1',
+      directory: '/repo',
+      all: true,
+    })).resolves.toEqual({
+      sessionId: 'ses_1',
+      directory: '/repo',
+      role: 'all',
+      sessionStatus: { type: 'idle' },
+      messages: [expectedAssistantMessage, expectedMessage, expectedFinalMessage],
+    });
+    await expect(service.execute('session.messages', {
+      sessionId: 'ses_1', directory: '/repo', role: 'user', all: true,
+    })).resolves.toEqual(expect.objectContaining({ role: 'user', messages: [expectedMessage, expectedFinalMessage] }));
+    await expect(service.execute('session.messages', {
+      sessionId: 'ses_1', directory: '/repo', role: 'assistant', all: true,
+    })).resolves.toEqual(expect.objectContaining({ role: 'assistant', messages: [expectedAssistantMessage] }));
+
+    await expect(service.execute('session.fork', {
+      sessionId: 'ses_1', directory: '/repo', messageId: expectedMessage.id, prompt: 'Continue',
+    })).rejects.toThrow('question-answer IDs are synthetic and cannot be used as session.fork messageId');
+    expect(sessionService.fork).not.toHaveBeenCalled();
+  });
+
   it('rejects actions outside the fixed contract', async () => {
     const { service } = createService();
     await expect(service.execute('session.delete')).rejects.toThrow('Unsupported OpenChamber action');
