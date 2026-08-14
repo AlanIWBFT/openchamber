@@ -91,8 +91,20 @@ other.
 
 ## Invariants
 
+- Submitted page answers in `session.messages` use `metadata.openchamber.title`
+  when present, falling back to the legacy request/parameters/flat input title.
+  The resolved title comes from `render-page.js`, so pages named from their HTML
+  remain readable after the turn and after OpenCode compaction.
+
 - Session status and messages come from official directory-scoped OpenCode
-  APIs. Message output includes only ordered `text` parts.
+  APIs. Message output includes text, completed `question` answers and completed
+  `openchamber_render` page choices projected from structured metadata as user messages. Page choices contain only the title, summary and JSON data, explicitly labeled as page-generated values submitted by the user rather than verbatim user text; HTML, unanswered, stopped and chat-instead calls are excluded. Every other tool
+  part remains excluded. A projected answer has a unique synthetic `id` for
+  result-list identity only; it is not a durable OpenCode message ID and cannot
+  be used as a session fork boundary.
+  Pages follow durable message sequence; projected answers remain with their
+  source message in content-array order. Reads continue through V2 cursors
+  until the requested number of projected rows or the end of history.
 - Session lists use the backend's `time.archived` field for archive filtering.
 - Wait (CLI only; the agent tool refuses it) never treats an initial idle
   response as completion after dispatch. It requires observed activity or a
