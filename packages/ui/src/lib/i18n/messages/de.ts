@@ -2820,7 +2820,7 @@ export const dict = {
   'quota.window.premium': 'Premium-Interaktionen',
   'quota.window.chat': 'Chat-Anfragen',
   'quota.window.completions': 'Vervollständigungen',
-  'quota.window.premiumInteractions': 'Premium-Interaktionen',
+  'quota.window.premiumInteractions': 'KI-Guthaben',
   'terminalView.actions.attachSelection': 'Ausgewählte Ausgabe anhängen',
   'terminalView.actions.restart': 'Terminal neu starten',
   'chat.message.terminalContext': '{terminal}, Zeilen {start}-{end}',
