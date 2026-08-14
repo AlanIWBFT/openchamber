@@ -39,6 +39,15 @@ describe('Claude usage transforms', () => {
     expect(models.Fable.windows['7d'].usedPercent).toBe(12);
   });
 
+  it('reports each window duration so callers can rank limits by urgency', () => {
+    const { windows, models } = toClaudeUsage(LIVE_PAYLOAD);
+
+    expect(windows['5h'].windowSeconds).toBe(5 * 60 * 60);
+    expect(windows['7d'].windowSeconds).toBe(7 * 24 * 60 * 60);
+    expect(models.Fable.windows['7d'].windowSeconds).toBe(7 * 24 * 60 * 60);
+    expect(windows.extra_usage.windowSeconds).toBeNull();
+  });
+
   it('reports extra usage as a spend window with a money label', () => {
     const { windows } = toClaudeUsage(LIVE_PAYLOAD);
 
