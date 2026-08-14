@@ -161,18 +161,17 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
       }
 
       setProviderUnavailable(plugin.id, false);
-      if (action === 'install') {
-        toast.success(t('settings.integrations.thirdParty.toast.installed', { name: t(plugin.nameKey) }));
-      } else if (action === 'update') {
-        toast.success(t('settings.integrations.thirdParty.toast.updated', { name: t(plugin.nameKey) }));
-      } else {
-        toast.success(t('settings.integrations.thirdParty.toast.removed', { name: t(plugin.nameKey) }));
-      }
-
       const restartNeeded = requiresRestart(result);
       setRestartRequired(plugin.id, restartNeeded);
-      if (restartNeeded) {
-        toast.warning(t('settings.integrations.thirdParty.status.restartRequired'));
+      const toastOptions = restartNeeded
+        ? { description: t('settings.integrations.thirdParty.toast.restartRequired') }
+        : undefined;
+      if (action === 'install') {
+        toast.success(t('settings.integrations.thirdParty.toast.installed', { name: t(plugin.nameKey) }), toastOptions);
+      } else if (action === 'update') {
+        toast.success(t('settings.integrations.thirdParty.toast.updated', { name: t(plugin.nameKey) }), toastOptions);
+      } else {
+        toast.success(t('settings.integrations.thirdParty.toast.removed', { name: t(plugin.nameKey) }), toastOptions);
       }
       await refresh();
     } finally {
