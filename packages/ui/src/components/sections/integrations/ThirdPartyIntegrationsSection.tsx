@@ -409,7 +409,6 @@ export const ThirdPartyIntegrationsSection: React.FC<ThirdPartyIntegrationsSecti
       <SettingsSection
         title={t('settings.integrations.thirdParty.title')}
         info={t('settings.integrations.thirdParty.info')}
-        divider={false}
         settingsItem="integrations.third-party"
         contentClassName="space-y-3"
       >
