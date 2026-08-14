@@ -42,6 +42,12 @@ export type SessionMessageTarget = {
   sessionID: string
 }
 
+export type SessionMessageRequirement =
+  | { kind: "message"; messageID: string }
+  | { kind: "message-context"; messageID: string }
+  | { kind: "latest-user" }
+  | { kind: "previous-user"; messageID: string }
+
 export type SessionMessageLoadKind = "initial" | "older" | "refresh" | "prefetch"
 export type SessionMessageLoadStatus = "idle" | "loading" | "ready" | "error"
 
@@ -61,11 +67,23 @@ type LoaderEntry = {
   snapshot: SessionMessageLoadState
   listeners: Set<() => void>
   inflight: Promise<void> | null
+  inflightCursor: string | undefined
+  lifecycleGeneration: number
   queuedRefresh: Promise<void> | null
   queuedRefreshLimit: number
   optimistic: Map<string, OptimisticItem>
   /** History was dropped by retention; events since then are not coverage. */
   evicted: boolean
+}
+
+type LoadContext = {
+  entry: LoaderEntry
+  entryKey: string
+  store: {
+    getState: () => DirectoryStore
+    setState: DirectoryStoreSetter
+  }
+  lifecycleGeneration: number
 }
 
 type FetchedPage = {
@@ -108,6 +126,18 @@ const getInitialWindowMaxRecords = () => isConstrainedRuntime()
   : INITIAL_WINDOW_MAX_RECORDS
 
 const isUserMessage = (message: Message): boolean => message.role === "user"
+
+export function hasSessionMessageRequirement(messages: readonly Message[], requirement: SessionMessageRequirement, complete = false): boolean {
+  if (requirement.kind === "message") return messages.some((message) => message.id === requirement.messageID)
+  if (requirement.kind === "latest-user") return messages.some(isUserMessage)
+  const boundary = messages.findIndex((message) => message.id === requirement.messageID)
+  if (boundary < 0) return false
+  if (requirement.kind === "previous-user") return messages.slice(0, boundary).some(isUserMessage)
+  for (let index = boundary - 1; index >= 0; index -= 1) {
+    if (messages[index].role !== "synthetic") return true
+  }
+  return complete
+}
 
 const hasUserMessage = (messages: Message[]): boolean => messages.some(isUserMessage)
 
@@ -173,6 +203,7 @@ export class SessionMessageLoader {
         generation: entry.snapshot.generation + 1,
       }
       entry.inflight = null
+      entry.inflightCursor = undefined
       this.notify(entry)
     }
     if (runtimeChanged) {
@@ -336,6 +367,79 @@ export class SessionMessageLoader {
     return this.ensure(normalized, { reason: "prefetch" })
   }
 
+  async loadUntil(
+    target: SessionMessageTarget,
+    requirement: SessionMessageRequirement,
+    options?: { signal?: AbortSignal },
+  ): Promise<boolean> {
+    const release = this.retainSessionHistory(target)
+    try {
+      return await this.seekRequirement(target, requirement, options?.signal)
+    } finally {
+      release()
+    }
+  }
+
+  private async seekRequirement(
+    target: SessionMessageTarget,
+    requirement: SessionMessageRequirement,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    const normalized = this.normalizeTarget(target)
+    if (!normalized || this.disposed) return false
+    if (signal?.aborted) return false
+    const entry = this.getEntry(normalized)
+    const store = this.childStores.ensureChild(normalized.directory, { bootstrap: false })
+    const context = this.captureLoadContext(normalized, entry, store)
+    if (hasSessionMessageRequirement(store.getState().message[normalized.sessionID] ?? [], requirement, entry.snapshot.complete)) return true
+    const initial = entry.snapshot
+    const needsCoverage = !initial.resolved || (!initial.complete && !initial.cursor)
+    let ensureSdkEpoch = this.sdkEpoch
+    await this.ensure(normalized, { force: needsCoverage, reason: "navigation" })
+    while (
+      !signal?.aborted
+      && this.isCurrentLoadContext(normalized, context)
+      && this.sdkEpoch !== ensureSdkEpoch
+      && (!entry.snapshot.resolved || (!entry.snapshot.complete && !entry.snapshot.cursor))
+    ) {
+      ensureSdkEpoch = this.sdkEpoch
+      await this.ensure(normalized, { force: true, reason: "navigation" })
+    }
+
+    if (signal?.aborted || !this.isCurrentLoadContext(normalized, context)) return false
+    if (hasSessionMessageRequirement(store.getState().message[normalized.sessionID] ?? [], requirement, entry.snapshot.complete)) return true
+    const initialResult = this.getSnapshot(normalized)
+    let retryFailedCursor = initialResult.status === "error"
+      && initialResult.resolved
+      && !initialResult.complete
+      && Boolean(initialResult.cursor)
+    if (initialResult.status === "error" && !retryFailedCursor) {
+      throw initialResult.error ?? new Error("Session message loading failed")
+    }
+
+    const visitedCursors = new Set<string>()
+    while (
+      !this.disposed
+      && !signal?.aborted
+      && this.isCurrentLoadContext(normalized, context)
+    ) {
+      if (hasSessionMessageRequirement(store.getState().message[normalized.sessionID] ?? [], requirement, entry.snapshot.complete)) return true
+      const snapshot = entry.snapshot
+      if (snapshot.status === "error") {
+        if (!retryFailedCursor || !snapshot.cursor) {
+          throw snapshot.error ?? new Error("Session message loading failed")
+        }
+        retryFailedCursor = false
+      }
+      if (snapshot.complete || !snapshot.cursor) return false
+      if (visitedCursors.has(snapshot.cursor)) return false
+      const cursor = snapshot.cursor
+      visitedCursors.add(cursor)
+      await this.loadOlderAtCursor(normalized, cursor, context)
+    }
+    return false
+  }
+
   loadOlder(target: SessionMessageTarget): Promise<void> {
     return this.loadOlderPage(target, "interactive")
   }
@@ -344,51 +448,73 @@ export class SessionMessageLoader {
     const normalized = this.normalizeTarget(target)
     if (!normalized || this.disposed) return Promise.resolve()
     const entry = this.getEntry(normalized)
-    if (entry.inflight) {
-      if (entry.snapshot.loadingKind === "older") return entry.inflight
-      return entry.inflight.then(() => this.loadOlderPage(normalized, mode))
-    }
     if (entry.snapshot.complete || !entry.snapshot.cursor) return Promise.resolve()
-    const store = this.childStores.ensureChild(normalized.directory, { bootstrap: false })
     const cursor = entry.snapshot.cursor
-    return this.startLoad(normalized, entry, store, "older", async (isCurrent, performance, snapshot) => {
-      let page = await this.fetchPage(normalized, HISTORY_MESSAGE_PAGE_SIZE, cursor, "older", performance)
-      if (!isCurrent()) return
-      const visited = new Set([cursor])
-      // An interactive batch tries to start on a user prompt so the oldest
-      // visible turn is whole. Every fetched record is kept, and the server
-      // cursor stays authoritative; the extra reads are bounded.
-      for (let extra = 0; mode === "interactive" && extra < HISTORY_TURN_ALIGNMENT_EXTRA_PAGES; extra += 1) {
-        if (page.complete || !page.session[0] || isUserMessage(page.session[0])) break
-        if (!page.cursor || visited.has(page.cursor)) throw new Error("Session history pagination made no progress")
-        visited.add(page.cursor)
-        const older = await this.fetchPage(normalized, HISTORY_MESSAGE_PAGE_SIZE, page.cursor, "older", performance)
-        if (!isCurrent()) return
-        if (older.session.length === 0 && !older.complete) throw new Error("Session history pagination made no progress")
-        page = {
-          session: [...older.session, ...page.session],
-          records: [...older.records, ...page.records],
-          recentBoundary: older.recentBoundary ?? page.recentBoundary,
-          cursor: older.cursor,
-          complete: older.complete,
-        }
+    const store = this.childStores.ensureChild(normalized.directory, { bootstrap: false })
+    return this.loadOlderAtCursor(normalized, cursor, this.captureLoadContext(normalized, entry, store), mode)
+  }
+
+  private async loadOlderAtCursor(target: SessionMessageTarget, expectedCursor: string, context: LoadContext, mode: "interactive" | "complete" = "complete"): Promise<void> {
+    const entry = context.entry
+
+    while (true) {
+      if (!this.isCurrentLoadContext(target, context)) return
+      if (entry.snapshot.complete || entry.snapshot.cursor !== expectedCursor) return
+
+      const inflight = entry.inflight
+      if (inflight) {
+        const inflightSdkEpoch = this.sdkEpoch
+        const isSameOlderPage = entry.snapshot.loadingKind === "older"
+          && entry.inflightCursor === expectedCursor
+        await inflight
+        if (!this.isCurrentLoadContext(target, context)) return
+        // The request for this exact cursor has already completed. Do not start
+        // it again when the server returns the same cursor (a no-progress page).
+        if (isSameOlderPage && this.sdkEpoch === inflightSdkEpoch) return
+        continue
       }
-      // Commit the whole batch atomically. A failed follow-up read keeps the
-      // previous visible history and its retry cursor intact.
-      const committed = this.commitPage(normalized, entry, store, page, "prepend", isCurrent, snapshot)
-      if (!committed || !isCurrent()) return
-      this.patchEntry(entry, {
-        status: "ready",
-        loadingKind: null,
-        error: null,
-        resolved: true,
-        limit: Math.max(entry.snapshot.limit, committed.messages.length),
-        cursor: page.cursor,
-        complete: page.complete,
-        updatedAt: Date.now(),
-      })
-      this.persistCoverage(normalized, entry.snapshot)
-    })
+
+      if (!this.isCurrentLoadContext(target, context)) return
+      if (entry.snapshot.complete || entry.snapshot.cursor !== expectedCursor) return
+      const requestSdkEpoch = this.sdkEpoch
+      await this.startLoad(target, entry, context.store, "older", async (isCurrent, performance, snapshot) => {
+        let page = await this.fetchPage(target, HISTORY_MESSAGE_PAGE_SIZE, expectedCursor, "older", performance)
+        if (!isCurrent()) return
+        const visited = new Set([expectedCursor])
+        // Interactive scrolling keeps its bounded turn alignment. Requirement
+        // readers consume one page at a time and stop at their own boundary.
+        for (let extra = 0; mode === "interactive" && extra < HISTORY_TURN_ALIGNMENT_EXTRA_PAGES; extra += 1) {
+          if (page.complete || !page.session[0] || isUserMessage(page.session[0])) break
+          if (!page.cursor || visited.has(page.cursor)) throw new Error("Session history pagination made no progress")
+          visited.add(page.cursor)
+          const older = await this.fetchPage(target, HISTORY_MESSAGE_PAGE_SIZE, page.cursor, "older", performance)
+          if (!isCurrent()) return
+          if (older.session.length === 0 && !older.complete) throw new Error("Session history pagination made no progress")
+          page = {
+            session: [...older.session, ...page.session],
+            records: [...older.records, ...page.records],
+            recentBoundary: older.recentBoundary ?? page.recentBoundary,
+            cursor: older.cursor,
+            complete: older.complete,
+          }
+        }
+        const committed = this.commitPage(target, entry, context.store, page, "prepend", isCurrent, snapshot)
+        if (!committed || !isCurrent()) return
+        this.patchEntry(entry, {
+          status: "ready",
+          loadingKind: null,
+          error: null,
+          resolved: true,
+          limit: Math.max(entry.snapshot.limit, committed.messages.length),
+          cursor: page.cursor,
+          complete: page.complete,
+          updatedAt: Date.now(),
+        })
+        this.persistCoverage(target, entry.snapshot)
+      }, expectedCursor)
+      if (!this.isCurrentLoadContext(target, context)) return
+      if (this.sdkEpoch === requestSdkEpoch) return
+    }
   }
 
   async loadComplete(target: SessionMessageTarget): Promise<void> {
@@ -585,9 +711,11 @@ export class SessionMessageLoader {
     clearSessionPrefetch(normalized.directory, [normalized.sessionID], this.runtimeKey)
     const entry = this.entries.get(this.keyFor(normalized))
     if (!entry) return
+    entry.lifecycleGeneration += 1
     this.bumpGeneration(entry)
     entry.inflight = null
     const preservedIDs = new Set(preservedMessages.map((message) => message.id))
+    entry.inflightCursor = undefined
     for (const messageID of entry.optimistic.keys()) {
       if (!preservedIDs.has(messageID)) entry.optimistic.delete(messageID)
     }
@@ -602,8 +730,10 @@ export class SessionMessageLoader {
     clearDirectorySessionPrefetch(normalizedDirectory, this.runtimeKey)
     for (const [key, entry] of this.entries) {
       if (!key.startsWith(prefix)) continue
+      entry.lifecycleGeneration += 1
       this.bumpGeneration(entry)
       entry.inflight = null
+      entry.inflightCursor = undefined
       entry.optimistic.clear()
       this.entries.delete(key)
       this.notify(entry)
@@ -618,6 +748,7 @@ export class SessionMessageLoader {
     for (const entry of this.entries.values()) {
       this.bumpGeneration(entry)
       entry.inflight = null
+      entry.inflightCursor = undefined
       entry.optimistic.clear()
       this.notify(entry)
     }
@@ -633,6 +764,26 @@ export class SessionMessageLoader {
 
   private keyFor(target: SessionMessageTarget): string {
     return `${this.runtimeKey}\n${target.directory}\n${target.sessionID}`
+  }
+
+  private captureLoadContext(
+    target: SessionMessageTarget,
+    entry: LoaderEntry,
+    store: LoadContext["store"],
+  ): LoadContext {
+    return {
+      entry,
+      entryKey: this.keyFor(target),
+      store,
+      lifecycleGeneration: entry.lifecycleGeneration,
+    }
+  }
+
+  private isCurrentLoadContext(target: SessionMessageTarget, context: LoadContext): boolean {
+    return !this.disposed
+      && context.entry.lifecycleGeneration === context.lifecycleGeneration
+      && this.entries.get(context.entryKey) === context.entry
+      && this.childStores.getChild(target.directory) === context.store
   }
 
   private getEntry(target: SessionMessageTarget): LoaderEntry {
@@ -654,6 +805,8 @@ export class SessionMessageLoader {
         : createDefaultState(),
       listeners: new Set(),
       inflight: null,
+      inflightCursor: undefined,
+      lifecycleGeneration: 0,
       queuedRefresh: null,
       queuedRefreshLimit: 0,
       optimistic: new Map(),
@@ -684,6 +837,7 @@ export class SessionMessageLoader {
     store: { getState: () => DirectoryStore; setState: DirectoryStoreSetter },
     kind: SessionMessageLoadKind,
     run: (isCurrent: () => boolean, performance: LoadPerformanceDetails, snapshot: MessageSnapshot) => Promise<void>,
+    requestCursor?: string,
   ): Promise<void> {
     const generation = entry.snapshot.generation
     const sdkEpoch = this.sdkEpoch
@@ -700,6 +854,7 @@ export class SessionMessageLoader {
       && snapshot.isCurrent()
     )
     const performance = { retryCount: 0, recordCount: 0 }
+    entry.inflightCursor = requestCursor
     this.patchEntry(entry, { status: "loading", loadingKind: kind, error: null })
     let loadPromise: Promise<void>
     try {
@@ -723,8 +878,11 @@ export class SessionMessageLoader {
       })
       .finally(() => {
         snapshot.dispose()
-        if (entry.inflight === promise) entry.inflight = null
         this.scheduleCacheRetention(target.directory)
+        if (entry.inflight === promise) {
+          entry.inflight = null
+          entry.inflightCursor = undefined
+        }
       })
     entry.inflight = promise
     return promise

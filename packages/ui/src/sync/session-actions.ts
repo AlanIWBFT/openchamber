@@ -38,7 +38,7 @@ import { withContextObligatoryMessage, type ContextObligatoryMessage } from "@/l
 import { getBtwOriginalSessionID, getBtwSessionID, isBtwSession, withoutBtwSessionLink } from "@/lib/sessionBtwMetadata"
 import { withLinkedIssue, type LinkedIssue } from "@/lib/linkedIssues"
 import { withSessionWorkState, type SessionWork } from "@/lib/sessionWorkMetadata"
-import { getImperativeSessionMessageLoader } from "./session-message-loader"
+import { getImperativeSessionMessageLoader, hasSessionMessageRequirement, type SessionMessageRequirement } from "./session-message-loader"
 import { cleanupPersistedSessionState } from "./session-deletion-cleanup"
 import { requestSessionArchiveBatch, requestSessionMetadataUpdate, requestSessionUnarchiveBatch, type SessionArchiveStamp } from "./session-archive-batch"
 import { registerBulkArchiveEchoes, releaseBulkArchiveEchoes } from "./bulk-archive-echo"
@@ -58,8 +58,8 @@ import { getSessionGoal } from "@/lib/sessionGoalMetadata"
 import { fetchGoalObjectiveContent, writeGoalObjectiveFile } from "@/lib/goalObjectiveFiles"
 import { selectRevertedMessages, selectVisibleMessages } from "./message-boundary"
 
-const MESSAGE_REFETCH_LIMIT = 100
 const SEND_CONFIRMATION_REFETCH_LIMIT = 30
+const MESSAGE_REFETCH_LIMIT = 100
 // A relay-tunnel send fails when the tunnel drops, and the confirming refetch
 // then has to travel over that same tunnel to answer "did my message land?".
 // Two attempts 150ms apart always answered "no" on a remote connection, so an
@@ -175,6 +175,22 @@ function dirStoreForSession(sessionId: string): { store: DirectoryStoreApi; dire
     return { store: dirStoreForDirectory(directory), directory }
   }
   return { store: dirStore(), directory: dir() }
+}
+
+export async function ensureSessionMessageRequirement(
+  sessionId: string,
+  requirement: SessionMessageRequirement,
+): Promise<boolean> {
+  const expectedRuntimeKey = getRuntimeKey()
+  const { store, directory } = dirStoreForSession(sessionId)
+  if (hasSessionMessageRequirement(store.getState().message[sessionId] ?? [], requirement)) return true
+  const loader = getImperativeSessionMessageLoader()
+  if (!loader || !directory) return false
+  const found = await loader.loadUntil({ directory, sessionID: sessionId }, requirement)
+  if (isStaleRuntime(expectedRuntimeKey) || _childStores?.getChild(directory) !== store) {
+    throw new Error("Session history lookup was invalidated")
+  }
+  return found
 }
 
 /**
@@ -493,20 +509,27 @@ function descendantRevertCutoff(state: { session: readonly Session[] }, target: 
   return child ? Math.min(child.time.created, target.time.created) : target.time.created
 }
 
-async function cascadeRevertToDescendants(rootId: string, cutoff: number): Promise<void> {
+async function cascadeRevertToDescendants(rootId: string, cutoff: number, assertCurrent: () => void): Promise<void> {
   for (const { session, directory } of getDescendantSessions(rootId)) {
+    assertCurrent()
     try {
       // Match the upstream traversal, including visited descendants with no
       // timestamp-selected target. Idle models may still own live commands.
       await stopSessionExecution(session.id, directory)
+      assertCurrent()
       const messages = await fetchSessionMessages(session.id, directory)
+      assertCurrent()
       // Equal timestamps belong to the reverted side of the boundary. Keeping
       // them would rely on unrelated message IDs to decide chronology.
       const target = firstUserMessageAtOrAfter(messages, cutoff)
       if (!target) continue
       await opencodeClient.stageRevert(session.id, target.id, { directory })
-      mirrorSessionIntoLiveStores(await opencodeClient.getSession(session.id, directory), directory)
+      assertCurrent()
+      const updated = await opencodeClient.getSession(session.id, directory)
+      assertCurrent()
+      mirrorSessionIntoLiveStores(updated, directory)
     } catch (error) {
+      assertCurrent()
       console.error(`[session-actions] Failed to cascade revert to descendant ${session.id}:`, error)
     }
   }
@@ -1992,17 +2015,48 @@ export async function optimisticSend(input: {
 
   assertRuntimeUnchanged()
   await waitForConnectionOrThrow()
-  input.beforeOptimisticInsert?.()
   assertRuntimeUnchanged()
   input.appendSubmissions?.()
 
   const targetDirectory = input.directory ?? dir()
   const store = targetDirectory ? dirStoreForDirectory(targetDirectory) : dirStore()
+  let stateBeforeSend = store.getState()
+  let sessionBeforeSend = stateBeforeSend.session.find((session) => session.id === input.sessionId)
+  let revertMessageID = sessionBeforeSend?.revert?.messageID
+  let sessionMessages = stateBeforeSend.message[input.sessionId] ?? []
+  let revertBoundary = revertMessageID
+    ? sessionMessages.findIndex((message) => message.id === revertMessageID)
+    : -1
+
+  while (revertMessageID && revertBoundary < 0) {
+    const expectedRevertMessageID = revertMessageID
+    const loader = getImperativeSessionMessageLoader()
+    if (!loader || !targetDirectory) {
+      throw new Error("Reverted session history is not available yet.")
+    }
+    const found = await loader.loadUntil(
+      { directory: targetDirectory, sessionID: input.sessionId },
+      { kind: "message", messageID: expectedRevertMessageID },
+    )
+    assertRuntimeUnchanged()
+
+    stateBeforeSend = store.getState()
+    sessionBeforeSend = stateBeforeSend.session.find((session) => session.id === input.sessionId)
+    revertMessageID = sessionBeforeSend?.revert?.messageID
+    sessionMessages = stateBeforeSend.message[input.sessionId] ?? []
+    revertBoundary = revertMessageID
+      ? sessionMessages.findIndex((message) => message.id === revertMessageID)
+      : -1
+
+    if (revertMessageID === expectedRevertMessageID && (!found || revertBoundary < 0)) {
+      throw new Error("Reverted session history could not be loaded.")
+    }
+  }
+
+  input.beforeOptimisticInsert?.()
+  assertRuntimeUnchanged()
   const sdk = opencodeClient.getSdkClient()
-  const stateBeforeSend = store.getState()
-  const sessionBeforeSend = stateBeforeSend.session.find((session) => session.id === input.sessionId)
-  const revertMessageID = sessionBeforeSend?.revert?.messageID
-  const messagesBeforeSend = stateBeforeSend.message[input.sessionId] ?? []
+  const messagesBeforeSend = sessionMessages
   const revertedMessages = selectRevertedMessages(messagesBeforeSend, revertMessageID)
   const revertedParts = new Map(
     revertedMessages.map((message) => [message.id, stateBeforeSend.part[message.id] ?? []] as const),
@@ -2014,7 +2068,7 @@ export async function optimisticSend(input: {
     ))
     const message = {
       ...stateBeforeSend.message,
-      [input.sessionId]: selectVisibleMessages(messagesBeforeSend, revertMessageID),
+      [input.sessionId]: revertBoundary >= 0 ? sessionMessages.slice(0, revertBoundary) : sessionMessages,
     }
     const part = { ...stateBeforeSend.part }
     for (const revertedMessage of revertedMessages) delete part[revertedMessage.id]
@@ -2490,30 +2544,65 @@ export async function dismissOpenFormsForSession(sessionId: string): Promise<boo
  */
 export async function revertToMessage(sessionId: string, messageId: string): Promise<void> {
   if (isRunningSubagentRunMessage(messageId)) throw new Error("Cannot revert a running subagent entry")
+  const expectedRuntimeKey = getRuntimeKey()
   const { store, directory } = dirStoreForSession(sessionId)
-  const cachedTarget = store.getState().message[sessionId]?.find((message) => message.id === messageId)
-  let stopped = false
-  if (cachedTarget && (cachedTarget.role === "user" || readSubagentRun(cachedTarget))) {
-    await stopSessionExecution(sessionId, directory)
-    stopped = true
+  const assertCurrent = () => {
+    if (isStaleRuntime(expectedRuntimeKey) || (directory && _childStores?.getChild(directory) !== store)) {
+      throw new Error("Revert was invalidated by a runtime or directory change")
+    }
   }
-  await refetchSessionMessages(sessionId, true)
-  const state = store.getState()
+  let targetMsg = store.getState().message[sessionId]?.find((message) => message.id === messageId)
+  if (!targetMsg) {
+    await ensureSessionMessageRequirement(sessionId, { kind: "message", messageID: messageId })
+    assertCurrent()
+    targetMsg = store.getState().message[sessionId]?.find((message) => message.id === messageId)
+  }
 
-  // Extract message text for prompt restoration.
-  const messages = state.message[sessionId] ?? []
-  const targetMsg = messages.find((m) => m.id === messageId)
   if (!targetMsg || (targetMsg.role !== "user" && !readSubagentRun(targetMsg))) {
     throw new Error(`Cannot revert session: prompt or subagent report ${messageId} was not found`)
   }
-  if (!stopped) {
-    await stopSessionExecution(sessionId, directory)
+
+  await stopSessionExecution(sessionId, directory)
+  assertCurrent()
+  const contextLoaded = targetMsg.role !== "user" || await ensureSessionMessageRequirement(sessionId, { kind: "message-context", messageID: messageId })
+  assertCurrent()
+  if (!contextLoaded) throw new Error("Revert message context could not be loaded")
+  const stoppedState = store.getState()
+  targetMsg = stoppedState.message[sessionId]?.find((message) => message.id === messageId)
+  if (!targetMsg || (targetMsg.role !== "user" && !readSubagentRun(targetMsg))) {
+    console.error("[sync] Revert target disappeared before the revert request", { sessionId, messageId })
+    return
   }
+
+  let parts = stoppedState.part[messageId] ?? []
+  if (targetMsg.role === "user" && !Object.hasOwn(stoppedState.part, messageId)) {
+    try {
+      const record = await opencodeClient.getSessionMessage(sessionId, messageId, directory)
+      assertCurrent()
+
+      // Prefer an event that arrived while the exact read was in flight.
+      const refreshed = store.getState()
+      parts = Object.hasOwn(refreshed.part, messageId) ? refreshed.part[messageId] ?? [] : record.parts
+    } catch (error) {
+      assertCurrent()
+      // Missing parts are already an exceptional cache/data state. Keep this
+      // fallback best-effort: one exact read, no pagination or retry loop.
+      console.error("[sync] Failed to load revert target parts", { sessionId, messageId, error })
+    }
+  }
+  const state = store.getState()
+  targetMsg = state.message[sessionId]?.find((message) => message.id === messageId)
+  if (!targetMsg || (targetMsg.role !== "user" && !readSubagentRun(targetMsg))) {
+    console.error("[sync] Revert target disappeared before the revert request", { sessionId, messageId })
+    return
+  }
+
+  // Extract message text for prompt restoration.
+  const messages = state.message[sessionId] ?? []
   let messageText = ""
   let submittedFileParts: FilePart[] = []
   let submittedContextParts: readonly ContextCarrierPart[] = []
   if (targetMsg && targetMsg.role === "user") {
-    const parts = state.part[messageId] ?? []
     // Every part on a user message is the user's own: OpenCode 2.x delivers
     // injected context as synthetic messages, not as parts of this one.
     messageText = parts
@@ -2574,11 +2663,14 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   try {
     // Descendants go first because OpenCode also restores file snapshots during
     // revert. All sessions share a directory, so the parent's snapshot must win.
-    await cascadeRevertToDescendants(sessionId, descendantRevertCutoff(state, targetMsg))
+    await cascadeRevertToDescendants(sessionId, descendantRevertCutoff(state, targetMsg), assertCurrent)
+    assertCurrent()
     // Stage only: the messages disappear behind the revert marker while the
     // dock offers Commit (finalize) or Clear (bring them back).
     await opencodeClient.stageRevert(sessionId, revertMessageID, { directory })
+    assertCurrent()
     const revertedSession = await opencodeClient.getSession(sessionId, directory)
+    assertCurrent()
     const current = store.getState()
     const updated = [...current.session]
     const idx = updated.findIndex((s) => s.id === sessionId)
@@ -2591,6 +2683,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
       fileTreeChanges.unknownChange(directory)
     }
   } catch (err) {
+    assertCurrent()
     // Rollback: restore removed messages + revert marker
     const current = store.getState()
     const rollback = [...current.session]

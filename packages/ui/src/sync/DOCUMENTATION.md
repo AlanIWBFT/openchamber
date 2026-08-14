@@ -546,7 +546,7 @@ covers the client cursor. The pipeline clears that cursor and the sync provider
 runs normal authoritative gap repair even during early boot. Ordinary reconnects
 retain their existing startup grace period.
 
-`SessionMessageLoader` is the shared authority for session message requests. Navigation, reactive chat loading, sidebar prefetch, pagination, reconnect/recovery, and optimistic reconciliation must delegate to it rather than issuing parallel initial requests.
+`SessionMessageLoader` is the shared authority for timeline materialization and paged session message requests. Navigation, reactive chat loading, sidebar prefetch, pagination, reconnect/recovery, and optimistic reconciliation must delegate to it rather than issuing parallel initial requests.
 
 Rules:
 
@@ -589,6 +589,8 @@ late reply still replaces it. Both buffers — session errors and rejected sends
 status report (`buildOpenCodeStatusReport`, Ctrl/Cmd+Shift+L or
 `__opencodeDebug.statusReport()`) together with the managed OpenCode
 process's last error and stderr tail and the expected log file locations.
+
+Revert, undo, redo, and cold-open reverted sessions use the loader's bounded requirement lookup. A lookup first checks the materialized sequence-ordered messages, then shares one in-flight page per cursor while fetching older pages until the requested message/user boundary is found or history is complete. Lifecycle-bound callers may cancel their own lookup after the current shared page finishes; cancellation does not abort a page needed by another caller or continue to fetch subsequent pages. Directory/session invalidation, store replacement, and loader disposal invalidate captured page demand before another request can start, while a same-runtime SDK transport replacement retries unresolved coverage on the replacement client. A later lookup may retry one retained cursor after an older-page error. If a revert target message is cached but its local part bucket is absent, revert makes at most one best-effort exact-message read after stopping the branch; it uses those parts only for that action and never starts pagination, retries, or cache repair. Sending a new branch from a reverted session must resolve its current marker before any optimistic mutation and must fail without sending if that boundary cannot be loaded. These actions never use complete-history refreshes; explicit complete history remains an export-only operation.
 
 ## Loading diagnostics
 
@@ -798,6 +800,18 @@ Revert boundaries are resolved by identity in the sequence-ordered message array
 If a boundary is absent from a partial cache, retrieve the required history through
 cursor paging; never infer its position from message IDs or use the retired
 `limit: 0` convention.
+
+`loadUntil` retains the cache while reading only the pages needed for a message,
+user-turn boundary, or the complete synthetic-context prefix before a prompt.
+Concurrent readers share a cursor request. Cancelling one reader stops its next
+page without cancelling another reader's shared request. Session invalidation,
+directory replacement and runtime replacement retire the reader. A transport
+replacement within the same runtime can retry with the new client.
+
+Revert restores comments, quotes and terminal selections from the contiguous
+synthetic messages before its target. A truncated prefix triggers more paging
+until a preceding non-synthetic record or confirmed history start is reached.
+Failure aborts the revert before staging it or replacing composer contents.
 
 ### Missing worktree directories
 
