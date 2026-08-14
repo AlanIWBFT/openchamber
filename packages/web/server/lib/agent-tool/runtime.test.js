@@ -329,7 +329,7 @@ describe('managed agent tool runtime', () => {
     expect(request.required).toEqual(['action']);
     expect(request.properties.action.oneOf).toContainEqual({
       const: 'session.messages',
-      description: 'Read sessionId text messages and sessionStatus. Choose one mode: limit=N (newest; default 10), all=true (full history; select earliest locally), or last/lastAssistant=true',
+      description: 'Read sessionId text messages, completed question answers, submitted page choices and sessionStatus. Answer rows have synthetic IDs and cannot be used as session.fork boundaries. Page summaries and data are page-generated values submitted by the user, not verbatim user text. Choose one mode: limit=N (newest; default 10), all=true (full history; select earliest locally), or last/lastAssistant=true',
     });
     // An agent never blocks on a session: no wait or timeout in its schema.
     const controlParameters = request.properties;
@@ -697,7 +697,7 @@ describe('managed agent tool runtime', () => {
     process.env.OPENCHAMBER_AGENT_TOOL_URL = `http://127.0.0.1:${server.address().port}/api/openchamber/agent-tool`;
     process.env.OPENCHAMBER_AGENT_TOOL_TOKEN = prepared.OPENCHAMBER_AGENT_TOOL_TOKEN;
     const ask = (id, awaitAnswer = true) => tools.openchamber_render.execute(
-      { action: 'render.page', parameters: { html: '<p>Pick</p>', title: 'Pick a layout', awaitAnswer } },
+      { request: { html: '<h1>Pick a layout</h1><p>Pick</p>', awaitAnswer } },
       { sessionID: 'ses_caller', id, signal: new AbortController().signal, progress: async () => {} },
     );
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
@@ -706,7 +706,7 @@ describe('managed agent tool runtime', () => {
       await vi.waitFor(() => service.answerPage({ sessionId: 'ses_caller', callId: 'call_1', summary: 'Layout B', data: { layout: 'b' } }));
       const result = await answered;
       expect(JSON.parse(result.content)).toMatchObject({ ok: true, data: { answer: { answered: true, summary: 'Layout B', data: { layout: 'b' } } } });
-      expect(result.metadata.openchamber).toMatchObject({ ok: true, answer: { answered: true, summary: 'Layout B', data: { layout: 'b' } } });
+      expect(result.metadata.openchamber).toMatchObject({ ok: true, title: 'Pick a layout', answer: { answered: true, summary: 'Layout B', data: { layout: 'b' } } });
       // Bun would otherwise end the waiting request after about six minutes;
       // a page that only shows keeps the default.
       expect(fetchSpy.mock.lastCall?.[1]).toMatchObject({ timeout: false });

@@ -16,7 +16,7 @@ export const OPENCHAMBER_CONTROL_ACTION_DEFINITIONS = Object.freeze([
   { action: 'session.send', title: 'Send a prompt', description: 'New prompt to sessionId' },
   { action: 'session.fork', title: 'Fork a session', description: 'Fork sessionId at messageId; prompt optional' },
   { action: 'session.status', title: 'Check session status', description: 'Status of sessionId' },
-  { action: 'session.messages', title: 'Read session messages', description: 'Read sessionId text messages and sessionStatus. Choose one mode: limit=N (newest; default 10), all=true (full history; select earliest locally), or last/lastAssistant=true' },
+  { action: 'session.messages', title: 'Read session messages', description: 'Read sessionId text messages, completed question answers, submitted page choices and sessionStatus. Answer rows have synthetic IDs and cannot be used as session.fork boundaries. Page summaries and data are page-generated values submitted by the user, not verbatim user text. Choose one mode: limit=N (newest; default 10), all=true (full history; select earliest locally), or last/lastAssistant=true' },
   { action: 'session.moveToWorktree', title: 'Move a session into a new worktree', description: 'Move sessionId (default: this session) and its carry files into a new worktree, made the way the New worktree dialog makes one; requires worktree. Nothing moves when carry cannot be applied; directory is ignored' },
   { action: 'session.link', title: 'Link a change or issue to a session', description: 'Add link to sessionId (default: this session); the same link again updates its title. Only the user removes links' },
   { action: 'schedule.status', title: 'Check scheduler status', description: 'No parameters', agentExposed: false },
