@@ -1,4 +1,4 @@
-## [Unreleased]
+## [1.18.4] - 2026-08-14
 
 - **Chat:** new messages now remain at the end of the conversation instead of jumping before older messages after the message ID sequence rolls over; history loading, revert, and redo follow the same chronological order.
 

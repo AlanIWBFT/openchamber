@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.4] - 2026-08-14
+
 - **Chat:** new messages now remain at the end of the conversation instead of jumping before older messages after the message ID sequence rolls over; history loading, revert, and redo follow the same chronological order.
 - **Stability:** a single internal error no longer shuts down the local server, which made the instance unreachable until it was restarted; the error is logged and the server keeps running.
 - Mobile: connecting to a server that has authentication disabled now survives closing and reopening the app — auto-reconnect and the return-to-app check no longer treat the missing password token as a lost connection and kick back to the connect screen.
