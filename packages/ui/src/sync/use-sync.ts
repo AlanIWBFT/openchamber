@@ -357,6 +357,18 @@ export function useSync() {
     [messageLoader, touch],
   )
 
+  const ensureMessage = useCallback(
+    async (sessionID: string, messageID: string, targetDirectory: string, signal?: AbortSignal) => {
+      touch(sessionID, targetDirectory)
+      return messageLoader.loadUntil(
+        { directory: targetDirectory, sessionID },
+        { kind: "message", messageID },
+        { signal },
+      )
+    },
+    [messageLoader, touch],
+  )
+
   const loadCompleteHistory = useCallback(
     async (sessionID: string, targetDirectory: string) => {
       touch(sessionID, targetDirectory)
@@ -441,6 +453,7 @@ export function useSync() {
       syncSession,
       prefetchSession,
       loadMore,
+      ensureMessage,
       loadCompleteHistory,
       hasMore,
       isLoading,
@@ -452,6 +465,6 @@ export function useSync() {
         confirm: optimisticConfirm,
       },
     }),
-    [syncSession, prefetchSession, loadMore, loadCompleteHistory, hasMore, isLoading, isComplete, recoverPendingQuestions, optimisticAdd, optimisticRemove, optimisticConfirm],
+    [syncSession, prefetchSession, loadMore, ensureMessage, loadCompleteHistory, hasMore, isLoading, isComplete, recoverPendingQuestions, optimisticAdd, optimisticRemove, optimisticConfirm],
   )
 }
