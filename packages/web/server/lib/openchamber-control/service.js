@@ -1,6 +1,7 @@
 import { asNonEmptyString, isBoolean } from '../shared/guards.js';
 import path from 'node:path';
 import { OpenCode } from '@opencode/client';
+import { z } from 'zod';
 import { OpenChamberControlError, asControlError } from './error.js';
 import { OPENCHAMBER_ALL_ACTIONS, OPENCHAMBER_KNOWLEDGE_ACTIONS } from './actions.js';
 import { writeScreenshot } from './screenshots.js';
@@ -11,6 +12,8 @@ import { createWorkNamer } from '../openchamber-sessions/work-naming.js';
 const DEFAULT_WAIT_TIMEOUT_SECONDS = 600;
 const MAX_WAIT_TIMEOUT_SECONDS = 86_400;
 const WAIT_POLL_INTERVAL_MS = 500;
+const questionAnswersSchema = z.array(z.array(z.string()));
+const pageReplySchema = z.object({ ok: z.literal(true), action: z.literal('render.page'), title: z.string().optional(), answer: z.object({ answered: z.literal(true), summary: z.string(), data: z.json() }) });
 // One service, both capabilities: which tool asked is the caller's concern.
 const CONTROL_ACTIONS = new Set(OPENCHAMBER_ALL_ACTIONS);
 // models.search ranks a favorite 2 and a recent model 1.
@@ -51,25 +54,67 @@ const messageText = (record) => {
     .trim();
 };
 
-const extractTextMessages = (messages, role = 'all') => {
+const projectSessionMessages = (messages, role = 'all') => {
   const result = [];
-  for (const record of Array.isArray(messages) ? messages : []) {
-    const messageRole = record?.type;
-    if ((messageRole !== 'user' && messageRole !== 'assistant') || (role !== 'all' && role !== messageRole)) continue;
-    const text = messageText(record);
-    if (!text) continue;
-    const providerID = asNonEmptyString(record.model?.providerID);
-    const modelID = asNonEmptyString(record.model?.id);
-    result.push({
-      id: asNonEmptyString(record.id) || '',
-      role: messageRole,
-      createdAt: Number.isFinite(record?.time?.created) ? record.time.created : null,
-      completedAt: Number.isFinite(record?.time?.completed) ? record.time.completed : null,
-      model: providerID && modelID ? `${providerID}/${modelID}` : null,
-      text,
-    });
+  for (const record of [...messages].sort((left, right) => left.seq - right.seq)) {
+    const messageRole = record.type;
+    if (messageRole !== 'user' && messageRole !== 'assistant') continue;
+    if (role === 'all' || role === messageRole) {
+      const text = messageText(record);
+      if (text) {
+        const providerID = asNonEmptyString(record.model?.providerID);
+        const modelID = asNonEmptyString(record.model?.id);
+        result.push({
+          id: record.id,
+          role: messageRole,
+          createdAt: record.time.created,
+          completedAt: record.time.completed ?? null,
+          model: providerID && modelID ? `${providerID}/${modelID}` : null,
+          text,
+        });
+      }
+    }
+    if (messageRole !== 'assistant' || (role !== 'all' && role !== 'user')) continue;
+    for (const part of record.content) {
+      if (part.type !== 'tool' || (part.name !== 'question' && part.name !== 'openchamber_render') || part.state.status !== 'completed') continue;
+      if (part.name === 'openchamber_render') {
+        const reply = pageReplySchema.safeParse(part.state.metadata?.openchamber);
+        if (!reply.success) continue;
+        const input = part.state.input;
+        const title = asNonEmptyString(reply.data.title) ?? asNonEmptyString(input?.request?.title ?? input?.parameters?.title ?? input?.title);
+        if (!title) continue;
+        result.push({
+          id: `page-answer:${record.id}:${part.id}`,
+          role: 'user',
+          createdAt: part.time.completed ?? record.time.completed ?? record.time.created,
+          completedAt: null,
+          model: null,
+          text: `User submitted a choice through a page (page-generated summary and data, not verbatim user text).\nPage: ${title}\nSubmitted choice: ${reply.data.answer.summary}\nSubmitted data: ${JSON.stringify(reply.data.answer.data)}`,
+        });
+        continue;
+      }
+      const questions = Array.isArray(part.state.input?.questions) ? part.state.input.questions : [];
+      const answers = questionAnswersSchema.safeParse(part.state.metadata?.answers);
+      if (!answers.success) continue;
+      const text = answers.data.flatMap((answer, index) => {
+        const values = answer.filter((value) => value.trim().length > 0);
+        if (values.length === 0) return [];
+        const rendered = values.map((value) => `Answer: ${value}`).join('\n');
+        const question = asNonEmptyString(questions[index]?.question);
+        return [question ? `Question: ${question}\n${rendered}` : rendered];
+      }).join('\n\n').trim();
+      if (!text) continue;
+      result.push({
+        id: `question-answer:${record.id}:${part.id}`,
+        role: 'user',
+        createdAt: part.time.completed ?? record.time.completed ?? record.time.created,
+        completedAt: null,
+        model: null,
+        text,
+      });
+    }
   }
-  return result.sort((left, right) => (left.createdAt || 0) - (right.createdAt || 0));
+  return result;
 };
 
 const parseModel = (value) => {
@@ -434,36 +479,25 @@ export const createOpenChamberControlService = (dependencies) => {
     return asPublicStatus(statuses[sessionID]);
   };
 
-  // The message list is cursor-paginated and `order: 'desc'` puts the newest
-  // messages in the page, so a single call returns only the recent tail.
-  // `all: true` walks `cursor.next` until the history is exhausted; a bounded
-  // `limit` stops once enough text messages are collected. Later pages carry
-  // the order inside the cursor, and OpenCode rejects a cursor combined with
-  // `order`, so only the first page sends it. An empty page or a repeated
-  // cursor ends the walk. `extractTextMessages` sorts the gathered records
-  // oldest-first for the caller.
-  const MESSAGE_PAGE_LIMIT = 200;
-  const sessionMessages = async (client, sessionID, role, limit) => {
-    const fetchLimit = limit === undefined ? undefined : Math.max(100, limit * 4);
-    const collected = [];
-    const seenCursors = new Set();
+  // V2 always pages, including when no limit is supplied. Read newest first
+  // until enough projected rows exist, then return them in durable order.
+  const sessionMessages = async (client, sessionID, role, limit, signal) => {
+    const records = new Map();
+    const cursors = new Set();
     let cursor;
-    for (;;) {
-      const response = await client.message.list({
-        sessionID,
-        limit: fetchLimit ?? MESSAGE_PAGE_LIMIT,
-        ...(cursor ? { cursor } : fetchLimit ? { order: 'desc' } : {}),
-      });
-      const raw = Array.isArray(response?.data) ? response.data : [];
-      collected.push(...raw);
-      const next = asNonEmptyString(response?.cursor?.next);
-      if (!next || raw.length === 0 || seenCursors.has(next)) break;
-      // A bounded read only needs enough pages to project `limit` text messages.
-      if (limit !== undefined && extractTextMessages(collected, role).length >= limit) break;
-      seenCursors.add(next);
+    while (true) {
+      if (signal?.aborted) throw new OpenChamberControlError('OpenChamber action was cancelled', 499);
+      const response = await client.message.list({ sessionID, limit: 100, ...(cursor ? { cursor } : { order: 'desc' }) });
+      if (signal?.aborted) throw new OpenChamberControlError('OpenChamber action was cancelled', 499);
+      for (const record of response.data) records.set(record.id, record);
+      if (limit !== undefined && projectSessionMessages([...records.values()], role).length >= limit) break;
+      const next = response.cursor?.next;
+      if (response.data.length === 0 || !next) break;
+      if (cursors.has(next)) throw new OpenChamberControlError('Session message cursor did not advance', 500);
+      cursors.add(next);
       cursor = next;
     }
-    const messages = extractTextMessages(collected, role);
+    const messages = projectSessionMessages([...records.values()], role);
     return limit === undefined ? messages : messages.slice(-limit);
   };
 
@@ -478,7 +512,7 @@ export const createOpenChamberControlService = (dependencies) => {
       } else if (!requireActivity || observedActivity) {
         return status;
       } else {
-        const messages = await sessionMessages(client, sessionID, 'assistant', 1);
+        const messages = await sessionMessages(client, sessionID, 'assistant', 1, signal);
         const message = messages[0];
         if (message?.completedAt && (baselineMessageID ? message.id !== baselineMessageID : message.completedAt >= startedAt)) {
           return status;
@@ -590,6 +624,13 @@ export const createOpenChamberControlService = (dependencies) => {
       const resolvedSessionDirectory = await resolveSessionDirectory(sessionID);
       if (resolvedSessionDirectory) directory = resolvedSessionDirectory;
     }
+    const messageID = asNonEmptyString(input.messageId);
+    if (action === 'session.fork' && messageID?.startsWith('question-answer:')) {
+      throw new OpenChamberControlError('question-answer IDs are synthetic and cannot be used as session.fork messageId', 400);
+    }
+    if (action === 'session.fork' && messageID?.startsWith('page-answer:')) {
+      throw new OpenChamberControlError('page-answer IDs are synthetic and cannot be used as session.fork messageId', 400);
+    }
     const payload = {
       ...(directory ? { directory } : {}),
       ...(asNonEmptyString(input.projectId) ? { projectId: input.projectId.trim() } : {}),
@@ -606,7 +647,6 @@ export const createOpenChamberControlService = (dependencies) => {
         ...(asNonEmptyString(input.startRef) ? { startRef: input.startRef.trim() } : {}),
       } } : {}),
       ...(typeof input.setUpstream === 'boolean' ? { setUpstream: input.setUpstream } : {}),
-      ...(asNonEmptyString(input.messageId) ? { messageId: input.messageId.trim() } : {}),
     };
     // A pull request makes a worktree of its own, so its branch name (and a
     // start ref the session service refuses) travel without a worktree name.
@@ -624,6 +664,7 @@ export const createOpenChamberControlService = (dependencies) => {
     if (parentSessionID && !(action === 'session.send' && sessionID === parentSessionID)) {
       payload.promptedBySessionId = parentSessionID;
     }
+    if (messageID) payload.messageId = messageID;
     const startedAt = now();
     let result;
     if (action === 'session.create') {
@@ -663,7 +704,7 @@ export const createOpenChamberControlService = (dependencies) => {
     delete publicResult.baselineAssistantMessageId;
     delete publicResult.baselineIdleRecordId;
     if (input.lastAssistant === true) {
-      publicResult.lastAssistantMessage = (await sessionMessages(client, result.sessionId, 'assistant', 1))[0] || null;
+      publicResult.lastAssistantMessage = (await sessionMessages(client, result.sessionId, 'assistant', 1, signal))[0] || null;
     }
     return publicResult;
   };
@@ -1036,7 +1077,7 @@ export const createOpenChamberControlService = (dependencies) => {
             ? await waitForIdle({ client, sessionID, directory, timeoutMs: normalizeWaitTimeoutMs(input.timeout), requireActivity: false, startedAt: now(), signal: options.signal })
             : await sessionStatus(client, sessionID);
           const limit = input.all === true ? undefined : (last ? 1 : positiveInteger(input.limit, 10, 'limit'));
-          return { sessionId: sessionID, directory, role, sessionStatus: currentStatus, messages: await sessionMessages(client, sessionID, role, limit) };
+          return { sessionId: sessionID, directory, role, sessionStatus: currentStatus, messages: await sessionMessages(client, sessionID, role, limit, options.signal) };
         }
       }
       throw new OpenChamberControlError(`Unsupported OpenChamber action: ${action || 'missing'}`, 400);
