@@ -38,26 +38,57 @@ const normalizeWaitTimeoutMs = (value) => {
   return seconds * 1000;
 };
 
-const extractTextMessages = (messages, role = 'all') => {
+const projectSessionMessages = (messages, role = 'all') => {
   const result = [];
   for (const record of Array.isArray(messages) ? messages : []) {
     const info = record?.info;
     const messageRole = info?.role;
-    if ((messageRole !== 'user' && messageRole !== 'assistant') || (role !== 'all' && role !== messageRole)) continue;
-    const text = Array.isArray(record?.parts)
-      ? record.parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('').trim()
-      : '';
-    if (!text) continue;
-    const providerID = asNonEmptyString(info.providerID);
-    const modelID = asNonEmptyString(info.modelID);
-    result.push({
-      id: asNonEmptyString(info.id) || '',
-      role: messageRole,
-      createdAt: Number.isFinite(info?.time?.created) ? info.time.created : null,
-      completedAt: Number.isFinite(info?.time?.completed) ? info.time.completed : null,
-      model: providerID && modelID ? `${providerID}/${modelID}` : null,
-      text,
-    });
+    if (messageRole !== 'user' && messageRole !== 'assistant') continue;
+    const parts = Array.isArray(record?.parts) ? record.parts : [];
+    if (role === 'all' || role === messageRole) {
+      const text = parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('').trim();
+      if (text) {
+        const providerID = asNonEmptyString(info.providerID);
+        const modelID = asNonEmptyString(info.modelID);
+        result.push({
+          id: asNonEmptyString(info.id) || '',
+          role: messageRole,
+          createdAt: Number.isFinite(info?.time?.created) ? info.time.created : null,
+          completedAt: Number.isFinite(info?.time?.completed) ? info.time.completed : null,
+          model: providerID && modelID ? `${providerID}/${modelID}` : null,
+          text,
+        });
+      }
+    }
+    if (messageRole !== 'assistant' || (role !== 'all' && role !== 'user')) continue;
+    for (const part of parts) {
+      if (part?.type !== 'tool' || part.tool !== 'question' || part.state?.status !== 'completed') continue;
+      const questions = Array.isArray(part.state.input?.questions) ? part.state.input.questions : [];
+      const answers = part.state.metadata?.answers;
+      if (!Array.isArray(answers)) continue;
+      const text = answers.flatMap((answer, index) => {
+        if (!Array.isArray(answer)) return [];
+        const values = answer.filter((value) => typeof value === 'string' && value.trim().length > 0);
+        if (values.length === 0) return [];
+        const rendered = values.map((value) => `Answer: ${value}`).join('\n');
+        const question = asNonEmptyString(questions[index]?.question);
+        return [question ? `Question: ${question}\n${rendered}` : rendered];
+      }).join('\n\n').trim();
+      if (!text) continue;
+      const sourceMessageId = asNonEmptyString(info.id);
+      if (!sourceMessageId) continue;
+      const partId = asNonEmptyString(part.id) || asNonEmptyString(part.callID) || 'question';
+      result.push({
+        id: `question-answer:${sourceMessageId}:${partId}`,
+        role: 'user',
+        createdAt: Number.isFinite(part.state.time?.end)
+          ? part.state.time.end
+          : (Number.isFinite(info?.time?.completed) ? info.time.completed : (Number.isFinite(info?.time?.created) ? info.time.created : null)),
+        completedAt: null,
+        model: null,
+        text,
+      });
+    }
   }
   return result.sort((left, right) => (left.createdAt || 0) - (right.createdAt || 0));
 };
@@ -210,11 +241,11 @@ export const createOpenChamberControlService = (dependencies) => {
     const fetchLimit = limit === undefined ? undefined : Math.max(100, limit * 4);
     let response = await client.session.messages({ sessionID, directory, ...(fetchLimit ? { limit: fetchLimit } : {}) });
     let raw = Array.isArray(response?.data) ? response.data : [];
-    let messages = extractTextMessages(raw, role);
+    let messages = projectSessionMessages(raw, role);
     if (limit !== undefined && messages.length < limit && raw.length >= fetchLimit) {
       response = await client.session.messages({ sessionID, directory });
       raw = Array.isArray(response?.data) ? response.data : [];
-      messages = extractTextMessages(raw, role);
+      messages = projectSessionMessages(raw, role);
     }
     return limit === undefined ? messages : messages.slice(-limit);
   };
@@ -270,6 +301,10 @@ export const createOpenChamberControlService = (dependencies) => {
       const resolvedSessionDirectory = await resolveSessionDirectory(sessionID);
       if (resolvedSessionDirectory) directory = resolvedSessionDirectory;
     }
+    const messageID = asNonEmptyString(input.messageId);
+    if (action === 'session.fork' && messageID?.startsWith('question-answer:')) {
+      throw new OpenChamberControlError('question-answer IDs are synthetic and cannot be used as session.fork messageId', 400);
+    }
     const payload = {
       ...(directory ? { directory } : {}),
       ...(asNonEmptyString(input.projectId) ? { projectId: input.projectId.trim() } : {}),
@@ -286,7 +321,7 @@ export const createOpenChamberControlService = (dependencies) => {
         ...(asNonEmptyString(input.startRef) ? { startRef: input.startRef.trim() } : {}),
       } } : {}),
       ...(typeof input.setUpstream === 'boolean' ? { setUpstream: input.setUpstream } : {}),
-      ...(asNonEmptyString(input.messageId) ? { messageId: input.messageId.trim() } : {}),
+      ...(messageID ? { messageId: messageID } : {}),
     };
     const startedAt = now();
     let result;

@@ -15,7 +15,7 @@ export const OPENCHAMBER_CONTROL_ACTION_DEFINITIONS = Object.freeze([
   { action: 'session.send', title: 'Send a prompt', description: 'Send a required prompt to sessionId' },
   { action: 'session.fork', title: 'Fork a session', description: 'Fork sessionId and send a required prompt; messageId optionally selects the boundary' },
   { action: 'session.status', title: 'Check session status', description: 'Check sessionId status; directory defaults to the current session' },
-  { action: 'session.messages', title: 'Read session messages', description: 'Read sessionId text messages. Choose one mode: limit=N (newest; default 10), all=true (full history; select earliest locally), or last/lastAssistant=true' },
+  { action: 'session.messages', title: 'Read session messages', description: 'Read sessionId text messages and completed question answers. Question-answer rows have synthetic IDs and cannot be used as session.fork boundaries. Choose one mode: limit=N (newest; default 10), all=true (full history; select earliest locally), or last/lastAssistant=true' },
   { action: 'schedule.status', title: 'Check scheduler status', description: 'Check scheduler status; no parameters', agentExposed: false },
   { action: 'schedule.list', title: 'List scheduled tasks', description: 'List tasks and scheduler status; scope with projectId or directory' },
   { action: 'schedule.create', title: 'Create a scheduled task', description: 'Requires name, prompt, model=provider/model, and one schedule: daily="09:00"; weekly="1,3" + time="09:00"; once="2026-08-07" + time="09:00"; or cron="0 9 * * *"' },
