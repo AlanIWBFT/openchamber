@@ -3,7 +3,7 @@ import type { MessagePage } from "@/lib/opencode/client"
 import type { TextPart } from "@/lib/opencode/model"
 import { recordDirectoryRecoveryEvent } from "./directory-recovery-snapshots"
 import { ChildStoreManager } from "./child-store"
-import { SessionMessageLoader } from "./session-message-loader"
+import { SessionMessageLoader, type SessionMessagePageSource } from "./session-message-loader"
 import {
   createFirstVisibleSessionPerformanceTracker,
   startSessionLoadPerformanceEvent,
@@ -152,6 +152,212 @@ describe("SessionMessageLoader", () => {
 
     expect(loader.getSnapshot(target).status).toBe("ready")
     expect(childStores.getChild(target.directory)?.getState().message[target.sessionID]?.length).toBe(1)
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("does not fetch when a required message is already materialized", async () => {
+    const calls: Array<{ limit?: number; cursor?: string }> = []
+    const { childStores, loader } = createLoader(async ({ limit, cursor }) => {
+      calls.push({ limit, cursor })
+      return response([])
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+    childStores.ensureChild(target.directory, { bootstrap: false }).setState({
+      message: { [target.sessionID]: [createRecord(target.sessionID, "target").info] },
+    })
+
+    const loaded = await loader.loadUntil(target, { kind: "message", messageID: "target" })
+    expect(loaded).toBe(true)
+    expect(calls).toEqual([])
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("resolves a missing requirement after cached messages established no coverage metadata", async () => {
+    const calls: Array<{ limit?: number; cursor?: string }> = []
+    const { childStores, loader } = createLoader(async ({ sessionID, limit, cursor }) => {
+      calls.push({ limit, cursor })
+      return response([createRecord(sessionID, "target")])
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+    childStores.ensureChild(target.directory, { bootstrap: false }).setState({
+      message: { [target.sessionID]: [createRecord(target.sessionID, "cached").info] },
+    })
+
+    await loader.ensure(target)
+    const loaded = await loader.loadUntil(target, { kind: "message", messageID: "target" })
+
+    expect(loaded).toBe(true)
+    expect(calls).toEqual([{ limit: 100, cursor: undefined }])
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("pages only until a missing required message is found", async () => {
+    const calls: Array<{ limit?: number; cursor?: string }> = []
+    const { childStores, loader } = createLoader(async ({ sessionID, limit, cursor }) => {
+      calls.push({ limit, cursor })
+      return cursor
+        ? response([createRecord(sessionID, "target", 1)])
+        : response([createRecord(sessionID, "latest", 2)], "older-cursor")
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+
+    const loaded = await loader.loadUntil(target, { kind: "message", messageID: "target" })
+    expect(loaded).toBe(true)
+    expect(calls).toEqual([
+      { limit: 100, cursor: undefined },
+      { limit: 100, cursor: "older-cursor" },
+    ])
+    expect(calls.every((call) => call.limit !== 0)).toBe(true)
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("deduplicates concurrent boundary seeks", async () => {
+    const calls: Array<{ limit?: number; cursor?: string }> = []
+    const { childStores, loader } = createLoader(async ({ sessionID, limit, cursor }) => {
+      calls.push({ limit, cursor })
+      return cursor
+        ? response([createRecord(sessionID, "target", 1)])
+        : response([createRecord(sessionID, "latest", 2)], "older-cursor")
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+
+    const loaded = await Promise.all([
+      loader.loadUntil(target, { kind: "message", messageID: "target" }),
+      loader.loadUntil(target, { kind: "message", messageID: "target" }),
+    ])
+    expect(loaded).toEqual([true, true])
+    expect(calls).toEqual([
+      { limit: 100, cursor: undefined },
+      { limit: 100, cursor: "older-cursor" },
+    ])
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("loads the whole synthetic context prefix and stops before unrelated older history", async () => {
+    const calls: Array<string | undefined> = []
+    const { childStores, loader } = createLoader(async ({ sessionID, cursor }) => {
+      calls.push(cursor)
+      if (!cursor) return response([createRecord(sessionID, "target", 4)], "context")
+      if (cursor === "context") return response([{
+        info: { id: "context", sessionID, role: "synthetic", seq: 3, time: { created: 1 }, text: "attached context" },
+        parts: [],
+      }], "previous")
+      if (cursor === "previous") return response([createRecord(sessionID, "previous", 2)], "unneeded")
+      throw new Error("Read past the required context")
+    })
+    const target = { directory: "/context", sessionID: "context-session" }
+    try {
+      expect(await loader.loadUntil(target, { kind: "message", messageID: "target" })).toBe(true)
+      expect(calls).toEqual([undefined])
+      expect(await loader.loadUntil(target, { kind: "message-context", messageID: "target" })).toBe(true)
+      expect(calls).toEqual([undefined, "context", "previous"])
+      expect(loader.getSnapshot(target).complete).toBe(false)
+      expect(childStores.getChild(target.directory)?.getState().message[target.sessionID].map((message) => message.id))
+        .toEqual(["previous", "context", "target"])
+    } finally {
+      loader.dispose()
+      childStores.disposeAll()
+    }
+  })
+
+  test("does not accept a truncated context prefix after a page read fails", async () => {
+    const { childStores, loader } = createLoader(async ({ sessionID, cursor }) => {
+      if (cursor) return failure(400, "context rejected")
+      return response([createRecord(sessionID, "target", 2)], "context")
+    })
+    const target = { directory: "/context-error", sessionID: "context-error" }
+    try {
+      await expect(loader.loadUntil(target, { kind: "message-context", messageID: "target" }))
+        .rejects.toThrow("context rejected")
+      expect(childStores.getChild(target.directory)?.getState().message[target.sessionID].map((message) => message.id)).toEqual(["target"])
+    } finally {
+      loader.dispose()
+      childStores.disposeAll()
+    }
+  })
+
+  test("accepts a complete context prefix at the beginning of history", async () => {
+    let calls = 0
+    const { childStores, loader } = createLoader(async ({ sessionID }) => {
+      calls += 1
+      return response([createRecord(sessionID, "target", 1)])
+    })
+    const target = { directory: "/first-message", sessionID: "first-message" }
+    try {
+      expect(await loader.loadUntil(target, { kind: "message-context", messageID: "target" })).toBe(true)
+      expect(await loader.loadUntil(target, { kind: "message-context", messageID: "target" })).toBe(true)
+      expect(calls).toBe(1)
+    } finally {
+      loader.dispose()
+      childStores.disposeAll()
+    }
+  })
+
+  test("stops a cancelled seek after its current page completes", async () => {
+    const calls: Array<{ limit?: number; cursor?: string }> = []
+    const olderRequestStarted = deferred<void>()
+    const olderPage = deferred<ReturnType<typeof response>>()
+    const { childStores, loader } = createLoader(async ({ sessionID, limit, cursor }) => {
+      calls.push({ limit, cursor })
+      if (!cursor) return response([createRecord(sessionID, "latest", 2)], "cursor-a")
+      olderRequestStarted.resolve()
+      return olderPage.promise
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+    const controller = new AbortController()
+    const lookup = loader.loadUntil(
+      target,
+      { kind: "message", messageID: "target" },
+      { signal: controller.signal },
+    )
+
+    await olderRequestStarted.promise
+    controller.abort()
+    olderPage.resolve(response([createRecord(target.sessionID, "older", 1)], "cursor-b"))
+
+    expect(await lookup).toBe(false)
+    expect(calls).toEqual([
+      { limit: 100, cursor: undefined },
+      { limit: 100, cursor: "cursor-a" },
+    ])
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("does not cancel a shared page needed by an active seek", async () => {
+    const calls: Array<{ limit?: number; cursor?: string }> = []
+    const olderRequestStarted = deferred<void>()
+    const olderPage = deferred<ReturnType<typeof response>>()
+    const { childStores, loader } = createLoader(async ({ sessionID, limit, cursor }) => {
+      calls.push({ limit, cursor })
+      if (!cursor) return response([createRecord(sessionID, "latest", 2)], "cursor-a")
+      olderRequestStarted.resolve()
+      return olderPage.promise
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+    const controller = new AbortController()
+    const cancelledLookup = loader.loadUntil(
+      target,
+      { kind: "message", messageID: "target" },
+      { signal: controller.signal },
+    )
+
+    await olderRequestStarted.promise
+    const activeLookup = loader.loadUntil(target, { kind: "message", messageID: "target" })
+    controller.abort()
+    olderPage.resolve(response([createRecord(target.sessionID, "target", 1)]))
+
+    expect(await cancelledLookup).toBe(false)
+    expect(await activeLookup).toBe(true)
+    expect(calls).toEqual([
+      { limit: 100, cursor: undefined },
+      { limit: 100, cursor: "cursor-a" },
+    ])
     loader.dispose()
     childStores.disposeAll()
   })
@@ -311,6 +517,35 @@ describe("SessionMessageLoader", () => {
     await expect(loader.loadComplete(target)).rejects.toThrow("session.messages failed (400): older rejected")
 
     expect(loader.getSnapshot(target).cursor).toBe("older-cursor")
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("retries a failed older cursor on the next bounded lookup", async () => {
+    let olderAttempts = 0
+    const calls: Array<{ cursor?: string }> = []
+    const { childStores, loader } = createLoader(async ({ sessionID, cursor }) => {
+      calls.push({ cursor })
+      if (!cursor) return response([createRecord(sessionID, "latest", 2)], "cursor-a")
+      olderAttempts += 1
+      if (olderAttempts === 1) {
+        return failure(400, "older rejected")
+      }
+      return response([createRecord(sessionID, "target", 1)])
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+
+    await expect(loader.loadUntil(target, { kind: "message", messageID: "target" }))
+      .rejects.toThrow("session.messages failed (400): older rejected")
+    expect(loader.getSnapshot(target).status).toBe("error")
+    expect(loader.getSnapshot(target).cursor).toBe("cursor-a")
+
+    expect(await loader.loadUntil(target, { kind: "message", messageID: "target" })).toBe(true)
+    expect(calls).toEqual([
+      { cursor: undefined },
+      { cursor: "cursor-a" },
+      { cursor: "cursor-a" },
+    ])
     loader.dispose()
     childStores.disposeAll()
   })
@@ -498,6 +733,229 @@ describe("SessionMessageLoader", () => {
 
     expect(childStores.getChild(target.directory)?.getState().message[target.sessionID]).toBe(undefined)
     expect(loader.getSnapshot(target).status).toBe("idle")
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("does not start another page after directory invalidation while loading older history", async () => {
+    const calls: Array<{ cursor?: string }> = []
+    const olderRequestStarted = deferred<void>()
+    const olderPage = deferred<ReturnType<typeof response>>()
+    const { childStores, loader } = createLoader(async ({ sessionID, cursor }) => {
+      calls.push({ cursor })
+      if (!cursor) return response([createRecord(sessionID, "latest", 2)], "cursor-a")
+      olderRequestStarted.resolve()
+      return olderPage.promise
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+
+    await loader.loadUntil(target, { kind: "latest-user" })
+    const loading = loader.loadOlder(target)
+    await olderRequestStarted.promise
+
+    loader.invalidateDirectory(target.directory)
+    olderPage.resolve(response([createRecord(target.sessionID, "older", 1)], "cursor-b"))
+    await loading
+
+    expect(calls).toEqual([{ cursor: undefined }, { cursor: "cursor-a" }])
+    expect(loader.getSnapshot(target).cursor).toBe(undefined)
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("does not continue an older-page lookup after the session is invalidated", async () => {
+    const calls: Array<{ cursor?: string }> = []
+    const olderRequestStarted = deferred<void>()
+    const olderPage = deferred<ReturnType<typeof response>>()
+    const { childStores, loader } = createLoader(async ({ sessionID, cursor }) => {
+      calls.push({ cursor })
+      if (!cursor) return response([createRecord(sessionID, "latest", 2)], "cursor-a")
+      olderRequestStarted.resolve()
+      return olderPage.promise
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+
+    await loader.loadUntil(target, { kind: "latest-user" })
+    const loading = loader.loadOlder(target)
+    await olderRequestStarted.promise
+
+    loader.invalidateSession(target)
+    olderPage.resolve(response([createRecord(target.sessionID, "older", 1)], "cursor-b"))
+    await loading
+
+    expect(calls).toEqual([{ cursor: undefined }, { cursor: "cursor-a" }])
+    expect(loader.getSnapshot(target).status).toBe("idle")
+    expect(loader.getSnapshot(target).cursor).toBe(undefined)
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("does not start an older page after directory invalidation while waiting for a tail refresh", async () => {
+    const calls: Array<{ limit?: number; cursor?: string }> = []
+    const refreshStarted = deferred<void>()
+    const refreshPage = deferred<ReturnType<typeof response>>()
+    let tailRequests = 0
+    const { childStores, loader } = createLoader(async ({ sessionID, limit, cursor }) => {
+      calls.push({ limit, cursor })
+      if (cursor) return response([createRecord(sessionID, "unexpected-older", 1)])
+      tailRequests += 1
+      if (tailRequests === 1) return response([createRecord(sessionID, "latest", 2)], "cursor-a")
+      refreshStarted.resolve()
+      return refreshPage.promise
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+    const store = childStores.ensureChild(target.directory, { bootstrap: false })
+
+    await loader.loadUntil(target, { kind: "latest-user" })
+    const refreshing = loader.refreshTail(target, 20)
+    await refreshStarted.promise
+    const loadingOlder = loader.loadOlder(target)
+
+    loader.invalidateDirectory(target.directory)
+    store.setState({ message: {}, part: {} })
+    refreshPage.resolve(response([createRecord(target.sessionID, "refreshed", 3)], "ignored-refresh-cursor"))
+    await Promise.all([refreshing, loadingOlder])
+
+    expect(calls).toEqual([
+      { limit: 100, cursor: undefined },
+      { limit: 20, cursor: undefined },
+    ])
+    expect(store.getState().message[target.sessionID]).toBe(undefined)
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("does not recreate a disposed directory after waiting for a tail refresh", async () => {
+    const calls: Array<{ cursor?: string }> = []
+    const refreshStarted = deferred<void>()
+    const refreshPage = deferred<ReturnType<typeof response>>()
+    let tailRequests = 0
+    const { childStores, loader } = createLoader(async ({ sessionID, cursor }) => {
+      calls.push({ cursor })
+      if (cursor) return response([createRecord(sessionID, "unexpected-older", 1)])
+      tailRequests += 1
+      if (tailRequests === 1) return response([createRecord(sessionID, "latest", 2)], "cursor-a")
+      refreshStarted.resolve()
+      return refreshPage.promise
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+
+    await loader.loadUntil(target, { kind: "latest-user" })
+    const refreshing = loader.refreshTail(target, 20)
+    await refreshStarted.promise
+    const loadingOlder = loader.loadOlder(target)
+
+    expect(childStores.disposeDirectory(target.directory)).toBe(true)
+    loader.invalidateDirectory(target.directory)
+    refreshPage.resolve(response([createRecord(target.sessionID, "refreshed", 3)], "ignored-refresh-cursor"))
+    await Promise.all([refreshing, loadingOlder])
+
+    expect(calls).toEqual([{ cursor: undefined }, { cursor: undefined }])
+    expect(childStores.getChild(target.directory)).toBe(undefined)
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("does not start another page after loader disposal while waiting for a tail refresh", async () => {
+    const calls: Array<{ cursor?: string }> = []
+    const refreshStarted = deferred<void>()
+    const refreshPage = deferred<ReturnType<typeof response>>()
+    let tailRequests = 0
+    const { childStores, loader } = createLoader(async ({ sessionID, cursor }) => {
+      calls.push({ cursor })
+      if (cursor) return response([createRecord(sessionID, "unexpected-older", 1)])
+      tailRequests += 1
+      if (tailRequests === 1) return response([createRecord(sessionID, "latest", 2)], "cursor-a")
+      refreshStarted.resolve()
+      return refreshPage.promise
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+
+    await loader.loadUntil(target, { kind: "latest-user" })
+    const refreshing = loader.refreshTail(target, 20)
+    await refreshStarted.promise
+    const loadingOlder = loader.loadOlder(target)
+
+    loader.dispose()
+    childStores.disposeAll()
+    refreshPage.resolve(response([createRecord(target.sessionID, "refreshed", 3)], "ignored-refresh-cursor"))
+    await Promise.all([refreshing, loadingOlder])
+
+    expect(calls).toEqual([{ cursor: undefined }, { cursor: undefined }])
+    expect(childStores.getChild(target.directory)).toBe(undefined)
+  })
+
+  test("retries initial coverage after an SDK transport switch for the same runtime", async () => {
+    const oldInitial = deferred<ReturnType<typeof response>>()
+    const oldCalls: Array<{ cursor?: string }> = []
+    const newCalls: Array<{ cursor?: string }> = []
+    const childStores = new ChildStoreManager()
+    const oldSdk: SessionMessagePageSource = {
+      getSessionMessages: async (_sessionID, options) => {
+        oldCalls.push({ cursor: options?.cursor })
+        return oldInitial.promise
+      },
+    }
+    const newSdk: SessionMessagePageSource = {
+      getSessionMessages: async (sessionID, options) => {
+        newCalls.push({ cursor: options?.cursor })
+        return options?.cursor
+          ? response([createRecord(sessionID, "target", 1)])
+          : response([createRecord(sessionID, "latest", 2)], "cursor-a")
+      },
+    }
+    const loader = new SessionMessageLoader(childStores, { sdk: oldSdk, runtimeKey: "runtime-a" })
+    const target = { directory: "/repo", sessionID: "session-a" }
+    childStores.ensureChild(target.directory, { bootstrap: false }).setState({
+      message: { [target.sessionID]: [createRecord(target.sessionID, "cached", 0).info] },
+      part: { cached: createRecord(target.sessionID, "cached", 0).parts },
+    })
+    await loader.ensure(target)
+    expect(loader.getSnapshot(target).resolved).toBe(true)
+    expect(loader.getSnapshot(target).cursor).toBe(undefined)
+    const lookup = loader.loadUntil(target, { kind: "message", messageID: "target" })
+
+    loader.configure({ sdk: newSdk, runtimeKey: "runtime-a" })
+    oldInitial.resolve(response([createRecord(target.sessionID, "stale", 1)], "stale-cursor"))
+
+    expect(await lookup).toBe(true)
+    expect(oldCalls).toEqual([{ cursor: undefined }])
+    expect(newCalls).toEqual([{ cursor: undefined }, { cursor: "cursor-a" }])
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
+  test("retries an older cursor after an SDK transport switch for the same runtime", async () => {
+    const oldOlderStarted = deferred<void>()
+    const oldOlder = deferred<ReturnType<typeof response>>()
+    const oldCalls: Array<{ cursor?: string }> = []
+    const newCalls: Array<{ cursor?: string }> = []
+    const childStores = new ChildStoreManager()
+    const oldSdk: SessionMessagePageSource = {
+      getSessionMessages: async (sessionID, options) => {
+        oldCalls.push({ cursor: options?.cursor })
+        if (!options?.cursor) return response([createRecord(sessionID, "latest", 2)], "cursor-a")
+        oldOlderStarted.resolve()
+        return oldOlder.promise
+      },
+    }
+    const newSdk: SessionMessagePageSource = {
+      getSessionMessages: async (sessionID, options) => {
+        newCalls.push({ cursor: options?.cursor })
+        return response([createRecord(sessionID, "target", 1)])
+      },
+    }
+    const loader = new SessionMessageLoader(childStores, { sdk: oldSdk, runtimeKey: "runtime-a" })
+    const target = { directory: "/repo", sessionID: "session-a" }
+    const lookup = loader.loadUntil(target, { kind: "message", messageID: "target" })
+
+    await oldOlderStarted.promise
+    loader.configure({ sdk: newSdk, runtimeKey: "runtime-a" })
+    oldOlder.resolve(response([createRecord(target.sessionID, "stale-target", 1)]))
+
+    expect(await lookup).toBe(true)
+    expect(oldCalls).toEqual([{ cursor: undefined }, { cursor: "cursor-a" }])
+    expect(newCalls).toEqual([{ cursor: "cursor-a" }])
     loader.dispose()
     childStores.disposeAll()
   })
