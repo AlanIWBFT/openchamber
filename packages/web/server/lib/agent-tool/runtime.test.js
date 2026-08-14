@@ -386,6 +386,7 @@ describe('managed agent tool runtime', () => {
     // Agents also have OpenCode's own subagent tool; the line between the two is drawn up front.
     expect(tool.openchamber.description).toContain('use the subagent tool');
     expect(tool.openchamber.input.properties.action.enum).toContain('session.messages');
+    expect(tool.openchamber.input.properties.action.description).toContain('Answer rows have synthetic IDs and cannot be used as session.fork boundaries');
     // An agent never blocks on a session: no wait or timeout in its schema.
     const controlParameters = tool.openchamber.input.properties.parameters.properties;
     expect(controlParameters).not.toHaveProperty('wait');
@@ -1035,7 +1036,7 @@ describe('managed agent tool runtime', () => {
     process.env.OPENCHAMBER_AGENT_TOOL_URL = `http://127.0.0.1:${server.address().port}/api/openchamber/agent-tool`;
     process.env.OPENCHAMBER_AGENT_TOOL_TOKEN = prepared.OPENCHAMBER_AGENT_TOOL_TOKEN;
     const ask = (id, awaitAnswer = true, signal = new AbortController().signal) => tools.openchamber_render.execute(
-      { action: 'render.page', parameters: { html: '<p>Pick</p>', title: 'Pick a layout', awaitAnswer } },
+      { action: 'render.page', parameters: { html: '<h1>Pick a layout</h1><p>Pick</p>', awaitAnswer } },
       { sessionID: 'ses_caller', id, signal, progress: async () => {} },
     );
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
@@ -1044,7 +1045,7 @@ describe('managed agent tool runtime', () => {
       await vi.waitFor(() => service.answerPage({ sessionId: 'ses_caller', callId: 'call_1', summary: 'Layout B', data: { layout: 'b' } }));
       const result = await answered;
       expect(JSON.parse(result.content)).toMatchObject({ ok: true, data: { answer: { answered: true, summary: 'Layout B', data: { layout: 'b' } } } });
-      expect(result.metadata.openchamber).toMatchObject({ ok: true, answer: { answered: true, summary: 'Layout B', data: { layout: 'b' } } });
+      expect(result.metadata.openchamber).toMatchObject({ ok: true, title: 'Pick a layout', answer: { answered: true, summary: 'Layout B', data: { layout: 'b' } } });
       // Bun would otherwise end the waiting request after about six minutes;
       // a page that only shows keeps the default.
       expect(fetchSpy.mock.lastCall?.[1]).toMatchObject({ timeout: false });
