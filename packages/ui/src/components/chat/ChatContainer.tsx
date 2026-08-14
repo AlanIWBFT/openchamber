@@ -533,12 +533,26 @@ const DraftWelcome: React.FC = () => {
 
 type ChatContainerProps = {
     active?: boolean;
+    /**
+     * When set, controls `useSessionMessageRecords` independently of `active`.
+     * Defaults to `active`. Embedded session-chat panels pass `true` so a
+     * delayed/lost visibility handshake cannot hide an already-materialized
+     * transcript (leaving only the working-status row — issue #2903).
+     */
+    messagesEnabled?: boolean;
     autoOpenDraft?: boolean;
     readOnly?: boolean;
     initialAllowPromptingSubagentSessions?: boolean;
 };
 
-export const ChatContainer: React.FC<ChatContainerProps> = ({ active = true, autoOpenDraft = true, readOnly = false, initialAllowPromptingSubagentSessions }) => {
+export const ChatContainer: React.FC<ChatContainerProps> = ({
+    active = true,
+    messagesEnabled: messagesEnabledProp,
+    autoOpenDraft = true,
+    readOnly = false,
+    initialAllowPromptingSubagentSessions,
+}) => {
+    const messagesEnabled = messagesEnabledProp ?? active;
     const { t } = useI18n();
     // Session UI state
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
@@ -591,9 +605,11 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ active = true, aut
     );
     const sessionMessageCount = useSessionMessageCount(currentSessionId ?? '', effectiveSessionDirectory);
     const hasRenderableSessionSnapshot = useSessionRenderable(currentSessionId ?? '', effectiveSessionDirectory);
-    // Messages from sync system
+    // Messages from sync system. Keep this gated by `messagesEnabled`, not
+    // `active`, so embedded panels can show history while the composer stays
+    // inactive until the parent confirms visibility.
     const sessionMessageRecords = useSessionMessageRecords(currentSessionId ?? '', effectiveSessionDirectory, {
-        enabled: active,
+        enabled: messagesEnabled,
         suspendPartUpdates: Boolean(streamingMessageId),
         suspendPartUpdatesForMessageId: streamingMessageId,
     });
