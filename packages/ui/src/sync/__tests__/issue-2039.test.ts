@@ -348,7 +348,7 @@ mock.module("../session-actions", () => ({
   shareSession: mock(async () => undefined),
   unshareSession: mock(async () => undefined),
   optimisticSend: mock(async () => undefined),
-  refetchSessionMessages: mock(async () => undefined),
+  ensureSessionMessageRequirement: mock(async () => false),
   revertToMessage: mock(async () => undefined),
   unrevertSession: mock(async () => undefined),
   forkFromMessage: mock(async () => undefined),
@@ -356,6 +356,7 @@ mock.module("../session-actions", () => ({
   getSessionLastAssistantModel: () => null,
   patchSessionMetadata: mock(async () => undefined),
   abortCurrentOperation: mock(async () => undefined),
+  stopSessionExecution: mock(async () => undefined),
 }))
 
 mock.module("@/lib/git/branchNameGenerator", () => ({
