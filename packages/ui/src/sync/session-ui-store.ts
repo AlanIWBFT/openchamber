@@ -68,7 +68,7 @@ import {
   shareSession as shareSessionAction,
   unshareSession as unshareSessionAction,
   optimisticSend,
-  refetchSessionMessages,
+  ensureSessionMessageRequirement,
   revertToMessage as revertToMessageAction,
   unrevertSession as unrevertSessionAction,
   forkFromMessage as forkFromMessageAction,
@@ -1789,19 +1789,25 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // handleSlashUndo — reads from sync, records history for redo
   // ---------------------------------------------------------------------------
   handleSlashUndo: async (sessionId) => {
-    await refetchSessionMessages(sessionId, true)
-    const messages = getSyncMessages(sessionId)
+    let messages = getSyncMessages(sessionId)
     const sessions = getSyncSessions()
     const currentSession = sessions.find((s) => s.id === sessionId)
-
-    const userMessages = messages.filter((m) => m.role === "user")
-    if (userMessages.length === 0) return
 
     const revertToId = currentSession?.revert?.messageID
     let targetMessage: typeof messages[number] | undefined
     if (revertToId) {
       targetMessage = previousUserMessage(messages, revertToId)
+      if (!targetMessage) {
+        await ensureSessionMessageRequirement(sessionId, { kind: "previous-user", messageID: revertToId })
+        messages = getSyncMessages(sessionId)
+        targetMessage = previousUserMessage(messages, revertToId)
+      }
     } else {
+      if (!messages.some((message) => message.role === "user")) {
+        await ensureSessionMessageRequirement(sessionId, { kind: "latest-user" })
+        messages = getSyncMessages(sessionId)
+      }
+      const userMessages = messages.filter((m) => m.role === "user")
       targetMessage = userMessages[userMessages.length - 1]
     }
 
@@ -1842,8 +1848,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const revertToId = currentSession?.revert?.messageID
     if (!revertToId) return
 
-    await refetchSessionMessages(sessionId, true)
-    const messages = getSyncMessages(sessionId)
+    let messages = getSyncMessages(sessionId)
+    if (!messages.some((message) => message.id === revertToId)) {
+      await ensureSessionMessageRequirement(sessionId, { kind: "message", messageID: revertToId })
+      messages = getSyncMessages(sessionId)
+    }
     const targetMessage = nextUserMessage(messages, revertToId)
 
     if (targetMessage) {
