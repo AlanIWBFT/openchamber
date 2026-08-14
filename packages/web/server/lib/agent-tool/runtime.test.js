@@ -124,7 +124,7 @@ describe('managed agent tool runtime', () => {
     expect(request.required).toEqual(['action']);
     expect(request.properties.action.oneOf).toContainEqual({
       const: 'session.messages',
-      description: 'Read sessionId text messages. Choose one mode: limit=N (newest; default 10), all=true (full history; select earliest locally), or last/lastAssistant=true',
+      description: 'Read sessionId text messages and completed question answers. Question-answer rows have synthetic IDs and cannot be used as session.fork boundaries. Choose one mode: limit=N (newest; default 10), all=true (full history; select earliest locally), or last/lastAssistant=true',
     });
     // An agent never blocks on a session: no wait or timeout in its schema.
     const controlParameters = request.properties;
