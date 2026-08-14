@@ -174,7 +174,7 @@ Status snapshot requests are ordered by successfully applied generation per dire
 
 ## Session message loading
 
-`SessionMessageLoader` is the shared authority for session message requests. Navigation, reactive chat loading, sidebar prefetch, pagination, reconnect/recovery, and optimistic reconciliation must delegate to it rather than issuing parallel initial requests.
+`SessionMessageLoader` is the shared authority for timeline materialization and paged session message requests. Navigation, reactive chat loading, sidebar prefetch, pagination, reconnect/recovery, and optimistic reconciliation must delegate to it rather than issuing parallel initial requests.
 
 Rules:
 
@@ -190,6 +190,8 @@ Rules:
 10. Persisted part arrays are ordered only by part/event `seq`. Part IDs are identity keys and have the same rollover limitation; identity lookup/removal must not require a part array to be lexically ID-sorted.
 
 Initial loads use smaller pages on constrained VS Code/mobile surfaces. Prefetch resolves only the initial renderable page; it does not eagerly download older history. The mounted chat timeline requests older pages when its viewport is underfilled or the user scrolls toward history, while mobile uses its explicit load-older action. Timeline caches, pending work, prepend snapshots, and stale checks use runtime + directory + session identity so equal session IDs in different worktrees cannot share lifecycle state. Older pages are fetched through the same loader and merged with optimistic records before publication. The same sequence contract applies in the VS Code webview because it consumes this shared loader and sync store; the extension bridge must transport OpenCode records without introducing its own ID- or timestamp-based ordering.
+
+Revert, undo, redo, and cold-open reverted sessions use the loader's bounded requirement lookup. A lookup first checks the materialized sequence-ordered messages, then shares one in-flight page per cursor while fetching older pages until the requested message/user boundary is found or history is complete. Lifecycle-bound callers may cancel their own lookup after the current shared page finishes; cancellation does not abort a page needed by another caller or continue to fetch subsequent pages. Directory/session invalidation, store replacement, and loader disposal invalidate captured page demand before another request can start, while a same-runtime SDK transport replacement retries unresolved coverage on the replacement client. A later lookup may retry one retained cursor after an older-page error. If a revert target message is cached but its local part bucket is absent, revert makes at most one best-effort exact-message read after stopping the branch; it uses those parts only for that action and never starts pagination, retries, or cache repair. Sending a new branch from a reverted session must resolve its current marker before any optimistic mutation and must fail without sending if that boundary cannot be loaded. These actions never use complete-history refreshes; explicit complete history remains an export-only operation.
 
 ## Loading diagnostics
 
@@ -339,7 +341,7 @@ Message and part IDs are identities only. Persisted timeline order comes from th
 
 HTTP materialization must declare whether a result is recent, prepend, sparse merge, or complete. A finite page without `X-Next-Cursor` is complete, including a successful empty page. In-flight snapshots preserve newer events, HTTP commits, optimistic state, removals, and session eviction tombstones. Directory or server instance replacement invalidates the entire sidecar so old requests cannot write into the replacement instance.
 
-Revert boundaries are resolved by identity in the sequence-ordered message array. If a boundary is absent from a partial cache, load complete history with `limit: 0`; never infer its position from message IDs.
+Revert boundaries are resolved by identity in the sequence-ordered message array. If a boundary is absent from a partial cache, the message loader pages toward older history until it finds the boundary or reaches a confirmed complete result; revert and restore actions never request complete history with `limit: 0`. Never infer message position from message IDs.
 
 ## The golden rule
 
