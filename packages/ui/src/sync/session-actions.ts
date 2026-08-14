@@ -28,8 +28,8 @@ import {
   assertCurrentMessageSnapshot,
   beginMessageSnapshot,
   decodeStoredMessageRecords,
-  getMessageSequenceBoundary,
   getMessageOrderState,
+  sortMessages,
   dropSessionOrder,
   preserveConcurrentMessageChanges,
   SequenceProtocolError,
@@ -47,7 +47,7 @@ import {
 import { withContextObligatoryMessage, type ContextObligatoryMessage } from "@/lib/contextObligatoryMessages"
 import { getBtwOriginalSessionID, getBtwSessionID, isBtwSession, withoutBtwSessionLink } from "@/lib/sessionBtwMetadata"
 import { withLinkedIssue, type LinkedIssue } from "@/lib/linkedIssues"
-import { getImperativeSessionMessageLoader } from "./session-message-loader"
+import { getImperativeSessionMessageLoader, type SessionMessageRequirement } from "./session-message-loader"
 import { cleanupPersistedSessionState } from "./session-deletion-cleanup"
 import { requestSessionArchiveBatch } from "./session-archive-batch"
 import { registerBulkArchiveEchoes, releaseBulkArchiveEchoes } from "./bulk-archive-echo"
@@ -56,11 +56,8 @@ import { markAmbiguousTransportFailure } from "@/lib/relay/transport-error"
 import { getErrorStatus, isAmbiguousSendFailure } from "./send-failure-classification"
 import { getStaleRunningToolMessageID } from "./materialization"
 import { normalizePath } from "@/lib/pathNormalization"
-import { mergeMessages } from "./optimistic"
 import { deleteChatDirectory } from "@/lib/chatDirectories"
-import { selectRevertedMessages, selectVisibleMessages } from "./message-boundary"
 
-const MESSAGE_REFETCH_LIMIT = 100
 const SEND_CONFIRMATION_REFETCH_LIMIT = 30
 // A relay-tunnel send fails when the tunnel drops, and the confirming refetch
 // then has to travel over that same tunnel to answer "did my message land?".
@@ -233,6 +230,30 @@ function dirStoreForSession(sessionId: string): { store: DirectoryStoreApi; dire
     return { store: dirStoreForDirectory(directory), directory }
   }
   return { store: dirStore(), directory: dir() }
+}
+
+function hasSessionMessageRequirement(messages: readonly Message[], requirement: SessionMessageRequirement): boolean {
+  if (requirement.kind === "message") {
+    return messages.some((message) => message.id === requirement.messageID)
+  }
+
+  if (requirement.kind === "latest-user") {
+    return messages.some((message) => message.role === "user")
+  }
+
+  const boundary = messages.findIndex((message) => message.id === requirement.messageID)
+  return boundary >= 0 && messages.slice(0, boundary).some((message) => message.role === "user")
+}
+
+export async function ensureSessionMessageRequirement(
+  sessionId: string,
+  requirement: SessionMessageRequirement,
+): Promise<boolean> {
+  const { store, directory } = dirStoreForSession(sessionId)
+  if (hasSessionMessageRequirement(store.getState().message[sessionId] ?? [], requirement)) return true
+  const loader = getImperativeSessionMessageLoader()
+  if (!loader || !directory) return false
+  return loader.loadUntil({ directory, sessionID: sessionId }, requirement)
 }
 
 /**
@@ -1739,17 +1760,46 @@ export async function optimisticSend(input: {
 
   assertRuntimeUnchanged()
   await waitForConnectionOrThrow()
-  input.beforeOptimisticInsert?.()
   assertRuntimeUnchanged()
 
   const targetDirectory = input.directory ?? dir()
   const store = targetDirectory ? dirStoreForDirectory(targetDirectory) : dirStore()
-  const stateBeforeSend = store.getState()
-  const order = getMessageOrderState(store)
-  const sessionBeforeSend = stateBeforeSend.session.find((session) => session.id === input.sessionId)
-  const revertMessageID = sessionBeforeSend?.revert?.messageID
-  const messagesBeforeSend = stateBeforeSend.message[input.sessionId] ?? []
-  const revertedMessages = selectRevertedMessages(messagesBeforeSend, revertMessageID)
+  let stateBeforeSend = store.getState()
+  let sessionBeforeSend = stateBeforeSend.session.find((session) => session.id === input.sessionId)
+  let revertMessageID = sessionBeforeSend?.revert?.messageID
+  let sessionMessages = stateBeforeSend.message[input.sessionId] ?? []
+  let revertBoundary = revertMessageID
+    ? sessionMessages.findIndex((message) => message.id === revertMessageID)
+    : -1
+
+  while (revertMessageID && revertBoundary < 0) {
+    const expectedRevertMessageID = revertMessageID
+    const loader = getImperativeSessionMessageLoader()
+    if (!loader || !targetDirectory) {
+      throw new Error("Reverted session history is not available yet.")
+    }
+    const found = await loader.loadUntil(
+      { directory: targetDirectory, sessionID: input.sessionId },
+      { kind: "message", messageID: expectedRevertMessageID },
+    )
+    assertRuntimeUnchanged()
+
+    stateBeforeSend = store.getState()
+    sessionBeforeSend = stateBeforeSend.session.find((session) => session.id === input.sessionId)
+    revertMessageID = sessionBeforeSend?.revert?.messageID
+    sessionMessages = stateBeforeSend.message[input.sessionId] ?? []
+    revertBoundary = revertMessageID
+      ? sessionMessages.findIndex((message) => message.id === revertMessageID)
+      : -1
+
+    if (revertMessageID === expectedRevertMessageID && (!found || revertBoundary < 0)) {
+      throw new Error("Reverted session history could not be loaded.")
+    }
+  }
+
+  input.beforeOptimisticInsert?.()
+  assertRuntimeUnchanged()
+  const revertedMessages = revertBoundary >= 0 ? sessionMessages.slice(revertBoundary) : []
   const revertedParts = new Map(
     revertedMessages.map((message) => [message.id, stateBeforeSend.part[message.id] ?? []] as const),
   )
@@ -1760,7 +1810,7 @@ export async function optimisticSend(input: {
     ))
     const message = {
       ...stateBeforeSend.message,
-      [input.sessionId]: selectVisibleMessages(messagesBeforeSend, revertMessageID),
+      [input.sessionId]: revertBoundary >= 0 ? sessionMessages.slice(0, revertBoundary) : sessionMessages,
     }
     const part = { ...stateBeforeSend.part }
     for (const revertedMessage of revertedMessages) delete part[revertedMessage.id]
@@ -1876,9 +1926,16 @@ export async function optimisticSend(input: {
       session = rollbackState.session.map((candidate) => (
         candidate.id === input.sessionId ? { ...candidate, revert: sessionBeforeSend?.revert } as Session : candidate
       ))
+      const restoredMessages = new Map(
+        (rollbackState.message[input.sessionId] ?? []).map((message) => [message.id, message] as const),
+      )
+      for (const revertedMessage of revertedMessages) restoredMessages.set(revertedMessage.id, revertedMessage)
       message = {
         ...rollbackState.message,
-        [input.sessionId]: mergeMessages(rollbackState.message[input.sessionId] ?? [], revertedMessages, order),
+        [input.sessionId]: sortMessages(
+          [...restoredMessages.values()],
+          getMessageOrderState(store),
+        ),
       }
       part = { ...rollbackState.part }
       for (const [revertedMessageID, parts] of revertedParts) {
@@ -2304,29 +2361,55 @@ export async function dismissOpenQuestionsForSession(sessionId: string): Promise
  */
 export async function revertToMessage(sessionId: string, messageId: string): Promise<void> {
   const { store, directory } = dirStoreForSession(sessionId)
-  const cachedTarget = store.getState().message[sessionId]?.find((message) => message.id === messageId)
-  let stopped = false
-  if (cachedTarget?.role === "user") {
-    await stopSessionExecution(sessionId, { scope: "reverted-branch", messageID: messageId }, directory)
-    stopped = true
+  let targetMsg = store.getState().message[sessionId]?.find((message) => message.id === messageId)
+  if (!targetMsg) {
+    await ensureSessionMessageRequirement(sessionId, { kind: "message", messageID: messageId })
+    targetMsg = store.getState().message[sessionId]?.find((message) => message.id === messageId)
   }
-  await refetchSessionMessages(sessionId, true)
+
+  if (!targetMsg || targetMsg.role !== "user") {
+    console.error("[sync] Revert target is missing from session history", { sessionId, messageId })
+    return
+  }
+
+  await stopSessionExecution(sessionId, { scope: "reverted-branch", messageID: messageId }, directory)
+  const stoppedState = store.getState()
+  targetMsg = stoppedState.message[sessionId]?.find((message) => message.id === messageId)
+  if (!targetMsg || targetMsg.role !== "user") {
+    console.error("[sync] Revert target disappeared before the revert request", { sessionId, messageId })
+    return
+  }
+
+  let parts = stoppedState.part[messageId] ?? []
+  if (!Object.hasOwn(stoppedState.part, messageId)) {
+    try {
+      const result = await sdk().session.message({
+        sessionID: sessionId,
+        messageID: messageId,
+        directory,
+      })
+      const record = assertSdkData(result, "session.message")
+
+      // Prefer an event that arrived while the exact read was in flight.
+      const refreshed = store.getState()
+      parts = Object.hasOwn(refreshed.part, messageId) ? refreshed.part[messageId] ?? [] : record.parts
+    } catch (error) {
+      // Missing parts are already an exceptional cache/data state. Keep this
+      // fallback best-effort: one exact read, no pagination or retry loop.
+      console.error("[sync] Failed to load revert target parts", { sessionId, messageId, error })
+    }
+  }
   const state = store.getState()
+  targetMsg = state.message[sessionId]?.find((message) => message.id === messageId)
+  if (!targetMsg || targetMsg.role !== "user") {
+    console.error("[sync] Revert target disappeared before the revert request", { sessionId, messageId })
+    return
+  }
 
   // Extract message text for prompt restoration (only non-synthetic text parts —
   // the server adds file content as synthetic text parts that should not be restored)
-  const messages = state.message[sessionId] ?? []
-  const targetMsg = messages.find((m) => m.id === messageId)
-  if (!targetMsg || targetMsg.role !== "user") {
-    console.error("[sync] Revert target is missing from complete history", { sessionId, messageId })
-    return
-  }
-  if (!stopped) {
-    await stopSessionExecution(sessionId, { scope: "reverted-branch", messageID: messageId }, directory)
-  }
   let messageText = ""
   let submittedFileParts: Array<Record<string, unknown>> = []
-  const parts = state.part[messageId] ?? []
   const textParts = parts.filter((p) => p.type === "text" && !isSyntheticPart(p))
   messageText = textParts
     .map((p: Record<string, unknown>) => (p as { text?: string }).text || (p as { content?: string }).content || "")
@@ -2425,60 +2508,6 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   }
 }
 
-export async function refetchSessionMessages(sessionId: string, complete = false): Promise<void> {
-  const { store, directory } = dirStoreForSession(sessionId)
-  const loader = getImperativeSessionMessageLoader()
-  if (loader && directory) {
-    if (complete) {
-      await loader.refreshComplete({ directory, sessionID: sessionId })
-    } else {
-      await loader.refreshTail({ directory, sessionID: sessionId }, MESSAGE_REFETCH_LIMIT)
-    }
-    const snapshot = loader.getSnapshot({ directory, sessionID: sessionId })
-    if (snapshot.status === "error") throw snapshot.error ?? new Error("Session message refresh failed")
-    return
-  }
-
-  // Actions can run in isolated tests before SyncProvider binds the shared
-  // loader. The application runtime always takes the shared path above.
-  const order = getMessageOrderState(store)
-  const revision = beginMessageSnapshot(order, sessionId)
-  const result = await sdk().session.messages({
-    sessionID: sessionId,
-    directory,
-    limit: complete ? 0 : MESSAGE_REFETCH_LIMIT,
-  })
-  const records = assertSdkSuccess(result, "session.messages")
-  if (!Array.isArray(records)) throw new SequenceProtocolError("session.messages response is missing stored records")
-  assertCurrentMessageOrderState(store, order)
-  assertCurrentMessageSnapshot(order, sessionId, revision)
-  const snapshot = decodeStoredMessageRecords(records, MESSAGE_REFETCH_SKIP_PARTS, sessionId)
-  const recentBoundary = getMessageSequenceBoundary(snapshot)
-  let decoded = preserveConcurrentMessageChanges(
-    order,
-    snapshot,
-    store.getState(),
-    sessionId,
-    revision,
-  )
-  decoded = appendConcurrentMessagesMissingFromSnapshot(order, decoded, store.getState(), sessionId, revision)
-  applyDecodedSequences(order, decoded)
-  const cursor = result.response?.headers?.get?.("x-next-cursor") ?? undefined
-
-  store.setState((state) => {
-    const materialized = materializeSessionSnapshots(
-      state,
-      sessionId,
-      decoded.records.map((record) => ({
-        info: stripMessageDiffSnapshots(record.info),
-        parts: record.parts ?? [],
-      })),
-      { skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS, order, mode: complete || !cursor ? "complete" : "recent", recentBoundary },
-    )
-    return { message: materialized.message, part: materialized.part }
-  })
-}
-
 /**
  * Unrevert — restore all previously reverted messages.
  * Restore all previously reverted messages. Stops if busy, merges result.
@@ -2486,8 +2515,6 @@ export async function refetchSessionMessages(sessionId: string, complete = false
 export async function unrevertSession(sessionId: string): Promise<void> {
   const { store, directory } = dirStoreForSession(sessionId)
   const state = store.getState()
-  const previousMessageCount = state.message[sessionId]?.length ?? 0
-
   // This is an explicit user action. A busy session must be fully stopped
   // before its reverted history becomes active again.
   const status = state.session_status[sessionId]
@@ -2507,8 +2534,6 @@ export async function unrevertSession(sessionId: string): Promise<void> {
     sessions[idx] = unrevertedSession
     store.setState({ session: sessions })
   }
-  await refetchSessionMessages(sessionId, true)
-  if ((store.getState().message[sessionId]?.length ?? 0) > previousMessageCount) return
 }
 
 /**
