@@ -4,11 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Git: the pull request panel now follows the branch's current open PR, and an open PR always wins over an older merged or closed one. After a PR is merged or closed the panel keeps showing it as the branch's last PR and offers creating the next one right below it (thanks to @makeittech).
-- **Usage/Claude:** Claude plan limits now work when you are signed in through Claude Code, without also signing into Anthropic in OpenCode; the account is read from Claude Code's own login on macOS, Linux, and WSL. The page shows your session and weekly limits again, adds per-model weekly limits and extra usage spending, and names your plan. Limits are kept on screen instead of disappearing when Anthropic temporarily blocks refreshes.
 - **Settings/Integrations:** a new Integrations settings page lists Claude Code, Command Code, and Cursor plugins with install, update, setup, and remove actions, plus Discord and Telegram Coming soon placeholders.
+- Usage/Claude: Claude plan limits now work when you are signed in through Claude Code, without also signing into Anthropic in OpenCode; the account is read from Claude Code's own login on macOS, Linux, and WSL. The page shows your session and weekly limits again, adds per-model weekly limits and extra usage spending, and names your plan. Limits are kept on screen instead of disappearing when Anthropic temporarily blocks refreshes.
+- Git: the pull request panel now follows the branch's current open PR, and an open PR always wins over an older merged or closed one. After a PR is merged or closed the panel keeps showing it as the branch's last PR and offers creating the next one right below it (thanks to @makeittech).
 - Chat: new chats no longer start against a deleted last worktree directory; they fall back to the active project instead of saving the first message and never starting.
 - Chat: opening a busy subagent in the context panel now shows its history instead of only the working-status line (thanks to @makeittech).
+- Chat: saved chats in the context panel open again instead of staying blank.
+- Projects: project names now match the folder name exactly, so `.ssh` and `opencode-claude` are no longer shown as `.Ssh` and `Opencode Claude` in the sidebar, window title, settings and notifications; names you renamed yourself are kept.
+- Settings: the session retention action you pick is now saved instead of being dropped (thanks to @Gautam0507).
+- Browser: typing a comment on a page no longer triggers app shortcuts.
+- Skills Catalog: the source is now named ClawHub instead of "ClawdHub" (thanks to @makeittech).
 
 ## [1.18.4] - 2026-08-14
 
