@@ -534,10 +534,11 @@ const DraftWelcome: React.FC = () => {
 type ChatContainerProps = {
     active?: boolean;
     /**
-     * When set, controls `useSessionMessageRecords` independently of `active`.
-     * Defaults to `active`. Embedded session-chat panels pass `true` so a
-     * delayed/lost visibility handshake cannot hide an already-materialized
-     * transcript (leaving only the working-status row — issue #2903).
+     * When set, controls message-history reads and session-message loads
+     * independently of `active`. Defaults to `active`. Embedded session-chat
+     * panels pass `true` so a delayed/lost visibility handshake cannot hide
+     * an already-materialized transcript (leaving only the working-status
+     * row — issue #2903).
      */
     messagesEnabled?: boolean;
     autoOpenDraft?: boolean;
@@ -1058,9 +1059,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         Boolean(currentSessionId)
         && !hasRenderableSessionSnapshot;
     const retrySessionLoad = React.useCallback(() => {
-        if (!active || !currentSessionId) return;
+        if (!messagesEnabled || !currentSessionId) return;
         void sync.ensureSessionRenderable(currentSessionId, true, effectiveSessionDirectory);
-    }, [active, currentSessionId, effectiveSessionDirectory, sync]);
+    }, [currentSessionId, effectiveSessionDirectory, messagesEnabled, sync]);
 
     React.useEffect(() => {
         if (!active || !currentSessionId) return;
@@ -1085,10 +1086,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     }, [active, currentSessionId, currentSessionKey, releaseAutoFollow, restoreSnapshot]);
 
     React.useEffect(() => {
-        if (!active || !currentSessionId) return;
+        if (!messagesEnabled || !currentSessionId) return;
         if (hasRenderableSessionSnapshot) return;
         void ensureSessionRenderable(currentSessionId);
-    }, [active, currentSessionId, ensureSessionRenderable, hasRenderableSessionSnapshot]);
+    }, [currentSessionId, ensureSessionRenderable, hasRenderableSessionSnapshot, messagesEnabled]);
 
 	if (!currentSessionId && !draftOpen) {
 		// With auto-open, the draft welcome opens on the next tick (effect below),

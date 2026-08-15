@@ -14,15 +14,45 @@
  * subscribed while `active={embeddedBackgroundWorkEnabled}` still gates
  * composer focus and background work.
  */
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 
-import { getSessionMaterializationStatus, materializeSessionSnapshots } from '@/sync/materialization';
-import { buildSessionMessageRecordsSnapshot } from '@/sync/sync-context';
-import { INITIAL_STATE } from '@/sync/types';
+mock.module('sonner', () => ({
+  toast: { dismiss: () => undefined, error: () => undefined, info: () => undefined, success: () => undefined },
+}));
+mock.module('@/components/ui', () => ({
+  toast: { info: () => undefined, error: () => undefined, success: () => undefined },
+}));
+mock.module('@/lib/opencode/client', () => ({
+  opencodeClient: {
+    getDirectory: () => '/repo',
+    setDirectory: () => undefined,
+    getSdkClient: () => ({}),
+    getScopedSdkClient: () => ({}),
+  },
+}));
+mock.module('@/stores/permissionStore', () => ({
+  usePermissionStore: { getState: () => ({ isSessionAutoAccepting: () => false, hydrate: async () => undefined }) },
+}));
+mock.module('@/stores/useConfigStore', () => ({
+  useConfigStore: {
+    getState: () => ({ isConnected: true, hasEverConnected: true, settingsMessageStreamTransport: 'auto' }),
+    setState: () => undefined,
+  },
+}));
+mock.module('@/stores/useTodosPersistStore', () => ({
+  useTodosPersistStore: { getState: () => ({ setSessionTodos: () => undefined }) },
+}));
+
+const { useSessionMessageRecords } = await import('@/sync/sync-context');
+const { ChildStoreManager } = await import('@/sync/child-store');
+const { getSessionMaterializationStatus } = await import('@/sync/materialization');
+import type { State } from '@/sync/types';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const appSource = readFileSync(join(__dirname, '..', '..', '..', 'App.tsx'), 'utf-8');
@@ -31,57 +61,148 @@ const chatViewSource = readFileSync(join(__dirname, '..', '..', 'views', 'ChatVi
 const syncContextSource = readFileSync(join(__dirname, '..', '..', '..', 'sync', 'sync-context.tsx'), 'utf-8');
 
 const SESSION_ID = 'ses_subagent_2903';
+const DIRECTORY = '/repo';
 
-const createRecord = (id: string, role: 'user' | 'assistant', created: number) => ({
-  info: {
-    id,
-    sessionID: SESSION_ID,
-    role,
-    time: { created },
-    ...(role === 'assistant'
-      ? { parentID: `u_${created}`, providerID: 'deepseek', modelID: 'deepseek-v4-flash' }
-      : {}),
-  } as Message,
-  parts: [{
-    id: `prt_${id}`,
-    messageID: id,
-    sessionID: SESSION_ID,
-    type: 'text',
-    text: role === 'user' ? `prompt ${created}` : `output ${created}`,
-  }] as Part[],
-});
-
-/** 14-message subagent transcript, matching the issue reproduction fixture. */
-const buildFourteenMessageSnapshot = () => {
-  const records = Array.from({ length: 14 }, (_, index) => {
-    const n = index + 1;
-    return createRecord(
-      n % 2 === 1 ? `u_${n}` : `a_${n}`,
-      n % 2 === 1 ? 'user' : 'assistant',
-      n,
-    );
-  });
-  return materializeSessionSnapshots({ message: {}, part: {} }, SESSION_ID, records);
+const installMinimalDom = () => {
+  const descriptors = new Map<string, PropertyDescriptor | undefined>();
+  const setGlobal = (name: string, value: unknown) => {
+    descriptors.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
+  };
+  class ElementStub {}
+  const documentStub: Record<string, unknown> = {
+    nodeType: 9,
+    defaultView: globalThis,
+    activeElement: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  };
+  const container = {
+    nodeType: 1,
+    tagName: 'DIV',
+    nodeName: 'DIV',
+    namespaceURI: 'http://www.w3.org/1999/xhtml',
+    ownerDocument: documentStub,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  };
+  documentStub.documentElement = container;
+  documentStub.body = container;
+  setGlobal('document', documentStub);
+  setGlobal('window', globalThis);
+  setGlobal('location', { search: '', protocol: 'http:', hostname: 'localhost' });
+  setGlobal('Element', ElementStub);
+  setGlobal('HTMLElement', ElementStub);
+  setGlobal('HTMLIFrameElement', ElementStub);
+  setGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  setGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(Date.now()), 0));
+  setGlobal('cancelAnimationFrame', (id: ReturnType<typeof setTimeout>) => clearTimeout(id));
+  return {
+    container: container as unknown as Element,
+    restore: () => {
+      for (const [name, descriptor] of descriptors) {
+        if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+        else Reflect.deleteProperty(globalThis, name);
+      }
+    },
+  };
 };
 
+const createMessage = (id: string, role: 'user' | 'assistant', created: number): Message => ({
+  id,
+  sessionID: SESSION_ID,
+  role,
+  ...(role === 'assistant' ? { parentID: `u_${created}` } : {}),
+  time: { created },
+} as Message);
+
+const createPart = (id: string, messageID: string, text: string): Part => ({
+  id,
+  messageID,
+  sessionID: SESSION_ID,
+  type: 'text',
+  text,
+} as Part);
+
+/** 14-message subagent transcript, matching the issue reproduction fixture. */
+const buildMaterializedSubagentSession = () => {
+  const messages: Message[] = [];
+  const part: Record<string, Part[]> = {};
+  for (let index = 0; index < 14; index += 1) {
+    const created = index + 1;
+    const role: 'user' | 'assistant' = created % 2 === 1 ? 'user' : 'assistant';
+    const id = role === 'user' ? `u_${created}` : `a_${created}`;
+    messages.push(createMessage(id, role, created));
+    part[id] = [createPart(`prt_${id}`, id, role === 'user' ? `prompt ${created}` : `output ${created}`)];
+  }
+  return { messages, part };
+};
+
+const syncContext = (globalThis as unknown as {
+  __openchamber_sync_context__?: React.Context<unknown>;
+}).__openchamber_sync_context__;
+
+if (!syncContext) {
+  throw new Error('sync context was not published on globalThis by @/sync/sync-context');
+}
+
 describe('issue #2903 busy embedded subagent status-line-only', () => {
-  test('materialized 14-message subagent is renderable and snapshottable', () => {
-    const materialized = buildFourteenMessageSnapshot();
-    expect(materialized.message[SESSION_ID]).toHaveLength(14);
-    expect(getSessionMaterializationStatus(materialized, SESSION_ID)).toEqual({
+  test('cold disabled reads hide a fully materialized 14-message subagent; enabled reads return all 14', async () => {
+    const dom = installMinimalDom();
+    const root: Root = createRoot(dom.container);
+    const childStores = new ChildStoreManager();
+    const store = childStores.ensureChild(DIRECTORY, { bootstrap: false });
+    const { messages, part } = buildMaterializedSubagentSession();
+    store.setState({
+      status: 'complete',
+      session: [{
+        id: SESSION_ID,
+        title: 'Audit Searchbar implementation',
+        time: { created: 1, updated: 1 },
+        version: '1',
+        directory: DIRECTORY,
+      } as State['session'][number]],
+      message: { [SESSION_ID]: messages },
+      part,
+    } as Partial<State>);
+
+    expect(getSessionMaterializationStatus(store.getState(), SESSION_ID)).toEqual({
       hasMessages: true,
       renderable: true,
       missingPartMessageIDs: [],
     });
 
-    const records = buildSessionMessageRecordsSnapshot(
-      { ...INITIAL_STATE, message: materialized.message, part: materialized.part },
-      SESSION_ID,
-    );
-    expect(records.list).toHaveLength(14);
-    expect(records.list.map((record) => record.info.id)).toEqual(
-      materialized.message[SESSION_ID].map((message) => message.id),
-    );
+    const system = { childStores, messageLoader: {}, sdk: {}, runtimeKey: 'test', directory: DIRECTORY };
+    const Provider = syncContext.Provider as React.Provider<unknown>;
+    let inactiveCount = -1;
+    let activeCount = -1;
+    let enabled = false;
+
+    const Harness = () => {
+      const records = useSessionMessageRecords(SESSION_ID, DIRECTORY, { enabled });
+      if (enabled) {
+        activeCount = records.length;
+      } else {
+        inactiveCount = records.length;
+      }
+      return null;
+    };
+
+    try {
+      await act(async () => {
+        root.render(React.createElement(Provider, { value: system }, React.createElement(Harness)));
+      });
+      expect(inactiveCount).toBe(0);
+
+      enabled = true;
+      await act(async () => {
+        root.render(React.createElement(Provider, { value: system }, React.createElement(Harness)));
+      });
+      expect(activeCount).toBe(14);
+    } finally {
+      await act(async () => root.unmount());
+      dom.restore();
+    }
   });
 
   test('sync gate still returns empty on cold disabled reads', () => {
@@ -101,6 +222,8 @@ describe('issue #2903 busy embedded subagent status-line-only', () => {
     expect(chatContainerSource).toContain('const messagesEnabled = messagesEnabledProp ?? active;');
     expect(chatContainerSource).toContain('enabled: messagesEnabled');
     expect(chatContainerSource.includes('enabled: active')).toBe(false);
+    expect(chatContainerSource).toContain('if (!messagesEnabled || !currentSessionId) return;');
+    expect(chatContainerSource).toContain('void ensureSessionRenderable(currentSessionId);');
   });
 
   test('empty+busy branch skips empty state so StatusRowContainer can stand alone', () => {
