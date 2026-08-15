@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { parseMdFile, writeMdFile, readConfigFile, writeConfig } from './shared.js';
+import { parseMdFile, writeMdFile, readConfigFile, readConfigLayers, writeConfig } from './shared.js';
 import { updateAgent } from './agents.js';
 import { updateMcpConfig } from './mcp.js';
 
@@ -332,6 +332,42 @@ describe('readConfigFile / writeConfig JSONC safety (issue #2923)', () => {
       );
       expect(fs.readFileSync(file, 'utf8')).toBe(PARTIAL_PARSE_CONFIG);
       expect(fs.existsSync(`${file}.openchamber.backup`)).toBe(false);
+    } finally {
+      if (previousOpenCodeConfig === undefined) delete process.env.OPENCODE_CONFIG;
+      else process.env.OPENCODE_CONFIG = previousOpenCodeConfig;
+    }
+  });
+
+  it('returns an empty object for a comment-only config file', () => {
+    const file = writeFixture('comments.jsonc', '// placeholder\n/* still empty */\n');
+    expect(readConfigFile(file)).toEqual({});
+  });
+
+  it('keeps a valid custom layer readable when a project layer is unparseable', () => {
+    const custom = writeFixture('custom.jsonc', VALID_CONFIG);
+    const projectDir = path.join(FIXTURE_DIR, 'project');
+    const projectFile = writeFixture(path.join('project', '.opencode', 'opencode.jsonc'), PARTIAL_PARSE_CONFIG);
+    const previousOpenCodeConfig = process.env.OPENCODE_CONFIG;
+
+    try {
+      process.env.OPENCODE_CONFIG = custom;
+      const layers = readConfigLayers(projectDir);
+      expect(layers.customConfig.plugin).toEqual(['opencode-see-image']);
+      expect(layers.projectConfig).toEqual({});
+      expect(layers.mergedConfig.plugin).toEqual(['opencode-see-image']);
+      expect(layers.layerErrors).toEqual([
+        expect.objectContaining({
+          path: projectFile,
+          code: 'INVALID_JSONC',
+        }),
+      ]);
+
+      updateMcpConfig('openproject', { enabled: false }, projectDir);
+      const rewritten = JSON.parse(fs.readFileSync(custom, 'utf8'));
+      expect(rewritten.plugin).toEqual(['opencode-see-image']);
+      expect(rewritten.mcp.openproject.enabled).toBe(false);
+      expect(fs.readFileSync(projectFile, 'utf8')).toBe(PARTIAL_PARSE_CONFIG);
+      expect(fs.existsSync(`${projectFile}.openchamber.backup`)).toBe(false);
     } finally {
       if (previousOpenCodeConfig === undefined) delete process.env.OPENCODE_CONFIG;
       else process.env.OPENCODE_CONFIG = previousOpenCodeConfig;

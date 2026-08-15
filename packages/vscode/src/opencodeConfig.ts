@@ -564,9 +564,17 @@ const formatJsoncParseError = (filePath: string, errors: ParseError[]): string =
   return `OpenCode configuration at ${filePath} contains invalid JSONC and cannot be loaded safely${location}`;
 };
 
+const isInvalidJsoncError = (error: unknown): error is Error & { code: string } =>
+  Boolean(error && typeof error === 'object' && 'code' in error && error.code === INVALID_JSONC);
+
 const parseConfigObject = (content: string, filePath: string): Record<string, unknown> => {
   const errors: ParseError[] = [];
   const parsed = parseJsonc(content, errors, { allowTrailingComma: true });
+  // Comment-only / no JSON value: jsonc-parser returns undefined plus ValueExpected.
+  // That is empty config, not a partial tree. The data-loss bug is errors + object.
+  if (parsed === undefined) {
+    return {};
+  }
   if (errors.length > 0 || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw codedError(formatJsoncParseError(filePath, errors), INVALID_JSONC);
   }
@@ -603,20 +611,50 @@ const mergeConfigs = (base: Record<string, unknown>, override: Record<string, un
   return result;
 };
 
+const readConfigLayer = (filePath?: string | null): {
+  config: Record<string, unknown>;
+  error: (Error & { code: string }) | null;
+} => {
+  try {
+    return { config: readConfigFile(filePath), error: null };
+  } catch (error) {
+    if (isInvalidJsoncError(error)) {
+      console.error(error.message);
+      return { config: {}, error };
+    }
+    throw error;
+  }
+};
+
 const readConfigLayers = (workingDirectory?: string) => {
   const { userPaths, projectPath, customPath } = getConfigPaths(workingDirectory);
   const userPath = getPrimaryUserConfigPath(userPaths);
-  const userConfig = readConfigFile(userPath);
-  const projectConfig = readConfigFile(projectPath);
-  const customConfig = readConfigFile(customPath);
-  const mergedConfig = mergeConfigs(mergeConfigs(userConfig, projectConfig), customConfig);
+  const userLayer = readConfigLayer(userPath);
+  const projectLayer = readConfigLayer(projectPath);
+  const customLayer = readConfigLayer(customPath);
+  const mergedConfig = mergeConfigs(
+    mergeConfigs(userLayer.config, projectLayer.config),
+    customLayer.config,
+  );
+
+  const layerErrors: Array<{ path: string; code: string; message: string }> = [];
+  if (userLayer.error) {
+    layerErrors.push({ path: userPath, code: userLayer.error.code, message: userLayer.error.message });
+  }
+  if (projectLayer.error && projectPath) {
+    layerErrors.push({ path: projectPath, code: projectLayer.error.code, message: projectLayer.error.message });
+  }
+  if (customLayer.error && customPath) {
+    layerErrors.push({ path: customPath, code: customLayer.error.code, message: customLayer.error.message });
+  }
 
   return {
-    userConfig,
-    projectConfig,
-    customConfig,
+    userConfig: userLayer.config,
+    projectConfig: projectLayer.config,
+    customConfig: customLayer.config,
     mergedConfig,
-    paths: { userPath, projectPath, customPath }
+    paths: { userPath, projectPath, customPath },
+    layerErrors,
   };
 };
 
@@ -1402,22 +1440,45 @@ export const deleteMcpConfig = (name: string, workingDirectory?: string): void =
   writeConfig(config, targetPath);
 };
 
+const getLayerError = (
+  layers: ReturnType<typeof readConfigLayers>,
+  filePath?: string | null,
+) => {
+  if (!filePath) return null;
+  return layers.layerErrors.find((entry) => entry.path === filePath) || null;
+};
+
+const throwIfLayerError = (
+  layers: ReturnType<typeof readConfigLayers>,
+  filePath?: string | null,
+) => {
+  const failed = getLayerError(layers, filePath);
+  if (!failed) return;
+  throw codedError(failed.message, failed.code);
+};
+
 const getJsonEntrySource = (
   layers: ReturnType<typeof readConfigLayers>,
   sectionKey: 'agent' | 'command' | 'mcp',
   entryName: string
 ) => {
   const { userConfig, projectConfig, customConfig, paths } = layers;
-  const customSection = (customConfig as Record<string, unknown>)?.[sectionKey] as Record<string, unknown> | undefined;
-  if (customSection?.[entryName] !== undefined) {
-    return { section: customSection[entryName], config: customConfig, path: paths.customPath, exists: true };
+  if (paths.customPath) {
+    throwIfLayerError(layers, paths.customPath);
+    const customSection = (customConfig as Record<string, unknown>)?.[sectionKey] as Record<string, unknown> | undefined;
+    if (customSection?.[entryName] !== undefined) {
+      return { section: customSection[entryName], config: customConfig, path: paths.customPath, exists: true };
+    }
   }
 
-  const projectSection = (projectConfig as Record<string, unknown>)?.[sectionKey] as Record<string, unknown> | undefined;
-  if (projectSection?.[entryName] !== undefined) {
-    return { section: projectSection[entryName], config: projectConfig, path: paths.projectPath, exists: true };
+  if (paths.projectPath && !getLayerError(layers, paths.projectPath)) {
+    const projectSection = (projectConfig as Record<string, unknown>)?.[sectionKey] as Record<string, unknown> | undefined;
+    if (projectSection?.[entryName] !== undefined) {
+      return { section: projectSection[entryName], config: projectConfig, path: paths.projectPath, exists: true };
+    }
   }
 
+  throwIfLayerError(layers, paths.userPath);
   const userSection = (userConfig as Record<string, unknown>)?.[sectionKey] as Record<string, unknown> | undefined;
   if (userSection?.[entryName] !== undefined) {
     return { section: userSection[entryName], config: userConfig, path: paths.userPath, exists: true };
@@ -1432,11 +1493,14 @@ const getJsonWriteTarget = (
 ) => {
   const { userConfig, projectConfig, customConfig, paths } = layers;
   if (paths.customPath) {
+    throwIfLayerError(layers, paths.customPath);
     return { config: customConfig, path: paths.customPath };
   }
   if (preferredScope === AGENT_SCOPE.PROJECT && paths.projectPath) {
+    throwIfLayerError(layers, paths.projectPath);
     return { config: projectConfig, path: paths.projectPath };
   }
+  throwIfLayerError(layers, paths.userPath);
   return { config: userConfig, path: paths.userPath };
 };
 

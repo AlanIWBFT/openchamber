@@ -185,6 +185,11 @@ function formatJsoncParseError(filePath, errors) {
 function parseConfigObject(content, filePath) {
   const errors = [];
   const parsed = parseJsonc(content, errors, { allowTrailingComma: true });
+  // Comment-only / no JSON value: jsonc-parser returns undefined plus ValueExpected.
+  // That is empty config, not a partial tree. The data-loss bug is errors + object.
+  if (parsed === undefined) {
+    return {};
+  }
   if (errors.length > 0 || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     const error = new Error(formatJsoncParseError(filePath, errors));
     error.code = INVALID_JSONC;
@@ -239,20 +244,47 @@ function mergeConfigs(base, override) {
   return result;
 }
 
+function readConfigLayer(filePath) {
+  try {
+    return { config: readConfigFile(filePath), error: null };
+  } catch (error) {
+    if (isInvalidJsoncError(error)) {
+      console.error(error.message);
+      return { config: {}, error };
+    }
+    throw error;
+  }
+}
+
 function readConfigLayers(workingDirectory) {
   const { userPaths, projectPath, customPath } = getConfigPaths(workingDirectory);
   const userPath = getPrimaryUserConfigPath(userPaths);
-  const userConfig = readConfigFile(userPath);
-  const projectConfig = readConfigFile(projectPath);
-  const customConfig = readConfigFile(customPath);
-  const mergedConfig = mergeConfigs(mergeConfigs(userConfig, projectConfig), customConfig);
+  const userLayer = readConfigLayer(userPath);
+  const projectLayer = readConfigLayer(projectPath);
+  const customLayer = readConfigLayer(customPath);
+  const mergedConfig = mergeConfigs(
+    mergeConfigs(userLayer.config, projectLayer.config),
+    customLayer.config,
+  );
+
+  const layerErrors = [];
+  if (userLayer.error) {
+    layerErrors.push({ path: userPath, code: userLayer.error.code, message: userLayer.error.message });
+  }
+  if (projectLayer.error && projectPath) {
+    layerErrors.push({ path: projectPath, code: projectLayer.error.code, message: projectLayer.error.message });
+  }
+  if (customLayer.error && customPath) {
+    layerErrors.push({ path: customPath, code: customLayer.error.code, message: customLayer.error.message });
+  }
 
   return {
-    userConfig,
-    projectConfig,
-    customConfig,
+    userConfig: userLayer.config,
+    projectConfig: projectLayer.config,
+    customConfig: customLayer.config,
     mergedConfig,
-    paths: { userPath, projectPath, customPath }
+    paths: { userPath, projectPath, customPath },
+    layerErrors,
   };
 }
 
@@ -299,18 +331,41 @@ function writeConfig(config, filePath = CONFIG_FILE) {
   }
 }
 
+function getLayerError(layers, filePath) {
+  if (!filePath || !Array.isArray(layers?.layerErrors)) {
+    return null;
+  }
+  return layers.layerErrors.find((entry) => entry.path === filePath) || null;
+}
+
+function throwIfLayerError(layers, filePath) {
+  const failed = getLayerError(layers, filePath);
+  if (!failed) {
+    return;
+  }
+  const error = new Error(failed.message);
+  error.code = failed.code;
+  throw error;
+}
+
 function getJsonEntrySource(layers, sectionKey, entryName) {
   const { userConfig, projectConfig, customConfig, paths } = layers;
-  const customSection = customConfig?.[sectionKey]?.[entryName];
-  if (customSection !== undefined) {
-    return { section: customSection, config: customConfig, path: paths.customPath, exists: true };
+  if (paths.customPath) {
+    throwIfLayerError(layers, paths.customPath);
+    const customSection = customConfig?.[sectionKey]?.[entryName];
+    if (customSection !== undefined) {
+      return { section: customSection, config: customConfig, path: paths.customPath, exists: true };
+    }
   }
 
-  const projectSection = projectConfig?.[sectionKey]?.[entryName];
-  if (projectSection !== undefined) {
-    return { section: projectSection, config: projectConfig, path: paths.projectPath, exists: true };
+  if (paths.projectPath && !getLayerError(layers, paths.projectPath)) {
+    const projectSection = projectConfig?.[sectionKey]?.[entryName];
+    if (projectSection !== undefined) {
+      return { section: projectSection, config: projectConfig, path: paths.projectPath, exists: true };
+    }
   }
 
+  throwIfLayerError(layers, paths.userPath);
   const userSection = userConfig?.[sectionKey]?.[entryName];
   if (userSection !== undefined) {
     return { section: userSection, config: userConfig, path: paths.userPath, exists: true };
@@ -322,11 +377,14 @@ function getJsonEntrySource(layers, sectionKey, entryName) {
 function getJsonWriteTarget(layers, preferredScope) {
   const { userConfig, projectConfig, customConfig, paths } = layers;
   if (paths.customPath) {
+    throwIfLayerError(layers, paths.customPath);
     return { config: customConfig, path: paths.customPath };
   }
   if (preferredScope === AGENT_SCOPE.PROJECT && paths.projectPath) {
+    throwIfLayerError(layers, paths.projectPath);
     return { config: projectConfig, path: paths.projectPath };
   }
+  throwIfLayerError(layers, paths.userPath);
   return { config: userConfig, path: paths.userPath };
 }
 

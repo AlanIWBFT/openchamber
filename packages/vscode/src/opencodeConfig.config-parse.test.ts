@@ -93,4 +93,22 @@ describe('opencodeConfig JSONC parse safety (issue #2923)', () => {
     assert.equal(rewritten.mcp.openproject.enabled, false);
     assert.equal(fs.readFileSync(`${configPath}.openchamber.backup`, 'utf8'), VALID_CONFIG);
   });
+
+  test('keeps a valid custom layer writable when a project layer is unparseable', () => {
+    const customPath = path.join(tempDir, 'custom.jsonc');
+    const projectDir = path.join(tempDir, 'project');
+    const projectFile = path.join(projectDir, '.opencode', 'opencode.jsonc');
+    fs.writeFileSync(customPath, VALID_CONFIG, 'utf8');
+    fs.mkdirSync(path.dirname(projectFile), { recursive: true });
+    fs.writeFileSync(projectFile, PARTIAL_PARSE_CONFIG, 'utf8');
+    process.env.OPENCODE_CONFIG = customPath;
+
+    updateMcpConfig('openproject', { enabled: false }, projectDir);
+
+    const rewritten = JSON.parse(fs.readFileSync(customPath, 'utf8'));
+    assert.deepEqual(rewritten.plugin, ['opencode-see-image']);
+    assert.equal(rewritten.mcp.openproject.enabled, false);
+    assert.equal(fs.readFileSync(projectFile, 'utf8'), PARTIAL_PARSE_CONFIG);
+    assert.equal(fs.existsSync(`${projectFile}.openchamber.backup`), false);
+  });
 });
