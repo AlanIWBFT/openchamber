@@ -555,6 +555,37 @@ describe('createSession draft lifecycle', () => {
     expect(useDirectoryStore.getState().currentDirectory).toBe('/private/unavailable-worktree');
   });
 
+  test('still creates against the active project when the draft is rewritten during the create probe', async () => {
+    const createSessionCalls = [];
+    const availabilityResolvers = [];
+    useProjectsStore.setState({
+      projects: [{ id: 'project-main', path: '/projects/main', label: 'Main' }],
+      activeProjectId: 'project-main',
+    });
+    useDirectoryStore.getState().setDirectory('/private/deleted-worktree', { showOverlay: false });
+    opencodeClient.getDirectoryAvailability = () => new Promise((resolve) => {
+      availabilityResolvers.push(resolve);
+    });
+    opencodeClient.createSession = async (_params, directory) => {
+      createSessionCalls.push(directory);
+      return { id: 'session-race', directory };
+    };
+
+    useSessionUIStore.getState().openNewSessionDraft();
+    const createPromise = useSessionUIStore.getState().createSession('Draft title', '/private/deleted-worktree');
+    expect(availabilityResolvers.length).toBe(2);
+
+    availabilityResolvers[0]('missing');
+    await Bun.sleep(0);
+    expect(useSessionUIStore.getState().newSessionDraft.directoryOverride).toBe('/projects/main');
+
+    availabilityResolvers[1]('missing');
+    const session = await createPromise;
+
+    expect(session).not.toBeNull();
+    expect(createSessionCalls).toEqual(['/projects/main']);
+  });
+
   test('does not persist a fallback when session creation fails', async () => {
     useProjectsStore.setState({
       projects: [{ id: 'project-main', path: '/projects/main', label: 'Main' }],

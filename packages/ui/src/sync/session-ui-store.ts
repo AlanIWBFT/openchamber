@@ -619,6 +619,8 @@ const resolveActiveProjectDirectory = (draft: NewSessionDraftState): string | nu
  * path is confirmed missing (deleted worktree), fall back to the active project.
  * Explicit worktree targets, in-flight worktree creation, and unknown/offline
  * probes stay unchanged so a temporary outage cannot rewrite the destination.
+ * A concurrent rewrite of the same implicit draft to that fallback is accepted
+ * instead of aborting create.
  */
 const resolveCreatableDraftDirectory = async (
   draft: NewSessionDraftState,
@@ -645,13 +647,24 @@ const resolveCreatableDraftDirectory = async (
   const draftDirectory = draft.directoryOverride
   const availability = await opencodeClient.getDirectoryAvailability(directory)
   const currentDraft = useSessionUIStore.getState().newSessionDraft
+  const currentDirectory = normalizePath(currentDraft.directoryOverride)
+  const capturedDirectory = normalizePath(draftDirectory)
+  // openNewSessionDraft may rewrite the same implicit draft to this fallback
+  // while createSession's probe is still in flight. That is the intended
+  // destination, not a user change, so do not abort the create.
+  const recoveredToActiveProject = currentDirectory === activeProjectDirectory
+    && capturedDirectory !== activeProjectDirectory
   const draftChanged = !currentDraft.open
     || currentDraft.preserveDirectoryOverride !== draft.preserveDirectoryOverride
     || currentDraft.pendingWorktreeRequestId !== draft.pendingWorktreeRequestId
-    || normalizePath(currentDraft.directoryOverride) !== normalizePath(draftDirectory)
+    || (currentDirectory !== capturedDirectory && !recoveredToActiveProject)
 
   if (getRuntimeKey() !== runtimeKey || draftChanged) {
     return { status: "aborted" }
+  }
+
+  if (recoveredToActiveProject) {
+    return { status: "ok", directory: activeProjectDirectory }
   }
 
   return {
