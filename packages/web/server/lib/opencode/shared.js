@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import yaml from 'yaml';
-import { parse as parseJsonc } from 'jsonc-parser';
+import { parse as parseJsonc, printParseErrorCode } from 'jsonc-parser';
 
 // ============== PATH CONSTANTS ==============
 
@@ -168,6 +168,31 @@ function getPrimaryUserConfigPath(userPaths) {
   return CONFIG_FILE;
 }
 
+const INVALID_JSONC = 'INVALID_JSONC';
+
+function isInvalidJsoncError(error) {
+  return Boolean(error && typeof error === 'object' && error.code === INVALID_JSONC);
+}
+
+function formatJsoncParseError(filePath, errors) {
+  const first = Array.isArray(errors) && errors.length > 0 ? errors[0] : null;
+  const location = first && Number.isFinite(first.offset)
+    ? ` (${printParseErrorCode(first.error)} at offset ${first.offset})`
+    : '';
+  return `OpenCode configuration at ${filePath} contains invalid JSONC and cannot be loaded safely${location}`;
+}
+
+function parseConfigObject(content, filePath) {
+  const errors = [];
+  const parsed = parseJsonc(content, errors, { allowTrailingComma: true });
+  if (errors.length > 0 || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    const error = new Error(formatJsoncParseError(filePath, errors));
+    error.code = INVALID_JSONC;
+    throw error;
+  }
+  return parsed;
+}
+
 function readConfigFile(filePath) {
   if (!filePath || !fs.existsSync(filePath)) {
     return {};
@@ -178,8 +203,13 @@ function readConfigFile(filePath) {
     if (!normalized) {
       return {};
     }
-    return parseJsonc(normalized, [], { allowTrailingComma: true });
+    // Refuse partial jsonc-parser trees. Ignoring errors previously let mutations
+    // rewrite a truncated object (often only `$schema`) over the full config.
+    return parseConfigObject(normalized, filePath);
   } catch (error) {
+    if (isInvalidJsoncError(error)) {
+      throw error;
+    }
     console.error(`Failed to read config file: ${filePath}`, error);
     throw new Error('Failed to read OpenCode configuration');
   }
@@ -246,6 +276,12 @@ function getConfigForPath(layers, targetPath) {
 function writeConfig(config, filePath = CONFIG_FILE) {
   try {
     if (fs.existsSync(filePath)) {
+      // Defense in depth: never overwrite a file we cannot fully parse.
+      const existing = fs.readFileSync(filePath, 'utf8').trim();
+      if (existing) {
+        parseConfigObject(existing, filePath);
+      }
+
       const backupFile = `${filePath}.openchamber.backup`;
       fs.copyFileSync(filePath, backupFile);
       console.log(`Created config backup: ${backupFile}`);
@@ -255,6 +291,9 @@ function writeConfig(config, filePath = CONFIG_FILE) {
     fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf8');
     console.log(`Successfully wrote config file: ${filePath}`);
   } catch (error) {
+    if (isInvalidJsoncError(error)) {
+      throw error;
+    }
     console.error(`Failed to write config file: ${filePath}`, error);
     throw new Error('Failed to write OpenCode configuration');
   }

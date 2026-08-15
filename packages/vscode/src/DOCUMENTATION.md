@@ -58,6 +58,7 @@ The webview CSP permits `blob:` only for `worker-src` so shared UI parsers can r
 - `bridge-config-runtime.ts`
   - Config and skills message handlers (`api:config/*`).
   - Includes OpenCode resolution diagnostics parity handler used by shared UI (`/api/config/opencode-resolution`).
+  - OpenCode JSONC reads in `opencodeConfig.ts` fail closed on any `jsonc-parser` error or non-object result (`INVALID_JSONC`) so mutations cannot rewrite a partial `$schema`-only stub over an existing config.
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers.

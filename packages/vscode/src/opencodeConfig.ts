@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import yaml from 'yaml';
-import { parse as parseJsonc } from 'jsonc-parser';
+import { parse as parseJsonc, printParseErrorCode, type ParseError } from 'jsonc-parser';
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
@@ -554,12 +554,33 @@ const getPrimaryUserConfigPath = (userPaths: string[]): string => {
   return CONFIG_FILE;
 };
 
+const INVALID_JSONC = 'INVALID_JSONC';
+
+const formatJsoncParseError = (filePath: string, errors: ParseError[]): string => {
+  const first = errors.length > 0 ? errors[0] : null;
+  const location = first && Number.isFinite(first.offset)
+    ? ` (${printParseErrorCode(first.error)} at offset ${first.offset})`
+    : '';
+  return `OpenCode configuration at ${filePath} contains invalid JSONC and cannot be loaded safely${location}`;
+};
+
+const parseConfigObject = (content: string, filePath: string): Record<string, unknown> => {
+  const errors: ParseError[] = [];
+  const parsed = parseJsonc(content, errors, { allowTrailingComma: true });
+  if (errors.length > 0 || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw codedError(formatJsoncParseError(filePath, errors), INVALID_JSONC);
+  }
+  return parsed as Record<string, unknown>;
+};
+
 const readConfigFile = (filePath?: string | null): Record<string, unknown> => {
   if (!filePath || !fs.existsSync(filePath)) return {};
   const content = fs.readFileSync(filePath, 'utf8');
   const normalized = content.trim();
   if (!normalized) return {};
-  return parseJsonc(normalized, [], { allowTrailingComma: true }) as Record<string, unknown>;
+  // Refuse partial jsonc-parser trees. Ignoring errors previously let mutations
+  // rewrite a truncated object (often only `$schema`) over the full config.
+  return parseConfigObject(normalized, filePath);
 };
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -695,6 +716,11 @@ const getConfigForPath = (layers: ReturnType<typeof readConfigLayers>, targetPat
 
 const writeConfig = (config: Record<string, unknown>, filePath: string = CONFIG_FILE) => {
   if (fs.existsSync(filePath)) {
+    // Defense in depth: never overwrite a file we cannot fully parse.
+    const existing = fs.readFileSync(filePath, 'utf8').trim();
+    if (existing) {
+      parseConfigObject(existing, filePath);
+    }
     const backupFile = `${filePath}.openchamber.backup`;
     try {
       fs.copyFileSync(filePath, backupFile);

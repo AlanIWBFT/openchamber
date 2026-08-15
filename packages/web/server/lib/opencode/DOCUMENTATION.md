@@ -71,7 +71,8 @@ This module provides OpenCode server integration utilities for the web server ru
 - `ensureDirs()`: Creates required OpenCode directories.
 - `parseMdFile(filePath)`, `writeMdFile(filePath, frontmatter, body)`: Markdown file operations with YAML frontmatter.
 - `getConfigPaths(workingDirectory)`, `readConfigLayers(workingDirectory)`, `readConfig(workingDirectory)`: Config file operations with layer merging (user, project, custom).
-- `writeConfig(config, filePath)`: Writes config with automatic backup.
+- `readConfigFile(filePath)`: Reads one config file. Empty/missing files return `{}`. Any `jsonc-parser` error or non-object result throws `INVALID_JSONC` — partial parse trees must never be treated as authoritative (avoids rewriting a `$schema`-only stub over a full config).
+- `writeConfig(config, filePath)`: Writes config with automatic backup. Refuses to overwrite an existing non-empty file that fails the same JSONC parse check.
 - `getJsonEntrySource(layers, sectionKey, entryName)`: Resolves which config layer provides an entry.
 - `getJsonWriteTarget(layers, preferredScope)`: Determines write target for config updates.
 - `getAncestors(startDir, stopDir)`, `findWorktreeRoot(startDir)`: Git worktree helpers.
