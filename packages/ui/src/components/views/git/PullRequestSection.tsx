@@ -1167,21 +1167,23 @@ export const PullRequestSection: React.FC<{
   }, [remotes, status?.resolvedRemoteName]);
 
   React.useEffect(() => {
-    const isTerminal = status?.pr?.state === 'closed' || status?.pr?.state === 'merged';
-    const lastRefreshAt = statusEntry?.lastRefreshAt ?? 0;
-    const isStale = Date.now() - lastRefreshAt > 60_000;
-    const shouldRefresh = !isTerminal && isStale;
-
+    // Terminal (closed/merged) status must still revalidate on focus/visibility:
+    // the branch may now have a newer open PR, or the association may clear.
+    // Recompute staleness inside the handlers — a captured boolean freezes after
+    // the first fresh refresh until lastRefreshAt changes again.
     const onFocus = () => {
-      if (shouldRefresh) {
+      const lastRefreshAt = statusEntry?.lastRefreshAt ?? 0;
+      if (Date.now() - lastRefreshAt > 60_000) {
         void refresh({ force: true, silent: true });
       }
     };
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        if (shouldRefresh) {
-          void refresh({ force: true, silent: true });
-        }
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+      const lastRefreshAt = statusEntry?.lastRefreshAt ?? 0;
+      if (Date.now() - lastRefreshAt > 60_000) {
+        void refresh({ force: true, silent: true });
       }
     };
 
@@ -1191,7 +1193,7 @@ export const PullRequestSection: React.FC<{
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [refresh, status?.pr?.state, statusEntry?.lastRefreshAt]);
+  }, [refresh, statusEntry?.lastRefreshAt]);
 
   React.useEffect(() => {
     if (githubAuthChecked && githubAuthStatus?.connected === false) {
