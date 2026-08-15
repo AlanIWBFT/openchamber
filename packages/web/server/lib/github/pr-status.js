@@ -440,60 +440,61 @@ const searchFallbackPr = async ({ octokit, branch, repoNames }) => {
 
   const normalizedRepoNames = new Set(repoNames.map((name) => normalizeLower(name)).filter(Boolean));
 
-  for (const state of ['open', 'closed']) {
-    let response;
+  // Branch status only discovers open PRs. Closed/merged history belongs to
+  // explicit PR list/detail workflows, not automatic branch association.
+  let response;
+  try {
+    response = await octokit.rest.search.issuesAndPullRequests({
+      q: `is:pr state:open head:${branch}`,
+      per_page: 20,
+    });
+    // If we get here, search API works for this repo — clear the disabled flag
+    _searchApiDisabledRepos.delete(repoKey);
+  } catch (error) {
+    noteIfGitHubRateLimit(error);
+    if (error?.status === 403) {
+      _searchApiDisabledRepos.set(repoKey, Date.now());
+      return null;
+    }
+    if (error?.status === 404) {
+      rememberSearchMiss(missKey);
+      return null;
+    }
+    throw error;
+  }
+
+  const items = Array.isArray(response?.data?.items) ? response.data.items : [];
+  for (const item of items) {
+    const repo = parseRepoFromApiUrl(item?.repository_url);
+    if (!repo) {
+      continue;
+    }
+    if (normalizedRepoNames.size > 0 && !normalizedRepoNames.has(normalizeLower(repo.repo))) {
+      continue;
+    }
     try {
-      response = await octokit.rest.search.issuesAndPullRequests({
-        q: `is:pr state:${state} head:${branch}`,
-        per_page: 20,
+      const prResponse = await octokit.rest.pulls.get({
+        owner: repo.owner,
+        repo: repo.repo,
+        pull_number: item.number,
       });
-      // If we get here, search API works for this repo — clear the disabled flag
-      _searchApiDisabledRepos.delete(repoKey);
-    } catch (error) {
-      noteIfGitHubRateLimit(error);
-      if (error?.status === 403) {
-        _searchApiDisabledRepos.set(repoKey, Date.now());
-        return null;
+      const pr = prResponse?.data;
+      if (!pr || normalizeText(pr.head?.ref) !== branch) {
+        continue;
       }
-      if (error?.status === 404) {
+      return {
+        repo: {
+          owner: repo.owner,
+          repo: repo.repo,
+          url: `https://github.com/${repo.owner}/${repo.repo}`,
+        },
+        pr,
+      };
+    } catch (error) {
+      if (error?.status === 403 || error?.status === 404) {
         continue;
       }
       throw error;
-    }
-
-    const items = Array.isArray(response?.data?.items) ? response.data.items : [];
-    for (const item of items) {
-      const repo = parseRepoFromApiUrl(item?.repository_url);
-      if (!repo) {
-        continue;
-      }
-      if (normalizedRepoNames.size > 0 && !normalizedRepoNames.has(normalizeLower(repo.repo))) {
-        continue;
-      }
-      try {
-        const prResponse = await octokit.rest.pulls.get({
-          owner: repo.owner,
-          repo: repo.repo,
-          pull_number: item.number,
-        });
-        const pr = prResponse?.data;
-        if (!pr || normalizeText(pr.head?.ref) !== branch) {
-          continue;
-        }
-        return {
-          repo: {
-            owner: repo.owner,
-            repo: repo.repo,
-            url: `https://github.com/${repo.owner}/${repo.repo}`,
-          },
-          pr,
-        };
-      } catch (error) {
-        if (error?.status === 403 || error?.status === 404) {
-          continue;
-        }
-        throw error;
-      }
     }
   }
 
@@ -511,24 +512,22 @@ const findFirstMatchingPr = async ({ octokit, target, branch, sourceCandidates, 
     .filter((pr) => matcher.matches(pr, target.repo.repo))
     .sort((left, right) => matcher.compare(left, right, target.repo.repo))[0] ?? null;
 
-  for (const state of ['open', 'closed']) {
-    // Shared per-repo list first: one pulls.list answers every branch of the
-    // repo within the TTL. A miss in a complete list is authoritative — skip
-    // the per-branch query fan entirely.
-    let listWasComplete = false;
-    try {
-      const listEntry = await getRepoPulls(octokit, target.repo, state, { force });
-      const fromList = pickPreferred(listEntry.prs);
-      if (fromList) {
-        return fromList;
-      }
-      listWasComplete = listEntry.complete;
-    } catch {
-      // fall through to the precise per-branch queries
+  // Branch status associates the current head with an open PR only. Returning a
+  // closed/merged PR here made the client cache a terminal status that could not
+  // self-heal until a manual forced refresh. A miss also lets the next repo
+  // target run, so an open upstream PR wins over a merged fork PR.
+  let listWasComplete = false;
+  try {
+    const listEntry = await getRepoPulls(octokit, target.repo, 'open', { force });
+    const fromList = pickPreferred(listEntry.prs);
+    if (fromList) {
+      return fromList;
     }
-    if (listWasComplete) {
-      continue;
-    }
+    listWasComplete = listEntry.complete;
+  } catch {
+    // fall through to the precise per-branch queries
+  }
+  if (!listWasComplete) {
     if (coverage) {
       coverage.authoritative = false;
     }
@@ -537,7 +536,7 @@ const findFirstMatchingPr = async ({ octokit, target, branch, sourceCandidates, 
       const directCandidates = await safeListPulls(octokit, {
         owner: target.repo.owner,
         repo: target.repo.repo,
-        state,
+        state: 'open',
         head: `${owner}:${branch}`,
         per_page: 100,
       });
@@ -550,6 +549,9 @@ const findFirstMatchingPr = async ({ octokit, target, branch, sourceCandidates, 
 
   return null;
 };
+
+// Exported for focused unit tests of open-only branch matching.
+export { findFirstMatchingPr };
 
 export async function resolveGitHubPrStatus({ octokit, directory, branch, remoteName, force = false }) {
   // A deleted worktree can still have a session in the sidebar that keeps
