@@ -68,7 +68,7 @@ type SdkResult<T> = {
   response?: { status?: number };
 };
 
-export type DirectoryAvailability = "available" | "missing" | "unknown";
+type DirectoryAvailability = "available" | "missing" | "unknown";
 
 const isMissingDirectoryError = (error: unknown): boolean => {
   if (error instanceof FilesystemError) {
