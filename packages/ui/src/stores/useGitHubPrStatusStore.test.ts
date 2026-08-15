@@ -465,7 +465,7 @@ describe("GitHub PR status stale terminal associations", () => {
     const persisted = useGitHubPrStatusStore.persist.getOptions().partialize?.(
       useGitHubPrStatusStore.getState(),
     ) as { entries?: Record<string, unknown> } | undefined
-    expect(persisted?.entries?.[key]).toBeUndefined()
+    expect(persisted?.entries?.[key]).toBe(undefined)
   })
 
   test("still persists an open branch association", () => {
@@ -536,8 +536,8 @@ describe("GitHub PR status stale terminal associations", () => {
       repo: "app",
       url: "https://github.com/acme/app",
     })
-    expect(hydrated.entries[key]?.status?.checks).toBeUndefined()
-    expect(hydrated.entries[key]?.status?.canMerge).toBeUndefined()
+    expect(hydrated.entries[key]?.status?.checks).toBe(undefined)
+    expect(hydrated.entries[key]?.status?.canMerge).toBe(undefined)
     expect(hydrated.entries[key]?.isInitialStatusResolved).toBe(false)
   })
 })
