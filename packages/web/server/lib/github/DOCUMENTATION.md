@@ -75,8 +75,9 @@
 - It resolves those remotes into GitHub repos.
 - It expands each repo through `parent` and `source` so PRs in upstream repos can still be found.
 - It skips PR lookup when the current branch matches that repo's default branch.
-- It first searches for PRs by likely source owner plus exact head branch.
-- If that fails, it falls back to broader GitHub search for the branch name.
+- It first searches for **open** PRs by likely source owner plus exact head branch.
+- If that fails, it falls back to broader GitHub search for open PRs on the branch name.
+- Closed/merged PRs are intentionally not associated with branch status; historical PR browsing stays on explicit list/detail endpoints.
 - `403` and `404` during repo lookups are treated as expected gaps, not hard errors.
 
 ## Shared client state model
@@ -108,10 +109,15 @@
 - Open PR with pending checks -> refresh about every `1m`.
 - Open PR with non-pending checks -> refresh about every `5m`.
 - Open PR without a stable checks signal -> refresh about every `2m`.
-- Closed or merged PR -> stop regular polling.
+- Closed or merged PR -> discovery refresh every `5m` (do not permanently stop polling).
 - Hidden tab -> skip polling.
 - Non-forced refreshes use a `90s` TTL.
 - Failed non-forced attempts also observe the `90s` TTL so transient server or rate-limit failures cannot retry on every sidebar update. Forced user/action refreshes bypass this guard.
+
+## Persistence notes for terminal PRs
+
+- Closed/merged branch-status entries are not written to local storage.
+- Legacy persisted terminal entries are stripped on hydrate (`pr: null`) and marked unresolved until the next refresh.
 
 ## Background tracking rules
 
