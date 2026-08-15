@@ -45,7 +45,10 @@ its message listener, the iframe requests its authoritative visibility from the
 parent. The parent accepts requests only from a currently mounted chat frame and
 answers from the current active tab. Do not rely only on a parent `onLoad`
 notification: it can arrive before the iframe listener exists and leave a
-visible chat with background work and message subscriptions disabled.
+visible chat with background work disabled. Message-history subscriptions in the
+mounted session-chat iframe stay enabled independently of that visibility flag
+so a delayed or lost handshake cannot hide an already-materialized transcript
+(busy subagents would otherwise show only the working-status row).
 
 ### Session / project coordination stores
 
