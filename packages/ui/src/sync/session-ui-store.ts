@@ -660,6 +660,33 @@ const resolveCreatableDraftDirectory = async (
   }
 }
 
+const recoverStaleDraftDirectory = async (openedDraft: NewSessionDraftState): Promise<void> => {
+  const resolved = await resolveCreatableDraftDirectory(openedDraft, openedDraft.directoryOverride)
+  if (resolved.status !== "ok") return
+  const recovered = normalizePath(resolved.directory ?? null)
+  const original = normalizePath(openedDraft.directoryOverride)
+  if (!recovered || recovered === original) return
+
+  const currentDraft = useSessionUIStore.getState().newSessionDraft
+  if (!currentDraft.open) return
+  if (currentDraft.preserveDirectoryOverride === true) return
+  if (currentDraft.pendingWorktreeRequestId) return
+  if (normalizePath(currentDraft.directoryOverride) !== original) return
+
+  const recoveredProject = useProjectsStore.getState().projects.find((project) => (
+    normalizePath(project.path) === recovered
+  ))
+  const nextDraft: NewSessionDraftState = {
+    ...currentDraft,
+    selectedProjectId: recoveredProject?.id ?? currentDraft.selectedProjectId,
+    directoryOverride: recovered,
+  }
+  useSessionUIStore.setState({ newSessionDraft: nextDraft })
+  writeRuntimeSessionMemory(runtimeMemoryKey(), { draft: nextDraft })
+  persistDraftTarget({ projectId: nextDraft.selectedProjectId ?? null, directory: recovered })
+  void activateConfigForDirectory(recovered)
+}
+
 export async function materializeOpenDraftSession(selection: {
   providerID: string
   modelID: string
@@ -1021,6 +1048,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     if (directory && directory !== useDirectoryStore.getState().currentDirectory) {
       useDirectoryStore.getState().setDirectory(directory)
     }
+
+    void recoverStaleDraftDirectory(nextDraft)
   },
 
   // ---------------------------------------------------------------------------

@@ -456,6 +456,22 @@ describe('createSession draft lifecycle', () => {
     expect(useSessionUIStore.getState().newSessionDraft.title).toBe('Draft title');
   });
 
+  test('rewrites an implicit new-chat draft to the active project before the session is created', async () => {
+    useProjectsStore.setState({
+      projects: [{ id: 'project-main', path: '/projects/main', label: 'Main' }],
+      activeProjectId: 'project-main',
+    });
+    useDirectoryStore.getState().setDirectory('/private/deleted-worktree', { showOverlay: false });
+    opencodeClient.getDirectoryAvailability = async () => 'missing';
+
+    useSessionUIStore.getState().openNewSessionDraft();
+    await Bun.sleep(0);
+
+    expect(useSessionUIStore.getState().newSessionDraft.directoryOverride).toBe('/projects/main');
+    expect(useSessionUIStore.getState().newSessionDraft.selectedProjectId).toBe('project-main');
+    expect(getDeferredSafeStorage().getItem('lastDirectory')).toBe('/private/deleted-worktree');
+  });
+
   test('falls back to the current active project when a regular new-chat directory is missing', async () => {
     const createSessionCalls = [];
     useProjectsStore.setState({
