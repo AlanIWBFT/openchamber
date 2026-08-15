@@ -514,14 +514,11 @@ const findFirstMatchingPr = async ({ octokit, target, branch, sourceCandidates, 
 
   // Branch status associates the current head with an open PR only. Returning a
   // closed/merged PR here made the client cache a terminal status that could not
-  // self-heal until a manual forced refresh.
-  const state = 'open';
-  // Shared per-repo list first: one pulls.list answers every branch of the
-  // repo within the TTL. A miss in a complete list is authoritative — skip
-  // the per-branch query fan entirely.
+  // self-heal until a manual forced refresh. A miss also lets the next repo
+  // target run, so an open upstream PR wins over a merged fork PR.
   let listWasComplete = false;
   try {
-    const listEntry = await getRepoPulls(octokit, target.repo, state, { force });
+    const listEntry = await getRepoPulls(octokit, target.repo, 'open', { force });
     const fromList = pickPreferred(listEntry.prs);
     if (fromList) {
       return fromList;
@@ -539,7 +536,7 @@ const findFirstMatchingPr = async ({ octokit, target, branch, sourceCandidates, 
       const directCandidates = await safeListPulls(octokit, {
         owner: target.repo.owner,
         repo: target.repo.repo,
-        state,
+        state: 'open',
         head: `${owner}:${branch}`,
         per_page: 100,
       });

@@ -86,4 +86,20 @@ describe('findFirstMatchingPr open-only branch status', () => {
     expect(listMock.mock.calls.every((call) => call[0]?.state === 'open')).toBe(true);
     expect(listMock.mock.calls.some((call) => call[0]?.state === 'closed')).toBe(false);
   });
+
+  test('does not query closed PRs when the open list is complete and empty', async () => {
+    listMock.mockImplementation(async () => ({ data: [] }));
+
+    const pr = await findFirstMatchingPr({
+      octokit: { rest: { pulls: { list: listMock } } },
+      target: { repo: { owner: 'acme', repo: 'app' }, remoteName: 'origin' },
+      branch: 'feature',
+      sourceCandidates: [{ repo: { owner: 'acme', repo: 'app' } }],
+      force: true,
+    });
+
+    expect(pr).toBeNull();
+    expect(listMock.mock.calls).toHaveLength(1);
+    expect(listMock.mock.calls[0]?.[0]?.state).toBe('open');
+  });
 });

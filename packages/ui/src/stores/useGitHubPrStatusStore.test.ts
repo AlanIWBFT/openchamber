@@ -440,4 +440,104 @@ describe("GitHub PR status stale terminal associations", () => {
     expect(useGitHubPrStatusStore.getState().entries[key]?.status?.pr?.number).toBe(12)
     expect(useGitHubPrStatusStore.getState().entries[key]?.error).toBe("GitHub unavailable")
   })
+
+  test("does not persist a merged branch association", () => {
+    const merged: GitHubPullRequestStatus = {
+      connected: true,
+      fetchedAt: 1_000,
+      pr: { number: 12, title: "old", url: "u12", state: "merged", draft: false, base: "main", head: "feature" },
+    }
+    const key = getGitHubPrStatusKey("/repo", "feature", "origin")
+    useGitHubPrStatusStore.getState().ensureEntry(key)
+    useGitHubPrStatusStore.getState().setParams(key, params({} as RuntimeAPIs["github"], "feature"))
+    useGitHubPrStatusStore.setState((state) => ({
+      entries: {
+        ...state.entries,
+        [key]: {
+          ...state.entries[key]!,
+          status: merged,
+          isInitialStatusResolved: true,
+          lastRefreshAt: Date.now(),
+        },
+      },
+    }))
+
+    const persisted = useGitHubPrStatusStore.persist.getOptions().partialize?.(
+      useGitHubPrStatusStore.getState(),
+    ) as { entries?: Record<string, unknown> } | undefined
+    expect(persisted?.entries?.[key]).toBeUndefined()
+  })
+
+  test("still persists an open branch association", () => {
+    const open: GitHubPullRequestStatus = {
+      connected: true,
+      fetchedAt: 1_000,
+      pr: { number: 15, title: "new", url: "u15", state: "open", draft: false, base: "main", head: "feature" },
+    }
+    const key = getGitHubPrStatusKey("/repo", "feature", "origin")
+    useGitHubPrStatusStore.getState().ensureEntry(key)
+    useGitHubPrStatusStore.getState().setParams(key, params({} as RuntimeAPIs["github"], "feature"))
+    useGitHubPrStatusStore.setState((state) => ({
+      entries: {
+        ...state.entries,
+        [key]: {
+          ...state.entries[key]!,
+          status: open,
+          isInitialStatusResolved: true,
+          lastRefreshAt: Date.now(),
+        },
+      },
+    }))
+
+    const persisted = useGitHubPrStatusStore.persist.getOptions().partialize?.(
+      useGitHubPrStatusStore.getState(),
+    ) as { entries?: Record<string, { status?: GitHubPullRequestStatus | null }> } | undefined
+    expect(persisted?.entries?.[key]?.status?.pr?.number).toBe(15)
+  })
+
+  test("hydrate strips a legacy persisted merged PR and marks it unresolved", () => {
+    const key = getGitHubPrStatusKey("/repo", "feature", "origin")
+    const hydrated = useGitHubPrStatusStore.persist.getOptions().merge?.(
+      {
+        entries: {
+          [key]: {
+            status: {
+              connected: true,
+              fetchedAt: 1_000,
+              repo: { owner: "acme", repo: "app", url: "https://github.com/acme/app" },
+              pr: { number: 12, title: "old", url: "u12", state: "merged", draft: false, base: "main", head: "feature" },
+              checks: { state: "success", total: 1, success: 1, failure: 0, pending: 0 },
+              canMerge: true,
+            },
+            isInitialStatusResolved: true,
+            lastRefreshAt: Date.now(),
+            lastDiscoveryPollAt: 0,
+            identity: {
+              runtimeKey: "runtime-a",
+              directory: "/repo",
+              branch: "feature",
+              remoteName: "origin",
+            },
+            resolvedRemoteName: "origin",
+          },
+        },
+      },
+      useGitHubPrStatusStore.getState(),
+    ) as {
+      entries: Record<string, {
+        status: GitHubPullRequestStatus | null
+        isInitialStatusResolved: boolean
+      }>
+    }
+
+    expect(hydrated.entries[key]?.status?.pr).toBeNull()
+    expect(hydrated.entries[key]?.status?.repo).toEqual({
+      owner: "acme",
+      repo: "app",
+      url: "https://github.com/acme/app",
+    })
+    expect(hydrated.entries[key]?.status?.checks).toBeUndefined()
+    expect(hydrated.entries[key]?.status?.canMerge).toBeUndefined()
+    expect(hydrated.entries[key]?.isInitialStatusResolved).toBe(false)
+  })
 })
