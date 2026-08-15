@@ -212,11 +212,6 @@ const findResolvedSiblingEntry = (
     if (entryKey === key || !entry.isInitialStatusResolved || !entry.status) {
       continue;
     }
-    // Never seed a fresh key from a closed/merged association — that is what
-    // made stale terminal PRs reappear after remote-key switches.
-    if (isTerminalPrState(entry.status.pr?.state)) {
-      continue;
-    }
     const parsed = parseStatusKey(entryKey);
     if (!parsed
       || parsed.runtimeKey !== target.runtimeKey
@@ -364,35 +359,18 @@ const toPersistedEntry = (entry: PrStatusEntry): PersistedPrStatusEntry => ({
   resolvedRemoteName: entry.resolvedRemoteName ?? entry.status?.resolvedRemoteName ?? null,
 });
 
-const stripTerminalPersistedStatus = (
-  status: GitHubPullRequestStatus | null | undefined,
-): GitHubPullRequestStatus | null => {
-  if (!status) {
-    return null;
-  }
-  if (!isTerminalPrState(status.pr?.state)) {
-    return status;
-  }
-  // Persisted closed/merged branch associations are not live authority. Keep
-  // repo/remote continuity so refresh can resume without briefly showing the
-  // stale terminal PR.
-  return {
-    ...status,
-    pr: null,
-    checks: undefined,
-    canMerge: undefined,
-  };
-};
-
 const hydrateEntry = (entry: PersistedPrStatusEntry | undefined): PrStatusEntry => {
-  const status = stripTerminalPersistedStatus(entry?.status);
-  const hadTerminalPr = Boolean(entry?.status?.pr) && !status?.pr;
+  // A persisted closed/merged PR is restored so the panel keeps showing the
+  // branch's PR history across a reload. It is never treated as live authority:
+  // `lastDiscoveryPollAt` is reset so the watcher revalidates it immediately and
+  // an open PR (or an authoritative empty result) replaces it.
+  const hasTerminalPr = isTerminalPrState(entry?.status?.pr?.state);
   return {
     ...createEntry(),
-    status,
-    isInitialStatusResolved: hadTerminalPr ? false : (entry?.isInitialStatusResolved ?? false),
+    status: entry?.status ?? null,
+    isInitialStatusResolved: entry?.isInitialStatusResolved ?? false,
     lastRefreshAt: entry?.lastRefreshAt ?? 0,
-    lastDiscoveryPollAt: entry?.lastDiscoveryPollAt ?? 0,
+    lastDiscoveryPollAt: hasTerminalPr ? 0 : (entry?.lastDiscoveryPollAt ?? 0),
     identity: entry?.identity ?? null,
     resolvedRemoteName: entry?.resolvedRemoteName ?? entry?.status?.resolvedRemoteName ?? null,
   };
@@ -501,8 +479,9 @@ export const useGitHubPrStatusStore = create<GitHubPrStatusStore>()(
             if (!entry || entry.watchers <= 0) {
               return;
             }
-            // Bootstrap retries only help discovery before any PR is known. Once a
-            // terminal PR is cached, the discovery interval owns revalidation.
+            // Bootstrap retries only help discovery before any PR is known.
+            // Once a PR is cached — open or historical — the discovery interval
+            // owns revalidation.
             if (entry.status?.pr) {
               return;
             }
@@ -527,10 +506,10 @@ export const useGitHubPrStatusStore = create<GitHubPrStatusStore>()(
           }
 
           const hasPr = Boolean(entry.status?.pr);
+          // A closed/merged PR is history, not live status. It stays on the
+          // discovery cadence like a branch with no PR at all, so a newer open
+          // PR — or an authoritative empty result — replaces it on its own.
           const isTerminal = isTerminalPrState(entry.status?.pr?.state);
-          // Missing PR and terminal (closed/merged) PRs both need discovery:
-          // a new open PR may exist for the same head, or the association may
-          // need to clear to an authoritative empty result.
           if (!hasPr || isTerminal) {
             const now = Date.now();
             if (now - entry.lastDiscoveryPollAt < PR_DISCOVERY_INTERVAL_MS) {
@@ -879,11 +858,6 @@ export const useGitHubPrStatusStore = create<GitHubPrStatusStore>()(
             .filter(([, entry]) => {
               const identity = getIdentityFromEntry(entry);
               if (!identity?.directory || !identity.branch) {
-                return false;
-              }
-              // Do not persist closed/merged branch associations — they become
-              // permanently sticky without a discovery refresh after reload.
-              if (isTerminalPrState(entry.status?.pr?.state)) {
                 return false;
               }
               const freshness = Math.max(entry.lastRefreshAt, entry.lastDiscoveryPollAt);

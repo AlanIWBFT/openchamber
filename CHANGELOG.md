@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Git: the pull request panel now follows the current open PR for the branch instead of keeping a merged or closed one after reload or a later open PR (thanks to @makeittech).
+- Git: the pull request panel now follows the branch's current open PR, and an open PR always wins over an older merged or closed one. After a PR is merged or closed the panel keeps showing it as the branch's last PR and offers creating the next one right below it (thanks to @makeittech).
 - **Usage/Claude:** Claude plan limits now work when you are signed in through Claude Code, without also signing into Anthropic in OpenCode; the account is read from Claude Code's own login on macOS, Linux, and WSL. The page shows your session and weekly limits again, adds per-model weekly limits and extra usage spending, and names your plan. Limits are kept on screen instead of disappearing when Anthropic temporarily blocks refreshes.
 - **Settings/Integrations:** a new Integrations settings page lists Claude Code, Command Code, and Cursor plugins with install, update, setup, and remove actions, plus Discord and Telegram Coming soon placeholders.
 - Chat: new chats no longer start against a deleted last worktree directory; they fall back to the active project instead of saving the first message and never starting.

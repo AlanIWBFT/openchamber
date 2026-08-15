@@ -1,7 +1,6 @@
 ## [Unreleased]
 
 - Chat: new chats no longer start against a deleted last worktree directory; they fall back to the active project instead of saving the first message and never starting.
-- Git: the pull request panel now follows the current open PR for the branch instead of keeping a merged or closed one after reload or a later open PR (thanks to @makeittech).
 
 ## [1.18.4] - 2026-08-14
 
