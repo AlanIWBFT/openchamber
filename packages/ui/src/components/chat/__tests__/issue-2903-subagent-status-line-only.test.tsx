@@ -21,6 +21,8 @@ import { fileURLToPath } from 'node:url';
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from '@/sync/materialization';
+import { buildSessionMessageRecordsSnapshot } from '@/sync/sync-context';
+import { INITIAL_STATE } from '@/sync/types';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const appSource = readFileSync(join(__dirname, '..', '..', '..', 'App.tsx'), 'utf-8');
@@ -63,47 +65,66 @@ const buildFourteenMessageSnapshot = () => {
 };
 
 /**
- * Mirrors the cold-start branch of useSessionMessageRecords when
- * `options.enabled === false` and no prior snapshot exists for the session.
+ * Cold-start `useSessionMessageRecords` when `enabled === false` and no prior
+ * snapshot exists for the session: getSnapshot returns EMPTY records even
+ * though the store already holds a renderable transcript.
  */
 const readRecordsThroughEnabledGate = (
-  storeMessages: Message[] | undefined,
+  storeMessages: ReturnType<typeof buildSessionMessageRecordsSnapshot>['list'],
   enabled: boolean,
-): Message[] => {
+) => {
   if (enabled === false) {
-    // Cold iframe: snapshotRef is empty / wrong session → EMPTY records.
     return [];
   }
-  return storeMessages ?? [];
+  return storeMessages;
 };
 
 describe('issue #2903 busy embedded subagent status-line-only', () => {
-  test('materialized 14-message subagent is renderable', () => {
-    const snapshot = buildFourteenMessageSnapshot();
-    expect(snapshot.message[SESSION_ID]).toHaveLength(14);
-    expect(getSessionMaterializationStatus(snapshot, SESSION_ID)).toEqual({
+  test('materialized 14-message subagent is renderable and snapshottable', () => {
+    const materialized = buildFourteenMessageSnapshot();
+    expect(materialized.message[SESSION_ID]).toHaveLength(14);
+    expect(getSessionMaterializationStatus(materialized, SESSION_ID)).toEqual({
       hasMessages: true,
       renderable: true,
       missingPartMessageIDs: [],
     });
+
+    const records = buildSessionMessageRecordsSnapshot(
+      { ...INITIAL_STATE, message: materialized.message, part: materialized.part },
+      SESSION_ID,
+    );
+    expect(records.list).toHaveLength(14);
+    expect(records.list.map((record) => record.info.id)).toEqual(
+      materialized.message[SESSION_ID].map((message) => message.id),
+    );
   });
 
   test('inactive enabled:false hides a fully-renderable session (0 records)', () => {
-    const snapshot = buildFourteenMessageSnapshot();
-    expect(getSessionMaterializationStatus(snapshot, SESSION_ID).renderable).toBe(true);
-    expect(readRecordsThroughEnabledGate(snapshot.message[SESSION_ID], false)).toHaveLength(0);
+    const materialized = buildFourteenMessageSnapshot();
+    const records = buildSessionMessageRecordsSnapshot(
+      { ...INITIAL_STATE, message: materialized.message, part: materialized.part },
+      SESSION_ID,
+    );
+    expect(getSessionMaterializationStatus(materialized, SESSION_ID).renderable).toBe(true);
+    expect(records.list).toHaveLength(14);
+    expect(readRecordsThroughEnabledGate(records.list, false)).toHaveLength(0);
   });
 
   test('enabled:true reveals all 14 materialized records', () => {
-    const snapshot = buildFourteenMessageSnapshot();
-    expect(readRecordsThroughEnabledGate(snapshot.message[SESSION_ID], true)).toHaveLength(14);
+    const materialized = buildFourteenMessageSnapshot();
+    const records = buildSessionMessageRecordsSnapshot(
+      { ...INITIAL_STATE, message: materialized.message, part: materialized.part },
+      SESSION_ID,
+    );
+    expect(readRecordsThroughEnabledGate(records.list, true)).toHaveLength(14);
   });
 
   test('sync gate still returns empty on cold disabled reads', () => {
-    // Mutation check: the real hook still has the enabled===false early return
-    // that produced the bug when ChatContainer passed enabled: active.
-    expect(syncContextSource).toContain('if (options?.enabled === false)');
-    expect(syncContextSource).toContain('EMPTY_SESSION_MESSAGE_RECORDS');
+    const hookStart = syncContextSource.indexOf('export function useSessionMessageRecords(');
+    const hookBody = syncContextSource.slice(hookStart, hookStart + 1800);
+    expect(hookBody).toContain('if (options?.enabled === false)');
+    expect(hookBody).toContain('EMPTY_SESSION_MESSAGE_RECORDS');
+    expect(hookBody).toContain('snapshotRef.current.sessionID === sessionID ? snapshotRef.current.list');
   });
 
   test('embedded session-chat keeps message history enabled while visibility gates active', () => {
@@ -118,9 +139,6 @@ describe('issue #2903 busy embedded subagent status-line-only', () => {
   });
 
   test('empty+busy branch skips empty state so StatusRowContainer can stand alone', () => {
-    // Busy + zero messages skips ChatEmptyState and falls through to the full
-    // ChatViewport, whose transcript always includes StatusRowContainer — the
-    // "one status line, no history" symptom when records stay empty.
     expect(chatContainerSource).toContain('if (sessionMessages.length === 0 && !sessionIsWorking)');
     expect(chatContainerSource).toContain('<ChatEmptyState');
     expect(chatContainerSource).toContain('<StatusRowContainer />');
