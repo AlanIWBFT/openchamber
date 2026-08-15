@@ -603,6 +603,63 @@ const waitForWorktreeBootstrapIfConfigured = async (directory: string | null, pr
   }
 }
 
+const resolveActiveProjectDirectory = (draft: NewSessionDraftState): string | null => {
+  const projectsState = useProjectsStore.getState()
+  return normalizePath(
+    projectsState.getActiveProject()?.path
+      ?? (draft.selectedProjectId
+        ? projectsState.projects.find((project) => project.id === draft.selectedProjectId)?.path
+        : null)
+      ?? null,
+  )
+}
+
+/**
+ * Regular new-chat drafts inherit the persisted current/last directory. If that
+ * path is confirmed missing (deleted worktree), fall back to the active project.
+ * Explicit worktree targets, in-flight worktree creation, and unknown/offline
+ * probes stay unchanged so a temporary outage cannot rewrite the destination.
+ */
+const resolveCreatableDraftDirectory = async (
+  draft: NewSessionDraftState,
+  requestedDirectory: string | null | undefined,
+): Promise<{ status: "ok"; directory: string | null | undefined } | { status: "aborted" }> => {
+  const directory = requestedDirectory ?? opencodeClient.getDirectory() ?? null
+  const isRecoverableDraftDirectory =
+    draft.open
+    && draft.preserveDirectoryOverride !== true
+    && !draft.pendingWorktreeRequestId
+    && !draft.bootstrapPendingDirectory
+    && normalizePath(draft.directoryOverride) === normalizePath(directory)
+
+  if (!isRecoverableDraftDirectory || !directory) {
+    return { status: "ok", directory }
+  }
+
+  const activeProjectDirectory = resolveActiveProjectDirectory(draft)
+  if (!activeProjectDirectory || normalizePath(directory) === activeProjectDirectory) {
+    return { status: "ok", directory }
+  }
+
+  const runtimeKey = getRuntimeKey()
+  const draftDirectory = draft.directoryOverride
+  const availability = await opencodeClient.getDirectoryAvailability(directory)
+  const currentDraft = useSessionUIStore.getState().newSessionDraft
+  const draftChanged = !currentDraft.open
+    || currentDraft.preserveDirectoryOverride !== draft.preserveDirectoryOverride
+    || currentDraft.pendingWorktreeRequestId !== draft.pendingWorktreeRequestId
+    || normalizePath(currentDraft.directoryOverride) !== normalizePath(draftDirectory)
+
+  if (getRuntimeKey() !== runtimeKey || draftChanged) {
+    return { status: "aborted" }
+  }
+
+  return {
+    status: "ok",
+    directory: availability === "missing" ? activeProjectDirectory : directory,
+  }
+}
+
 export async function materializeOpenDraftSession(selection: {
   providerID: string
   modelID: string
@@ -1416,14 +1473,16 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const targetFolderId = draft.targetFolderId
 
     try {
-      const dir = directoryOverride ?? opencodeClient.getDirectory()
+      const resolved = await resolveCreatableDraftDirectory(draft, directoryOverride)
+      if (resolved.status === "aborted") return null
+      const dir = resolved.directory
       const session = await createSessionAction(title, dir, parentID ?? null, metadata)
       if (!session) return null
 
       get().closeNewSessionDraft()
 
       if (targetFolderId) {
-        const scopeKey = directoryOverride || get().lastLoadedDirectory || session.directory
+        const scopeKey = dir || get().lastLoadedDirectory || session.directory
         if (scopeKey) {
           useSessionFoldersStore.getState().addSessionToFolder(scopeKey, targetFolderId, session.id)
         }
