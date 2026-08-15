@@ -64,21 +64,6 @@ const buildFourteenMessageSnapshot = () => {
   return materializeSessionSnapshots({ message: {}, part: {} }, SESSION_ID, records);
 };
 
-/**
- * Cold-start `useSessionMessageRecords` when `enabled === false` and no prior
- * snapshot exists for the session: getSnapshot returns EMPTY records even
- * though the store already holds a renderable transcript.
- */
-const readRecordsThroughEnabledGate = (
-  storeMessages: ReturnType<typeof buildSessionMessageRecordsSnapshot>['list'],
-  enabled: boolean,
-) => {
-  if (enabled === false) {
-    return [];
-  }
-  return storeMessages;
-};
-
 describe('issue #2903 busy embedded subagent status-line-only', () => {
   test('materialized 14-message subagent is renderable and snapshottable', () => {
     const materialized = buildFourteenMessageSnapshot();
@@ -97,26 +82,6 @@ describe('issue #2903 busy embedded subagent status-line-only', () => {
     expect(records.list.map((record) => record.info.id)).toEqual(
       materialized.message[SESSION_ID].map((message) => message.id),
     );
-  });
-
-  test('inactive enabled:false hides a fully-renderable session (0 records)', () => {
-    const materialized = buildFourteenMessageSnapshot();
-    const records = buildSessionMessageRecordsSnapshot(
-      { ...INITIAL_STATE, message: materialized.message, part: materialized.part },
-      SESSION_ID,
-    );
-    expect(getSessionMaterializationStatus(materialized, SESSION_ID).renderable).toBe(true);
-    expect(records.list).toHaveLength(14);
-    expect(readRecordsThroughEnabledGate(records.list, false)).toHaveLength(0);
-  });
-
-  test('enabled:true reveals all 14 materialized records', () => {
-    const materialized = buildFourteenMessageSnapshot();
-    const records = buildSessionMessageRecordsSnapshot(
-      { ...INITIAL_STATE, message: materialized.message, part: materialized.part },
-      SESSION_ID,
-    );
-    expect(readRecordsThroughEnabledGate(records.list, true)).toHaveLength(14);
   });
 
   test('sync gate still returns empty on cold disabled reads', () => {
