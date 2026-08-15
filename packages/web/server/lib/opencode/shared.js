@@ -644,6 +644,7 @@ export {
   parseMdFile,
   writeMdFile,
   readConfigFile,
+  readConfigLayer,
   isPlainObject,
   readConfigLayers,
   readConfig,

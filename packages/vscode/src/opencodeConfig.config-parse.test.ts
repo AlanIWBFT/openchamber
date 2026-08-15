@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { updateMcpConfig } from './opencodeConfig';
+import { listPluginEntries, updateMcpConfig } from './opencodeConfig';
 
 const PARTIAL_PARSE_CONFIG = [
   '{',
@@ -92,6 +92,29 @@ describe('opencodeConfig JSONC parse safety (issue #2923)', () => {
     assert.equal(rewritten.provider['ollama-cloud'].name, 'Ollama Cloud');
     assert.equal(rewritten.mcp.openproject.enabled, false);
     assert.equal(fs.readFileSync(`${configPath}.openchamber.backup`, 'utf8'), VALID_CONFIG);
+  });
+
+  test('returns an empty object for a comment-only config file', () => {
+    const configPath = path.join(tempDir, 'comments.jsonc');
+    fs.writeFileSync(configPath, '// placeholder\n/* still empty */\n', 'utf8');
+    process.env.OPENCODE_CONFIG = configPath;
+
+    assert.deepEqual(listPluginEntries(), []);
+  });
+
+  test('lists custom-layer plugins when a project layer is unparseable', () => {
+    const customPath = path.join(tempDir, 'custom.jsonc');
+    const projectDir = path.join(tempDir, 'project');
+    const projectFile = path.join(projectDir, '.opencode', 'opencode.jsonc');
+    fs.writeFileSync(customPath, VALID_CONFIG, 'utf8');
+    fs.mkdirSync(path.dirname(projectFile), { recursive: true });
+    fs.writeFileSync(projectFile, PARTIAL_PARSE_CONFIG, 'utf8');
+    process.env.OPENCODE_CONFIG = customPath;
+
+    const specs = listPluginEntries(projectDir).map((entry) => entry.spec);
+    assert.deepEqual(specs, ['opencode-see-image']);
+    assert.equal(fs.readFileSync(projectFile, 'utf8'), PARTIAL_PARSE_CONFIG);
+    assert.equal(fs.existsSync(`${projectFile}.openchamber.backup`), false);
   });
 
   test('keeps a valid custom layer writable when a project layer is unparseable', () => {

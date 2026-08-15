@@ -926,10 +926,10 @@ const getPluginConfigSources = (workingDirectory?: string | null): Array<{ scope
   const projectPath = getProjectConfigPath(workingDirectory || undefined);
   return [
     customPath
-      ? { scope: 'user', path: customPath, config: readConfigFile(customPath) }
-      : { scope: 'user', path: userPath, config: readConfigFile(userPath) },
+      ? { scope: 'user', path: customPath, config: readConfigLayer(customPath).config }
+      : { scope: 'user', path: userPath, config: readConfigLayer(userPath).config },
     ...(projectPath
-      ? [{ scope: 'project' as const, path: projectPath, config: readConfigFile(projectPath) }]
+      ? [{ scope: 'project' as const, path: projectPath, config: readConfigLayer(projectPath).config }]
       : []),
   ];
 };
