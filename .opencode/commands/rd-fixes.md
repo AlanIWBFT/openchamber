@@ -7,11 +7,21 @@ You are working in the OpenChamber repository.
 
 Goal: reduce React Doctor diagnostics in a small, reviewable maintenance PR.
 
-Start by running:
+This task can run unattended on a schedule, so it must be safe to start at any moment and must stop cleanly when there is nothing to do.
+
+First, verify the worktree is safe to use:
+
+`git status --porcelain`
+
+If the output is not empty, stop immediately and report that the worktree has uncommitted changes. Do not stash, reset, discard, commit, or switch branches. Local work in progress must never end up in a maintenance PR.
+
+Then run:
 
 `bun run doctor -- next-batch --min-issues 75 --max-issues 120`
 
 Use the command output as the source of truth for this task scope.
+
+If the output contains `NO BATCH AVAILABLE`, stop immediately and report the printed reason. Do not create a branch, do not create a pull request, and do not look for other work. Concurrency is already handled: the command excludes files claimed by other active batches and refuses to exceed the active-batch limit.
 
 Workflow:
 - Before generating the batch, switch to `main` and pull the latest remote changes.
@@ -31,11 +41,15 @@ After edits, run:
 
 `bun run doctor -- check-batch --run <run-id>`
 
-Then run:
+Then validate the packages you actually touched, not the whole workspace. For each affected package run its own checks, for example:
 
-`bun run type-check`
+`bun run --cwd packages/ui type-check`
 
-`bun run lint`
+`bun run --cwd packages/ui lint`
+
+`bun run --cwd packages/ui test`
+
+Workspace-wide `bun run type-check` and `bun run lint` are CI's job. Run them locally only when a change crosses package boundaries or touches shared contracts. For files that TypeScript does not cover, such as server or CLI JavaScript, run the focused tests for that surface instead.
 
 Validation and delivery:
 - Confirm selected files have fewer diagnostics than before.
@@ -51,7 +65,7 @@ PR requirements:
 - Include selected files.
 - Include diagnostics fixed according to `check-batch`.
 - Include remaining diagnostics in selected files.
-- Include validation results for `bun run type-check` and `bun run lint`.
+- Include validation results for every package-scoped type-check, lint, and test command you ran, naming the packages.
 - Include a `Manual testing recommendations` section with focused checks for the changed behavior. Base it on the selected files and actual edits, for example checking affected dropdowns, keyboard navigation, model/agent selection, settings controls, or mobile/desktop variants.
 - Include any skipped diagnostics and why.
 
@@ -61,4 +75,6 @@ Constraints:
 - Do not modify unrelated files except minimal supporting changes required by selected-file fixes.
 - Do not run broad formatting.
 - Do not fix diagnostics outside the selected files.
-- Leave `.tmp/react-doctor/runs/<run-id>/` intact after creating the PR. These files are the handoff for the review follow-up task.
+- Do not edit `CHANGELOG.md`, package versions, or release metadata. This is internal maintenance with no user-facing change.
+- Leave the batch's run directory intact after creating the PR. `next-batch` prints its location. That directory is both the handoff for the review follow-up task and the claim that stops another batch, including the anti-slop pipeline, from touching the same files. Deleting it early lets a parallel batch collide with this PR. Never delete it by hand; use `bun run doctor -- release --run <run-id>`.
+- If you stop before creating a PR for any reason, release the claim with `bun run doctor -- release --run <run-id>` so the files return to the pool.
