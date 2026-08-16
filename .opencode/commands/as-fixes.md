@@ -17,7 +17,7 @@ If the output is not empty, stop immediately and report that the worktree has un
 
 Then run:
 
-`bun run deslop -- next-batch --min-issues 25 --max-issues 60`
+`bun run deslop -- next-batch --min-issues 60 --max-issues 120`
 
 Use the command output as the source of truth for this task scope.
 
@@ -282,7 +282,20 @@ Before moving to the next finding, check all four:
 
 Handle findings deliberately instead of skipping them: for parsing work, add the smallest schema that covers the fields actually used; for contract changes, follow call sites with search and update them; for tests, prefer real seams over widened fixtures.
 
-Skip a finding only when the fix would require broad architectural changes, unclear behavior changes, or changes outside the selected batch scope. If skipped, mention it in the PR body.
+## Finish the file
+
+A selected file is finished when it has zero anti-slop findings for the enabled rules, or when every remaining finding has an individual, specific reason to stay.
+
+This matters beyond tidiness. A file left half-fixed will be selected again by a later batch, producing a second pull request over the same file, with its own template, its own review, and its own merge. Every finding you defer costs the repository owner a future review cycle. Treat "I fixed the easy half" as an incomplete task, not a delivery.
+
+So, before you consider a selected file done:
+
+- Re-run `bun run deslop -- file <path>` and read what is left.
+- If findings remain, they must be the genuinely hard ones, and you must be able to explain each one specifically. "Requires a broader refactor" is only acceptable when you name the refactor, the module boundary it crosses, and why doing it here would make the change unreviewable.
+- A group of findings sharing one root cause counts as one reason, and that root cause is usually worth fixing. If eleven findings in a file all come from one untyped parser, fixing that parser is the point of the batch, not a reason to skip.
+- Leaving more than roughly a quarter of a file's findings behind means you have not finished. Either finish them or explain, per group, why the file was a bad selection in the first place.
+
+Skip a finding only when the fix would require unclear behavior changes, or a change so large it would stop the pull request from being reviewable. Difficulty alone is not a reason. If skipped, give the specific reason in the PR body under `## Non-goals`.
 
 Hard prohibitions. Each of these makes the lint output greener while making the code worse, and each is grounds for rejecting the whole PR:
 - Do not disable, downgrade, or ignore anti-slop rules, in configuration or with inline comments.
@@ -323,17 +336,20 @@ Validation and delivery:
 - Create exactly one PR with `gh pr create` using the exact printed `PR title`.
 - After the PR is created, switch back to `main` and pull the latest remote changes again.
 
-PR requirements:
+PR requirements. The repository has a mandatory pull request template at `.github/PULL_REQUEST_TEMPLATE.md`, and `AGENTS.md` requires it to be completed with concrete evidence for the final PR HEAD. Read the template and `CONTRIBUTING.md` before writing the description. Use every template heading, in the template's order, and do not invent replacement headings. Fill each section as follows.
+
 - Use the exact printed `PR title`.
-- Include the `Run ID`, `Batch name`, and `Branch name`.
-- Include selected files.
-- Include findings fixed according to `check-batch`.
-- Include remaining findings in selected files.
-- Include validation results for `check-batch` and every package-scoped type-check, lint, and test command you ran, naming the packages.
-- Include a `Manual testing recommendations` section with focused checks for the changed behavior, based on the selected files and actual edits. Type-contract changes can alter runtime behavior at call sites, so name the affected surfaces concretely.
-- Include any skipped findings and why.
-- Include any `// SAFETY:` comment you added, with the invariant it documents.
-- Include every parsing decision you introduced: what schema was added, and what now happens when input fails to parse. Reviewers must be able to see where behavior changed without reading the whole diff.
+- `## Intent`: state that this is an unattended maintenance batch, name the `Run ID`, `Batch name`, and `Branch name`, and say what behavior changes. When nothing observable changes, say so explicitly rather than leaving it implied.
+- `## Non-goals`: the findings left unfixed in the selected files, findings elsewhere in the repository, and any refactor you deliberately did not start. Give the reason for each, not just the count.
+- `## Affected surfaces`: the packages, runtimes, user-visible states, and persisted or external contracts the diff reaches. Name every runtime the changed code runs in, and explain why an apparently applicable runtime is unaffected.
+- `## Repository guidance`: fill the table. List the `AGENTS.md` rules you followed, every project skill that matched the change, required skill references you read, and the nearest `README.md` or `DOCUMENTATION.md` for the touched modules. For each row explain why it applies and how the change complies. Do not list filenames without explanation.
+- `## Validation`: fill the table with the exact commands you ran and their results, including `check-batch` and every package-scoped type-check, lint, and test command, naming the packages. Record failures honestly, including pre-existing failures unrelated to this PR, and say which checks you did not run. Do not claim runtime behavior from type-check or lint alone.
+- `## Visual evidence`: these PRs usually have no visible change, so explain concretely why the diff cannot affect rendered behavior. If anything user-visible did change, attach before/after evidence for the affected states.
+- `## Risks and failure behavior`: cover what breaks if a change is wrong, how to roll it back, and any compatibility, data, performance, or cross-runtime concern. This is where every behavior-affecting decision belongs: each parsing decision you introduced and what now happens on invalid input, each `// SAFETY:` comment you added with the invariant it documents, and any change to whether an object key is present. State "None identified" only with a concrete reason.
+
+Add a `## Manual testing recommendations` section after the template sections, with focused checks for the changed behavior, based on the selected files and actual edits. Type-contract changes can alter runtime behavior at call sites, so name the affected surfaces concretely.
+
+Also state, inside `## Intent`, the selected files and how many findings `check-batch` reports as fixed and remaining.
 
 Constraints:
 - Keep the PR small and reviewable.

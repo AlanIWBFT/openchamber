@@ -54,6 +54,7 @@ Delivery:
 - Reply to addressed review comments using `gh`.
 - For each specific review comment you addressed, reply with what was changed and the follow-up commit hash.
 - If the feedback was a general PR comment, add one general PR comment summarizing what was addressed, commit hashes, and validation results.
+- Update the PR description so it stays true for the final HEAD: refresh `## Validation` with the checks you re-ran, and move any new behavior change into `## Risks and failure behavior`. Keep every heading of `.github/PULL_REQUEST_TEMPLATE.md` intact, and preserve content the repository owner added by hand, including screenshots. Read the live description before editing and merge into it rather than overwriting.
 - If a comment is intentionally not addressed, reply with a concise reason.
 - Do not release the batch while its PR is still open and awaiting review. The claim is what keeps parallel batches off these files.
 - Release the batch only once its PR has been merged or closed: `bun run deslop -- release --run <run-id>`.
