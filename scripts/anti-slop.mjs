@@ -16,7 +16,7 @@ import {
 const PIPELINE = "as";
 // Resolved before command dispatch so every command shares one claims location.
 const { runsDir: RUNS_DIR, shared: SHARED_CLAIMS } = resolveRunsDir(parseArgs(process.argv.slice(2))["claims-dir"]);
-const DEFAULT_MAX_ACTIVE = 3;
+const DEFAULT_MAX_ACTIVE = 10;
 const DEFAULT_CLAIM_TTL_DAYS = 3;
 
 // Rules ordered by how mechanical and behavior-safe their fixes are. Higher
