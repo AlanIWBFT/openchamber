@@ -151,10 +151,12 @@ describe('markdownCore content-addressed htmlCache (#2769)', () => {
     expect(highlightCalls).toBe(afterFirst + 1);
   });
 
-  test('block cache keys are content-addressed (mode + highlight + hash)', () => {
-    expect(markdownBlockCacheKey('abc', 'full', true)).toBe('abc:full:1');
-    expect(markdownBlockCacheKey('abc', 'live', false)).toBe('abc:live:0');
-    expect(markdownBlockCacheKey('abc', 'full', true)).not.toBe(markdownBlockCacheKey('abc', 'full', false));
+  test('block cache keys are content-addressed (mode + highlight + imageMode + hash)', () => {
+    expect(markdownBlockCacheKey('abc', 'full', true, 'inline')).toBe('abc:full:1:inline');
+    expect(markdownBlockCacheKey('abc', 'live', false, 'inline')).toBe('abc:live:0:inline');
+    expect(markdownBlockCacheKey('abc', 'full', true, 'inline')).not.toBe(markdownBlockCacheKey('abc', 'full', false, 'inline'));
+    // Image mode changes the rendered HTML, so it must not share a cache entry.
+    expect(markdownBlockCacheKey('abc', 'full', true, 'inline')).not.toBe(markdownBlockCacheKey('abc', 'full', true, 'label'));
   });
 
   test('multiple code fences in one document highlight concurrently', async () => {
