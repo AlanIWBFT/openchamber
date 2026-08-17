@@ -173,10 +173,10 @@ Important properties:
 - `refreshTargets()` supports one-shot multi-target bootstrap without turning on live watching
 - runtime reset disposes timers, watchers, API references, and request ownership while inert namespaced snapshots remain isolated
 - persisted cache is versioned, TTL-filtered, and bounded for page refresh continuity, not broad background syncing
-- closed/merged associations use the same `5m` discovery cadence as missing PRs so a newer open PR (or authoritative `pr: null`) can replace them without a manual refresh
-- closed/merged branch associations are not persisted; legacy hydrated terminal PRs are stripped to `pr: null` and marked unresolved until refresh
-- sibling remote-key seeding never copies a closed/merged association
-- a successful refresh that returns `pr: null` replaces any previously cached PR authoritatively
+- a closed/merged PR is the branch's history, not live status: it is displayed and persisted, but never treated as authority
+- closed/merged associations use the same `5m` discovery cadence as missing PRs so a newer open PR (or authoritative `pr: null`) replaces them without a manual refresh
+- hydrate restores a persisted closed/merged PR but resets its `lastDiscoveryPollAt`, so revalidation runs on the first watcher tick after a reload
+- a successful refresh that returns `pr: null` replaces any previously cached PR authoritatively; a failed refresh keeps the previous one
 
 ## Ownership Rules
 

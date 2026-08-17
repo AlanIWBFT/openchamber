@@ -77,7 +77,12 @@
 - It skips PR lookup when the current branch matches that repo's default branch.
 - It first searches for **open** PRs by likely source owner plus exact head branch.
 - If that fails, it falls back to broader GitHub search for open PRs on the branch name.
-- Closed/merged PRs are intentionally not associated with branch status; historical PR browsing stays on explicit list/detail endpoints.
+- An **open PR from any candidate repo always wins** over a closed/merged one, so a merged fork PR can never hide an open upstream PR for the same head.
+- Only when no target has an open PR does it return the branch's newest closed/merged PR, as history.
+- History is looked up **only for the ranked-first remote and the branch's own name** — the repo it actually pushes to. Live status is worth searching the whole fork network for; history is not, and asking every target for it multiplies serial GitHub calls until the route hits its `12s` resolve timeout and returns no status at all.
+- The history answer is remembered per repo+branch so discovery polls do not re-query it: a found closed/merged record for `6h`, and "no history yet" for `10m`. A found record only changes if a second PR appears on the same head, and while that one is open the open-PR path wins without ever reading this cache.
+- Creating, merging, or closing a PR invalidates both the shared repo pull list and that remembered history.
+- The route skips the checks summary and the merge-permission lookup for a closed/merged PR: neither is actionable, and both cost extra GitHub calls.
 - `403` and `404` during repo lookups are treated as expected gaps, not hard errors.
 
 ## Shared client state model
@@ -116,8 +121,8 @@
 
 ## Persistence notes for terminal PRs
 
-- Closed/merged branch-status entries are not written to local storage.
-- Legacy persisted terminal entries are stripped on hydrate (`pr: null`) and marked unresolved until the next refresh.
+- Closed/merged branch associations are persisted like open ones, so a reload still shows that the branch's PR was merged.
+- Hydrate resets `lastDiscoveryPollAt` for them, so restored history revalidates on the first watcher tick instead of waiting out a discovery interval.
 
 ## Background tracking rules
 

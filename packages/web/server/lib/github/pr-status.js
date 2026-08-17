@@ -332,6 +332,38 @@ const safeListPulls = async (octokit, options) => {
 const REPO_PULLS_CACHE_TTL_MS = 45_000;
 const repoPullsCache = new Map();
 
+// Remembered answer to "what is the newest closed/merged PR for this head?",
+// so discovery polls do not re-ask GitHub every few minutes.
+//
+// A found record barely ever changes: it would take a second PR on the same
+// head, and while that one is open the open-PR path wins and never reads this
+// cache at all. "No history yet" is the volatile answer, since closing or
+// merging a PR elsewhere flips it, so it expires far sooner. Either way, doing
+// it from OpenChamber invalidates the entry immediately.
+const HISTORICAL_PR_FOUND_TTL_MS = 6 * 60 * 60 * 1000;
+const HISTORICAL_PR_ABSENT_TTL_MS = 10 * 60 * 1000;
+const HISTORICAL_PR_CACHE_MAX_ENTRIES = 500;
+const _historicalPrCache = new Map();
+
+const isHistoricalPrCacheFresh = (entry) => {
+  if (!entry) {
+    return false;
+  }
+  const ttl = entry.pr ? HISTORICAL_PR_FOUND_TTL_MS : HISTORICAL_PR_ABSENT_TTL_MS;
+  return Date.now() - entry.fetchedAt < ttl;
+};
+
+const rememberHistoricalPr = (key, pr) => {
+  _historicalPrCache.delete(key);
+  _historicalPrCache.set(key, { pr, fetchedAt: Date.now() });
+  if (_historicalPrCache.size > HISTORICAL_PR_CACHE_MAX_ENTRIES) {
+    const oldest = _historicalPrCache.keys().next().value;
+    if (oldest !== undefined) {
+      _historicalPrCache.delete(oldest);
+    }
+  }
+};
+
 export const invalidateRepoPullsCache = (owner, repo) => {
   const prefix = `${normalizeText(owner)}/${normalizeText(repo)}::`;
   for (const key of repoPullsCache.keys()) {
@@ -345,6 +377,13 @@ export const invalidateRepoPullsCache = (owner, repo) => {
     const [repoPart] = key.split('::');
     if (repoPart && repoPart.split(',').includes(repoNameLower)) {
       _searchMissCache.delete(key);
+    }
+  }
+  // A merge or close changes the branch's PR history, so drop it too.
+  const historicalPrefix = `${normalizeRepoKey(owner, repo)}::`;
+  for (const key of _historicalPrCache.keys()) {
+    if (key.startsWith(historicalPrefix)) {
+      _historicalPrCache.delete(key);
     }
   }
 };
@@ -440,8 +479,8 @@ const searchFallbackPr = async ({ octokit, branch, repoNames }) => {
 
   const normalizedRepoNames = new Set(repoNames.map((name) => normalizeLower(name)).filter(Boolean));
 
-  // Branch status only discovers open PRs. Closed/merged history belongs to
-  // explicit PR list/detail workflows, not automatic branch association.
+  // The Search API has a tiny quota, so it is only spent on live branch status.
+  // Closed/merged history is resolved by the cheaper per-head repo queries.
   let response;
   try {
     response = await octokit.rest.search.issuesAndPullRequests({
@@ -502,7 +541,22 @@ const searchFallbackPr = async ({ octokit, branch, repoNames }) => {
   return null;
 };
 
-const findFirstMatchingPr = async ({ octokit, target, branch, sourceCandidates, force = false, coverage = null }) => {
+const isTerminalPr = (pr) => Boolean(pr) && (pr.state === 'closed' || Boolean(pr.merged_at));
+
+/**
+ * Resolve the PRs a branch is associated with in one repo target.
+ *
+ * Returns both candidates because they answer different questions:
+ * `open` is live branch status, `historical` is the last closed/merged PR for
+ * the same head. The caller must prefer an open PR from ANY target over a
+ * historical one — otherwise a merged fork PR hides an open upstream PR.
+ *
+ * `includeHistory` is off by default and must stay that way for secondary
+ * targets. Live status is worth searching the whole fork network for; history
+ * is not, and doing it per target multiplied the serial GitHub calls until the
+ * route hit its resolve timeout and reported no status at all.
+ */
+const findBranchPrCandidates = async ({ octokit, target, branch, sourceCandidates, force = false, coverage = null, includeHistory = false }) => {
   const matcher = buildSourceMatcher(sourceCandidates);
   const sourceOwners = [];
   sourceCandidates.forEach((candidate) => pushUnique(sourceOwners, candidate.repo?.owner));
@@ -512,46 +566,71 @@ const findFirstMatchingPr = async ({ octokit, target, branch, sourceCandidates, 
     .filter((pr) => matcher.matches(pr, target.repo.repo))
     .sort((left, right) => matcher.compare(left, right, target.repo.repo))[0] ?? null;
 
-  // Branch status associates the current head with an open PR only. Returning a
-  // closed/merged PR here made the client cache a terminal status that could not
-  // self-heal until a manual forced refresh. A miss also lets the next repo
-  // target run, so an open upstream PR wins over a merged fork PR.
-  let listWasComplete = false;
+  // The shared repo-level open list answers every branch of the repo within the
+  // TTL. A miss in a complete list is authoritative: no open PR exists here.
+  let openListWasComplete = false;
   try {
     const listEntry = await getRepoPulls(octokit, target.repo, 'open', { force });
     const fromList = pickPreferred(listEntry.prs);
     if (fromList) {
-      return fromList;
+      return { open: fromList, historical: null };
     }
-    listWasComplete = listEntry.complete;
+    openListWasComplete = listEntry.complete;
   } catch {
-    // fall through to the precise per-branch queries
-  }
-  if (!listWasComplete) {
-    if (coverage) {
-      coverage.authoritative = false;
-    }
-
-    for (const owner of sourceOwners) {
-      const directCandidates = await safeListPulls(octokit, {
-        owner: target.repo.owner,
-        repo: target.repo.repo,
-        state: 'open',
-        head: `${owner}:${branch}`,
-        per_page: 100,
-      });
-      const direct = pickPreferred(directCandidates);
-      if (direct) {
-        return direct;
-      }
-    }
+    // fall through to the precise per-head queries
   }
 
-  return null;
+  if (!openListWasComplete && coverage) {
+    coverage.authoritative = false;
+  }
+
+  // A complete open list already proved there is no open PR in this repo. With
+  // no history to look up there is nothing left to ask GitHub.
+  if (openListWasComplete && !includeHistory) {
+    return { open: null, historical: null };
+  }
+
+  const historicalKey = `${normalizeRepoKey(target.repo?.owner, target.repo?.repo)}::${branch}`;
+  if (includeHistory && !force && openListWasComplete) {
+    const cached = _historicalPrCache.get(historicalKey);
+    if (isHistoricalPrCacheFresh(cached)) {
+      return { open: null, historical: cached.pr };
+    }
+  }
+
+  // One query per source owner. With history enabled `state: 'all'` answers
+  // both questions at once, so asking for history never costs an extra call.
+  let historical = null;
+  for (const owner of sourceOwners) {
+    const directCandidates = await safeListPulls(octokit, {
+      owner: target.repo.owner,
+      repo: target.repo.repo,
+      state: includeHistory ? 'all' : 'open',
+      head: `${owner}:${branch}`,
+      per_page: 100,
+    });
+    const openMatch = pickPreferred(directCandidates.filter((pr) => !isTerminalPr(pr)));
+    if (openMatch) {
+      return { open: openMatch, historical: null };
+    }
+    if (includeHistory && !historical) {
+      // Among past PRs for the same head the newest one is the relevant record.
+      historical = directCandidates
+        .filter((pr) => normalizeText(pr?.head?.ref) === branch)
+        .filter((pr) => matcher.matches(pr, target.repo.repo))
+        .filter(isTerminalPr)
+        .sort((left, right) => (right?.number ?? 0) - (left?.number ?? 0))[0] ?? null;
+    }
+  }
+
+  if (includeHistory) {
+    rememberHistoricalPr(historicalKey, historical);
+  }
+  return { open: null, historical };
 };
 
-// Exported for focused unit tests of open-only branch matching.
-export { findFirstMatchingPr };
+// Exported for focused unit tests of open-versus-historical branch matching.
+export { findBranchPrCandidates };
 
 export async function resolveGitHubPrStatus({ octokit, directory, branch, remoteName, force = false }) {
   // A deleted worktree can still have a session in the sidebar that keeps
@@ -604,6 +683,11 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
   let fallbackRemoteName = resolvedTargets[0].remoteName;
   let fallbackDefaultBranch = await getRepoDefaultBranch(octokit, fallbackRepo);
 
+  // The first closed/merged PR found, in target priority order. It is only
+  // returned once every target has been checked for an open PR, so an open
+  // upstream PR always wins over a merged fork PR for the same head.
+  let historicalMatch = null;
+
   for (const target of resolvedTargets) {
     const defaultBranch = await getRepoDefaultBranch(octokit, target.repo);
     if (!fallbackRepo) {
@@ -618,18 +702,33 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
         continue;
       }
 
-      const pr = await findFirstMatchingPr({
+      // History is only asked of the branch's own repo and its own name: the
+      // ranked-first target is the remote this branch actually pushes to.
+      // Searching the rest of the fork network for history would multiply
+      // serial GitHub calls for no additional user-visible information.
+      const isPrimaryAssociation = target === resolvedTargets[0] && candidateBranch === branchCandidates[0];
+
+      const { open, historical } = await findBranchPrCandidates({
         octokit,
         target,
         branch: candidateBranch,
         sourceCandidates,
         force,
         coverage,
+        includeHistory: isPrimaryAssociation,
       });
-      if (pr) {
+      if (open) {
         return {
           repo: target.repo,
-          pr,
+          pr: open,
+          defaultBranch,
+          resolvedRemoteName: target.remoteName,
+        };
+      }
+      if (historical && !historicalMatch) {
+        historicalMatch = {
+          repo: target.repo,
+          pr: historical,
           defaultBranch,
           resolvedRemoteName: target.remoteName,
         };
@@ -654,6 +753,10 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
         resolvedRemoteName: null,
       };
     }
+  }
+
+  if (historicalMatch) {
+    return historicalMatch;
   }
 
   return {
