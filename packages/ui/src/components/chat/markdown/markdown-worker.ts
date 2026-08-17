@@ -18,6 +18,15 @@ import type { MarkdownTokenRun, MarkdownWorkerRequest, MarkdownWorkerResponse } 
 // re-highlight load in openchamber/openchamber#2769. In-flight requests with
 // the same key coalesce so remount storms share one round-trip. Cache keys are
 // fingerprints (not full source) so large files are not duplicated in the Map.
+//
+// This module is the only sender to the worker, so memoizing here is sufficient
+// and the worker itself stays stateless apart from the Shiki instance. A second
+// cache inside the worker would only duplicate these payloads in another heap.
+//
+// `highlight` / `highlightLines` results are theme-independent: the worker
+// tokenizes with the CSS-variable `MARKDOWN_SHIKI_THEME`, so a theme switch
+// repaints via CSS and must not invalidate these entries. Only
+// `highlightTokens` resolves concrete colors, so only its key carries a theme.
 
 type PendingResolver = (response: MarkdownWorkerResponse | null) => void;
 

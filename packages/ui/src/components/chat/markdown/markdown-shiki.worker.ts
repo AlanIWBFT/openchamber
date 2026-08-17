@@ -1,14 +1,8 @@
 /// <reference lib="webworker" />
 
 import { bundledLanguages, createHighlighter, type BundledLanguage, type ThemedToken } from 'shiki';
-import {
-  contentFingerprint,
-  estimateTokenRunsBytes,
-  HighlightResultCache,
-  utf16Bytes,
-} from './highlightResultCache';
 import { MARKDOWN_SHIKI_THEME, MARKDOWN_SHIKI_THEME_DEFINITION } from './markdownShikiThemeDefinition';
-import type { MarkdownTokenRun, MarkdownWorkerRequest, MarkdownWorkerResponse } from './markdown-worker-protocol';
+import type { MarkdownWorkerRequest, MarkdownWorkerResponse } from './markdown-worker-protocol';
 
 // Shiki FontStyle bitmask (from @shikijs/types). Inlined to avoid an extra import.
 const FONT_STYLE_ITALIC = 1;
@@ -37,25 +31,6 @@ let highlighter: ReturnType<typeof createHighlighter> | undefined;
 
 // Serialize work so language loading / tokenization never overlaps.
 let queue = Promise.resolve();
-
-// Memoize tokenization by content fingerprint. Defense in depth for the
-// main-thread client cache (openchamber/openchamber#2769): keys stay short so
-// large sources are not duplicated in the Map.
-const WORKER_CACHE_MAX_ENTRIES = 1500;
-const WORKER_CACHE_MAX_BYTES = 16 * 1024 * 1024;
-
-const htmlCache = new HighlightResultCache<string>({
-  maxEntries: WORKER_CACHE_MAX_ENTRIES,
-  maxBytes: WORKER_CACHE_MAX_BYTES,
-});
-const linesCache = new HighlightResultCache<string[]>({
-  maxEntries: WORKER_CACHE_MAX_ENTRIES,
-  maxBytes: WORKER_CACHE_MAX_BYTES,
-});
-const tokensCache = new HighlightResultCache<MarkdownTokenRun[][]>({
-  maxEntries: WORKER_CACHE_MAX_ENTRIES,
-  maxBytes: WORKER_CACHE_MAX_BYTES,
-});
 
 const ensureHighlighter = (): ReturnType<typeof createHighlighter> => {
   highlighter ??= createHighlighter({
@@ -97,19 +72,8 @@ const resolveLanguage = async (instance: Instance, requested: string): Promise<s
   return lang;
 };
 
-const htmlKey = (lang: string, code: string): string => `${lang}:${contentFingerprint(code)}`;
-const linesKey = (lang: string, code: string): string => `${lang}:${contentFingerprint(code)}`;
-const tokensKey = (themeName: string, lang: string, code: string): string =>
-  `${themeName}:${lang}:${contentFingerprint(code)}`;
-
 async function highlight(request: Extract<MarkdownWorkerRequest, { type: 'highlight' }>): Promise<void> {
   try {
-    const cacheKey = htmlKey(request.lang, request.code);
-    const cached = htmlCache.get(cacheKey);
-    if (cached !== undefined) {
-      post({ type: 'highlight', id: request.id, html: cached });
-      return;
-    }
     const instance = await ensureHighlighter();
     const lang = await resolveLanguage(instance, request.lang);
     const html = instance.codeToHtml(request.code, {
@@ -117,7 +81,6 @@ async function highlight(request: Extract<MarkdownWorkerRequest, { type: 'highli
       theme: MARKDOWN_SHIKI_THEME,
       tabindex: false,
     });
-    htmlCache.set(cacheKey, html, utf16Bytes(cacheKey) + utf16Bytes(html));
     post({ type: 'highlight', id: request.id, html });
   } catch (error) {
     post({ type: 'error', id: request.id, message: error instanceof Error ? error.message : String(error) });
@@ -126,12 +89,6 @@ async function highlight(request: Extract<MarkdownWorkerRequest, { type: 'highli
 
 async function highlightTokens(request: Extract<MarkdownWorkerRequest, { type: 'highlightTokens' }>): Promise<void> {
   try {
-    const cacheKey = tokensKey(request.themeName, request.lang, request.code);
-    const cached = tokensCache.get(cacheKey);
-    if (cached !== undefined) {
-      post({ type: 'highlightTokens', id: request.id, lines: cached });
-      return;
-    }
     const instance = await ensureHighlighter();
     if (request.theme && !instance.getLoadedThemes().includes(request.themeName)) {
       // Cast: a resolved TextMate theme object from the app theme registry.
@@ -145,7 +102,6 @@ async function highlightTokens(request: Extract<MarkdownWorkerRequest, { type: '
     const lines = tokens.map((line) =>
       line.map((token) => [token.content.length, token.color ?? '', token.fontStyle ?? 0] as [number, string, number]),
     );
-    tokensCache.set(cacheKey, lines, utf16Bytes(cacheKey) + estimateTokenRunsBytes(lines));
     post({ type: 'highlightTokens', id: request.id, lines });
   } catch (error) {
     post({ type: 'error', id: request.id, message: error instanceof Error ? error.message : String(error) });
@@ -154,12 +110,6 @@ async function highlightTokens(request: Extract<MarkdownWorkerRequest, { type: '
 
 async function highlightLines(request: Extract<MarkdownWorkerRequest, { type: 'highlightLines' }>): Promise<void> {
   try {
-    const cacheKey = linesKey(request.lang, request.code);
-    const cached = linesCache.get(cacheKey);
-    if (cached !== undefined) {
-      post({ type: 'highlightLines', id: request.id, lines: cached });
-      return;
-    }
     const instance = await ensureHighlighter();
     const lang = await resolveLanguage(instance, request.lang);
     const { tokens } = instance.codeToTokens(request.code, {
@@ -167,9 +117,6 @@ async function highlightLines(request: Extract<MarkdownWorkerRequest, { type: 'h
       theme: MARKDOWN_SHIKI_THEME,
     });
     const lines = tokens.map((line) => line.map(tokenSpan).join(''));
-    let bytes = utf16Bytes(cacheKey);
-    for (const line of lines) bytes += utf16Bytes(line);
-    linesCache.set(cacheKey, lines, bytes);
     post({ type: 'highlightLines', id: request.id, lines });
   } catch (error) {
     post({ type: 'error', id: request.id, message: error instanceof Error ? error.message : String(error) });

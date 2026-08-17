@@ -492,33 +492,57 @@ const sanitize = (html: string): string => {
 // Per-block HTML cache (content-addressed LRU)
 // ---------------------------------------------------------------------------
 //
-// Keyed by content hash + mode + highlight flag — NOT by renderer instance id.
-// `SimpleMarkdownRenderer` historically used a shared `simple:${variant}` key,
-// so every same-variant instance fought over one cache slot and re-highlighted
-// unchanged content on every pass (openchamber/openchamber#2769). Content
-// addressing makes identical blocks share one entry and stops that thrash.
-// Bounds are high enough for long sessions; byte cap keeps memory bounded.
+// Keyed by content hash + mode + highlight flag + image mode — NOT by renderer
+// instance id. `SimpleMarkdownRenderer` historically used a shared
+// `simple:${variant}` key, so every same-variant instance fought over one cache
+// slot and re-highlighted unchanged content on every pass
+// (openchamber/openchamber#2769). Content addressing makes identical blocks
+// share one entry and stops that thrash. Bounds are high enough for long
+// sessions; byte cap keeps memory bounded.
+//
+// `full` (settled) and `live` (trailing, still streaming) blocks get separate
+// caches. A live block's content changes on every stream step, so under one
+// shared content-addressed cache each step would insert a new entry and a long
+// streaming message would evict the settled blocks this fix exists to keep
+// warm. The live cache is small on purpose: it only has to absorb repeat
+// renders of the *same* step.
 
-const HTML_CACHE_MAX_ENTRIES = 2000;
-const HTML_CACHE_MAX_BYTES = 24 * 1024 * 1024;
+const FULL_CACHE_MAX_ENTRIES = 2000;
+const FULL_CACHE_MAX_BYTES = 24 * 1024 * 1024;
+const LIVE_CACHE_MAX_ENTRIES = 32;
+const LIVE_CACHE_MAX_BYTES = 2 * 1024 * 1024;
 
-const htmlCache = new HighlightResultCache<string>({
-  maxEntries: HTML_CACHE_MAX_ENTRIES,
-  maxBytes: HTML_CACHE_MAX_BYTES,
+const fullBlockCache = new HighlightResultCache<string>({
+  maxEntries: FULL_CACHE_MAX_ENTRIES,
+  maxBytes: FULL_CACHE_MAX_BYTES,
+});
+const liveBlockCache = new HighlightResultCache<string>({
+  maxEntries: LIVE_CACHE_MAX_ENTRIES,
+  maxBytes: LIVE_CACHE_MAX_BYTES,
 });
 
-/** Content-addressed cache key for a markdown block (exported for tests). */
-export const markdownBlockCacheKey = (
+const cacheForMode = (mode: MarkdownBlock['mode']): HighlightResultCache<string> =>
+  (mode === 'live' ? liveBlockCache : fullBlockCache);
+
+/** Content-addressed cache key for a markdown block. */
+const markdownBlockCacheKey = (
   contentHash: string,
   mode: MarkdownBlock['mode'],
   highlight: boolean,
   imageMode: MarkdownImageMode,
 ): string => `${contentHash}:${mode}:${highlight ? 1 : 0}:${imageMode}`;
 
-/** Test-only: clear the render HTML cache between cases. */
+/** Test-only: clear the render HTML caches between cases. */
 export const resetMarkdownHtmlCacheForTests = (): void => {
-  htmlCache.clear();
+  fullBlockCache.clear();
+  liveBlockCache.clear();
 };
+
+/** Test-only: entry counts per block cache, for churn/eviction assertions. */
+export const __markdownBlockCacheSizesForTests = (): { full: number; live: number } => ({
+  full: fullBlockCache.size,
+  live: liveBlockCache.size,
+});
 
 const parseBlock = async (block: MarkdownBlock, imageMode: MarkdownImageMode): Promise<string> => {
   const parser = imageMode === 'label' ? imageLabelParser : inlineImageParser;
@@ -559,18 +583,14 @@ export type RenderedBlock = {
  * blocks (instead of one joined string) lets the renderer re-morph only the
  * block that changed, keeping per-step streaming cost ~O(last block).
  *
- * `cacheKey` is retained for call-site compatibility / debugging; the HTML
- * cache itself is content-addressed so distinct renderers with identical
- * blocks share results and cannot evict each other by identity collision.
+ * Lookup is content-addressed: distinct renderers holding identical blocks
+ * share one entry and cannot evict each other by identity collision.
  */
 export const renderMarkdownBlocks = async (
   text: string,
   streaming: boolean,
-  cacheKey: string,
   imageMode: MarkdownImageMode = 'inline',
 ): Promise<RenderedBlock[]> => {
-  // Retained for call-site compatibility / debugging; lookup is content-addressed.
-  void cacheKey;
   if (!text) return [];
 
   const blocks = streamBlocks(text, streaming);
@@ -578,12 +598,13 @@ export const renderMarkdownBlocks = async (
     blocks.map(async (block) => {
       const contentHash = contentFingerprint(block.raw);
       const id = markdownBlockCacheKey(contentHash, block.mode, block.highlight, imageMode);
-      const cached = htmlCache.get(id);
+      const cache = cacheForMode(block.mode);
+      const cached = cache.get(id);
       if (cached !== undefined) {
         return { id, html: cached };
       }
       const html = await parseBlock(block, imageMode);
-      htmlCache.set(id, html, utf16Bytes(id) + utf16Bytes(html));
+      cache.set(id, html, utf16Bytes(id) + utf16Bytes(html));
       return { id, html };
     }),
   );

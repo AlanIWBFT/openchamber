@@ -42,7 +42,7 @@ mock.module('./markdown-worker', () => ({
 const {
   renderMarkdownBlocks,
   resetMarkdownHtmlCacheForTests,
-  markdownBlockCacheKey,
+  __markdownBlockCacheSizesForTests,
 } = await import('./markdownCore');
 
 const { resetMarkdownWorkerClientCacheForTests } = await import('./markdown-worker');
@@ -83,6 +83,22 @@ describe('HighlightResultCache', () => {
     expect(contentFingerprint('ab')).not.toBe(contentFingerprint('abc'));
   });
 
+  test('contentFingerprint stays collision-free across a realistic session', () => {
+    // A collision here does not mis-color a block — it returns a *different*
+    // block's HTML, showing the user source they never wrote. Keep enough key
+    // space that a session-sized working set never collides.
+    const seen = new Map<string, string>();
+    for (let i = 0; i < 20_000; i += 1) {
+      // Same-length, near-identical sources are the realistic worst case:
+      // repeated tool output differing by a few characters.
+      const source = `const value_${String(i).padStart(6, '0')} = ${String(i).padStart(6, '0')};`;
+      const fingerprint = contentFingerprint(source);
+      expect(seen.get(fingerprint) ?? source).toBe(source);
+      seen.set(fingerprint, source);
+    }
+    expect(seen.size).toBe(20_000);
+  });
+
   test('estimateTokenRunsBytes avoids JSON and stays positive', () => {
     const lines: Array<Array<[number, string, number]>> = [
       [[3, '#fff', 0], [1, '', 1]],
@@ -93,21 +109,22 @@ describe('HighlightResultCache', () => {
 });
 
 describe('markdownCore content-addressed htmlCache (#2769)', () => {
-  test('two same-variant SimpleMarkdown-style keys do not re-highlight unchanged content', async () => {
+  test('repeat renders of unchanged content never re-enter the worker', async () => {
     const toolOutputA = '```ts\nconst a = 1;\n```';
     const toolOutputB = '```ts\nconst b = 2;\n```';
 
     // First pass: cold miss for each distinct block.
-    await renderMarkdownBlocks(toolOutputA, false, 'simple:tool');
-    await renderMarkdownBlocks(toolOutputB, false, 'simple:tool');
+    await renderMarkdownBlocks(toolOutputA, false);
+    await renderMarkdownBlocks(toolOutputB, false);
     const coldCalls = highlightCalls;
     expect(coldCalls).toBeGreaterThan(0);
 
-    // 100 more passes with the legacy shared `simple:tool` identity keys —
-    // must not produce additional worker calls.
+    // 100 more passes. Renderers used to pass a shared `simple:${variant}`
+    // identity key here and evict each other every pass; lookup is now
+    // content-addressed, so no additional worker calls may happen.
     for (let pass = 0; pass < 100; pass += 1) {
-      await renderMarkdownBlocks(toolOutputA, false, 'simple:tool');
-      await renderMarkdownBlocks(toolOutputB, false, 'simple:tool');
+      await renderMarkdownBlocks(toolOutputA, false);
+      await renderMarkdownBlocks(toolOutputB, false);
     }
 
     expect(highlightCalls).toBe(coldCalls);
@@ -115,19 +132,18 @@ describe('markdownCore content-addressed htmlCache (#2769)', () => {
 
   test('long sessions (working set > former 240 cap) stay warm across re-render passes', async () => {
     const parts = Array.from({ length: 600 }, (_, i) => ({
-      key: `markdown-part-part_${i}`,
       content: `\`\`\`ts\nconst value_${i} = ${i};\n\`\`\``,
     }));
 
     for (const part of parts) {
-      await renderMarkdownBlocks(part.content, false, part.key);
+      await renderMarkdownBlocks(part.content, false);
     }
     const afterCold = highlightCalls;
     expect(afterCold).toBe(parts.length);
 
     for (let pass = 0; pass < 5; pass += 1) {
       for (const part of parts) {
-        await renderMarkdownBlocks(part.content, false, part.key);
+        await renderMarkdownBlocks(part.content, false);
       }
     }
 
@@ -139,24 +155,74 @@ describe('markdownCore content-addressed htmlCache (#2769)', () => {
     const stable = '```ts\nconst stable = true;\n```';
     const changing = '```ts\nconst n = 1;\n```';
 
-    await renderMarkdownBlocks(stable, false, 'a');
-    await renderMarkdownBlocks(changing, false, 'b');
+    await renderMarkdownBlocks(stable, false);
+    await renderMarkdownBlocks(changing, false);
     const afterFirst = highlightCalls;
 
-    await renderMarkdownBlocks(stable, false, 'a');
-    await renderMarkdownBlocks('```ts\nconst n = 2;\n```', false, 'b');
+    await renderMarkdownBlocks(stable, false);
+    await renderMarkdownBlocks('```ts\nconst n = 2;\n```', false);
     expect(highlightCalls).toBe(afterFirst + 1);
 
-    await renderMarkdownBlocks(stable, false, 'a');
+    await renderMarkdownBlocks(stable, false);
     expect(highlightCalls).toBe(afterFirst + 1);
   });
 
-  test('block cache keys are content-addressed (mode + highlight + imageMode + hash)', () => {
-    expect(markdownBlockCacheKey('abc', 'full', true, 'inline')).toBe('abc:full:1:inline');
-    expect(markdownBlockCacheKey('abc', 'live', false, 'inline')).toBe('abc:live:0:inline');
-    expect(markdownBlockCacheKey('abc', 'full', true, 'inline')).not.toBe(markdownBlockCacheKey('abc', 'full', false, 'inline'));
-    // Image mode changes the rendered HTML, so it must not share a cache entry.
-    expect(markdownBlockCacheKey('abc', 'full', true, 'inline')).not.toBe(markdownBlockCacheKey('abc', 'full', true, 'label'));
+  test('image mode is part of the cache identity, not shared across modes', async () => {
+    const source = '![diagram](https://example.com/a.png)';
+
+    const [inline] = await renderMarkdownBlocks(source, false, 'inline');
+    expect(__markdownBlockCacheSizesForTests().full).toBe(1);
+
+    // Same source, different rendering: content addressing must not let the
+    // first-rendered mode answer for both.
+    const [label] = await renderMarkdownBlocks(source, false, 'label');
+    expect(inline?.id).not.toBe(label?.id);
+    expect(__markdownBlockCacheSizesForTests().full).toBe(2);
+
+    // Re-rendering a mode already seen stays a cache hit.
+    const [inlineAgain] = await renderMarkdownBlocks(source, false, 'inline');
+    expect(inlineAgain?.id).toBe(inline?.id);
+    expect(__markdownBlockCacheSizesForTests().full).toBe(2);
+  });
+
+  test('streaming a message does not evict settled blocks (live cache is separate)', async () => {
+    const settled = Array.from(
+      { length: 40 },
+      (_, i) => `\`\`\`ts\nconst settled_${i} = ${i};\n\`\`\``,
+    );
+    for (const block of settled) {
+      await renderMarkdownBlocks(block, false);
+    }
+    const settledEntries = __markdownBlockCacheSizesForTests().full;
+    expect(settledEntries).toBe(settled.length);
+    const afterSettled = highlightCalls;
+
+    // Stream a message: every step is new content for the trailing live block,
+    // so a single shared content-addressed cache would insert one entry per
+    // step and evict the settled working set this fix exists to keep warm.
+    let streamed = '';
+    for (let step = 0; step < 150; step += 1) {
+      streamed += `word_${step} `;
+      await renderMarkdownBlocks(streamed, true);
+    }
+
+    const sizes = __markdownBlockCacheSizesForTests();
+    expect(sizes.live).toBeLessThanOrEqual(32);
+    expect(sizes.full).toBe(settledEntries);
+
+    for (const block of settled) {
+      await renderMarkdownBlocks(block, false);
+    }
+    expect(highlightCalls).toBe(afterSettled);
+  });
+
+  test('a repeated streaming step is served from the live cache', async () => {
+    const step = 'partial answer text';
+    const [first] = await renderMarkdownBlocks(step, true);
+    const [second] = await renderMarkdownBlocks(step, true);
+
+    expect(second?.id).toBe(first?.id);
+    expect(__markdownBlockCacheSizesForTests()).toEqual({ full: 0, live: 1 });
   });
 
   test('multiple code fences in one document highlight concurrently', async () => {
@@ -168,7 +234,7 @@ describe('markdownCore content-addressed htmlCache (#2769)', () => {
       '```ts\nconst c = 3;\n```',
     ].join('\n');
 
-    await renderMarkdownBlocks(multi, false, 'multi');
+    await renderMarkdownBlocks(multi, false);
     expect(highlightCalls).toBe(3);
     // Sequential awaits would keep max inflight at 1.
     expect(highlightMaxInflight).toBeGreaterThan(1);
