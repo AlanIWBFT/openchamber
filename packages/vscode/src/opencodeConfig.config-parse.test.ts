@@ -48,6 +48,14 @@ const VALID_CONFIG = [
   '',
 ].join('\n');
 
+const isInvalidJsoncError = (error: unknown): boolean => {
+  if (!(error instanceof Error) || !/cannot be loaded safely/.test(error.message)) {
+    return false;
+  }
+  // SAFETY: the config layer throws Error instances carrying the coded `code` field.
+  return (error as Error & { code?: string }).code === 'INVALID_JSONC';
+};
+
 describe('opencodeConfig JSONC parse safety (issue #2923)', () => {
   let tempDir: string;
   let previousOpenCodeConfig: string | undefined;
@@ -68,14 +76,7 @@ describe('opencodeConfig JSONC parse safety (issue #2923)', () => {
     fs.writeFileSync(configPath, PARTIAL_PARSE_CONFIG, 'utf8');
     process.env.OPENCODE_CONFIG = configPath;
 
-    assert.throws(
-      () => updateMcpConfig('openproject', { enabled: true }),
-      (error: unknown) => (
-        error instanceof Error
-        && /cannot be loaded safely/.test(error.message)
-        && (error as Error & { code?: string }).code === 'INVALID_JSONC'
-      ),
-    );
+    assert.throws(() => updateMcpConfig('openproject', { enabled: true }), isInvalidJsoncError);
     assert.equal(fs.readFileSync(configPath, 'utf8'), PARTIAL_PARSE_CONFIG);
     assert.equal(fs.existsSync(`${configPath}.openchamber.backup`), false);
   });
@@ -100,6 +101,17 @@ describe('opencodeConfig JSONC parse safety (issue #2923)', () => {
     process.env.OPENCODE_CONFIG = configPath;
 
     assert.deepEqual(listPluginEntries(), []);
+  });
+
+  test('refuses MCP updates against content that yields no JSON value at all', () => {
+    const configPath = path.join(tempDir, 'yamlish.jsonc');
+    const contents = 'mcp:\n  openproject:\n    type: remote\n';
+    fs.writeFileSync(configPath, contents, 'utf8');
+    process.env.OPENCODE_CONFIG = configPath;
+
+    assert.throws(() => updateMcpConfig('openproject', { enabled: true }), isInvalidJsoncError);
+    assert.equal(fs.readFileSync(configPath, 'utf8'), contents);
+    assert.equal(fs.existsSync(`${configPath}.openchamber.backup`), false);
   });
 
   test('lists custom-layer plugins when a project layer is unparseable', () => {

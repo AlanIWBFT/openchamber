@@ -343,6 +343,16 @@ describe('readConfigFile / writeConfig JSONC safety (issue #2923)', () => {
     expect(readConfigFile(file)).toEqual({});
   });
 
+  it('throws INVALID_JSONC for content that yields no JSON value at all', () => {
+    const yamlish = writeFixture('yamlish.jsonc', 'mcp:\n  openproject:\n    type: remote\n');
+    expect(() => readConfigFile(yamlish)).toThrow(/cannot be loaded safely/);
+    expect(() => writeConfig({ $schema: 'https://opencode.ai/config.json' }, yamlish)).toThrow(
+      /cannot be loaded safely/,
+    );
+    expect(fs.readFileSync(yamlish, 'utf8')).toBe('mcp:\n  openproject:\n    type: remote\n');
+    expect(fs.existsSync(`${yamlish}.openchamber.backup`)).toBe(false);
+  });
+
   it('keeps a valid custom layer readable when a project layer is unparseable', () => {
     const custom = writeFixture('custom.jsonc', VALID_CONFIG);
     const projectDir = path.join(FIXTURE_DIR, 'project');

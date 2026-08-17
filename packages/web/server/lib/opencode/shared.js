@@ -182,12 +182,18 @@ function formatJsoncParseError(filePath, errors) {
   return `OpenCode configuration at ${filePath} contains invalid JSONC and cannot be loaded safely${location}`;
 }
 
+function isCommentOnlyParse(parsed, errors) {
+  // Comment-only / whitespace-only files parse to undefined with nothing but
+  // ValueExpected. Any other error means real content we failed to understand
+  // (YAML, plain text, a stray leading token), which must not read as empty.
+  return parsed === undefined
+    && errors.every((entry) => printParseErrorCode(entry.error) === 'ValueExpected');
+}
+
 function parseConfigObject(content, filePath) {
   const errors = [];
   const parsed = parseJsonc(content, errors, { allowTrailingComma: true });
-  // Comment-only / no JSON value: jsonc-parser returns undefined plus ValueExpected.
-  // That is empty config, not a partial tree. The data-loss bug is errors + object.
-  if (parsed === undefined) {
+  if (isCommentOnlyParse(parsed, errors)) {
     return {};
   }
   if (errors.length > 0 || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {

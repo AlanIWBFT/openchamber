@@ -567,12 +567,17 @@ const formatJsoncParseError = (filePath: string, errors: ParseError[]): string =
 const isInvalidJsoncError = (error: unknown): error is Error & { code: string } =>
   Boolean(error && typeof error === 'object' && 'code' in error && error.code === INVALID_JSONC);
 
+// Comment-only / whitespace-only files parse to undefined with nothing but
+// ValueExpected. Any other error means real content we failed to understand
+// (YAML, plain text, a stray leading token), which must not read as empty.
+const isCommentOnlyParse = (parsed: unknown, errors: ParseError[]): boolean =>
+  parsed === undefined
+  && errors.every((entry) => printParseErrorCode(entry.error) === 'ValueExpected');
+
 const parseConfigObject = (content: string, filePath: string): Record<string, unknown> => {
   const errors: ParseError[] = [];
   const parsed = parseJsonc(content, errors, { allowTrailingComma: true });
-  // Comment-only / no JSON value: jsonc-parser returns undefined plus ValueExpected.
-  // That is empty config, not a partial tree. The data-loss bug is errors + object.
-  if (parsed === undefined) {
+  if (isCommentOnlyParse(parsed, errors)) {
     return {};
   }
   if (errors.length > 0 || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
