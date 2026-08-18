@@ -341,6 +341,24 @@ describe('fs write', () => {
 });
 
 describe('fs read', () => {
+  it('reads workspace files through symlinks that resolve outside the workspace', async () => {
+    const fsPromises = {
+      realpath: vi.fn(async (targetPath) => {
+        if (targetPath === '/repo/link.txt') return '/shared/target.txt';
+        return targetPath;
+      }),
+      stat: vi.fn(async () => ({ isFile: () => true, size: 6 })),
+      readFile: vi.fn(async () => 'shared'),
+    };
+    const handler = registerRead(fsPromises);
+
+    const res = await callRead(handler, { path: '/repo/link.txt' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe('shared');
+    expect(fsPromises.readFile).toHaveBeenCalledWith('/shared/target.txt', 'utf8');
+  });
+
   it('rejects outside workspace reads without a grant', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const fsPromises = {
