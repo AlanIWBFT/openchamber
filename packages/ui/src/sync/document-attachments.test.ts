@@ -196,7 +196,7 @@ describe("document attachment extraction", () => {
 
   test("does not retain images whose citations fall beyond the text limit", async () => {
     const file = zippedFile("long.docx", {
-      "word/document.xml": `<w:document xmlns:w="w" xmlns:a="a" xmlns:r="r"><w:body><w:p><w:t>${"x".repeat(2_000_100)}</w:t></w:p><w:p><a:blip r:embed="image"/></w:p></w:body></w:document>`,
+      "word/document.xml": `<w:document xmlns:w="w" xmlns:a="a" xmlns:r="r"><w:body><w:p><w:t>${"x".repeat(250_100)}</w:t></w:p><w:p><a:blip r:embed="image"/></w:p></w:body></w:document>`,
       "word/_rels/document.xml.rels": relationships([{ id: "image", target: "media/image.png" }]),
       "word/media/image.png": pngBytes(),
     })
@@ -204,7 +204,7 @@ describe("document attachment extraction", () => {
     const result = await extractDocumentAttachments(file)
     const text = await result?.textFile.text() ?? ""
 
-    expect(text.length <= 2_000_000).toBe(true)
+    expect(text.length <= 250_000).toBe(true)
     expect(text.endsWith("[Document text truncated by OpenChamber]\n")).toBe(true)
     expect(text.includes("[long-image-1.png]")).toBe(false)
     expect(result?.images).toEqual([])
