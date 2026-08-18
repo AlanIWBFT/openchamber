@@ -16,6 +16,7 @@ Own filesystem API behavior for the web server runtime, including workspace-boun
     - `GET /api/fs/raw`
     - `GET /api/fs/serve/:path(*)`
     - `POST /api/fs/write`
+    - `POST /api/fs/upload`
     - `POST /api/fs/delete`
     - `POST /api/fs/rename`
     - `POST /api/fs/reveal`
@@ -38,3 +39,4 @@ Own filesystem API behavior for the web server runtime, including workspace-boun
 - Read-only routes authorize the requested path against the workspace before resolving symlinks. A symlink reached through the workspace may therefore target a file outside it, while a directly requested outside path still requires an exact-path grant. Write routes keep canonical-target boundary checks.
 - If adding new `/api/fs/*` endpoints, add them in `routes.js` and extend this document.
 - `GET /api/fs/list` may resolve symlinks with `realpath` to read directory contents, but the response `path` and each entry `path` must stay in the caller's requested path space (`path.join(requestedPath, name)`). Returning real paths breaks file-tree expansion for directories reached through workspace symlinks.
+- `POST /api/fs/upload` accepts one `application/octet-stream` body (up to 100 MB) with `path` and optional `overwrite=true` query parameters. It rejects existing files with `409` unless overwrite is explicit, and resolves the destination parent before writing so uploads cannot escape through workspace symlinks.
