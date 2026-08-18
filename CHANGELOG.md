@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-08-19
+
 - **Settings/Integrations:** a new Integrations settings page lists Claude Code, Command Code, and Cursor plugins with install, update, setup, and remove actions, plus Discord and Telegram Coming soon placeholders.
 - **Project knowledge:** the Project notes panel is now Project knowledge, with notes, todos, plans and their search in a resizable sidebar. Notes are cards you expand by clicking anywhere on them, plans open and edit in the panel itself instead of a separate tab, and notes and plans can be pinned as context.
 - **Files:** drag files onto the Files sidebar to upload them into the project or a specific folder; existing files require confirmation before replacement, and open previews refresh after an upload (thanks to @makeittech, @alanzchen).

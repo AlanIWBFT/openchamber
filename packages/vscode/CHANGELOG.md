@@ -1,4 +1,4 @@
-## [Unreleased]
+## [1.19.0] - 2026-08-19
 
 - **Settings/Integrations:** a new Integrations settings page lists Claude Code, Command Code, and Cursor plugins with install, update, setup, and remove actions, plus Discord and Telegram Coming soon placeholders.
 - **Chat:** an open conversation no longer keeps re-coloring the same code blocks in the background, preventing high CPU use while the chat is idle (thanks to @makeittech).
