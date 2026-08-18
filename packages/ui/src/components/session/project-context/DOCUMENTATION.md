@@ -65,8 +65,8 @@ still pass `onOpenPlan` and keep theirs.
 Notes and plans are project data, but attaching one writes its id to the current
 session metadata. Other sessions in the project do not inherit it. A pin made
 while a new-session draft is open lives on that draft and transfers only to the
-session created by its first message. Work status lists and detaches the pins of
-the session it describes.
+session created by its first message. Work status lists and detaches draft pins
+before that first message, then reads them from the created session metadata.
 
 ## Memory is not a fifth kind of note
 
