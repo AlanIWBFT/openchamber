@@ -19,6 +19,7 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | --- | --- | --- | --- |
 | `claude` | Claude | `providers/claude/` | Claude Code Keychain entry, Claude Code credentials file, OpenCode `auth.json` (`anthropic`, `claude`), `CLAUDE_CODE_OAUTH_TOKEN` |
 | `codex` | Codex | `providers/codex.js` | `openai`, `codex`, `chatgpt` |
+| `command-code` | Command Code | `providers/command-code.js` | `command-code` OAuth/API credential in OpenCode `auth.json`, or `COMMAND_CODE_API_KEY` |
 | `cursor` | Cursor | `providers/cursor.js` | Environment/token files, OpenChamber-managed credentials, or explicit one-time Cursor import |
 | `crof` | CrofAI | `providers/crof.js` | `crof` (API key under `key` or `token`) |
 | `deepseek` | DeepSeek | `providers/deepseek.js` | `deepseek` (API key under `key` or `token`) |
@@ -51,6 +52,8 @@ Provider modules must export `providerId`, `providerName`, `aliases`, `isConfigu
 `fetchQuota()` should return a quota result with `usage.windows` keyed by window name (for example `5h`, `7d`, `daily`) and optional provider-specific `usage.models` data.
 
 Ollama Cloud and Cursor credentials are explicitly managed through Settings. OpenCode Go usage uses `GET https://opencode.ai/zen/go/v1/usage` with the `opencode-go` API key from OpenCode `auth.json` as a bearer token. The server validates managed credentials before atomic `0600` writes and never returns secrets through its API. OpenChamber never scans browser cookie stores or automatically reads Cursor storage; Cursor import is an explicit one-time user action and never modifies Cursor's database.
+
+Command Code usage resolves account scope through `GET /alpha/whoami`, then reads server-backed credit balances and five-hour/weekly limits from `GET /alpha/billing/credits?orgId=...`. Personal accounts return `org: null` and use `/alpha/billing/credits` without an `orgId`; organization accounts include their organization id. Web/Electron and VS Code read the standard `command-code` OpenCode auth entry (including OAuth `access`) or `COMMAND_CODE_API_KEY`; credentials remain in the owning runtime and are never returned to shared UI.
 
 On the first OpenCode Go usage refresh after upgrading, OpenChamber deletes the obsolete `quota/opencode-go.json` credential file without reading its cookie value.
 
