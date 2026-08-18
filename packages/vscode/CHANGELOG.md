@@ -7,6 +7,7 @@
 - Chat: new chats no longer start against a deleted last worktree directory; they fall back to the active project instead of saving the first message and never starting.
 - Chat: typing with Chinese, Japanese, or Korean input methods no longer interrupts composition or jumps the cursor to the end of the composer (thanks to @makeittech).
 - The context usage readout no longer climbs over 100% after turns with many tool calls and no longer jumps when reopening an older session; it now shows what the window actually holds (thanks to @pocharlies).
+- Usage: the context usage readout in the chat header now also shows the session's cost in its tooltip.
 - Attachments: extracted Office and OpenDocument content is now capped and presented more compactly, preventing large documents and their images from overwhelming the message context.
 - Projects: project names now match the folder name exactly, so `.ssh` and `opencode-claude` are no longer shown as `.Ssh` and `Opencode Claude`; names you renamed yourself are kept.
 - Skills Catalog: the source is now named ClawHub instead of "ClawdHub" (thanks to @makeittech).
