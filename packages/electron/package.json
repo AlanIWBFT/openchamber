@@ -164,7 +164,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "openchamber",
+      "owner": "AlanIWBFT",
       "repo": "openchamber"
     }
   }
