@@ -91,11 +91,11 @@ const ALL_PARAMETER_PROPERTIES = {
   withStatus: { type: 'boolean', description: 'Include authoritative status in session.list' },
   role: { type: 'string', enum: ['all', 'user', 'assistant'], description: 'Message role filter' },
   name: { type: 'string' },
-  daily: { type: 'string' },
-  weekly: { type: 'string' },
-  once: { type: 'string' },
-  time: { type: 'string' },
-  cron: { type: 'string' },
+  daily: { type: 'string', description: 'Daily run time in HH:mm format' },
+  weekly: { type: 'string', description: 'Comma-separated weekdays; 0=Sunday and 6=Saturday' },
+  once: { type: 'string', description: 'One-time run date in YYYY-MM-DD format' },
+  time: { type: 'string', description: 'Weekly or one-time run time in HH:mm format' },
+  cron: { type: 'string', description: 'Cron expression' },
   timezone: { type: 'string', description: 'IANA timezone' },
   disabled: { type: 'boolean', description: 'true disables and false enables; required for schedule.toggle' },
   path: { type: 'string', description: 'File to show for file.open; absolute, or relative to the session directory' },
@@ -188,7 +188,7 @@ const createResult = ({ ok, action, data, error, exitCode }) => ({
 /**
  * One template, one entry per enabled capability.
  *
- * Both tools speak to the same callback with the same envelope; only the action
+ * All managed tools speak to the same callback with the same envelope; only the action
  * set, the inputs and the description differ. Generating them from one template
  * keeps the transport, metadata and failure handling identical, which is what
  * the caller depends on.
