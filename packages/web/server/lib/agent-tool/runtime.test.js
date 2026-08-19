@@ -140,7 +140,11 @@ describe('managed agent tool runtime', () => {
       description: 'Requires name, prompt, model=provider/model, and one schedule: daily="09:00"; weekly="1,3" + time="09:00"; once="2026-08-07" + time="09:00"; or cron="0 9 * * *"',
     });
     expect(request.properties.sessionId).toEqual({ type: 'string' });
-    expect(request.properties.daily).toEqual({ type: 'string' });
+    expect(request.properties.daily).toEqual({ type: 'string', description: 'Daily run time in HH:mm format' });
+    expect(request.properties.weekly.description).toBe('Comma-separated weekdays; 0=Sunday and 6=Saturday');
+    expect(request.properties.once.description).toBe('One-time run date in YYYY-MM-DD format');
+    expect(request.properties.time.description).toBe('Weekly or one-time run time in HH:mm format');
+    expect(request.properties.cron.description).toBe('Cron expression');
     expect(request.properties.goal.description).toContain('requires prompt');
     expect(request.properties.worktree.description).toContain('branch, startRef, and setUpstream apply only with it');
     expect(request.properties.worktree.description).toContain('Uncommitted changes do not carry over');
@@ -257,11 +261,13 @@ describe('managed agent tool runtime', () => {
     const tool = await loadTools(dataDir, 'memory');
 
     expect(Object.keys(tool)).toEqual(['openchamber', 'openchamber_memory']);
+    expect(tool.openchamber_memory.input.properties.request.required).toEqual(['action']);
     expect(Object.keys(tool.openchamber_memory.input.properties.request.properties).sort())
       .toEqual(['action', 'body', 'memoryId', 'scope', 'title', 'type']);
     // Memory inputs must not leak into the control tool's schema, which the
     // model pays for on every unrelated call.
     expect(Object.keys(tool.openchamber.input.properties.request.properties)).not.toContain('memoryId');
+    expect(tool.openchamber_memory.input.properties.parameters).toBeUndefined();
   });
 
   it('omits memory entirely when the user turns it off', async () => {
@@ -286,9 +292,9 @@ describe('managed agent tool runtime', () => {
     const tool = await loadTools(dataDir, 'notify');
 
     expect(Object.keys(tool)).toEqual(['openchamber', 'openchamber_notify']);
-    expect(Object.keys(tool.openchamber_notify.input.properties.parameters.properties).sort())
-      .toEqual(['body', 'showWhenFocused', 'title']);
-    expect(Object.keys(tool.openchamber.input.properties.parameters.properties)).not.toContain('showWhenFocused');
+    expect(Object.keys(tool.openchamber_notify.input.properties.request.properties).sort())
+      .toEqual(['action', 'body', 'showWhenFocused', 'title']);
+    expect(Object.keys(tool.openchamber.input.properties.request.properties)).not.toContain('showWhenFocused');
 
     const { runtime: plain, dataDir: plainDir } = await createRuntime();
     await prepareManagedEnv(plain, { includeControl: true, includeWeb: false, includeMemory: false });
