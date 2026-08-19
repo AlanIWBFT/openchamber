@@ -18,11 +18,11 @@ from the schema rather than leaving them visible. The plugin is injected only
 when OpenChamber launches and owns the OpenCode process, and not at all when
 both settings are `false`.
 
-- The plugin accepts the action's inputs either inside `parameters` or beside
-  `action`, because models produce both shapes; an explicit `parameters` object
-  wins on a conflict. Rejecting the flattened shape turned a call that plainly
-  carried a `url` into "url is required", which reads as a broken tool rather
-  than a malformed call.
+- The generated schema exposes one typed `request` object. Execution also
+  accepts the preceding `parameters` shape and inputs beside `action`, because
+  models produce both compatibility shapes; `request` wins on a conflict.
+  Rejecting flattened input turned a call that plainly carried a `url` into
+  "url is required", which reads as a broken tool rather than a malformed call.
 
 ## Runtime flow
 
