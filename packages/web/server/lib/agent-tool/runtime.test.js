@@ -120,7 +120,14 @@ describe('managed agent tool runtime', () => {
       'Wait for current session activity to become idle. Omit by default; use only when the user asks or the next step requires the completed result',
     );
     expect(hooks.tool.openchamber.args.request.properties.sessionId).toEqual({ type: 'string' });
-    expect(hooks.tool.openchamber.args.request.properties.daily).toEqual({ type: 'string' });
+    expect(hooks.tool.openchamber.args.request.properties.daily).toEqual({
+      type: 'string',
+      description: 'Daily run time in HH:mm format',
+    });
+    expect(hooks.tool.openchamber.args.request.properties.weekly.description).toBe('Comma-separated weekdays; 0=Sunday and 6=Saturday');
+    expect(hooks.tool.openchamber.args.request.properties.once.description).toBe('One-time run date in YYYY-MM-DD format');
+    expect(hooks.tool.openchamber.args.request.properties.time.description).toBe('Weekly or one-time run time in HH:mm format');
+    expect(hooks.tool.openchamber.args.request.properties.cron.description).toBe('Cron expression');
     expect(hooks.tool.openchamber.args.request.properties.goal.description).toContain('requires prompt');
     expect(hooks.tool.openchamber.args.request.properties.worktree.description).toContain('branch, startRef, and setUpstream apply only with it');
     expect(hooks.tool.openchamber.args.request.properties.worktree.description).toContain('Uncommitted changes do not carry over');
@@ -224,11 +231,14 @@ describe('managed agent tool runtime', () => {
     const { tool } = await pluginModule.OpenChamberPlugin();
 
     expect(Object.keys(tool)).toEqual(['openchamber', 'openchamber_memory']);
-    expect(Object.keys(tool.openchamber_memory.args.parameters.properties).sort())
-      .toEqual(['body', 'memoryId', 'scope', 'title', 'type']);
+    const memoryRequest = tool.openchamber_memory.args.request;
+    expect(memoryRequest.required).toEqual(['action']);
+    expect(Object.keys(memoryRequest.properties).sort())
+      .toEqual(['action', 'body', 'memoryId', 'scope', 'title', 'type']);
     // Memory inputs must not leak into the control tool's schema, which the
     // model pays for on every unrelated call.
-    expect(Object.keys(tool.openchamber.args.parameters.properties)).not.toContain('memoryId');
+    expect(Object.keys(tool.openchamber.args.request.properties)).not.toContain('memoryId');
+    expect(tool.openchamber_memory.args.parameters).toBeUndefined();
   });
 
   it('omits memory entirely when the user turns it off', async () => {
