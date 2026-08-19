@@ -1,10 +1,10 @@
 ---
-name: unslop
-description: Must always apply.
+name: communication-style
+description: Use it always.
 author: poteto (pstack)
 ---
 
-# Unslop
+# Communication style
 
 Edit text to remove AI patterns and add human voice.
 

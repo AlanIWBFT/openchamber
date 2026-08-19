@@ -95,6 +95,7 @@ process violation.
 | iOS Simulator build, launch, preview, gestures, or `serve-sim` control | `serve-sim` |
 | Drafting or updating user-facing CHANGELOG entries for the `[Unreleased]` section (main app or VS Code extension) | `changelog-authoring` |
 | Creating or editing skills, `AGENTS.md`, or docs reached through agent instructions/context pointers | `writing-for-agents` |
+| Every task, always | `communication-style` |
 
 Pure code-reading or explanation does not require implementation skills unless needed to interpret a specialized subsystem.
 
