@@ -119,7 +119,7 @@ const ALL_PARAMETER_PROPERTIES = {
   existingBranch: { type: 'string', description: 'Check out this existing local or remote branch (origin/feature) instead of a new one; not with branch or startRef' },
   setUpstream: { type: 'boolean', description: 'Track the upstream branch' },
   pullRequest: { type: 'integer', minimum: 1, description: "session.create only, when the user asks to work on that pull or merge request: the session starts in a new worktree on its branch. worktree and branch then only rename the folder and local branch" },
-  goal: { type: 'boolean', description: 'Goal Mode; only when the user asks' },
+  goal: { type: 'boolean', description: 'Goal Mode; requires prompt. Only when the user explicitly asks' },
   goalTokenBudget: { type: 'integer', minimum: 1000, maximum: 100_000_000, description: 'Requires goal' },
   returnResult: { type: 'boolean', description: 'create, send or fork with a prompt: the final answer arrives here as a message when the session finishes. Only when the user wants the outcome or your next step needs it' },
   lastAssistant: { type: 'boolean', description: 'Only the last assistant message' },
@@ -443,7 +443,7 @@ const singleActionSchema = (definition) => ({
 /**
  * One template, one entry per enabled capability.
  *
- * Both tools speak to the same callback with the same envelope; only the action
+ * All managed tools speak to the same callback with the same envelope; only the action
  * set, the inputs and the description differ. Generating them from one template
  * keeps the transport, metadata and failure handling identical, which is what
  * the caller depends on.
