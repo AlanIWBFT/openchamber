@@ -79,6 +79,10 @@ task-required reference named by those skills. Skills are canonical for their
 detailed workflows and checklists. Treating this table as optional advice is a
 process violation.
 
+**Always load `.agents/skills/communication-style/SKILL.md` at the start of
+every task, before any analysis, tool call, or response. Apply its guidance to
+all messages and written output, not only to user-facing copy or documentation.**
+
 | Trigger | Required skill |
 |---|---|
 | Source/dependency changes, exports or package contracts, build/generated assets, or module ownership | `openchamber-change-discipline` |
@@ -95,7 +99,6 @@ process violation.
 | iOS Simulator build, launch, preview, gestures, or `serve-sim` control | `serve-sim` |
 | Drafting or updating user-facing CHANGELOG entries for the `[Unreleased]` section (main app or VS Code extension) | `changelog-authoring` |
 | Creating or editing skills, `AGENTS.md`, or docs reached through agent instructions/context pointers | `writing-for-agents` |
-| Every task, always | `communication-style` |
 
 Pure code-reading or explanation does not require implementation skills unless needed to interpret a specialized subsystem.
 
