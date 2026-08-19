@@ -404,6 +404,7 @@ describe('managed agent tool runtime', () => {
     expect(controlParameters).not.toHaveProperty('wait');
     expect(controlParameters).not.toHaveProperty('timeout');
     expect(controlParameters.returnResult.type).toBe('boolean');
+    expect(controlParameters.goal.description).toContain('requires prompt');
     expect(tool.openchamber.input.properties.parameters.properties.sessionId).toEqual({ type: 'string' });
   });
 
