@@ -345,14 +345,14 @@ describe('managed agent tool runtime', () => {
     // OpenCode's own worktree_create makes a detached copy of the current commit.
     expect(tool.openchamber.description).toContain('Unlike git worktree add, the session moves along');
     expect(tool.openchamber.description).not.toContain('without asking');
-    expect(tool.openchamber.input.properties.action.oneOf.map((entry) => entry.const)).toContain('session.moveToWorktree');
-    expect(tool.openchamber.input.properties.parameters.properties.carry).toEqual(expect.objectContaining({ type: 'array' }));
+    expect(tool.openchamber.input.properties.request.properties.action.oneOf.map((entry) => entry.const)).toContain('session.moveToWorktree');
+    expect(tool.openchamber.input.properties.request.properties.carry).toEqual(expect.objectContaining({ type: 'array' }));
   });
 
   it('materializes the plugin and mints a per-child callback token', async () => {
     const { runtime, dataDir } = await createRuntime();
 
-    const preparedEnv = await prepareManagedEnv(runtime);
+    const preparedEnv = await prepareManagedEnv(runtime, { includeSchedule: true });
     const source = await fs.readFile(path.join(pluginDirectoryFor(dataDir), 'index.js'), 'utf8');
     const manifest = JSON.parse(await fs.readFile(path.join(pluginDirectoryFor(dataDir), 'package.json'), 'utf8'));
 
@@ -385,17 +385,22 @@ describe('managed agent tool runtime', () => {
     expect(controlParameters.returnResult.type).toBe('boolean');
     expect(request.properties.action.oneOf).toContainEqual({
       const: 'session.fork',
-      description: 'Fork sessionId and send a required prompt; messageId optionally selects the boundary',
+      description: 'Fork sessionId at messageId; prompt optional',
     });
-    expect(request.properties.action.oneOf).toContainEqual({
+    const scheduleRequest = tool.openchamber_schedule.input.properties.request;
+    expect(scheduleRequest.properties.action.oneOf).toContainEqual({
       const: 'schedule.create',
-      description: 'Requires name, prompt, model=provider/model, and one schedule: daily="09:00"; weekly="1,3" + time="09:00"; once="2026-08-07" + time="09:00"; or cron="0 9 * * *"',
+      description: 'Requires name, prompt, one schedule selector, and model unless targetSessionId is set, which keeps that session\'s model',
     });
     expect(request.properties.sessionId).toEqual({ type: 'string' });
-    expect(request.properties.daily).toEqual({ type: 'string' });
+    expect(scheduleRequest.properties.daily).toEqual({ type: 'string', description: 'HH:mm' });
+    expect(scheduleRequest.properties.weekly.description).toBe('Comma-separated weekdays, 0 is Sunday');
+    expect(scheduleRequest.properties.once.description).toBe('YYYY-MM-DD');
+    expect(scheduleRequest.properties.time.description).toBe('HH:mm for weekly or once');
+    expect(scheduleRequest.properties.cron.type).toBe('string');
     expect(request.properties.goal.description).toContain('requires prompt');
-    expect(request.properties.worktree.description).toContain('branch, startRef, and setUpstream apply only with it');
-    expect(request.properties.worktree.description).toContain('Uncommitted changes do not carry over');
+    expect(request.properties.worktree.description).toContain('on session.create only when the user asks');
+    expect(request.properties.worktree.description).toContain('uncommitted changes stay behind');
     expect(tool.openchamber.input.properties.parameters).toBeUndefined();
     expect(source).not.toContain('title: "OpenChamber"');
     // Nothing resolves from the generated directory, so the file must not import.
@@ -646,11 +651,13 @@ describe('managed agent tool runtime', () => {
     const tool = await loadTools(dataDir, 'memory');
 
     expect(Object.keys(tool)).toEqual(['openchamber', 'openchamber_memory']);
+    expect(tool.openchamber_memory.input.properties.request.required).toEqual(['action']);
     expect(Object.keys(tool.openchamber_memory.input.properties.request.properties).sort())
       .toEqual(['action', 'body', 'memoryId', 'scope', 'title', 'type']);
     // Memory inputs must not leak into the control tool's schema, which the
     // model pays for on every unrelated call.
     expect(Object.keys(tool.openchamber.input.properties.request.properties)).not.toContain('memoryId');
+    expect(tool.openchamber_memory.input.properties.parameters).toBeUndefined();
   });
 
   it('omits memory entirely when the user turns it off', async () => {
