@@ -398,7 +398,6 @@ All notable changes to this project will be documented in this file.
 - CLI: stale server PID files are checked more carefully so unrelated processes are not mistaken for an OpenChamber server.
 - Files: downloads and file names with non-Latin characters now handle those characters correctly in headers (thanks to @FanFan4204).
 - Mobile: subagent chevrons no longer overlap long session titles, and session grouping now matches the exact workspace directory (thanks to @weixiang1862, @lilyzhaun).
->>>>>>> upstream/main
 
 ## [1.13.2] - 2026-06-18
 
