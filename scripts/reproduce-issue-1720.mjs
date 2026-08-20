@@ -25,9 +25,10 @@
  *   spawnSync($SHELL, ['-il', '-c', 'env -0'], { timeout: 5000 })
  *
  * If the shell startup is slow (>5s due to nvm, pyenv, etc.), this times
- * out and PATH stays minimal. The fast-path (Step 3b) catches standard brew
- * paths even with minimal PATH, and all shell probes now have a 5s timeout
- * to prevent blocking startup indefinitely.
+ * out and PATH stays minimal. The hardcoded fallback paths catch standard
+ * brew locations, the fast-path (Step 3b) catches binaries already visible
+ * in the inherited PATH without sourcing shell config, and all shell probes
+ * now have a 5s timeout to prevent blocking startup indefinitely.
  */
 
 import fs from 'node:fs';
