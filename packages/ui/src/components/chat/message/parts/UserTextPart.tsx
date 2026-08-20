@@ -10,11 +10,11 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { getDirectoryForFilePath } from '@/lib/path-utils';
 import { useI18n } from '@/lib/i18n';
 import {
-    buildAgentHref,
     buildAgentMentionUrl,
-    buildSkillHref,
     parseSkillHref,
 } from '@/lib/messages/inlineMessageLinks';
+import { prepareUserMarkdownContent, SKILL_TOKEN_PATTERN } from './userTextPartContent';
+import { extractTerminalContexts } from '@/lib/messages/terminalContext';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string };
 
@@ -25,35 +25,16 @@ type UserTextPartProps = {
     agentMention?: AgentMentionInfo;
 };
 
-const SKILL_TOKEN_PATTERN = /(^|\s)\/([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/g;
-
-const escapeHtml = (text: string): string => {
-    return text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#x27;');
-};
-
 const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' => {
     return mode === 'markdown' ? 'markdown' : 'plain';
-};
-
-// In Markdown a single "\n" is a soft break (rendered as a space). Users type plain
-// text where each newline is meant literally, so convert soft breaks into hard breaks
-// (two trailing spaces) outside of fenced code blocks, where newlines are already literal.
-const applyHardLineBreaks = (markdown: string): string => {
-    return markdown
-        .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g)
-        .map((segment, index) => (index % 2 === 1 ? segment : segment.replace(/ *\n/g, '  \n')))
-        .join('');
 };
 
 const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMention }) => {
     const partWithText = part as PartWithText;
     const rawText = partWithText.text;
-    const textContent = typeof rawText === 'string' ? rawText : partWithText.content || partWithText.value || '';
+    const serializedText = typeof rawText === 'string' ? rawText : partWithText.content || partWithText.value || '';
+    const terminalContextState = React.useMemo(() => extractTerminalContexts(serializedText), [serializedText]);
+    const textContent = terminalContextState.visibleText;
 
     const [isExpanded, setIsExpanded] = React.useState(false);
     const [isTruncated, setIsTruncated] = React.useState(false);
@@ -145,26 +126,11 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
     }, []);
 
     const processedMarkdownContent = React.useMemo(() => {
-        let content = textContent;
-
-        // Step 1: First escape HTML to protect against XSS and ensure HTML tags display as text
-        content = escapeHtml(content);
-
-        // Step 2: Insert agent mention links with an internal href so markdown renders them as mentions, not external links.
-        if (agentMention?.token && content.includes(agentMention.token)) {
-            const mentionMarkdown = `[${agentMention.token}](${buildAgentHref(agentMention.name)})`;
-            content = content.replace(agentMention.token, mentionMarkdown);
-        }
-
-        content = content.replace(SKILL_TOKEN_PATTERN, (match, prefix: string, skillName: string) => {
-            if (!skillByName.has(skillName)) return match;
-            return `${prefix}[/${skillName}](${buildSkillHref(skillName)})`;
+        return prepareUserMarkdownContent({
+            textContent,
+            agentMention,
+            skillNames: new Set(skillByName.keys()),
         });
-
-        // Step 4: Preserve user newlines (markdown soft breaks would otherwise collapse to spaces)
-        content = applyHardLineBreaks(content);
-
-        return content;
     }, [agentMention, skillByName, textContent]);
 
     const plainTextContent = React.useMemo(() => {
@@ -227,7 +193,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         });
     }, [agentMention, openSkill, skillByName, textContent]);
 
-    if (!textContent || textContent.trim().length === 0) {
+    if ((!textContent || textContent.trim().length === 0) && terminalContextState.contexts.length === 0) {
         return null;
     }
 
@@ -267,10 +233,13 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                                 "[&_[data-component='markdown-code']]:bg-transparent",
                                 "[&_[data-component='markdown-code']>*:first-child]:hidden",
                                 "[&_[data-component='markdown-code']>div]:inline",
-                                "[&_[data-component='markdown-code']>div]:p-0",
-                                "[&_[data-component='markdown-code']_pre]:inline",
-                                "[&_[data-component='markdown-code']_code]:inline",
-                            ]
+                                 "[&_[data-component='markdown-code']>div]:p-0",
+                                 "[&_[data-component='markdown-code']_pre]:inline",
+                                 "[&_[data-component='markdown-code']_code]:inline",
+                                 "[&_[data-md-code-line]]:!inline",
+                                 "[&_[data-md-code-line-number]]:hidden",
+                                 "[&_[data-md-code-line-break]]:!inline",
+                             ]
                         )}
                         disableLinkSafety
                         enableFileReferences={false}
@@ -279,6 +248,18 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                     plainTextContent
                 )}
             </div>
+            {terminalContextState.contexts.length > 0 ? (
+                <div className="mt-2 space-y-1.5">
+                    {terminalContextState.contexts.map((context, index) => (
+                        <details key={`${context.terminalLabel}-${context.startLine}-${index}`} className="rounded-md border border-[var(--interactive-border)] bg-[var(--surface-elevated)] px-2 py-1.5 text-xs">
+                            <summary className="cursor-pointer text-[var(--surface-mutedForeground)]">
+                                {t('chat.message.terminalContext', { terminal: context.terminalLabel, start: context.startLine, end: context.endLine })}
+                            </summary>
+                            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[var(--surface-foreground)]">{context.text}</pre>
+                        </details>
+                    ))}
+                </div>
+            ) : null}
         </div>
     );
 };

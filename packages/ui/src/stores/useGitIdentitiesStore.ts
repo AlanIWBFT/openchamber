@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { StoreApi, UseBoundStore } from "zustand";
-import { devtools, persist, createJSONStorage } from "zustand/middleware";
-import { getSafeStorage } from "./utils/safeStorage";
+import { devtools, persist } from "zustand/middleware";
+import { createDeferredSafeJSONStorage } from "./utils/safeStorage";
 import {
   getGitIdentities,
   createGitIdentity,
@@ -10,7 +10,7 @@ import {
   discoverGitCredentials,
   getGlobalGitIdentity
 } from "@/lib/gitApi";
-import { updateDesktopSettings } from "@/lib/persistence";
+import { reportSettingsSaveState, updateDesktopSettings } from "@/lib/persistence";
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
 import { runtimeFetch } from "@/lib/runtime-fetch";
 
@@ -23,6 +23,8 @@ export interface GitIdentityProfile {
   userEmail: string;
   authType?: GitIdentityAuthType;
   sshKey?: string | null;
+  signCommits?: boolean;
+  signingKey?: string | null;
   host?: string | null;
   color?: string | null;
   icon?: string | null;
@@ -106,7 +108,7 @@ export const useGitIdentitiesStore = create<GitIdentitiesStore>()(
                 authType: data.sshCommand ? 'ssh' : undefined,
                 sshKey: data.sshCommand ? data.sshCommand.replace('ssh -i ', '') : null,
                 color: 'info',
-                icon: 'house'
+                icon: 'fingerprint'
               };
               set({ globalIdentity: globalProfile });
             } else {
@@ -204,11 +206,14 @@ export const useGitIdentitiesStore = create<GitIdentitiesStore>()(
               icon: profileData.icon || 'branch'
             };
 
+            reportSettingsSaveState('saving');
             await createGitIdentity(profile);
+            reportSettingsSaveState('saved');
 
             await get().loadProfiles();
             return true;
           } catch (error) {
+            reportSettingsSaveState('error');
             console.error("Failed to create git identity profile:", error);
             return false;
           }
@@ -223,11 +228,14 @@ export const useGitIdentitiesStore = create<GitIdentitiesStore>()(
             }
 
             const updated = { ...existing, ...updates };
+            reportSettingsSaveState('saving');
             await updateGitIdentity(id, updated);
+            reportSettingsSaveState('saved');
 
             await get().loadProfiles();
             return true;
           } catch (error) {
+            reportSettingsSaveState('error');
             console.error("Failed to update git identity profile:", error);
             return false;
           }
@@ -235,7 +243,9 @@ export const useGitIdentitiesStore = create<GitIdentitiesStore>()(
 
         deleteProfile: async (id) => {
           try {
+            reportSettingsSaveState('saving');
             await deleteGitIdentity(id);
+            reportSettingsSaveState('saved');
 
             if (get().selectedProfileId === id) {
               set({ selectedProfileId: null });
@@ -244,6 +254,7 @@ export const useGitIdentitiesStore = create<GitIdentitiesStore>()(
             await get().loadProfiles();
             return true;
           } catch (error) {
+            reportSettingsSaveState('error');
             console.error("Failed to delete git identity profile:", error);
             return false;
           }
@@ -269,7 +280,7 @@ export const useGitIdentitiesStore = create<GitIdentitiesStore>()(
       }),
       {
         name: "git-identities-store",
-        storage: createJSONStorage(() => getSafeStorage()),
+        storage: createDeferredSafeJSONStorage(),
         partialize: (state) => ({
           selectedProfileId: state.selectedProfileId,
         }),

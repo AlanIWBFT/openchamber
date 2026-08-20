@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { isPrimaryMode } from '@/components/chat/mobileControlsUtils';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useI18n } from '@/lib/i18n';
 
@@ -44,7 +45,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   const defaultAgentName = useConfigStore((state) => state.currentAgentName);
   const agents = getVisibleAgents();
   const selectableAgents = React.useMemo(
-    () => agents.filter((agent) => agent.mode !== 'subagent'),
+    () => agents.filter((agent) => isPrimaryMode(agent.mode)),
     [agents]
   );
 
@@ -91,10 +92,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
       <SelectTrigger
         id={id}
         size="lg"
-        className={cn(
-          'max-w-full typography-meta text-foreground !border-border/80 !bg-[var(--surface-subtle)] hover:!bg-[var(--interactive-hover)]/70 data-[popup-open]:!bg-[var(--interactive-active)]/70',
-          className,
-        )}
+        className={cn('max-w-full', className)}
       >
         <SelectValue placeholder={t('multirun.agentSelector.placeholder')} />
       </SelectTrigger>

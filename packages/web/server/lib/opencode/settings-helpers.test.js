@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createSettingsHelpers } from './settings-helpers.js';
+import { createSettingsNormalizationRuntime } from './settings-normalization-runtime.js';
 
 const createTestHelpers = () => createSettingsHelpers({
   normalizePathForPersistence: (value) => value,
@@ -20,7 +21,67 @@ const createTestHelpers = () => createSettingsHelpers({
   sanitizeProjects: () => undefined,
 });
 
+const createTestHelpersWithRealSanitizers = () => {
+  const runtime = createSettingsNormalizationRuntime({
+    os: { homedir: () => '/home/testuser' },
+    path: {
+      resolve: (...args) => args[args.length - 1],
+      sep: '/',
+      dirname: (p) => p.split('/').slice(0, -1).join('/') || '/',
+    },
+    processLike: { platform: 'linux', env: {} },
+    realpathSync: (p) => p,
+    tunnelBootstrapTtlDefaultMs: 600000,
+    tunnelBootstrapTtlMinMs: 60000,
+    tunnelBootstrapTtlMaxMs: 3600000,
+    tunnelSessionTtlDefaultMs: 86400000,
+    tunnelSessionTtlMinMs: 3600000,
+    tunnelSessionTtlMaxMs: 604800000,
+  });
+  return createSettingsHelpers({
+    normalizePathForPersistence: (value) => value,
+    normalizeDirectoryPath: (value) => value,
+    normalizeTunnelBootstrapTtlMs: (value) => value,
+    normalizeTunnelSessionTtlMs: (value) => value,
+    normalizeTunnelProvider: (value) => value,
+    normalizeTunnelMode: (value) => value,
+    normalizeOptionalPath: (value) => value,
+    normalizeManagedRemoteTunnelHostname: (value) => value,
+    normalizeManagedRemoteTunnelPresets: () => undefined,
+    normalizeManagedRemoteTunnelPresetTokens: () => undefined,
+    sanitizeTypographySizesPartial: () => undefined,
+    normalizeStringArray: runtime.normalizeStringArray,
+    sanitizeModelRefs: runtime.sanitizeModelRefs,
+    sanitizeSkillCatalogs: () => undefined,
+    sanitizeProjects: () => undefined,
+  });
+};
+
 describe('settings helpers', () => {
+  it('accepts only booleans for draft starter visibility', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ draftStartersVisible: true })).toEqual({ draftStartersVisible: true });
+    expect(helpers.sanitizeSettingsUpdate({ draftStartersVisible: false })).toEqual({ draftStartersVisible: false });
+    expect(helpers.sanitizeSettingsUpdate({ draftStartersVisible: 'false' })).toEqual({});
+  });
+
+  it('accepts only booleans for wide chat layout', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ wideChatLayoutEnabled: true })).toEqual({ wideChatLayoutEnabled: true });
+    expect(helpers.sanitizeSettingsUpdate({ wideChatLayoutEnabled: false })).toEqual({ wideChatLayoutEnabled: false });
+    expect(helpers.sanitizeSettingsUpdate({ wideChatLayoutEnabled: 'true' })).toEqual({});
+  });
+
+  it('accepts only booleans for collapsible user messages', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ collapsibleUserMessages: true })).toEqual({ collapsibleUserMessages: true });
+    expect(helpers.sanitizeSettingsUpdate({ collapsibleUserMessages: false })).toEqual({ collapsibleUserMessages: false });
+    expect(helpers.sanitizeSettingsUpdate({ collapsibleUserMessages: 'true' })).toEqual({});
+  });
+
   it('accepts messageStreamTransport as a persisted shared setting', () => {
     const helpers = createTestHelpers();
 
@@ -41,6 +102,19 @@ describe('settings helpers', () => {
     expect(helpers.sanitizeSettingsUpdate({ messageStreamTransport: 'websocket' })).toEqual({});
   });
 
+  it('sanitizes the persisted terminal shell', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ terminalShell: ' ZSH ' })).toEqual({ terminalShell: 'zsh' });
+    expect(helpers.sanitizeSettingsUpdate({ terminalShell: 'auto' })).toEqual({ terminalShell: 'auto' });
+    expect(helpers.sanitizeSettingsUpdate({ terminalShell: '/bin/zsh' })).toEqual({});
+    expect(helpers.sanitizeSettingsUpdate({ terminalShell: 'zsh -c whoami' })).toEqual({});
+    expect(helpers.sanitizeSettingsUpdate({ terminalLoginShells: [' ZSH ', 'bash', 'zsh', '/bin/fish', 42] })).toEqual({
+      terminalLoginShells: ['zsh', 'bash'],
+    });
+    expect(helpers.sanitizeSettingsUpdate({ terminalLoginShells: [] })).toEqual({ terminalLoginShells: [] });
+  });
+
   it('accepts desktopLanAccessEnabled as a persisted shared setting', () => {
     const helpers = createTestHelpers();
 
@@ -49,6 +123,85 @@ describe('settings helpers', () => {
     });
     expect(helpers.sanitizeSettingsUpdate({ desktopLanAccessEnabled: false })).toEqual({
       desktopLanAccessEnabled: false,
+    });
+  });
+
+  it('accepts desktopKeepAwakeEnabled as a persisted shared setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ desktopKeepAwakeEnabled: true })).toEqual({
+      desktopKeepAwakeEnabled: true,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopKeepAwakeEnabled: false })).toEqual({
+      desktopKeepAwakeEnabled: false,
+    });
+  });
+
+  it('accepts desktopMinimizeToTrayEnabled as a persisted shared setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ desktopMinimizeToTrayEnabled: true })).toEqual({
+      desktopMinimizeToTrayEnabled: true,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopMinimizeToTrayEnabled: false })).toEqual({
+      desktopMinimizeToTrayEnabled: false,
+    });
+  });
+
+  it('accepts desktopMacMenuBarEnabled as a persisted shared setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ desktopMacMenuBarEnabled: true })).toEqual({
+      desktopMacMenuBarEnabled: true,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopMacMenuBarEnabled: false })).toEqual({
+      desktopMacMenuBarEnabled: false,
+    });
+    expect(helpers.formatSettingsResponse({ desktopMacMenuBarEnabled: false })).toMatchObject({
+      desktopMacMenuBarEnabled: false,
+    });
+  });
+
+  it('normalizes desktopWindowControlsPosition and maps legacy auto to right', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsPosition: 'left' })).toEqual({
+      desktopWindowControlsPosition: 'left',
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsPosition: 'right' })).toEqual({
+      desktopWindowControlsPosition: 'right',
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsPosition: 'auto' })).toEqual({
+      desktopWindowControlsPosition: 'right',
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsPosition: 'center' })).toEqual({});
+  });
+
+  it('sanitizes desktopWindowControlsStyle and rejects unknown values', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsStyle: 'classic' })).toEqual({
+      desktopWindowControlsStyle: 'classic',
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsStyle: 'traffic-lights' })).toEqual({
+      desktopWindowControlsStyle: 'traffic-lights',
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsStyle: 'macos' })).toEqual({});
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsStyle: 'auto' })).toEqual({});
+  });
+
+  it('sanitizes the persisted permission auto-accept policy', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({
+      permissionAutoAccept: {
+        sessions: { root: true, child: false, invalid: 'true' },
+      },
+    })).toEqual({
+      permissionAutoAccept: {
+        sessions: { root: true, child: false },
+        revision: 0,
+      },
     });
   });
 
@@ -187,5 +340,165 @@ describe('settings helpers', () => {
       if (typeof previousReason === 'string') process.env.OPENCHAMBER_DESKTOP_LAN_ACCESS_BLOCKED_REASON = previousReason;
       else delete process.env.OPENCHAMBER_DESKTOP_LAN_ACCESS_BLOCKED_REASON;
     }
+  });
+
+  describe('previously-dropped model selector persistence fields', () => {
+    it('round-trips hiddenModels through the sanitizer', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+      const input = [
+        { providerID: 'anthropic', modelID: 'claude-opus-4' },
+        { providerID: 'openai', modelID: 'gpt-5' },
+      ];
+
+      expect(helpers.sanitizeSettingsUpdate({ hiddenModels: input })).toEqual({
+        hiddenModels: input,
+      });
+    });
+
+    it('handles empty hiddenModels the same way as empty favoriteModels', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      const hiddenResult = helpers.sanitizeSettingsUpdate({ hiddenModels: [] });
+      const favoriteResult = helpers.sanitizeSettingsUpdate({ favoriteModels: [] });
+
+      expect(hiddenResult.hiddenModels).toEqual([]);
+      expect(favoriteResult.favoriteModels).toEqual([]);
+      expect(hiddenResult.hiddenModels).toEqual(favoriteResult.favoriteModels);
+    });
+
+    it('round-trips collapsedModelProviders and recentAgents as string arrays', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      expect(helpers.sanitizeSettingsUpdate({ collapsedModelProviders: ['anthropic', 'openai'] })).toEqual({
+        collapsedModelProviders: ['anthropic', 'openai'],
+      });
+      expect(helpers.sanitizeSettingsUpdate({ recentAgents: ['build', 'plan'] })).toEqual({
+        recentAgents: ['build', 'plan'],
+      });
+    });
+
+    it('round-trips recentEfforts as a Record<string, string[]>', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+      const input = {
+        'anthropic/claude-opus-4': ['high', 'default'],
+        'openai/gpt-5': ['low'],
+      };
+
+      expect(helpers.sanitizeSettingsUpdate({ recentEfforts: input })).toEqual({
+        recentEfforts: input,
+      });
+    });
+
+    it('rejects garbage hiddenModels input the same way sanitizeModelRefs rejects bad refs', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      expect(helpers.sanitizeSettingsUpdate({ hiddenModels: 'not-an-array' })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ hiddenModels: null })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ hiddenModels: 123 })).toEqual({});
+      expect(
+        helpers.sanitizeSettingsUpdate({
+          hiddenModels: [
+            { providerID: 'anthropic' },
+            { modelID: 'gpt-5' },
+            'not-an-object',
+            null,
+            { providerID: '  ', modelID: 'x' },
+            { providerID: 'openai', modelID: '' },
+          ],
+        })
+      ).toEqual({ hiddenModels: [] });
+    });
+
+    it('rejects garbage collapsedModelProviders and recentAgents input', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      expect(helpers.sanitizeSettingsUpdate({ collapsedModelProviders: 'anthropic' })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ collapsedModelProviders: null })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ recentAgents: 42 })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ recentAgents: { build: 1 } })).toEqual({});
+    });
+
+    it('rejects garbage recentEfforts input', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      expect(helpers.sanitizeSettingsUpdate({ recentEfforts: 'not-an-object' })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ recentEfforts: [] })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ recentEfforts: null })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ recentEfforts: { 'anthropic/claude-opus-4': 'high' } })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ recentEfforts: { '': ['high'] } })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ recentEfforts: { 'anthropic/claude-opus-4': [] } })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ recentEfforts: { 'anthropic/claude-opus-4': [123, ''] } })).toEqual({});
+    });
+
+    it('persists only boolean system prompt optimization values', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      expect(helpers.sanitizeSettingsUpdate({ optimizeSystemPrompt: true })).toEqual({ optimizeSystemPrompt: true });
+      expect(helpers.sanitizeSettingsUpdate({ optimizeSystemPrompt: false })).toEqual({ optimizeSystemPrompt: false });
+      expect(helpers.sanitizeSettingsUpdate({ optimizeSystemPrompt: 'true' })).toEqual({});
+    });
+
+    it('survives a full settings.json payload containing all four previously-dropped fields (regression)', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+      const payload = {
+        themeId: 'default',
+        hiddenModels: [
+          { providerID: 'anthropic', modelID: 'claude-opus-4' },
+          { providerID: 'openai', modelID: 'gpt-5' },
+        ],
+        collapsedModelProviders: ['anthropic', 'openai'],
+        recentAgents: ['build', 'plan'],
+        recentEfforts: {
+          'anthropic/claude-opus-4': ['high', 'default'],
+          'openai/gpt-5': ['low'],
+        },
+        favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-haiku-4' }],
+        recentModels: [{ providerID: 'openai', modelID: 'gpt-5' }],
+      };
+
+      const sanitized = helpers.sanitizeSettingsUpdate(payload);
+
+      expect(sanitized.hiddenModels).toEqual(payload.hiddenModels);
+      expect(sanitized.collapsedModelProviders).toEqual(payload.collapsedModelProviders);
+      expect(sanitized.recentAgents).toEqual(payload.recentAgents);
+      expect(sanitized.recentEfforts).toEqual(payload.recentEfforts);
+      expect(sanitized.favoriteModels).toEqual(payload.favoriteModels);
+      expect(sanitized.recentModels).toEqual(payload.recentModels);
+    });
+  });
+
+  describe('session retention settings persistence', () => {
+    it('round-trips sessionRetentionAction archive and delete through the sanitizer', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      expect(helpers.sanitizeSettingsUpdate({ sessionRetentionAction: 'archive' })).toEqual({
+        sessionRetentionAction: 'archive',
+      });
+      expect(helpers.sanitizeSettingsUpdate({ sessionRetentionAction: 'delete' })).toEqual({
+        sessionRetentionAction: 'delete',
+      });
+    });
+
+    it('rejects invalid sessionRetentionAction values', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      expect(helpers.sanitizeSettingsUpdate({ sessionRetentionAction: 'remove' })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ sessionRetentionAction: true })).toEqual({});
+    });
+
+    it('survives a full settings payload containing sessionRetentionAction (regression)', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+      const payload = {
+        autoDeleteEnabled: true,
+        autoDeleteAfterDays: 60,
+        sessionRetentionAction: 'delete',
+      };
+
+      const sanitized = helpers.sanitizeSettingsUpdate(payload);
+
+      expect(sanitized.autoDeleteEnabled).toBe(true);
+      expect(sanitized.autoDeleteAfterDays).toBe(60);
+      expect(sanitized.sessionRetentionAction).toBe('delete');
+    });
   });
 });

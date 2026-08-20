@@ -4,7 +4,7 @@ import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 
-export const SIDEBAR_CONTENT_WIDTH = 280;
+const SIDEBAR_CONTENT_WIDTH = 280;
 const SIDEBAR_MIN_WIDTH = 280;
 const SIDEBAR_MAX_WIDTH = 500;
 
@@ -126,8 +126,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, isMobile, children, cl
         <aside
             ref={sidebarRef}
             className={cn(
-                'relative flex h-full overflow-hidden border-r border-border/40 will-change-[width] motion-reduce:transition-none',
-                'bg-sidebar oc-vibrancy-surface',
+                'relative flex h-full overflow-hidden border-r border-border will-change-[width] motion-reduce:transition-none',
+                'bg-sidebar',
                 !isOpen && 'border-r-0',
                 className,
             )}
@@ -143,6 +143,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, isMobile, children, cl
             }}
             aria-hidden={!isOpen || appliedWidth === 0}
         >
+            {isOpen && (
+                <div
+                    className="pointer-events-none absolute inset-0 z-30 shadow-[inset_-2px_0_10px_-2px_rgb(0_0_0_/_0.06)]"
+                    aria-hidden="true"
+                />
+            )}
             {isOpen && (
                 <div
                     className={cn(

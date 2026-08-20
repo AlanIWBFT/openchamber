@@ -1,3 +1,6 @@
+# Agent memory
+.graymatter/
+
 # Logs
 logs
 *.log
@@ -21,6 +24,7 @@ changelog-*.png
 /openchamber@*
 local-dev*
 .tmp/
+/tmp/
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -67,3 +71,7 @@ workspaces/
 
 # Internal superpower planning docs (not for upstream)
 docs/superpowers/
+# Marks a disposable clone dedicated to unattended maintenance tasks.
+.maintenance-clone
+test-results/
+artifacts/

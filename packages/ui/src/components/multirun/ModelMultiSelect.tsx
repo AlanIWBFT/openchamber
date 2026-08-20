@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from '@/components/ui/button';
+import { dropdownTriggerVariants } from '@/components/ui/dropdown-trigger';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { Icon } from "@/components/icon/Icon";
@@ -22,14 +22,6 @@ export interface ModelSelectionWithId {
   instanceId: string;
 }
 
-/** Model selection without instanceId (for external use) */
-export interface ModelSelection {
-  providerID: string;
-  modelID: string;
-  displayName?: string;
-  variant?: string;
-}
-
 // eslint-disable-next-line react-refresh/only-export-components -- Utility is tightly coupled with ModelMultiSelect
 export const generateInstanceId = (): string => {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -39,7 +31,7 @@ export const generateInstanceId = (): string => {
  * Model selection chip with remove button.
  * Shows instance index (e.g., "(2)") when same model is selected multiple times.
  */
-export const ModelChip: React.FC<{
+const ModelChip: React.FC<{
   model: ModelSelectionWithId;
   instanceIndex: number;
   totalSameModel: number;
@@ -115,6 +107,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
   const isFavoriteModel = useUIStore((state) => state.isFavoriteModel);
   const { favoriteModelsList, recentModelsList } = useModelLists();
   const hiddenModels = useUIStore((state) => state.hiddenModels);
+  const providerOrder = useUIStore((state) => state.providerOrder);
   const [isOpen, setIsOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [availableHeight, setAvailableHeight] = React.useState<number | null>(null);
@@ -236,14 +229,13 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
       <div className="flex flex-wrap gap-1.5 items-center">
         {/* Add model button (dropdown trigger) */}
         <div className={cn('relative', containerClassName)} ref={dropdownRef}>
-          <Button
+          <button
             ref={triggerRef}
             type="button"
-            variant="outline"
-            size="sm"
+            data-popup-open={isOpen ? '' : undefined}
             className={cn(
-              CHIP_HEIGHT_CLASS,
-              '!border-border/80 !bg-[var(--surface-subtle)] hover:!bg-[var(--interactive-hover)]/70',
+              dropdownTriggerVariants({ size: 'default' }),
+              'w-fit',
               addButtonClassName,
             )}
             disabled={!canAddModel}
@@ -253,7 +245,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
           >
             {triggerIcon ?? <Icon name="add" className="h-3.5 w-3.5 mr-1" />}
             {addButtonLabel ?? t('multirun.modelMultiSelect.actions.addModel')}
-          </Button>
+          </button>
 
           {isOpen ? (
             <div
@@ -268,6 +260,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
             >
               <ModelPickerList
                 providers={providers}
+                providerOrder={providerOrder}
                 favoriteModels={favoriteModelsList}
                 recentModels={recentModelsList}
                 modelsMetadata={modelsMetadata}
@@ -330,8 +323,8 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
                       }}
                     >
                       <SelectTrigger
-                        size="chip"
-                        className="px-2 gap-1.5 rounded-md !border-border/80 !bg-[var(--surface-subtle)] hover:!bg-[var(--interactive-hover)]/70 typography-meta font-medium text-foreground"
+                        size="sm"
+                        className="gap-1.5"
                       >
                         <Icon name="brain-ai-3"
                           className={cn(

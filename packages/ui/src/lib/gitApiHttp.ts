@@ -1,9 +1,8 @@
-
-
 import type {
   GitStatus,
   GitDiffResponse,
   GetGitDiffOptions,
+  GetGitRangeDiffOptions,
   GitFileDiffResponse,
   GetGitFileDiffOptions,
   GitBranch,
@@ -37,16 +36,36 @@ import type {
 } from './api/types';
 import { runtimeFetch } from './runtime-fetch';
 import { getRuntimeUrlResolver } from './runtime-url';
+import { getRuntimeKey } from './runtime-switch';
 
 const API_BASE = '/api/git';
 const GIT_STATUS_CACHE_TTL_MS = 1200;
 const GIT_REPO_CHECK_CACHE_TTL_MS = 5000;
 const gitStatusCache = new Map<string, { value: GitStatus; expiresAt: number }>();
 const gitStatusInFlight = new Map<string, Promise<GitStatus>>();
+const gitStatusCacheVersions = new Map<string, number>();
 const gitRepoCache = new Map<string, { value: boolean; expiresAt: number }>();
 const gitRepoInFlight = new Map<string, Promise<boolean>>();
 
 const normalizeDirectoryKey = (directory: string): string => directory.trim();
+const getDirectoryCacheKey = (runtimeKey: string, directory: string): string =>
+  JSON.stringify([runtimeKey, normalizeDirectoryKey(directory)]);
+const getStatusCacheKey = (runtimeKey: string, directory: string, mode?: 'light'): string =>
+  JSON.stringify([runtimeKey, normalizeDirectoryKey(directory), mode ?? 'full']);
+
+const getStatusCacheVersion = (runtimeKey: string, directory: string): number =>
+  gitStatusCacheVersions.get(getDirectoryCacheKey(runtimeKey, directory)) ?? 0;
+
+const invalidateGitStatusCache = (directory: string): void => {
+  const runtimeKey = getRuntimeKey();
+  const key = getDirectoryCacheKey(runtimeKey, directory);
+  gitStatusCacheVersions.set(key, getStatusCacheVersion(runtimeKey, directory) + 1);
+  for (const mode of [undefined, 'light'] as const) {
+    const statusKey = getStatusCacheKey(runtimeKey, directory, mode);
+    gitStatusCache.delete(statusKey);
+    gitStatusInFlight.delete(statusKey);
+  }
+};
 
 function buildUrl(
   path: string,
@@ -60,7 +79,7 @@ function buildUrl(
 }
 
 export async function checkIsGitRepository(directory: string): Promise<boolean> {
-  const key = normalizeDirectoryKey(directory);
+  const key = getDirectoryCacheKey(getRuntimeKey(), directory);
   const now = Date.now();
   const cached = gitRepoCache.get(key);
   if (cached && cached.expiresAt > now) {
@@ -98,7 +117,8 @@ export async function checkIsGitRepository(directory: string): Promise<boolean> 
 
 export async function getGitStatus(directory: string, options?: { mode?: 'light' }): Promise<GitStatus> {
   const mode = options?.mode;
-  const key = mode === 'light' ? `${normalizeDirectoryKey(directory)}::light` : normalizeDirectoryKey(directory);
+  const runtimeKey = getRuntimeKey();
+  const key = getStatusCacheKey(runtimeKey, directory, mode);
   const now = Date.now();
   const cached = gitStatusCache.get(key);
   if (cached && cached.expiresAt > now) {
@@ -111,15 +131,18 @@ export async function getGitStatus(directory: string, options?: { mode?: 'light'
   }
 
   const task = (async () => {
+    const cacheVersion = getStatusCacheVersion(runtimeKey, directory);
     const response = await runtimeFetch(buildUrl(`${API_BASE}/status`, directory, mode ? { mode } : undefined));
     if (!response.ok) {
       throw new Error(`Failed to get git status: ${response.statusText}`);
     }
     const payload = await response.json() as GitStatus;
-    gitStatusCache.set(key, {
-      value: payload,
-      expiresAt: Date.now() + GIT_STATUS_CACHE_TTL_MS,
-    });
+    if (getStatusCacheVersion(runtimeKey, directory) === cacheVersion) {
+      gitStatusCache.set(key, {
+        value: payload,
+        expiresAt: Date.now() + GIT_STATUS_CACHE_TTL_MS,
+      });
+    }
     return payload;
   })();
 
@@ -200,6 +223,31 @@ export async function getGitDiff(directory: string, options: GetGitDiffOptions):
   return response.json();
 }
 
+export async function getGitRangeDiff(
+  directory: string,
+  options: GetGitRangeDiffOptions
+): Promise<GitDiffResponse> {
+  const { base, head, path, contextLines } = options;
+  if (!base || !head) {
+    throw new Error('base and head are required to fetch git range diff');
+  }
+
+  const response = await runtimeFetch(
+    buildUrl(`${API_BASE}/range-diff`, directory, {
+      base,
+      head,
+      path: path || undefined,
+      context: contextLines,
+    })
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to get git range diff: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
 export async function getGitFileDiff(directory: string, options: GetGitFileDiffOptions): Promise<GitFileDiffResponse> {
   const { path, staged } = options;
   if (!path) {
@@ -241,6 +289,8 @@ export async function revertGitFile(
       .catch(() => ({ error: response.statusText }));
     throw new Error(message.error || 'Failed to revert git changes');
   }
+
+  invalidateGitStatusCache(directory);
 }
 
 export async function stageGitFile(directory: string, filePath: string): Promise<void> {
@@ -264,6 +314,8 @@ export async function stageGitFiles(directory: string, filePaths: string[]): Pro
     const message = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(message.error || 'Failed to stage git changes');
   }
+
+  invalidateGitStatusCache(directory);
 }
 
 export async function unstageGitFile(directory: string, filePath: string): Promise<void> {
@@ -287,6 +339,8 @@ export async function unstageGitFiles(directory: string, filePaths: string[]): P
     const message = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(message.error || 'Failed to unstage git changes');
   }
+
+  invalidateGitStatusCache(directory);
 }
 
 export async function stageGitHunk(directory: string, filePath: string, patch: string): Promise<void> {
@@ -324,6 +378,8 @@ async function applyGitHunk(
     const message = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(message.error || 'Failed to apply git hunk');
   }
+
+  invalidateGitStatusCache(directory);
 }
 
 export async function isLinkedWorktree(directory: string): Promise<boolean> {
@@ -608,7 +664,9 @@ export async function createGitCommit(
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to create commit');
   }
-  return response.json();
+  const result = await response.json();
+  invalidateGitStatusCache(directory);
+  return result;
 }
 
 export async function gitPush(
@@ -624,7 +682,9 @@ export async function gitPush(
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to push');
   }
-  return response.json();
+  const result = await response.json();
+  invalidateGitStatusCache(directory);
+  return result;
 }
 
 export async function gitPull(
@@ -640,7 +700,9 @@ export async function gitPull(
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to pull');
   }
-  return response.json();
+  const result = await response.json();
+  invalidateGitStatusCache(directory);
+  return result;
 }
 
 export async function gitFetch(
@@ -656,7 +718,9 @@ export async function gitFetch(
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to fetch');
   }
-  return response.json();
+  const result = await response.json();
+  invalidateGitStatusCache(directory);
+  return result;
 }
 
 export async function listGitStashes(directory: string): Promise<{ stashes: GitStashEntry[] }> {

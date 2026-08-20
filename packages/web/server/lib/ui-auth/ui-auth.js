@@ -295,19 +295,21 @@ const isUrlAuthReadableHttpPath = (pathname) => {
   return pathname === '/api/event'
     || pathname === '/api/global/event'
     || pathname === '/api/openchamber/events'
+    || pathname === '/api/openchamber/realtime-proxy/sse'
     || pathname === '/api/notifications/stream'
     || pathname === '/api/fs/raw'
     || pathname === '/api/fs/serve'
     || pathname.startsWith('/api/fs/serve/')
     || pathname.startsWith('/api/preview/proxy/')
-    || /^\/api\/terminal\/[^/]+\/stream$/.test(pathname)
     || /^\/api\/projects\/[^/]+\/icon$/.test(pathname);
 };
 
 const isUrlAuthWebSocketPath = (pathname) => {
   return pathname === '/api/event/ws'
     || pathname === '/api/global/event/ws'
+    || pathname === '/api/openchamber/realtime-proxy/ws'
     || pathname === '/api/terminal/ws'
+    || pathname === '/api/dictation/ws'
     || pathname.startsWith('/api/preview/proxy/');
 };
 
@@ -747,6 +749,21 @@ export const createUiAuth = ({
   };
 
   const handleSessionStatus = async (req, res) => {
+    // An explicit bearer credential decides the answer on its own. Native
+    // clients probe with the token their runtime transport will actually use;
+    // falling back to the ambient session cookie here masked revoked tokens
+    // (cookie said "authenticated", every bearer-only API call then 401'd).
+    const authorization = req.headers?.authorization;
+    const hasBearer = typeof authorization === 'string' && authorization.toLowerCase().startsWith('bearer ');
+    if (hasBearer) {
+      const clientAuth = await authenticateClientRequest(req, { allowUrlToken: false });
+      if (clientAuth) {
+        res.json({ authenticated: true, scope: 'client' });
+        return;
+      }
+      res.status(401).json({ authenticated: false, locked: true });
+      return;
+    }
     const token = getTokenFromRequest(req);
     if (await isSessionValid(token)) {
       res.json({ authenticated: true });
@@ -826,6 +843,11 @@ export const createUiAuth = ({
         expiresAt: new Date(Date.now() + ttlMs).toISOString(),
         clientKind: req.body?.clientKind,
         dedupeKey: req.body?.dedupeKey,
+        authMethod: 'password',
+        deviceName: req.body?.deviceName,
+        devicePlatform: req.body?.devicePlatform,
+        deviceModel: req.body?.deviceModel,
+        appVersion: req.body?.appVersion,
       });
     }
     res.setHeader('Cache-Control', 'no-store');
@@ -889,6 +911,11 @@ export const createUiAuth = ({
           expiresAt: new Date(Date.now() + ttlMs).toISOString(),
           clientKind: req.body?.clientKind,
           dedupeKey: req.body?.dedupeKey,
+          authMethod: 'passkey',
+          deviceName: req.body?.deviceName,
+          devicePlatform: req.body?.devicePlatform,
+          deviceModel: req.body?.deviceModel,
+          appVersion: req.body?.appVersion,
         });
       }
       res.json({

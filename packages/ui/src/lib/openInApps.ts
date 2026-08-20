@@ -10,6 +10,7 @@ export const OPEN_IN_APPS: OpenInApp[] = [
   { id: 'iterm2', label: 'iTerm2', appName: 'iTerm' },
   { id: 'ghostty', label: 'Ghostty', appName: 'Ghostty' },
   { id: 'vscode', label: 'VS Code', appName: 'Visual Studio Code' },
+  { id: 'vscode-insiders', label: 'VS Code Insiders', appName: 'Visual Studio Code - Insiders' },
   { id: 'intellij', label: 'IntelliJ', appName: 'IntelliJ IDEA' },
   { id: 'visual-studio', label: 'Visual Studio', appName: 'Visual Studio' },
   { id: 'cursor', label: 'Cursor', appName: 'Cursor' },
@@ -32,12 +33,19 @@ export const OPEN_IN_APPS: OpenInApp[] = [
 
 export const DEFAULT_OPEN_IN_APP_ID = 'finder';
 export const OPEN_IN_ALWAYS_AVAILABLE_APP_IDS = new Set(['finder', 'terminal']);
-export const OPEN_DIRECTORY_APP_IDS = new Set(['finder', 'terminal', 'iterm2', 'ghostty']);
 
 export const getPlatformOpenInApp = (app: OpenInApp): OpenInApp => {
-  if (typeof window !== 'undefined' && window.__OPENCHAMBER_PLATFORM__ === 'win32') {
-    if (app.id === 'finder') {
+  if (typeof window === 'undefined') {
+    return app;
+  }
+
+  const platform = window.__OPENCHAMBER_PLATFORM__;
+  if (app.id === 'finder') {
+    if (platform === 'win32') {
       return { ...app, label: 'Explorer', appName: 'File Explorer' };
+    }
+    if (platform === 'linux') {
+      return { ...app, label: 'File Manager' };
     }
   }
   return app;
@@ -49,8 +57,4 @@ export const getOpenInAppById = (id: string | null | undefined): OpenInApp | nul
   }
   const app = OPEN_IN_APPS.find((candidate) => candidate.id === id) ?? null;
   return app ? getPlatformOpenInApp(app) : null;
-};
-
-export const getDefaultOpenInApp = (): OpenInApp => {
-  return getOpenInAppById(DEFAULT_OPEN_IN_APP_ID) ?? getPlatformOpenInApp(OPEN_IN_APPS[0]);
 };

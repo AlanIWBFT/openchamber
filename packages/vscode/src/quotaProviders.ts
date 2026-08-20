@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { fetchOpenCodeGoUsage } from './opencodeGoQuota';
+import { fetchCommandCodeUsage } from './commandCodeQuota';
+import { deleteLegacyOpenCodeGoCredential, readCredential } from './quotaCredentials';
+import { getProviderAuth, updateProviderAuth } from './opencodeAuth';
 
 type AuthEntry = Record<string, unknown> | string;
 type AuthFile = Record<string, AuthEntry>;
@@ -38,6 +42,13 @@ type OpenAiUsagePayload = {
     balance?: number | string;
     unlimited?: boolean;
   };
+  spend_control?: {
+    individual_limit?: {
+      limit?: number | string;
+      used?: number | string;
+      used_percent?: number | string;
+    };
+  };
 };
 
 type GoogleModelsPayload = {
@@ -61,13 +72,31 @@ type ZaiLimit = {
   type?: string;
   number?: number;
   unit?: number;
+  usage?: number;
+  currentValue?: number;
+  remaining?: number;
   nextResetTime?: number;
   percentage?: number;
+};
+
+// CREDIT_LIMIT entries carry `usage` (total credits) and `currentValue` (consumed);
+// TOKENS_LIMIT entries only carry a percentage.
+const formatZaiCreditAmount = (value: number): string => {
+  if (value < 1000) return value.toLocaleString('en-US');
+  return `${Math.round(value / 100) / 10}k`;
+};
+
+const formatZaiCreditValueLabel = (limit: ZaiLimit): string | null => {
+  const used = toNumber(limit.currentValue);
+  const total = toNumber(limit.usage);
+  if (used === null || total === null) return null;
+  return `${formatZaiCreditAmount(used)} / ${formatZaiCreditAmount(total)} credits`;
 };
 
 type ZaiPayload = {
   data?: {
     limits?: ZaiLimit[];
+    level?: string;
   };
 };
 
@@ -110,6 +139,47 @@ type WaferPayload = {
   plan_tier?: string;
 };
 
+type CrofPayload = {
+  usable_requests?: number | null;
+  credits?: number | string;
+};
+
+type DeepseekPayload = {
+  is_available?: boolean;
+  balance_infos?: Array<{
+    currency?: string;
+    total_balance?: number | string;
+    granted_balance?: number | string;
+    topped_up_balance?: number | string;
+  }>;
+};
+
+type NeuralwattPayload = {
+  balance?: {
+    credits_remaining_usd?: number | string;
+  };
+  subscription?: {
+    plan?: string;
+    billing_interval?: string;
+    current_period_start?: string;
+    current_period_end?: string;
+    kwh_included?: number | string;
+    kwh_used?: number | string;
+    in_overage?: boolean;
+    kwh_reset_date?: string;
+  } | null;
+  key?: {
+    name?: string;
+    allowance?: {
+      limit_usd?: number | string;
+      period?: string;
+      spent_usd?: number | string;
+      blocked?: boolean;
+      reset_at?: string;
+    } | null;
+  };
+};
+
 export type ProviderResult = {
   providerId: string;
   providerName: string;
@@ -118,12 +188,27 @@ export type ProviderResult = {
   usage: ProviderUsage | null;
   fetchedAt: number;
   error?: string;
+  planLabel?: string | null;
 };
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
 const OPENCODE_DATA_DIR = path.join(os.homedir(), '.local', 'share', 'opencode');
 const AUTH_FILE = path.join(OPENCODE_DATA_DIR, 'auth.json');
-const OLLAMA_CLOUD_COOKIE_PATH = path.join(os.homedir(), '.config', 'ollama-quota', 'cookie');
+
+const XAI_USAGE_ENDPOINT = 'https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig';
+const XAI_TOKEN_ENDPOINT = 'https://auth.x.ai/oauth2/token';
+const XAI_CLIENT_ID = 'b1a00492-073a-47ea-816f-4c329264a828';
+const XAI_REFRESH_SKEW_MS = 120_000;
+const XAI_DEFAULT_EXPIRES_IN_SECONDS = 3600;
+
+type XaiAuthEntry = Record<string, unknown> & {
+  type: 'oauth';
+  access?: string;
+  refresh?: string;
+  expires?: unknown;
+};
+
+let xaiRefreshPromise: Promise<XaiAuthEntry> | null = null;
 
 
 const ANTIGRAVITY_ACCOUNTS_PATHS = [
@@ -183,7 +268,10 @@ const resolveGoogleWindow = (sourceId: GoogleAuthSource['sourceId'], resetAt: nu
   return { label: 'daily', seconds: GOOGLE_DAILY_WINDOW_SECONDS } as const;
 };
 
-const ZAI_TOKEN_WINDOW_SECONDS: Record<number, number> = { 3: 3600 };
+const ZAI_TOKEN_WINDOW_SECONDS: Record<number, number> = {
+  3: 60 * 60,
+  6: 7 * 24 * 60 * 60,
+};
 
 const readAuthFile = (): AuthFile => {
   if (!fs.existsSync(AUTH_FILE)) {
@@ -215,19 +303,6 @@ const readJsonFile = (filePath: string): Record<string, unknown> | null => {
     return parsed as Record<string, unknown>;
   } catch (error) {
     console.warn(`Failed to read JSON file: ${filePath}`, error);
-    return null;
-  }
-};
-
-const readTextFile = (filePath: string): string | null => {
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-  try {
-    const content = fs.readFileSync(filePath, 'utf8').trim();
-    return content || null;
-  } catch (error) {
-    console.warn(`Failed to read text file: ${filePath}`, error);
     return null;
   }
 };
@@ -354,15 +429,318 @@ const buildResult = (data: {
   configured: boolean;
   usage?: ProviderUsage | null;
   error?: string;
-}): ProviderResult => ({
-  providerId: data.providerId,
-  providerName: data.providerName,
-  ok: data.ok,
-  configured: data.configured,
-  usage: data.usage ?? null,
-  ...(data.error ? { error: data.error } : {}),
-  fetchedAt: Date.now(),
-});
+  planLabel?: string | null;
+}): ProviderResult => {
+  const result: ProviderResult = {
+    providerId: data.providerId,
+    providerName: data.providerName,
+    ok: data.ok,
+    configured: data.configured,
+    usage: data.usage ?? null,
+    ...(data.error ? { error: data.error } : {}),
+    fetchedAt: Date.now(),
+  };
+  if (data.planLabel) result.planLabel = data.planLabel;
+  return result;
+};
+
+const resolveXaiAuth = (): XaiAuthEntry | null => {
+  const entry = getProviderAuth('xai');
+  if (!entry || typeof entry !== 'object' || entry.type !== 'oauth') return null;
+
+  const access = asNonEmptyString(entry.access);
+  const refresh = asNonEmptyString(entry.refresh);
+  if (!access && !refresh) return null;
+
+  return {
+    ...entry,
+    type: 'oauth',
+    ...(access ? { access } : {}),
+    ...(refresh ? { refresh } : {}),
+    ...(entry.expires !== undefined ? { expires: entry.expires } : {}),
+  };
+};
+
+const jwtExpiryMilliseconds = (accessToken: string): number | null => {
+  const payload = accessToken.split('.')[1];
+  if (!payload) return null;
+
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Record<string, unknown>;
+    return typeof decoded.exp === 'number' && Number.isFinite(decoded.exp)
+      ? decoded.exp * 1000
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const xaiAccessNeedsRefresh = (entry: XaiAuthEntry, now = Date.now()): boolean => {
+  const access = asNonEmptyString(entry.access);
+  if (!access) return true;
+
+  const refreshDeadline = now + XAI_REFRESH_SKEW_MS;
+  const storedExpiry = Number(entry.expires);
+  if (Number.isFinite(storedExpiry) && storedExpiry <= refreshDeadline) {
+    return true;
+  }
+
+  const jwtExpiry = jwtExpiryMilliseconds(access);
+  return jwtExpiry !== null && jwtExpiry <= refreshDeadline;
+};
+
+const refreshXaiAuth = (entry: XaiAuthEntry): Promise<XaiAuthEntry> => {
+  if (xaiRefreshPromise) return xaiRefreshPromise;
+
+  const refreshToken = asNonEmptyString(entry.refresh);
+  if (!refreshToken) {
+    return Promise.reject(new Error('xAI OAuth refresh token is unavailable'));
+  }
+
+  const pending = (async () => {
+    const response = await fetch(XAI_TOKEN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: XAI_CLIENT_ID,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    if (!response.ok) {
+      throw new Error(`xAI OAuth refresh failed: ${response.status}`);
+    }
+
+    const responsePayload = payload ?? {};
+    const access = asNonEmptyString(responsePayload.access_token);
+    if (!access) {
+      throw new Error('xAI OAuth refresh returned no access token');
+    }
+
+    const expiresIn = responsePayload.expires_in ?? XAI_DEFAULT_EXPIRES_IN_SECONDS;
+    if (typeof expiresIn !== 'number' || !Number.isFinite(expiresIn)) {
+      throw new Error('xAI OAuth refresh returned an invalid expiry');
+    }
+
+    const refreshed: XaiAuthEntry = {
+      ...entry,
+      type: 'oauth',
+      access,
+      refresh: asNonEmptyString(responsePayload.refresh_token) ?? refreshToken,
+      expires: Date.now() + expiresIn * 1000,
+    };
+
+    // Validate the new access token before updating the existing secure auth file.
+    updateProviderAuth('xai', refreshed);
+    return refreshed;
+  })();
+
+  const settled = pending.finally(() => {
+    if (xaiRefreshPromise === settled) {
+      xaiRefreshPromise = null;
+    }
+  });
+  xaiRefreshPromise = settled;
+  return settled;
+};
+
+const getXaiAccessToken = async (entry: XaiAuthEntry): Promise<string> => {
+  if (!xaiAccessNeedsRefresh(entry)) return entry.access!;
+  return (await refreshXaiAuth(entry)).access!;
+};
+
+type XaiFixed32Field = { path: number[]; value: number; order: number };
+type XaiVarintField = { path: number[]; value: bigint };
+type XaiProtobufScan = {
+  fixed32Fields: XaiFixed32Field[];
+  varintFields: XaiVarintField[];
+  nextOrder: number;
+};
+
+const readXaiVarint = (bytes: Uint8Array, index: { value: number }): bigint | null => {
+  let result = 0n;
+  for (let shift = 0n; index.value < bytes.length && shift < 64n; shift += 7n) {
+    const byte = bytes[index.value++];
+    if (shift === 63n && (byte & 0x7e) !== 0) return null;
+    result |= BigInt(byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) return result;
+  }
+  return null;
+};
+
+const scanXaiProtobuf = (
+  bytes: Uint8Array,
+  depth: number,
+  pathPrefix: number[],
+  scan: XaiProtobufScan,
+): boolean => {
+  const index = { value: 0 };
+  while (index.value < bytes.length) {
+    const fieldKey = readXaiVarint(bytes, index);
+    if (fieldKey === null || fieldKey === 0n) return false;
+
+    const fieldNumber = Number(fieldKey >> 3n);
+    const wireType = Number(fieldKey & 0x07n);
+    if (fieldNumber < 1 || fieldNumber > 0x1fffffff) return false;
+    const fieldPath = [...pathPrefix, fieldNumber];
+
+    if (wireType === 0) {
+      const value = readXaiVarint(bytes, index);
+      if (value === null) return false;
+      scan.varintFields.push({ path: fieldPath, value });
+      continue;
+    }
+
+    if (wireType === 1) {
+      if (index.value + 8 > bytes.length) return false;
+      index.value += 8;
+      continue;
+    }
+
+    if (wireType === 2) {
+      const length = readXaiVarint(bytes, index);
+      if (length === null || length > BigInt(bytes.length - index.value)) return false;
+      const start = index.value;
+      index.value += Number(length);
+      if (depth >= 4 && length !== 0n) return false;
+      if (depth < 4) {
+        const nestedScan: XaiProtobufScan = {
+          fixed32Fields: [],
+          varintFields: [],
+          nextOrder: scan.nextOrder,
+        };
+        if (!scanXaiProtobuf(bytes.subarray(start, index.value), depth + 1, fieldPath, nestedScan)) return false;
+        scan.fixed32Fields.push(...nestedScan.fixed32Fields);
+        scan.varintFields.push(...nestedScan.varintFields);
+        scan.nextOrder = nestedScan.nextOrder;
+      }
+      continue;
+    }
+
+    if (wireType === 5) {
+      if (index.value + 4 > bytes.length) return false;
+      const value = new DataView(bytes.buffer, bytes.byteOffset + index.value, 4).getFloat32(0, true);
+      scan.fixed32Fields.push({ path: fieldPath, value, order: scan.nextOrder++ });
+      index.value += 4;
+      continue;
+    }
+
+    return false;
+  }
+
+  return true;
+};
+
+const looksLikeXaiProtobuf = (bytes: Uint8Array): boolean => {
+  if (!bytes.length) return false;
+  const fieldNumber = Math.floor(bytes[0] / 8);
+  const wireType = bytes[0] % 8;
+  return fieldNumber > 0 && [0, 1, 2, 5].includes(wireType);
+};
+
+const parseXaiGrpcTrailerStatus = (bytes: Uint8Array): number | null => {
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+
+  let status: number | null = null;
+  for (const line of text.split(/\r?\n/)) {
+    if (!line) continue;
+    const separator = line.indexOf(':');
+    if (separator <= 0) return null;
+    const key = line.slice(0, separator).trim().toLowerCase();
+    if (!key) return null;
+    if (key !== 'grpc-status') continue;
+    if (status !== null) return null;
+    const rawStatus = line.slice(separator + 1).trim();
+    if (!/^\d+$/.test(rawStatus)) return null;
+    status = Number(rawStatus);
+    if (!Number.isSafeInteger(status)) return null;
+  }
+  return status;
+};
+
+const parseXaiGrpcFrames = (bytes: Uint8Array): { payloads: Uint8Array[]; trailerStatuses: number[] } | null | false => {
+  if (bytes.length < 5 || (bytes[0] & 0x7f) !== 0) return null;
+  const payloads: Uint8Array[] = [];
+  const trailerStatuses: number[] = [];
+  let index = 0;
+  let sawTrailer = false;
+  while (index < bytes.length) {
+    if (index + 5 > bytes.length) return false;
+    const flags = bytes[index++];
+    if ((flags & 0x7f) !== 0) return false;
+    const length = (bytes[index++] * 0x1000000) + (bytes[index++] << 16) + (bytes[index++] << 8) + bytes[index++];
+    if (length > bytes.length - index) return false;
+    const frame = bytes.subarray(index, index + length);
+    index += length;
+    if (flags & 0x80) {
+      sawTrailer = true;
+      const status = parseXaiGrpcTrailerStatus(frame);
+      if (status === null) return false;
+      trailerStatuses.push(status);
+    } else {
+      if (sawTrailer) return false;
+      payloads.push(frame);
+    }
+  }
+  return { payloads, trailerStatuses };
+};
+
+const sameXaiPath = (left: number[], right: number[]) => (
+  left.length === right.length && left.every((value, index) => value === right[index])
+);
+
+const XAI_USAGE_PERCENT_PATHS = [[1], [1, 1]];
+const isXaiUsagePercentPath = (path: number[]) => (
+  XAI_USAGE_PERCENT_PATHS.some((candidate) => sameXaiPath(candidate, path))
+);
+
+const parseXaiUsage = (bytes: Uint8Array): { usedPercent: number; resetAt: number | null } => {
+  const frames = parseXaiGrpcFrames(bytes);
+  if (frames === false) throw new Error('xAI returned malformed gRPC-web framing');
+  const payloads = frames === null
+    ? (looksLikeXaiProtobuf(bytes) ? [bytes] : [])
+    : frames.payloads;
+  if (frames) {
+    for (const status of frames.trailerStatuses) {
+      if (status !== 0) throw new Error(`xAI billing RPC failed with status ${status}`);
+    }
+  }
+  if (!payloads.length) throw new Error('xAI returned an empty protobuf response');
+
+  const scan: XaiProtobufScan = { fixed32Fields: [], varintFields: [], nextOrder: 0 };
+  for (const payload of payloads) {
+    if (!scanXaiProtobuf(payload, 0, [], scan)) throw new Error('xAI returned malformed protobuf data');
+  }
+
+  const percentField = scan.fixed32Fields
+    .filter((field) => isXaiUsagePercentPath(field.path) && Number.isFinite(field.value) && field.value >= 0 && field.value <= 100)
+    .sort((left, right) => left.path.length - right.path.length || left.order - right.order)[0];
+  const resetCandidates = scan.varintFields
+    .filter((field) => field.value >= 1_700_000_000n && field.value <= 2_100_000_000n)
+    .map((field) => ({ path: field.path, seconds: Number(field.value) }))
+    .map((field) => ({ path: field.path, timestamp: field.seconds * 1000 }))
+    .filter((field) => field.timestamp > Date.now());
+  const preferredReset = resetCandidates
+    .filter((field) => sameXaiPath(field.path, [1, 5, 1]))
+    .sort((a, b) => a.timestamp - b.timestamp)[0];
+  const resetAt = (preferredReset ?? resetCandidates.sort((a, b) => a.timestamp - b.timestamp)[0])?.timestamp ?? null;
+  const hasUsagePeriod = scan.varintFields.some((field) => (
+    (field.path.length >= 2 && field.path[0] === 1 && field.path[1] === 6)
+    || (sameXaiPath(field.path, [1, 8, 1]) && (field.value === 1n || field.value === 2n))
+  ));
+  const noUsageYet = !percentField && scan.fixed32Fields.length === 0 && resetAt !== null && hasUsagePeriod;
+  const usedPercent = percentField?.value ?? (noUsageYet ? 0 : null);
+  if (usedPercent === null) throw new Error('xAI billing response did not contain usable current-period data');
+  return { usedPercent, resetAt };
+};
 
 const formatMoney = (value: number | null) => {
   if (value === null || !Number.isFinite(value)) return null;
@@ -386,8 +764,20 @@ const durationToSeconds = (duration?: number, unit?: string) => {
 };
 
 export const listConfiguredQuotaProviders = () => {
-  const auth = readAuthFile();
+  let auth: AuthFile = {};
+  try {
+    auth = readAuthFile();
+  } catch {
+    // Managed credentials remain enumerable; unreadable auth cannot establish xAI configuration.
+  }
   const configured = new Set<string>();
+  const openCodeGoAuth = normalizeAuthEntry(getAuthEntry(auth, ['opencode-go']));
+  if (openCodeGoAuth && (typeof openCodeGoAuth.key === 'string' || typeof openCodeGoAuth.token === 'string')) configured.add('opencode-go');
+  const commandCodeAuth = normalizeAuthEntry(getAuthEntry(auth, ['command-code']));
+  if (commandCodeAuth && (typeof commandCodeAuth.key === 'string' || typeof commandCodeAuth.access === 'string' || typeof commandCodeAuth.token === 'string')) configured.add('command-code');
+  if (process.env.COMMAND_CODE_API_KEY?.trim()) configured.add('command-code');
+  if (readCredential('ollama-cloud')) configured.add('ollama-cloud');
+  if (readCredential('cursor')) configured.add('cursor');
 
   const anthropicAuth = normalizeAuthEntry(getAuthEntry(auth, ['anthropic', 'claude']));
   if (anthropicAuth && ((anthropicAuth as Record<string, unknown>).access || (anthropicAuth as Record<string, unknown>).token)) {
@@ -444,19 +834,41 @@ export const listConfiguredQuotaProviders = () => {
     configured.add('github-copilot-addon');
   }
 
-  if (readTextFile(OLLAMA_CLOUD_COOKIE_PATH)) {
-    configured.add('ollama-cloud');
-  }
 
   const waferAuth = normalizeAuthEntry(getAuthEntry(auth, ['wafer', 'wafer-ai', 'wafer_ai', 'wafer.ai']));
   if (waferAuth && ((waferAuth as Record<string, unknown>).key || (waferAuth as Record<string, unknown>).token)) {
     configured.add('wafer');
   }
 
+  const crofAuth = normalizeAuthEntry(getAuthEntry(auth, ['crof']));
+  if (crofAuth && ((crofAuth as Record<string, unknown>).key || (crofAuth as Record<string, unknown>).token)) {
+    configured.add('crof');
+  }
+
+  const neuralwattAuth = normalizeAuthEntry(getAuthEntry(auth, ['neuralwatt']));
+  if (neuralwattAuth && ((neuralwattAuth as Record<string, unknown>).key || (neuralwattAuth as Record<string, unknown>).token)) {
+    configured.add('neuralwatt');
+  }
+
+  const deepseekAuth = normalizeAuthEntry(getAuthEntry(auth, ['deepseek']));
+  if (deepseekAuth && ((deepseekAuth as Record<string, unknown>).key || (deepseekAuth as Record<string, unknown>).token)) {
+    configured.add('deepseek');
+  }
+
+  let xaiAuth: XaiAuthEntry | null = null;
+  try {
+    xaiAuth = resolveXaiAuth();
+  } catch {
+    xaiAuth = null;
+  }
+  if (xaiAuth) {
+    configured.add('xai');
+  }
+
   return Array.from(configured);
 };
 
-export const fetchCodexQuota = async (): Promise<ProviderResult> => {
+const fetchCodexQuota = async (): Promise<ProviderResult> => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['openai', 'codex', 'chatgpt'])) as Record<string, unknown> | null;
   const accessToken = (entry?.access as string | undefined) ?? (entry?.token as string | undefined);
@@ -499,16 +911,18 @@ export const fetchCodexQuota = async (): Promise<ProviderResult> => {
 
     const windows: Record<string, UsageWindow> = {};
     if (primary) {
-      windows['5h'] = toUsageWindow({
+      const windowSeconds = toNumber(primary.limit_window_seconds);
+      windows[resolveWindowLabel(windowSeconds)] = toUsageWindow({
         usedPercent: toNumber(primary.used_percent),
-        windowSeconds: toNumber(primary.limit_window_seconds),
+        windowSeconds,
         resetAt: toTimestamp(primary.reset_at),
       });
     }
     if (secondary) {
-      windows['weekly'] = toUsageWindow({
+      const windowSeconds = toNumber(secondary.limit_window_seconds);
+      windows[resolveWindowLabel(windowSeconds)] = toUsageWindow({
         usedPercent: toNumber(secondary.used_percent),
-        windowSeconds: toNumber(secondary.limit_window_seconds),
+        windowSeconds,
         resetAt: toTimestamp(secondary.reset_at),
       });
     }
@@ -522,6 +936,20 @@ export const fetchCodexQuota = async (): Promise<ProviderResult> => {
           : null;
       windows.credits_balance = toUsageWindow({
         usedPercent: null,
+        windowSeconds: null,
+        resetAt: null,
+        valueLabel,
+      });
+    }
+    if (payload?.spend_control?.individual_limit) {
+      const spendLimit = payload.spend_control.individual_limit;
+      const used = toNumber(spendLimit.used);
+      const limit = toNumber(spendLimit.limit);
+      const valueLabel = used !== null && limit !== null
+        ? `${used.toFixed(0)} / ${limit.toFixed(0)} used`
+        : null;
+      windows.credits = toUsageWindow({
+        usedPercent: toNumber(spendLimit.used_percent),
         windowSeconds: null,
         resetAt: null,
         valueLabel,
@@ -723,7 +1151,7 @@ const fetchGoogleModels = async (accessToken: string, projectId?: string) => {
   return null;
 };
 
-export const fetchGoogleQuota = async (): Promise<ProviderResult> => {
+const fetchGoogleQuota = async (): Promise<ProviderResult> => {
   const authSources = resolveGoogleAuthSources();
   if (!authSources.length) {
     return buildResult({
@@ -851,7 +1279,113 @@ export const fetchGoogleQuota = async (): Promise<ProviderResult> => {
   });
 };
 
-export const fetchClaudeQuota = async (): Promise<ProviderResult> => {
+const CLAUDE_DEFAULT_COOLDOWN_MS = 5 * 60 * 1000;
+const CLAUDE_MAX_COOLDOWN_MS = 60 * 60 * 1000;
+let claudeCredentialFingerprint: string | null = null;
+let claudeCachedUsage: ProviderUsage | null = null;
+let claudeCooldownUntil = 0;
+
+const claudeCooldownFromResponse = (response: Response): number => {
+  const raw = response.headers.get('retry-after');
+  const seconds = raw ? Number(raw) : Number.NaN;
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.min(seconds * 1000, CLAUDE_MAX_COOLDOWN_MS);
+  }
+  if (raw) {
+    const retryAt = Date.parse(raw);
+    if (Number.isFinite(retryAt) && retryAt > Date.now()) {
+      return Math.min(retryAt - Date.now(), CLAUDE_MAX_COOLDOWN_MS);
+    }
+  }
+  return CLAUDE_DEFAULT_COOLDOWN_MS;
+};
+
+const buildClaudeRateLimitResult = (): ProviderResult => (
+  claudeCachedUsage
+    ? buildResult({
+        providerId: 'claude',
+        providerName: 'Claude',
+        ok: true,
+        configured: true,
+        usage: claudeCachedUsage,
+      })
+    : buildResult({
+        providerId: 'claude',
+        providerName: 'Claude',
+        ok: false,
+        configured: true,
+        error: 'Rate limited. Retrying soon.',
+      })
+);
+
+const buildClaudeUsage = (payload: Record<string, unknown>): ProviderUsage => {
+  const windows: Record<string, UsageWindow> = {};
+  const models: Record<string, ProviderUsage> = {};
+  const limits = Array.isArray(payload.limits) ? payload.limits : [];
+
+  for (const entry of limits) {
+    const limit = asObject(entry);
+    if (!limit) continue;
+    const usedPercent = toNumber(limit.percent);
+    const resetAt = toTimestamp(limit.resets_at);
+    if (limit.kind === 'session') {
+      windows['5h'] = toUsageWindow({ usedPercent, windowSeconds: 5 * 60 * 60, resetAt });
+    } else if (limit.kind === 'weekly_all') {
+      windows['7d'] = toUsageWindow({ usedPercent, windowSeconds: 7 * 24 * 60 * 60, resetAt });
+    } else if (limit.kind === 'weekly_scoped') {
+      const modelName = asNonEmptyString(asObject(asObject(limit.scope)?.model)?.display_name);
+      if (modelName) {
+        models[modelName] = {
+          windows: {
+            '7d': toUsageWindow({ usedPercent, windowSeconds: 7 * 24 * 60 * 60, resetAt }),
+          },
+        };
+      }
+    }
+  }
+
+  if (!limits.length) {
+    const fiveHour = asObject(payload.five_hour);
+    const sevenDay = asObject(payload.seven_day);
+    if (fiveHour) {
+      windows['5h'] = toUsageWindow({
+        usedPercent: toNumber(fiveHour.utilization),
+        windowSeconds: 5 * 60 * 60,
+        resetAt: toTimestamp(fiveHour.resets_at),
+      });
+    }
+    if (sevenDay) {
+      windows['7d'] = toUsageWindow({
+        usedPercent: toNumber(sevenDay.utilization),
+        windowSeconds: 7 * 24 * 60 * 60,
+        resetAt: toTimestamp(sevenDay.resets_at),
+      });
+    }
+  }
+
+  const spend = asObject(payload.spend);
+  if (spend?.enabled === true) {
+    const usedMoney = asObject(spend.used);
+    const limitMoney = asObject(spend.limit);
+    const usedMinor = toNumber(usedMoney?.amount_minor);
+    const limitMinor = toNumber(limitMoney?.amount_minor);
+    const exponent = toNumber(usedMoney?.exponent) ?? 2;
+    const currency = asNonEmptyString(usedMoney?.currency);
+    const prefix = currency === 'USD' || !currency ? '$' : `${currency} `;
+    const used = usedMinor === null ? null : usedMinor / 10 ** exponent;
+    const limit = limitMinor === null ? null : limitMinor / 10 ** (toNumber(limitMoney?.exponent) ?? 2);
+    windows.extra_usage = toUsageWindow({
+      usedPercent: toNumber(spend.percent),
+      windowSeconds: null,
+      resetAt: null,
+      valueLabel: used === null ? null : `${prefix}${formatMoney(used)}${limit === null ? '' : ` / ${prefix}${formatMoney(limit)}`}`,
+    });
+  }
+
+  return Object.keys(models).length ? { windows, models } : { windows };
+};
+
+const fetchClaudeQuota = async (): Promise<ProviderResult> => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['anthropic', 'claude'])) as Record<string, unknown> | null;
   const accessToken = (entry?.access as string | undefined) ?? (entry?.token as string | undefined);
@@ -866,6 +1400,15 @@ export const fetchClaudeQuota = async (): Promise<ProviderResult> => {
     });
   }
 
+  const refreshToken = typeof entry?.refresh === 'string' ? entry.refresh : '';
+  const fingerprint = `${accessToken}\0${refreshToken}`;
+  if (claudeCredentialFingerprint !== fingerprint) {
+    claudeCredentialFingerprint = fingerprint;
+    claudeCachedUsage = null;
+    claudeCooldownUntil = 0;
+  }
+  if (Date.now() < claudeCooldownUntil) return buildClaudeRateLimitResult();
+
   try {
     const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
       method: 'GET',
@@ -874,6 +1417,21 @@ export const fetchClaudeQuota = async (): Promise<ProviderResult> => {
         'anthropic-beta': 'oauth-2025-04-20',
       },
     });
+
+    if (response.status === 429) {
+      claudeCooldownUntil = Date.now() + claudeCooldownFromResponse(response);
+      return buildClaudeRateLimitResult();
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return buildResult({
+        providerId: 'claude',
+        providerName: 'Claude',
+        ok: false,
+        configured: true,
+        error: 'Claude session expired. Open Claude Code to sign in again.',
+      });
+    }
 
     if (!response.ok) {
       return buildResult({
@@ -886,47 +1444,14 @@ export const fetchClaudeQuota = async (): Promise<ProviderResult> => {
     }
 
     const payload = await response.json() as Record<string, unknown>;
-    const windows: Record<string, UsageWindow> = {};
-    const fiveHour = (payload as Record<string, unknown>).five_hour as Record<string, unknown> | undefined;
-    const sevenDay = (payload as Record<string, unknown>).seven_day as Record<string, unknown> | undefined;
-    const sevenDaySonnet = (payload as Record<string, unknown>).seven_day_sonnet as Record<string, unknown> | undefined;
-    const sevenDayOpus = (payload as Record<string, unknown>).seven_day_opus as Record<string, unknown> | undefined;
-
-    if (fiveHour) {
-      windows['5h'] = toUsageWindow({
-        usedPercent: toNumber(fiveHour.utilization),
-        windowSeconds: null,
-        resetAt: toTimestamp(fiveHour.resets_at),
-      });
-    }
-    if (sevenDay) {
-      windows['7d'] = toUsageWindow({
-        usedPercent: toNumber(sevenDay.utilization),
-        windowSeconds: null,
-        resetAt: toTimestamp(sevenDay.resets_at),
-      });
-    }
-    if (sevenDaySonnet) {
-      windows['7d-sonnet'] = toUsageWindow({
-        usedPercent: toNumber(sevenDaySonnet.utilization),
-        windowSeconds: null,
-        resetAt: toTimestamp(sevenDaySonnet.resets_at),
-      });
-    }
-    if (sevenDayOpus) {
-      windows['7d-opus'] = toUsageWindow({
-        usedPercent: toNumber(sevenDayOpus.utilization),
-        windowSeconds: null,
-        resetAt: toTimestamp(sevenDayOpus.resets_at),
-      });
-    }
-
+    const usage = buildClaudeUsage(payload);
+    claudeCachedUsage = usage;
     return buildResult({
       providerId: 'claude',
       providerName: 'Claude',
       ok: true,
       configured: true,
-      usage: { windows },
+      usage,
     });
   } catch (error) {
     return buildResult({
@@ -969,7 +1494,7 @@ const buildCopilotWindows = (payload: Record<string, unknown>) => {
   return windows;
 };
 
-export const fetchCopilotQuota = async (): Promise<ProviderResult> => {
+const fetchCopilotQuota = async (): Promise<ProviderResult> => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['github-copilot', 'copilot'])) as Record<string, unknown> | null;
   const accessToken = (entry?.access as string | undefined) ?? (entry?.token as string | undefined);
@@ -1024,7 +1549,7 @@ export const fetchCopilotQuota = async (): Promise<ProviderResult> => {
   }
 };
 
-export const fetchCopilotAddonQuota = async (): Promise<ProviderResult> => {
+const fetchCopilotAddonQuota = async (): Promise<ProviderResult> => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['github-copilot', 'copilot'])) as Record<string, unknown> | null;
   const accessToken = (entry?.access as string | undefined) ?? (entry?.token as string | undefined);
@@ -1082,7 +1607,25 @@ export const fetchCopilotAddonQuota = async (): Promise<ProviderResult> => {
   }
 };
 
-export const fetchKimiQuota = async (): Promise<ProviderResult> => {
+// Kimi's weekly `usage` block reports `used`; its rate-limit `limits[].detail`
+// blocks report `remaining` instead. Neither field is guaranteed present, so
+// derive usedPercent from whichever one the API actually returned.
+const computeKimiUsedPercent = (
+  total: number | null,
+  used: number | null,
+  remaining: number | null,
+): number | null => {
+  if (!total) return null;
+  if (used !== null) {
+    return Math.max(0, Math.min(100, (used / total) * 100));
+  }
+  if (remaining !== null) {
+    return Math.max(0, Math.min(100, 100 - (remaining / total) * 100));
+  }
+  return null;
+};
+
+const fetchKimiQuota = async (): Promise<ProviderResult> => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['kimi-for-coding', 'kimi'])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
@@ -1121,10 +1664,9 @@ export const fetchKimiQuota = async (): Promise<ProviderResult> => {
     const usage = payload.usage as Record<string, unknown> | undefined;
     if (usage) {
       const limit = toNumber(usage.limit);
+      const used = toNumber(usage.used);
       const remaining = toNumber(usage.remaining);
-      const usedPercent = limit && remaining !== null
-        ? Math.max(0, Math.min(100, 100 - (remaining / limit) * 100))
-        : null;
+      const usedPercent = computeKimiUsedPercent(limit, used, remaining);
       windows.weekly = toUsageWindow({
         usedPercent,
         windowSeconds: null,
@@ -1140,10 +1682,9 @@ export const fetchKimiQuota = async (): Promise<ProviderResult> => {
       const windowSeconds = durationToSeconds(window?.duration as number | undefined, window?.timeUnit as string | undefined);
       const label = windowSeconds === 5 * 60 * 60 ? `Rate Limit (${rawLabel})` : rawLabel;
       const total = toNumber(detail?.limit);
+      const used = toNumber(detail?.used);
       const remaining = toNumber(detail?.remaining);
-      const usedPercent = total && remaining !== null
-        ? Math.max(0, Math.min(100, 100 - (remaining / total) * 100))
-        : null;
+      const usedPercent = computeKimiUsedPercent(total, used, remaining);
       windows[label] = toUsageWindow({
         usedPercent,
         windowSeconds,
@@ -1293,14 +1834,14 @@ const fetchMiniMaxQuota = async (data: {
   }
 };
 
-export const fetchMiniMaxCodingPlanQuota = () => fetchMiniMaxQuota({
+const fetchMiniMaxCodingPlanQuota = () => fetchMiniMaxQuota({
   providerId: 'minimax-coding-plan',
   providerName: 'MiniMax Coding Plan (minimax.io)',
   endpoint: 'https://api.minimax.io/v1/api/openplatform/coding_plan/remains',
   usageFieldsAreRemaining: false,
 });
 
-export const fetchMiniMaxCnCodingPlanQuota = () => fetchMiniMaxQuota({
+const fetchMiniMaxCnCodingPlanQuota = () => fetchMiniMaxQuota({
   providerId: 'minimax-cn-coding-plan',
   providerName: 'MiniMax Coding Plan (minimaxi.com)',
   endpoint: 'https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains',
@@ -1343,8 +1884,8 @@ const parseOllamaSettingsHtml = (html: string) => {
   return windows;
 };
 
-export const fetchOllamaCloudQuota = async (): Promise<ProviderResult> => {
-  const cookie = readTextFile(OLLAMA_CLOUD_COOKIE_PATH);
+const fetchOllamaCloudQuota = async (): Promise<ProviderResult> => {
+  const cookie = readCredential('ollama-cloud')?.cookie;
 
   if (!cookie) {
     return buildResult({
@@ -1393,7 +1934,20 @@ export const fetchOllamaCloudQuota = async (): Promise<ProviderResult> => {
   }
 };
 
-export const fetchOpenRouterQuota = async (): Promise<ProviderResult> => {
+const fetchCursorQuota = async (): Promise<ProviderResult> => {
+  const accessToken = readCredential('cursor')?.accessToken;
+  if (!accessToken) return buildResult({ providerId: 'cursor', providerName: 'Cursor', ok: false, configured: false, error: 'Not configured' });
+  try {
+    const response = await fetch('https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage', { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1' }, body: '{}', signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) throw new Error(response.status === 401 ? 'Cursor session expired' : `API error: ${response.status}`);
+    const payload = await response.json() as Record<string, unknown>;
+    const plan = (payload.planUsage as Record<string, unknown> | undefined) ?? {};
+    const usedPercent = toNumber(plan.totalPercentUsed);
+    return buildResult({ providerId: 'cursor', providerName: 'Cursor', ok: true, configured: true, usage: { windows: { billing_cycle: toUsageWindow({ usedPercent, windowSeconds: null, resetAt: toTimestamp(payload.billingCycleEnd) }) } } });
+  } catch (error) { return buildResult({ providerId: 'cursor', providerName: 'Cursor', ok: false, configured: true, error: error instanceof Error ? error.message : 'Request failed' }); }
+};
+
+const fetchOpenRouterQuota = async (): Promise<ProviderResult> => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['openrouter'])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
@@ -1491,7 +2045,7 @@ const resolveWindowLabel = (windowSeconds: number | null) => {
   return `${windowSeconds}s`;
 };
 
-export const fetchZaiQuota = async (): Promise<ProviderResult> => {
+const fetchZaiQuota = async (): Promise<ProviderResult> => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['zai-coding-plan', 'zai', 'z.ai'])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
@@ -1527,18 +2081,29 @@ export const fetchZaiQuota = async (): Promise<ProviderResult> => {
 
     const payload = await response.json() as ZaiPayload;
     const limits = Array.isArray(payload?.data?.limits) ? payload.data.limits : [];
-    const tokensLimit = limits.find((limit: Record<string, unknown>) => limit?.type === 'TOKENS_LIMIT');
-    const windowSeconds = resolveWindowSeconds(tokensLimit as Record<string, unknown> | undefined);
-    const windowLabel = resolveWindowLabel(windowSeconds);
-    const resetAt = tokensLimit?.nextResetTime ? normalizeTimestamp(tokensLimit.nextResetTime) : null;
-    const usedPercent = typeof tokensLimit?.percentage === 'number' ? tokensLimit.percentage : null;
-
     const windows: Record<string, UsageWindow> = {};
-    if (tokensLimit) {
+    // The API renamed TOKENS_LIMIT to CREDIT_LIMIT; field semantics stayed the same,
+    // so both limit types map to the same windows.
+    for (const limit of limits.filter((entry) => entry?.type === 'TOKENS_LIMIT' || entry?.type === 'CREDIT_LIMIT')) {
+      const windowSeconds = resolveWindowSeconds(limit as Record<string, unknown>);
+      const windowLabel = resolveWindowLabel(windowSeconds);
+      const resetAt = limit.nextResetTime ? normalizeTimestamp(limit.nextResetTime) : null;
+      const usedPercent = typeof limit.percentage === 'number' ? limit.percentage : null;
+
       windows[windowLabel] = toUsageWindow({
         usedPercent,
         windowSeconds,
         resetAt,
+        valueLabel: formatZaiCreditValueLabel(limit),
+      });
+    }
+
+    const mcpToolsTimeLimit = limits.find((limit) => limit?.type === 'TIME_LIMIT');
+    if (mcpToolsTimeLimit) {
+      windows['MCP Tools'] = toUsageWindow({
+        usedPercent: typeof mcpToolsTimeLimit.percentage === 'number' ? mcpToolsTimeLimit.percentage : null,
+        windowSeconds: 30 * 24 * 60 * 60,
+        resetAt: mcpToolsTimeLimit.nextResetTime ? normalizeTimestamp(mcpToolsTimeLimit.nextResetTime) : null,
       });
     }
 
@@ -1548,6 +2113,7 @@ export const fetchZaiQuota = async (): Promise<ProviderResult> => {
       ok: true,
       configured: true,
       usage: { windows },
+      planLabel: payload?.data?.level || null,
     });
   } catch (error) {
     return buildResult({
@@ -1560,7 +2126,7 @@ export const fetchZaiQuota = async (): Promise<ProviderResult> => {
   }
 };
 
-export const fetchZhipuaiCodingPlanQuota = async (): Promise<ProviderResult> => {
+const fetchZhipuaiCodingPlanQuota = async (): Promise<ProviderResult> => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['zhipuai-coding-plan'])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
@@ -1649,7 +2215,7 @@ export const fetchZhipuaiCodingPlanQuota = async (): Promise<ProviderResult> => 
 
 const NANO_GPT_DAILY_WINDOW_SECONDS = 86400;
 
-export const fetchNanoGptQuota = async (): Promise<ProviderResult> => {
+const fetchNanoGptQuota = async (): Promise<ProviderResult> => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['nano-gpt', 'nanogpt', 'nano_gpt'])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
@@ -1755,7 +2321,7 @@ export const fetchNanoGptQuota = async (): Promise<ProviderResult> => {
 const WAFER_QUOTA_URL = 'https://pass.wafer.ai/v1/inference/quota';
 const WAFER_WINDOW_SECONDS = 5 * 3600;
 
-export const fetchWaferQuota = async (): Promise<ProviderResult> => {
+const fetchWaferQuota = async (): Promise<ProviderResult> => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['wafer', 'wafer-ai', 'wafer_ai', 'wafer.ai'])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
@@ -1862,7 +2428,413 @@ export const fetchWaferQuota = async (): Promise<ProviderResult> => {
   }
 };
 
-export const fetchQuotaForProvider = async (providerId: string): Promise<ProviderResult> => {
+const NEURALWATT_QUOTA_URL = 'https://api.neuralwatt.com/v1/quota';
+
+// 30d month / 365d year are fixed approximations; real calendars vary but the
+// window is for the UI's progress bar label, not billing decisions.
+// Accepts both subscription (month/year) and allowance (monthly/weekly/daily) shapes.
+const neuralwattWindowSeconds = (period: string | null | undefined): number | null => {
+  if (period === 'daily') return 86400;
+  if (period === 'weekly') return 604800;
+  if (period === 'monthly' || period === 'month') return 30 * 86400;
+  if (period === 'yearly' || period === 'year') return 365 * 86400;
+  return null;
+};
+
+const fetchNeuralwattQuota = async (): Promise<ProviderResult> => {
+  const auth = readAuthFile();
+  const entry = normalizeAuthEntry(getAuthEntry(auth, ['neuralwatt'])) as Record<string, unknown> | null;
+  const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
+
+  if (!apiKey) {
+    return buildResult({
+      providerId: 'neuralwatt',
+      providerName: 'NeuralWatt',
+      ok: false,
+      configured: false,
+      error: 'Not configured',
+    });
+  }
+
+  const timeoutSignal = AbortSignal.timeout(15_000);
+
+  try {
+    const response = await fetch(NEURALWATT_QUOTA_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Accept-Encoding': 'identity',
+      },
+      signal: timeoutSignal,
+    });
+
+    if (!response.ok) {
+      return buildResult({
+        providerId: 'neuralwatt',
+        providerName: 'NeuralWatt',
+        ok: false,
+        configured: true,
+        error: response.status === 401
+          ? 'Session expired — please re-authenticate with NeuralWatt'
+          : `API error: ${response.status}`,
+      });
+    }
+
+    const payload = await response.json() as NeuralwattPayload;
+    const subscription = payload?.subscription ?? null;
+    const inOverage = Boolean(subscription?.in_overage);
+    const allowance = payload?.key?.allowance ?? null;
+    const keyName = payload?.key?.name ?? null;
+    const creditsRemaining = toNumber(payload?.balance?.credits_remaining_usd);
+
+    const windows: Record<string, UsageWindow> = {};
+
+    if (subscription) {
+      const kwhIncluded = toNumber(subscription.kwh_included);
+      const kwhUsed = toNumber(subscription.kwh_used);
+      const plan = typeof subscription.plan === 'string' && subscription.plan.trim()
+        ? subscription.plan.trim()
+        : null;
+      // Subscription window title is the plan name; subscription limits reset
+      // monthly even on annual billing plans, but the API exposes no kWh window
+      // start to derive windowSeconds — pass null rather than fabricating a guess.
+      const subKey = plan ?? 'plan_limit';
+      const usedPercent = inOverage
+        ? 100
+        : (kwhIncluded !== null && kwhIncluded > 0 && kwhUsed !== null
+            ? Math.max(0, Math.min(100, (kwhUsed / kwhIncluded) * 100))
+            : null);
+      const subResetAt = toTimestamp(subscription.kwh_reset_date) ?? toTimestamp(subscription.current_period_end);
+      windows[subKey] = toUsageWindow({
+        usedPercent,
+        windowSeconds: null,
+        resetAt: subResetAt,
+      });
+    }
+
+    if (allowance) {
+      const spent = toNumber(allowance.spent_usd);
+      const limit = toNumber(allowance.limit_usd);
+      // Credits wallet is reduced by each period's spend before the allowance cap
+      // bites, so the real ceiling is min(limit, creditsRemaining + spent).
+      const effectiveSpent = spent ?? 0;
+      const effectiveLimit = limit !== null && creditsRemaining !== null
+        ? Math.min(limit, creditsRemaining + effectiveSpent)
+        : (limit ?? creditsRemaining);
+      const period = typeof allowance.period === 'string' && allowance.period.trim()
+        ? allowance.period.trim()
+        : null;
+      const blocked = Boolean(allowance.blocked);
+      const usedPercent = blocked
+        ? 100
+        : (spent !== null && effectiveLimit !== null && effectiveLimit > 0
+            ? Math.max(0, Math.min(100, (spent / effectiveLimit) * 100))
+            : null);
+      // Window title is the localized period label (daily/weekly/monthly); key
+      // name is attached via valueLabel for identification (wafer precedent).
+      const periodKey = (period === 'daily' || period === 'weekly' || period === 'monthly' || period === 'month')
+        ? (period === 'month' ? 'monthly' : period)
+        : 'billing_cycle';
+      const labelName = typeof keyName === 'string' && keyName.trim() ? keyName.trim() : null;
+      const resetAt = toTimestamp(allowance.reset_at);
+      const windowSeconds = period ? neuralwattWindowSeconds(period) : null;
+      windows[periodKey] = toUsageWindow({
+        usedPercent,
+        windowSeconds,
+        resetAt,
+        ...(labelName ? { valueLabel: labelName } : {}),
+      });
+    } else if (creditsRemaining !== null) {
+      windows.credits_balance = toUsageWindow({
+        usedPercent: null,
+        windowSeconds: null,
+        resetAt: null,
+        valueLabel: `$${formatMoney(creditsRemaining)}`,
+      });
+    }
+
+    if (Object.keys(windows).length === 0) {
+      return buildResult({
+        providerId: 'neuralwatt',
+        providerName: 'NeuralWatt',
+        ok: false,
+        configured: true,
+        error: 'No quota data in response',
+      });
+    }
+
+    return buildResult({
+      providerId: 'neuralwatt',
+      providerName: 'NeuralWatt',
+      ok: true,
+      configured: true,
+      usage: { windows },
+    });
+  } catch (error) {
+    const isTimeout = error instanceof DOMException && error.name === 'AbortError' && timeoutSignal.aborted;
+    const isParseError = error instanceof SyntaxError;
+    return buildResult({
+      providerId: 'neuralwatt',
+      providerName: 'NeuralWatt',
+      ok: false,
+      configured: true,
+      error: isTimeout
+        ? 'Request timed out'
+        : isParseError
+          ? 'Invalid response from provider'
+          : (error instanceof Error ? error.message : 'Request failed'),
+    });
+  }
+};
+
+const CROF_USAGE_URL = 'https://crof.ai/usage_api/';
+
+const fetchCrofQuota = async (): Promise<ProviderResult> => {
+  const auth = readAuthFile();
+  const entry = normalizeAuthEntry(getAuthEntry(auth, ['crof'])) as Record<string, unknown> | null;
+  const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
+
+  if (!apiKey) {
+    return buildResult({
+      providerId: 'crof',
+      providerName: 'CrofAI',
+      ok: false,
+      configured: false,
+      error: 'Not configured',
+    });
+  }
+
+  const timeoutSignal = AbortSignal.timeout(15_000);
+
+  try {
+    const response = await fetch(CROF_USAGE_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Accept-Encoding': 'identity',
+      },
+      signal: timeoutSignal,
+    });
+
+    if (!response.ok) {
+      return buildResult({
+        providerId: 'crof',
+        providerName: 'CrofAI',
+        ok: false,
+        configured: true,
+        error: response.status === 401
+          ? 'Session expired — please re-authenticate with CrofAI'
+          : `API error: ${response.status}`,
+      });
+    }
+
+    const payload = await response.json() as CrofPayload;
+    const credits = toNumber(payload?.credits);
+    const valueLabel = credits !== null ? `$${formatMoney(credits)}` : null;
+
+    const windows: Record<string, UsageWindow> = {
+      credits: toUsageWindow({
+        usedPercent: null,
+        windowSeconds: null,
+        resetAt: null,
+        valueLabel,
+      }),
+    };
+
+    return buildResult({
+      providerId: 'crof',
+      providerName: 'CrofAI',
+      ok: true,
+      configured: true,
+      usage: { windows },
+    });
+  } catch (error) {
+    const isTimeout = error instanceof DOMException && error.name === 'AbortError' && timeoutSignal.aborted;
+    const isParseError = error instanceof SyntaxError;
+    return buildResult({
+      providerId: 'crof',
+      providerName: 'CrofAI',
+      ok: false,
+      configured: true,
+      error: isTimeout
+        ? 'Request timed out'
+        : isParseError
+          ? 'Invalid response from provider'
+          : (error instanceof Error ? error.message : 'Request failed'),
+    });
+  }
+};
+
+const DEEPSEEK_QUOTA_URL = 'https://api.deepseek.com/user/balance';
+
+const fetchDeepseekQuota = async (): Promise<ProviderResult> => {
+  const auth = readAuthFile();
+  const entry = normalizeAuthEntry(getAuthEntry(auth, ['deepseek'])) as Record<string, unknown> | null;
+  const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
+
+  if (!apiKey) {
+    return buildResult({
+      providerId: 'deepseek',
+      providerName: 'DeepSeek',
+      ok: false,
+      configured: false,
+      error: 'Not configured',
+    });
+  }
+
+  const timeoutSignal = AbortSignal.timeout(15_000);
+
+  try {
+    const response = await fetch(DEEPSEEK_QUOTA_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Accept-Encoding': 'identity',
+      },
+      signal: timeoutSignal,
+    });
+
+    if (!response.ok) {
+      return buildResult({
+        providerId: 'deepseek',
+        providerName: 'DeepSeek',
+        ok: false,
+        configured: true,
+        error: response.status === 401 || response.status === 403
+          ? 'Session expired — please re-authenticate with DeepSeek'
+          : `API error: ${response.status}`,
+      });
+    }
+
+    const payload = await response.json() as DeepseekPayload;
+    const balanceInfos = Array.isArray(payload?.balance_infos) ? payload.balance_infos : [];
+    const balanceInfo = balanceInfos.find((info) => info?.currency === 'USD')
+      ?? balanceInfos.find((info) => info?.currency === 'CNY')
+      ?? null;
+    const rawBalance = balanceInfo?.total_balance;
+    const totalBalance = (typeof rawBalance === 'number' || (typeof rawBalance === 'string' && rawBalance.trim() !== ''))
+      ? toNumber(rawBalance)
+      : null;
+
+    if (totalBalance === null) {
+      return buildResult({
+        providerId: 'deepseek',
+        providerName: 'DeepSeek',
+        ok: false,
+        configured: true,
+        error: 'No quota data in response',
+      });
+    }
+
+    const symbol = balanceInfo?.currency === 'CNY' ? '¥' : '$';
+    const windows: Record<string, UsageWindow> = {
+      credits_balance: toUsageWindow({
+        usedPercent: null,
+        windowSeconds: null,
+        resetAt: null,
+        valueLabel: `${symbol}${formatMoney(totalBalance)}`,
+      }),
+    };
+
+    return buildResult({
+      providerId: 'deepseek',
+      providerName: 'DeepSeek',
+      ok: true,
+      configured: true,
+      usage: { windows },
+    });
+  } catch (error) {
+    const isTimeout = error instanceof DOMException && (
+      error.name === 'TimeoutError' || (error.name === 'AbortError' && timeoutSignal.aborted)
+    );
+    const isParseError = error instanceof SyntaxError;
+    return buildResult({
+      providerId: 'deepseek',
+      providerName: 'DeepSeek',
+      ok: false,
+      configured: true,
+      error: isTimeout
+        ? 'Request timed out'
+        : isParseError
+          ? 'Invalid response from provider'
+          : (error instanceof Error ? error.message : 'Request failed'),
+    });
+  }
+};
+
+const fetchXaiQuota = async (): Promise<ProviderResult> => {
+  try {
+    const entry = resolveXaiAuth();
+    if (!entry) {
+      return buildResult({
+        providerId: 'xai',
+        providerName: 'xAI',
+        ok: false,
+        configured: false,
+        error: 'Not configured',
+      });
+    }
+
+    const accessToken = await getXaiAccessToken(entry);
+    const response = await fetch(XAI_USAGE_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Origin: 'https://grok.com',
+        Referer: 'https://grok.com/?_s=usage',
+        Accept: '*/*',
+        'Content-Type': 'application/grpc-web+proto',
+        'x-grpc-web': '1',
+        'x-user-agent': 'connect-es/2.1.1',
+        'User-Agent': 'OpenChamber',
+      },
+      body: new Uint8Array([0, 0, 0, 0, 0]),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    const grpcStatus = response.headers.get('grpc-status');
+    if (grpcStatus !== null) {
+      const rawStatus = grpcStatus.trim();
+      if (!/^\d+$/.test(rawStatus)) throw new Error('xAI billing returned malformed gRPC status');
+      const status = Number(rawStatus);
+      if (!Number.isSafeInteger(status)) throw new Error('xAI billing returned malformed gRPC status');
+      if (status !== 0) {
+        throw new Error(`xAI billing RPC failed with status ${status}`);
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(`xAI billing API error: ${response.status}`);
+    }
+
+    const parsed = parseXaiUsage(new Uint8Array(await response.arrayBuffer()));
+    return buildResult({
+      providerId: 'xai',
+      providerName: 'xAI',
+      ok: true,
+      configured: true,
+      usage: {
+        windows: {
+          billing_cycle: toUsageWindow({
+            usedPercent: parsed.usedPercent,
+            windowSeconds: null,
+            resetAt: parsed.resetAt,
+          }),
+        },
+      },
+    });
+  } catch (error) {
+    return buildResult({
+      providerId: 'xai',
+      providerName: 'xAI',
+      ok: false,
+      configured: true,
+      error: error instanceof Error ? error.message : 'Request failed',
+    });
+  }
+};
+
+const fetchQuotaForProviderUncoalesced = async (providerId: string): Promise<ProviderResult> => {
   switch (providerId) {
     case 'claude':
       return fetchClaudeQuota();
@@ -1892,6 +2864,39 @@ export const fetchQuotaForProvider = async (providerId: string): Promise<Provide
       return fetchZhipuaiCodingPlanQuota();
     case 'wafer':
       return fetchWaferQuota();
+    case 'opencode-go': {
+      try {
+        deleteLegacyOpenCodeGoCredential();
+        const entry = normalizeAuthEntry(getAuthEntry(readAuthFile(), ['opencode-go']));
+        const apiKey = typeof entry?.key === 'string' ? entry.key : typeof entry?.token === 'string' ? entry.token : null;
+        if (!apiKey) return buildResult({ providerId, providerName: 'OpenCode Go', ok: false, configured: false, error: 'Not configured' });
+        return buildResult({ providerId, providerName: 'OpenCode Go', ok: true, configured: true, usage: { windows: await fetchOpenCodeGoUsage({ apiKey }) } });
+      } catch (error) {
+        return buildResult({ providerId, providerName: 'OpenCode Go', ok: false, configured: true, error: error instanceof Error ? error.message : 'Request failed' });
+      }
+    }
+    case 'command-code': {
+      try {
+        const entry = normalizeAuthEntry(getAuthEntry(readAuthFile(), ['command-code']));
+        const stored = typeof entry?.key === 'string' ? entry.key : typeof entry?.access === 'string' ? entry.access : typeof entry?.token === 'string' ? entry.token : null;
+        const environment = process.env.COMMAND_CODE_API_KEY?.trim() || null;
+        const apiKey = stored?.trim() || environment;
+        if (!apiKey) return buildResult({ providerId, providerName: 'Command Code', ok: false, configured: false, error: 'Not configured' });
+        return buildResult({ providerId, providerName: 'Command Code', ok: true, configured: true, usage: { windows: await fetchCommandCodeUsage(apiKey) } });
+      } catch (error) {
+        return buildResult({ providerId, providerName: 'Command Code', ok: false, configured: true, error: error instanceof Error ? error.message : 'Request failed' });
+      }
+    }
+    case 'cursor':
+      return fetchCursorQuota();
+    case 'crof':
+      return fetchCrofQuota();
+    case 'deepseek':
+      return fetchDeepseekQuota();
+    case 'neuralwatt':
+      return fetchNeuralwattQuota();
+    case 'xai':
+      return fetchXaiQuota();
     default:
       return buildResult({
         providerId,
@@ -1901,4 +2906,17 @@ export const fetchQuotaForProvider = async (providerId: string): Promise<Provide
         error: 'Unsupported provider',
       });
   }
+};
+
+const pendingQuotaFetches = new Map<string, Promise<ProviderResult>>();
+
+export const fetchQuotaForProvider = (providerId: string): Promise<ProviderResult> => {
+  const existing = pendingQuotaFetches.get(providerId);
+  if (existing) return existing;
+
+  const pending = fetchQuotaForProviderUncoalesced(providerId).finally(() => {
+    if (pendingQuotaFetches.get(providerId) === pending) pendingQuotaFetches.delete(providerId);
+  });
+  pendingQuotaFetches.set(providerId, pending);
+  return pending;
 };

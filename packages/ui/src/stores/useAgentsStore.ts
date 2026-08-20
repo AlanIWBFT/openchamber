@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { StoreApi, UseBoundStore } from "zustand";
-import { devtools, persist, createJSONStorage } from "zustand/middleware";
+import { devtools, persist } from "zustand/middleware";
 import type { Agent, PermissionConfig } from "@opencode-ai/sdk/v2";
 import { opencodeClient } from "@/lib/opencode/client";
 import { emitConfigChange, scopeMatches, subscribeToConfigChanges, type ConfigChangeScope } from "@/lib/configSync";
@@ -9,7 +9,8 @@ import {
   finishConfigUpdate,
   updateConfigUpdateMessage,
 } from "@/lib/configUpdate";
-import { getSafeStorage } from "./utils/safeStorage";
+import { noteDeferredRestartFromPayload } from "@/lib/opencode/deferredRestart";
+import { createDeferredSafeJSONStorage } from "./utils/safeStorage";
 import { useConfigStore } from "@/stores/useConfigStore";
 import { invalidateCommandsLoadCache, useCommandsStore } from "@/stores/useCommandsStore";
 import { useProjectsStore } from "@/stores/useProjectsStore";
@@ -39,7 +40,7 @@ const getCurrentDirectory = (): string | null => {
   return null;
 };
 
-const getConfigDirectory = (): string | null => {
+export const getConfigDirectory = (): string | null => {
   try {
     const projectsStore = useProjectsStore.getState();
     const activeProject = projectsStore.getActiveProject?.();
@@ -104,14 +105,29 @@ export interface AgentConfig {
   name: string;
   description?: string;
   model?: string | null;
-  temperature?: number;
-  top_p?: number;
+  variant?: string | null;
+  temperature?: number | null;
+  top_p?: number | null;
   prompt?: string | null;
   mode?: "primary" | "subagent" | "all";
   permission?: PermissionConfig | null;
 
   disable?: boolean;
   scope?: AgentScope;
+}
+
+/**
+ * Result of an agent config mutation.
+ * `requiresManualRestart` is true when the change was persisted to disk but the
+ * connected (external) OpenCode server could not be reloaded by OpenChamber, so
+ * the user must restart that server before the change takes effect.
+ * `restartDeferred` is true when the change is saved and waiting for an explicit
+ * Apply & Restart OpenCode action.
+ */
+export interface AgentMutationResult {
+  ok: boolean;
+  requiresManualRestart?: boolean;
+  restartDeferred?: boolean;
 }
 
 // Extended Agent type for API properties not in SDK types
@@ -165,13 +181,73 @@ const SLOW_HEALTH_POLL_BASE_MS = 800;
 const SLOW_HEALTH_POLL_INCREMENT_MS = 200;
 const SLOW_HEALTH_POLL_MAX_MS = 2000;
 
+const hasValue = <T>(value: T | null | undefined): value is T => value !== null && value !== undefined;
+
+const parseModelRef = (model: string | null | undefined): Agent['model'] | undefined => {
+  if (!model || typeof model !== 'string') return undefined;
+  const trimmed = model.trim();
+  if (!trimmed) return undefined;
+  const slash = trimmed.indexOf('/');
+  if (slash <= 0 || slash >= trimmed.length - 1) {
+    return { providerID: trimmed, modelID: trimmed };
+  }
+  return {
+    providerID: trimmed.slice(0, slash),
+    modelID: trimmed.slice(slash + 1),
+  };
+};
+
+const buildOptimisticAgent = (
+  name: string,
+  config: Partial<AgentConfig>,
+  previous?: Agent,
+): AgentWithExtras => {
+  const previousExtras = previous as AgentWithExtras | undefined;
+  const model = 'model' in config
+    ? parseModelRef(config.model)
+    : previous?.model;
+  return {
+    ...(previous || { name }),
+    name,
+    description: config.description !== undefined ? (config.description || undefined) : previous?.description,
+    mode: config.mode ?? previous?.mode ?? 'subagent',
+    model,
+    variant: 'variant' in config ? (config.variant ?? undefined) : previous?.variant,
+    temperature: 'temperature' in config ? (config.temperature ?? undefined) : previous?.temperature,
+    topP: 'top_p' in config ? (config.top_p ?? undefined) : previous?.topP,
+    prompt: config.prompt !== undefined ? (config.prompt || undefined) : previous?.prompt,
+    permission: config.permission !== undefined ? (config.permission || undefined) : previous?.permission,
+    scope: config.scope ?? previousExtras?.scope,
+    group: previousExtras?.group,
+  } as unknown as AgentWithExtras;
+};
+
+const upsertOptimisticAgentLocal = (
+  set: (partial: { agents: Agent[] }) => void,
+  get: () => { agents: Agent[] },
+  name: string,
+  config: Partial<AgentConfig>,
+) => {
+  const agents = get().agents;
+  const existing = agents.find((agent) => agent.name === name);
+  const nextAgent = buildOptimisticAgent(name, config, existing);
+  if (existing) {
+    set({
+      agents: agents.map((agent) => (agent.name === name ? nextAgent : agent)),
+    });
+  } else {
+    set({ agents: [...agents, nextAgent] });
+  }
+};
+
 export interface AgentDraft {
   name: string;
   scope: AgentScope;
   description?: string;
   model?: string | null;
-  temperature?: number;
-  top_p?: number;
+  variant?: string;
+  temperature?: number | null;
+  top_p?: number | null;
   prompt?: string;
   mode?: "primary" | "subagent" | "all";
   permission?: PermissionConfig;
@@ -188,9 +264,9 @@ interface AgentsStore {
   setSelectedAgent: (name: string | null) => void;
   setAgentDraft: (draft: AgentDraft | null) => void;
   loadAgents: () => Promise<boolean>;
-  createAgent: (config: AgentConfig) => Promise<boolean>;
-  updateAgent: (name: string, config: Partial<AgentConfig>) => Promise<boolean>;
-  deleteAgent: (name: string, scope?: AgentScope) => Promise<boolean>;
+  createAgent: (config: AgentConfig) => Promise<AgentMutationResult>;
+  updateAgent: (name: string, config: Partial<AgentConfig>) => Promise<AgentMutationResult>;
+  deleteAgent: (name: string, scope?: AgentScope) => Promise<AgentMutationResult>;
   getAgentByName: (name: string) => Agent | undefined;
   // Returns only visible agents (excludes hidden internal agents)
   getVisibleAgents: () => Agent[];
@@ -320,8 +396,6 @@ export const useAgentsStore = create<AgentsStore>()(
         },
 
         createAgent: async (config: AgentConfig) => {
-          startConfigUpdate("Creating agent configuration…");
-          let requiresReload = false;
           try {
             console.log('[AgentsStore] Creating agent:', config.name);
 
@@ -331,8 +405,9 @@ export const useAgentsStore = create<AgentsStore>()(
 
             if (config.description) agentConfig.description = config.description;
             if (config.model) agentConfig.model = config.model;
-            if (config.temperature !== undefined) agentConfig.temperature = config.temperature;
-            if (config.top_p !== undefined) agentConfig.top_p = config.top_p;
+            if (config.variant) agentConfig.variant = config.variant;
+            if (hasValue(config.temperature)) agentConfig.temperature = config.temperature;
+            if (hasValue(config.top_p)) agentConfig.top_p = config.top_p;
             if (config.prompt) agentConfig.prompt = config.prompt;
             if (config.permission) agentConfig.permission = config.permission;
             if (config.disable !== undefined) agentConfig.disable = config.disable;
@@ -358,50 +433,58 @@ export const useAgentsStore = create<AgentsStore>()(
               throw new Error(message);
             }
 
-            const needsReload = payload?.requiresReload ?? true;
             invalidateAgentsLoadCache(configDirectory);
+
+            if (payload?.requiresManualRestart) {
+              upsertOptimisticAgentLocal(set, get, config.name, config);
+              return { ok: true, requiresManualRestart: true };
+            }
+
+            if (noteDeferredRestartFromPayload(payload, 'agents', { id: config.name })) {
+              upsertOptimisticAgentLocal(set, get, config.name, config);
+              emitConfigChange("agents", { source: CONFIG_EVENT_SOURCE });
+              return { ok: true, restartDeferred: true };
+            }
+
+            startConfigUpdate("Creating agent configuration…");
+            const needsReload = payload?.requiresReload ?? true;
             if (needsReload) {
-              requiresReload = true;
               await refreshAfterOpenCodeRestart({
                 message: payload?.message,
                 delayMs: payload?.reloadDelayMs,
                 scopes: ["agents"],
                 mode: "projects",
               });
-              return true;
+              return { ok: true };
             }
 
             const loaded = await get().loadAgents();
             if (loaded) {
               emitConfigChange("agents", { source: CONFIG_EVENT_SOURCE });
             }
-            return loaded;
+            finishConfigUpdate();
+            return { ok: loaded };
           } catch (error) {
             console.error('Failed to create agent:', error);
-            return false;
-          } finally {
-            if (!requiresReload) {
-              finishConfigUpdate();
-            }
+            finishConfigUpdate();
+            return { ok: false };
           }
         },
 
         updateAgent: async (name: string, config: Partial<AgentConfig>) => {
-          startConfigUpdate("Updating agent configuration…");
-          let requiresReload = false;
           try {
             const agentConfig: Record<string, unknown> = {};
 
             if (config.mode !== undefined) agentConfig.mode = config.mode;
             if (config.description !== undefined) agentConfig.description = config.description;
             if (config.model !== undefined) agentConfig.model = config.model;
-            if (config.temperature !== undefined) agentConfig.temperature = config.temperature;
-            if (config.top_p !== undefined) agentConfig.top_p = config.top_p;
+            if ('variant' in config) agentConfig.variant = config.variant ?? null;
+            if ('temperature' in config) agentConfig.temperature = config.temperature ?? null;
+            if ('top_p' in config) agentConfig.top_p = config.top_p ?? null;
             if (config.prompt !== undefined) agentConfig.prompt = config.prompt;
             if (config.permission !== undefined) agentConfig.permission = config.permission;
             if (config.disable !== undefined) agentConfig.disable = config.disable;
 
-            // Use active project root for project-level agent support.
             const configDirectory = getConfigDirectory();
             const queryParams = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
 
@@ -420,39 +503,46 @@ export const useAgentsStore = create<AgentsStore>()(
               throw new Error(message);
             }
 
-            const needsReload = payload?.requiresReload ?? true;
             invalidateAgentsLoadCache(configDirectory);
+
+            if (payload?.requiresManualRestart) {
+              upsertOptimisticAgentLocal(set, get, name, config);
+              return { ok: true, requiresManualRestart: true };
+            }
+
+            if (noteDeferredRestartFromPayload(payload, 'agents', { id: name })) {
+              upsertOptimisticAgentLocal(set, get, name, config);
+              emitConfigChange("agents", { source: CONFIG_EVENT_SOURCE });
+              return { ok: true, restartDeferred: true };
+            }
+
+            startConfigUpdate("Updating agent configuration…");
+            const needsReload = payload?.requiresReload ?? true;
             if (needsReload) {
-              requiresReload = true;
               await refreshAfterOpenCodeRestart({
                 message: payload?.message,
                 delayMs: payload?.reloadDelayMs,
                 scopes: ["agents"],
                 mode: "projects",
               });
-              return true;
+              return { ok: true };
             }
 
             const loaded = await get().loadAgents();
             if (loaded) {
               emitConfigChange("agents", { source: CONFIG_EVENT_SOURCE });
             }
-            return loaded;
+            finishConfigUpdate();
+            return { ok: loaded };
           } catch (error) {
             console.error('Failed to update agent:', error);
+            finishConfigUpdate();
             throw error;
-          } finally {
-            if (!requiresReload) {
-              finishConfigUpdate();
-            }
           }
         },
 
         deleteAgent: async (name: string, scope?: AgentScope) => {
-          startConfigUpdate("Deleting agent configuration…");
-          let requiresReload = false;
           try {
-            // Use active project root for project-level agent support.
             const configDirectory = getConfigDirectory();
             const queryParams = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
 
@@ -471,17 +561,37 @@ export const useAgentsStore = create<AgentsStore>()(
               throw new Error(message);
             }
 
-            const needsReload = payload?.requiresReload ?? true;
             invalidateAgentsLoadCache(configDirectory);
+
+            if (get().selectedAgentName === name) {
+              set({ selectedAgentName: null });
+            }
+
+            const removeLocal = () => {
+              set({ agents: get().agents.filter((agent) => agent.name !== name) });
+            };
+
+            if (payload?.requiresManualRestart) {
+              removeLocal();
+              return { ok: true, requiresManualRestart: true };
+            }
+
+            if (noteDeferredRestartFromPayload(payload, 'agents', { id: name })) {
+              removeLocal();
+              emitConfigChange("agents", { source: CONFIG_EVENT_SOURCE });
+              return { ok: true, restartDeferred: true };
+            }
+
+            startConfigUpdate("Deleting agent configuration…");
+            const needsReload = payload?.requiresReload ?? true;
             if (needsReload) {
-              requiresReload = true;
               await refreshAfterOpenCodeRestart({
                 message: payload?.message,
                 delayMs: payload?.reloadDelayMs,
                 scopes: ["agents"],
                 mode: "projects",
               });
-              return true;
+              return { ok: true };
             }
 
             const loaded = await get().loadAgents();
@@ -489,17 +599,12 @@ export const useAgentsStore = create<AgentsStore>()(
               emitConfigChange("agents", { source: CONFIG_EVENT_SOURCE });
             }
 
-            if (get().selectedAgentName === name) {
-              set({ selectedAgentName: null });
-            }
-            return loaded;
+            finishConfigUpdate();
+            return { ok: loaded };
           } catch (error) {
             console.error('Failed to delete agent:', error);
+            finishConfigUpdate();
             throw error;
-          } finally {
-            if (!requiresReload) {
-              finishConfigUpdate();
-            }
           }
         },
 
@@ -516,7 +621,7 @@ export const useAgentsStore = create<AgentsStore>()(
       }),
       {
         name: "agents-store",
-        storage: createJSONStorage(() => getSafeStorage()),
+        storage: createDeferredSafeJSONStorage(),
         partialize: (state) => ({
           selectedAgentName: state.selectedAgentName,
         }),
@@ -660,7 +765,9 @@ async function performConfigRefresh(options: {
       uiRefreshTasks.push(commandsStore.loadCommands().then(() => undefined));
     }
     if (refreshSkills) {
-      invalidateSkillsLoadCache(currentDirectory);
+      // Match loadSkills cache key (active-project-first). Passing client/directory-store
+      // path here misses the key when those diverge after getRequestDirectory().
+      invalidateSkillsLoadCache();
       uiRefreshTasks.push(skillsStore.loadSkills().then(() => undefined));
       uiRefreshTasks.push(skillsCatalogStore.loadCatalog({ refresh: true }).then(() => undefined));
     }
@@ -707,6 +814,15 @@ export async function reloadOpenCodeConfiguration(options?: {
       throw new Error(message);
     }
 
+    if (payload?.requiresManualRestart) {
+      finishConfigUpdate();
+      const error = new Error(
+        payload?.message || 'Restart your connected OpenCode server to apply the changes.',
+      );
+      (error as Error & { requiresManualRestart?: boolean }).requiresManualRestart = true;
+      throw error;
+    }
+
     const refreshOptions = {
       ...options,
       scopes: options?.scopes ?? ["all"],
@@ -724,6 +840,9 @@ export async function reloadOpenCodeConfiguration(options?: {
     }
   } catch (error) {
     console.error('[reloadOpenCodeConfiguration] Failed:', error);
+    if ((error as Error & { requiresManualRestart?: boolean })?.requiresManualRestart) {
+      throw error;
+    }
     updateConfigUpdateMessage('Failed to reload configuration. Please try again.');
     await sleep(2000);
     finishConfigUpdate();

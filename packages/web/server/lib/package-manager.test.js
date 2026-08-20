@@ -6,7 +6,12 @@ vi.mock('node:child_process', () => ({
   spawnSync: vi.fn(() => ({ status: 0, stdout: '/usr/local/bin', stderr: '' })),
 }));
 
-const { checkForUpdates } = await import('./package-manager.js');
+const {
+  checkForUpdates,
+  detectPackageManager,
+  executeUpdate,
+  getCurrentVersion,
+} = await import('./package-manager.js');
 
 /** Helper: create a fetch mock that routes by URL pattern */
 function createFetchMock() {
@@ -129,10 +134,78 @@ describe('checkForUpdates', () => {
     const result = await checkForUpdates({
       appType: 'desktop-electron',
       currentVersion: '1.9.10',
+      installId: '4f4dfead-9688-4c4f-97d7-4607fbbfc3ab',
+      platform: 'windows',
+      arch: 'arm64',
     });
 
     expect(result.available).toBe(true);
     expect(result.version).toBe('1.10.0');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      installId: '4f4dfead-9688-4c4f-97d7-4607fbbfc3ab',
+      platform: 'windows',
+      arch: 'arm64',
+    });
+  });
+
+  it('resolves an Android APK asset when the update API returns an AAB', async () => {
+    fetchMock
+      .when('api.openchamber.dev', {
+        ok: true,
+        json: async () => ({
+          latestVersion: '1.10.0',
+          updateAvailable: true,
+          downloadUrl: 'https://github.com/openchamber/openchamber/releases/download/v1.10.0/OpenChamber-1.10.0-42-android.aab',
+        }),
+      })
+      .when('api.github.com/repos/openchamber/openchamber/releases/tags/v1.10.0', {
+        ok: true,
+        json: async () => ({
+          assets: [
+            {
+              name: 'OpenChamber-1.10.0-42-android.aab',
+              browser_download_url: 'https://downloads.example/OpenChamber-1.10.0-42-android.aab',
+            },
+            {
+              name: 'app-release.apk',
+              browser_download_url: 'https://downloads.example/app-release.apk',
+            },
+            {
+              name: 'OpenChamber-1.10.0-42-android.apk',
+              browser_download_url: 'https://downloads.example/OpenChamber-1.10.0-42-android.apk',
+            },
+          ],
+        }),
+      });
+
+    const result = await checkForUpdates({
+      appType: 'mobile-capacitor',
+      platform: 'android',
+      currentVersion: '1.9.10',
+    });
+
+    expect(result.downloadUrl).toBe('https://downloads.example/OpenChamber-1.10.0-42-android.apk');
+  });
+
+  it('keeps a direct Android APK URL from the update API', async () => {
+    const apkUrl = 'https://github.com/openchamber/openchamber/releases/download/v1.10.0/OpenChamber-1.10.0-42-android.apk';
+    fetchMock.when('api.openchamber.dev', {
+      ok: true,
+      json: async () => ({
+        latestVersion: '1.10.0',
+        updateAvailable: true,
+        downloadUrl: apkUrl,
+      }),
+    });
+
+    const result = await checkForUpdates({
+      appType: 'mobile-capacitor',
+      platform: 'android',
+      currentVersion: '1.9.10',
+    });
+
+    expect(result.downloadUrl).toBe(apkUrl);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -242,5 +315,19 @@ describe('checkForUpdates', () => {
     const result = await checkForUpdates({ currentVersion: '1.9.10' });
 
     expect(result.available).toBe(false);
+  });
+});
+
+describe('getCurrentVersion', () => {
+  it('is exported for the CLI update command', () => {
+    expect(typeof getCurrentVersion).toBe('function');
+    expect(getCurrentVersion()).toMatch(/^\d+\.\d+\.\d+|unknown$/);
+  });
+});
+
+describe('CLI update exports', () => {
+  it('exports package-manager helpers used by the update command', () => {
+    expect(typeof detectPackageManager).toBe('function');
+    expect(typeof executeUpdate).toBe('function');
   });
 });

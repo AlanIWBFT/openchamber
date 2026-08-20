@@ -19,6 +19,7 @@ import {
   SelectTrigger,
 } from '@/components/ui/select';
 import { Icon } from "@/components/icon/Icon";
+import { SettingsInfoHint } from '@/components/sections/shared/SettingsInfoHint';
 
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { isVSCodeRuntime } from '@/lib/desktop';
@@ -85,6 +86,8 @@ export const AddCatalogDialog: React.FC<AddCatalogDialogProps> = ({ open, onOpen
   const { t } = useI18n();
   const scanRepo = useSkillsCatalogStore((s) => s.scanRepo);
   const loadCatalog = useSkillsCatalogStore((s) => s.loadCatalog);
+  const loadSource = useSkillsCatalogStore((s) => s.loadSource);
+  const setSelectedSource = useSkillsCatalogStore((s) => s.setSelectedSource);
   const isScanning = useSkillsCatalogStore((s) => s.isScanning);
   const defaultGitIdentityId = useGitIdentitiesStore((s) => s.defaultGitIdentityId);
   const loadDefaultGitIdentityId = useGitIdentitiesStore((s) => s.loadDefaultGitIdentityId);
@@ -248,6 +251,8 @@ export const AddCatalogDialog: React.FC<AddCatalogDialogProps> = ({ open, onOpen
       setExistingCatalogs(updated);
       toast.success(t('settings.skills.catalog.add.toast.catalogAdded'));
       await loadCatalog({ refresh: true });
+      await loadSource(next.id, { refresh: true });
+      setSelectedSource(next.id);
       onOpenChange(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('settings.skills.catalog.add.toast.saveFailed'));
@@ -274,7 +279,10 @@ export const AddCatalogDialog: React.FC<AddCatalogDialogProps> = ({ open, onOpen
           </div>
 
           <div className="space-y-2">
-            <label className="typography-ui-label text-foreground">{t('settings.skills.catalog.add.field.repository')}</label>
+            <div className="flex items-center gap-1">
+              <label className="typography-ui-label text-foreground">{t('settings.skills.catalog.add.field.repository')}</label>
+              <SettingsInfoHint>{t('settings.skills.catalog.add.field.repositoryHint')}</SettingsInfoHint>
+            </div>
             <Input
               value={source}
               onChange={(e) => {
@@ -283,9 +291,6 @@ export const AddCatalogDialog: React.FC<AddCatalogDialogProps> = ({ open, onOpen
               }}
               placeholder={t('settings.skills.catalog.shared.field.repositoryPlaceholder')}
             />
-            <p className="typography-micro text-muted-foreground">
-              {t('settings.skills.catalog.add.field.repositoryHint')}
-            </p>
           </div>
 
           <div className="space-y-2">
@@ -302,9 +307,10 @@ export const AddCatalogDialog: React.FC<AddCatalogDialogProps> = ({ open, onOpen
 
           {identityOptions.length > 0 && !isVSCodeRuntime() ? (
             <div className="space-y-2">
-              <div>
+              <div className="flex items-center">
                 <span className="typography-ui-label text-[var(--status-warning)]">{t('settings.skills.catalog.shared.auth.title')}</span>
                 <span className="typography-meta text-muted-foreground ml-2">{t('settings.skills.catalog.shared.auth.description')}</span>
+                <SettingsInfoHint className="ml-1">{t('settings.skills.catalog.shared.auth.footerHint')}</SettingsInfoHint>
               </div>
               <Select
                 value={gitIdentityId || ''}
@@ -324,9 +330,6 @@ export const AddCatalogDialog: React.FC<AddCatalogDialogProps> = ({ open, onOpen
                   ))}
                 </SelectContent>
               </Select>
-              <p className="typography-micro text-muted-foreground">
-                {t('settings.skills.catalog.shared.auth.footerHint')}
-              </p>
             </div>
           ) : null}
 

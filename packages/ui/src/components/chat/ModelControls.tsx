@@ -1,4 +1,5 @@
 import React from 'react';
+import { focusChatInput } from './composer/editor/dom';
 import type { EditPermissionMode } from '@/stores/types/sessionTypes';
 import type { ModelMetadata } from '@/types';
 import {
@@ -29,17 +30,21 @@ import { useContextStore } from '@/stores/contextStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
-import { useDirectorySync, useSessionMessages } from '@/sync/sync-context';
+import { useSessionMessages, useSessionRenderable } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
-import { getSessionMaterializationStatus } from '@/sync/materialization';
 import { useUIStore } from '@/stores/useUIStore';
 import { useModelLists } from '@/hooks/useModelLists';
 import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
-import { formatEffortLabel, getCycledPrimaryAgentName, type MobileControlsPanel } from './mobileControlsUtils';
+import { formatEffortLabel, getCycledPrimaryAgentName, isPrimaryMode, type MobileControlsPanel } from './mobileControlsUtils';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { useOpenCodeReadiness } from '@/hooks/useOpenCodeReadiness';
 import { eventMatchesShortcut, getEffectiveShortcutCombo, normalizeCombo } from '@/lib/shortcuts';
 import { markStartupTrace } from '@/lib/startupTrace';
+import {
+    findLatestUserModelChoice,
+    shouldPreserveManualModelOverride,
+} from '@/lib/messages/userModelChoice';
+import { getSyncParts } from '@/sync/sync-refs';
 
 type IconComponent = IconName;
 
@@ -366,6 +371,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const toggleFavoriteModel = useUIStore((state) => state.toggleFavoriteModel);
     const reorderFavoriteModel = useUIStore((state) => state.reorderFavoriteModel);
+    const providerOrder = useUIStore((state) => state.providerOrder);
+    const setProviderOrder = useUIStore((state) => state.setProviderOrder);
     const isFavoriteModel = useUIStore((state) => state.isFavoriteModel);
     const addRecentModel = useUIStore((state) => state.addRecentModel);
     const addRecentAgent = useUIStore((state) => state.addRecentAgent);
@@ -384,7 +391,15 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const [isAgentSelectorOpen, setIsAgentSelectorOpen] = React.useState(false);
     const { favoriteModelsList, recentModelsList } = useModelLists();
 
-    const { isMobile } = useDeviceInfo();
+    const { isMobile: deviceIsMobile } = useDeviceInfo();
+    // The composer decides whether it renders the mobile layout from the UI
+    // store (the Capacitor shell forces it true even on tablets/iPad, where
+    // useDeviceInfo classifies the wide screen as non-mobile). The bottom-sheet
+    // panels must follow the SAME source: with the device flag alone, tapping
+    // the model/agent chip on an iPad set the panel state while the sheet
+    // itself rendered null.
+    const uiIsMobile = useUIStore((state) => state.isMobile);
+    const isMobile = deviceIsMobile || uiIsMobile;
     const isDesktop = React.useMemo(() => isDesktopShell(), []);
     const isVSCodeRuntime = useIsVSCodeRuntime();
     // Only use mobile panels on actual mobile devices, VSCode uses desktop dropdowns
@@ -469,10 +484,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
             // Restore focus to chat input when model selector closes
             if (wasOpen && !isCompact) {
-                requestAnimationFrame(() => {
-                    const textarea = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input="true"]');
-                    textarea?.focus();
-                });
+                requestAnimationFrame(focusChatInput);
             }
         }
     }, [isModelSelectorOpen, isCompact]);
@@ -483,16 +495,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         if (!isAgentSelectorOpen) {
             setAgentSearchQuery('');
             if (!isCompact) {
-                requestAnimationFrame(() => {
-                    const textarea = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input="true"]');
-                    textarea?.focus();
-                });
+                requestAnimationFrame(focusChatInput);
             }
         }
     }, [isAgentSelectorOpen, isCompact]);
 
     const selectableDesktopAgents = React.useMemo(() => {
-        return agents.filter((agent) => agent.mode !== 'subagent');
+        return agents.filter((agent) => isPrimaryMode(agent.mode));
     }, [agents]);
 
     const sortedAndFilteredAgents = React.useMemo(() => {
@@ -636,45 +645,19 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const latestLoadedUserChoiceRestoreRef = React.useRef<string | null>(null);
 
     const currentSessionDirectory = currentSessionId ? getDirectoryForSession(currentSessionId) : undefined;
-    const hasRenderableCurrentSessionSnapshot = useDirectorySync(
-        React.useCallback(
-            (state) => (currentSessionId ? getSessionMaterializationStatus(state, currentSessionId).renderable : false),
-            [currentSessionId],
-        ),
+    const hasRenderableCurrentSessionSnapshot = useSessionRenderable(
+        currentSessionId ?? '',
         currentSessionDirectory ?? undefined,
     );
     const currentSessionMessagesFromSync = useSessionMessages(currentSessionId ?? '', currentSessionDirectory ?? undefined);
+    // Skip synthetic subagent-completion nudges — restoring from them resets a
+    // manual model override back to the agent default (issue #2404).
     const latestLoadedUserChoice = React.useMemo(() => {
-        for (let i = currentSessionMessagesFromSync.length - 1; i >= 0; i -= 1) {
-            const message = currentSessionMessagesFromSync[i] as typeof currentSessionMessagesFromSync[number] & {
-                model?: { providerID?: string; modelID?: string; variant?: string };
-                variant?: string;
-                mode?: string;
-            };
-            if (message.role !== 'user') {
-                continue;
-            }
-
-            const providerID = typeof message.model?.providerID === 'string' && message.model.providerID.trim().length > 0
-                ? message.model.providerID
-                : undefined;
-            const modelID = typeof message.model?.modelID === 'string' && message.model.modelID.trim().length > 0
-                ? message.model.modelID
-                : undefined;
-            const agent = typeof message.agent === 'string' && message.agent.trim().length > 0
-                ? message.agent
-                : (typeof message.mode === 'string' && message.mode.trim().length > 0 ? message.mode : undefined);
-            // OpenCode 1.4.0 moved variant from top-level to model.variant.
-            // Prefer the new location, fall back to the legacy one for older servers.
-            const variantCandidate = message.model?.variant ?? message.variant;
-            const variant = typeof variantCandidate === 'string' && variantCandidate.trim().length > 0
-                ? variantCandidate
-                : undefined;
-
-            return { id: message.id, agent, providerID, modelID, variant };
-        }
-        return null;
-    }, [currentSessionMessagesFromSync]);
+        return findLatestUserModelChoice(
+            currentSessionMessagesFromSync,
+            (messageId) => getSyncParts(messageId, currentSessionDirectory ?? undefined),
+        );
+    }, [currentSessionDirectory, currentSessionMessagesFromSync]);
 
     const tryApplyModelSelection = React.useCallback(
         (providerId: string, modelId: string, agentName?: string): ModelApplyResult => {
@@ -827,13 +810,37 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             return;
         }
 
+        // Manual session override wins over historical / synthetic message metadata.
+        const savedSessionModel = getSessionModelSelection(currentSessionId);
+        if (shouldPreserveManualModelOverride({
+            selectionSource: useConfigStore.getState().selectionSource,
+            savedSessionModel,
+            candidate: latestLoadedUserChoice,
+        })) {
+            if (savedSessionModel) {
+                applyModelSelectionWithVariant(
+                    savedSessionModel.providerId,
+                    savedSessionModel.modelId,
+                    resolveModelVariantSelection(savedSessionModel.providerId, savedSessionModel.modelId),
+                    currentAgentName || undefined,
+                );
+            }
+            latestLoadedUserChoiceRestoreRef.current = restoreKey;
+            return;
+        }
+
         if (latestLoadedUserChoice.agent && currentAgentName !== latestLoadedUserChoice.agent) {
             setAgent(latestLoadedUserChoice.agent);
         }
 
-        const applyResult = tryApplyModelSelection(
+        const historicalVariant = latestLoadedUserChoice.variant
+            && getModelVariantOptions(latestLoadedUserChoice.providerID, latestLoadedUserChoice.modelID).includes(latestLoadedUserChoice.variant)
+            ? latestLoadedUserChoice.variant
+            : undefined;
+        const applyResult = applyModelSelectionWithVariant(
             latestLoadedUserChoice.providerID,
             latestLoadedUserChoice.modelID,
+            historicalVariant,
             latestLoadedUserChoice.agent || currentAgentName || undefined,
         );
         if (applyResult !== 'applied') {
@@ -847,7 +854,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 latestLoadedUserChoice.agent,
                 latestLoadedUserChoice.providerID,
                 latestLoadedUserChoice.modelID,
-                latestLoadedUserChoice.variant,
+                historicalVariant,
             );
         }
         saveSessionModelSelection(currentSessionId, latestLoadedUserChoice.providerID, latestLoadedUserChoice.modelID);
@@ -861,7 +868,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         hasRenderableCurrentSessionSnapshot,
         latestLoadedUserChoice,
         setAgent,
-        tryApplyModelSelection,
+        applyModelSelectionWithVariant,
+        getModelVariantOptions,
+        getSessionModelSelection,
+        resolveModelVariantSelection,
         saveSessionAgentSelection,
         saveAgentModelVariantForSession,
         saveSessionModelSelection,
@@ -1144,7 +1154,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
         const resolvedSaved = savedVariant && availableVariants.includes(savedVariant)
             ? savedVariant
-            : undefined;
+            : settingsDefaultVariant && availableVariants.includes(settingsDefaultVariant)
+                ? settingsDefaultVariant
+                : undefined;
 
         setCurrentVariant(resolvedSaved);
         manualVariantSelectionRef.current = false;
@@ -1250,10 +1262,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 closeMobilePanel();
             }
             // Restore focus to chat input after model selection.
-            requestAnimationFrame(() => {
-                const textarea = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input="true"]');
-                textarea?.focus();
-            });
+            requestAnimationFrame(focusChatInput);
         } catch (error) {
             console.error('[ModelControls] Handle model change error:', error);
         }
@@ -1591,13 +1600,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             }
         }
 
-        const focusMobileComposer = () => {
-            requestAnimationFrame(() => {
-                const textarea = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input="true"]');
-                textarea?.focus();
-            });
-        };
-
         const handleMobileModelApply = (providerId: string, modelId: string, variant: string | undefined) => {
             const result = applyModelSelectionWithVariant(providerId, modelId, variant);
             if (result !== 'applied') {
@@ -1611,7 +1613,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
             setExpandedMobileModelKey(null);
             closeMobilePanel();
-            focusMobileComposer();
+            requestAnimationFrame(focusChatInput);
         };
 
         const openMobileVariantOverflow = (providerId: string, modelId: string) => {
@@ -1661,7 +1663,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         isSelected && 'bg-interactive-selection/15 text-interactive-selection-foreground'
                     )}
                 >
-                    <div className="flex items-start gap-2 px-2 py-1.5">
+                    <div className="flex items-center gap-2 px-2 py-1.5">
                         <button
                             type="button"
                             onClick={() => handleMobileModelApply(providerId, modelId, resolvedVariant)}
@@ -1670,15 +1672,15 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 'focus:outline-none focus-visible:ring-1 focus-visible:ring-primary rounded-lg'
                             )}
                         >
-                            {showProviderLogo ? (
-                                <ProviderLogo providerId={providerId} className="mt-0.5 size-3.5 flex-shrink-0" />
-                            ) : null}
                             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                                <div className="flex min-w-0 items-start gap-2">
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                    {showProviderLogo ? (
+                                        <ProviderLogo providerId={providerId} className="size-3.5 flex-shrink-0" />
+                                    ) : null}
                                     <span className="typography-meta font-medium text-foreground truncate">
                                         {getModelDisplayName(model)}
                                     </span>
-                                    {isSelected ? <Icon name="check" className="mt-0.5 size-4 flex-shrink-0 text-primary" /> : null}
+                                    {isSelected ? <Icon name="check" className="size-4 flex-shrink-0 text-primary" /> : null}
                                 </div>
                                 {contextText || indicatorIcons.length > 0 ? (
                                     <div className="flex min-w-0 items-center gap-1.5 overflow-hidden typography-micro text-muted-foreground">
@@ -1712,7 +1714,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setExpandedMobileModelKey((prev) => prev === rowKey ? null : rowKey)}
-                                className="flex items-center gap-1 rounded-lg border border-border/40 px-2 py-1 typography-micro font-medium text-muted-foreground hover:bg-interactive-hover/50 flex-shrink-0"
+                                className="flex items-center gap-0.5 typography-micro font-medium text-muted-foreground hover:text-foreground flex-shrink-0"
                                 aria-expanded={isExpanded}
                                 aria-label={isExpanded ? t('chat.modelControls.hideThinkingModes') : t('chat.modelControls.showThinkingModes')}
                             >
@@ -1720,7 +1722,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 {isExpanded ? <Icon name="arrow-down-s" className="size-3.5" /> : <Icon name="arrow-right-s" className="size-3.5" />}
                             </button>
                         ) : null}
-                        <div className="flex flex-shrink-0 items-start gap-1.5">
+                        <div className="flex flex-shrink-0 items-center gap-1.5">
                             <button
                                 type="button"
                                 onClick={(event) => {
@@ -1947,10 +1949,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             }
 
             closeMobilePanel();
-            requestAnimationFrame(() => {
-                const textarea = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input="true"]');
-                textarea?.focus();
-            });
+            requestAnimationFrame(focusChatInput);
         };
 
         return (
@@ -2360,6 +2359,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 )}
                                 reorderFavoriteAriaLabel={t('chat.modelControls.reorderFavoriteAria')}
                                 reorderFavoriteTitle={t('chat.modelControls.reorderFavoriteTitle')}
+                                providerOrder={providerOrder}
+                                onReorderProvider={setProviderOrder}
+                                reorderProviderTitle={t('chat.modelControls.reorderProviderTitle')}
                                 footerContent={(activeEntry) => {
                                     const activeHasThinkingVariants = activeEntry
                                         ? getModelVariantOptions(activeEntry.providerID, activeEntry.modelID).length > 0

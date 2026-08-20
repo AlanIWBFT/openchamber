@@ -1,3 +1,5 @@
+import { isAgentMemoryFeatureAvailable } from '../agent-memory/feature-flag.js';
+
 export const createSettingsHelpers = (dependencies) => {
   const {
     normalizePathForPersistence,
@@ -26,6 +28,10 @@ export const createSettingsHelpers = (dependencies) => {
   const SHORTCUT_OVERRIDE_VALUE_MAX_LENGTH = 128;
   const PWA_ORIENTATION_VALUES = new Set(['system', 'portrait', 'landscape']);
   const MOBILE_KEYBOARD_MODE_VALUES = new Set(['native', 'resize-content']);
+  const TERMINAL_SHELL_VALUES = new Set(['auto', 'bash', 'zsh', 'sh', 'fish', 'pwsh', 'powershell', 'cmd', 'dash', 'ksh', 'nu']);
+  const HIDDEN_MODELS_MAX = 1024;
+  const RECENT_EFFORTS_MAX_KEYS = 128;
+  const RECENT_EFFORTS_MAX_VARIANTS_PER_KEY = 5;
 
   const sanitizeShortcutOverrides = (value) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -39,6 +45,35 @@ export const createSettingsHelpers = (dependencies) => {
       result[key.slice(0, SHORTCUT_OVERRIDE_KEY_MAX_LENGTH)] = combo.slice(0, SHORTCUT_OVERRIDE_VALUE_MAX_LENGTH);
     }
     return result;
+  };
+
+  const sanitizeRecentEfforts = (value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+    const result = {};
+    const seenKeys = new Set();
+    let count = 0;
+    for (const [rawKey, rawVariants] of Object.entries(value)) {
+      const key = typeof rawKey === 'string' ? rawKey.trim() : '';
+      if (!key || seenKeys.has(key)) continue;
+      if (!Array.isArray(rawVariants)) continue;
+      const variants = [];
+      const seenVariants = new Set();
+      for (const rawVariant of rawVariants) {
+        const variant = typeof rawVariant === 'string' ? rawVariant.trim() : '';
+        if (!variant || seenVariants.has(variant)) continue;
+        seenVariants.add(variant);
+        variants.push(variant);
+        if (variants.length >= RECENT_EFFORTS_MAX_VARIANTS_PER_KEY) break;
+      }
+      if (variants.length === 0) continue;
+      seenKeys.add(key);
+      result[key] = variants;
+      count += 1;
+      if (count >= RECENT_EFFORTS_MAX_KEYS) break;
+    }
+    return count > 0 ? result : null;
   };
 
   const normalizePwaAppName = (value, fallback = '') => {
@@ -72,6 +107,20 @@ export const createSettingsHelpers = (dependencies) => {
       return normalized;
     }
     return fallback;
+  };
+
+  const normalizeFollowUpBehavior = (value, legacyQueueModeEnabled = null) => {
+    // "immediate" was removed (it was wire-identical to "steer"); collapse it.
+    if (value === 'immediate') {
+      return 'steer';
+    }
+    if (value === 'steer' || value === 'queue') {
+      return value;
+    }
+    if (legacyQueueModeEnabled === false) {
+      return 'steer';
+    }
+    return 'queue';
   };
 
   const sanitizeSettingsUpdate = (payload) => {
@@ -129,8 +178,58 @@ export const createSettingsHelpers = (dependencies) => {
       const normalized = normalizeDirectoryPath(candidate.opencodeBinary).trim();
       result.opencodeBinary = normalized;
     }
+    if (typeof candidate.workStatusPanelEnabled === 'boolean') {
+      result.workStatusPanelEnabled = candidate.workStatusPanelEnabled;
+    }
+    if (Array.isArray(candidate.workStatusHiddenSections)) {
+      // Ids are validated on the client, which owns the section list; here we
+      // only guarantee the shape, so a malformed payload cannot land on disk.
+      result.workStatusHiddenSections = [
+        ...new Set(candidate.workStatusHiddenSections.filter((entry) => typeof entry === 'string' && entry.length > 0)),
+      ];
+    }
     if (typeof candidate.desktopLanAccessEnabled === 'boolean') {
       result.desktopLanAccessEnabled = candidate.desktopLanAccessEnabled;
+    }
+    if (typeof candidate.desktopKeepAwakeEnabled === 'boolean') {
+      result.desktopKeepAwakeEnabled = candidate.desktopKeepAwakeEnabled;
+    }
+    if (typeof candidate.desktopMinimizeToTrayEnabled === 'boolean') {
+      result.desktopMinimizeToTrayEnabled = candidate.desktopMinimizeToTrayEnabled;
+    }
+    if (typeof candidate.desktopMacMenuBarEnabled === 'boolean') {
+      result.desktopMacMenuBarEnabled = candidate.desktopMacMenuBarEnabled;
+    }
+    if (typeof candidate.desktopWindowControlsPosition === 'string') {
+      const mode = candidate.desktopWindowControlsPosition.trim();
+      // Legacy "auto" never read OS chrome config; persist as the right default.
+      if (mode === 'auto' || mode === 'right') {
+        result.desktopWindowControlsPosition = 'right';
+      } else if (mode === 'left') {
+        result.desktopWindowControlsPosition = 'left';
+      }
+    }
+    if (typeof candidate.desktopWindowControlsStyle === 'string') {
+      const style = candidate.desktopWindowControlsStyle.trim();
+      if (style === 'classic' || style === 'traffic-lights') {
+        result.desktopWindowControlsStyle = style;
+      }
+    }
+    if (candidate.permissionAutoAccept && typeof candidate.permissionAutoAccept === 'object' && !Array.isArray(candidate.permissionAutoAccept)) {
+      const sessions = {};
+      const sourceSessions = candidate.permissionAutoAccept.sessions;
+      if (sourceSessions && typeof sourceSessions === 'object' && !Array.isArray(sourceSessions)) {
+        for (const [sessionId, enabled] of Object.entries(sourceSessions)) {
+          if (sessionId && typeof enabled === 'boolean') sessions[sessionId] = enabled;
+        }
+      }
+      result.permissionAutoAccept = {
+        sessions,
+        revision: Number.isSafeInteger(candidate.permissionAutoAccept.revision)
+          && candidate.permissionAutoAccept.revision >= 0
+          ? candidate.permissionAutoAccept.revision
+          : 0,
+      };
     }
     if (typeof candidate.desktopUiPassword === 'string') {
       result.desktopUiPassword = candidate.desktopUiPassword.trim();
@@ -170,6 +269,15 @@ export const createSettingsHelpers = (dependencies) => {
       }
       result.draftStarters = starters;
     }
+    if (typeof candidate.draftStartersVisible === 'boolean') {
+      result.draftStartersVisible = candidate.draftStartersVisible;
+    }
+    if (typeof candidate.draftStartersCraftGoalAdded === 'boolean') {
+      result.draftStartersCraftGoalAdded = candidate.draftStartersCraftGoalAdded;
+    }
+    if (typeof candidate.draftStartersScheduleTaskAdded === 'boolean') {
+      result.draftStartersScheduleTaskAdded = candidate.draftStartersScheduleTaskAdded;
+    }
 
 
     if (typeof candidate.uiFont === 'string' && candidate.uiFont.length > 0) {
@@ -195,6 +303,21 @@ export const createSettingsHelpers = (dependencies) => {
     }
     if (typeof candidate.showReasoningTraces === 'boolean') {
       result.showReasoningTraces = candidate.showReasoningTraces;
+    }
+    if (typeof candidate.sessionRecapEnabled === 'boolean') {
+      result.sessionRecapEnabled = candidate.sessionRecapEnabled;
+    }
+    if (typeof candidate.sessionSuggestionEnabled === 'boolean') {
+      result.sessionSuggestionEnabled = candidate.sessionSuggestionEnabled;
+    }
+    if (typeof candidate.sessionGoalEnabled === 'boolean') {
+      result.sessionGoalEnabled = candidate.sessionGoalEnabled;
+    }
+    if (typeof candidate.sessionGoalDefaultBudgetEnabled === 'boolean') {
+      result.sessionGoalDefaultBudgetEnabled = candidate.sessionGoalDefaultBudgetEnabled;
+    }
+    if (typeof candidate.sessionGoalDefaultBudget === 'number' && Number.isFinite(candidate.sessionGoalDefaultBudget) && candidate.sessionGoalDefaultBudget > 0) {
+      result.sessionGoalDefaultBudget = Math.floor(candidate.sessionGoalDefaultBudget);
     }
     if (typeof candidate.collapsibleThinkingBlocks === 'boolean') {
       result.collapsibleThinkingBlocks = candidate.collapsibleThinkingBlocks;
@@ -241,17 +364,8 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.maxLastMessageLength === 'number' && Number.isFinite(candidate.maxLastMessageLength)) {
       result.maxLastMessageLength = Math.max(10, Math.round(candidate.maxLastMessageLength));
     }
-    if (typeof candidate.usageAutoRefresh === 'boolean') {
-      result.usageAutoRefresh = candidate.usageAutoRefresh;
-    }
-    if (typeof candidate.usageRefreshIntervalMs === 'number' && Number.isFinite(candidate.usageRefreshIntervalMs)) {
-      result.usageRefreshIntervalMs = Math.max(30000, Math.min(300000, Math.round(candidate.usageRefreshIntervalMs)));
-    }
     if (candidate.usageDisplayMode === 'usage' || candidate.usageDisplayMode === 'remaining') {
       result.usageDisplayMode = candidate.usageDisplayMode;
-    }
-    if (typeof candidate.usageShowPredValues === 'boolean') {
-      result.usageShowPredValues = candidate.usageShowPredValues;
     }
     if (Array.isArray(candidate.usageDropdownProviders)) {
       result.usageDropdownProviders = normalizeStringArray(candidate.usageDropdownProviders);
@@ -262,6 +376,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.autoDeleteAfterDays === 'number' && Number.isFinite(candidate.autoDeleteAfterDays)) {
       const normalizedDays = Math.max(1, Math.min(365, Math.round(candidate.autoDeleteAfterDays)));
       result.autoDeleteAfterDays = normalizedDays;
+    }
+    if (candidate.sessionRetentionAction === 'archive' || candidate.sessionRetentionAction === 'delete') {
+      result.sessionRetentionAction = candidate.sessionRetentionAction;
     }
     if (candidate.tunnelBootstrapTtlMs === null) {
       result.tunnelBootstrapTtlMs = null;
@@ -325,12 +442,25 @@ export const createSettingsHelpers = (dependencies) => {
       const trimmed = candidate.defaultAgent.trim();
       result.defaultAgent = trimmed.length > 0 ? trimmed : undefined;
     }
+    if (typeof candidate.smallModelUseDefault === 'boolean') {
+      result.smallModelUseDefault = candidate.smallModelUseDefault;
+    }
+    if (typeof candidate.smallModelOverride === 'string') {
+      const trimmed = candidate.smallModelOverride.trim();
+      result.smallModelOverride = trimmed.length > 0 ? trimmed : undefined;
+    }
+    if (typeof candidate.walkthroughModelOverride === 'string') {
+      const trimmed = candidate.walkthroughModelOverride.trim();
+      result.walkthroughModelOverride = trimmed.length > 0 ? trimmed : undefined;
+    }
     if (typeof candidate.defaultGitIdentityId === 'string') {
       const trimmed = candidate.defaultGitIdentityId.trim();
       result.defaultGitIdentityId = trimmed.length > 0 ? trimmed : undefined;
     }
-    if (typeof candidate.queueModeEnabled === 'boolean') {
-      result.queueModeEnabled = candidate.queueModeEnabled;
+    if (typeof candidate.followUpBehavior === 'string') {
+      result.followUpBehavior = normalizeFollowUpBehavior(candidate.followUpBehavior);
+    } else if (typeof candidate.queueModeEnabled === 'boolean') {
+      result.followUpBehavior = normalizeFollowUpBehavior(undefined, candidate.queueModeEnabled);
     }
     if (typeof candidate.autoCreateWorktree === 'boolean') {
       result.autoCreateWorktree = candidate.autoCreateWorktree;
@@ -376,6 +506,18 @@ export const createSettingsHelpers = (dependencies) => {
     }
     if (typeof candidate.showOpenCodeUpdateNotifications === 'boolean') {
       result.showOpenCodeUpdateNotifications = candidate.showOpenCodeUpdateNotifications;
+    }
+    if (typeof candidate.agentWebToolEnabled === 'boolean') {
+      result.agentWebToolEnabled = candidate.agentWebToolEnabled;
+    }
+    if (typeof candidate.agentControlToolEnabled === 'boolean') {
+      result.agentControlToolEnabled = candidate.agentControlToolEnabled;
+    }
+    if (typeof candidate.agentMemoryToolEnabled === 'boolean') {
+      result.agentMemoryToolEnabled = candidate.agentMemoryToolEnabled;
+    }
+    if (typeof candidate.optimizeSystemPrompt === 'boolean') {
+      result.optimizeSystemPrompt = candidate.optimizeSystemPrompt;
     }
     if (typeof candidate.openCodeUpdateToastDismissedVersion === 'string') {
       const version = candidate.openCodeUpdateToastDismissedVersion.trim();
@@ -435,11 +577,20 @@ export const createSettingsHelpers = (dependencies) => {
         result.userMessageRenderingMode = mode;
       }
     }
+    if (typeof candidate.collapsibleUserMessages === 'boolean') {
+      result.collapsibleUserMessages = candidate.collapsibleUserMessages;
+    }
     if (typeof candidate.stickyUserHeader === 'boolean') {
       result.stickyUserHeader = candidate.stickyUserHeader;
     }
+    if (typeof candidate.promptNavigatorEnabled === 'boolean') {
+      result.promptNavigatorEnabled = candidate.promptNavigatorEnabled;
+    }
     if (typeof candidate.expandedEditorToolbar === 'boolean') {
       result.expandedEditorToolbar = candidate.expandedEditorToolbar;
+    }
+    if (typeof candidate.wideChatLayoutEnabled === 'boolean') {
+      result.wideChatLayoutEnabled = candidate.wideChatLayoutEnabled;
     }
     if (typeof candidate.showSplitAssistantMessageActions === 'boolean') {
       result.showSplitAssistantMessageActions = candidate.showSplitAssistantMessageActions;
@@ -449,6 +600,16 @@ export const createSettingsHelpers = (dependencies) => {
     }
     if (typeof candidate.terminalFontSize === 'number' && Number.isFinite(candidate.terminalFontSize)) {
       result.terminalFontSize = Math.max(9, Math.min(52, Math.round(candidate.terminalFontSize)));
+    }
+    if (typeof candidate.terminalShell === 'string') {
+      const shell = candidate.terminalShell.trim().toLowerCase();
+      if (TERMINAL_SHELL_VALUES.has(shell)) result.terminalShell = shell;
+    }
+    if (Array.isArray(candidate.terminalLoginShells)) {
+      result.terminalLoginShells = [...new Set(candidate.terminalLoginShells
+        .filter((shell) => typeof shell === 'string')
+        .map((shell) => shell.trim().toLowerCase())
+        .filter((shell) => TERMINAL_SHELL_VALUES.has(shell)))];
     }
     if (typeof candidate.padding === 'number' && Number.isFinite(candidate.padding)) {
       result.padding = Math.max(50, Math.min(200, Math.round(candidate.padding)));
@@ -473,6 +634,28 @@ export const createSettingsHelpers = (dependencies) => {
     const recentModels = sanitizeModelRefs(candidate.recentModels, 16);
     if (recentModels) {
       result.recentModels = recentModels;
+    }
+
+    // Cap at 1024: users with several providers (anthropic, openai, google,
+    // bedrock, azure, etc.) each exposing dozens-to-hundreds of models can
+    // exceed 256 hidden entries quickly. 1024 covers dense multi-provider
+    // setups while still bounding persistence/memory.
+    const hiddenModels = sanitizeModelRefs(candidate.hiddenModels, HIDDEN_MODELS_MAX);
+    if (hiddenModels) {
+      result.hiddenModels = hiddenModels;
+    }
+
+    if (Array.isArray(candidate.collapsedModelProviders)) {
+      result.collapsedModelProviders = normalizeStringArray(candidate.collapsedModelProviders);
+    }
+
+    if (Array.isArray(candidate.recentAgents)) {
+      result.recentAgents = normalizeStringArray(candidate.recentAgents);
+    }
+
+    const recentEfforts = sanitizeRecentEfforts(candidate.recentEfforts);
+    if (recentEfforts) {
+      result.recentEfforts = recentEfforts;
     }
     if (typeof candidate.diffLayoutPreference === 'string') {
       const mode = candidate.diffLayoutPreference.trim();
@@ -648,10 +831,18 @@ export const createSettingsHelpers = (dependencies) => {
       }
     }
 
+    if (typeof candidate.dictationEnabled === 'boolean') {
+      result.dictationEnabled = candidate.dictationEnabled;
+    }
     if (typeof candidate.sttProvider === 'string') {
       const provider = candidate.sttProvider.trim();
-      if (provider === 'browser' || provider === 'server' || provider === 'wasm') {
+      if (provider === 'local' || provider === 'openai-compatible') {
         result.sttProvider = provider;
+      } else if (provider === 'server') {
+        // Legacy provider migration: 'server' was the OpenAI-compatible endpoint.
+        result.sttProvider = 'openai-compatible';
+      } else if (provider === 'browser' || provider === 'wasm') {
+        result.sttProvider = 'local';
       }
     }
     if (typeof candidate.sttServerUrl === 'string') {
@@ -666,10 +857,10 @@ export const createSettingsHelpers = (dependencies) => {
         result.sttModel = trimmed;
       }
     }
-    if (typeof candidate.wasmSttModel === 'string') {
-      const trimmed = candidate.wasmSttModel.trim();
-      if (trimmed.length <= 256) {
-        result.wasmSttModel = trimmed;
+    if (typeof candidate.sttLocalModel === 'string') {
+      const trimmed = candidate.sttLocalModel.trim();
+      if (trimmed.length <= STT_MODEL_MAX_LENGTH) {
+        result.sttLocalModel = trimmed;
       }
     }
     if (typeof candidate.sttLanguage === 'string') {
@@ -677,15 +868,6 @@ export const createSettingsHelpers = (dependencies) => {
       if (trimmed.length <= STT_LANGUAGE_MAX_LENGTH) {
         result.sttLanguage = trimmed;
       }
-    }
-    if (typeof candidate.sttSilenceThresholdDb === 'number' && Number.isFinite(candidate.sttSilenceThresholdDb)) {
-      result.sttSilenceThresholdDb = Math.max(-100, Math.min(0, candidate.sttSilenceThresholdDb));
-    }
-    if (typeof candidate.sttSilenceHoldMs === 'number' && Number.isFinite(candidate.sttSilenceHoldMs)) {
-      result.sttSilenceHoldMs = Math.max(250, Math.min(10000, Math.round(candidate.sttSilenceHoldMs)));
-    }
-    if (typeof candidate.sttTranscribeOnStop === 'boolean') {
-      result.sttTranscribeOnStop = candidate.sttTranscribeOnStop;
     }
 
     return result;
@@ -731,6 +913,9 @@ export const createSettingsHelpers = (dependencies) => {
     return {
       ...sanitized,
       hasManagedRemoteTunnelToken,
+      // Tells the client whether agent memory exists in this build at all, so
+      // its settings row and panel tab can be absent rather than merely off.
+      agentMemoryFeatureAvailable: isAgentMemoryFeatureAvailable(),
       ...(pwaAppName ? { pwaAppName } : {}),
       pwaOrientation,
       mobileKeyboardMode,

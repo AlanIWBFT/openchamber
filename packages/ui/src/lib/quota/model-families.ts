@@ -25,21 +25,6 @@ export function getDisplayModelName(modelName: string): string {
   return modelName;
 }
 
-/**
- * Get the auth source label from a model name prefix.
- * e.g., "gemini/..." -> "Gemini"
- *       "antigravity/..." -> "Antigravity"
- */
-export function getAuthSourceLabel(modelName: string): string | null {
-  const slashIndex = modelName.indexOf('/');
-  if (slashIndex === -1) return null;
-  
-  const prefix = modelName.substring(0, slashIndex);
-  if (prefix === 'gemini') return 'Gemini';
-  if (prefix === 'antigravity') return 'Antigravity';
-  return null;
-}
-
 const GOOGLE_MODEL_FAMILIES: ModelFamily[] = [
   {
     id: 'gemini-auth',
@@ -55,11 +40,11 @@ const GOOGLE_MODEL_FAMILIES: ModelFamily[] = [
   },
 ];
 
-export const PROVIDER_MODEL_FAMILIES: Record<string, ModelFamily[]> = {
+const PROVIDER_MODEL_FAMILIES: Record<string, ModelFamily[]> = {
   google: GOOGLE_MODEL_FAMILIES,
 };
 
-export function getModelFamily(modelName: string, providerId: QuotaProviderId): ModelFamily | null {
+function getModelFamily(modelName: string, providerId: QuotaProviderId): ModelFamily | null {
   const families = PROVIDER_MODEL_FAMILIES[providerId] ?? [];
   for (const family of families) {
     if (family.matcher(modelName)) {
@@ -128,12 +113,16 @@ export function groupModelsByFamilyWithGetter<T>(
  * For Google provider with gemini/ and antigravity/ prefixes:
  * - Gemini 3.x models
  * - All Claude models
+ * For the Claude provider: every model it reports a limit for.
  */
 export function getDefaultModels(
   providerId: QuotaProviderId,
   availableModels: string[]
 ): string[] {
   return availableModels.filter((model) => {
+    // Anthropic only reports a model here when that model has its own plan
+    // limit, so every one it names is worth showing by default.
+    if (providerId === 'claude') return true;
     const lower = model.toLowerCase();
     // Handle gemini/ and antigravity/ prefixes
     const modelName = lower.includes('/') ? lower.split('/')[1] : lower;

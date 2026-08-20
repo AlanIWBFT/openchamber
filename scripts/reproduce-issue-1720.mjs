@@ -300,11 +300,7 @@ async function main() {
        of potentially seconds. (Standard brew paths are also
        covered by hardcoded fallbacks.)
 
-   3. ✅ TOOLCHAIN_SEGMENTS (path-utils.js):
-       Added '/usr/local/' to TOOLCHAIN_SEGMENTS so a PATH
-       containing /usr/local/bin is recognized as user-configured.
-
-   4. ✅ VS CODE FALLBACK ORDER (opencode.ts):
+   3. ✅ VS CODE FALLBACK ORDER (opencode.ts):
        Brew fallback order now matches server: /opt/homebrew
        (Apple Silicon) before /usr/local (Intel).
 
@@ -341,14 +337,13 @@ async function main() {
 
   console.log(`
   ──────────────────────────────────────────────────────────
-  Fixes applied:
-  1. ✅ All 4 shell probe spawnSync calls now have a 5s timeout
-     (SHELL_PROBE_TIMEOUT_MS, added at env-runtime.js module level)
-  2. ✅ Fast-path via /bin/sh -c 'command -v opencode' added
-     before login shell probing in all 3 resolvers
-  3. ✅ /usr/local/ added to TOOLCHAIN_SEGMENTS in path-utils.js
-  4. ✅ Brew fallback order fixed in VS Code extension
-     (/opt/homebrew before /usr/local)
+Fixes applied:
+   1. ✅ All 4 shell probe spawnSync calls now have a 5s timeout
+      (SHELL_PROBE_TIMEOUT_MS, added at env-runtime.js module level)
+   2. ✅ Fast-path via /bin/sh -c 'command -v opencode' added
+      before login shell probing in all 3 resolvers
+   3. ✅ Brew fallback order fixed in VS Code extension
+      (/opt/homebrew before /usr/local)
 `);
 }
 

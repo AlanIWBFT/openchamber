@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import type { StoreApi, UseBoundStore } from "zustand";
-import { devtools, persist, createJSONStorage } from "zustand/middleware";
+import { devtools, persist } from "zustand/middleware";
 import type { Provider, Agent, Config } from "@opencode-ai/sdk/v2";
 import { opencodeClient } from "@/lib/opencode/client";
 import { scopeMatches, subscribeToConfigChanges } from "@/lib/configSync";
 import type { ModelMetadata } from "@/types";
-import { getSafeStorage } from "./utils/safeStorage";
+import { createDeferredSafeJSONStorage } from "./utils/safeStorage";
 import { filterVisibleAgents } from "./useAgentsStore";
+import { isPrimaryMode } from "@/components/chat/mobileControlsUtils";
 import { useSessionUIStore } from "@/sync/session-ui-store";
 import { useSelectionStore } from "@/sync/selection-store";
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
@@ -18,33 +19,36 @@ import { streamDebugEnabled } from "@/stores/utils/streamDebug";
 import { parseModelIdentifier } from "@/lib/modelIdentifier";
 import { runtimeFetch } from "@/lib/runtime-fetch";
 import { markStartupTrace, measureStartupTrace } from "@/lib/startupTrace";
+import { normalizePath } from "@/lib/pathNormalization";
 import { getSyncConfig, subscribeToSyncConfigChanges } from "@/sync/sync-refs";
+import { getRuntimeKey } from "@/lib/runtime-switch";
 
 const MODELS_DEV_API_URL = "https://models.dev/api.json";
 const MODELS_DEV_PROXY_URL = "/api/openchamber/models-metadata";
-const STT_SILENCE_THRESHOLD_DB_MIN = -100;
-const STT_SILENCE_THRESHOLD_DB_MAX = 0;
-const STT_SILENCE_HOLD_MS_MIN = 250;
-const STT_SILENCE_HOLD_MS_MAX = 10000;
 
 const FALLBACK_PROVIDER_ID = "opencode";
 const FALLBACK_MODEL_ID = "big-pickle";
+// Sentinel selectedProviderId used by the providers UI while the "Add provider"
+// form is open. It is intentionally not a real provider id and must not be
+// persisted as a stable provider selection.
+const ADD_PROVIDER_SENTINEL = "__add_provider__";
 const GIT_UTILITY_PROVIDER_ID = "zen";
 const GIT_UTILITY_PREFERRED_MODEL_ID = "big-pickle";
 const PROVIDER_CONFIG_REFRESH_CONCURRENCY = 4;
 
-const normalizeSttSilenceThresholdDb = (value: unknown): number | undefined => {
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-        return undefined;
+const normalizeSttProvider = (value: unknown): 'local' | 'openai-compatible' | undefined => {
+    if (value === 'local' || value === 'openai-compatible') {
+        return value;
     }
-    return Math.max(STT_SILENCE_THRESHOLD_DB_MIN, Math.min(STT_SILENCE_THRESHOLD_DB_MAX, value));
-};
-
-const normalizeSttSilenceHoldMs = (value: unknown): number | undefined => {
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-        return undefined;
+    // Legacy providers: 'server' used an OpenAI-compatible endpoint;
+    // 'browser' and 'wasm' map to the local default.
+    if (value === 'server') {
+        return 'openai-compatible';
     }
-    return Math.max(STT_SILENCE_HOLD_MS_MIN, Math.min(STT_SILENCE_HOLD_MS_MAX, Math.round(value)));
+    if (value === 'browser' || value === 'wasm') {
+        return 'local';
+    }
+    return undefined;
 };
 
 interface OpenChamberDefaults {
@@ -56,13 +60,11 @@ interface OpenChamberDefaults {
     defaultFileViewerPreview?: boolean;
     zenModel?: string;
     messageStreamTransport?: 'auto' | 'ws' | 'sse';
-    sttProvider?: 'browser' | 'server' | 'wasm';
+    sttProvider?: 'local' | 'openai-compatible';
     sttServerUrl?: string;
-    wasmSttModel?: string;
     sttModel?: string;
+    sttLocalModel?: string;
     sttLanguage?: string;
-    sttSilenceThresholdDb?: number;
-    sttSilenceHoldMs?: number;
 }
 
 const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
@@ -96,12 +98,11 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
                         data?.messageStreamTransport === 'ws' || data?.messageStreamTransport === 'sse' || data?.messageStreamTransport === 'auto'
                             ? data.messageStreamTransport
                             : undefined;
-                    const sttProvider = data?.sttProvider === 'browser' || data?.sttProvider === 'server' || data?.sttProvider === 'wasm' ? data.sttProvider : undefined;
+                    const sttProvider = normalizeSttProvider(data?.sttProvider);
                     const sttServerUrl = typeof data?.sttServerUrl === 'string' ? data.sttServerUrl.trim() : undefined;
                     const sttModel = typeof data?.sttModel === 'string' ? data.sttModel.trim() : undefined;
+                    const sttLocalModel = typeof data?.sttLocalModel === 'string' ? data.sttLocalModel.trim() : undefined;
                     const sttLanguage = typeof data?.sttLanguage === 'string' ? data.sttLanguage.trim() : undefined;
-                    const sttSilenceThresholdDb = normalizeSttSilenceThresholdDb(data?.sttSilenceThresholdDb);
-                    const sttSilenceHoldMs = normalizeSttSilenceHoldMs(data?.sttSilenceHoldMs);
 
                     return finish('runtime-settings', {
                         defaultModel: defaultModel.length > 0 ? defaultModel : undefined,
@@ -115,9 +116,8 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
                         sttProvider,
                         sttServerUrl,
                         sttModel,
+                        sttLocalModel,
                         sttLanguage,
-                        sttSilenceThresholdDb,
-                        sttSilenceHoldMs,
                     });
                 }
             } catch {
@@ -144,12 +144,11 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
             data?.messageStreamTransport === 'ws' || data?.messageStreamTransport === 'sse' || data?.messageStreamTransport === 'auto'
                 ? data.messageStreamTransport
                 : undefined;
-        const sttProvider = data?.sttProvider === 'browser' || data?.sttProvider === 'server' ? data.sttProvider : undefined;
+        const sttProvider = normalizeSttProvider(data?.sttProvider);
         const sttServerUrl = typeof data?.sttServerUrl === 'string' ? data.sttServerUrl.trim() : undefined;
         const sttModel = typeof data?.sttModel === 'string' ? data.sttModel.trim() : undefined;
+        const sttLocalModel = typeof data?.sttLocalModel === 'string' ? data.sttLocalModel.trim() : undefined;
         const sttLanguage = typeof data?.sttLanguage === 'string' ? data.sttLanguage.trim() : undefined;
-        const sttSilenceThresholdDb = normalizeSttSilenceThresholdDb(data?.sttSilenceThresholdDb);
-        const sttSilenceHoldMs = normalizeSttSilenceHoldMs(data?.sttSilenceHoldMs);
 
         return finish('settings-route', {
             defaultModel: defaultModel.length > 0 ? defaultModel : undefined,
@@ -163,9 +162,8 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
             sttProvider,
             sttServerUrl,
             sttModel,
+            sttLocalModel,
             sttLanguage,
-            sttSilenceThresholdDb,
-            sttSilenceHoldMs,
         });
     } catch (error) {
         markStartupTrace('config.defaults:error', { error: error instanceof Error ? error.message : String(error) });
@@ -179,13 +177,19 @@ const parseModelString = (modelString: string): { providerId: string; modelId: s
 
 const normalizeProviderId = (value: string) => value?.toLowerCase?.() ?? '';
 
-const isPrimaryMode = (mode?: string) => mode === "primary" || mode === "all" || mode === undefined || mode === null;
-
 type ProviderModel = Provider["models"][string];
 type ProviderWithModelList = Omit<Provider, "models"> & { models: ProviderModel[] };
 
 type GitModelSelection = { providerId: string; modelId: string };
 type ProviderModelSelection = { providerId: string; modelId: string; variant?: string } | null;
+
+const sanitizePersistedSelectedProviderId = (providerId: string | undefined): string => (
+    providerId === ADD_PROVIDER_SENTINEL ? "" : (providerId ?? "")
+);
+
+const preserveAddProviderSelection = (currentSelectedProviderId: string | undefined, nextProviderId: string): string => (
+    currentSelectedProviderId === ADD_PROVIDER_SENTINEL ? ADD_PROVIDER_SENTINEL : nextProviderId
+);
 
 const normalizeOptionalString = (value: unknown): string | undefined => {
     if (typeof value !== "string") {
@@ -279,7 +283,7 @@ type DefaultAgentModelSelection = {
 // fresh draft (applyDefaultModelAgentSelection), so the two paths stay identical.
 //
 //   Agent: settings.defaultAgent → opencode default_agent → build → first primary → first
-//   Model: settings.defaultModel → resolved agent's pinned model+variant → opencode config.model
+//   Model: project.defaultModel → settings.defaultModel → resolved agent's pinned model+variant → opencode config.model
 //          → opencode/big-pickle → first
 //
 // The opencode default_agent / default model (config fields on the OpenCode server) are honored
@@ -290,6 +294,7 @@ type DefaultAgentModelSelection = {
 const resolveDefaultAgentModelSelection = ({
     agents,
     providers,
+    projectDefaultModel,
     settingsDefaultAgent,
     settingsDefaultModel,
     settingsDefaultVariant,
@@ -298,6 +303,7 @@ const resolveDefaultAgentModelSelection = ({
 }: {
     agents: Agent[];
     providers: ProviderWithModelList[];
+    projectDefaultModel?: string;
     settingsDefaultAgent?: string;
     settingsDefaultModel?: string;
     settingsDefaultVariant?: string;
@@ -346,12 +352,14 @@ const resolveDefaultAgentModelSelection = ({
     let modelId: string | undefined;
     let variant: string | undefined;
 
-    if (settingsDefaultModel) {
-        const parsed = parseModelString(settingsDefaultModel);
+    const effectiveDefaultModel = projectDefaultModel || settingsDefaultModel;
+
+    if (effectiveDefaultModel) {
+        const parsed = parseModelString(effectiveDefaultModel);
         if (parsed && hasProviderModel(providers, parsed.providerId, parsed.modelId)) {
             providerId = parsed.providerId;
             modelId = parsed.modelId;
-            variant = resolveVariant(providerId, modelId, settingsDefaultVariant);
+            variant = resolveVariant(providerId, modelId, projectDefaultModel ? undefined : settingsDefaultVariant);
         }
     }
 
@@ -433,6 +441,7 @@ interface ModelsDevModelEntry {
     reasoning?: boolean;
     temperature?: boolean;
     attachment?: boolean;
+    structured_output?: boolean;
     modalities?: {
         input?: string[];
         output?: string[];
@@ -569,6 +578,8 @@ const transformModelsDevResponse = (payload: unknown): Map<string, ModelMetadata
                 reasoning: typeof modelValue.reasoning === 'boolean' ? modelValue.reasoning : undefined,
                 temperature: typeof modelValue.temperature === 'boolean' ? modelValue.temperature : undefined,
                 attachment: typeof modelValue.attachment === 'boolean' ? modelValue.attachment : undefined,
+                structured_output:
+                    typeof modelValue.structured_output === 'boolean' ? modelValue.structured_output : undefined,
                 modalities: modelValue.modalities
                     ? {
                           input: isStringArray(modelValue.modalities.input) ? modelValue.modalities.input : undefined,
@@ -710,18 +721,57 @@ const resolveInitialDirectoryKey = (): string => {
 // We cache resolved mappings to localStorage so subsequent launches resolve the
 // project synchronously at init time. worktree→project is effectively immutable,
 // so a cached entry is safe to trust.
-const WORKTREE_PROJECT_MAP_KEY = 'oc.worktreeProjectMap';
-let _worktreeProjectMap: Record<string, string> | null = null;
+const WORKTREE_PROJECT_MAP_KEY = 'oc.worktreeProjectMap.v2';
+const LEGACY_WORKTREE_PROJECT_MAP_KEY = 'oc.worktreeProjectMap';
+const MAX_WORKTREE_PROJECT_RUNTIME_MAPS = 8;
+type WorktreeProjectMapEnvelope = {
+    version: 2;
+    legacyClaimed: boolean;
+    runtimes: Record<string, { updatedAt: number; entries: Record<string, string> }>;
+};
+const _worktreeProjectMaps = new Map<string, Record<string, string>>();
+const readWorktreeProjectEnvelope = (): WorktreeProjectMapEnvelope => {
+    try {
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(WORKTREE_PROJECT_MAP_KEY) : null;
+        if (!raw) return { version: 2, legacyClaimed: false, runtimes: {} };
+        const parsed = JSON.parse(raw) as Partial<WorktreeProjectMapEnvelope>;
+        if (parsed.version !== 2 || !parsed.runtimes || typeof parsed.runtimes !== 'object') {
+            return { version: 2, legacyClaimed: false, runtimes: {} };
+        }
+        return { version: 2, legacyClaimed: parsed.legacyClaimed === true, runtimes: parsed.runtimes };
+    } catch {
+        return { version: 2, legacyClaimed: false, runtimes: {} };
+    }
+};
+const writeWorktreeProjectEnvelope = (envelope: WorktreeProjectMapEnvelope): void => {
+    const runtimes = Object.fromEntries(
+        Object.entries(envelope.runtimes)
+            .sort(([, left], [, right]) => right.updatedAt - left.updatedAt)
+            .slice(0, MAX_WORKTREE_PROJECT_RUNTIME_MAPS),
+    );
+    localStorage.setItem(WORKTREE_PROJECT_MAP_KEY, JSON.stringify({ ...envelope, runtimes }));
+};
 const getWorktreeProjectMap = (): Record<string, string> => {
-    if (_worktreeProjectMap === null) {
+    const runtimeKey = getRuntimeKey() || 'default';
+    const existing = _worktreeProjectMaps.get(runtimeKey);
+    if (existing) return existing;
+    const envelope = readWorktreeProjectEnvelope();
+    let map = envelope.runtimes[runtimeKey]?.entries ?? null;
+    if (!map && !envelope.legacyClaimed) {
         try {
-            const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(WORKTREE_PROJECT_MAP_KEY) : null;
-            _worktreeProjectMap = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+            const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(LEGACY_WORKTREE_PROJECT_MAP_KEY) : null;
+            map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+            envelope.legacyClaimed = true;
+            envelope.runtimes[runtimeKey] = { updatedAt: Date.now(), entries: map };
+            writeWorktreeProjectEnvelope(envelope);
+            localStorage.removeItem(LEGACY_WORKTREE_PROJECT_MAP_KEY);
         } catch {
-            _worktreeProjectMap = {};
+            map = {};
         }
     }
-    return _worktreeProjectMap;
+    const result = map ?? {};
+    _worktreeProjectMaps.set(runtimeKey, result);
+    return result;
 };
 const rememberWorktreeProject = (worktree: string, project: string): void => {
     if (!worktree || !project || worktree === project) return;
@@ -729,16 +779,21 @@ const rememberWorktreeProject = (worktree: string, project: string): void => {
     if (map[worktree] === project) return;
     map[worktree] = project;
     try {
-        localStorage.setItem(WORKTREE_PROJECT_MAP_KEY, JSON.stringify(map));
+        const runtimeKey = getRuntimeKey() || 'default';
+        const envelope = readWorktreeProjectEnvelope();
+        envelope.legacyClaimed = true;
+        envelope.runtimes[runtimeKey] = { updatedAt: Date.now(), entries: map };
+        writeWorktreeProjectEnvelope(envelope);
+        localStorage.removeItem(LEGACY_WORKTREE_PROJECT_MAP_KEY);
     } catch {
         // localStorage quota exceeded — ignore; live resolution still works.
     }
 };
 
 const normalizeConfigPath = (value: string | null | undefined): string | null => {
-    const trimmed = typeof value === 'string' ? value.trim() : '';
-    if (!trimmed) return null;
-    return trimmed.replace(/\\/g, '/').replace(/\/+$/, '') || '/';
+    const result = normalizePath(value);
+    if (result === null) return null;
+    return result || '/';
 };
 
 const getKnownProjectDirectories = (): string[] => {
@@ -978,33 +1033,31 @@ interface ConfigStore {
     settingsZenModel: string | undefined;
     settingsMessageStreamTransport: 'auto' | 'ws' | 'sse';
     // Voice provider preference ('browser', 'openai', 'openai-compatible', or 'say' for macOS)
-    voiceProvider: 'browser' | 'openai' | 'openai-compatible' | 'say';
-    setVoiceProvider: (provider: 'browser' | 'openai' | 'openai-compatible' | 'say') => void;
+    voiceProvider: 'browser' | 'local' | 'openai' | 'openai-compatible' | 'say';
+    setVoiceProvider: (provider: 'browser' | 'local' | 'openai' | 'openai-compatible' | 'say') => void;
     // TTS settings
     speechRate: number;
     speechPitch: number;
     speechVolume: number;
     sayVoice: string;
     browserVoice: string;
+    localTtsVoiceId: number;
     openaiVoice: string;
     openaiApiKey: string;
     openaiCompatibleUrl: string;
     openaiCompatibleApiKey: string;
     openaiCompatibleVoice: string;
     openaiCompatibleTtsModel: string;
-    // STT (speech-to-text) settings
-    sttProvider: 'browser' | 'server' | 'wasm';
+    // STT (dictation) settings
+    dictationEnabled: boolean;
+    sttProvider: 'local' | 'openai-compatible';
     sttServerUrl: string;
     sttApiKey: string;
     sttModel: string;
-    wasmSttModel: string;
+    sttLocalModel: string;
     sttLanguage: string;
-    sttSilenceThresholdDb: number;
-    sttSilenceHoldMs: number;
-    sttTranscribeOnStop: boolean;
     showMessageTTSButtons: boolean;
-    ttsInputMode: 'sanitized' | 'raw';
-    voiceModeEnabled: boolean;
+    ttsInputMode: 'sanitized' | 'raw' | 'summarized';
     // Summarization settings
     summarizeMessageTTS: boolean;
     summarizeVoiceConversation: boolean;
@@ -1015,24 +1068,22 @@ interface ConfigStore {
     setSpeechVolume: (volume: number) => void;
     setSayVoice: (voice: string) => void;
     setBrowserVoice: (voice: string) => void;
+    setLocalTtsVoiceId: (voiceId: number) => void;
     setOpenaiVoice: (voice: string) => void;
     setOpenaiApiKey: (apiKey: string) => void;
     setOpenaiCompatibleUrl: (url: string) => void;
     setOpenaiCompatibleApiKey: (apiKey: string) => void;
     setOpenaiCompatibleVoice: (voice: string) => void;
     setOpenaiCompatibleTtsModel: (model: string) => void;
-    setSttProvider: (provider: 'browser' | 'server' | 'wasm') => void;
+    setDictationEnabled: (enabled: boolean) => void;
+    setSttProvider: (provider: 'local' | 'openai-compatible') => void;
     setSttServerUrl: (url: string) => void;
     setSttApiKey: (apiKey: string) => void;
     setSttModel: (model: string) => void;
-    setWasmSttModel: (model: string) => void;
+    setSttLocalModel: (model: string) => void;
     setSttLanguage: (lang: string) => void;
-    setSttSilenceThresholdDb: (db: number) => void;
-    setSttSilenceHoldMs: (ms: number) => void;
-    setSttTranscribeOnStop: (enabled: boolean) => void;
     setShowMessageTTSButtons: (show: boolean) => void;
-    setTtsInputMode: (mode: 'sanitized' | 'raw') => void;
-    setVoiceModeEnabled: (enabled: boolean) => void;
+    setTtsInputMode: (mode: 'sanitized' | 'raw' | 'summarized') => void;
     setSummarizeMessageTTS: (enabled: boolean) => void;
     setSummarizeVoiceConversation: (enabled: boolean) => void;
     setSummarizeCharacterThreshold: (threshold: number) => void;
@@ -1050,7 +1101,7 @@ interface ConfigStore {
     cycleCurrentVariant: () => void;
     getCurrentModelVariants: () => string[];
     setAgent: (agentName: string | undefined) => void;
-    applyDefaultModelAgentSelection: () => void;
+    applyDefaultModelAgentSelection: (options?: { projectDefaultModel?: string }) => void;
     applyOpenCodeConfigDefaults: (directory?: string | null, source?: string, config?: Config) => void;
     setSelectedProvider: (providerId: string) => void;
     setSettingsDefaultModel: (model: string | undefined) => void;
@@ -1125,7 +1176,7 @@ export const useConfigStore = create<ConfigStore>()(
                 voiceProvider: (() => {
                     if (typeof window !== 'undefined') {
                         const saved = localStorage.getItem('voiceProvider');
-                        if (saved === 'openai' || saved === 'browser' || saved === 'say' || saved === 'openai-compatible') return saved;
+                        if (saved === 'openai' || saved === 'browser' || saved === 'local' || saved === 'say' || saved === 'openai-compatible') return saved;
                     }
                     return 'browser';
                 })(),
@@ -1167,6 +1218,17 @@ export const useConfigStore = create<ConfigStore>()(
                         if (saved) return saved;
                     }
                     return 'Samantha';
+                })(),
+                // Local (Kokoro) TTS speaker id - load from localStorage or default to 0
+                localTtsVoiceId: (() => {
+                    if (typeof window !== 'undefined') {
+                        const saved = localStorage.getItem('localTtsVoiceId');
+                        if (saved !== null) {
+                            const parsed = Number.parseInt(saved, 10);
+                            if (Number.isInteger(parsed) && parsed >= 0) return parsed;
+                        }
+                    }
+                    return 0;
                 })(),
                 // Browser voice - load from localStorage or default to empty (auto-select)
                 browserVoice: (() => {
@@ -1224,17 +1286,24 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                     return 'kokoro';
                 })(),
-                // STT provider: 'browser' (Web Speech API), 'server' (OpenAI-compat), 'wasm' (local Whisper)
+                // Voice input (dictation) master toggle - default enabled
+                dictationEnabled: (() => {
+                    if (typeof window !== 'undefined') {
+                        const saved = localStorage.getItem('dictationEnabled');
+                        if (saved === 'false') return false;
+                    }
+                    return true;
+                })(),
+                // STT provider: 'local' (server-side sherpa-onnx) or 'openai-compatible'
                 sttProvider: (() => {
                     if (typeof window !== 'undefined') {
                         const saved = localStorage.getItem('sttProvider');
-                        if (saved === 'browser' || saved === 'server' || saved === 'wasm') return saved;
-                        // Electron/Chromium's Web Speech API requires Google API keys
-                        // not available in Electron, so default to WASM local Whisper.
-                        const electron = (window as unknown as { __OPENCHAMBER_ELECTRON__?: { runtime?: string } }).__OPENCHAMBER_ELECTRON__;
-                        if (electron?.runtime === 'electron') return 'wasm' as const;
+                        if (saved === 'local' || saved === 'openai-compatible') return saved;
+                        // Migrate legacy providers: 'server' used an OpenAI-compatible
+                        // endpoint; 'browser' and 'wasm' map to the local default.
+                        if (saved === 'server') return 'openai-compatible' as const;
                     }
-                    return 'browser' as const;
+                    return 'local' as const;
                 })(),
                 sttServerUrl: (() => {
                     if (typeof window !== 'undefined') {
@@ -1257,12 +1326,12 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                     return 'deepdml/faster-whisper-large-v3-turbo-ct2';
                 })(),
-                wasmSttModel: (() => {
+                sttLocalModel: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('wasmSttModel');
+                        const saved = localStorage.getItem('sttLocalModel');
                         if (saved) return saved;
                     }
-                    return 'Xenova/whisper-base.en';
+                    return 'parakeet-tdt-0.6b-v2-int8';
                 })(),
                 sttLanguage: (() => {
                     if (typeof window !== 'undefined') {
@@ -1270,33 +1339,6 @@ export const useConfigStore = create<ConfigStore>()(
                         if (saved !== null) return saved;
                     }
                     return '';
-                })(),
-                sttSilenceThresholdDb: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttSilenceThresholdDb');
-                        if (saved) {
-                            const parsed = parseFloat(saved);
-                            if (!isNaN(parsed)) return parsed;
-                        }
-                    }
-                    return -45;
-                })(),
-                sttSilenceHoldMs: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttSilenceHoldMs');
-                        if (saved) {
-                            const parsed = parseInt(saved, 10);
-                            if (!isNaN(parsed)) return parsed;
-                        }
-                    }
-                    return 1500;
-                })(),
-                sttTranscribeOnStop: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttTranscribeOnStop');
-                        if (saved === 'true') return true;
-                    }
-                    return false;
                 })(),
                 // Show TTS buttons on messages - disabled by default until user enables it
                 showMessageTTSButtons: (() => {
@@ -1310,16 +1352,9 @@ export const useConfigStore = create<ConfigStore>()(
                     if (typeof window !== 'undefined') {
                         const saved = localStorage.getItem('ttsInputMode');
                         if (saved === 'raw') return 'raw' as const;
+                        if (saved === 'summarized') return 'summarized' as const;
                     }
                     return 'sanitized' as const;
-                })(),
-                // Voice mode enabled - load from localStorage or default to false
-                voiceModeEnabled: (() => {
-                    if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('voiceModeEnabled');
-                        if (saved === 'true') return true;
-                    }
-                    return false;
                 })(),
                 // Summarization settings
                 summarizeMessageTTS: (() => {
@@ -1574,7 +1609,10 @@ export const useConfigStore = create<ConfigStore>()(
                                 const currentSelectedProviderId = state.activeDirectoryKey === directoryKey
                                     ? state.selectedProviderId
                                     : baseSnapshot.selectedProviderId;
-                                const selectedProviderId = processedProviders.some((provider) => provider.id === currentSelectedProviderId)
+                                // Preserve the add-provider sentinel so a background refresh does not
+                                // navigate the user out of the in-progress add-provider form (issue #1765).
+                                const selectedProviderId = currentSelectedProviderId === ADD_PROVIDER_SENTINEL
+                                    || processedProviders.some((provider) => provider.id === currentSelectedProviderId)
                                     ? currentSelectedProviderId
                                     : (resolvedModel?.providerId ?? processedProviders[0]?.id ?? "");
 
@@ -2046,9 +2084,8 @@ export const useConfigStore = create<ConfigStore>()(
                                     sttProvider: openChamberDefaults.sttProvider ?? state.sttProvider,
                                     sttServerUrl: openChamberDefaults.sttServerUrl ?? state.sttServerUrl,
                                     sttModel: openChamberDefaults.sttModel ?? state.sttModel,
+                                    sttLocalModel: openChamberDefaults.sttLocalModel ?? state.sttLocalModel,
                                     sttLanguage: openChamberDefaults.sttLanguage ?? state.sttLanguage,
-                                    sttSilenceThresholdDb: openChamberDefaults.sttSilenceThresholdDb ?? state.sttSilenceThresholdDb,
-                                    sttSilenceHoldMs: openChamberDefaults.sttSilenceHoldMs ?? state.sttSilenceHoldMs,
                                     directoryScoped: {
                                         ...state.directoryScoped,
                                         [directoryKey]: nextSnapshot,
@@ -2419,7 +2456,7 @@ export const useConfigStore = create<ConfigStore>()(
                                     currentProviderId: providerId,
                                     currentModelId: modelId,
                                     currentVariant: variant,
-                                    selectedProviderId: providerId,
+                                    selectedProviderId: preserveAddProviderSelection(state.selectedProviderId, providerId),
                                     selectionSource: "manual",
                                 };
 
@@ -2427,7 +2464,7 @@ export const useConfigStore = create<ConfigStore>()(
                                     currentProviderId: providerId,
                                     currentModelId: modelId,
                                     currentVariant: variant,
-                                    selectedProviderId: providerId,
+                                    selectedProviderId: preserveAddProviderSelection(state.selectedProviderId, providerId),
                                     selectionSource: "manual",
                                     directoryScoped: {
                                         ...state.directoryScoped,
@@ -2437,8 +2474,58 @@ export const useConfigStore = create<ConfigStore>()(
                             });
                         };
 
-                        // Prefer the selected agent's configured model when switching agents.
+                        const resolveVariantForModel = (
+                            providerId: string,
+                            modelId: string,
+                            agentVariant?: string,
+                        ): string | undefined => {
+                            const model = providers
+                                .find((provider) => provider.id === providerId)
+                                ?.models.find((candidate) => candidate.id === modelId) as { variants?: Record<string, unknown> } | undefined;
+                            const variants = model?.variants;
+                            if (!variants) return undefined;
+
+                            const savedVariant = currentSessionId
+                                ? useSelectionStore.getState().getAgentModelVariantForSession(
+                                    currentSessionId,
+                                    agentName,
+                                    providerId,
+                                    modelId,
+                                )
+                                : undefined;
+
+                            for (const candidate of [savedVariant, agentVariant, settingsDefaultVariant]) {
+                                if (candidate && Object.prototype.hasOwnProperty.call(variants, candidate)) {
+                                    return candidate;
+                                }
+                            }
+
+                            return undefined;
+                        };
+
                         const agent = agents.find((candidate) => candidate.name === agentName);
+
+                        // Prefer a session-level manual override for this agent over the
+                        // agent's configured default. Re-applying setAgent after subtask
+                        // completion / rematerialization must not clobber the override
+                        // (issue #2404). Explicit agent-picker switches still force the
+                        // agent default via ModelControls' shouldPreferAgentModel path.
+                        if (currentSessionId) {
+                            const existingAgentModel = useSelectionStore.getState().getAgentModelForSession(currentSessionId, agentName);
+                            if (existingAgentModel && hasProviderModel(providers, existingAgentModel.providerId, existingAgentModel.modelId)) {
+                                const resolvedVariant = resolveVariantForModel(existingAgentModel.providerId, existingAgentModel.modelId, agent?.variant);
+                                if (
+                                    currentProviderId !== existingAgentModel.providerId
+                                    || currentModelId !== existingAgentModel.modelId
+                                    || get().currentVariant !== resolvedVariant
+                                ) {
+                                    applyResolvedModelSelection(existingAgentModel.providerId, existingAgentModel.modelId, resolvedVariant);
+                                }
+                                return;
+                            }
+                        }
+
+                        // No session override — use the agent's configured/pinned model.
                         const agentModelSelection = agent?.model;
                         if (agentModelSelection?.providerID && agentModelSelection?.modelID) {
                             const { providerID, modelID } = agentModelSelection;
@@ -2446,27 +2533,7 @@ export const useConfigStore = create<ConfigStore>()(
                             const agentModel = agentProvider?.models.find((model) => model.id === modelID);
 
                             if (agentModel) {
-                                applyResolvedModelSelection(providerID, modelID, undefined);
-                                return;
-                            }
-                        }
-
-                        if (currentSessionId) {
-                            const existingAgentModel = useSelectionStore.getState().getAgentModelForSession(currentSessionId, agentName);
-                            if (existingAgentModel && hasProviderModel(providers, existingAgentModel.providerId, existingAgentModel.modelId)) {
-                                const savedVariant = useSelectionStore.getState().getAgentModelVariantForSession(
-                                    currentSessionId,
-                                    agentName,
-                                    existingAgentModel.providerId,
-                                    existingAgentModel.modelId,
-                                );
-                                if (
-                                    currentProviderId !== existingAgentModel.providerId
-                                    || currentModelId !== existingAgentModel.modelId
-                                    || get().currentVariant !== savedVariant
-                                ) {
-                                    applyResolvedModelSelection(existingAgentModel.providerId, existingAgentModel.modelId, savedVariant);
-                                }
+                                applyResolvedModelSelection(providerID, modelID, resolveVariantForModel(providerID, modelID, agent?.variant));
                                 return;
                             }
                         }
@@ -2477,16 +2544,7 @@ export const useConfigStore = create<ConfigStore>()(
                             if (parsed) {
                                 const settingsProvider = providers.find((p) => p.id === parsed.providerId);
                                 if (settingsProvider?.models.some((m) => m.id === parsed.modelId)) {
-                                    let nextVariant: string | undefined;
-                                    if (settingsDefaultVariant) {
-                                        const model = settingsProvider.models.find((m) => m.id === parsed.modelId) as { variants?: Record<string, unknown> } | undefined;
-                                        const variants = model?.variants;
-                                        if (variants && Object.prototype.hasOwnProperty.call(variants, settingsDefaultVariant)) {
-                                            nextVariant = settingsDefaultVariant;
-                                        }
-                                    }
-
-                                    applyResolvedModelSelection(parsed.providerId, parsed.modelId, nextVariant);
+                                    applyResolvedModelSelection(parsed.providerId, parsed.modelId, resolveVariantForModel(parsed.providerId, parsed.modelId, agent?.variant));
                                     return;
                                 }
                             }
@@ -2498,10 +2556,10 @@ export const useConfigStore = create<ConfigStore>()(
 
                 // Re-applies the same priority cascade used at app startup (see loadAgents):
                 //   agent: settings.defaultAgent → build → first primary → first agent
-                //   model: settings.defaultModel → agent's preferred model → opencode/big-pickle → first
+                //   model: project.defaultModel → settings.defaultModel → agent's preferred model → opencode/big-pickle → first
                 // Used when entering a fresh draft session so model/agent reset to defaults
                 // instead of sticking to the previously open session's selection.
-                applyDefaultModelAgentSelection: () => {
+                applyDefaultModelAgentSelection: (options) => {
                     const {
                         agents,
                         providers,
@@ -2524,6 +2582,7 @@ export const useConfigStore = create<ConfigStore>()(
                     } = resolveDefaultAgentModelSelection({
                         agents,
                         providers,
+                        projectDefaultModel: options?.projectDefaultModel,
                         settingsDefaultAgent,
                         settingsDefaultModel,
                         settingsDefaultVariant,
@@ -2557,7 +2616,7 @@ export const useConfigStore = create<ConfigStore>()(
                                     currentProviderId: resolvedProviderId,
                                     currentModelId: resolvedModelId,
                                     currentVariant: resolvedVariant,
-                                    selectedProviderId: resolvedProviderId,
+                                    selectedProviderId: preserveAddProviderSelection(state.selectedProviderId, resolvedProviderId),
                                 }
                                 : {}),
                             selectionSource: "auto",
@@ -2576,7 +2635,7 @@ export const useConfigStore = create<ConfigStore>()(
                             nextState.currentProviderId = resolvedProviderId;
                             nextState.currentModelId = resolvedModelId;
                             nextState.currentVariant = resolvedVariant;
-                            nextState.selectedProviderId = resolvedProviderId;
+                            nextState.selectedProviderId = preserveAddProviderSelection(state.selectedProviderId, resolvedProviderId);
                         }
 
                         return nextState;
@@ -2658,6 +2717,7 @@ export const useConfigStore = create<ConfigStore>()(
                         const currentProviderId = isActive ? state.currentProviderId : baseSnapshot.currentProviderId;
                         const currentModelId = isActive ? state.currentModelId : baseSnapshot.currentModelId;
                         const currentVariant = isActive ? state.currentVariant : baseSnapshot.currentVariant;
+                        const currentSelectedProviderId = isActive ? state.selectedProviderId : baseSnapshot.selectedProviderId;
                         const nextSelection = resolveSelectionWithManualGuard({
                             agents,
                             providers,
@@ -2682,7 +2742,7 @@ export const useConfigStore = create<ConfigStore>()(
                                     currentProviderId: nextSelection.providerId,
                                     currentModelId: nextSelection.modelId,
                                     currentVariant: nextSelection.variant,
-                                    selectedProviderId: nextSelection.providerId,
+                                    selectedProviderId: preserveAddProviderSelection(currentSelectedProviderId, nextSelection.providerId),
                                 }
                                 : {}),
                             selectionSource: nextSelection.selectionSource,
@@ -2701,7 +2761,7 @@ export const useConfigStore = create<ConfigStore>()(
                                     state.currentProviderId !== nextSelection.providerId
                                     || state.currentModelId !== nextSelection.modelId
                                     || state.currentVariant !== nextSelection.variant
-                                    || state.selectedProviderId !== nextSelection.providerId
+                                    || state.selectedProviderId !== preserveAddProviderSelection(currentSelectedProviderId, nextSelection.providerId)
                                 ))
                             ));
 
@@ -2721,7 +2781,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 nextState.currentProviderId = nextSelection.providerId;
                                 nextState.currentModelId = nextSelection.modelId;
                                 nextState.currentVariant = nextSelection.variant;
-                                nextState.selectedProviderId = nextSelection.providerId;
+                                nextState.selectedProviderId = preserveAddProviderSelection(currentSelectedProviderId, nextSelection.providerId);
                             }
                         }
 
@@ -2770,7 +2830,7 @@ export const useConfigStore = create<ConfigStore>()(
                     });
                 },
 
-                setVoiceProvider: (provider: 'browser' | 'openai' | 'openai-compatible' | 'say') => {
+                setVoiceProvider: (provider: 'browser' | 'local' | 'openai' | 'openai-compatible' | 'say') => {
                     set({ voiceProvider: provider });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('voiceProvider', provider);
@@ -2805,6 +2865,13 @@ export const useConfigStore = create<ConfigStore>()(
                     set({ sayVoice: voice });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('sayVoice', voice);
+                    }
+                },
+
+                setLocalTtsVoiceId: (voiceId: number) => {
+                    set({ localTtsVoiceId: voiceId });
+                    if (typeof window !== 'undefined') {
+                        localStorage.setItem('localTtsVoiceId', String(voiceId));
                     }
                 },
 
@@ -2857,7 +2924,15 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                 },
 
-                setSttProvider: (provider: 'browser' | 'server' | 'wasm') => {
+                setDictationEnabled: (enabled: boolean) => {
+                    set({ dictationEnabled: enabled });
+                    if (typeof window !== 'undefined') {
+                        localStorage.setItem('dictationEnabled', String(enabled));
+                    }
+                    updateDesktopSettings({ dictationEnabled: enabled }).catch(() => {});
+                },
+
+                setSttProvider: (provider: 'local' | 'openai-compatible') => {
                     set({ sttProvider: provider });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('sttProvider', provider);
@@ -2888,12 +2963,12 @@ export const useConfigStore = create<ConfigStore>()(
                     updateDesktopSettings({ sttModel: model }).catch(() => {});
                 },
 
-                setWasmSttModel: (model: string) => {
-                    set({ wasmSttModel: model });
+                setSttLocalModel: (model: string) => {
+                    set({ sttLocalModel: model });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('wasmSttModel', model);
+                        localStorage.setItem('sttLocalModel', model);
                     }
-                    updateDesktopSettings({ wasmSttModel: model }).catch(() => {});
+                    updateDesktopSettings({ sttLocalModel: model }).catch(() => {});
                 },
 
                 setSttLanguage: (lang: string) => {
@@ -2904,30 +2979,6 @@ export const useConfigStore = create<ConfigStore>()(
                     updateDesktopSettings({ sttLanguage: lang }).catch(() => {});
                 },
 
-                setSttSilenceThresholdDb: (db: number) => {
-                    set({ sttSilenceThresholdDb: db });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttSilenceThresholdDb', String(db));
-                    }
-                    updateDesktopSettings({ sttSilenceThresholdDb: db }).catch(() => {});
-                },
-
-                setSttSilenceHoldMs: (ms: number) => {
-                    set({ sttSilenceHoldMs: ms });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttSilenceHoldMs', String(ms));
-                    }
-                    updateDesktopSettings({ sttSilenceHoldMs: ms }).catch(() => {});
-                },
-
-                setSttTranscribeOnStop: (enabled: boolean) => {
-                    set({ sttTranscribeOnStop: enabled });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttTranscribeOnStop', String(enabled));
-                    }
-                    updateDesktopSettings({ sttTranscribeOnStop: enabled }).catch(() => {});
-                },
-
                 setShowMessageTTSButtons: (show: boolean) => {
                     set({ showMessageTTSButtons: show });
                     if (typeof window !== 'undefined') {
@@ -2935,17 +2986,10 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                 },
 
-                setTtsInputMode: (mode: 'sanitized' | 'raw') => {
+                setTtsInputMode: (mode: 'sanitized' | 'raw' | 'summarized') => {
                     set({ ttsInputMode: mode });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('ttsInputMode', mode);
-                    }
-                },
-
-                setVoiceModeEnabled: (enabled: boolean) => {
-                    set({ voiceModeEnabled: enabled });
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('voiceModeEnabled', String(enabled));
                     }
                 },
 
@@ -3253,7 +3297,7 @@ export const useConfigStore = create<ConfigStore>()(
             }),
             {
                 name: "config-store",
-                storage: createJSONStorage(() => getSafeStorage()),
+                storage: createDeferredSafeJSONStorage(),
                 merge: (persistedState, currentState) =>
                     hydrateActiveDirectorySnapshot({
                         ...currentState,
@@ -3268,14 +3312,22 @@ export const useConfigStore = create<ConfigStore>()(
                 // success) and by the provider/agent config-change subscriptions.
                 partialize: (state) => ({
                     activeDirectoryKey: state.activeDirectoryKey,
-                    directoryScoped: state.directoryScoped,
+                    directoryScoped: Object.fromEntries(
+                        Object.entries(state.directoryScoped).map(([directoryKey, snapshot]) => [
+                            directoryKey,
+                            {
+                                ...snapshot,
+                                selectedProviderId: sanitizePersistedSelectedProviderId(snapshot.selectedProviderId),
+                            },
+                        ]),
+                    ),
                     providers: state.providers,
                     agents: state.agents,
                     currentProviderId: state.currentProviderId,
                     currentModelId: state.currentModelId,
                     currentVariant: state.currentVariant,
                     currentAgentName: state.currentAgentName,
-                    selectedProviderId: state.selectedProviderId,
+                    selectedProviderId: sanitizePersistedSelectedProviderId(state.selectedProviderId),
                     agentModelSelections: state.agentModelSelections,
                     defaultProviders: state.defaultProviders,
                     settingsDefaultModel: state.settingsDefaultModel,

@@ -51,6 +51,10 @@ export type State = {
   path: Path
   session: Session[]
   sessionTotal: number
+  sessionListSource?: "empty" | "persisted" | "live" | "authoritative"
+  sessionRevision?: number
+  sessionEventRevision?: Record<string, number>
+  sessionDeletedRevision?: Record<string, number>
   session_status: Record<string, SessionStatus>
   session_diff: Record<string, FileDiff[]>
   todo: Record<string, Todo[]>
@@ -77,7 +81,7 @@ export type GlobalState = {
   sessionTodo: Record<string, Todo[]>
 }
 
-export type InitError = {
+type InitError = {
   type: "init"
   message: string
 }
@@ -92,6 +96,7 @@ export type EvictPlan = {
   pins: Set<string>
   max: number
   ttl: number
+  graceMs?: number
   now: number
   hasPendingBlockingRequests?: (directory: string) => boolean
 }
@@ -105,14 +110,20 @@ export type DisposeCheck = {
   hasPendingBlockingRequests: boolean
 }
 
-export type ChildOptions = {
-  bootstrap?: boolean
-}
-
 export const MAX_DIR_STORES = 30
+/**
+ * Directories touched within this window are never overflow-eviction victims.
+ *
+ * Sidebar rows call `ensureChild` during render but only take their pin in an
+ * effect after commit. Without a grace window, expanding a project with more
+ * worktrees than `MAX_DIR_STORES` evicted directories that were actively
+ * rendering, which recreated them, which issued another bootstrap request, in
+ * an endless loop (issue #1472). The limit is therefore a soft target: a burst
+ * of live directories overflows briefly rather than thrashing, and the cache is
+ * bounded by idle-time eviction instead.
+ */
+export const EVICTION_GRACE_MS = 30 * 1000
 export const DIR_IDLE_TTL_MS = 20 * 60 * 1000
-export const SESSION_RECENT_WINDOW = 4 * 60 * 60 * 1000
-export const SESSION_RECENT_LIMIT = 50
 export const SESSION_CACHE_LIMIT = 40
 
 export const INITIAL_STATE: State = {
@@ -127,6 +138,10 @@ export const INITIAL_STATE: State = {
   command: [],
   session: [],
   sessionTotal: 0,
+  sessionListSource: "empty",
+  sessionRevision: 0,
+  sessionEventRevision: {},
+  sessionDeletedRevision: {},
   session_status: {},
   session_diff: {},
   todo: {},
