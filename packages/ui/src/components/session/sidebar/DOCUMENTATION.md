@@ -12,10 +12,12 @@ kept at this root in `types.ts` and `utils.tsx`.
 - `recent/` owns Recent and managed Chats activity projections.
 - `folders/` owns folder DnD, bulk actions, archived folders, and folder UI.
 - Root session right-click and overflow menus expose `Move to worktree`: a submenu
-  listing existing primary and linked worktree destinations, the current target
-  greyed and disabled, plus a `New worktree...` action. Moving to an existing or
-  new destination transfers the full idle subtree; only the root session carries
-  uncommitted changes.
+  listing the canonical primary and linked worktree destinations, with the current
+  target disabled and a separate `New worktree...` action. Opening the submenu
+  refreshes the worktree topology. Moving transfers the full idle subtree. Clean
+  and non-Git sources move session-only; a dirty Git source prompts to move only
+  the session, move all source changes, or cancel. Only the root session carries
+  source changes during a subtree move.
 
 `MainLayout` and `VSCodeLayout` call `useSessionListSync({ isVSCode })`
 unconditionally. The hook publishes complete directory bootstrap demand,
