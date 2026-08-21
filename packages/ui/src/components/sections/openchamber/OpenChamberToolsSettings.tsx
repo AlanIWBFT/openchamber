@@ -83,8 +83,8 @@ export const OpenChamberToolsSettings: React.FC = () => {
   const setBrowserProvider = useUIStore((state) => state.setBrowserProvider);
   const guests = useGuestsStore((state) => state.guests);
   const agentMemoryToolEnabled = useUIStore((state) => state.agentMemoryToolEnabled);
-  // Absent, not merely off: the feature is finished but unreleased, and a
-  // visible switch invites turning on something that was never announced.
+  // Server-owned availability can hide the entire surface independently of
+  // the user's persisted tool setting.
   const agentMemoryAvailable = useUIStore((state) => state.agentMemoryFeatureAvailable);
   const setAgentMemoryToolEnabled = useUIStore((state) => state.setAgentMemoryToolEnabled);
   const agentNotifyToolEnabled = useUIStore((state) => state.agentNotifyToolEnabled);
