@@ -502,8 +502,8 @@ const agentMemoryRuntime = createAgentMemoryRuntime({
  * that still reads or writes the store.
  */
 const isAgentMemoryEnabled = async () => {
-  // The feature gate comes first: unreleased means absent, not merely switched
-  // off, so no stored setting can bring it back.
+  // The process-level availability gate comes first, so no stored setting can
+  // bring memory back when an operator explicitly hides the whole surface.
   if (!isAgentMemoryFeatureAvailable()) {
     return false;
   }
