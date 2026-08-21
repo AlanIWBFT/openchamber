@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveOpenCodeCliTarget, resolveTargetArchitecture } from './target-architecture.mjs';
 import { parseOpenCodeCliVersion, readPinnedOpenCodeCliVersion } from './opencode-cli-version.mjs';
+import { requireOpenCodeNativeHelpers } from './opencode-native-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
@@ -139,7 +140,11 @@ const prepareFromLocalSource = ({ sourceRoot, version, targetArchitecture, outpu
 
   const artifact = artifactForPlatform(process.platform, targetArchitecture);
   const builtBinary = path.join(opencodePackageRoot, 'dist', cliTarget.packageDirectory, 'bin', artifact.binary);
+  const helpers = requireOpenCodeNativeHelpers(builtBinary);
   stageBinary(builtBinary, outputBinary, version);
+  for (const helper of helpers) {
+    fs.copyFileSync(helper, path.join(outputDir, path.basename(helper)));
+  }
   console.log(`[electron] prepared local OpenCode CLI ${version}: ${outputBinary}`);
 };
 
