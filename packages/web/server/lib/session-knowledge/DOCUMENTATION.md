@@ -77,13 +77,13 @@ the attempt from the only person able to judge it.
 Patterns, not a model — this runs on every index build. That buys the blunt
 cases only, which is the honest expectation.
 
-## Shipping dark
+## Availability gate
 
-Agent memory is complete but unreleased. `OPENCHAMBER_MEMORY_ENABLE` decides
-whether it exists in a given process at all: unset, there is no tool, no routes,
-no session index, no settings row and no panel tab — absent rather than switched
-off, which would invite turning on something never announced. The setting itself
-also defaults to off, so setting the variable does not enable memory by itself.
+Agent memory is available by default. `OPENCHAMBER_MEMORY_ENABLE` remains a
+process-level kill switch: set it to `0`, `false`, `no`, or `off` to remove the
+tool, routes, session index, settings row and panel tab together. The user
+setting itself still defaults to off, so default availability does not enable
+memory or inject its tool by itself.
 
 Pinned notes and plans are unaffected by the memory switch and remain scoped to
 the session that pinned them.
