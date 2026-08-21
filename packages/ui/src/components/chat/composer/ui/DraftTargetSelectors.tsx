@@ -122,7 +122,7 @@ export function DraftTargetSelectors(props: DraftTargetProps) {
                             : <ProjectLabel project={selectedProject} theme={theme} />}
                     </SelectValue>
                 </SelectTrigger>
-                <SelectContent fitContent>
+                <SelectContent side="top" fitContent>
                     {projects.map((project) => (
                         <SelectItem key={project.id} value={project.id} className="max-w-[24rem] truncate">
                             <ProjectLabel project={project} theme={theme} />
@@ -144,7 +144,7 @@ export function DraftTargetSelectors(props: DraftTargetProps) {
                             {selectedBranchLabel ?? t('chat.chatInput.branch')}
                         </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="w-max min-w-48">
+                    <SelectContent side="top" className="w-max min-w-48">
                         {projectRootBranchOption ? (
                             <SelectGroup>
                                 <SelectLabel>{t('chat.chatInput.projectRoot')}</SelectLabel>

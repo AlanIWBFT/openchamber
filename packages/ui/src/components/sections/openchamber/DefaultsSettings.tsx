@@ -21,6 +21,7 @@ import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { useI18n } from '@/lib/i18n';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { isPrimaryMode } from '@/components/chat/mobileControlsUtils';
 
 const getDisplayModel = (
   storedModel: string | undefined
@@ -390,6 +391,7 @@ export const DefaultsSettings: React.FC = () => {
               <AgentSelector
                 agentName={defaultAgent || ''}
                 onChange={handleAgentChange}
+                filter={(agent) => isPrimaryMode(agent.mode)}
                 className={SETTINGS_CUSTOM_TRIGGER_CLASS}
               />
             </SettingsFieldRow>
