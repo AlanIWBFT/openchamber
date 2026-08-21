@@ -238,7 +238,8 @@ export const orderSessionsByLifecycleScopes = (
   for (const root of roots) {
     append(root);
   }
-  for (const session of sessions) {
+  const remaining = sessions.filter((session) => !visited.has(session.id)).sort(compare);
+  for (const session of remaining) {
     append(session);
   }
   return ordered;
