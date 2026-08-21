@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseOpenCodeCliVersion, readPinnedOpenCodeCliVersion } from './opencode-cli-version.mjs';
 import { resolveTargetArchitecture } from './target-architecture.mjs';
 import { readPeArchitecture } from './windows-executable.mjs';
+import { requireOpenCodeNativeHelpers } from './opencode-native-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
@@ -93,7 +94,11 @@ const main = () => {
 
   const expectedVersion = readPinnedOpenCodeCliVersion();
   if (mode === '--staged') {
-    assertBinary(path.join(electronRoot, 'resources', 'opencode-cli', binaryName()), expectedVersion);
+    const binaryPath = path.join(electronRoot, 'resources', 'opencode-cli', binaryName());
+    assertBinary(binaryPath, expectedVersion);
+    if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) {
+      requireOpenCodeNativeHelpers(binaryPath);
+    }
     return;
   }
 
@@ -103,6 +108,9 @@ const main = () => {
   }
   for (const packagedBinary of packagedBinaries) {
     assertBinary(packagedBinary, expectedVersion);
+    if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) {
+      requireOpenCodeNativeHelpers(packagedBinary);
+    }
   }
 };
 
