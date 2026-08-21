@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
 const workspaceRoot = path.resolve(electronRoot, '../..');
 const shutdownProtocolMarker = 'openchamber-shutdown-protocol.capability';
+const windowsRecycleHelper = 'OpenCode.Windows.RecycleBin.dll';
 
 const readExpectedVersion = () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(workspaceRoot, 'package.json'), 'utf8'));
@@ -59,6 +60,14 @@ const assertShutdownProtocolMarker = (binaryPath) => {
   }
 };
 
+const assertWindowsRecycleHelper = (binaryPath) => {
+  if (process.platform !== 'win32') return;
+  const helper = path.join(path.dirname(binaryPath), windowsRecycleHelper);
+  if (!fs.statSync(helper, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Bundled OpenCode CLI is missing the Windows Recycle Bin helper: ${helper}`);
+  }
+};
+
 const findPackagedBinaries = () => {
   const distDir = path.join(electronRoot, 'dist');
   if (!fs.existsSync(distDir)) return [];
@@ -98,6 +107,7 @@ const main = () => {
     assertBinary(binaryPath, expectedVersion);
     if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) {
       assertShutdownProtocolMarker(binaryPath);
+      assertWindowsRecycleHelper(binaryPath);
     }
     return;
   }
@@ -110,6 +120,7 @@ const main = () => {
     assertBinary(packagedBinary, expectedVersion);
     if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) {
       assertShutdownProtocolMarker(packagedBinary);
+      assertWindowsRecycleHelper(packagedBinary);
     }
   }
 };
