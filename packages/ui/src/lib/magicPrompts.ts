@@ -132,8 +132,8 @@ The JSON object must have exactly this shape:
 
 Rules:
 - title: concise, outcome-first, conventional style
-- body: when a repository pull request template is included below, reuse it as the body — keep its headings, order, wording, comments stripped, and checklists, and fill each section from the commits and changed files; leave a section empty rather than inventing content for it
-- body when no template is included: markdown with sections: ## Summary, ## Why, ## Testing
+- body, when a repository pull request template is included below: reuse the template as the body. Keep its headings, their order, its wording and its checklists, drop its HTML comments, and fill every section from the commits and changed files. Leave a section empty rather than inventing content for it
+- body, when no template is included: markdown with sections ## Summary, ## Why, ## Testing
 - keep output concrete and user-facing
 - put all markdown inside the body string
 - use double quotes for all JSON strings and escape newlines as \\n
