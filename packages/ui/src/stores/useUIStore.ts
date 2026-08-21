@@ -982,8 +982,8 @@ interface UIStore {
   /** The isolated-spaces switch as saved; the server applies it at its next start. */
   isolatedSpacesEnabled: boolean;
   /**
-   * Whether this build has agent memory at all. Server-owned and not
-   * persisted: an unreleased feature must not come back from a stale cache.
+   * Whether this process exposes agent memory at all. Server-owned and not
+   * persisted, so an environment override cannot be masked by a stale cache.
    */
   agentMemoryFeatureAvailable: boolean;
   /**

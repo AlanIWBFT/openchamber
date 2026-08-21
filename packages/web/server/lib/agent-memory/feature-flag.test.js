@@ -9,10 +9,10 @@ afterEach(() => {
   else process.env.OPENCHAMBER_MEMORY_ENABLE = original;
 });
 
-describe('the unreleased feature gate', () => {
-  test('is closed when the variable is unset', () => {
+describe('the memory availability gate', () => {
+  test('is open when the variable is unset', () => {
     delete process.env.OPENCHAMBER_MEMORY_ENABLE;
-    expect(isAgentMemoryFeatureAvailable()).toBe(false);
+    expect(isAgentMemoryFeatureAvailable()).toBe(true);
   });
 
   test('opens for the usual truthy spellings', () => {
@@ -29,8 +29,10 @@ describe('the unreleased feature gate', () => {
     }
   });
 
-  test('is read per call, so a process started with it set is what decides', () => {
+  test('is read per call, so the process environment is authoritative', () => {
     delete process.env.OPENCHAMBER_MEMORY_ENABLE;
+    expect(isAgentMemoryFeatureAvailable()).toBe(true);
+    process.env.OPENCHAMBER_MEMORY_ENABLE = 'off';
     expect(isAgentMemoryFeatureAvailable()).toBe(false);
     process.env.OPENCHAMBER_MEMORY_ENABLE = '1';
     expect(isAgentMemoryFeatureAvailable()).toBe(true);
