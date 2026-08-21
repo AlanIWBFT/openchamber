@@ -28,6 +28,7 @@ import {
     getShellBridgeAssistantDetails,
     type ShellBridgeDetails,
 } from './lib/shellBridge';
+import { useActivationOverscan } from './useActivationOverscan';
 
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
 const EMPTY_STATIC_ENTRY_MESSAGES: ChatMessageEntry[] = [];
@@ -952,6 +953,7 @@ type StaticHistoryListProps = {
 
 const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, registerTanstackVirtualizer, virtualizerKey, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, defaultActivityExpanded, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, reviewTransferDirection }: StaticHistoryListProps) => {
     const isTanstack = engine === 'tanstack';
+    const overscan = useActivationOverscan(isTanstack, resolveTanstackOverscan());
 
     // --- Quiet-window prepend (mobile) --------------------------------------
     // Gesture tracking for the deferred-prepend decision. Refs only: reading
@@ -1051,7 +1053,7 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         enabled: isTanstack,
         getScrollElement: () => scrollRef?.current ?? null,
         estimateSize: () => estimatedEntrySizeRef.current,
-        overscan: resolveTanstackOverscan(),
+        overscan,
         scrollToFn: (offset, options, instance) => {
             // Expose the new total height before core writes an anchor
             // correction so the browser does not clamp the offset to the old
