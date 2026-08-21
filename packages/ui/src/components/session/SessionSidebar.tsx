@@ -102,6 +102,7 @@ import { recordWorktreesSeen } from './sidebar/worktreeFirstSeen';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { streamPerfCount, streamPerfMark } from '@/stores/utils/streamDebug';
 import { runBackgroundNetworkTask } from '@/lib/background-network';
+import { isCapacitorApp } from '@/lib/platform';
 
 const PROJECT_COLLAPSE_STORAGE_KEY = 'oc.sessions.projectCollapse';
 const GROUP_ORDER_STORAGE_KEY = 'oc.sessions.groupOrder';
@@ -924,10 +925,10 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   const stableHandleRestoreSession = useStableRenderCallback(handleRestoreSession);
   const stableCreateFolderAndStartRename = useStableRenderCallback(createFolderAndStartRename);
 
-  const showMoreGroupSessions = React.useCallback((groupId: string, currentVisibleCount: number) => {
+  const showMoreGroupSessions = React.useCallback((groupId: string, currentVisibleCount: number, increment: number = 7) => {
     setVisibleSessionCountByGroup((prev) => {
       const next = new Map(prev);
-      next.set(groupId, currentVisibleCount + 7);
+      next.set(groupId, currentVisibleCount + increment);
       return next;
     });
   }, []);
@@ -1134,10 +1135,16 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   }
 
   const showRecentSection = useSessionDisplayStore((state) => state.showRecentSection);
+  const projectDisplayMode = useSessionDisplayStore((state) => state.projectDisplayMode);
+  const singleProjectId = useSessionDisplayStore((state) => state.singleProjectId);
+  const setSingleProjectId = useSessionDisplayStore((state) => state.setSingleProjectId);
   const showArchivedSessions = useSessionDisplayStore((state) => state.showArchivedSessions);
   const projectSortOrder = useSessionDisplayStore((state) => state.projectSortOrder);
   const stickyZoneHeaders = useSessionDisplayStore((state) => state.stickyZoneHeaders);
   const manualProjectOrder = useProjectsStore((state) => state.manualProjectOrder);
+  const supportsSingleProjectMode = !isVSCode && !isCapacitorApp();
+  const isSingleProjectMode = projectDisplayMode === 'single' && supportsSingleProjectMode;
+  const shouldShowRecentSection = showRecentSection && !isSingleProjectMode;
   const projectExpandedParentsRef = React.useRef<Set<string>>(new Set());
   const recentExpandedParentsRef = React.useRef<Set<string>>(new Set());
   const projectExpandedParents = selectExpandedParentKeysForContext(
@@ -1182,7 +1189,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     githubAuthStatus,
     githubAuthChecked,
     updateStore,
-    showRecentSection,
+    showRecentSection: shouldShowRecentSection,
     showArchivedSessions,
     projectSortOrder,
     projectRepoStatus,
@@ -1362,13 +1369,13 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   }, [projectSections, homeDirectory]);
 
   const recentSessions = React.useMemo(() => {
-    if (!showRecentSection || isVSCode) {
+    if (!shouldShowRecentSection || isVSCode) {
       return [];
     }
 
     return deriveRecentSessions(sessions.filter((session) => !isChatDirectoryForHome(session.directory, homeDirectory)), activeSessionIdSet)
       .sort((a, b) => compareSessionsByLifecycleOrder(a, b, pinnedSessionIds, sessionOrderRanks));
-  }, [activeSessionIdSet, homeDirectory, isVSCode, pinnedSessionIds, sessionOrderRanks, sessions, showRecentSection]);
+  }, [activeSessionIdSet, homeDirectory, isVSCode, pinnedSessionIds, sessionOrderRanks, sessions, shouldShowRecentSection]);
 
   const chatSessions = React.useMemo(() => sessions
     .filter((session) => !session.parentID && !session.time?.archived && isChatDirectoryForHome(session.directory, homeDirectory))
@@ -1409,7 +1416,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
       };
     };
 
-    const recentItems = showRecentSection ? recentSessions
+    const recentItems = shouldShowRecentSection ? recentSessions
       .map(toItem)
       .filter((item): item is NonNullable<ReturnType<typeof toItem>> => item !== null) : [];
 
@@ -1420,7 +1427,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
       { key: 'chats' as const, title: t('sessions.sidebar.activity.chatsTitle'), items: chatItems },
       { key: 'active-now' as const, title: t('sessions.sidebar.activity.recentTitle'), items: recentItems },
     ];
-  }, [chatSessions, filterSessionNodesForSearch, hasSessionSearchQuery, isVSCode, normalizedSessionSearchQuery, recentSessions, sessionSidebarMetaById, showRecentSection, t]);
+  }, [chatSessions, filterSessionNodesForSearch, hasSessionSearchQuery, isVSCode, normalizedSessionSearchQuery, recentSessions, sessionSidebarMetaById, shouldShowRecentSection, t]);
 
   const hasActivitySectionItems = React.useMemo(
     () => activitySections.some((section) => section.key === 'chats' || section.items.length > 0),
@@ -1446,6 +1453,19 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
           : section
       ));
   }, [flatSectionsForRender, sectionsForRender, showInlineArchived, useGroupedSections]);
+  const effectiveSingleProjectId = React.useMemo(() => {
+    if (!isSingleProjectMode) return null;
+    if (singleProjectId && projectSections.some((section) => section.project.id === singleProjectId)) {
+      return singleProjectId;
+    }
+    if (activeProjectId && projectSections.some((section) => section.project.id === activeProjectId)) {
+      return activeProjectId;
+    }
+    return projectSections[0]?.project.id ?? null;
+  }, [activeProjectId, isSingleProjectMode, projectSections, singleProjectId]);
+  const handleSingleProjectSelect = React.useCallback((projectId: string) => {
+    setSingleProjectId(projectId);
+  }, [setSingleProjectId]);
 
   // Discover/refresh PR status for expanded projects' worktree branches so
   // session rows can tint their branch marker and show PR state in tooltips.
@@ -1665,6 +1685,9 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         normalizedSessionSearchQuery={normalizedSessionSearchQuery}
         groupSearchDataByGroup={groupSearchDataByGroup}
         visibleSessionCount={visibleSessionCountByGroup.get(groupKey)}
+        sessionBatchSize={isSingleProjectMode && sessionGroupingMode === 'flat' && group.id !== 'managed-chats'
+          ? 20
+          : undefined}
         collapsedGroups={collapsedGroups}
         hideDirectoryControls={hideDirectoryControls}
         collapsedFolderIds={collapsedFolderIds}
@@ -1853,6 +1876,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
 
       <SidebarHeader
         hideDirectoryControls={hideDirectoryControls}
+        showProjectDisplayControls={supportsSingleProjectMode}
         showRecentControls={!isVSCode}
         handleOpenDirectoryDialog={handleOpenDirectoryDialog}
         onOpenScheduled={() => {
@@ -1885,7 +1909,11 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         hasSharedSessions={hasActivitySectionItems}
         sectionsForRender={sectionsForSidebarRender}
         projectSections={projectSections}
+        projectPickerSections={projectSections}
         activeProjectId={activeProjectId}
+        singleProjectMode={isSingleProjectMode}
+        singleProjectId={effectiveSingleProjectId}
+        setSingleProjectId={handleSingleProjectSelect}
         showOnlyMainWorkspace={showOnlyMainWorkspace}
         hasSessionSearchQuery={hasSessionSearchQuery}
         emptyState={emptyState}

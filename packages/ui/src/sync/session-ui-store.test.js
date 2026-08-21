@@ -10,6 +10,7 @@ import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
+import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
 
 /**
  * Unit tests for session worktree routing through the authoritative store.
@@ -656,9 +657,19 @@ describe('sendMessage draft snapshot (issues #2222 / #2315)', () => {
       currentSessionDirectory: null,
       newSessionDraft: { open: false, directoryOverride: null, parentID: null },
     });
+    useProjectsStore.setState({ projects: [], activeProjectId: null });
+    useSessionDisplayStore.setState({ singleProjectId: null });
   });
 
   test('draft send snapshots the draft; switching to another project mid-flight still targets the materialized session', async () => {
+    useProjectsStore.setState({
+      projects: [
+        { id: 'project-alpha', path: '/projects/alpha', label: 'Alpha' },
+        { id: 'project-beta', path: '/projects/beta', label: 'Beta' },
+      ],
+      activeProjectId: 'project-alpha',
+    });
+    useSessionDisplayStore.setState({ singleProjectId: 'project-alpha' });
     const draftSnapshot = {
       open: true,
       directoryOverride: '/projects/alpha',
@@ -686,6 +697,7 @@ describe('sendMessage draft snapshot (issues #2222 / #2315)', () => {
 
     // A sidebar switch while the send is still in flight must not reroute it.
     useSessionUIStore.getState().setCurrentSession('session-project-b', '/projects/beta');
+    expect(useSessionDisplayStore.getState().singleProjectId).toBe('project-beta');
 
     await sendPromise;
 
@@ -694,6 +706,7 @@ describe('sendMessage draft snapshot (issues #2222 / #2315)', () => {
     expect(sendMessageCalls).toHaveLength(1);
     expect(sendMessageCalls[0].id).toBe('session-materialized');
     expect(sendMessageCalls[0].directory).toBe('/projects/alpha');
+    expect(useSessionDisplayStore.getState().singleProjectId).toBe('project-alpha');
   });
 
   test('existing-session send keeps the submit-time target even when selection changes', async () => {

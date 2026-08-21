@@ -59,7 +59,11 @@ type Props = {
   hasSharedSessions?: boolean;
   sectionsForRender: ProjectSection[];
   projectSections: ProjectSection[];
+  projectPickerSections: ProjectSection[];
   activeProjectId: string | null;
+  singleProjectMode: boolean;
+  singleProjectId: string | null;
+  setSingleProjectId: (id: string) => void;
   showOnlyMainWorkspace: boolean;
   hasSessionSearchQuery: boolean;
   emptyState: React.ReactNode;
@@ -105,7 +109,7 @@ type Props = {
 function SidebarProjectsListComponent(props: Props): React.ReactNode {
   streamPerfCount('ui.sidebar_projects_list.render');
   const { t } = useI18n();
-  const enableStickyFade = props.isDesktopShellRuntime && props.stickyZoneHeaders;
+  const enableStickyFade = props.isDesktopShellRuntime && props.stickyZoneHeaders && !props.singleProjectMode;
   const projectSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -113,6 +117,21 @@ function SidebarProjectsListComponent(props: Props): React.ReactNode {
   const groupSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
+  const selectedSingleProjectSection = props.singleProjectMode
+    ? props.sectionsForRender.find((section) => section.project.id === props.singleProjectId)
+    : null;
+  const renderedProjectSections = props.singleProjectMode
+    ? (selectedSingleProjectSection ? [selectedSingleProjectSection] : [])
+    : props.sectionsForRender;
+  const projectPickerOptions = React.useMemo(() => props.projectPickerSections.map((section) => ({
+    id: section.project.id,
+    projectLabel: getProjectLabel(section.project, props.homeDirectory),
+    projectDescription: formatPathForDisplay(section.project.normalizedPath, props.homeDirectory),
+    projectIcon: section.project.icon,
+    projectColor: section.project.color,
+    projectIconImage: section.project.iconImage,
+    projectIconBackground: section.project.iconBackground,
+  })), [props.homeDirectory, props.projectPickerSections]);
 
   // Memoize getOrderedGroups per project so downstream consumers see a stable
   // array reference while inputs are unchanged (avoids O(P) fresh arrays per
@@ -169,7 +188,7 @@ function SidebarProjectsListComponent(props: Props): React.ReactNode {
     event.preventDefault();
     event.stopPropagation();
   }, []);
-  const hasProjectScroller = props.projectSections.length > 0 && props.sectionsForRender.length > 0;
+  const hasProjectScroller = props.projectSections.length > 0 && renderedProjectSections.length > 0;
   React.useLayoutEffect(() => {
     if (enableStickyFade && hasProjectScroller && scrollContainerRef.current) {
       syncTopFade(scrollContainerRef.current);
@@ -220,7 +239,7 @@ function SidebarProjectsListComponent(props: Props): React.ReactNode {
   // ready in the same frame; the observer then corrects it. When shared sessions
   // lead the list, the Recent fallback below owns the top instead of a project.
   const leadingProject =
-    stuckProject ?? (props.hasSharedSessions ? null : props.sectionsForRender[0]?.project ?? null);
+    stuckProject ?? (props.hasSharedSessions ? null : renderedProjectSections[0]?.project ?? null);
   const leadingProjectLabel = leadingProject ? getProjectLabel(leadingProject, props.homeDirectory) : null;
 
   if (props.sharedSessionsOnly) {
@@ -311,20 +330,20 @@ function SidebarProjectsListComponent(props: Props): React.ReactNode {
             props.reorderProjects(oldIndex, newIndex);
           }}
         >
-          <SortableContext items={props.sectionsForRender.map((section) => section.project.id)} strategy={verticalListSortingStrategy}>
-            {props.sectionsForRender.map((section) => {
+          <SortableContext items={renderedProjectSections.map((section) => section.project.id)} strategy={verticalListSortingStrategy}>
+            {renderedProjectSections.map((section) => {
               const project = section.project;
               const projectKey = project.id;
               const projectLabel = getProjectLabel(project, props.homeDirectory);
               const projectDescription = formatPathForDisplay(project.normalizedPath, props.homeDirectory);
-              const isCollapsed = props.collapsedProjects.has(projectKey);
+              const isCollapsed = props.singleProjectMode ? false : props.collapsedProjects.has(projectKey);
               const isRepo = props.projectRepoStatus.get(projectKey);
 
               return (
                 <SortableProjectItem
                   key={projectKey}
                   id={projectKey}
-                  disabled={props.projectSortOrder !== 'manual'}
+                  disabled={props.singleProjectMode || props.projectSortOrder !== 'manual'}
                   projectLabel={projectLabel}
                   projectDescription={projectDescription}
                   projectIcon={project.icon}
@@ -338,7 +357,9 @@ function SidebarProjectsListComponent(props: Props): React.ReactNode {
                   mobileVariant={props.mobileVariant}
                   alwaysShowActions={props.alwaysShowActions}
                   statusIndicator={isCollapsed ? props.renderProjectStatusIndicator?.(projectKey, section.groups) : null}
-                  onToggle={() => props.toggleProject(projectKey)}
+                  onToggle={() => {
+                    if (!props.singleProjectMode) props.toggleProject(projectKey);
+                  }}
                   onNewSession={() => {
                     if (projectKey !== props.activeProjectId) props.setActiveProjectIdOnly(projectKey);
                     props.setActiveMainTab('chat');
@@ -360,6 +381,8 @@ function SidebarProjectsListComponent(props: Props): React.ReactNode {
                   showCreateButtons
                   openSidebarMenuKey={props.openSidebarMenuKey}
                   setOpenSidebarMenuKey={props.setOpenSidebarMenuKey}
+                  projectPickerOptions={props.singleProjectMode ? projectPickerOptions : undefined}
+                  onProjectSelect={props.singleProjectMode ? props.setSingleProjectId : undefined}
                 >
                   {!isCollapsed ? (
                     <div className="space-y-0 pt-0.5 pb-0.5">
