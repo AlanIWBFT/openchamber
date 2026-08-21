@@ -3,6 +3,7 @@ export const thirdPartyIntegrationI18n = {
   en: {
     'settings.page.integrations.title': 'Integrations',
     'settings.page.integrations.description': 'Add third-party subscriptions to use as OpenChamber providers.',
+    'settings.integrations.experimentalWarning': 'This is an experimental feature. Integrations may change or stop working. Use them at your own discretion.',
     'settings.integrations.messengers.title': 'Messengers',
     'settings.integrations.messengers.info': 'Chat with OpenChamber from Discord or Telegram. These bridges are not available yet.',
     'settings.integrations.messengers.discord.name': 'Discord',
@@ -45,6 +46,7 @@ export const thirdPartyIntegrationI18n = {
   de: {
     'settings.page.integrations.title': 'Integrationen',
     'settings.page.integrations.description': 'Füge Drittanbieter-Abonnements hinzu, um sie als OpenChamber-Provider zu nutzen.',
+    'settings.integrations.experimentalWarning': 'Dies ist eine experimentelle Funktion. Integrationen können sich ändern oder nicht mehr funktionieren. Nutze sie nach eigenem Ermessen.',
     'settings.integrations.messengers.title': 'Messenger',
     'settings.integrations.messengers.info': 'Chatte mit OpenChamber über Discord oder Telegram. Diese Bridges sind noch nicht verfügbar.',
     'settings.integrations.messengers.discord.name': 'Discord',
@@ -87,6 +89,7 @@ export const thirdPartyIntegrationI18n = {
   fr: {
     'settings.page.integrations.title': 'Intégrations',
     'settings.page.integrations.description': 'Ajoutez des abonnements tiers à utiliser comme fournisseurs OpenChamber.',
+    'settings.integrations.experimentalWarning': 'Cette fonctionnalité est expérimentale. Les intégrations peuvent changer ou cesser de fonctionner. Utilisez-les à votre discrétion.',
     'settings.integrations.messengers.title': 'Messagers',
     'settings.integrations.messengers.info': 'Discutez avec OpenChamber depuis Discord ou Telegram. Ces ponts ne sont pas encore disponibles.',
     'settings.integrations.messengers.discord.name': 'Discord',
@@ -129,6 +132,7 @@ export const thirdPartyIntegrationI18n = {
   es: {
     'settings.page.integrations.title': 'Integraciones',
     'settings.page.integrations.description': 'Añade suscripciones de terceros para usarlas como proveedores de OpenChamber.',
+    'settings.integrations.experimentalWarning': 'Esta función es experimental. Las integraciones pueden cambiar o dejar de funcionar. Úsalas bajo tu propia responsabilidad.',
     'settings.integrations.messengers.title': 'Mensajeros',
     'settings.integrations.messengers.info': 'Chatea con OpenChamber desde Discord o Telegram. Estos puentes aún no están disponibles.',
     'settings.integrations.messengers.discord.name': 'Discord',
@@ -171,6 +175,7 @@ export const thirdPartyIntegrationI18n = {
   ja: {
     'settings.page.integrations.title': '連携',
     'settings.page.integrations.description': 'サードパーティのサブスクリプションを追加して、OpenChamber のプロバイダーとして使います。',
+    'settings.integrations.experimentalWarning': 'これは実験的な機能です。連携は変更されたり、動作しなくなったりする可能性があります。自己責任で使用してください。',
     'settings.integrations.messengers.title': 'メッセンジャー',
     'settings.integrations.messengers.info': 'Discord または Telegram から OpenChamber とチャットできます。これらの連携はまだ利用できません。',
     'settings.integrations.messengers.discord.name': 'Discord',
@@ -213,6 +218,7 @@ export const thirdPartyIntegrationI18n = {
   ko: {
     'settings.page.integrations.title': '통합',
     'settings.page.integrations.description': '타사 구독을 추가해 OpenChamber 프로바이더로 사용하세요.',
+    'settings.integrations.experimentalWarning': '이 기능은 실험 단계입니다. 통합 기능은 변경되거나 작동하지 않을 수 있습니다. 본인의 판단에 따라 사용하세요.',
     'settings.integrations.messengers.title': '메신저',
     'settings.integrations.messengers.info': 'Discord 또는 Telegram에서 OpenChamber와 채팅하세요. 이 브리지는 아직 사용할 수 없습니다.',
     'settings.integrations.messengers.discord.name': 'Discord',
@@ -255,6 +261,7 @@ export const thirdPartyIntegrationI18n = {
   pl: {
     'settings.page.integrations.title': 'Integracje',
     'settings.page.integrations.description': 'Dodaj subskrypcje zewnętrzne, aby używać ich jako dostawców OpenChamber.',
+    'settings.integrations.experimentalWarning': 'To funkcja eksperymentalna. Integracje mogą się zmienić lub przestać działać. Korzystasz z nich na własną odpowiedzialność.',
     'settings.integrations.messengers.title': 'Komunikatory',
     'settings.integrations.messengers.info': 'Czatuj z OpenChamber przez Discord lub Telegram. Te mosty nie są jeszcze dostępne.',
     'settings.integrations.messengers.discord.name': 'Discord',
@@ -297,6 +304,7 @@ export const thirdPartyIntegrationI18n = {
   'pt-BR': {
     'settings.page.integrations.title': 'Integrações',
     'settings.page.integrations.description': 'Adicione assinaturas de terceiros para usar como provedores do OpenChamber.',
+    'settings.integrations.experimentalWarning': 'Este recurso é experimental. As integrações podem mudar ou deixar de funcionar. Use-as por sua conta e risco.',
     'settings.integrations.messengers.title': 'Mensageiros',
     'settings.integrations.messengers.info': 'Converse com o OpenChamber pelo Discord ou Telegram. Essas pontes ainda não estão disponíveis.',
     'settings.integrations.messengers.discord.name': 'Discord',
@@ -339,6 +347,7 @@ export const thirdPartyIntegrationI18n = {
   uk: {
     'settings.page.integrations.title': 'Інтеграції',
     'settings.page.integrations.description': 'Додайте сторонні підписки, щоб використовувати їх як провайдери OpenChamber.',
+    'settings.integrations.experimentalWarning': 'Це експериментальна функція. Інтеграції можуть змінюватися або перестати працювати. Використовуйте їх на власний розсуд.',
     'settings.integrations.messengers.title': 'Месенджери',
     'settings.integrations.messengers.info': 'Спілкуйтеся з OpenChamber у Discord або Telegram. Ці мости ще недоступні.',
     'settings.integrations.messengers.discord.name': 'Discord',
@@ -381,6 +390,7 @@ export const thirdPartyIntegrationI18n = {
   'zh-CN': {
     'settings.page.integrations.title': '集成',
     'settings.page.integrations.description': '添加第三方订阅，将其用作 OpenChamber 提供商。',
+    'settings.integrations.experimentalWarning': '这是实验性功能。集成可能会变更或停止工作。请自行酌情使用。',
     'settings.integrations.messengers.title': '即时通讯',
     'settings.integrations.messengers.info': '通过 Discord 或 Telegram 与 OpenChamber 聊天。这些桥接尚不可用。',
     'settings.integrations.messengers.discord.name': 'Discord',
@@ -423,6 +433,7 @@ export const thirdPartyIntegrationI18n = {
   'zh-TW': {
     'settings.page.integrations.title': '整合',
     'settings.page.integrations.description': '新增第三方訂閱，將其用作 OpenChamber 供應商。',
+    'settings.integrations.experimentalWarning': '這是實驗性功能。整合可能會變更或停止運作。請自行斟酌使用。',
     'settings.integrations.messengers.title': '即時通訊',
     'settings.integrations.messengers.info': '透過 Discord 或 Telegram 與 OpenChamber 聊天。這些橋接尚不可用。',
     'settings.integrations.messengers.discord.name': 'Discord',
