@@ -504,14 +504,16 @@ const renderDraftTitle = (title: string, projectLabel: string | null): React.Rea
 
 const DraftWelcome: React.FC = () => {
     const { t } = useI18n();
+    const draftTarget = useSessionUIStore((state) => state.newSessionDraft.target);
     const selectedProjectId = useSessionUIStore((state) => state.newSessionDraft.selectedProjectId ?? null);
     const projectLabel = useProjectsStore(React.useCallback((state) => {
+        if (draftTarget === 'chat') return null;
         const projectId = selectedProjectId ?? state.activeProjectId;
         const project = (projectId
             ? state.projects.find((candidate) => candidate.id === projectId)
             : null) ?? state.projects[0] ?? null;
         return project ? getProjectDisplayLabel(project) : null;
-    }, [selectedProjectId]));
+    }, [draftTarget, selectedProjectId]));
 
     return (
         <div className="oc-draft-center flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">

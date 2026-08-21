@@ -29,7 +29,7 @@
 - `SidebarHeader.tsx`: Top header UI for add-project, session search, selection mode, project sort, and the display menu (recent toggle, collapse/expand all).
 - A successful add/create/clone from the project-directory dialog transitions to a new-session draft targeted at that project, matching the project's `+` action; changing project metadata alone must not leave the visible session or draft on a different directory.
 - `SidebarNav.tsx`: Text navigation rows above the tree (New session, Scheduled, Multi-run, Archive); hidden in VS Code.
-- `SidebarActivitySections.tsx`: Global top section renderer; currently used for the `recent` section only, styled as a zone header.
+- `SidebarActivitySections.tsx`: Global top section renderer for project-only `recent` sessions followed by OpenChamber-managed `chats`, styled as zone headers.
 - `SidebarFooter.tsx`: Static footer with icon-only settings, shortcuts, and about actions.
 - `SidebarProjectsList.tsx`: Main scrollable renderer for project zones and their flat/archived groups plus empty/search states; owns project drag-to-reorder.
 - `SessionGroupSection.tsx`: Renders one flat (or archived) group: sessions first, then flat folder entries with path labels, show-more batching, and explicit loading/error/retry state for empty groups. Archived buckets (VS Code) virtualize past 50 rows.

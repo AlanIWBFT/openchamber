@@ -370,16 +370,17 @@ describe('openNewSessionDraft project binding', () => {
     useDirectoryStore.getState().setDirectory(projectB.path, { showOverlay: false });
   });
 
-  test('keeps implicit draft on current directory when active project differs', () => {
+  test('defaults an implicit draft to Chat when active project differs', () => {
     useSessionUIStore.getState().openNewSessionDraft();
     const draft = useSessionUIStore.getState().newSessionDraft;
 
     expect(draft.open).toBe(true);
-    expect(draft.selectedProjectId).toBe(projectB.id);
-    expect(draft.directoryOverride).toBe(projectB.path);
+    expect(draft.target).toBe('chat');
+    expect(draft.selectedProjectId).toBeNull();
+    expect(draft.directoryOverride).toBeNull();
   });
 
-  test('does not attach active project when current directory is unmatched', () => {
+  test('defaults an implicit draft to Chat when current directory is unmatched', () => {
     useDirectoryStore.getState().setDirectory('/external/worktree', { showOverlay: false });
 
     useSessionUIStore.getState().openNewSessionDraft();
@@ -387,7 +388,8 @@ describe('openNewSessionDraft project binding', () => {
 
     expect(draft.open).toBe(true);
     expect(draft.selectedProjectId).toBeNull();
-    expect(draft.directoryOverride).toBe('/external/worktree');
+    expect(draft.target).toBe('chat');
+    expect(draft.directoryOverride).toBeNull();
   });
 
   test('respects explicit directoryOverride over active project', () => {
@@ -464,7 +466,7 @@ describe('createSession draft lifecycle', () => {
     useDirectoryStore.getState().setDirectory('/private/deleted-worktree', { showOverlay: false });
     opencodeClient.getDirectoryAvailability = async () => 'missing';
 
-    useSessionUIStore.getState().openNewSessionDraft();
+    useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: '/private/deleted-worktree' });
     await Bun.sleep(0);
 
     expect(useSessionUIStore.getState().newSessionDraft.directoryOverride).toBe('/projects/main');
@@ -482,7 +484,7 @@ describe('createSession draft lifecycle', () => {
       activeProjectId: 'project-active',
     });
     useDirectoryStore.getState().setDirectory('/private/deleted-worktree', { showOverlay: false });
-    useSessionUIStore.getState().openNewSessionDraft();
+    useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: '/private/deleted-worktree' });
     opencodeClient.getDirectoryAvailability = async () => 'missing';
     opencodeClient.createSession = async (_params, directory) => {
       createSessionCalls.push(directory);
@@ -542,7 +544,7 @@ describe('createSession draft lifecycle', () => {
       activeProjectId: 'project-main',
     });
     useDirectoryStore.getState().setDirectory('/private/unavailable-worktree', { showOverlay: false });
-    useSessionUIStore.getState().openNewSessionDraft();
+    useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: '/private/unavailable-worktree' });
     opencodeClient.getDirectoryAvailability = async () => 'unknown';
     opencodeClient.createSession = async (_params, directory) => {
       createSessionCalls.push(directory);
@@ -571,7 +573,7 @@ describe('createSession draft lifecycle', () => {
       return { id: 'session-race', directory };
     };
 
-    useSessionUIStore.getState().openNewSessionDraft();
+    useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: '/private/deleted-worktree' });
     const createPromise = useSessionUIStore.getState().createSession('Draft title', '/private/deleted-worktree');
     expect(availabilityResolvers.length).toBe(2);
 

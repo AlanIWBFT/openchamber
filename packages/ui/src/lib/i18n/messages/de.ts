@@ -415,6 +415,8 @@ export const dict = {
   'sessions.sidebar.empty.noMatches.title': 'Keine passenden Sitzungen',
   'sessions.sidebar.empty.noMatches.description': 'Versuchen Sie einen anderen Titel, Branch, Ordner oder Pfad.',
   'sessions.sidebar.activity.recentTitle': 'kürzlich',
+  'sessions.sidebar.activity.chatsTitle': 'Chats',
+  'chat.chatInput.chooseProject': 'Projekt auswählen',
   'sessions.switcher.openAria': 'Sitzungswechsler öffnen',
   'sessions.switcher.empty': 'Keine kürzlichen Sitzungen',
   'sessions.switcher.draftTitle': 'Neue Sitzung',

@@ -438,6 +438,8 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.empty.noMatches.title": "Немає відповідних сесій",
   "sessions.sidebar.empty.noMatches.description": "Спробуйте інший заголовок, гілку, папку або шлях.",
   "sessions.sidebar.activity.recentTitle": "Останні",
+  "sessions.sidebar.activity.chatsTitle": "Чати",
+  "chat.chatInput.chooseProject": "Вибрати проєкт",
   "sessions.archivePage.allDirectories": "Всі директорії",
   "sessions.sidebar.header.displayMode.stickyHeaders": "Липкі заголовки проектів",
   "sessions.sidebar.header.grouping.label": "Групування сесій",

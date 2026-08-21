@@ -324,6 +324,16 @@ metadata and the next authoritative load reconciles it.
 
 ## The golden rule
 
+### Managed chat directories
+
+Ordinary user-created drafts default to the OpenChamber-managed Chat target. The first submit creates one isolated directory under `~/.config/openchamber/chats/YYYY-MM-DD/session-<id>` before creating the OpenCode session. The shared `~/.config/openchamber/chats` root acts as a system project owner for sidebar membership and Notes, Todo, Plans, pinned knowledge, and project memory, but it is never persisted or rendered as a user project and exposes no Git/worktree controls. Project and worktree actions remain explicit targets. Archiving retains a chat directory so restore remains lossless. Confirmed deletion removes that managed directory and never removes project directories.
+
+Typing the first character in a managed Chat draft starts one deduplicated directory preparation for that draft. Materialization consumes the prepared directory before `createSession`, removing filesystem creation from the usual submit path. Closing the draft, changing it to a project target, or completing preparation after the runtime/draft changed deletes the unclaimed directory. A create failure also deletes the consumed directory.
+
+The global sessions store persists and hydrates one bounded, runtime-scoped startup snapshot containing only active managed chat sessions. Every global session surface, including the main sidebar and Electron Mini Chat switcher, sees that stale snapshot while the global list is unresolved or failed; the first authoritative global snapshot replaces it. Runtime reset to idle must hydrate rather than erase the destination runtime's snapshot; authoritative empty, archive, and delete updates do persist the resulting empty or reduced list.
+
+VS Code intentionally has no managed Chats mode. It neither reads nor writes the managed Chats startup cache, regular drafts continue to target the open workspace, and the global session store rejects managed chat sessions from both snapshots and live upserts before any VS Code surface can consume them. Sidebar and switcher filters repeat that exclusion defensively.
+
 When creating a draft in `handleDirectoryEvent`, **only clone the state fields the event will mutate**. Never spread all fields eagerly.
 
 ```typescript

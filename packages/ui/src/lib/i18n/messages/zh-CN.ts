@@ -438,6 +438,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.empty.noMatches.title': '没有匹配的会话',
   'sessions.sidebar.empty.noMatches.description': '请尝试其他标题、分支、文件夹或路径。',
   'sessions.sidebar.activity.recentTitle': '最近',
+  'sessions.sidebar.activity.chatsTitle': '聊天',
+  'chat.chatInput.chooseProject': '选择项目',
   'sessions.archivePage.allDirectories': '所有目录',
   'sessions.sidebar.header.displayMode.stickyHeaders': '固定项目标题',
   'sessions.sidebar.header.grouping.label': '会话分组',

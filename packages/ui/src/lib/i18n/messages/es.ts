@@ -438,6 +438,8 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.empty.noMatches.title": "No hay sesiones coincidentes",
   "sessions.sidebar.empty.noMatches.description": "Inténtalo con un título, rama, carpeta o ruta diferente.",
   "sessions.sidebar.activity.recentTitle": "reciente",
+  "sessions.sidebar.activity.chatsTitle": "chats",
+  "chat.chatInput.chooseProject": "Elegir proyecto",
   "sessions.archivePage.allDirectories": "Todos los directorios",
   "sessions.sidebar.header.displayMode.stickyHeaders": "Encabezados de proyecto fijos",
   "sessions.sidebar.header.grouping.label": "Agrupar sesiones",

@@ -438,6 +438,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.empty.noMatches.title': '일치하는 세션 없음',
   'sessions.sidebar.empty.noMatches.description': '다른 제목, 브랜치, 폴더 또는 경로로 검색해 보세요.',
   'sessions.sidebar.activity.recentTitle': '최근',
+  'sessions.sidebar.activity.chatsTitle': '채팅',
+  'chat.chatInput.chooseProject': '프로젝트 선택',
   'sessions.archivePage.allDirectories': '모든 디렉터리',
   'sessions.sidebar.header.displayMode.stickyHeaders': '프로젝트 헤더 고정',
   'sessions.sidebar.header.grouping.label': '세션 그룹화',

@@ -437,6 +437,8 @@ export const dict = {
   'sessions.sidebar.empty.noMatches.title': 'No matching sessions',
   'sessions.sidebar.empty.noMatches.description': 'Try a different title, branch, folder, or path.',
   'sessions.sidebar.activity.recentTitle': 'recent',
+  'sessions.sidebar.activity.chatsTitle': 'chats',
+  'chat.chatInput.chooseProject': 'Choose project',
   'sessions.archivePage.allDirectories': 'All directories',
   'sessions.sidebar.header.displayMode.stickyHeaders': 'Sticky project headers',
   'sessions.sidebar.header.grouping.label': 'Group sessions',
