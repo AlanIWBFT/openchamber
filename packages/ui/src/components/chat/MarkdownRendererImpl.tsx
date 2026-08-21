@@ -20,7 +20,12 @@ import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime } from '@/l
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import { getDirectoryForFilePath, isFilePathWithinDirectory, toAbsoluteFilePath } from '@/lib/path-utils';
-import { renderMarkdownBlocks, renderMarkdownSync, type MarkdownImageMode } from './markdown/markdownCore';
+import {
+  getCachedMarkdownBlocks,
+  renderMarkdownBlocks,
+  renderMarkdownSync,
+  type MarkdownImageMode,
+} from './markdown/markdownCore';
 import { ensureMarkdownShikiTheme } from './markdown/markdownTheme';
 import { getMarkdownSyntaxVars } from './markdown/markdownSyntaxVars';
 import {
@@ -659,6 +664,18 @@ const useMermaidInlineInteractions = ({
 // so a stable diagram is laid out once and served from cache thereafter.
 const MERMAID_RENDER_CACHE = new Map<string, MermaidRender>();
 const MERMAID_RENDER_CACHE_MAX = 100;
+const MARKDOWN_DECORATION_ID_ATTR = 'data-md-decoration-id';
+const MARKDOWN_DECORATION_IDS = new WeakMap<DecorateContext, string>();
+let nextMarkdownDecorationId = 0;
+
+const getMarkdownDecorationId = (ctx: DecorateContext): string => {
+  const existing = MARKDOWN_DECORATION_IDS.get(ctx);
+  if (existing) return existing;
+  const id = `decoration-${nextMarkdownDecorationId}`;
+  nextMarkdownDecorationId += 1;
+  MARKDOWN_DECORATION_IDS.set(ctx, id);
+  return id;
+};
 
 const cachedMermaidRender = (key: string, compute: () => MermaidRender): MermaidRender => {
   const existing = MERMAID_RENDER_CACHE.get(key);
@@ -780,25 +797,40 @@ const useMorphdomMarkdown = ({
     const container = containerRef.current;
     const target = container?.querySelector<HTMLElement>('[data-markdown-content]') ?? container;
     if (!target) return;
+    const decorationId = getMarkdownDecorationId(ctx);
     if (text && target.childNodes.length === 0) {
-      const block = document.createElement('div');
-      block.setAttribute('data-md-block', '');
-      // `display:contents` keeps margin-collapsing/spacing identical to a flat
-      // HTML body — the wrapper exists only for per-block reconciliation.
-      block.style.display = 'contents';
-      block.innerHTML = renderMarkdownSync(text, imageMode);
-      // Decorate synchronously too: wrap code blocks in their framed card,
-      // mark inline code, build table controls, etc. The async pass re-decorates
-      // its own DOM before morphing, so without this the first paint shows bare
-      // <pre>/tables that "snap" into their decorated form a tick later. Matching
-      // the structure here keeps the async morph to syntax colors only.
-      decorateMarkdown(block, ctx);
-      target.appendChild(block);
-      if (shouldRefreshMermaidViewers(block)) {
-        refreshMermaidViewers();
+      const cachedBlocks = !streaming ? getCachedMarkdownBlocks(text, imageMode) : null;
+      if (cachedBlocks) {
+        let hasMermaidBlock = false;
+        for (const cachedBlock of cachedBlocks) {
+          const block = document.createElement('div');
+          block.setAttribute('data-md-block', '');
+          block.style.display = 'contents';
+          block.innerHTML = cachedBlock.html;
+          decorateMarkdown(block, ctx);
+          block.setAttribute('data-md-id', cachedBlock.id);
+          block.setAttribute(MARKDOWN_DECORATION_ID_ATTR, decorationId);
+          hasMermaidBlock ||= shouldRefreshMermaidViewers(block);
+          target.appendChild(block);
+        }
+        if (hasMermaidBlock) refreshMermaidViewers();
+      } else {
+        const block = document.createElement('div');
+        block.setAttribute('data-md-block', '');
+        block.style.display = 'contents';
+        block.innerHTML = renderMarkdownSync(text, imageMode);
+        decorateMarkdown(block, ctx);
+        block.setAttribute(MARKDOWN_DECORATION_ID_ATTR, decorationId);
+        target.appendChild(block);
+        if (shouldRefreshMermaidViewers(block)) refreshMermaidViewers();
       }
+    } else if (!mermaidViewerRef.current && shouldRefreshMermaidViewers(target)) {
+      // StrictMode re-runs this setup after the cleanup probe. The DOM remains,
+      // but the viewer registry does not, so recreate it without reinstalling
+      // or re-decorating ordinary blocks.
+      refreshMermaidViewers();
     }
-  }, [containerRef, text, imageMode, ctx, refreshMermaidViewers]);
+  }, [containerRef, text, streaming, imageMode, ctx, refreshMermaidViewers]);
 
   React.useEffect(() => () => {
     mermaidViewerRef.current?.cleanup();
@@ -810,14 +842,12 @@ const useMorphdomMarkdown = ({
     if (!container) return;
     const target = container.querySelector<HTMLElement>('[data-markdown-content]') ?? container;
     let active = true;
+    const decorationId = getMarkdownDecorationId(ctx);
 
     void renderMarkdownBlocks(text, streaming, imageMode).then((blocks) => {
       if (!active) return;
       const existing = Array.from(target.children) as HTMLElement[];
 
-      // Reconcile per block: only re-morph blocks whose content changed, leaving
-      // stable leading blocks untouched. Keeps per-stream-step DOM work bounded
-      // to the trailing (growing) block instead of the whole message.
       blocks.forEach((block, index) => {
         let el = existing[index];
         if (!el) {
@@ -826,7 +856,28 @@ const useMorphdomMarkdown = ({
           el.style.display = 'contents';
           target.appendChild(el);
         }
-        if (el.getAttribute('data-md-id') === block.id) return;
+        if (el.getAttribute('data-md-id') === block.id) {
+          if (el.getAttribute(MARKDOWN_DECORATION_ID_ATTR) !== decorationId) {
+            const hasMermaidBlock = shouldRefreshMermaidViewers(el);
+            if (hasMermaidBlock) {
+              mermaidViewerRef.current?.cleanup();
+              mermaidViewerRef.current = null;
+            }
+            const replacement = document.createElement('div');
+            replacement.setAttribute('data-md-block', '');
+            replacement.style.display = 'contents';
+            replacement.innerHTML = block.html;
+            decorateMarkdown(replacement, ctx);
+            replacement.setAttribute('data-md-id', block.id);
+            replacement.setAttribute(MARKDOWN_DECORATION_ID_ATTR, decorationId);
+            el.replaceWith(replacement);
+            if (hasMermaidBlock || shouldRefreshMermaidViewers(replacement)) refreshMermaidViewers();
+          }
+          if (!mermaidViewerRef.current && shouldRefreshMermaidViewers(el)) {
+            refreshMermaidViewers();
+          }
+          return;
+        }
 
         const temp = document.createElement('div');
         temp.innerHTML = block.html;
@@ -838,12 +889,12 @@ const useMorphdomMarkdown = ({
           onBeforeElUpdated: (fromEl, toEl) => !fromEl.isEqualNode(toEl),
         });
         el.setAttribute('data-md-id', block.id);
+        el.setAttribute(MARKDOWN_DECORATION_ID_ATTR, decorationId);
         if (hadMermaidBlock || tempHasMermaidBlock || shouldRefreshMermaidViewers(el)) {
           refreshMermaidViewers();
         }
       });
 
-      // Remove any trailing block elements no longer present.
       const hadMermaidBeforeTrailingCleanup = shouldRefreshMermaidViewers(target);
       let removedMermaidBlock = false;
       for (let i = existing.length - 1; i >= blocks.length; i -= 1) {
@@ -856,7 +907,6 @@ const useMorphdomMarkdown = ({
       if (removedMermaidBlock || (existing.length > blocks.length && hadMermaidBeforeTrailingCleanup)) {
         refreshMermaidViewers();
       }
-
     });
 
     return () => {
