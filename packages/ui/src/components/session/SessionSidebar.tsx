@@ -1,5 +1,5 @@
 import React from 'react';
-import { isChatDirectoryForHome, isChatDirectoryPath } from '@/lib/chatDirectories';
+import { getChatsRootForHome, getChatsRootFromDirectory, isChatDirectoryForHome, isChatDirectoryPath } from '@/lib/chatDirectories';
 import { mergeSidebarSessionSources } from './sidebar/sidebarSessionSources';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { toast } from '@/components/ui';
@@ -41,7 +41,7 @@ import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { SessionGroupSection } from './sidebar/SessionGroupSection';
 import { SidebarHeader } from './sidebar/SidebarHeader';
 import { SidebarNav } from './sidebar/SidebarNav';
-import { SidebarActivitySections } from './sidebar/SidebarActivitySections';
+import { SidebarActivitySections, type ActivityItem } from './sidebar/SidebarActivitySections';
 import { SidebarFooter } from './sidebar/SidebarFooter';
 import { SidebarProjectsList } from './sidebar/SidebarProjectsList';
 import { SessionNodeItem } from './sidebar/SessionNodeItem';
@@ -1730,6 +1730,8 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
       normalizedSessionSearchQuery,
       groupSearchDataByGroup,
       visibleSessionCountByGroup,
+      isSingleProjectMode,
+      sessionGroupingMode,
       collapsedGroups,
       hideDirectoryControls,
       collapsedFolderIds,
@@ -1773,6 +1775,36 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     openNewSessionDraft();
   }, [mobileVariant, openNewSessionDraft, setActiveMainTab, setSessionSwitcherOpen]);
 
+  const renderChatsSection = React.useCallback((items: ActivityItem[]) => {
+    const chatsRoot = getChatsRootForHome(homeDirectory)
+      ?? items.map((item) => getChatsRootFromDirectory(item.node.session.directory)).find(Boolean)
+      ?? null;
+    if (!chatsRoot) return items.map((item) => renderSessionNode(item.node, 0, item.groupDirectory));
+
+    const folderDirectories = [
+      chatsRoot,
+      ...items.map((item) => normalizePath(item.node.session.directory ?? null)).filter((directory): directory is string => Boolean(directory)),
+    ];
+    const folderScopes = Array.from(new Set(folderDirectories)).map((directory) => ({
+      scopeKey: directory,
+      directory,
+    }));
+    const group: SessionGroup = {
+      id: 'managed-chats',
+      label: '',
+      branch: null,
+      description: null,
+      isMain: true,
+      worktree: null,
+      directory: chatsRoot,
+      folderScopeKey: chatsRoot,
+      folderScopes,
+      draftTarget: 'chat',
+      sessions: items.map((item) => item.node),
+    };
+    return renderGroupSessions(group, 'managed-chats', null, true);
+  }, [homeDirectory, renderGroupSessions, renderSessionNode]);
+
   const topContent = React.useMemo(
     () => (!isVSCode && !hasSessionSearchQuery && hasActivitySectionItems) ? (
       <SidebarActivitySections
@@ -1785,9 +1817,10 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         isDesktopShellRuntime={isDesktopShellRuntime}
         onNewChat={handleOpenNewSessionDraftFromHeader}
         alwaysShowActions={alwaysShowSidebarActions}
+        renderChatsSection={renderChatsSection}
       />
     ) : null,
-    [activitySections, alwaysShowSidebarActions, editingId, handleOpenNewSessionDraftFromHeader, hasActivitySectionItems, hasSessionSearchQuery, isDesktopShellRuntime, isVSCode, openSidebarMenuKey, recentExpandedParents, renderSessionNode],
+    [activitySections, alwaysShowSidebarActions, editingId, handleOpenNewSessionDraftFromHeader, hasActivitySectionItems, hasSessionSearchQuery, isDesktopShellRuntime, isVSCode, openSidebarMenuKey, recentExpandedParents, renderChatsSection, renderSessionNode],
   );
   const isInlineEditing = Boolean(renamingFolderId || editingId || editingProjectDialogId);
 

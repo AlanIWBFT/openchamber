@@ -34,7 +34,10 @@ export const useMiniChatKeyboardShortcuts = () => {
 
       if (eventMatchesShortcut(event, combo('new_chat'))) {
         event.preventDefault();
-        openNewSessionDraft();
+        const sessionState = useSessionUIStore.getState();
+        openNewSessionDraft(sessionState.currentSessionId && sessionState.currentSessionDirectory
+          ? { directoryOverride: sessionState.currentSessionDirectory }
+          : undefined);
         focusChatInput();
         return;
       }

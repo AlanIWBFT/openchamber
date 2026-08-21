@@ -30,7 +30,7 @@ import { useSkillsStore } from "@/stores/useSkillsStore"
 import { getDeferredSafeStorage } from "@/stores/utils/safeStorage"
 import { markPendingUserSendAnimation } from "@/lib/userSendAnimation"
 import { normalizePath } from "@/lib/pathNormalization"
-import { CHAT_DRAFT_PROJECT_ID, createChatDirectory, deleteChatDirectory, warmChatsRootDirectory } from "@/lib/chatDirectories"
+import { CHAT_DRAFT_PROJECT_ID, createChatDirectory, deleteChatDirectory, getChatsRootFromDirectory, warmChatsRootDirectory } from "@/lib/chatDirectories"
 import { isVSCodeRuntime } from "@/lib/desktop"
 import { flattenAssistantTextParts } from "@/lib/messages/messageText"
 import { composeForkSessionMessage } from "@/lib/messages/executionMeta"
@@ -1677,7 +1677,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       get().closeNewSessionDraft()
 
       if (targetFolderId) {
-        const scopeKey = dir || get().lastLoadedDirectory || session.directory
+        const scopeDirectory = dir || get().lastLoadedDirectory || session.directory
+        const scopeKey = getChatsRootFromDirectory(scopeDirectory) ?? scopeDirectory
         if (scopeKey) {
           useSessionFoldersStore.getState().addSessionToFolder(scopeKey, targetFolderId, session.id)
         }

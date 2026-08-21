@@ -12,7 +12,7 @@ import {
 import type { SessionNodeRenderExtras } from './sessionNodeItemUtils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-type ActivityItem = {
+export type ActivityItem = {
   node: SessionNode;
   projectId: string | null;
   groupDirectory: string | null;
@@ -49,6 +49,7 @@ type Props = {
   isDesktopShellRuntime: boolean;
   onNewChat?: () => void;
   alwaysShowActions?: boolean;
+  renderChatsSection?: (items: ActivityItem[]) => React.ReactNode;
 };
 
 type RenderExtras = SessionNodeRenderExtras;
@@ -151,7 +152,8 @@ export function SidebarActivitySections(props: Props): React.ReactNode {
         );
         const visibleItems = section.items.slice(0, visibleLimit);
         const remainingCount = section.items.length - visibleItems.length;
-        const canShowFewer = !flatVariant && section.items.length > initialVisibleCount && remainingCount === 0;
+        const usesCustomRenderer = section.key === 'chats' && Boolean(props.renderChatsSection);
+        const canShowFewer = !usesCustomRenderer && !flatVariant && section.items.length > initialVisibleCount && remainingCount === 0;
         const getRenderExtras = buildRenderExtras(visibleItems.map((item) => item.node));
         const renderItem = (item: ActivityItem) => renderSessionNode(
           item.node,
@@ -240,8 +242,10 @@ export function SidebarActivitySections(props: Props): React.ReactNode {
             </div>
             {!isCollapsed ? (
               <div className={cn('space-y-0.5')}>
-                {visibleItems.map(renderItem)}
-                {remainingCount > 0 ? (
+                {section.key === 'chats' && props.renderChatsSection
+                  ? props.renderChatsSection(section.items)
+                  : visibleItems.map(renderItem)}
+                {!usesCustomRenderer && remainingCount > 0 ? (
                   <button
                     type="button"
                     onClick={() => showMoreSessions(section.key, visibleItems.length, section.items.length)}

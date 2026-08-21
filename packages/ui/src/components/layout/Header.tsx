@@ -2062,7 +2062,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <DropdownMenuItem onClick={() => void shareCurrentSession()}><Icon name="share-2" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.share')}</DropdownMenuItem>
                     )}
                     <DropdownMenuItem onClick={() => void exportCurrentSession()}><Icon name="download" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.exportMarkdown')}</DropdownMenuItem>
-                    {!isVSCode && currentSession && !currentSession.parentId ? (
+                    {!isVSCode && !isChatContext && currentSession && !currentSession.parentId ? (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="block">

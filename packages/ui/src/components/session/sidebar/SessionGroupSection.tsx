@@ -85,7 +85,7 @@ type Props = {
   setActiveProjectIdOnly: (id: string) => void;
   setActiveMainTab: (tab: MainTab) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
-  openNewSessionDraft: (options?: { selectedProjectId?: string | null; directoryOverride?: string | null; targetFolderId?: string }) => void;
+  openNewSessionDraft: (options?: { selectedProjectId?: string | null; directoryOverride?: string | null; targetFolderId?: string; target?: 'chat' | 'project' }) => void;
   addSessionToFolder: (scopeKey: string, folderId: string, sessionId: string) => void;
   createFolderAndStartRename: (scopeKey: string, parentId?: string | null) => { id: string } | null;
   renamingFolderId: string | null;
@@ -881,7 +881,12 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
               if (projectId && projectId !== activeProjectId) setActiveProjectIdOnly(projectId);
               setActiveMainTab('chat');
               if (mobileVariant) setSessionSwitcherOpen(false);
-              openNewSessionDraft({ selectedProjectId: projectId, directoryOverride: scopeDirectory ?? group.directory, targetFolderId: folder.id });
+               openNewSessionDraft({
+                 selectedProjectId: projectId,
+                 directoryOverride: scopeDirectory ?? group.directory,
+                 targetFolderId: folder.id,
+                 target: group.draftTarget,
+               });
             }}
             hideActions={false}
             archivedBucket={group.isArchivedBucket === true}
