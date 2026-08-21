@@ -7,9 +7,6 @@ const requiredKeys = [
   'settings.page.integrations.title',
   'settings.page.integrations.description',
   'settings.integrations.experimentalWarning',
-  'settings.integrations.messengers.title',
-  'settings.integrations.messengers.discord.name',
-  'settings.integrations.messengers.telegram.name',
   'settings.integrations.thirdParty.title',
   'settings.integrations.thirdParty.actions.install',
   'settings.integrations.thirdParty.actions.update',
@@ -17,7 +14,6 @@ const requiredKeys = [
   'settings.integrations.thirdParty.actions.remove',
   'settings.integrations.thirdParty.status.notInstalled',
   'settings.integrations.thirdParty.opencodeClaude.description',
-  'settings.integrations.thirdParty.opencodeCommandcode.description',
   'settings.integrations.thirdParty.opencodeCursorOauth.description',
 ] as const;
 
