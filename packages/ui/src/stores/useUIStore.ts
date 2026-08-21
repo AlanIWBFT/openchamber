@@ -861,8 +861,8 @@ interface UIStore {
   agentWebToolEnabled: boolean;
   agentMemoryToolEnabled: boolean;
   /**
-   * Whether this build has agent memory at all. Server-owned and not
-   * persisted: an unreleased feature must not come back from a stale cache.
+   * Whether this process exposes agent memory at all. Server-owned and not
+   * persisted, so an environment override cannot be masked by a stale cache.
    */
   agentMemoryFeatureAvailable: boolean;
   /**
