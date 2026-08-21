@@ -60,6 +60,7 @@ import { findShellCommandForMessage, isUserShellMarkerMessage } from './lib/shel
 import { resolveChatPromptReadOnly } from './chatPromptReadOnly';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { createFirstVisibleSessionPerformanceTracker } from '@/sync/session-load-performance';
+import { isChatDirectoryPath } from '@/lib/chatDirectories';
 
 const EMPTY_MESSAGES: Array<{ info: Message; parts: Part[] }> = [];
 const IDLE_SESSION_STATUS = { type: 'idle' as const };
@@ -738,12 +739,15 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     const isVSCode = isVSCodeRuntime();
     const chatSurfaceMode = useChatSurfaceMode();
     const draftOpen = Boolean(newSessionDraft?.open);
+    const isManagedChatContext = draftOpen
+        ? newSessionDraft?.target === 'chat'
+        : isChatDirectoryPath(effectiveSessionDirectory);
     // A draft can target another project or a pending worktree before it has a
     // session. Keep the panel on that same directory so its project, MCP, and
     // usage readouts describe where the draft will run rather than the project
     // the user came from.
     const workStatusDirectory = draftOpen
-        ? newSessionDraft?.bootstrapPendingDirectory ?? newSessionDraft?.directoryOverride ?? effectiveSessionDirectory
+        ? (isManagedChatContext ? null : newSessionDraft?.bootstrapPendingDirectory ?? newSessionDraft?.directoryOverride ?? effectiveSessionDirectory)
         : effectiveSessionDirectory;
     const initError = useGlobalSyncStore((s) => s.error);
     // Despite the historical name, this now covers mobile too: the mobile
@@ -1320,6 +1324,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                     visible={showWorkStatusOverlay}
                     sessionId={currentSessionId ?? null}
                     directory={workStatusDirectory ?? null}
+                    repositoryEnabled={!isManagedChatContext}
                 />
             ) : null}
 
@@ -1342,6 +1347,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 visible={showWorkStatusPanel}
                 sessionId={currentSessionId ?? null}
                 directory={workStatusDirectory ?? null}
+                repositoryEnabled={!isManagedChatContext}
             />
         ) : null}
         </div>

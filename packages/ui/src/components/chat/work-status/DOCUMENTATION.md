@@ -54,6 +54,11 @@ mode. It remains available on a new-session draft: when the draft targets a
 project or pending worktree, the panel uses that directory for project, MCP,
 and usage readouts before a session exists.
 
+Managed Chats never render or warm the Project repository section. A Chat draft
+also passes no fallback directory to the panel, so an active project's branch
+cannot leak into the draft while directory-independent sections remain
+available.
+
 `rowRef` is a **callback ref, not an object ref**. An object ref gives no signal
 when the node attaches, so the measuring effect read `.current`, found nothing
 whenever the row mounted after the effect first ran, and only recovered on the
