@@ -2387,7 +2387,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         && !isVSCode
         && !isMiniChatSurface;
     const draftPresentationClassName = cn(
-        'transition-opacity duration-100 ease-out motion-reduce:transition-none',
+        'transition-opacity duration-[120ms] ease-out motion-reduce:transition-none',
         draftPresentationExiting && 'pointer-events-none opacity-0',
     );
 
