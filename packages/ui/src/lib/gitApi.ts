@@ -7,6 +7,7 @@ import { materializeOpenDraftSession, useSessionUIStore } from '@/sync/session-u
 import { useSelectionStore } from '@/sync/selection-store';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 export type {
   GitRemote,
@@ -247,6 +248,30 @@ const collectSelectedFileDiffs = async (directory: string, files: string[]): Pro
   return total;
 };
 
+const COMMIT_STYLE_SAMPLE_COUNT = 10;
+const COMMIT_STYLE_SUBJECT_CHAR_LIMIT = 200;
+
+// Recent commit subjects give the model the repository's own commit style —
+// language, prefixes, capitalization — instead of a hardcoded English default.
+// A repository with no history yet is normal, so an empty sample is not an error.
+const collectRecentCommitSubjects = async (directory: string): Promise<string> => {
+  try {
+    const log = await getGitLog(directory, { maxCount: COMMIT_STYLE_SAMPLE_COUNT });
+    const subjects = (Array.isArray(log?.all) ? log.all : [])
+      .map((entry) => (typeof entry?.message === 'string' ? entry.message.trim() : ''))
+      .filter(Boolean)
+      .map((subject) => subject.slice(0, COMMIT_STYLE_SUBJECT_CHAR_LIMIT));
+    if (subjects.length === 0) return '(no commits yet)';
+    return subjects.map((subject) => `- ${subject}`).join('\n');
+  } catch (error) {
+    console.warn('[git-generation][browser] failed to collect recent commit subjects', {
+      directory,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return '(recent commits unavailable)';
+  }
+};
+
 const parseCommitStructured = (structured: Record<string, unknown> | null): { subject: string; highlights: string[] } => {
   const subject = typeof structured?.subject === 'string' ? structured.subject.trim() : '';
   const highlights = Array.isArray(structured?.highlights)
@@ -293,9 +318,11 @@ export async function generateCommitMessage(
     selectedFiles: files.length,
   });
 
+  const recentCommits = await collectRecentCommitSubjects(directory);
   const visiblePrompt = await renderMagicPrompt('git.commit.generate.visible');
   const hiddenPrompt = await renderMagicPrompt('git.commit.generate.instructions', {
     selected_files: files.map((file) => `- ${file}`).join('\n'),
+    recent_commits: recentCommits,
   });
 
   try {
@@ -354,6 +381,62 @@ export async function generateCommitMessage(
     throw error;
   }
 }
+
+// Conventional pull request template locations. GitHub resolves `.github/`
+// first, then the repository root, then `docs/`; both casings are probed
+// because case-sensitive filesystems treat them as different files. GitLab
+// keeps its merge request templates in `.gitlab/merge_request_templates/`,
+// where `Default.md` is the one applied without an explicit choice.
+const PULL_REQUEST_TEMPLATE_PATHS = [
+  '.github/pull_request_template.md',
+  '.github/PULL_REQUEST_TEMPLATE.md',
+  'pull_request_template.md',
+  'PULL_REQUEST_TEMPLATE.md',
+  'docs/pull_request_template.md',
+  'docs/PULL_REQUEST_TEMPLATE.md',
+  '.gitlab/merge_request_templates/Default.md',
+] as const;
+
+const PULL_REQUEST_TEMPLATE_CHAR_LIMIT = 8_000;
+
+const readOptionalRepoTextFile = async (directory: string, relativePath: string): Promise<string | null> => {
+  const absolutePath = `${directory.replace(/\/+$/, '')}/${relativePath}`;
+  const runtimeFiles = getRegisteredRuntimeAPIs()?.files;
+  if (runtimeFiles?.readFile) {
+    try {
+      const result = await runtimeFiles.readFile(absolutePath, { optional: true, directory });
+      return result.content ?? null;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const params = new URLSearchParams({ path: absolutePath, directory, optional: 'true' });
+    const response = await runtimeFetch(`/api/fs/read?${params.toString()}`, { cache: 'no-store' });
+    if (!response.ok) return null;
+    return await response.text();
+  } catch {
+    return null;
+  }
+};
+
+// A repository that ships a PR template expects descriptions in its shape, so
+// the template wins over the built-in section layout. Missing template is the
+// normal case, not a failure: probing stops at the first file that has content.
+const collectPullRequestTemplate = async (directory: string): Promise<string> => {
+  for (const relativePath of PULL_REQUEST_TEMPLATE_PATHS) {
+    const content = await readOptionalRepoTextFile(directory, relativePath);
+    const trimmed = content?.trim();
+    if (!trimmed) continue;
+    console.info('[git-generation][browser] pull request template detected', {
+      directory,
+      template: relativePath,
+      length: trimmed.length,
+    });
+    return `\nRepository pull request template (${relativePath}) — use it as the body structure:\n${trimmed.slice(0, PULL_REQUEST_TEMPLATE_CHAR_LIMIT)}`;
+  }
+  return '';
+};
 
 export async function generatePullRequestDescription(
   directory: string,
@@ -420,6 +503,7 @@ export async function generatePullRequestDescription(
     }).join('\n'),
     changed_files: changedFiles.length > 0 ? changedFiles.map((file) => `- ${file}`).join('\n') : '- none detected',
     additional_context_block: payload.context?.trim() ? `\nAdditional context:\n${payload.context.trim()}` : '',
+    pr_template_block: await collectPullRequestTemplate(directory),
   });
 
   const parsePrStructured = (structured: Record<string, unknown> | null) => ({

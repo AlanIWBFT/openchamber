@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 - **Dictation:** speech is now transcribed after you stop talking, instead of being re-guessed word by word while you speak. The offline models OpenChamber runs are built to read a whole utterance at once, so the running transcript was consistently worse than the final one. While recording, the composer shows a live waveform of your voice and a timer, then Transcribing while the text is produced. Long recordings are split at pauses in your speech rather than on a timer, so a three-minute dictation still returns a few seconds after you stop, and words are no longer cut in half at the split.
+- Git: generated commit messages now follow the style of the repository's recent commits, including their language, so repositories that commit in Korean or without a `feat:`-style prefix get messages that match instead of English Conventional Commits.
+- Git: generating a pull request description now picks up the repository's own PR template when it has one, so the draft comes back in your project's sections and checklists instead of the built-in Summary/Why/Testing layout.
 - Chat: if OpenCode restarts while a response is still running, the chat now stops with an interrupted state and a notification to continue instead of hanging silently (thanks to @sum117).
 
 ## [1.19.0] - 2026-08-19
