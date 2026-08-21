@@ -450,9 +450,8 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   const archivedSessionStructure = useGlobalSessionsStore(useShallow(
     (state) => state.archivedSessions.map(getSessionStructuralSignature).sort(),
   ));
-  const globalSessionSnapshot = useGlobalSessionsStore.getState();
-  const globalActiveSessions = globalSessionSnapshot.activeSessions;
-  const archivedSessions = globalSessionSnapshot.archivedSessions;
+  const globalActiveSessions = useGlobalSessionsStore((state) => state.activeSessions);
+  const archivedSessions = useGlobalSessionsStore((state) => state.archivedSessions);
   const liveFallbackCacheRef = React.useRef<{ signature: string; sessions: Session[] }>({
     signature: '',
     sessions: [],
@@ -551,6 +550,13 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     }
     initialGlobalSessionsRefreshStartedRef.current = true;
     void refreshGlobalSessions(syncSessionsSnapshotRef.current);
+  }, []);
+
+  React.useEffect(() => {
+    const interval = window.setInterval(() => {
+      void refreshGlobalSessions();
+    }, 45_000);
+    return () => window.clearInterval(interval);
   }, []);
 
   React.useEffect(() => {
