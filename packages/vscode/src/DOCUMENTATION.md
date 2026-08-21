@@ -40,11 +40,16 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     - active-directory selection across multi-root workspaces
     - dropped-file parsing and attachment reading
     - models metadata fetch helper
+  - Read paths are authorized in the requested workspace path space before symlink resolution, matching the web runtime; directly requested outside-workspace paths remain denied.
 
 The webview CSP permits `blob:` only for `worker-src` so shared UI parsers can run bounded local decompression off the main thread. Blob scripts remain disallowed by `script-src`.
 
 - `bridge-localfs-proxy-runtime.ts`
   - Local `/api/fs/read` and `/api/fs/raw` proxy helpers and shared proxy utility helpers.
+  - Workspace-contained Markdown gallery images use these local filesystem
+    routes without calling the server grant route. Grant requests for OpenCode
+    temporary-directory images return an explicit unsupported response instead
+    of being forwarded to OpenCode.
 
 - `bridge-proxy-runtime.ts`
   - Proxy route handlers (`api:proxy`, `api:session:message`) with injected helper dependencies.
@@ -54,6 +59,7 @@ The webview CSP permits `blob:` only for `worker-src` so shared UI parsers can r
 - `bridge-config-runtime.ts`
   - Config and skills message handlers (`api:config/*`).
   - Includes OpenCode resolution diagnostics parity handler used by shared UI (`/api/config/opencode-resolution`).
+  - OpenCode JSONC reads in `opencodeConfig.ts` fail closed on a partial or non-object `jsonc-parser` tree (`INVALID_JSONC`) so mutations cannot rewrite a `$schema`-only stub over an existing config. Comment-only files read as empty, while other content that yields no JSON value (YAML, plain text) fails closed. A broken layer is omitted from the merge and recorded on `layerErrors`; valid sibling layers still load, including plugin list/read via `getPluginConfigSources`. Writes still refuse to overwrite the broken file.
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers.
