@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
 const workspaceRoot = path.resolve(electronRoot, '../..');
 const sqliteFinalizerMarker = 'openchamber-sqlite-finalizer.capability';
+const windowsRecycleHelper = 'OpenCode.Windows.RecycleBin.dll';
 
 const readExpectedVersion = () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(workspaceRoot, 'package.json'), 'utf8'));
@@ -59,6 +60,14 @@ const assertFinalizerMarker = (binaryPath) => {
   }
 };
 
+const assertWindowsRecycleHelper = (binaryPath) => {
+  if (process.platform !== 'win32') return;
+  const helper = path.join(path.dirname(binaryPath), windowsRecycleHelper);
+  if (!fs.statSync(helper, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Bundled OpenCode CLI is missing the Windows Recycle Bin helper: ${helper}`);
+  }
+};
+
 const findPackagedBinaries = () => {
   const distDir = path.join(electronRoot, 'dist');
   if (!fs.existsSync(distDir)) return [];
@@ -96,7 +105,10 @@ const main = () => {
   if (mode === '--staged') {
     const binaryPath = path.join(electronRoot, 'resources', 'opencode-cli', binaryName());
     assertBinary(binaryPath, expectedVersion);
-    if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) assertFinalizerMarker(binaryPath);
+    if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) {
+      assertFinalizerMarker(binaryPath);
+      assertWindowsRecycleHelper(binaryPath);
+    }
     return;
   }
 
@@ -106,7 +118,10 @@ const main = () => {
   }
   for (const packagedBinary of packagedBinaries) {
     assertBinary(packagedBinary, expectedVersion);
-    if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) assertFinalizerMarker(packagedBinary);
+    if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) {
+      assertFinalizerMarker(packagedBinary);
+      assertWindowsRecycleHelper(packagedBinary);
+    }
   }
 };
 

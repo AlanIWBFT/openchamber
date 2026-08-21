@@ -11,6 +11,7 @@ const outputDir = path.join(electronRoot, 'resources', 'opencode-cli');
 const cacheRoot = path.join(electronRoot, '.cache', 'opencode-cli');
 const rootPackagePath = path.join(workspaceRoot, 'package.json');
 const sqliteFinalizerMarker = 'openchamber-sqlite-finalizer.capability';
+const windowsRecycleHelper = 'OpenCode.Windows.RecycleBin.dll';
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -156,7 +157,14 @@ const prepareFromLocalSource = ({ sourceRoot, version, targetArchitecture, outpu
   if (!fs.statSync(builtMarker, { throwIfNoEntry: false })?.isFile()) {
     throw new Error(`Local OpenCode build is missing SQLite finalizer capability marker: ${builtMarker}`);
   }
+  const builtRecycleHelper = path.join(path.dirname(builtBinary), windowsRecycleHelper);
+  if (process.platform === 'win32' && !fs.statSync(builtRecycleHelper, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Local OpenCode build is missing Windows Recycle Bin helper: ${builtRecycleHelper}`);
+  }
   stageBinary(builtBinary, outputBinary, version);
+  if (process.platform === 'win32') {
+    fs.copyFileSync(builtRecycleHelper, path.join(outputDir, windowsRecycleHelper));
+  }
   fs.copyFileSync(builtMarker, path.join(outputDir, sqliteFinalizerMarker));
   console.log(`[electron] prepared local OpenCode CLI ${version}: ${outputBinary}`);
 };

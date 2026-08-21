@@ -53,6 +53,10 @@ and custom CLIs without that marker skip this private step. The finalizer
 checkpoints WAL without loading the normal OpenCode CLI or server runtime.
 External OpenCode servers are never terminated or finalized.
 
+On Windows, a local fork build also stages `OpenCode.Windows.RecycleBin.dll`
+beside `opencode.exe`. The CLI loads this managed helper from PowerShell lanes
+to perform safe Recycle Bin operations and diagnose files that block recycling.
+
 The Electron workspace package trusts Electron's install script so `bun install` downloads the platform runtime in fresh checkouts and worktrees.
 
 Electron's postinstall (`node install.js`) is run by `bun install` with the system Node. Older Electron releases bundled `extract-zip@2.0.1`, which under Node 24 silently unpacked only the first entry of the Electron zip, leaving `dist/` without the binary and `path.txt` missing. Electron 43+ ships its own fixed extractor (`@electron-internal/extract-zip`), but to keep interrupted or wrong-architecture installs from blocking desktop work:
