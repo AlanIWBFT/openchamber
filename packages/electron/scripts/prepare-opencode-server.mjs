@@ -153,7 +153,7 @@ ${code.slice(start)}`,
 const main = async () => {
   const platform = process.env.OPENCHAMBER_OPENCODE_SERVER_PLATFORM || process.platform;
   const { node: arch } = resolveTargetArchitecture();
-  if (source && (arch !== 'x64' || !['linux', 'win32'].includes(platform))) throw new Error(`Unsupported local OpenCode target: ${platform}-${arch}`);
+  if (source && !(platform === 'win32' || (platform === 'linux' && arch === 'x64'))) throw new Error(`Unsupported local OpenCode target: ${platform}-${arch}`);
   const extra = [];
   const forkSourcePlugin = {
     name: 'openchamber-local-opencode',

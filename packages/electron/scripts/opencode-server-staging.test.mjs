@@ -43,6 +43,16 @@ const stage = (overrides = {}) => {
 
 const target = { platform: 'linux', arch: 'x64', version: '2.3.0' };
 
+test('requires both Windows fork helpers even when all manifest keys are present', (context) => {
+  const helpers = { processBroker: 'OpenCode.ProcessBroker.exe', recycleHelper: 'OpenCode.Windows.RecycleBin.dll' };
+  const dir = stage({ platform: 'win32', fork: { commit: 'fixture' }, ...helpers });
+  context.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const windows = { ...target, platform: 'win32' };
+  assert.throws(() => verifyOpenCodeServer(dir, windows), /missing its processBroker/);
+  fs.writeFileSync(path.join(dir, 'assets', helpers.processBroker), '');
+  assert.throws(() => verifyOpenCodeServer(dir, windows), /missing its recycleHelper/);
+});
+
 test('pins the bundled server to an exact OpenCode 2.x release', () => {
   assert.match(readPinnedOpenCodeServerVersion(), /^2\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
 });

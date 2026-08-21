@@ -307,6 +307,12 @@ is reported and retains ownership information. External OpenCode servers are nev
 terminated. Confirmed quit replaces the application page with a closing page and
 rejects new IPC and HTTP work while cleanup runs.
 
+On Windows the fork service stages `OpenCode.Windows.RecycleBin.dll` for
+PowerShell Recycle Bin operations and `OpenCode.ProcessBroker.exe` for Git/rg
+process jobs under `resources/opencode-server/assets`. Staged and packaged
+verification requires both assets. The out-of-process broker is x64 on both
+Windows architectures; native Node bindings match the Electron architecture.
+
 The Electron workspace package trusts Electron's install script so `bun install` downloads the platform runtime in fresh checkouts and worktrees.
 
 Electron's postinstall (`node install.js`) is run by `bun install` with the system Node. Older Electron releases bundled `extract-zip@2.0.1`, which under Node 24 silently unpacked only the first entry of the Electron zip, leaving `dist/` without the binary and `path.txt` missing. Electron 43+ ships its own fixed extractor (`@electron-internal/extract-zip`), but to keep interrupted or wrong-architecture installs from blocking desktop work:

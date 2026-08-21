@@ -57,6 +57,16 @@ export const verifyOpenCodeServer = (dir, { platform, arch, version, runtime }) 
   if (manifest.platform !== platform || manifest.arch !== arch) {
     throw new Error(`Bundled OpenCode server was staged for ${manifest.platform}-${manifest.arch}, expected ${platform}-${arch}`);
   }
+  if (manifest.fork && platform === 'win32') {
+    for (const key of ['processBroker', 'recycleHelper']) {
+      if (!manifest[key] || !fs.statSync(path.join(dir, 'assets', manifest[key]), { throwIfNoEntry: false })?.isFile()) {
+        throw new Error(`Bundled OpenCode server is missing its ${key}`);
+      }
+    }
+    if (readBinaryArchitecture(path.join(dir, 'assets', manifest.processBroker), platform) !== 'x64') {
+      throw new Error('The fork desktop service requires an x64 Windows process broker');
+    }
+  }
   for (const key of ['nodePty', 'photonWasm']) {
     const file = path.join(dir, 'assets', manifest[key]);
     if (!fs.existsSync(file)) throw new Error(`Bundled OpenCode server is missing ${key}: ${file}`);
