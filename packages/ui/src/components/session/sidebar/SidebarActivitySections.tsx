@@ -183,6 +183,11 @@ export function SidebarActivitySections(props: Props): React.ReactNode {
 
         return (
           <div key={section.key} className="relative space-y-1">
+            <div
+              className="absolute h-px w-px pointer-events-none"
+              data-sidebar-activity-sentinel={section.key}
+              aria-hidden="true"
+            />
             <div className={cn(
               'relative group/chats',
               '-ml-2.5 -mr-2',
