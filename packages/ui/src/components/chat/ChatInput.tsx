@@ -224,6 +224,7 @@ interface ChatInputProps {
     onOpenSettings?: () => void;
     scrollToBottom?: () => void;
     active?: boolean;
+    draftPresentationExiting?: boolean;
 }
 
 const resolveChatDraftIdentity = (sessionId: string | null): ChatDraftIdentity | null => {
@@ -237,7 +238,12 @@ const resolveChatDraftIdentity = (sessionId: string | null): ChatDraftIdentity |
     return createChatDraftIdentity(getRuntimeKey(), directory, sessionId);
 };
 
-const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBottom, active = true }) => {
+const ChatInputComponent: React.FC<ChatInputProps> = ({
+    onOpenSettings,
+    scrollToBottom,
+    active = true,
+    draftPresentationExiting = false,
+}) => {
     const { t } = useI18n();
     // Track if we restored a draft on mount (for text selection)
     const initialDraftRef = React.useRef<string | null>(null);
@@ -2375,6 +2381,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const chatSurfaceMode = useChatSurfaceMode();
     const isMiniChatSurface = chatSurfaceMode === 'mini-chat';
+    const showDesktopDraftPresentation = (newSessionDraftOpen || draftPresentationExiting)
+        && !isDesktopExpanded
+        && !isMobile
+        && !isVSCode
+        && !isMiniChatSurface;
+    const draftPresentationClassName = cn(
+        'transition-opacity duration-100 ease-out motion-reduce:transition-none',
+        draftPresentationExiting && 'pointer-events-none opacity-0',
+    );
 
     const hasPendingChanges = React.useMemo(() => {
         if (isMiniChatSurface) {
@@ -2552,8 +2567,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             )}
             style={isMobile && inputBarOffset > 0 ? { marginBottom: `${inputBarOffset}px` } : undefined}
         >
-            {newSessionDraftOpen && !isDesktopExpanded && !isMobile && !isVSCode && !isMiniChatSurface ? (
-                <div className="chat-input-column mb-7 text-center">
+            {showDesktopDraftPresentation ? (
+                <div className={cn('chat-input-column mb-7 text-center', draftPresentationClassName)}>
                     <h1 className="text-balance text-2xl font-normal tracking-tight text-foreground md:text-3xl">
                         {renderDraftTitle(
                             draftProjectLabel
@@ -2624,21 +2639,23 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         ? null
                         : <PendingChangesBar />}
                 />
-                {!isMobile && showDraftTargetSelectors && selectedDraftProject ? (
-                    <DraftTargetSelectors
-                        projects={draftProjects}
-                        selectedProject={selectedDraftProject}
-                        selectedDirectory={selectedDraftDirectory}
-                        selectedBranchLabel={selectedDraftBranchLabel}
-                        selectedBranchIsKnown={selectedDraftBranchIsKnown}
-                        projectRootBranchOption={projectRootBranchOption}
-                        worktreeBranchOptions={worktreeBranchOptions}
-                        branchItems={draftBranchItems}
-                        showBranchSelector={shouldShowDraftBranchSelector}
-                        onProjectChange={handleDraftProjectChange}
-                        onDirectoryChange={handleDraftDirectoryChange}
-                        theme={currentTheme}
-                    />
+                {!isMobile && (showDraftTargetSelectors || draftPresentationExiting) && selectedDraftProject ? (
+                    <div className={draftPresentationClassName}>
+                        <DraftTargetSelectors
+                            projects={draftProjects}
+                            selectedProject={selectedDraftProject}
+                            selectedDirectory={selectedDraftDirectory}
+                            selectedBranchLabel={selectedDraftBranchLabel}
+                            selectedBranchIsKnown={selectedDraftBranchIsKnown}
+                            projectRootBranchOption={projectRootBranchOption}
+                            worktreeBranchOptions={worktreeBranchOptions}
+                            branchItems={draftBranchItems}
+                            showBranchSelector={shouldShowDraftBranchSelector}
+                            onProjectChange={handleDraftProjectChange}
+                            onDirectoryChange={handleDraftDirectoryChange}
+                            theme={currentTheme}
+                        />
+                    </div>
                 ) : null}
                 {isMobile && showDraftTargetSelectors && selectedDraftProject ? (
                     <MobileDraftTargetTriggers
@@ -2902,10 +2919,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     />
                 ) : null}
             </div>
-            {newSessionDraftOpen && !isDesktopExpanded && !isMobile && !isVSCode && !isMiniChatSurface ? (
+            {showDesktopDraftPresentation ? (
                 <DraftPresetChips
                     onSubmit={(starter) => submitPresetPrompt(starter.submitText, starter.ref.type)}
-                    className="chat-input-column mt-4"
+                    className={cn('chat-input-column mt-4', draftPresentationClassName)}
                 />
             ) : null}
         </form>
