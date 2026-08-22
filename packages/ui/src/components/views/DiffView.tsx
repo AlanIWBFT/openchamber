@@ -1012,7 +1012,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const status = useGitStatus(effectiveDirectory ?? null);
     const isLoadingStatus = useGitLoadingStatus(effectiveDirectory ?? null);
     const setActiveDirectory = useGitStore((state) => state.setActiveDirectory);
-    const ensureStatus = useGitStore((state) => state.ensureStatus);
+    const ensureStatus = useGitStore((state) => state.ensurePassiveStatus);
     const selectNestedRepo = useGitStore((state) => state.selectNestedRepo);
     const fetchStatus = useGitStore((state) => state.fetchStatus);
     const fetchBranches = useGitStore((state) => state.fetchBranches);
