@@ -2,7 +2,11 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveOpenCodeCliTarget, resolveTargetArchitecture } from './target-architecture.mjs';
+import {
+  resolveLocalOpenCodeBunRuntime,
+  resolveOpenCodeCliTarget,
+  resolveTargetArchitecture,
+} from './target-architecture.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
@@ -58,10 +62,10 @@ const artifactForPlatform = (platform, targetArchitecture) => {
 };
 
 const localArtifactForPlatform = (platform, targetArchitecture) => {
-  const artifact = artifactForPlatform(platform, targetArchitecture);
+  const target = resolveOpenCodeCliTarget({ platform, targetArchitecture });
   return {
-    binary: artifact.binary,
-    directory: artifact.name.replace(/\.(?:zip|tar\.gz)$/, ''),
+    binary: platform === 'win32' ? 'opencode.exe' : 'opencode',
+    directory: `opencode-${target.buildTarget}${target.baseline ? '-baseline' : ''}`,
   };
 };
 
@@ -134,20 +138,30 @@ const prepareFromLocalSource = ({ sourceRoot, version, targetArchitecture, outpu
   if (!fs.statSync(opencodePackagePath, { throwIfNoEntry: false })?.isFile()) {
     throw new Error(`Local OpenCode package not found: ${opencodePackagePath}`);
   }
+  const compileExecutablePath = resolveLocalOpenCodeBunRuntime({
+    platform: process.platform,
+    targetArchitecture,
+    sourceRoot,
+  });
+  if (compileExecutablePath && !fs.statSync(compileExecutablePath, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Local Bun runtime not found: ${compileExecutablePath}`);
+  }
 
   const args = ['run', '--cwd', opencodePackageRoot, 'build', '--single', `--target=${cliTarget.buildTarget}`];
   if (cliTarget.baseline) args.push('--baseline');
   args.push('--skip-embed-web-ui');
   const channel = 'dev';
+  const environment = {
+    ...process.env,
+    OPENCODE_CHANNEL: channel,
+    OPENCODE_VERSION: version,
+  };
+  if (compileExecutablePath) environment.OPENCODE_COMPILE_EXECUTABLE_PATH = compileExecutablePath;
 
   console.log(`[electron] building bundled OpenCode CLI from local source (${channel}): ${sourceRoot}`);
-  run(process.env.BUN?.trim() || (process.platform === 'win32' ? 'bun.exe' : 'bun'), args, {
+  run(compileExecutablePath || process.env.BUN?.trim() || (process.platform === 'win32' ? 'bun.exe' : 'bun'), args, {
     cwd: sourceRoot,
-    env: {
-      ...process.env,
-      OPENCODE_CHANNEL: channel,
-      OPENCODE_VERSION: version,
-    },
+    env: environment,
     stdio: 'inherit',
   });
 
