@@ -253,6 +253,15 @@ Packaged Desktop builds include an OpenCode CLI pinned by `opencodeCli.version` 
 
 Set `OPENCHAMBER_OPENCODE_SOURCE_DIR` to build from a local OpenCode checkout instead. This path uses `packages/cli`, channel `dev`, one explicit `opencode-<platform>-<arch>[-baseline]` build target, and `--skip-web-ui` to omit OpenCode's unused Web UI. Build output lives under `packages/cli/dist/cli-<platform>-<arch>[-baseline]/bin`. Windows builds use the GUI subsystem for redirected child-process use. The local Windows fork supports the x64 packaging path; ARM64 local-fork packaging is unsupported and unvalidated. Official release downloads retain upstream's native architecture mapping.
 
+`OPENCHAMBER_OPENCODE_BUN_RUNTIME` selects the Bun executable that both runs
+the source builder and is embedded into the CLI through
+`OPENCODE_COMPILE_EXECUTABLE_PATH`. Without that override, native Windows x64
+source builds retain the sibling fallback
+`bun-v1.3.14-shim-hardlink/build/release/bun.exe`. Native Windows x64 source
+targets are non-baseline; release downloads remain baseline. The builder is
+invoked directly rather than through a package script that could select another
+Bun from PATH.
+
 Managed local Desktop startup prefers OpenCode binaries in this order:
 
 0. `opencodeBinary` in the machine policy file, when an administrator pinned one. It has no fallback: an unusable pin stops startup instead of trying the entries below (see `packages/web/server/lib/enterprise-mode.js`).
