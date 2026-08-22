@@ -70,7 +70,9 @@
 
 ## How PR resolution works
 
-- It reads local git status and remotes first.
+- It requests the Git module's narrow PR context: one `for-each-ref` for the branch tracking ref and one `remote -v` for all remote URLs. It does not run full status, diff statistics, repository-root discovery, or another `get-url` process per remote.
+- Concurrent PR requests for the same directory and branch share that in-flight context read. Each HTTP waiter can cancel independently; the underlying read is aborted only after the last waiter leaves.
+- The route's 12-second resolution deadline aborts the narrow Git read. On Windows that read shares the fixed eight-lane Git Worker Thread pool with status reads, keeping process creation off Electron's main event loop without introducing helper processes. A lane-level timeout remains a transient failure rather than an authoritative empty result, so the route can preserve its last cached PR status.
 - It ranks remotes in this order: explicit remote, tracking remote, `origin`, `upstream`, then the rest.
 - It resolves those remotes into GitHub repos.
 - It expands each repo through `parent` and `source` so PRs in upstream repos can still be found.

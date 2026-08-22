@@ -76,9 +76,10 @@ const setDirectoryStatus = (status: GitStatus) => {
   });
 };
 
-const createGitApi = (getGitStatus: GitAPI['getGitStatus']): GitAPI => ({
+const createGitApi = (getGitStatus: GitAPI['getGitStatus'], getPassiveGitStatus?: GitAPI['getPassiveGitStatus']): GitAPI => ({
   checkIsGitRepository: async () => true,
   getGitStatus,
+  getPassiveGitStatus,
   getGitBranches: async () => ({ all: [], current: 'main', branches: {} }),
   getGitLog: async () => ({ all: [], latest: null, total: 0 }),
   getCurrentGitIdentity: async () => null,
@@ -121,29 +122,36 @@ describe('useGitStore', () => {
     });
   });
 
-  test('reuses an in-flight full status request for light status', async () => {
+  test('uses the passive reader for mounted status demand', async () => {
     setDirectoryStatus(createStatus());
-    const requests: Deferred<GitStatus>[] = [];
-    const statusCalls: Array<{ directory: string; options?: { mode?: 'light' } }> = [];
-    const git = createGitApi((directory, options) => {
-      statusCalls.push({ directory, options });
-      const request = createDeferred<GitStatus>();
-      requests.push(request);
-      return request.promise;
-    });
+    let authoritativeCalls = 0;
+    let passiveCalls = 0;
+    const passiveRequest = createDeferred<GitStatus>();
+    const git = createGitApi(
+      async () => {
+        authoritativeCalls += 1;
+        return createStatus();
+      },
+      async () => {
+        passiveCalls += 1;
+        return passiveRequest.promise;
+      },
+    );
 
-    const fullPromise = useGitStore.getState().fetchStatus('/repo', git, { silent: true });
-    const lightPromise = useGitStore.getState().fetchStatus('/repo', git, { mode: 'light', silent: true });
+    const first = useGitStore.getState().ensurePassiveStatus('/repo', git);
+    const second = useGitStore.getState().ensurePassiveStatus('/repo', git);
     await Promise.resolve();
 
-    expect(statusCalls).toEqual([{ directory: '/repo', options: undefined }]);
-
-    requests[0].resolve(createStatus({ 'src/index.ts': { insertions: 1, deletions: 0 } }));
-    const [fullResult, lightResult] = await Promise.all([fullPromise, lightPromise]);
-    expect(lightResult).toBe(fullResult);
+    expect(authoritativeCalls).toBe(0);
+    expect(passiveCalls).toBe(1);
+    passiveRequest.resolve(createStatus({ 'src/index.ts': { insertions: 1, deletions: 0 } }));
+    await Promise.all([first, second]);
+    expect(useGitStore.getState().getDirectoryState('/repo')?.status?.diffStats).toEqual({
+      'src/index.ts': { insertions: 1, deletions: 0 },
+    });
   });
 
-  test('deduplicates concurrent status requests when no mutation occurs', async () => {
+  test('deduplicates concurrent passive status requests when no mutation occurs', async () => {
     setDirectoryStatus(createStatus());
     let statusCalls = 0;
     const request = createDeferred<GitStatus>();
@@ -152,8 +160,8 @@ describe('useGitStore', () => {
       return request.promise;
     });
 
-    const first = useGitStore.getState().fetchStatus('/repo', git, { silent: true });
-    const second = useGitStore.getState().fetchStatus('/repo', git, { silent: true });
+    const first = useGitStore.getState().ensurePassiveStatus('/repo', git);
+    const second = useGitStore.getState().ensurePassiveStatus('/repo', git);
     await Promise.resolve();
 
     expect(statusCalls).toBe(1);
@@ -285,6 +293,43 @@ describe('useGitStore', () => {
     useGitStore.getState().moveStatusPathsOptimistically('/repo', ['src/index.ts'], 'stage');
     request.resolve(initial);
     await loading;
+
+    expect(useGitStore.getState().getDirectoryState('/repo')?.status?.files).toEqual([
+      { path: 'src/index.ts', index: 'M', working_dir: ' ' },
+    ]);
+  });
+
+  test('starts an authoritative refresh while an older passive read is active', async () => {
+    const initial = createStatus(undefined, [{ path: 'src/index.ts', index: ' ', working_dir: 'M' }]);
+    const staged = createStatus(undefined, [{ path: 'src/index.ts', index: 'M', working_dir: ' ' }]);
+    setDirectoryStatus(initial);
+    const passiveRequest = createDeferred<GitStatus>();
+    const authoritativeRequest = createDeferred<GitStatus>();
+    let authoritativeCalls = 0;
+    let passiveCalls = 0;
+    const git = createGitApi(
+      () => {
+        authoritativeCalls += 1;
+        return authoritativeRequest.promise;
+      },
+      () => {
+        passiveCalls += 1;
+        return passiveCalls === 1 ? passiveRequest.promise : authoritativeRequest.promise;
+      },
+    );
+
+    const passive = useGitStore.getState().ensurePassiveStatus('/repo', git);
+    await Promise.resolve();
+    useGitStore.getState().moveStatusPathsOptimistically('/repo', ['src/index.ts'], 'stage');
+    const authoritative = useGitStore.getState().fetchStatus('/repo', git, { silent: true });
+    const laterPassive = useGitStore.getState().ensurePassiveStatus('/repo', git);
+
+    expect(authoritativeCalls).toBe(1);
+    expect(passiveCalls).toBe(2);
+    authoritativeRequest.resolve(staged);
+    await Promise.all([authoritative, laterPassive]);
+    passiveRequest.resolve(initial);
+    await passive;
 
     expect(useGitStore.getState().getDirectoryState('/repo')?.status?.files).toEqual([
       { path: 'src/index.ts', index: 'M', working_dir: ' ' },

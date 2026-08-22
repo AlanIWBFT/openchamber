@@ -62,7 +62,7 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
   const sessions = useSessions();
   const currentSessionMessages = useSessionMessages(currentSessionId ?? '');
   const runtimeApis = useRuntimeAPIs();
-  const ensureGitStatus = useGitStore((state) => state.ensureStatus);
+  const ensureGitStatus = useGitStore((state) => state.ensurePassiveStatus);
   const worktreePath = useSessionUIStore((state) => currentSessionId ? state.worktreeMetadata.get(currentSessionId)?.path ?? '' : '');
   const worktreeMetadataBranch = useSessionUIStore((state) => currentSessionId ? state.worktreeMetadata.get(currentSessionId)?.branch?.trim() ?? null : null);
   const worktreeAttachment = useSessionWorktreeStore((state) => currentSessionId ? state.getAttachment(currentSessionId) : undefined);

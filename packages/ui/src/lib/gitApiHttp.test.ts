@@ -13,6 +13,7 @@ import {
   deleteRemoteBranch,
   dropGitStash,
   getGitBranches,
+  getPassiveGitStatus,
   getGitStatus,
   gitFetch,
   merge,
@@ -142,7 +143,7 @@ describe('gitApiHttp index mutations', () => {
 });
 
 describe('gitApiHttp status cache', () => {
-  test('a Git refresh hint invalidates the cached status before listeners fetch', async () => {
+  test('a Git refresh hint invalidates the cached passive status before listeners fetch', async () => {
     installWindowMock();
     let statusRequestCount = 0;
     globalThis.fetch = async () => {
@@ -152,9 +153,9 @@ describe('gitApiHttp status cache', () => {
 
     try {
       const directory = '/repo-cache-tool-mutation';
-      const first = await getGitStatus(directory);
+      const first = await getPassiveGitStatus(directory);
       sessionEvents.requestGitRefresh({ directory });
-      const afterMutation = await getGitStatus(directory);
+      const afterMutation = await getPassiveGitStatus(directory);
 
       expect(first.behind).toBe(1);
       expect(afterMutation.behind).toBe(2);
@@ -164,7 +165,7 @@ describe('gitApiHttp status cache', () => {
     }
   });
 
-  test('invalidates cached status after fetch', async () => {
+  test('invalidates cached passive status after fetch', async () => {
     installWindowMock();
     const calls: FetchCall[] = [];
     let statusRequestCount = 0;
@@ -193,19 +194,69 @@ describe('gitApiHttp status cache', () => {
 
     try {
       const directory = '/repo-cache-fetch';
-      const first = await getGitStatus(directory);
-      const cached = await getGitStatus(directory);
+      const first = await getPassiveGitStatus(directory);
+      const cached = await getPassiveGitStatus(directory);
       await gitFetch(directory, { remote: 'origin' });
-      const afterFetch = await getGitStatus(directory);
+      const afterFetch = await getPassiveGitStatus(directory);
 
       expect(first.behind).toBe(0);
       expect(cached.behind).toBe(0);
       expect(afterFetch.behind).toBe(2);
       expect(statusRequestCount).toBe(2);
       expect(calls.map((call) => String(call.input))).toEqual([
-        '/api/git/status?directory=%2Frepo-cache-fetch',
+        '/api/git/status/passive?directory=%2Frepo-cache-fetch',
         '/api/git/fetch?directory=%2Frepo-cache-fetch',
-        '/api/git/status?directory=%2Frepo-cache-fetch',
+        '/api/git/status/passive?directory=%2Frepo-cache-fetch',
+      ]);
+    } finally {
+      restoreMocks();
+    }
+  });
+
+  test('does not cache authoritative status reads', async () => {
+    installWindowMock();
+    const calls = installFetchMock();
+    try {
+      await getGitStatus('/repo-authoritative');
+      await getGitStatus('/repo-authoritative');
+
+      expect(calls.map((call) => String(call.input))).toEqual([
+        '/api/git/status?directory=%2Frepo-authoritative',
+        '/api/git/status?directory=%2Frepo-authoritative',
+      ]);
+    } finally {
+      restoreMocks();
+    }
+  });
+
+  test('publishes an authoritative result over an older passive cache entry', async () => {
+    installWindowMock();
+    const calls: FetchCall[] = [];
+    let requestCount = 0;
+    globalThis.fetch = (async (input, init) => {
+      calls.push({ input, init });
+      requestCount += 1;
+      return new Response(JSON.stringify({
+        current: requestCount === 1 ? 'old' : 'fresh',
+        tracking: null,
+        ahead: 0,
+        behind: 0,
+        files: [],
+        isClean: true,
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const directory = '/repo-authoritative-publish';
+      expect((await getPassiveGitStatus(directory)).current).toBe('old');
+      expect((await getGitStatus(directory)).current).toBe('fresh');
+      expect((await getPassiveGitStatus(directory)).current).toBe('fresh');
+      expect(calls.map((call) => String(call.input))).toEqual([
+        '/api/git/status/passive?directory=%2Frepo-authoritative-publish',
+        '/api/git/status?directory=%2Frepo-authoritative-publish',
       ]);
     } finally {
       restoreMocks();
@@ -222,8 +273,8 @@ describe('gitApiHttp status cache', () => {
 
     try {
       const directory = '/repo-cache-fresh';
-      const first = await getGitStatus(directory);
-      const cached = await getGitStatus(directory);
+      const first = await getPassiveGitStatus(directory);
+      const cached = await getPassiveGitStatus(directory);
       const fresh = await getGitStatus(directory, { fresh: true });
 
       expect(first.behind).toBe(1);
@@ -246,7 +297,7 @@ describe('gitApiHttp status cache', () => {
 
     try {
       const directory = '/repo-cache-fresh-race';
-      const older = getGitStatus(directory);
+      const older = getPassiveGitStatus(directory);
       await new Promise((resolve) => setTimeout(resolve, 0));
       const fresh = getGitStatus(directory, { fresh: true });
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -257,7 +308,7 @@ describe('gitApiHttp status cache', () => {
 
       expect((await fresh).current).toBe('fresh');
       expect((await older).current).toBe('stale');
-      expect((await getGitStatus(directory)).current).toBe('fresh');
+      expect((await getPassiveGitStatus(directory)).current).toBe('fresh');
       expect(statusResolvers).toHaveLength(2);
     } finally {
       restoreMocks();
@@ -312,17 +363,17 @@ const expectStatusInvalidatedBy = async <T>(
 ): Promise<void> => {
   const mock = installStatusMutationFetchMock();
 
-  const seeded = await getGitStatus(directory);
+  const seeded = await getPassiveGitStatus(directory);
   expect(seeded.behind).toBe(0);
 
   mock.behind = 2;
-  const cached = await getGitStatus(directory);
+  const cached = await getPassiveGitStatus(directory);
   expect(cached.behind).toBe(0);
   expect(mock.statusUrls).toHaveLength(1);
 
   await mutate();
 
-  const refreshed = await getGitStatus(directory);
+  const refreshed = await getPassiveGitStatus(directory);
   expect(refreshed.behind).toBe(2);
   expect(mock.statusUrls).toHaveLength(2);
 };
@@ -407,7 +458,7 @@ describe('gitApiHttp post-mutation status invalidation (#2281)', () => {
 
     try {
       const directory = '/repo-2281-failed-checkout';
-      await getGitStatus(directory);
+      await getPassiveGitStatus(directory);
 
       const error = await captureError(async () => {
         await checkoutBranch(directory, 'feature');
@@ -416,7 +467,7 @@ describe('gitApiHttp post-mutation status invalidation (#2281)', () => {
       // SAFETY: the assertion above established that `error` is an Error.
       expect((error as Error).message).toBe('checkout failed');
 
-      await getGitStatus(directory);
+      await getPassiveGitStatus(directory);
       expect(statusUrls).toHaveLength(1);
     } finally {
       restoreMocks();
@@ -442,13 +493,13 @@ describe('gitApiHttp post-mutation status invalidation (#2281)', () => {
 
     try {
       const directory = '/repo-2281-deferred';
-      const preMutationRead = getGitStatus(directory);
+      const preMutationRead = getPassiveGitStatus(directory);
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(statusUrls).toHaveLength(1);
 
       await checkoutBranch(directory, 'feature');
 
-      const postMutationRead = getGitStatus(directory);
+      const postMutationRead = getPassiveGitStatus(directory);
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(statusUrls).toHaveLength(2);
 
@@ -460,7 +511,7 @@ describe('gitApiHttp post-mutation status invalidation (#2281)', () => {
       expect(postMutationStatus.current).toBe('feature');
 
       // The late pre-mutation response must not repopulate the cache.
-      const cachedRead = await getGitStatus(directory);
+      const cachedRead = await getPassiveGitStatus(directory);
       expect(cachedRead.current).toBe('feature');
       expect(statusUrls).toHaveLength(2);
     } finally {

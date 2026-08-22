@@ -171,11 +171,27 @@ export async function listGitDirectories(root: string): Promise<string[]> {
 export async function getGitStatus(directory: string, options?: { mode?: 'light'; fresh?: boolean }): Promise<GitStatus> {
   const mode = options?.mode;
   const runtimeKey = getRuntimeKey();
-  if (options?.fresh) {
-    // A forced read must cross the transport cache boundary too. Advancing the
-    // version also prevents an older in-flight response from repopulating it.
-    clearGitStatusCache(runtimeKey, directory);
+  // Authoritative reads bypass passive snapshots without publishing a
+  // mutation hint, which would invalidate the store request that initiated it.
+  clearGitStatusCache(runtimeKey, directory);
+  const cacheVersion = getStatusCacheVersion(runtimeKey, directory);
+  const response = await runtimeFetch(buildUrl(`${API_BASE}/status`, directory, mode ? { mode } : undefined));
+  if (!response.ok) {
+    throw new Error(`Failed to get git status: ${response.statusText}`);
   }
+  const payload = await response.json() as GitStatus;
+  if (getStatusCacheVersion(runtimeKey, directory) === cacheVersion) {
+    gitStatusCache.set(getStatusCacheKey(runtimeKey, directory, mode), {
+      value: payload,
+      expiresAt: Date.now() + GIT_STATUS_CACHE_TTL_MS,
+    });
+  }
+  return payload;
+}
+
+export async function getPassiveGitStatus(directory: string, options?: { mode?: 'light' }): Promise<GitStatus> {
+  const mode = options?.mode;
+  const runtimeKey = getRuntimeKey();
   const key = getStatusCacheKey(runtimeKey, directory, mode);
   const now = Date.now();
   const cached = gitStatusCache.get(key);
@@ -190,7 +206,7 @@ export async function getGitStatus(directory: string, options?: { mode?: 'light'
 
   const task = (async () => {
     const cacheVersion = getStatusCacheVersion(runtimeKey, directory);
-    const response = await runtimeFetch(buildUrl(`${API_BASE}/status`, directory, mode ? { mode } : undefined));
+    const response = await runtimeFetch(buildUrl(`${API_BASE}/status/passive`, directory, mode ? { mode } : undefined));
     if (!response.ok) {
       throw new Error(`Failed to get git status: ${response.statusText}`);
     }
