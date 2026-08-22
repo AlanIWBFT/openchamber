@@ -144,6 +144,7 @@ const createRuntime = (overrides = {}, stateOverrides = {}, envOverrides = {}) =
 
 describe('OpenCode lifecycle', () => {
   it('records an authoritative ready terminal event for external startup', async () => {
+    const onOpenCodeReady = vi.fn();
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
       json: async () => ({ healthy: true }),
@@ -156,10 +157,12 @@ describe('OpenCode lifecycle', () => {
         ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
         ENV_SKIP_OPENCODE_START: true,
       },
+      onOpenCodeReady,
     });
 
-    await runtime.bootstrapOpenCodeAtStartup();
+    const result = await runtime.bootstrapOpenCodeAtStartup();
 
+    expect(result).toEqual({ status: 'ready' });
     expect(recordStartupPerformanceMock).toHaveBeenCalledWith('opencode.bootstrap.ready', {
       totalDurationMs: expect.any(Number),
       outcome: 'ready',
@@ -172,6 +175,30 @@ describe('OpenCode lifecycle', () => {
       phase === 'opencode.bootstrap.ready' || phase === 'opencode.bootstrap.error'
     ));
     expect(terminalEvents).toHaveLength(1);
+    expect(onOpenCodeReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('activates ready dependents after managed bootstrap passes its final health check', async () => {
+    const child = createMockChild();
+    const onOpenCodeReady = vi.fn();
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ healthy: true }),
+    }));
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    const runtime = createRuntime({
+      onOpenCodeReady,
+    }, {}, { ENV_EFFECTIVE_PORT: null });
+
+    await expect(runtime.bootstrapOpenCodeAtStartup()).resolves.toEqual({ status: 'ready' });
+
+    expect(onOpenCodeReady).toHaveBeenCalledTimes(1);
+    await runtime.state.openCodeProcess.close();
   });
 
   it('warms recently used directories after a successful bootstrap', async () => {
@@ -210,8 +237,9 @@ describe('OpenCode lifecycle', () => {
       }),
     });
 
-    await runtime.bootstrapOpenCodeAtStartup();
+    const result = await runtime.bootstrapOpenCodeAtStartup();
 
+    expect(result).toEqual({ status: 'failed', error: 'bootstrap failed' });
     expect(recordStartupPerformanceMock).toHaveBeenCalledWith('opencode.bootstrap.error', {
       totalDurationMs: expect.any(Number),
       outcome: 'error',
@@ -429,6 +457,7 @@ describe('OpenCode lifecycle', () => {
     const close = vi.fn(async () => {});
     const replacement = createMockChild();
     const onOpenCodeRestarted = vi.fn();
+    const onOpenCodeReady = vi.fn();
     globalThis.fetch = vi.fn(async () => ({
       ok: false,
       json: async () => null,
@@ -439,7 +468,7 @@ describe('OpenCode lifecycle', () => {
       });
       return replacement;
     });
-    const runtime = createRuntime({ onOpenCodeRestarted }, {
+    const runtime = createRuntime({ onOpenCodeRestarted, onOpenCodeReady }, {
       openCodePort: 45678,
       openCodeProcess: {
         pid: null,
@@ -454,6 +483,7 @@ describe('OpenCode lifecycle', () => {
     expect(close).toHaveBeenCalledTimes(1);
     expect(spawnMock).toHaveBeenCalledTimes(1);
     expect(onOpenCodeRestarted).toHaveBeenCalledTimes(1);
+    expect(onOpenCodeReady).toHaveBeenCalledTimes(1);
   });
 
   it('retains post-listen stderr and exited process diagnostics across restart', async () => {
@@ -577,6 +607,7 @@ describe('OpenCode lifecycle', () => {
   it('does not call onOpenCodeRestarted when a managed restart fails', async () => {
     const close = vi.fn(async () => {});
     const onOpenCodeRestarted = vi.fn();
+    const onOpenCodeReady = vi.fn();
     globalThis.fetch = vi.fn(async () => ({
       ok: false,
       json: async () => null,
@@ -588,7 +619,7 @@ describe('OpenCode lifecycle', () => {
       });
       return child;
     });
-    const runtime = createRuntime({ onOpenCodeRestarted }, {
+    const runtime = createRuntime({ onOpenCodeRestarted, onOpenCodeReady }, {
       openCodePort: 45678,
       openCodeProcess: {
         pid: null,
@@ -601,6 +632,7 @@ describe('OpenCode lifecycle', () => {
     await expect(runtime.restartOpenCode()).rejects.toThrow();
 
     expect(onOpenCodeRestarted).not.toHaveBeenCalled();
+    expect(onOpenCodeReady).not.toHaveBeenCalled();
   });
 
   it('force-stops OpenCode within the shared shutdown deadline', async () => {
@@ -807,12 +839,124 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.SHELL_ONLY).toBe('yes');
     expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
     expect(options.env.OPENCHAMBER_SHUTDOWN_PROTOCOL).toBe('1');
+    expect(options.env.OPENCODE_STARTUP_PROTOCOL).toBe('1');
     expect(server.exitCode).toBeNull();
     expect(server.signalCode).toBeNull();
     expect(options.stdio).toEqual(['pipe', 'pipe', 'pipe']);
 
     await server.close();
     expect(server.signalCode).toBe('SIGTERM');
+  });
+
+  it('suspends the startup timeout while OpenCode reports a database migration', async () => {
+    vi.useFakeTimers();
+    const child = createMockChild();
+    spawnMock.mockReturnValueOnce(child);
+    const runtime = createRuntime();
+    const phases = [];
+    runtime.onOpenCodeStartupState((value) => phases.push(value.phase));
+
+    const starting = runtime.startOpenCode();
+    for (let attempt = 0; attempt < 100 && runtime.state.startingOpenCodeProcess === null; attempt += 1) {
+      await Promise.resolve();
+    }
+    child.stdout.emit('data', 'opencode lifecycle {"version":1,"type":"database-migration","state":"started"}\n');
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(child.kill).not.toHaveBeenCalled();
+    expect(runtime.getOpenCodeStartupState()).toEqual({ phase: 'migrating' });
+
+    child.stdout.emit('data', 'opencode lifecycle {"version":1,"type":"database-migration","state":"completed"}\n');
+    child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+    const server = await starting;
+
+    expect(phases).toEqual(['idle', 'launching', 'migrating', 'launching', 'ready']);
+    await server.close();
+  });
+
+  it('does not retry a managed child that exits during database migration', async () => {
+    const child = createMockChild();
+    spawnMock.mockReturnValueOnce(child);
+    const runtime = createRuntime();
+
+    const starting = runtime.startOpenCode();
+    for (let attempt = 0; attempt < 100 && runtime.state.startingOpenCodeProcess === null; attempt += 1) {
+      await Promise.resolve();
+    }
+    child.stdout.emit('data', 'opencode lifecycle {"version":1,"type":"database-migration","state":"started"}\n');
+    child.exitCode = 1;
+    child.emit('exit', 1, null);
+    child.emit('close', 1, null);
+
+    await expect(starting).rejects.toThrow('OpenCode process exited before serving with code 1');
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(runtime.getOpenCodeStartupState()).toMatchObject({ phase: 'failed' });
+  });
+
+  it('does not retry a migration preflight failure before migration starts', async () => {
+    const child = createMockChild();
+    spawnMock.mockReturnValueOnce(child);
+    const runtime = createRuntime();
+    const phases = [];
+    runtime.onOpenCodeStartupState((value) => phases.push(value.phase));
+
+    const starting = runtime.startOpenCode();
+    for (let attempt = 0; attempt < 100 && runtime.state.startingOpenCodeProcess === null; attempt += 1) {
+      await Promise.resolve();
+    }
+    child.stdout.emit('data', 'opencode lifecycle {"version":1,"type":"database-migration","state":"failed"}\n');
+    child.exitCode = 1;
+    child.emit('exit', 1, null);
+    child.stderr.emit('data', 'Database is not empty and has no session table\n');
+    child.emit('close', 1, null);
+
+    await expect(starting).rejects.toThrow('Database is not empty and has no session table');
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(phases).toEqual(['idle', 'launching', 'failed']);
+  });
+
+  it('drains migration failure diagnostics before rejecting startup', async () => {
+    const child = createMockChild();
+    spawnMock.mockReturnValueOnce(child);
+    const runtime = createRuntime();
+
+    const starting = runtime.startOpenCode();
+    for (let attempt = 0; attempt < 100 && runtime.state.startingOpenCodeProcess === null; attempt += 1) {
+      await Promise.resolve();
+    }
+    child.stdout.emit('data', 'opencode lifecycle {"version":1,"type":"database-migration","state":"started"}\n');
+    child.stdout.emit('data', 'opencode lifecycle {"version":1,"type":"database-migration","state":"failed"}\n');
+
+    expect(child.kill).not.toHaveBeenCalled();
+    child.exitCode = 1;
+    child.emit('exit', 1, null);
+    child.stderr.emit('data', 'SQLITE_CONSTRAINT: migration exploded\n');
+    child.emit('close', 1, null);
+
+    await expect(starting).rejects.toThrow('SQLITE_CONSTRAINT: migration exploded');
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds diagnostic draining when a failed migration process does not exit', async () => {
+    vi.useFakeTimers();
+    const child = createMockChild();
+    spawnMock.mockReturnValueOnce(child);
+    const runtime = createRuntime();
+
+    const starting = runtime.startOpenCode();
+    for (let attempt = 0; attempt < 100 && runtime.state.startingOpenCodeProcess === null; attempt += 1) {
+      await Promise.resolve();
+    }
+    child.stdout.emit('data', 'opencode lifecycle {"version":1,"type":"database-migration","state":"started"}\n');
+    child.stdout.emit('data', 'opencode lifecycle {"version":1,"type":"database-migration","state":"failed"}\n');
+    child.stderr.emit('data', 'migration process remained alive\n');
+
+    const rejected = expect(starting).rejects.toThrow('migration process remained alive');
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await rejected;
+    expect(child.kill).toHaveBeenCalledTimes(1);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 
   it('launches managed OpenCode on the configured bind hostname', async () => {
