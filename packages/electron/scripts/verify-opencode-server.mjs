@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { OPENCODE_SERVER_ENTRY, readPinnedOpenCodeServerVersion, verifyOpenCodeServer } from './opencode-server-staging.mjs';
 import { readBinaryArchitecture } from './binary-architecture.mjs';
+import { assertWindowsGuiSubsystem } from './pe-subsystem.mjs';
 import { resolveTargetArchitecture } from './target-architecture.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -38,6 +39,10 @@ const packagedExecutable = (serverDir) => {
 const runtimeFor = (serverDir, arch) => {
   if (process.platform === 'linux') return process.execPath;
   const executable = packagedExecutable(serverDir);
+  if (process.platform === 'win32') {
+    if (!executable) throw new Error(`Missing packaged Windows service host for ${serverDir}`);
+    assertWindowsGuiSubsystem(executable);
+  }
   if (executable && arch === process.arch && readBinaryArchitecture(executable, process.platform) === process.arch) return executable;
   return process.execPath;
 };

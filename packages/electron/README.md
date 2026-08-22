@@ -314,6 +314,8 @@ PowerShell Recycle Bin operations and `OpenCode.ProcessBroker.exe` for Git/rg
 process jobs under `resources/opencode-server/assets`. Staged and packaged
 verification requires both assets. The out-of-process broker is x64 on both
 Windows architectures; native Node bindings match the Electron architecture.
+Packaged Windows verification checks the PE subsystem of `OpenChamber.exe`,
+the host that runs `serve.mjs`, before attempting the server version probe.
 
 The Electron workspace package trusts Electron's install script so `bun install` downloads the platform runtime in fresh checkouts and worktrees.
 
