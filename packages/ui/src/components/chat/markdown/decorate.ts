@@ -554,7 +554,12 @@ export const attachMarkdownInteractions = (
     if (action === 'copy-code') {
       const code = actionEl.closest('[data-component="markdown-code"]')?.querySelector('code');
       const text = code ? getMarkdownCodeText(code) : '';
-      if (text) void copyTextToClipboard(text).then(() => flashCopied(actionEl as HTMLButtonElement, ctx.labels.copied, 'copy', ctx.labels.copy));
+      if (text) {
+        actionEl.setAttribute('data-md-copy-pending', '');
+        void copyTextToClipboard(text)
+          .then(() => flashCopied(actionEl as HTMLButtonElement, ctx.labels.copied, 'copy', ctx.labels.copy))
+          .finally(() => actionEl.removeAttribute('data-md-copy-pending'));
+      }
       return;
     }
 

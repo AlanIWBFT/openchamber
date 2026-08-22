@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import type { TextPart } from '@opencode-ai/sdk/v2';
 
 type OperationCounts = {
   innerHTMLWrites: number;
@@ -64,9 +65,13 @@ let notifyResize: ((entries: Array<{ target: Element; contentRect: { width: numb
 let MarkdownRenderer: React.ComponentType<{
   content: string;
   messageId: string;
+  part?: TextPart;
   isAnimated?: boolean;
+  isStreaming?: boolean;
   enableFileReferences?: boolean;
 }>;
+let clearDetachedMarkdownDomCache: () => void;
+let detachedMarkdownDomCacheStats: () => { sessions: number; entries: number };
 
 const makeCounts = (): OperationCounts => ({
   innerHTMLWrites: 0,
@@ -293,6 +298,9 @@ const initializePerformanceDom = async (): Promise<void> => {
   mock.module('./message/FadeInOnReveal', () => ({ FadeInOnReveal: ({ children }: { children: React.ReactNode }) => children }));
   const imported = await import('./MarkdownRendererImpl');
   MarkdownRenderer = imported.MarkdownRenderer;
+  const { detachedMarkdownDomCache } = await import('./markdown/detachedMarkdownDomCache');
+  clearDetachedMarkdownDomCache = () => detachedMarkdownDomCache.clear();
+  detachedMarkdownDomCacheStats = () => detachedMarkdownDomCache.stats();
 };
 
 await initializePerformanceDom();
@@ -305,6 +313,122 @@ afterAll(() => {
 });
 
 describe('MarkdownRenderer DOM mount performance contract', () => {
+  test('reuses settled Markdown DOM without parsing or decorating it again', async () => {
+    clearDetachedMarkdownDomCache();
+    const content = '# Cached viewport\n\nA settled paragraph.';
+    const part: TextPart = {
+      id: 'part-cache',
+      sessionID: 'session-cache',
+      messageID: 'message-cache',
+      type: 'text',
+      text: content,
+      time: { start: 0, end: 1 },
+    };
+    const host = document.createElement('div');
+    document.body.replaceChildren(host);
+    const render = (root: Root) => root.render(
+      <MarkdownRenderer
+        content={content}
+        messageId="message-cache"
+        part={part}
+        isAnimated={false}
+        enableFileReferences={false}
+      />,
+    );
+
+    const firstCounts = makeCounts();
+    activeCounts = firstCounts;
+    const firstRoot = createRoot(host);
+    await act(async () => {
+      render(firstRoot);
+      await waitForSettledEffects();
+    });
+    const originalBlock = host.querySelector('[data-md-block]');
+    expect(originalBlock).not.toBeNull();
+    expect(firstCounts.innerHTMLWrites).toBeGreaterThan(0);
+    await act(async () => firstRoot.unmount());
+
+    const secondCounts = makeCounts();
+    activeCounts = secondCounts;
+    const secondRoot = createRoot(host);
+    await act(async () => {
+      render(secondRoot);
+      await waitForSettledEffects();
+    });
+    expect(host.querySelector('[data-md-block]')).toBe(originalBlock);
+    expect(secondCounts.innerHTMLWrites).toBe(0);
+    await act(async () => secondRoot.unmount());
+    clearDetachedMarkdownDomCache();
+  });
+
+  test('does not cache streaming, unfinished, or Mermaid DOM', async () => {
+    clearDetachedMarkdownDomCache();
+    const host = document.createElement('div');
+    document.body.replaceChildren(host);
+    const renderScoped = (
+      root: Root,
+      content: string,
+      partId: string,
+      isStreaming = false,
+    ) => root.render(
+      <MarkdownRenderer
+        content={content}
+        messageId="message-cache"
+        part={{
+          id: partId,
+          sessionID: 'session-cache',
+          messageID: 'message-cache',
+          type: 'text',
+          text: content,
+          time: { start: 0, end: 1 },
+        }}
+        isAnimated={false}
+        isStreaming={isStreaming}
+        enableFileReferences={false}
+      />,
+    );
+
+    const streamingRoot = createRoot(host);
+    await act(async () => {
+      renderScoped(streamingRoot, 'streaming content', 'part-streaming', true);
+      await waitForSettledEffects();
+    });
+    await act(async () => streamingRoot.unmount());
+    expect(detachedMarkdownDomCacheStats().entries).toBe(0);
+
+    const unfinalizedRoot = createRoot(host);
+    await act(async () => {
+      unfinalizedRoot.render(
+        <MarkdownRenderer
+          content="unfinalized content"
+          messageId="message-unfinalized"
+          part={{
+            id: 'part-unfinalized',
+            sessionID: 'session-cache',
+            messageID: 'message-unfinalized',
+            type: 'text',
+            text: 'unfinalized content',
+          }}
+          isAnimated={false}
+          enableFileReferences={false}
+        />,
+      );
+      await waitForSettledEffects();
+    });
+    await act(async () => unfinalizedRoot.unmount());
+    expect(detachedMarkdownDomCacheStats().entries).toBe(0);
+
+    const mermaidRoot = createRoot(host);
+    await act(async () => {
+      renderScoped(mermaidRoot, '```mermaid\ngraph TD\nA --> B\n```', 'part-mermaid');
+      await waitForSettledEffects();
+    });
+    await act(async () => mermaidRoot.unmount());
+    expect(detachedMarkdownDomCacheStats().entries).toBe(0);
+
+    clearDetachedMarkdownDomCache();
+  });
+
   test('defers and batches Mermaid controller initialization after Markdown mount', async () => {
     const mounted = await mountFixture(fixtureWorkload.rendererCount);
     const critical = mounted.counts;

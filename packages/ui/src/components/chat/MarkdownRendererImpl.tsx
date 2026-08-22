@@ -50,6 +50,8 @@ import {
 } from './fileReferenceParser';
 import { fileReferenceExists } from './fileReferenceStat';
 import { streamPerfCount, streamPerfObserve } from '@/stores/utils/streamDebug';
+import { detachedMarkdownDomCache, type DetachedMarkdownDomKey } from './markdown/detachedMarkdownDomCache';
+import { getRuntimeKey } from '@/lib/runtime-switch';
 
 const useCurrentMermaidTheme = () => {
   const themeSystem = useOptionalThemeSystem();
@@ -667,6 +669,7 @@ const MERMAID_RENDER_CACHE_MAX = 100;
 const MARKDOWN_DECORATION_ID_ATTR = 'data-md-decoration-id';
 const MARKDOWN_DECORATION_IDS = new WeakMap<DecorateContext, string>();
 let nextMarkdownDecorationId = 0;
+const MARKDOWN_DOM_CACHE_MAX_SOURCE_CHARS = 200_000;
 
 const getMarkdownDecorationId = (ctx: DecorateContext): string => {
   const existing = MARKDOWN_DECORATION_IDS.get(ctx);
@@ -760,6 +763,7 @@ const useMorphdomMarkdown = ({
   imageMode = 'inline',
   syntaxVars,
   ctx,
+  domCacheKey,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   text: string;
@@ -767,12 +771,20 @@ const useMorphdomMarkdown = ({
   imageMode?: MarkdownImageMode;
   syntaxVars: Record<string, string>;
   ctx: DecorateContext;
+  domCacheKey?: DetachedMarkdownDomKey | null;
 }) => {
   React.useEffect(() => {
     ensureMarkdownShikiTheme();
   }, []);
 
   const mermaidViewerRef = React.useRef<ReturnType<typeof createMermaidViewerRegistry> | null>(null);
+  const renderRevisionRef = React.useRef(0);
+  // Only DOM that was actually restored or completed by the async pipeline is
+  // eligible for capture. A fallback from an earlier content revision is not.
+  const mountedDomRef = React.useRef<{
+    key: DetachedMarkdownDomKey;
+    copiedLabel: string;
+  } | null>(null);
   const refreshMermaidViewers = React.useCallback(() => {
     const container = containerRef.current;
     if (!container) {
@@ -786,6 +798,61 @@ const useMorphdomMarkdown = ({
       return;
     }
     mermaidViewerRef.current.refresh();
+  }, [containerRef]);
+
+  React.useLayoutEffect(() => {
+    renderRevisionRef.current += 1;
+    mountedDomRef.current = null;
+  }, [ctx, imageMode, streaming, text]);
+
+  React.useLayoutEffect(() => {
+    if (!domCacheKey) return;
+    const container = containerRef.current;
+    const target = container?.querySelector<HTMLElement>('[data-markdown-content]') ?? container;
+    if (!target || target.childNodes.length > 0) return;
+
+    const cached = detachedMarkdownDomCache.take(domCacheKey);
+    if (cached) {
+      target.appendChild(cached);
+      const decorationId = getMarkdownDecorationId(ctx);
+      for (const block of Array.from(target.children)) {
+        block.setAttribute(MARKDOWN_DECORATION_ID_ATTR, decorationId);
+      }
+      for (const [key, value] of Object.entries(syntaxVars)) target.style.setProperty(key, value);
+      applyMarkdownCodeBlockWrapState(target, ctx.codeBlockLineWrap, ctx.labels);
+      mountedDomRef.current = {
+        key: domCacheKey,
+        copiedLabel: ctx.labels.copied,
+      };
+      streamPerfCount('ui.markdown_renderer.dom_cache.hit');
+    }
+  }, [containerRef, ctx, domCacheKey, syntaxVars, text.length]);
+
+  // Restoration follows the cache identity above, but capture must only happen
+  // when this renderer lifecycle ends. Combining both in one keyed effect would
+  // detach the live DOM on ordinary content, theme, or locale updates.
+  React.useLayoutEffect(() => {
+    const container = containerRef.current;
+    const target = container?.querySelector<HTMLElement>('[data-markdown-content]') ?? container;
+    if (!target) return;
+    return () => {
+      const mountedDom = mountedDomRef.current;
+      if (!mountedDom) return;
+      // Viewer controllers and transient interaction state belong to the
+      // current renderer instance and must not cross the cache boundary.
+      if (target.childNodes.length === 0 || shouldRefreshMermaidViewers(target)) return;
+      if (Array.from(target.children).some((block) => !block.hasAttribute('data-md-id'))) return;
+      if (target.querySelector('[data-md-copy-pending]')) return;
+      const openMenu = target.querySelector<HTMLElement>('[data-md-menu]:not(.hidden)');
+      const copiedButton = Array.from(target.querySelectorAll<HTMLButtonElement>('[data-md-action]'))
+        .some((button) => button.getAttribute('title') === mountedDom.copiedLabel);
+      if (openMenu || copiedButton) return;
+
+      const fragment = document.createDocumentFragment();
+      fragment.append(...Array.from(target.childNodes));
+      detachedMarkdownDomCache.store({ ...mountedDom.key, fragment });
+      streamPerfCount('ui.markdown_renderer.dom_cache.capture');
+    };
   }, [containerRef]);
 
   // Synchronous first paint: while the async parse is in-flight, show escaped
@@ -842,10 +909,11 @@ const useMorphdomMarkdown = ({
     if (!container) return;
     const target = container.querySelector<HTMLElement>('[data-markdown-content]') ?? container;
     let active = true;
+    const renderRevision = renderRevisionRef.current;
     const decorationId = getMarkdownDecorationId(ctx);
 
     void renderMarkdownBlocks(text, streaming, imageMode).then((blocks) => {
-      if (!active) return;
+      if (!active || renderRevisionRef.current !== renderRevision) return;
       const existing = Array.from(target.children) as HTMLElement[];
 
       blocks.forEach((block, index) => {
@@ -907,12 +975,15 @@ const useMorphdomMarkdown = ({
       if (removedMermaidBlock || (existing.length > blocks.length && hadMermaidBeforeTrailingCleanup)) {
         refreshMermaidViewers();
       }
+      mountedDomRef.current = domCacheKey
+        ? { key: domCacheKey, copiedLabel: ctx.labels.copied }
+        : null;
     });
 
     return () => {
       active = false;
     };
-  }, [containerRef, text, streaming, imageMode, ctx, refreshMermaidViewers]);
+  }, [containerRef, ctx, domCacheKey, imageMode, refreshMermaidViewers, streaming, text]);
 
   React.useEffect(() => {
     const container = containerRef.current;
@@ -993,6 +1064,24 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
 
   const syntaxVars = React.useMemo(() => getMarkdownSyntaxVars(currentTheme), [currentTheme]);
   const ctx = useDecorateContext(currentTheme, live, effectiveDirectory ? handlePreviewLoopback : undefined, DEFAULT_MERMAID_CONTROLS);
+  const { locale } = useI18n();
+  const imageMode: MarkdownImageMode = variant === 'assistant' ? 'label' : 'inline';
+  const settledPart = part
+    && (part.type === 'text' || part.type === 'reasoning')
+    && part.time?.end !== undefined
+    ? part
+    : null;
+  const runtimeKey = getRuntimeKey();
+  const domCacheKey = React.useMemo<DetachedMarkdownDomKey | null>(() => {
+    // Streaming, unfinished, oversized, and identity-less Markdown continues
+    // through the normal rendering pipeline and never retains detached DOM.
+    if (isStreaming || !settledPart || content.length === 0 || content.length > MARKDOWN_DOM_CACHE_MAX_SOURCE_CHARS) return null;
+    return {
+      scope: `${runtimeKey}\0${settledPart.sessionID}`,
+      id: `${settledPart.messageID}\0${settledPart.id}\0${imageMode}`,
+      locale,
+    };
+  }, [content.length, imageMode, isStreaming, locale, runtimeKey, settledPart]);
   // Identity for the fade-in wrapper: a new part/message restarts the animation.
   const fadeKey = `markdown-${part?.id ? `part-${part.id}` : `message-${messageId}`}`;
 
@@ -1000,9 +1089,10 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     containerRef,
     text: content,
     streaming: live,
-    imageMode: variant === 'assistant' ? 'label' : 'inline',
+    imageMode,
     syntaxVars,
     ctx,
+    domCacheKey,
   });
 
   const markdownContent = (

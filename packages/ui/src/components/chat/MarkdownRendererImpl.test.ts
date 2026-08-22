@@ -39,6 +39,7 @@ let mermaidRegistryCreates = 0;
 let mermaidRegistryCleanups = 0;
 let cachedRendererBlocks: Array<{ id: string; html: string }> | null = null;
 let renderedRendererBlocks: Array<{ id: string; html: string }> = [];
+let renderMarkdownBlocksForTest = async () => renderedRendererBlocks;
 let currentContextVersion = 0;
 const layoutEffects: Array<() => void> = [];
 const passiveEffects: Array<() => void | (() => void)> = [];
@@ -250,7 +251,7 @@ mock.module('@/lib/outsideFileGrants', () => ({ ensureOutsideFileGrantForDesktop
 mock.module('@/lib/path-utils', () => ({ getDirectoryForFilePath: () => '', isFilePathWithinDirectory: () => true, toAbsoluteFilePath: () => '' }));
 mock.module('./markdown/markdownCore', () => ({
     getCachedMarkdownBlocks: () => cachedRendererBlocks,
-    renderMarkdownBlocks: async () => renderedRendererBlocks,
+    renderMarkdownBlocks: () => renderMarkdownBlocksForTest(),
     renderMarkdownSync: () => {
         syncRenderCalls += 1;
         return '<p>cold</p>';
@@ -258,6 +259,13 @@ mock.module('./markdown/markdownCore', () => ({
 }));
 mock.module('./markdown/markdownTheme', () => ({ ensureMarkdownShikiTheme: () => undefined }));
 mock.module('./markdown/markdownSyntaxVars', () => ({ getMarkdownSyntaxVars: () => ({}) }));
+mock.module('./markdown/detachedMarkdownDomCache', () => ({
+    detachedMarkdownDomCache: {
+        take: () => null,
+        store: () => undefined,
+    },
+}));
+mock.module('@/lib/runtime-switch', () => ({ getRuntimeKey: () => 'runtime' }));
 type TestDecorateContext = {
     labels: { copy: string };
     codeBlockLineWrap: boolean;
@@ -297,6 +305,7 @@ const { MarkdownRenderer } = await import('./MarkdownRendererImpl');
 const resetRendererTestState = () => {
     cachedRendererBlocks = null;
     renderedRendererBlocks = [];
+    renderMarkdownBlocksForTest = async () => renderedRendererBlocks;
     syncRenderCalls = 0;
     morphCalls = 0;
     decorateCalls = 0;
@@ -551,6 +560,31 @@ describe('MarkdownRenderer warm settled path', () => {
             expect(updatedBlock?.getAttribute('data-test-decoration-marker')).toBe('true');
             expect(mermaidRegistryCleanups).toBeGreaterThan(0);
             expect(mermaidRegistryCreates).toBeGreaterThan(1);
+        });
+    });
+
+    test('rejects an older async render after a newer layout commit', async () => {
+        await withRendererDom(async () => {
+            resetRendererTestState();
+            cachedRendererBlocks = [{ id: 'full:initial', html: '<p>initial</p>' }];
+            let resolveOldRender: ((blocks: Array<{ id: string; html: string }>) => void) | undefined;
+            const oldRender = new Promise<Array<{ id: string; html: string }>>((resolve) => {
+                resolveOldRender = resolve;
+            });
+            renderMarkdownBlocksForTest = () => oldRender;
+
+            beginRendererRender();
+            runRendererLayoutEffects();
+            runRendererPassiveEffects();
+
+            cachedRendererBlocks = [{ id: 'full:new', html: '<p>new</p>' }];
+            beginRendererRender();
+            runRendererLayoutEffects();
+            expect(resolveOldRender).toBeDefined();
+            resolveOldRender?.([{ id: 'full:old-late', html: '<p>old late</p>' }]);
+            await Promise.resolve();
+
+            expect(morphCalls).toBe(0);
         });
     });
 
