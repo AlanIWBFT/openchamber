@@ -148,7 +148,9 @@ const prepareFromLocalSource = ({ sourceRoot, version, targetArchitecture, outpu
     throw new Error(`Local Bun runtime not found: ${compileExecutablePath}`);
   }
 
-  const args = ['run', '--cwd', opencodePackageRoot, 'build', '--single', `--target=${cliTarget.buildTarget}`];
+  // Execute the source build directly so a package script cannot resolve a
+  // different Bun from PATH than the runtime selected above.
+  const args = [path.join(opencodePackageRoot, 'script', 'build.ts'), '--single', `--target=${cliTarget.buildTarget}`];
   if (cliTarget.baseline) args.push('--baseline');
   if (process.platform === 'win32') args.push('--windows-gui-subsystem');
   args.push('--skip-embed-web-ui');
