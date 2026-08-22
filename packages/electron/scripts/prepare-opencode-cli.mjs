@@ -11,6 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
 const outputDir = path.join(electronRoot, 'resources', 'opencode-cli');
 const cacheRoot = path.join(electronRoot, '.cache', 'opencode-cli');
+const windowsProcessBroker = 'OpenCode.ProcessBroker.exe';
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -231,6 +232,7 @@ const main = async () => {
   const existingMatchesTarget = process.platform !== 'win32'
     || (existingVersion !== null && readPeArchitecture(outputBinary) === targetArchitecture.node);
   if (existingVersion === version && existingMatchesTarget) {
+    fs.rmSync(path.join(outputDir, windowsProcessBroker), { force: true });
     console.log(`[electron] bundled OpenCode CLI already prepared: ${outputBinary} (${version})`);
     return;
   }
@@ -259,11 +261,13 @@ const main = async () => {
       throw new Error(`Prepared OpenCode CLI package version mismatch: expected ${version}, got ${packageVersion || 'unknown'}`);
     }
     stageBinary(extractedBinary, outputBinary, null);
+    fs.rmSync(path.join(outputDir, windowsProcessBroker), { force: true });
     console.log(`[electron] prepared OpenCode CLI ${version} (@opencode/cli-${artifact.target}, not run on this ${process.arch} host): ${outputBinary}`);
     return;
   }
 
   stageBinary(extractedBinary, outputBinary, version);
+  fs.rmSync(path.join(outputDir, windowsProcessBroker), { force: true });
   const preparedVersion = readBinaryVersion(outputBinary);
   if (preparedVersion !== version) {
     throw new Error(`Prepared OpenCode CLI version mismatch: expected ${version}, got ${preparedVersion || 'unknown'}`);
