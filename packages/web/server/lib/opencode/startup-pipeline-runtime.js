@@ -138,7 +138,7 @@ export const createStartupPipelineRuntime = (dependencies) => {
     });
     tunnelRuntimeContext.setActivePort(startupResult.activePort);
     scheduleOpenCodeApiDetection();
-    void bootstrapOpenCodeAtStartup();
+    const openCodeStartup = Promise.resolve(bootstrapOpenCodeAtStartup());
 
     serverStartupRuntime.attachProcessHandlers({ attachSignals });
 
@@ -146,6 +146,7 @@ export const createStartupPipelineRuntime = (dependencies) => {
       terminalRuntime,
       dictationRuntime,
       messageStreamRuntime,
+      openCodeStartup,
     };
   };
 
