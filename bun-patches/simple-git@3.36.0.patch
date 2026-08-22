@@ -1,0 +1,84 @@
+diff --git a/dist/cjs/index.js b/dist/cjs/index.js
+index 311a7926d906d10823c325c92c7aa33f893a4c01..67c79257f6b64648ede92d86198e9f7a8a9b37ae 100644
+--- a/dist/cjs/index.js
++++ b/dist/cjs/index.js
+@@ -1909,7 +1909,7 @@ var init_git_executor_chain = __esm({
+               rejection = reason || rejection;
+             }
+           });
+-          const spawned = (0, import_child_process.spawn)(command, args, spawnOptions);
++          const spawned = this._executor._spawn(command, args, spawnOptions);
+           spawned.stdout.on(
+             "data",
+             onDataReceived(stdOut, "stdOut", logger, outputLogger.step("stdOut"))
+@@ -1969,10 +1969,11 @@ var init_git_executor = __esm({
+     "use strict";
+     init_git_executor_chain();
+     GitExecutor = class {
+-      constructor(cwd, _scheduler, _plugins) {
++      constructor(cwd, _scheduler, _plugins, _spawn) {
+         this.cwd = cwd;
+         this._scheduler = _scheduler;
+         this._plugins = _plugins;
++        this._spawn = _spawn;
+         this._chain = new GitExecutorChain(this, this._scheduler, this._plugins);
+       }
+       chain() {
+@@ -4380,7 +4381,8 @@ var require_git = __commonJS({
+       this._executor = new GitExecutor2(
+         options.baseDir,
+         new Scheduler2(options.maxConcurrentProcesses),
+-        plugins
++        plugins,
++        options.spawn || import_child_process.spawn
+       );
+       this._trimmed = options.trimmed;
+     }
+diff --git a/dist/esm/index.js b/dist/esm/index.js
+index bc6ff91f940c372bdff54adb06d06afdaa592340..4f2705f8d25126b478395141920ab9e5ea71ee20 100644
+--- a/dist/esm/index.js
++++ b/dist/esm/index.js
+@@ -1390,7 +1390,7 @@ var init_git_executor_chain = __esm({
+               rejection = reason || rejection;
+             }
+           });
+-          const spawned = spawn(command, args, spawnOptions);
++          const spawned = this._executor._spawn(command, args, spawnOptions);
+           spawned.stdout.on(
+             "data",
+             onDataReceived(stdOut, "stdOut", logger, outputLogger.step("stdOut"))
+@@ -1450,10 +1450,11 @@ var init_git_executor = __esm({
+     "use strict";
+     init_git_executor_chain();
+     GitExecutor = class {
+-      constructor(cwd, _scheduler, _plugins) {
++      constructor(cwd, _scheduler, _plugins, _spawn) {
+         this.cwd = cwd;
+         this._scheduler = _scheduler;
+         this._plugins = _plugins;
++        this._spawn = _spawn;
+         this._chain = new GitExecutorChain(this, this._scheduler, this._plugins);
+       }
+       chain() {
+@@ -3861,7 +3862,8 @@ var require_git = __commonJS({
+       this._executor = new GitExecutor2(
+         options.baseDir,
+         new Scheduler2(options.maxConcurrentProcesses),
+-        plugins
++        plugins,
++        options.spawn || spawn
+       );
+       this._trimmed = options.trimmed;
+     }
+diff --git a/dist/src/lib/types/index.d.ts b/dist/src/lib/types/index.d.ts
+index 60516705d5a52dfe0721f839c8b708b362c84471..3672a6913181369f687c9a26af75eaebcc1bdd0d 100644
+--- a/dist/src/lib/types/index.d.ts
++++ b/dist/src/lib/types/index.d.ts
+@@ -48,6 +48,7 @@ export interface GitExecutorResult {
+ }
+ export interface SimpleGitPluginConfig {
+     abort: AbortSignal;
++    spawn: typeof import('child_process').spawn;
+     /**
+      * Name of the binary the child processes will spawn - defaults to `git`,
+      * supply as a tuple to enable the use of platforms that require `git` to be
