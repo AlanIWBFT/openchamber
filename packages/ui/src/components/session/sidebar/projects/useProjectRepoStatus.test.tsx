@@ -9,7 +9,7 @@ import { useProjectRepoStatus } from './useProjectRepoStatus';
 
 type Project = { id: string; path: string; normalizedPath: string; sidebarCollapsed?: boolean };
 
-// SAFETY: the hook only passes `git` through to the store's `ensureStatus`, which these tests replace.
+// SAFETY: the hook only passes `git` through to the store's passive status read, which these tests replace.
 const runtimeAPIs = { git: {} } as RuntimeAPIs;
 const status: GitStatus = { current: 'main', tracking: null, ahead: 0, behind: 0, files: [], isClean: true };
 const project = (id: string, extra: Partial<Project> = {}): Project => ({ id, path: `/${id}`, normalizedPath: `/${id}`, ...extra });
@@ -28,7 +28,7 @@ const Probe: React.FC<{ projects: Project[]; enabled?: boolean }> = ({ projects,
 };
 
 describe('useProjectRepoStatus', () => {
-  const originalEnsureStatus = useGitStore.getState().ensureStatus;
+  const originalEnsureStatus = useGitStore.getState().ensurePassiveStatus;
   let dom: ReturnType<typeof installHookTestDom>;
   let root: Root;
   let reads: string[];
@@ -41,7 +41,7 @@ describe('useProjectRepoStatus', () => {
     failing = new Set();
     useGitStore.setState({
       directories: new Map(),
-      ensureStatus: async (directory) => {
+      ensurePassiveStatus: async (directory) => {
         reads.push(directory);
         if (failing.has(directory)) return;
         useGitStore.getState().setActiveDirectory(directory);
@@ -56,7 +56,7 @@ describe('useProjectRepoStatus', () => {
 
   afterEach(async () => {
     await act(async () => root.unmount());
-    useGitStore.setState({ directories: new Map(), activeDirectory: null, ensureStatus: originalEnsureStatus });
+    useGitStore.setState({ directories: new Map(), activeDirectory: null, ensurePassiveStatus: originalEnsureStatus });
     dom.restore();
   });
 
@@ -89,7 +89,7 @@ describe('useProjectRepoStatus', () => {
     await render([project('a', { sidebarCollapsed: true }), project('b')], false);
     expect(reads).toEqual(['/a', '/b']);
 
-    // ensureStatus itself skips a path read within its staleness window.
+    // The passive read itself skips a path within its staleness window.
     await render([project('a'), project('b')]);
     expect(reads).toEqual(['/a', '/b', '/a', '/b']);
     await render([project('a'), project('b')]);
@@ -98,15 +98,15 @@ describe('useProjectRepoStatus', () => {
 
   test('new paths are prefetched in one batch before the per-project reads', async () => {
     const events: string[] = [];
-    // SAFETY: the hook only calls `prefetchProjectStatuses` and passes `git` through to the store's `ensureStatus`, which these tests replace.
+    // SAFETY: the hook only calls `prefetchProjectStatuses` and passes `git` through to the replaced passive status read.
     const batchingAPIs = { git: {
       prefetchProjectStatuses: async (directories: string[]) => {
         events.push(`prefetch:${directories.join(',')}`);
       },
     } } as RuntimeAPIs;
-    const ensureStatus = useGitStore.getState().ensureStatus;
+    const ensureStatus = useGitStore.getState().ensurePassiveStatus;
     useGitStore.setState({
-      ensureStatus: async (directory, git) => {
+      ensurePassiveStatus: async (directory, git) => {
         events.push(`read:${directory}`);
         await ensureStatus(directory, git);
       },

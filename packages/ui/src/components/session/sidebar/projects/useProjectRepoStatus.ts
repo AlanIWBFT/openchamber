@@ -26,7 +26,7 @@ export const useProjectRepoStatus = (args: Args): void => {
   } = args;
 
   const { git } = useRuntimeAPIs();
-  const ensureStatus = useGitStore((state) => state.ensureStatus);
+  const ensureStatus = useGitStore((state) => state.ensurePassiveStatus);
   const gitRuntimeKey = useGitStore((state) => state.runtimeKey);
   // Paths this sidebar already populated. Collapsing, renaming, recoloring or
   // opening a project rewrites the project list without adding a path; each

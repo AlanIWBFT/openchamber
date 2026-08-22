@@ -288,7 +288,8 @@ export interface ProviderImplementation {
   };
   resources: {
     /** `force` asks past the provider's own short-lived caches. */
-    changeRequestStatus?(input: ReadInput & { branch: string; force: boolean }): Promise<Json>;
+    /** Runtime cancellation stays outside the serializable provider input. */
+    changeRequestStatus?(input: ReadInput & { branch: string; force: boolean }, options?: { signal?: AbortSignal }): Promise<Json>;
     listChangeRequests?(input: ReadInput & { page: number; query?: string; state: string; people: string }): Promise<Json>;
     changeRequestContext?(input: ReadInput & {
       number: number; project?: ProjectSelector; includeDiff: boolean; includeCIDetails: boolean; includeTimeline: boolean;
