@@ -27,12 +27,15 @@ function invalidatePrContextCache(directory, number) {
   }
 }
 
-function withTimeout(promise, timeoutMs, label) {
+function withTimeout(taskFactory, timeoutMs, label) {
   let timer;
+  const controller = new AbortController();
+  const promise = Promise.resolve().then(() => taskFactory(controller.signal));
   const timeout = new Promise((_resolve, reject) => {
     timer = setTimeout(() => {
       const error = new Error(`${label} timed out after ${timeoutMs}ms`);
       error.code = 'ETIMEDOUT';
+      controller.abort(error);
       reject(error);
     }, timeoutMs);
     if (typeof timer.unref === 'function') timer.unref();
@@ -473,12 +476,13 @@ export function registerGitHubRoutes(app) {
 
       const { resolveGitHubPrStatus } = await import('./pr-status.js');
       const resolvedStatus = await withTimeout(
-        resolveGitHubPrStatus({
+        (signal) => resolveGitHubPrStatus({
           octokit,
           directory,
           branch,
           remoteName: remote,
           force,
+          signal,
         }),
         PR_STATUS_RESOLVE_TIMEOUT_MS,
         'resolveGitHubPrStatus',
@@ -609,7 +613,8 @@ export function registerGitHubRoutes(app) {
       const { noteIfGitHubRateLimit } = await import('./rate-limit.js');
       const wasRateLimited = noteIfGitHubRateLimit(error);
       const wasTimeout = error?.code === 'ETIMEDOUT';
-      if (wasRateLimited || wasTimeout) {
+      const wasGitReadUnavailable = error?.code === 'GIT_READ_WORKER_UNAVAILABLE';
+      if (wasRateLimited || wasTimeout || wasGitReadUnavailable) {
         const dir = typeof req.query?.directory === 'string' ? req.query.directory.trim() : '';
         const br = typeof req.query?.branch === 'string' ? req.query.branch.trim() : '';
         const rem = typeof req.query?.remote === 'string' ? req.query.remote.trim() : 'origin';
@@ -617,7 +622,12 @@ export function registerGitHubRoutes(app) {
         if (cached) {
           return res.json(cached.data);
         }
-        return res.status(503).json({ error: wasRateLimited ? 'GitHub rate limited' : 'GitHub request timed out' });
+        const message = wasRateLimited
+          ? 'GitHub rate limited'
+          : wasTimeout
+            ? 'GitHub request timed out'
+            : 'Git is temporarily unavailable';
+        return res.status(503).json({ error: message });
       }
       if (isGitHubResourceUnavailable(error)) {
         return res.json({
