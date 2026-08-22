@@ -12,6 +12,7 @@
 - If OpenCode restarts while a response is still running, the chat now stops with an interrupted state and a notification to continue instead of hanging silently (thanks to @sum117).
 - Usage: Z.ai credit limits now appear alongside its other quota windows.
 - Chat: file paths in messages now open from the session's workspace, even if you last browsed files in another workspace (thanks to @tomzx).
+- Chat: app links such as `spotify://` now ask for confirmation before opening another app. You can trust an app link type on one device and manage trusted links in Settings.
 - While a reply streams, the model status line under the last message now turns into the finished message's info row in place, instead of jumping when the reply completes.
 - Chat: newly sent messages and syntax-highlighted code blocks no longer briefly flicker. Bash output can also grow with its content instead of being cut off.
 - Chat: long user messages can be expanded even when their final layout finishes after they first appear.

@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - Settings/Providers: the provider you select no longer jumps to a different one on its own. Changing the chat's model or agent, and background provider refreshes, used to move the settings selection with them.
 - Settings/Integrations: the experimental page now only lists integrations that can be installed; unavailable and Coming soon entries were removed.
 - Chat: file paths in messages now open from the session's project, even if you last browsed files in another project (thanks to @tomzx).
+- Chat: app links such as `spotify://` now ask for confirmation before opening another app. You can trust an app link type on one device and manage trusted links in Settings.
 - Files/Desktop: files opened from outside the workspace remain readable after their temporary access expires instead of failing until you reopen them (thanks to @pascalandr).
 - Diff: creating an inline comment now opens the chat and focuses the composer for your follow-up.
 - Chat: in the expanded composer, Enter now starts a new line and Cmd/Ctrl+Enter sends, so a long prompt is harder to send by accident.
