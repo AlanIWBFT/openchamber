@@ -1211,6 +1211,9 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
       console.warn('Failed to reconcile sessions after OpenCode restart:', error?.message ?? error);
     }
   },
+  onOpenCodeReady: () => {
+    void activateOpenCodeReadyDependents();
+  },
   getManagedOpenCodeEnv: async () => {
     const settings = await readSettingsFromDiskMigrated().catch(() => null);
     // Each capability is its own tool and its own switch; the plugin is only
@@ -1408,18 +1411,30 @@ const ensureGlobalWatcherStarted = async () => {
 
   return globalWatcherStartPromise;
 };
-const bootstrapOpenCodeAtStartup = async (...args) => {
-  await openCodeLifecycleRuntime.bootstrapOpenCodeAtStartup(...args);
-  scheduleOpenCodeApiDetection();
+let openCodeReadyActivationPromise = null;
+const activateOpenCodeReadyDependents = () => {
+  if (isShuttingDown) return Promise.resolve();
+  if (openCodeReadyActivationPromise) return openCodeReadyActivationPromise;
+
   if (openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) {
     startHealthMonitoring();
   }
-  // The global watcher used to start only for desktop notifications; the
-  // session-assist runtime also rides its event hub, so it now starts
-  // unconditionally once OpenCode is up.
-  void ensureGlobalWatcherStarted().catch((error) => {
-    console.warn(`Global event watcher startup failed: ${error?.message || error}`);
+  openCodeReadyActivationPromise = Promise.all([
+    scheduledTasksRuntime.start().catch((error) => {
+      console.warn('[ScheduledTasks] Failed to start runtime:', error?.message || error);
+    }),
+    ensureGlobalWatcherStarted().catch((error) => {
+      console.warn(`Global event watcher startup failed: ${error?.message || error}`);
+    }),
+  ]).finally(() => {
+    openCodeReadyActivationPromise = null;
   });
+  return openCodeReadyActivationPromise;
+};
+const bootstrapOpenCodeAtStartup = async (...args) => {
+  const result = await openCodeLifecycleRuntime.bootstrapOpenCodeAtStartup(...args);
+  scheduleOpenCodeApiDetection();
+  return result;
 };
 const killProcessOnPort = (...args) => openCodeLifecycleRuntime.killProcessOnPort(...args);
 const waitForPortRelease = (...args) => openCodeLifecycleRuntime.waitForPortRelease(...args);
@@ -2046,16 +2061,6 @@ async function main(options = {}) {
     throw new Error('OpenChamber server startup cancelled during shutdown');
   }
 
-  try {
-    await scheduledTasksRuntime.start();
-  } catch (error) {
-    console.warn('[ScheduledTasks] Failed to start runtime:', error?.message || error);
-  }
-  if (isShuttingDown) {
-    stopDesktopBackgroundResources();
-    throw new Error('OpenChamber server startup cancelled during shutdown');
-  }
-
   // Only opens a relay control socket when the user opted in (config enabled).
   // Reconcile the relay lifecycle from demand on startup: run it if any relay
   // device/session exists, stop it (and clear a stale enabled flag) otherwise.
@@ -2090,6 +2095,9 @@ async function main(options = {}) {
       };
     },
     isReady: () => isOpenCodeReady,
+    getOpenCodeStartupState: () => openCodeLifecycleRuntime.getOpenCodeStartupState(),
+    onOpenCodeStartupState: (listener) => openCodeLifecycleRuntime.onOpenCodeStartupState(listener),
+    waitForOpenCodeStartup: () => startupPipelineResult.openCodeStartup,
     restartOpenCode: () => restartOpenCode(),
     getOpenCodeProcessInfo: () => {
       const managed = Boolean((openCodeProcess || openCodePort) && !ENV_SKIP_OPENCODE_START && !isExternalOpenCode);
