@@ -8,6 +8,8 @@ This package owns the native shell: windows, menus, deep links, native notificat
 
 Desktop starts the OpenChamber web server in the same Electron main process. There is no separate sidecar subprocess for the OpenChamber server.
 
+On Windows, latency-sensitive Git status, PR-context, and per-file diff reads are dispatched to a fixed pool of eight persistent Node Worker Threads owned by that in-process server. Each worker has a file-backed module entry but remains a thread inside `OpenChamber.exe`; none is another executable or helper process. This keeps security-product delays in Git process creation off the Electron main event loop while allowing eight independent reads to progress.
+
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
 
 The foreground window loads its HTML splash before resolving the backend.

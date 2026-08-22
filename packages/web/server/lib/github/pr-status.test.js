@@ -1,21 +1,28 @@
-import { afterEach, beforeEach, describe, expect, mock, test, vi } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+
+const mock = vi.fn;
 
 const listMock = mock(async () => ({ data: [] }));
+const gitPrContextCalls = [];
+const defaultGitPrContextImplementation = async () => ({ tracking: null, remotes: [] });
+let gitPrContextImplementation = defaultGitPrContextImplementation;
 
-mock.module('../git/index.js', () => ({
-  getRemotes: async () => [],
-  getStatus: async () => null,
+vi.doMock('../git/index.js', () => ({
+  getPrGitContext: async (...args) => {
+    gitPrContextCalls.push(args);
+    return gitPrContextImplementation(...args);
+  },
 }));
 
-mock.module('./repo/index.js', () => ({
-  resolveGitHubRepoFromDirectory: async () => null,
+vi.doMock('./repo/index.js', () => ({
+  parseGitHubRemoteUrl: () => null,
 }));
 
-mock.module('./rate-limit.js', () => ({
+vi.doMock('./rate-limit.js', () => ({
   noteIfGitHubRateLimit: () => {},
 }));
 
-const { findBranchPrCandidates, invalidateRepoPullsCache } = await import('./pr-status.js');
+const { findBranchPrCandidates, invalidateRepoPullsCache, resolveGitHubPrStatus } = await import('./pr-status.js');
 
 const openPr = {
   number: 15,
@@ -54,6 +61,45 @@ const call = (overrides = {}) => findBranchPrCandidates({
   force: true,
   includeHistory: true,
   ...overrides,
+});
+
+describe('resolveGitHubPrStatus', () => {
+  beforeEach(() => {
+    gitPrContextCalls.length = 0;
+    gitPrContextImplementation = defaultGitPrContextImplementation;
+  });
+
+  test('requests only the narrow PR git context', async () => {
+    const controller = new AbortController();
+    const args = {
+      octokit: { rest: { repos: { get: mock(async () => ({ data: null })) } } },
+      directory: process.cwd(),
+      branch: 'feature',
+      signal: controller.signal,
+    };
+
+    await expect(resolveGitHubPrStatus(args)).resolves.toEqual({
+      repo: null,
+      pr: null,
+      defaultBranch: null,
+      resolvedRemoteName: null,
+    });
+    expect(gitPrContextCalls).toEqual([[process.cwd(), 'feature', { signal: controller.signal }]]);
+  });
+
+  test('propagates a temporarily unavailable Git worker to the route fallback', async () => {
+    const unavailable = Object.assign(
+      new Error('Git read worker is recovering from a timed-out process launch'),
+      { code: 'GIT_READ_WORKER_UNAVAILABLE' },
+    );
+    gitPrContextImplementation = async () => { throw unavailable; };
+
+    await expect(resolveGitHubPrStatus({
+      octokit: { rest: { repos: { get: mock(async () => ({ data: null })) } } },
+      directory: process.cwd(),
+      branch: 'feature',
+    })).rejects.toBe(unavailable);
+  });
 });
 
 describe('findBranchPrCandidates', () => {

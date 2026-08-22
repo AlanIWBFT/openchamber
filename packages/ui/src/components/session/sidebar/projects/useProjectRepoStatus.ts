@@ -26,7 +26,7 @@ export const useProjectRepoStatus = (args: Args): void => {
   } = args;
 
   const { git } = useRuntimeAPIs();
-  const ensureStatus = useGitStore((state) => state.ensureStatus);
+  const ensureStatus = useGitStore((state) => state.ensurePassiveStatus);
 
   // Derive repo status from centralized Git store
   React.useEffect(() => {
