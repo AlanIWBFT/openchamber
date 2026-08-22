@@ -5,16 +5,20 @@ import os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { createRequire } from 'module';
+import { isMainThread } from 'node:worker_threads';
+import {
+  resolveGitBinary,
+} from './git-binary.js';
+import { runGitReadWorkerTask } from './git-read-worker-client.js';
+import { runSharedGitReadTask } from './git-read-shared.js';
 
 const fsp = fs.promises;
 const require = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
 const gpgconfCandidates = ['gpgconf', '/opt/homebrew/bin/gpgconf', '/usr/local/bin/gpgconf'];
-let resolvedGitBinary = null;
 const worktreeBootstrapState = new Map();
 const activeWorktreeBootstrapTasks = new Map();
 const remoteExistenceCache = new Map();
-const SIMPLE_GIT_SAFE_BINARY_PATTERN = /^([a-z]:)?([a-z0-9/.\\_~-]+)$/i;
 const SIMPLE_GIT_UNSAFE_BINARY_WARNING = 'Invalid value supplied for custom binary, restricted characters must be removed';
 const REMOTE_EXISTENCE_CACHE_TTL_MS = 30_000;
 const gitIndexMutationQueues = new Map();
@@ -28,6 +32,23 @@ const WORKTREE_BOOTSTRAP_PHASE_SETUP_READY = 'setup-ready';
 const GIT_NULL_REF = '0'.repeat(40);
 const WORKTREE_INDEX_LOCK_RETRY_DELAY_MS = 250;
 const WORKTREE_INDEX_LOCK_STALE_DELAY_MS = 750;
+
+const throwIfGitReadCancelled = (options = {}, fallbackError = null) => {
+  const sharedCancelled = options.cancellationView
+    ? Atomics.load(options.cancellationView, 0) !== 0
+    : false;
+  if (!sharedCancelled && !options.signal?.aborted) {
+    return;
+  }
+
+  if (options.signal?.reason instanceof Error) {
+    throw options.signal.reason;
+  }
+  if (fallbackError instanceof Error) {
+    throw fallbackError;
+  }
+  throw Object.assign(new Error('Git read cancelled'), { code: 'ABORT_ERR' });
+};
 
 const toBootstrapStateKey = (directory) => {
   const normalized = normalizeDirectoryPath(directory);
@@ -93,50 +114,6 @@ const waitForActiveWorktreeBootstrap = async (directory) => {
   }
 };
 
-const isExecutableFile = (candidate) => {
-  if (typeof candidate !== 'string' || candidate.trim().length === 0) {
-    return false;
-  }
-  try {
-    const stat = fs.statSync(candidate);
-    if (!stat.isFile()) {
-      return false;
-    }
-    if (process.platform === 'win32') {
-      const ext = path.extname(candidate).toLowerCase();
-      return ext.length === 0 || ext === '.exe' || ext === '.cmd' || ext === '.bat' || ext === '.com';
-    }
-    fs.accessSync(candidate, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const normalizeGitExecutableCandidate = (candidate) => {
-  if (typeof candidate !== 'string') {
-    return null;
-  }
-  const trimmed = candidate.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const ext = path.extname(trimmed).toLowerCase();
-  if (ext === '.cmd' || ext === '.bat' || ext === '.com') {
-    const exeCandidate = trimmed.slice(0, -ext.length) + '.exe';
-    if (isExecutableFile(exeCandidate)) {
-      return exeCandidate;
-    }
-  }
-
-  return trimmed;
-};
-
-const isSafeSimpleGitBinary = (candidate) => (
-  typeof candidate === 'string' && SIMPLE_GIT_SAFE_BINARY_PATTERN.test(candidate)
-);
-
 const createSimpleGit = (options) => {
   if (!options?.unsafe?.allowUnsafeCustomBinary) {
     return simpleGit(options);
@@ -155,85 +132,6 @@ const createSimpleGit = (options) => {
   } finally {
     console.warn = originalWarn;
   }
-};
-
-const listPathExecutableCandidates = (binaryName) => {
-  const currentPath = process.env.PATH || '';
-  const seen = new Set();
-  const matches = [];
-  for (const segment of currentPath.split(path.delimiter)) {
-    const dir = typeof segment === 'string' ? segment.trim() : '';
-    if (!dir || seen.has(dir)) {
-      continue;
-    }
-    seen.add(dir);
-    matches.push(path.join(dir, binaryName));
-  }
-  return matches;
-};
-
-const listWindowsGitInstallCandidates = () => {
-  const roots = [
-    process.env.ProgramFiles,
-    process.env['ProgramFiles(x86)'],
-    process.env.LocalAppData,
-  ]
-    .map((value) => (typeof value === 'string' ? value.trim() : ''))
-    .filter(Boolean);
-
-  const candidates = [];
-  for (const root of roots) {
-    candidates.push(path.join(root, 'Git', 'cmd', 'git.exe'));
-    candidates.push(path.join(root, 'Git', 'bin', 'git.exe'));
-    candidates.push(path.join(root, 'Git', 'mingw64', 'bin', 'git.exe'));
-    candidates.push(path.join(root, 'Programs', 'Git', 'cmd', 'git.exe'));
-    candidates.push(path.join(root, 'Programs', 'Git', 'bin', 'git.exe'));
-  }
-  return candidates;
-};
-
-const resolveGitBinary = () => {
-  if (process.platform !== 'win32') {
-    return 'git';
-  }
-  if (resolvedGitBinary) {
-    return resolvedGitBinary;
-  }
-
-  const explicit = [process.env.GIT_BINARY, process.env.OPENCHAMBER_GIT_BINARY]
-    .map((value) => (typeof value === 'string' ? value.trim() : ''))
-    .filter(Boolean);
-  for (const candidate of explicit) {
-    const normalized = normalizeGitExecutableCandidate(candidate);
-    if (isExecutableFile(normalized)) {
-      resolvedGitBinary = normalized;
-      return resolvedGitBinary;
-    }
-  }
-
-  const pathDiscovered = [
-    ...listPathExecutableCandidates('git.exe'),
-    ...listPathExecutableCandidates('git'),
-  ]
-    .map(normalizeGitExecutableCandidate)
-    .filter(Boolean)
-    .filter((candidate) => isExecutableFile(candidate));
-  if (pathDiscovered.length > 0) {
-    resolvedGitBinary = 'git';
-    return resolvedGitBinary;
-  }
-
-  const discovered = [
-    ...listWindowsGitInstallCandidates(),
-  ]
-    .map(normalizeGitExecutableCandidate)
-    .filter(Boolean)
-    .filter((candidate) => isExecutableFile(candidate));
-
-  const preferredExe = discovered.find((candidate) => isSafeSimpleGitBinary(candidate) && candidate.toLowerCase().endsWith('.exe'))
-    || discovered.find((candidate) => candidate.toLowerCase().endsWith('.exe'));
-  resolvedGitBinary = preferredExe || discovered[0] || 'git.exe';
-  return resolvedGitBinary;
 };
 
 const getGitBinary = () => resolveGitBinary();
@@ -352,8 +250,11 @@ const buildGitEnv = async () => {
   return env;
 };
 
-const createGit = async (directory, { allowUnsafeSshCommand = false } = {}) => {
+const createGit = async (directory, options = {}) => {
+  const { allowUnsafeSshCommand = false, signal } = options;
+  throwIfGitReadCancelled(options);
   const env = await buildGitEnv();
+  throwIfGitReadCancelled(options);
   const spawnOptions = { windowsHide: true };
   const binary = getGitBinary();
   const hasCustomBinary = typeof binary === 'string' && binary.trim() && binary !== 'git' && binary !== 'git.exe';
@@ -372,13 +273,17 @@ const createGit = async (directory, { allowUnsafeSshCommand = false } = {}) => {
   if (typeof baseDir !== 'string' || !baseDir.trim()) {
     throw new Error('Git directory is required');
   }
-  return createSimpleGit({
+  const gitOptions = {
     baseDir,
     env,
     spawnOptions,
     binary,
     unsafe,
-  });
+  };
+  if (signal) {
+    gitOptions.abort = signal;
+  }
+  return createSimpleGit(gitOptions);
 };
 
 // Global config reads do not need a repository; use the home directory as a
@@ -475,23 +380,40 @@ const isInsideOrSameDirectory = (root, target) => {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 };
 
-const resolveGitRepositoryRoot = async (directoryPath, git) => {
-  const topLevel = await git.raw(['rev-parse', '--show-toplevel']);
-  const normalizedTopLevel = topLevel.trim();
-  return path.isAbsolute(normalizedTopLevel)
-    ? path.resolve(normalizedTopLevel)
-    : path.resolve(directoryPath, normalizedTopLevel);
+const resolveGitOutputPath = (directoryPath, value) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    throw new Error('Git returned an empty repository path');
+  }
+  return path.isAbsolute(normalized)
+    ? path.resolve(normalized)
+    : path.resolve(directoryPath, normalized);
 };
 
-const createRepositoryGitContext = async (directory) => {
+const resolveGitRepositoryPaths = async (directoryPath, git) => {
+  const output = await git.raw(['rev-parse', '--show-toplevel', '--absolute-git-dir']);
+  const [topLevel, absoluteGitDir] = String(output || '').split(/\r?\n/);
+  return {
+    repoRoot: resolveGitOutputPath(directoryPath, topLevel),
+    gitDir: resolveGitOutputPath(directoryPath, absoluteGitDir),
+  };
+};
+
+const resolveGitRepositoryRoot = async (directoryPath, git) => {
+  const { repoRoot } = await resolveGitRepositoryPaths(directoryPath, git);
+  return repoRoot;
+};
+
+const createRepositoryGitContext = async (directory, options = {}) => {
   const directoryPath = normalizeDirectoryPath(directory);
   if (typeof directoryPath !== 'string' || !directoryPath.trim()) {
     throw new Error('Git directory is required');
   }
-  const directoryGit = await createGit(directoryPath);
-  const repoRoot = await resolveGitRepositoryRoot(directoryPath, directoryGit);
-  const git = path.resolve(directoryPath) === repoRoot ? directoryGit : await createGit(repoRoot);
-  return { directoryPath, directoryGit, repoRoot, git };
+  const directoryGit = await createGit(directoryPath, options);
+  const { repoRoot, gitDir } = await resolveGitRepositoryPaths(directoryPath, directoryGit);
+  throwIfGitReadCancelled(options);
+  const git = path.resolve(directoryPath) === repoRoot ? directoryGit : await createGit(repoRoot, options);
+  return { directoryPath, directoryGit, repoRoot, gitDir, git };
 };
 
 /**
@@ -509,8 +431,10 @@ const resolveGitInternalPath = async (repoRoot, git, gitPath) => {
   return path.resolve(repoRoot, resolved.trim());
 };
 
-const resolveGitFileContext = async (directoryPath, git, filePath, repoRootOverride = null) => {
+const resolveGitFileContext = async (directoryPath, git, filePath, repoRootOverride = null, options = {}) => {
+  const assertActive = (error = null) => throwIfGitReadCancelled(options, error);
   const repoRoot = repoRootOverride || await resolveGitRepositoryRoot(directoryPath, git);
+  assertActive();
   const candidates = Array.from(new Set([
     path.resolve(repoRoot, filePath),
     path.resolve(directoryPath, filePath),
@@ -525,8 +449,16 @@ const resolveGitFileContext = async (directoryPath, git, filePath, repoRootOverr
     const worktreeEntry = await fsp.lstat(absolutePath).catch(() => null);
     const isSymbolicLink = worktreeEntry?.isSymbolicLink() ?? false;
     const existsInWorktree = worktreeEntry?.isFile() || isSymbolicLink;
-    const existsInIndex = await git.raw(['cat-file', '-e', `:${repoPath}`]).then(() => true).catch(() => false);
-    const existsInHead = await git.raw(['cat-file', '-e', `HEAD:${repoPath}`]).then(() => true).catch(() => false);
+    const existsInIndex = await git.raw(['cat-file', '-e', `:${repoPath}`]).then(() => true).catch((error) => {
+      assertActive(error);
+      return false;
+    });
+    assertActive();
+    const existsInHead = await git.raw(['cat-file', '-e', `HEAD:${repoPath}`]).then(() => true).catch((error) => {
+      assertActive(error);
+      return false;
+    });
+    assertActive();
 
     if (existsInWorktree || existsInIndex || existsInHead) {
       return {
@@ -822,7 +754,7 @@ const getRemoteExistenceCacheKey = (directory, remoteName) => {
   return `${path.resolve(normalizedDirectory)}\0${remoteName}`;
 };
 
-const hasRemote = async (git, directory, remoteName) => {
+const hasRemote = async (git, directory, remoteName, assertActive = () => {}) => {
   const remote = String(remoteName || '').trim();
   if (!remote) {
     return false;
@@ -834,10 +766,12 @@ const hasRemote = async (git, directory, remoteName) => {
     return cached.exists;
   }
 
+  assertActive();
   const exists = await git
     .raw(['remote', 'get-url', remote])
     .then((value) => String(value || '').trim().length > 0)
     .catch(() => false);
+  assertActive();
 
   remoteExistenceCache.set(key, { exists, checkedAt: Date.now() });
   return exists;
@@ -864,7 +798,7 @@ const buildRawGitOptions = (raw) => {
   });
 };
 
-const getRemoteBranchComparison = async (git, remoteName, branchName) => {
+const getRemoteBranchComparison = async (git, remoteName, branchName, assertActive = () => {}) => {
   const remote = String(remoteName || '').trim();
   const branch = String(branchName || '').trim();
   if (!remote || !branch) {
@@ -872,10 +806,12 @@ const getRemoteBranchComparison = async (git, remoteName, branchName) => {
   }
 
   const remoteRef = `refs/remotes/${remote}/${branch}`;
+  assertActive();
   const exists = await git
     .raw(['rev-parse', '--verify', remoteRef])
     .then((value) => String(value || '').trim())
     .catch(() => '');
+  assertActive();
   if (!exists) {
     return null;
   }
@@ -884,6 +820,7 @@ const getRemoteBranchComparison = async (git, remoteName, branchName) => {
     .raw(['rev-list', '--left-right', '--count', `HEAD...${remoteRef}`])
     .then((value) => String(value || '').trim())
     .catch(() => '');
+  assertActive();
   const counts = parseAheadBehindCounts(countsRaw);
   if (!counts) {
     return null;
@@ -915,14 +852,19 @@ const isMissingDirectoryError = (error) => {
   return /directory that does not exist|does not exist|no such file or directory/i.test(text);
 };
 
-const runGitCommand = async (cwd, args) => {
+const runGitCommand = async (cwd, args, options = {}) => {
+  throwIfGitReadCancelled(options);
   try {
+    const env = await buildGitEnv();
+    throwIfGitReadCancelled(options);
     const { stdout, stderr } = await execFileAsync(getGitBinary(), args, {
       cwd,
-      env: await buildGitEnv(),
+      env,
       windowsHide: true,
       maxBuffer: 20 * 1024 * 1024,
+      signal: options.signal,
     });
+    throwIfGitReadCancelled(options);
     return {
       success: true,
       exitCode: 0,
@@ -930,6 +872,7 @@ const runGitCommand = async (cwd, args) => {
       stderr: String(stderr || ''),
     };
   } catch (error) {
+    throwIfGitReadCancelled(options, error);
     return {
       success: false,
       exitCode: typeof error?.code === 'number' ? error.code : 1,
@@ -2177,32 +2120,38 @@ export async function setLocalIdentity(directory, profile) {
   }
 }
 
-export async function getStatus(directory, options = {}) {
+const getStatusDirect = async (directory, options = {}) => {
   const lightMode = options.mode === 'light';
   const normalizedDirectory = normalizeDirectoryPath(directory);
   if (typeof normalizedDirectory !== 'string' || !normalizedDirectory.trim()) {
     throw new Error('directory is required');
   }
+  const assertActive = (error) => throwIfGitReadCancelled(options, error);
+  assertActive();
 
   try {
-    // Prefer an explicit non-repo check before simple-git status so a missing
-    // repository never depends on process.cwd() or an opaque GitError shape.
-    if (!(await isGitRepository(normalizedDirectory))) {
-      throw new Error('fatal: not a git repository (or any of the parent directories): .git');
-    }
-
-    const { directoryPath, repoRoot, git } = await createRepositoryGitContext(normalizedDirectory);
+    const { directoryPath, repoRoot, gitDir, git } = await createRepositoryGitContext(normalizedDirectory, { signal: options.signal });
+    assertActive();
 
     // Use -uall to show all untracked files individually, not just directories
     const status = await git.status(['-uall']);
+    assertActive();
 
     // Light mode: skip numstat + new-file line counting for faster response
-    const [stagedStatsRaw, workingStatsRaw] = lightMode
-      ? ['', '']
-      : await Promise.all([
-          git.raw(['diff', '--cached', '--numstat']).catch(() => ''),
-          git.raw(['diff', '--numstat']).catch(() => ''),
-        ]);
+    let stagedStatsRaw = '';
+    let workingStatsRaw = '';
+    if (!lightMode) {
+      stagedStatsRaw = await git.raw(['diff', '--cached', '--numstat']).catch((error) => {
+        assertActive(error);
+        return '';
+      });
+      assertActive();
+      workingStatsRaw = await git.raw(['diff', '--numstat']).catch((error) => {
+        assertActive(error);
+        return '';
+      });
+      assertActive();
+    }
 
     const diffStatsMap = new Map();
 
@@ -2244,6 +2193,7 @@ export async function getStatus(directory, options = {}) {
 
     if (!lightMode) {
       for (const file of status.files) {
+        assertActive();
         if (newFileStats.length >= MAX_NEW_FILE_STATS) {
           break;
         }
@@ -2318,10 +2268,12 @@ export async function getStatus(directory, options = {}) {
     const selectBaseRefForUnpublished = async () => {
       const candidates = [];
 
+      assertActive();
       const originHead = await git
         .raw(['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'])
         .then((value) => String(value || '').trim())
         .catch(() => '');
+      assertActive();
 
       if (originHead) {
         // "refs/remotes/origin/main" -> "origin/main"
@@ -2331,10 +2283,12 @@ export async function getStatus(directory, options = {}) {
       candidates.push('origin/main', 'origin/master', 'main', 'master');
 
       for (const ref of candidates) {
+        assertActive();
         const exists = await git
           .raw(['rev-parse', '--verify', ref])
           .then((value) => String(value || '').trim())
           .catch(() => '');
+        assertActive();
         if (exists) return ref;
       }
 
@@ -2351,11 +2305,13 @@ export async function getStatus(directory, options = {}) {
     // Light mode skips this — the basic ahead/behind from git status is sufficient for polling.
     if (!lightMode && !tracking && status.current) {
       const baseRef = await selectBaseRefForUnpublished();
+      assertActive();
       if (baseRef) {
         const countRaw = await git
           .raw(['rev-list', '--count', `${baseRef}..HEAD`])
           .then((value) => String(value || '').trim())
           .catch(() => '');
+        assertActive();
         const count = parseInt(countRaw, 10);
         if (Number.isFinite(count)) {
           ahead = count;
@@ -2368,9 +2324,11 @@ export async function getStatus(directory, options = {}) {
       !lightMode
       && status.current
       && (!tracking || !tracking.startsWith('upstream/'))
-      && await hasRemote(git, directoryPath, 'upstream')
+      && await hasRemote(git, directoryPath, 'upstream', assertActive)
     ) {
-      upstreamComparison = await getRemoteBranchComparison(git, 'upstream', status.current);
+      assertActive();
+      upstreamComparison = await getRemoteBranchComparison(git, 'upstream', status.current, assertActive);
+      assertActive();
     }
 
     // Check for in-progress operations
@@ -2379,23 +2337,14 @@ export async function getStatus(directory, options = {}) {
 
     try {
       // Check MERGE_HEAD for merge in progress
-      const mergeHeadExists = await git
-        .raw(['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'])
-        .then(() => true)
-        .catch(() => false);
-      
-      if (mergeHeadExists) {
-        const mergeHead = await git.raw(['rev-parse', 'MERGE_HEAD']).catch(() => '');
-        const headSha = mergeHead.trim().slice(0, 7);
-        // Only set mergeInProgress if we actually have a valid head SHA
-        if (headSha) {
-          const mergeMsgPath = await resolveGitInternalPath(repoRoot, git, 'MERGE_MSG').catch(() => '');
-          const mergeMsg = mergeMsgPath ? await fsp.readFile(mergeMsgPath, 'utf8').catch(() => '') : '';
-          mergeInProgress = {
-            head: headSha,
-            message: mergeMsg.split('\n')[0] || '',
-          };
-        }
+      const mergeHead = await fsp.readFile(path.join(gitDir, 'MERGE_HEAD'), 'utf8').catch(() => '');
+      const mergeObjectId = mergeHead.split(/\r?\n/, 1)[0]?.trim() || '';
+      if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(mergeObjectId)) {
+        const mergeMsg = await fsp.readFile(path.join(gitDir, 'MERGE_MSG'), 'utf8').catch(() => '');
+        mergeInProgress = {
+          head: mergeObjectId.slice(0, 7),
+          message: mergeMsg.split('\n')[0] || '',
+        };
       }
     } catch {
       // ignore
@@ -2403,10 +2352,10 @@ export async function getStatus(directory, options = {}) {
 
     try {
       // Check for rebase in progress (.git/rebase-merge or .git/rebase-apply)
-      const rebaseMergePath = await resolveGitInternalPath(repoRoot, git, 'rebase-merge').catch(() => '');
-      const rebaseApplyPath = await resolveGitInternalPath(repoRoot, git, 'rebase-apply').catch(() => '');
-      const rebaseMergeExists = rebaseMergePath ? await fsp.stat(rebaseMergePath).then(() => true).catch(() => false) : false;
-      const rebaseApplyExists = rebaseApplyPath ? await fsp.stat(rebaseApplyPath).then(() => true).catch(() => false) : false;
+      const rebaseMergePath = path.join(gitDir, 'rebase-merge');
+      const rebaseApplyPath = path.join(gitDir, 'rebase-apply');
+      const rebaseMergeExists = await fsp.stat(rebaseMergePath).then(() => true).catch(() => false);
+      const rebaseApplyExists = await fsp.stat(rebaseApplyPath).then(() => true).catch(() => false);
       
       if (rebaseMergeExists || rebaseApplyExists) {
         const rebasePath = rebaseMergeExists ? rebaseMergePath : rebaseApplyPath;
@@ -2428,7 +2377,9 @@ export async function getStatus(directory, options = {}) {
       // ignore
     }
 
+    assertActive();
     return {
+      isGitRepository: true,
       current: status.current,
       tracking,
       ahead,
@@ -2445,6 +2396,7 @@ export async function getStatus(directory, options = {}) {
       rebaseInProgress,
     };
   } catch (error) {
+    assertActive(error);
     if (isNotGitRepositoryError(error) || isMissingDirectoryError(error)) {
       // Re-throw a plain Error so route/session callers can match reliably and
       // continue enumerating other projects instead of treating GitError as 500.
@@ -2453,6 +2405,16 @@ export async function getStatus(directory, options = {}) {
     console.error('Failed to get Git status:', error);
     throw error;
   }
+};
+
+export async function getStatus(directory, options = {}) {
+  if (process.platform === 'win32' && isMainThread) {
+    return runGitReadWorkerTask('status', {
+      directory,
+      mode: options.mode,
+    }, { signal: options.signal });
+  }
+  return getStatusDirect(directory, options);
 }
 
 export async function getDiff(directory, { path: filePath, staged = false, contextLines = 3 } = {}) {
@@ -2862,7 +2824,7 @@ const looksBinaryBySniff = async (absolutePath) => {
   }
 };
 
-const isBinaryDiff = async (directoryPath, filePath, staged) => {
+const isBinaryDiff = async (directoryPath, filePath, staged, options = {}) => {
   // Fast path: ask git for numstat. For binary, it returns "-\t-\t<path>".
   const args = ['diff', '--numstat'];
   if (staged) {
@@ -2870,16 +2832,16 @@ const isBinaryDiff = async (directoryPath, filePath, staged) => {
   }
   args.push('--', filePath);
 
-  const result = await runGitCommand(directoryPath, args);
+  const result = await runGitCommand(directoryPath, args, options);
   if (parseIsBinaryFromNumstat(result.stdout)) {
     return true;
   }
 
   // Fallback for untracked files (diff output is empty): use --no-index against /dev/null
   if (!staged) {
-    const tracked = await runGitCommand(directoryPath, ['ls-files', '--error-unmatch', '--', filePath]).then((r) => r.success);
+    const tracked = await runGitCommand(directoryPath, ['ls-files', '--error-unmatch', '--', filePath], options).then((r) => r.success);
     if (!tracked) {
-      const noIndex = await runGitCommand(directoryPath, ['diff', '--no-index', '--numstat', '--', '/dev/null', filePath]);
+      const noIndex = await runGitCommand(directoryPath, ['diff', '--no-index', '--numstat', '--', '/dev/null', filePath], options);
       if (parseIsBinaryFromNumstat(noIndex.stdout) || parseIsBinaryFromNumstat(noIndex.stderr) || parseIsBinaryFromNumstat(noIndex.message)) {
         return true;
       }
@@ -2893,19 +2855,26 @@ const isBinaryDiff = async (directoryPath, filePath, staged) => {
   return false;
 };
 
-export async function getFileDiff(directory, { path: filePath, staged = false } = {}) {
+const getFileDiffDirect = async (directory, options = {}) => {
+  const { path: filePath, staged = false, signal } = options;
+  const assertActive = (error = null) => throwIfGitReadCancelled(options, error);
   if (!directory || !filePath) {
     throw new Error('directory and path are required for getFileDiff');
   }
 
-  const { directoryPath, directoryGit, repoRoot, git } = await createRepositoryGitContext(directory);
+  assertActive();
+  const { directoryPath, directoryGit, repoRoot, git } = await createRepositoryGitContext(directory, options);
+  assertActive();
   const isImage = isImageFile(filePath);
   const mimeType = isImage ? getImageMimeType(filePath) : null;
-  const { absolutePath, repoPath, isSymbolicLink } = await resolveGitFileContext(directoryPath, directoryGit, filePath, repoRoot);
+  const { absolutePath, repoPath, isSymbolicLink } = await resolveGitFileContext(directoryPath, directoryGit, filePath, repoRoot, options);
+  assertActive();
 
   if (!isImage && !isSymbolicLink) {
     const isBinaryBySniff = await looksBinaryBySniff(absolutePath);
-    const isBinary = isBinaryBySniff || (await isBinaryDiff(repoRoot, repoPath, staged));
+    assertActive();
+    const isBinary = isBinaryBySniff || (await isBinaryDiff(repoRoot, repoPath, staged, options));
+    assertActive();
     if (isBinary) {
       return {
         original: '',
@@ -2926,17 +2895,22 @@ export async function getFileDiff(directory, { path: filePath, staged = false } 
           encoding: 'buffer',
           windowsHide: true,
           maxBuffer: 50 * 1024 * 1024, // 50MB max
+          signal,
         });
+        assertActive();
         if (stdout && stdout.length > 0) {
           original = `data:${mimeType};base64,${stdout.toString('base64')}`;
         }
-      } catch {
+      } catch (error) {
+        assertActive(error);
         original = '';
       }
     } else {
       original = await git.show([`HEAD:${repoPath}`]);
+      assertActive();
     }
-  } catch {
+  } catch (error) {
+    assertActive(error);
     original = '';
   }
 
@@ -2949,12 +2923,15 @@ export async function getFileDiff(directory, { path: filePath, staged = false } 
           encoding: 'buffer',
           windowsHide: true,
           maxBuffer: 50 * 1024 * 1024,
+          signal,
         });
+        assertActive();
         if (stdout && stdout.length > 0) {
           modified = `data:${mimeType};base64,${stdout.toString('base64')}`;
         }
       } else {
         modified = await git.show([`:${repoPath}`]);
+        assertActive();
       }
     } else {
       if (isSymbolicLink) {
@@ -2979,6 +2956,7 @@ export async function getFileDiff(directory, { path: filePath, staged = false } 
       }
     }
   } catch (error) {
+    assertActive(error);
     if (error && typeof error === 'object' && error.code === 'ENOENT') {
       modified = '';
     } else {
@@ -2987,12 +2965,24 @@ export async function getFileDiff(directory, { path: filePath, staged = false } 
     }
   }
 
+  assertActive();
   return {
     original: typeof original === 'string' ? original.replace(/\r\n/g, '\n') : original,
     modified: typeof modified === 'string' ? modified.replace(/\r\n/g, '\n') : modified,
     path: filePath,
     isBinary: false,
   };
+};
+
+export async function getFileDiff(directory, options = {}) {
+  if (process.platform === 'win32' && isMainThread) {
+    return runGitReadWorkerTask('file-diff', {
+      directory,
+      path: options.path,
+      staged: options.staged,
+    }, { signal: options.signal });
+  }
+  return getFileDiffDirect(directory, options);
 }
 
 export async function revertFile(directory, filePath, options = {}) {
@@ -4963,6 +4953,75 @@ export async function renameBranch(directory, oldName, newName) {
     console.error('Failed to rename branch:', error);
     throw error;
   }
+}
+
+const getPrGitContextDirect = async (directory, branch, options = {}) => {
+  const normalizedDirectory = normalizeDirectoryPath(directory);
+  const normalizedBranch = cleanBranchName(String(branch || '').trim());
+  if (!normalizedDirectory || !normalizedBranch) {
+    throw new Error('directory and branch are required');
+  }
+
+  const assertActive = (error) => throwIfGitReadCancelled(options, error);
+  assertActive();
+  const git = await createGit(normalizedDirectory, { signal: options.signal });
+  assertActive();
+
+  const tracking = await git
+    .raw([
+      'for-each-ref',
+      '--count=1',
+      '--format=%(upstream:short)',
+      `refs/heads/${normalizedBranch}`,
+    ])
+    .then((value) => String(value || '').trim() || null)
+    .catch((error) => {
+      assertActive(error);
+      return null;
+    });
+  assertActive();
+
+  const remotes = await git
+    .getRemotes(true)
+    .then((entries) => entries.map((remote) => ({
+      name: remote.name,
+      fetchUrl: remote.refs.fetch,
+      pushUrl: remote.refs.push,
+    })))
+    .catch((error) => {
+      assertActive(error);
+      return [];
+    });
+  assertActive();
+  return { tracking, remotes };
+};
+
+const getPrGitContextTaskKey = (directory, branch) => {
+  const normalizedDirectory = normalizeDirectoryPath(directory);
+  const normalizedBranch = cleanBranchName(String(branch || '').trim());
+  if (typeof normalizedDirectory !== 'string' || !normalizedDirectory.trim() || !normalizedBranch) {
+    throw new Error('directory and branch are required');
+  }
+  const directoryValue = path.resolve(normalizedDirectory);
+  const directoryKey = process.platform === 'win32'
+    ? directoryValue.replace(/\\/g, '/').toLowerCase()
+    : directoryValue;
+  return `pr-context\0${directoryKey}\0${normalizedBranch}`;
+};
+
+export async function getPrGitContext(directory, branch, options = {}) {
+  if (!isMainThread) {
+    return getPrGitContextDirect(directory, branch, options);
+  }
+
+  const key = getPrGitContextTaskKey(directory, branch);
+  return runSharedGitReadTask(
+    key,
+    (signal) => process.platform === 'win32'
+      ? runGitReadWorkerTask('pr-context', { directory, branch }, { signal })
+      : getPrGitContextDirect(directory, branch, { signal }),
+    { signal: options.signal },
+  );
 }
 
 export async function getRemotes(directory) {
