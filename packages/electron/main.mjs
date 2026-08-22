@@ -1575,9 +1575,11 @@ const spawnLocalServer = async () => {
     durationMs: performance.now() - serverStartedAt,
   });
 
-  await mutateSettingsRoot((root) => {
-    root.desktopLocalPort = port;
-  });
+  if (port !== storedPort) {
+    await mutateSettingsRoot((root) => {
+      root.desktopLocalPort = port;
+    });
+  }
 
   return url;
 };
