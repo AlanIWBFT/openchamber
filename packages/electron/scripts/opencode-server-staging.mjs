@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readBinaryArchitecture } from './binary-architecture.mjs';
+import { assertWindowsGuiSubsystem } from './pe-subsystem.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronPackagePath = path.resolve(__dirname, '..', 'package.json');
@@ -63,8 +64,18 @@ export const verifyOpenCodeServer = (dir, { platform, arch, version, runtime }) 
         throw new Error(`Bundled OpenCode server is missing its ${key}`);
       }
     }
-    if (readBinaryArchitecture(path.join(dir, 'assets', manifest.processBroker), platform) !== 'x64') {
+    const broker = path.join(dir, 'assets', manifest.processBroker);
+    if (readBinaryArchitecture(broker, platform) !== 'x64') {
       throw new Error('The fork desktop service requires an x64 Windows process broker');
+    }
+    assertWindowsGuiSubsystem(broker);
+    if (process.platform === 'win32') {
+      for (const [flag, expected] of [['--protocol-version', '2'], ['--runtime-kind', 'nativeaot']]) {
+        const result = spawnSync(broker, [flag], { encoding: 'utf8', windowsHide: true, timeout: 15_000 });
+        if (result.status !== 0 || result.stdout?.trim() !== expected) {
+          throw new Error(`Windows process broker ${flag} must report ${expected}: ${result.error?.message || result.stderr || result.stdout || `exit ${result.status}`}`);
+        }
+      }
     }
   }
   for (const key of ['nodePty', 'photonWasm']) {

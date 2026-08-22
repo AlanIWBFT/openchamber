@@ -491,6 +491,7 @@
     "zod@4.6.7": "bun-patches/zod@4.6.7.patch",
     "bun-pty@0.6.0": "bun-patches/bun-pty@0.6.0.patch",
     "@legendapp/list@3.7.2": "bun-patches/@legendapp%2Flist@3.7.2.patch",
+    "simple-git@4.0.2": "bun-patches/simple-git@4.0.2.patch",
   },
   "overrides": {
     "@codemirror/autocomplete": "6.20.4",

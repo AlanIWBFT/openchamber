@@ -1,4 +1,5 @@
 import { SHARE_ENV, Worker } from 'node:worker_threads';
+import { getProcessBrokerWorkerData } from './process-broker.js';
 import { failureCode, type GitReadInputs, type ReadFailure, type ReadOperation, type ReadResult, type WorkerOutput } from './git-read-protocol.js';
 
 type ReadOptions = { signal?: AbortSignal | undefined };
@@ -25,9 +26,9 @@ const createWorkerError = (payload: ReadFailure) => Object.assign(new Error(payl
 
 const defaultCreateWorker = () => new Worker(
   new URL(import.meta.url.endsWith('.ts') ? './git-read-worker.ts' : './git-read-worker.js', import.meta.url),
-  import.meta.url.endsWith('.ts') && !process.versions.bun
-    ? { env: SHARE_ENV, execArgv: [...process.execArgv, '--import', new URL('../../../scripts/register-server-sources.mjs', import.meta.url).href] }
-    : { env: SHARE_ENV },
+  { env: SHARE_ENV, workerData: getProcessBrokerWorkerData(), ...(import.meta.url.endsWith('.ts') && !process.versions.bun
+    ? { execArgv: [...process.execArgv, '--import', new URL('../../../scripts/register-server-sources.mjs', import.meta.url).href] }
+    : {}) },
 );
 
 export class GitReadWorkerClient {

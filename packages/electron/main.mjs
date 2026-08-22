@@ -152,6 +152,7 @@ import { compareVersions } from '@openchamber/web/server/lib/version-order.js';
 import { applyConnectAttemptTimeout } from '@openchamber/web/server/lib/network-defaults.js';
 import { isNetworkAccessBlocked } from '@openchamber/web/server/lib/enterprise-mode.js';
 import { assignInjectedEnv } from '@openchamber/web/server/lib/injected-env.js';
+import { resolveDesktopGitBroker } from './desktop-git-broker.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -1473,6 +1474,13 @@ const spawnLocalServer = async () => {
 
   if (!lanAccessBlockedByEnterprise && !lanAccessBlockedByMissingPassword) {
     delete process.env.OPENCHAMBER_DESKTOP_LAN_ACCESS_BLOCKED_REASON;
+  }
+  const processBroker = process.platform === 'win32' && resolveDesktopGitBroker(resourceRoot(), isDev, process.env);
+  if (processBroker) {
+    assignInjectedEnv(process.env, { OPENCHAMBER_PROCESS_BROKER_PATH: processBroker });
+  } else {
+    delete process.env.OPENCHAMBER_PROCESS_BROKER_PATH;
+    if (isDev && process.platform === 'win32') console.info('[desktop] No prepared Git broker; using normal Git spawning');
   }
   if (!desktopUiPassword) {
     delete process.env.OPENCHAMBER_UI_PASSWORD;

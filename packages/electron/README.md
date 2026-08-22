@@ -8,7 +8,7 @@ This package owns the native shell: windows, menus, deep links, native notificat
 
 Desktop starts the OpenChamber web server in the same Electron main process. There is no separate sidecar subprocess for the OpenChamber server.
 
-On Windows, latency-sensitive Git status, PR-context, and per-file diff reads are dispatched to a fixed pool of eight persistent Node Worker Threads owned by that in-process server. Each worker has a file-backed module entry but remains a thread inside `OpenChamber.exe`; none is another executable or helper process. This keeps security-product delays in Git process creation off the Electron main event loop while allowing eight independent reads to progress.
+On Windows, latency-sensitive Git status, PR-context, and per-file diff reads use four persistent Node Worker Threads in the in-process server. They share one NativeAOT `OpenCode.ProcessBroker.exe`, which starts Git without a console and owns its process tree in a per-command Job Object. In desktop HMR, choosing a standalone `OPENCODE_BINARY` does not change the desktop's Git broker: it uses the helper in the prepared desktop service. If the helper is absent, Git uses normal spawning.
 
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
 
@@ -312,7 +312,8 @@ rejects new IPC and HTTP work while cleanup runs.
 On Windows the fork service stages `OpenCode.Windows.RecycleBin.dll` for
 PowerShell Recycle Bin operations and `OpenCode.ProcessBroker.exe` for Git/rg
 process jobs under `resources/opencode-server/assets`. Staged and packaged
-verification requires both assets. The out-of-process broker is x64 on both
+verification requires both assets and checks the broker's GUI subsystem,
+protocol version 2 and NativeAOT identity. The out-of-process broker is x64 on both
 Windows architectures; native Node bindings match the Electron architecture.
 Packaged Windows verification checks the PE subsystem of `OpenChamber.exe`,
 the host that runs `serve.mjs`, before attempting the server version probe.
