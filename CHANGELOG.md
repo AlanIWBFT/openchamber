@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - **Dictation:** speech is now transcribed after you stop recording. The composer shows a live waveform and timer, and long recordings split at pauses instead of cutting words.
 - Chat: file paths in messages now open from the session's project, even if you last browsed files in another project (thanks to @tomzx).
 - Diff: creating an inline comment now opens the chat and focuses the composer for your follow-up.
+- Chat: in the expanded composer, Enter now starts a new line and Cmd/Ctrl+Enter sends, so a long prompt is harder to send by accident.
 - Providers: expanded support for custom providers.
 - Small Model: summaries, goal audits, commit messages, and walkthroughs now support more providers.
 - Git: generated commit messages now match the repository's recent commit style and language.
