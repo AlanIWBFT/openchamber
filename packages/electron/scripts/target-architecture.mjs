@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 const ARCHITECTURES = {
   x64: {
     node: 'x64',
@@ -18,6 +20,8 @@ const ARCHITECTURE_ALIASES = new Map([
   ['arm64', 'arm64'],
   ['aarch64', 'arm64'],
 ]);
+
+const LOCAL_WINDOWS_X64_BUN_RUNTIME = path.join('bun-v1.3.14-shim-hardlink', 'build', 'release', 'bun.exe');
 
 export const normalizeTargetArchitecture = (value, source = 'target architecture') => {
   const normalized = ARCHITECTURE_ALIASES.get(String(value || '').trim().toLowerCase());
@@ -88,6 +92,12 @@ export const resolveOpenCodeCliTarget = ({ platform = process.platform, targetAr
   return {
     architecture,
     buildTarget: `${buildPlatform}-${architecture}`,
-    baseline: architecture === 'x64',
+    // Native Windows x64 source builds use the patched sibling Bun; ARM64 still needs the x64 baseline workaround.
+    baseline: architecture === 'x64' && !(platform === 'win32' && requestedArchitecture === 'x64'),
   };
+};
+
+export const resolveLocalOpenCodeBunRuntime = ({ platform = process.platform, targetArchitecture, sourceRoot }) => {
+  if (platform !== 'win32' || targetArchitecture?.node !== 'x64') return null;
+  return path.resolve(sourceRoot, '..', LOCAL_WINDOWS_X64_BUN_RUNTIME);
 };
