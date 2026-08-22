@@ -14,6 +14,7 @@ export const createWebGitAPI = (): GitAPI => ({
   configureAuxiliaryBinding: configureWebAuxiliaryBinding,
   checkIsGitRepository: gitApiHttp.checkIsGitRepository,
   getGitStatus: gitApiHttp.getGitStatus,
+  getPassiveGitStatus: gitApiHttp.getPassiveGitStatus,
   getGitDiff: gitApiHttp.getGitDiff,
   getGitFileDiff: gitApiHttp.getGitFileDiff,
   getGitRangeDiff: gitApiHttp.getGitRangeDiff,

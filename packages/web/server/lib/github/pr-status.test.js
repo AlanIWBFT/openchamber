@@ -1,14 +1,15 @@
-import { afterEach, beforeEach, describe, expect, mock, test, vi } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { findBranchPrCandidates, invalidateRepoPullsCache, isHistoricalPrOfCheckout, resolveGitHubPrStatus } from './pr-status.js';
 import { createOctokit, getOctokitCacheIdentity } from './octokit.js';
+const mock = vi.fn;
+
+import { findBranchPrCandidates, invalidateRepoPullsCache, isHistoricalPrOfCheckout, resolveGitHubPrStatus } from './pr-status.js';
 
 const listMock = mock(async () => ({ data: [] }));
-
 const isAncestorMock = mock(async () => false);
 
 const octokitFor = (token, accountId) => ({
@@ -53,6 +54,41 @@ const call = (overrides = {}) => findBranchPrCandidates({
   force: true,
   includeHistory: true,
   ...overrides,
+});
+
+describe('resolveGitHubPrStatus', () => {
+  test('requests only the narrow PR git context', async () => {
+    const readGitContext = mock(async () => ({ tracking: null, remotes: [] }));
+    const controller = new AbortController();
+    const args = {
+      octokit: { rest: { repos: { get: mock(async () => ({ data: null })) } } },
+      directory: process.cwd(),
+      branch: 'feature',
+      signal: controller.signal,
+    };
+
+    await expect(resolveGitHubPrStatus(args, { readGitContext })).resolves.toEqual({
+      repo: null,
+      pr: null,
+      defaultBranch: null,
+      resolvedRemoteName: null,
+    });
+    expect(readGitContext.mock.calls).toEqual([[process.cwd(), 'feature', { signal: controller.signal }]]);
+  });
+
+  test('propagates a temporarily unavailable Git worker to the route fallback', async () => {
+    const unavailable = Object.assign(
+      new Error('Git read worker is recovering from a timed-out process launch'),
+      { code: 'GIT_READ_WORKER_UNAVAILABLE' },
+    );
+    const readGitContext = async () => { throw unavailable; };
+
+    await expect(resolveGitHubPrStatus({
+      octokit: { rest: { repos: { get: mock(async () => ({ data: null })) } } },
+      directory: process.cwd(),
+      branch: 'feature',
+    }, { readGitContext })).rejects.toBe(unavailable);
+  });
 });
 
 describe('findBranchPrCandidates', () => {
@@ -340,7 +376,7 @@ describe('isHistoricalPrOfCheckout', () => {
     isAncestorMock.mockImplementation(async () => true);
     const pr = { ...mergedPr, head: { ...mergedPr.head, sha: 'abc1234' } };
     expect(await isHistoricalPrOfCheckout('/repo', pr, { isAncestor: isAncestorMock })).toBe(true);
-    expect(isAncestorMock).toHaveBeenCalledWith('/repo', 'abc1234');
+    expect(isAncestorMock).toHaveBeenCalledWith('/repo', 'abc1234', { signal: undefined });
   });
 
   test('a reused branch name without the merged commits does not inherit the PR', async () => {
@@ -352,5 +388,21 @@ describe('isHistoricalPrOfCheckout', () => {
   test('a PR without a head sha is never attributed', async () => {
     expect(await isHistoricalPrOfCheckout('/repo', mergedPr, { isAncestor: isAncestorMock })).toBe(false);
     expect(isAncestorMock).not.toHaveBeenCalled();
+  });
+
+  test('worker recovery is not reported as an authoritative ancestry miss', async () => {
+    const unavailable = Object.assign(new Error('recovering'), { code: 'GIT_READ_WORKER_UNAVAILABLE' });
+    isAncestorMock.mockRejectedValue(unavailable);
+    const pr = { ...mergedPr, head: { ...mergedPr.head, sha: 'abc1234' } };
+    await expect(isHistoricalPrOfCheckout('/repo', pr, { isAncestor: isAncestorMock })).rejects.toBe(unavailable);
+  });
+
+  test('ancestry completion cannot turn a cancelled lookup into a history match', async () => {
+    const controller = new AbortController();
+    const cancelled = new Error('PR deadline');
+    isAncestorMock.mockImplementation(async () => { controller.abort(cancelled); return true; });
+    const pr = { ...mergedPr, head: { ...mergedPr.head, sha: 'abc1234' } };
+    await expect(isHistoricalPrOfCheckout('/repo', pr, { isAncestor: isAncestorMock, signal: controller.signal })).rejects.toBe(cancelled);
+    expect(isAncestorMock).toHaveBeenCalledWith('/repo', 'abc1234', { signal: controller.signal });
   });
 });

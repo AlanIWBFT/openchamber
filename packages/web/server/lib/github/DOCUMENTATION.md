@@ -114,7 +114,13 @@ that page, so callers cannot mistake a partial page for a complete one.
 
 ## How PR resolution works
 
-- It reads local git status and remotes first.
+- It requests the Git module's narrow PR context: one `for-each-ref` for the branch tracking ref and one `remote -v` for all remote URLs. It does not run full status, diff statistics, repository-root discovery, or another `get-url` process per remote.
+- Concurrent PR requests for the same directory and branch share that in-flight context read. Each HTTP waiter can cancel independently; the underlying read is aborted only after the last waiter leaves.
+- The route's 12-second resolution deadline aborts its Git reads. On Windows,
+  PR context and historical-PR ancestry checks share the four-lane Git Worker
+  Thread pool with status reads. Cancellation and worker recovery propagate to
+  the route's cached-status fallback rather than becoming an authoritative
+  missing-PR result.
 - It ranks remotes in this order: explicit remote, tracking remote, `origin`, `upstream`, then the rest.
 - It resolves those remotes into GitHub repos.
 - The ranked-first remote is the branch's source unless the worktree was checked out from a contributor's fork PR. Such a worktree deliberately has no upstream, so `/pr/status` reads its contributor provenance (`readContributorProvenance`, supplied by the server runtime) and, when the provenance's source ref is this branch, passes the fork remote as `sourceRemoteName`. That remote, not the primary one, is then the only source, so the open PR from the fork is found. Unreadable provenance resolves as for any other branch.
