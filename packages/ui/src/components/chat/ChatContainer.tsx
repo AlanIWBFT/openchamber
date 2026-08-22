@@ -566,6 +566,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     // Session UI state
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
     const currentSessionDirectory = useSessionUIStore((s) => s.currentSessionDirectory);
+    const materializedDraftSessionId = useSessionUIStore((s) => s.materializedDraftSessionId);
+    const clearMaterializedDraftSession = useSessionUIStore((s) => s.clearMaterializedDraftSession);
     const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
     const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
     const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
@@ -1107,8 +1109,11 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     const previousDraftOpenRef = React.useRef(draftOpen);
     const previousDraftLayoutVisibleRef = React.useRef(draftOpen);
     const [draftExitAnimating, setDraftExitAnimating] = React.useState(false);
+    const shouldAnimateDraftTransition = Boolean(
+        currentSessionId && materializedDraftSessionId === currentSessionId,
+    );
     const draftPresentationExiting = draftExitAnimating
-        || (previousDraftOpenRef.current && !draftOpen && Boolean(currentSessionId));
+        || (previousDraftOpenRef.current && !draftOpen && shouldAnimateDraftTransition);
     const draftLayoutVisible = draftOpen || draftPresentationExiting;
 
     React.useLayoutEffect(() => {
@@ -1116,12 +1121,12 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             setDraftExitAnimating(false);
             return;
         }
-        if (!previousDraftOpenRef.current || !currentSessionId) return;
+        if (!previousDraftOpenRef.current || !shouldAnimateDraftTransition) return;
 
         setDraftExitAnimating(true);
         const timeoutId = window.setTimeout(() => setDraftExitAnimating(false), DRAFT_EXIT_DURATION_MS);
         return () => window.clearTimeout(timeoutId);
-    }, [currentSessionId, draftOpen]);
+    }, [draftOpen, shouldAnimateDraftTransition]);
 
     React.useLayoutEffect(() => {
         previousDraftOpenRef.current = draftOpen;
@@ -1139,7 +1144,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             && Boolean(currentSessionId);
         const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
-        if (leftDraftLayout && previousRect && !reduceMotion && !useCompactDraftLayout && !isDesktopExpandedInput) {
+        const shouldMoveComposer = leftDraftLayout && shouldAnimateDraftTransition;
+        if (shouldMoveComposer && previousRect && !reduceMotion && !useCompactDraftLayout && !isDesktopExpandedInput) {
             const deltaX = previousRect.left - currentRect.left;
             const deltaY = previousRect.top - currentRect.top;
             composerSlot.animate(
@@ -1150,10 +1156,19 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 { duration: COMPOSER_MOVE_DURATION_MS, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
             );
         }
-
         previousComposerRectRef.current = currentRect;
         previousDraftLayoutVisibleRef.current = draftLayoutVisible;
-    }, [currentSessionId, draftLayoutVisible, isDesktopExpandedInput, useCompactDraftLayout]);
+        if (leftDraftLayout && currentSessionId) {
+            clearMaterializedDraftSession(currentSessionId);
+        }
+    }, [
+        clearMaterializedDraftSession,
+        currentSessionId,
+        draftLayoutVisible,
+        isDesktopExpandedInput,
+        shouldAnimateDraftTransition,
+        useCompactDraftLayout,
+    ]);
 
 	if (!currentSessionId && !draftOpen) {
 		// The auto-open effect runs on the next tick. Use a neutral background

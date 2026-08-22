@@ -727,6 +727,7 @@ export async function createSession(
   directoryOverride?: string | null,
   parentID?: string | null,
   metadata?: Record<string, unknown>,
+  selectionTransition?: "submitted-draft",
 ): Promise<Session | null> {
   try {
     // Capture the effective directory used for session creation so we can fall
@@ -747,7 +748,7 @@ export async function createSession(
     if (sessionDirectory) {
       registerSessionDirectory(session.id, sessionDirectory)
     }
-    useSessionUIStore.getState().setCurrentSession(session.id, sessionDirectory)
+    useSessionUIStore.getState().setCurrentSession(session.id, sessionDirectory, selectionTransition)
     useSessionUIStore.getState().markSessionAsOpenChamberCreated(session.id)
     useGlobalSessionsStore.getState().upsertSession(session)
     return session

@@ -296,6 +296,7 @@ export type SessionHistoryMeta = {
 export type SessionUIState = {
   currentSessionId: string | null
   currentSessionDirectory: string | null
+  materializedDraftSessionId: string | null
   newSessionDraft: NewSessionDraftState
   abortPromptSessionId: string | null
   abortPromptExpiresAt: number | null
@@ -318,7 +319,12 @@ export type SessionUIState = {
   dismissPendingChangesBar: (sessionId: string, signature: string | null) => void
 
   // Actions — UI state management
-  setCurrentSession: (id: string | null, directoryHint?: string | null) => void
+  setCurrentSession: (
+    id: string | null,
+    directoryHint?: string | null,
+    transition?: "submitted-draft",
+  ) => void
+  clearMaterializedDraftSession: (sessionId: string) => void
   prepareForRuntimeSwitch: (apiBaseUrl?: string | null) => void
   restoreForRuntimeSwitch: (apiBaseUrl?: string | null) => void
   openNewSessionDraft: (options?: Partial<NewSessionDraftState> & { automatic?: boolean }) => void
@@ -357,7 +363,12 @@ export type SessionUIState = {
     options?: SendMessageOptions,
   ) => Promise<void>
 
-  createSession: (title?: string, directoryOverride?: string | null, parentID?: string | null, metadata?: Record<string, unknown>) => Promise<Session | null>
+  createSession: (
+    title?: string,
+    directoryOverride?: string | null,
+    parentID?: string | null,
+    metadata?: Record<string, unknown>,
+  ) => Promise<Session | null>
   deleteSession: (id: string, options?: DeleteSessionOptions) => Promise<boolean>
   deleteSessions: (ids: string[], options?: DeleteSessionsOptions) => Promise<{ deletedIds: string[]; failedIds: string[] }>
   archiveSession: (id: string) => Promise<boolean>
@@ -715,6 +726,48 @@ const recoverStaleDraftDirectory = async (openedDraft: NewSessionDraftState): Pr
   void activateConfigForDirectory(recovered)
 }
 
+const createSessionWithDraftLifecycle = async (
+  title?: string,
+  directoryOverride?: string | null,
+  parentID?: string | null,
+  metadata?: Record<string, unknown>,
+  selectionTransition?: "submitted-draft",
+): Promise<Session | null> => {
+  const store = useSessionUIStore.getState()
+  const draft = store.newSessionDraft
+  const targetFolderId = draft.targetFolderId
+
+  try {
+    const resolved = await resolveCreatableDraftDirectory(draft, directoryOverride)
+    if (resolved.status === "aborted") return null
+    const directory = resolved.directory
+    const session = await createSessionAction(
+      title,
+      directory,
+      parentID ?? null,
+      metadata,
+      selectionTransition,
+    )
+    if (!session) return null
+
+    useSessionUIStore.getState().closeNewSessionDraft()
+
+    if (targetFolderId) {
+      const currentStore = useSessionUIStore.getState()
+      const scopeDirectory = directory || currentStore.lastLoadedDirectory || session.directory
+      const scopeKey = getChatsRootFromDirectory(scopeDirectory) ?? scopeDirectory
+      if (scopeKey) {
+        useSessionFoldersStore.getState().addSessionToFolder(scopeKey, targetFolderId, session.id)
+      }
+    }
+
+    return session
+  } catch (error) {
+    console.error("[session-ui-store] createSession failed", error)
+    return null
+  }
+}
+
 export async function materializeOpenDraftSession(selection: {
   providerID: string
   modelID: string
@@ -752,13 +805,14 @@ export async function materializeOpenDraftSession(selection: {
   await waitForWorktreeBootstrapIfConfigured(draftDirectoryOverride, draftProjectId)
 
   const draftPins = draft.projectContextPins ?? { notes: [], plans: [] }
-  const created = await store.createSession(
+  const created = await createSessionWithDraftLifecycle(
     draft.title,
     draftDirectoryOverride,
     draft.parentID ?? null,
     draftPins.notes.length > 0 || draftPins.plans.length > 0
       ? { openchamber: { project_context_pins: draftPins } }
       : undefined,
+    "submitted-draft",
   )
   if (!created?.id) {
     if (isChatDraft && draftDirectoryOverride) {
@@ -795,8 +849,6 @@ export async function materializeOpenDraftSession(selection: {
   }
 
   store.initializeNewOpenChamberSession(created.id, configState.agents ?? [])
-
-  store.setCurrentSession(created.id, createdDirectory)
 
   if (draftPermissionAutoAcceptEnabled) {
     void import("@/stores/permissionStore")
@@ -838,6 +890,7 @@ const PERSISTED_WORKTREE_MAP = readPersistedWorktreeTopology(runtimeMemoryKey())
 export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   currentSessionId: null,
   currentSessionDirectory: null,
+  materializedDraftSessionId: null,
   newSessionDraft: { ...DEFAULT_DRAFT },
   abortPromptSessionId: null,
   abortPromptExpiresAt: null,
@@ -856,7 +909,14 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   // setCurrentSession
   // ---------------------------------------------------------------------------
-  setCurrentSession: (id, directoryHint?: string | null) => {
+  setCurrentSession: (id, directoryHint?: string | null, transition?: "submitted-draft") => {
+    const materializedDraftSessionId = id && transition === "submitted-draft" ? id : null
+    // Publish the transition identity before closing the draft. Those are two
+    // separate store updates, and ChatContainer must never observe a closed
+    // draft with the previous transition identity.
+    if (get().materializedDraftSessionId !== materializedDraftSessionId) {
+      set({ materializedDraftSessionId })
+    }
     if (id) {
       get().closeNewSessionDraft()
     }
@@ -890,7 +950,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     // Set the directory together with the session id so chat hooks read the
     // same child store that send/SSE events will update during startup races.
-    set({ currentSessionId: id, currentSessionDirectory: id ? resolvedDir ?? null : null })
+    set({
+      currentSessionId: id,
+      currentSessionDirectory: id ? resolvedDir ?? null : null,
+    })
     guessedSelectionSessionId = isGuessedDir && id ? id : null
     const rememberedDir = isGuessedDir ? null : resolvedDir ?? null
     writeRuntimeSessionMemory(key, { sessionId: id, directory: rememberedDir })
@@ -943,6 +1006,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       markSessionViewed(id)
       setActiveSession(resolvedDir ?? "", id)
     }
+  },
+
+  clearMaterializedDraftSession: (sessionId) => {
+    if (get().materializedDraftSessionId !== sessionId) return
+    set({ materializedDraftSessionId: null })
   },
 
   prepareForRuntimeSwitch: (apiBaseUrl?: string | null) => {
@@ -1663,33 +1731,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   // createSession
   // ---------------------------------------------------------------------------
-  createSession: async (title, directoryOverride, parentID, metadata) => {
-    const draft = get().newSessionDraft
-    const targetFolderId = draft.targetFolderId
-
-    try {
-      const resolved = await resolveCreatableDraftDirectory(draft, directoryOverride)
-      if (resolved.status === "aborted") return null
-      const dir = resolved.directory
-      const session = await createSessionAction(title, dir, parentID ?? null, metadata)
-      if (!session) return null
-
-      get().closeNewSessionDraft()
-
-      if (targetFolderId) {
-        const scopeDirectory = dir || get().lastLoadedDirectory || session.directory
-        const scopeKey = getChatsRootFromDirectory(scopeDirectory) ?? scopeDirectory
-        if (scopeKey) {
-          useSessionFoldersStore.getState().addSessionToFolder(scopeKey, targetFolderId, session.id)
-        }
-      }
-
-      return session
-    } catch (e) {
-      console.error("[session-ui-store] createSession failed", e)
-      return null
-    }
-  },
+  createSession: (title, directoryOverride, parentID, metadata) =>
+    createSessionWithDraftLifecycle(title, directoryOverride, parentID, metadata),
 
   // ---------------------------------------------------------------------------
   // deleteSession — calls SDK, SSE event updates child store

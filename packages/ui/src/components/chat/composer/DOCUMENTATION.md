@@ -11,7 +11,9 @@ belongs to one of them.
 becomes its first session. Draft-only UI first fades for 120ms while the editor
 stays in place. The parent then moves the editor to its final session position
 with a 180ms transform-only FLIP animation. Reduced-motion mode skips these
-transitions. Do not restore separate draft and session composer branches:
+transitions. `session-ui-store.ts` marks sessions materialized from a submitted
+draft, so selecting an existing session while a draft is open switches without
+animation. Do not restore separate draft and session composer branches:
 remounting the editor loses focus and interrupts the transition. Keep the
 existing mobile fixed-position rules unchanged.
 
