@@ -761,7 +761,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     // row that holds both columns, so its width never depends on the panel's
     // own visibility.
     const { rowRef: workStatusRowRef, visible: workStatusVisible, fits: workStatusFits } = useWorkStatusVisibility({
-        directory: workStatusDirectory,
         isMobile,
         isVSCode,
     });
