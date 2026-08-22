@@ -10,6 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
 const outputDir = path.join(electronRoot, 'resources', 'opencode-cli');
 const cacheRoot = path.join(electronRoot, '.cache', 'opencode-cli');
+const windowsProcessBroker = 'OpenCode.ProcessBroker.exe';
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -218,6 +219,7 @@ const main = async () => {
   }
   const existingVersion = readBinaryVersion(outputBinary);
   if (existingVersion === version) {
+    fs.rmSync(path.join(outputDir, windowsProcessBroker), { force: true });
     console.log(`[electron] bundled OpenCode CLI already prepared: ${outputBinary} (${version})`);
     return;
   }
@@ -241,6 +243,7 @@ const main = async () => {
   }
 
   stageBinary(extractedBinary, outputBinary, version);
+  fs.rmSync(path.join(outputDir, windowsProcessBroker), { force: true });
 
   const preparedVersion = readBinaryVersion(outputBinary);
   if (preparedVersion !== version) {
