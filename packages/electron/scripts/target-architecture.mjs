@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 const ARCHITECTURES = {
   x64: {
     node: 'x64',
@@ -18,6 +20,8 @@ const ARCHITECTURE_ALIASES = new Map([
   ['arm64', 'arm64'],
   ['aarch64', 'arm64'],
 ]);
+
+const LOCAL_WINDOWS_X64_BUN_RUNTIME = path.join('bun-v1.3.14-shim-hardlink', 'build', 'release', 'bun.exe');
 
 export const normalizeTargetArchitecture = (value, source = 'target architecture') => {
   const normalized = ARCHITECTURE_ALIASES.get(String(value || '').trim().toLowerCase());
@@ -85,7 +89,7 @@ export const resolveOpenCodeCliTarget = ({ platform = process.platform, targetAr
   if (!['linux', 'darwin', 'windows'].includes(buildPlatform)) {
     throw new Error(`No OpenCode CLI build target mapping for ${platform}/${architecture}`);
   }
-  const baseline = architecture === 'x64';
+  const baseline = architecture === 'x64' && !(platform === 'win32' && requestedArchitecture === 'x64');
   const target = `${buildPlatform}-${architecture}${baseline ? '-baseline' : ''}`;
   return {
     architecture,
@@ -93,4 +97,11 @@ export const resolveOpenCodeCliTarget = ({ platform = process.platform, targetAr
     packageDirectory: `cli-${target}`,
     baseline,
   };
+};
+
+export const resolveLocalOpenCodeBunRuntime = ({ platform = process.platform, targetArchitecture, sourceRoot, environment = process.env }) => {
+  const configuredRuntime = environment.OPENCHAMBER_OPENCODE_BUN_RUNTIME?.trim();
+  if (configuredRuntime) return path.resolve(configuredRuntime);
+  if (platform !== 'win32' || targetArchitecture?.node !== 'x64') return null;
+  return path.resolve(sourceRoot, '..', LOCAL_WINDOWS_X64_BUN_RUNTIME);
 };
