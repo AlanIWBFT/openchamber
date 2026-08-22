@@ -588,7 +588,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     ), [cycleAgentShortcutOverride]);
     const { currentTheme } = useThemeSystem();
     const chatSearchDirectory = useChatSearchDirectory();
-    const ensureGitStatus = useGitStore((state) => state.ensureStatus);
+    const ensureGitStatus = useGitStore((state) => state.ensurePassiveStatus);
     const fetchGitStatus = useGitStore((state) => state.fetchStatus);
     const clearGitDiffCache = useGitStore((state) => state.clearDiffCache);
     const setSessionAutoAccept = usePermissionStore((state) => state.setSessionAutoAccept);
