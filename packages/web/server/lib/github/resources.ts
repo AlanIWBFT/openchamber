@@ -385,7 +385,7 @@ export function createGitHubResources({
   return Object.freeze({
     invalidateContexts: (scope: Partial<ContextScope>) => contextCache.invalidate(scope),
 
-    changeRequestStatus: async ({ session, directory, branch, remote, force = false }: ResourceInput<'changeRequestStatus'>) => {
+    changeRequestStatus: async ({ session, directory, branch, remote, force = false }: ResourceInput<'changeRequestStatus'>, { signal }: { signal?: AbortSignal } = {}) => {
       const { octokit, user } = accountOf(session);
       const identity = identityOf(session);
       const { rateLimit } = await load();
@@ -396,7 +396,7 @@ export function createGitHubResources({
       try {
         const sourceRemoteName = await readContributorSourceRemote(directory, branch);
         const resolved = await resolvePrStatus({
-          octokit, directory, branch, remoteName: remote, sourceRemoteName, force, requestHost: hostRepo?.host,
+          octokit, directory, branch, remoteName: remote, sourceRemoteName, force, requestHost: hostRepo?.host, signal,
         });
         if (!resolved.repo) return noProject;
         const project = mapProject(resolved.repo, identity);

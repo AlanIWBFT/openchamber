@@ -40,12 +40,12 @@ export function useBranchOptions(directory: string | null): BranchSelectorState 
   const isLoadingStatus = useGitLoadingStatus(directory);
   const isLoadingBranches = useGitLoadingBranches(directory);
   const fetchBranches = useGitStore((state) => state.fetchBranches);
-  const fetchStatus = useGitStore((state) => state.fetchStatus);
+  const ensurePassiveStatus = useGitStore((state) => state.ensurePassiveStatus);
 
   React.useEffect(() => {
-    if (!directory || !git || isGitRepo !== null || isLoadingStatus) return;
-    void fetchStatus(directory, git, { silent: true });
-  }, [directory, git, fetchStatus, isGitRepo, isLoadingStatus]);
+    if (!directory || !git || isGitRepo !== null) return;
+    void ensurePassiveStatus(directory, git);
+  }, [directory, ensurePassiveStatus, git, isGitRepo]);
 
   const branchesFetchedAt = useGitBranchesFetchedAt(directory);
   const hasFetchedBranches = Boolean(branches?.all) && branchesFetchedAt > 0;

@@ -112,6 +112,11 @@ const toGitRemoteSummary = (remote: { name?: unknown; fetchUrl?: string | null; 
   fetchUrl: redactRemoteUrl(remote?.fetchUrl),
   pushUrl: redactRemoteUrl(remote?.pushUrl),
 });
+import { GIT_STATUS_TIMEOUT_CODE, runGitStatusTask } from './status-tasks.js';
+import { GIT_READ_WORKER_UNAVAILABLE_CODE } from './git-read-worker-client.js';
+
+const GIT_FILE_DIFF_TIMEOUT_CODE = 'GIT_FILE_DIFF_TIMEOUT';
+const GIT_FILE_DIFF_TIMEOUT_MS = 30_000;
 
 const WORKTREE_INSTANCE_DISPOSE_TIMEOUT_MS = 5_000;
 
@@ -205,10 +210,12 @@ export function registerGitRoutes(app: Application, {
     ? createWorktreeInstanceDisposer({ buildOpenCodeUrl, getOpenCodeAuthHeaders })
     : undefined);
 
-  const nonRepoStatusPayload = () => ({
+  const nonRepoStatusPayload = (): import('./status-batch.js').NonRepositoryStatus & { isGitRepository: false } => ({
     isGitRepository: false,
+    current: '',
+    tracking: null,
     files: [],
-    branch: null,
+    isClean: true,
     ahead: 0,
     behind: 0,
   });
@@ -558,6 +565,47 @@ export function registerGitRoutes(app: Application, {
   });
 
   let identitiesBackfilled = false;
+  const readDirectoryStatus = async (directory: string, mode: 'light' | undefined, passive: boolean, signal: AbortSignal) => {
+    try {
+      const { getStatus, observeWorktreeTopology } = await getGitLibraries();
+      const status = await runGitStatusTask(directory, { mode, authoritative: !passive, signal }, (readSignal: AbortSignal) => getStatus(directory, { mode, signal: readSignal }));
+      if (status.isGitRepository) void observeWorktreeTopology(directory);
+      return status;
+    } catch (error) {
+      if (isNonRepoGitError(error) && !isUnreadableRepositoryError(error)) return nonRepoStatusPayload();
+      throw error;
+    }
+  };
+  const createStatusHandler = (passiveAlias: boolean) => async (req: Request, res: Response) => {
+    const controller = new AbortController();
+    const close = () => controller.abort();
+    res.once('close', close);
+    try {
+      const directory = resolveDirectoryQuery(req.query.directory);
+      if (!directory) {
+        return res.status(400).json({ error: 'directory parameter is required' });
+      }
+
+      const mode = req.query.mode === 'light' ? 'light' : undefined;
+      const status = await readDirectoryStatus(directory, mode, passiveAlias || req.query.passive === '1', controller.signal);
+      res.json(status);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (isUnreadableRepositoryError(error)) {
+        return res.status(500).json(unreadableRepositoryBody(error));
+      }
+      if (errorFields(error)?.code === GIT_STATUS_TIMEOUT_CODE) {
+        console.warn('Git status timed out:', extractGitErrorText(error));
+        return res.status(504).json({ error: messageOf(error) });
+      }
+      if (errorFields(error)?.code === GIT_READ_WORKER_UNAVAILABLE_CODE) {
+        return res.status(503).json({ error: messageOf(error) });
+      }
+      console.error('Failed to get git status:', error);
+      res.status(500).json({ error: messageOf(error) || 'Failed to get git status' });
+    } finally { res.off('close', close); }
+  };
+
   app.get('/api/git/identities', async (req, res) => {
     const { getProfiles } = await getGitLibraries();
     try {
@@ -709,7 +757,7 @@ export function registerGitRoutes(app: Application, {
           void observeWorktreeTopology(directory);
           reads.push((async () => {
             try {
-              entry.status = await getStatus(directory);
+              entry.status = await runGitStatusTask(directory, {}, (signal) => getStatus(directory, { signal }));
             } catch (error) {
               console.error('Git project batch status failed:', directory, error);
               entry.status = null;
@@ -855,48 +903,12 @@ export function registerGitRoutes(app: Application, {
     }
   });
 
-  registerGitStatusBatchRoute(app, async (directory, mode) => {
-    const { getStatus, isGitRepository, observeWorktreeTopology } = await getGitLibraries();
-    const isRepo = await isGitRepository(directory, probeOptions);
-    if (!isRepo) return {
-      isGitRepository: false,
-      status: { current: '', tracking: null, ahead: 0, behind: 0, files: [], isClean: true },
-    };
-    void observeWorktreeTopology(directory);
-    return { isGitRepository: true, status: await getStatus(directory, { mode }) };
+  registerGitStatusBatchRoute(app, async (directory, mode, signal) => {
+    const status = await readDirectoryStatus(directory, mode, true, signal);
+    return status.isGitRepository ? { isGitRepository: true, status } : { isGitRepository: false, status: nonRepoStatusPayload() };
   });
-
-  app.get('/api/git/status', async (req, res) => {
-    const { getStatus, isGitRepository, observeWorktreeTopology } = await getGitLibraries();
-
-    try {
-      const directory = resolveDirectoryQuery(req.query.directory);
-      if (!directory) {
-        return res.status(400).json({ error: 'directory parameter is required' });
-      }
-
-      const isRepo = await isGitRepository(directory, probeOptions);
-      if (!isRepo) {
-        return res.json(nonRepoStatusPayload());
-      }
-
-      void observeWorktreeTopology(directory);
-
-      const mode = req.query.mode === 'light' ? 'light' : undefined;
-      const status = await getStatus(directory, { mode });
-      res.json(status);
-    } catch (error) {
-      if (isUnreadableRepositoryError(error)) {
-        return res.status(500).json(unreadableRepositoryBody(error));
-      }
-      if (isNonRepoGitError(error)) {
-        console.warn('Git status skipped for non-repository path:', extractGitErrorText(error));
-        return res.json(nonRepoStatusPayload());
-      }
-      console.error('Failed to get git status:', error);
-      res.status(500).json({ error: messageOf(error) || 'Failed to get git status' });
-    }
-  });
+  app.get('/api/git/status', createStatusHandler(false));
+  app.get('/api/git/status/passive', createStatusHandler(true));
 
   app.get('/api/git/primary-root', async (req, res) => {
     const { resolvePrimaryWorktreeRoot } = await getGitLibraries();
@@ -1068,12 +1080,26 @@ export function registerGitRoutes(app: Application, {
 
       const staged = req.query.staged === 'true';
       const previousPath = String(req.query.previousPath ?? '') || undefined;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => {
+        controller.abort(Object.assign(
+          new Error(`Git file diff timed out after ${GIT_FILE_DIFF_TIMEOUT_MS}ms`),
+          { code: GIT_FILE_DIFF_TIMEOUT_CODE },
+        ));
+      }, GIT_FILE_DIFF_TIMEOUT_MS);
+      timeout.unref?.();
 
-      const result = await getFileDiff(directory, {
-        path: pathParam,
-        staged,
-        previousPath,
-      });
+      let result;
+      try {
+        result = await getFileDiff(directory, {
+          path: pathParam,
+          staged,
+          previousPath,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
 
       res.json({
         original: result.original,
@@ -1086,6 +1112,12 @@ export function registerGitRoutes(app: Application, {
       if (sendGitPathError(res, error)) return;
       if (isNonRepoGitError(error)) {
         return res.status(409).json({ error: 'This directory is not a Git repository.', code: 'not_repository' });
+      }
+      if (errorFields(error)?.code === GIT_FILE_DIFF_TIMEOUT_CODE) {
+        return res.status(504).json({ error: messageOf(error) });
+      }
+      if (errorFields(error)?.code === GIT_READ_WORKER_UNAVAILABLE_CODE) {
+        return res.status(503).json({ error: messageOf(error) });
       }
       console.error('Failed to get git file diff:', error);
       res.status(500).json({ error: messageOf(error) || 'Failed to get git file diff' });

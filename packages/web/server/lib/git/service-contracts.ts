@@ -9,12 +9,16 @@ export type GitUnsafeOptions = NonNullable<SimpleGitOptions['unsafe']>;
 export type GitFactoryOptions = Omit<Partial<SimpleGitOptions>, 'spawnOptions'> & {
   spawnOptions?: Pick<import('node:child_process').SpawnOptions, 'uid' | 'gid' | 'windowsHide'>;
 };
-export interface GitOptions {
+export interface GitReadOptions {
+  signal?: AbortSignal | undefined;
+  cancellationView?: Int32Array | undefined;
+}
+export interface GitOptions extends GitReadOptions {
   stallTimeoutMs?: number;
   optionalLocks?: boolean;
   extraEnv?: NodeJS.ProcessEnv;
 }
-export interface GitCommandOptions {
+export interface GitCommandOptions extends GitReadOptions {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
 }
@@ -200,7 +204,7 @@ export interface IntegrateStateInput extends IntegratePlanInput {
   remainingCommits?: unknown;
   currentCommit?: unknown;
 }
-export interface DiffOptions {
+export interface DiffOptions extends GitReadOptions {
   path?: string | undefined;
   staged?: boolean;
   contextLines?: number | undefined;

@@ -959,7 +959,7 @@ export async function prefetchProjectStatuses(directories: string[]): Promise<vo
     const cached = gitStatusCache.get(key);
     return !(cached && cached.expiresAt > now) && !gitStatusInFlight.has(key);
   });
-  await Promise.allSettled(pending.map((directory) => getGitStatus(directory)));
+  await Promise.allSettled(pending.map((directory) => getPassiveGitStatus(directory)));
 }
 
 export async function checkIsGitRepository(directory: string): Promise<boolean> {
@@ -1024,9 +1024,27 @@ export async function listGitDirectories(root: string): Promise<string[]> {
 export async function getGitStatus(directory: string, options?: { mode?: 'light'; fresh?: boolean }): Promise<GitStatus> {
   const mode = options?.mode;
   const runtimeKey = getRuntimeKey();
-  if (options?.fresh) {
-    clearGitStatusCache(runtimeKey, directory);
+  clearGitStatusCache(runtimeKey, directory);
+  const cacheVersion = getStatusCacheVersion(runtimeKey, directory);
+  const response = await runtimeFetch(buildUrl(`${API_BASE}/status`, directory, mode ? { mode } : undefined));
+  if (!response.ok) {
+    const unreadable = gitRepositoryUnreadableBodySchema.safeParse(await response.json().catch(() => null));
+    if (unreadable.success) throw new GitRepositoryUnreadableError(unreadable.data.error);
+    throw new Error(`Failed to get git status: ${response.statusText}`);
   }
+  const payload = await response.json() as GitStatus;
+  if (getStatusCacheVersion(runtimeKey, directory) === cacheVersion) {
+    gitStatusCache.set(getStatusCacheKey(runtimeKey, directory, mode), {
+      value: payload,
+      expiresAt: Date.now() + GIT_STATUS_CACHE_TTL_MS,
+    });
+  }
+  return payload;
+}
+
+export async function getPassiveGitStatus(directory: string, options?: { mode?: 'light' }): Promise<GitStatus> {
+  const mode = options?.mode;
+  const runtimeKey = getRuntimeKey();
   const key = getStatusCacheKey(runtimeKey, directory, mode);
   const now = Date.now();
   const cached = gitStatusCache.get(key);
@@ -1042,7 +1060,7 @@ export async function getGitStatus(directory: string, options?: { mode?: 'light'
   const task = (async () => {
     const cacheVersion = getStatusCacheVersion(runtimeKey, directory);
     const result = await readGitStatus(directory, mode, async (signal) => {
-      const response = await runtimeFetch(buildUrl(`${API_BASE}/status`, directory, mode ? { mode } : undefined), { signal });
+      const response = await runtimeFetch(buildUrl(`${API_BASE}/status`, directory, mode ? { mode, passive: '1' } : { passive: '1' }), { signal });
       if (!response.ok) {
         const unreadable = gitRepositoryUnreadableBodySchema.safeParse(await response.json().catch(() => null));
         if (unreadable.success) throw new GitRepositoryUnreadableError(unreadable.data.error);
@@ -1051,7 +1069,7 @@ export async function getGitStatus(directory: string, options?: { mode?: 'light'
       // SAFETY: `/api/git/status` is this app's own route; its body is a GitStatus.
       return await response.json() as GitStatus;
     });
-    const payload = result.status;
+    const payload = result.isGitRepository === undefined ? result.status : { ...result.status, isGitRepository: result.isGitRepository };
     if (getStatusCacheVersion(runtimeKey, directory) === cacheVersion) {
       if (result.isGitRepository !== undefined) gitRepoCache.set(getDirectoryCacheKey(runtimeKey, directory), {
         value: result.isGitRepository,

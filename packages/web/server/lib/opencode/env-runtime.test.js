@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as gitBinary from '../git/git-binary.js';
 import { createOpenCodeEnvRuntime } from './env-runtime.js';
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
@@ -723,6 +724,7 @@ describe('resolveGitBinaryForSpawn', () => {
   const originalGitBinary = process.env.GIT_BINARY;
   const originalOpenChamberGitBinary = process.env.OPENCHAMBER_GIT_BINARY;
   afterEach(() => {
+    vi.restoreAllMocks();
     if (originalGitBinary === undefined) delete process.env.GIT_BINARY;
     else process.env.GIT_BINARY = originalGitBinary;
     if (originalOpenChamberGitBinary === undefined) delete process.env.OPENCHAMBER_GIT_BINARY;
@@ -732,25 +734,34 @@ describe('resolveGitBinaryForSpawn', () => {
   it.each(['linux', 'darwin'])('uses an executable override on %s and PATH git otherwise', (platform) => {
     setPlatform(platform);
     delete process.env.GIT_BINARY;
-    const { runtime } = createRuntime({}, { isExecutable: (candidate) => candidate === '/opt/git/bin/git' });
+    const executable = path.join(createTempDir('openchamber-git-override-'), 'git');
+    fs.writeFileSync(executable, '', { mode: 0o755 });
+    vi.spyOn(gitBinary, 'resolveGitBinary').mockImplementation(gitBinary.createGitBinaryResolver({ platform }));
+    const { runtime } = createRuntime({});
 
-    process.env.OPENCHAMBER_GIT_BINARY = '/opt/git/bin/git';
-    expect(runtime.resolveGitBinaryForSpawn()).toBe('/opt/git/bin/git');
-    process.env.OPENCHAMBER_GIT_BINARY = '/missing/git';
+    process.env.OPENCHAMBER_GIT_BINARY = executable;
+    expect(runtime.resolveGitBinaryForSpawn()).toBe(executable);
+    process.env.OPENCHAMBER_GIT_BINARY = path.join(path.dirname(executable), 'missing');
     expect(runtime.resolveGitBinaryForSpawn()).toBe('git');
     delete process.env.OPENCHAMBER_GIT_BINARY;
-    process.env.GIT_BINARY = '/opt/git/bin/git';
-    expect(runtime.resolveGitBinaryForSpawn()).toBe('/opt/git/bin/git');
+    process.env.GIT_BINARY = executable;
+    expect(runtime.resolveGitBinaryForSpawn()).toBe(executable);
   });
 
   it('keeps the first Windows resolution', () => {
     setPlatform('win32');
     delete process.env.GIT_BINARY;
-    const { runtime } = createRuntime({}, { isExecutable: (candidate) => candidate.startsWith('C:\\Git') });
+    const directory = createTempDir('openchamber-git-override-');
+    const executable = path.join(directory, 'git.exe');
+    const other = path.join(directory, 'other.exe');
+    fs.writeFileSync(executable, '');
+    fs.writeFileSync(other, '');
+    vi.spyOn(gitBinary, 'resolveGitBinary').mockImplementation(gitBinary.createGitBinaryResolver({ platform: 'win32' }));
+    const { runtime } = createRuntime({});
 
-    process.env.OPENCHAMBER_GIT_BINARY = 'C:\\Git\\git.exe';
-    expect(runtime.resolveGitBinaryForSpawn()).toBe('C:\\Git\\git.exe');
-    process.env.OPENCHAMBER_GIT_BINARY = 'C:\\Git\\other.exe';
-    expect(runtime.resolveGitBinaryForSpawn()).toBe('C:\\Git\\git.exe');
+    process.env.OPENCHAMBER_GIT_BINARY = executable;
+    expect(runtime.resolveGitBinaryForSpawn()).toBe(executable);
+    process.env.OPENCHAMBER_GIT_BINARY = other;
+    expect(runtime.resolveGitBinaryForSpawn()).toBe(executable);
   });
 });

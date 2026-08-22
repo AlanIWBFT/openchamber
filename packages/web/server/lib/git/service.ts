@@ -22,7 +22,7 @@ import type { SimpleGit, BranchSummary, FileStatusResult, RemoteWithRefs } from 
 import type { ChildProcess } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import type {
-  GitEnvironment, GitUnsafeOptions, GitFactoryOptions, GitOptions, GitCommandOptions, GitCommandResult,
+  GitEnvironment, GitUnsafeOptions, GitFactoryOptions, GitOptions, GitCommandOptions, GitCommandResult, GitReadOptions,
   WorktreeEntry, WorktreeBootstrapState, BootstrapStore, BootstrapOptions,
   WorktreeCreateInput, WorktreeServerOptions, WorktreeCandidate, WorktreeProjectContext,
   WorktreeCreateResult, UpstreamConfiguration, WorktreeBootstrapTask, WorktreeRemovalInput,
@@ -32,16 +32,20 @@ import type {
   HunkAction, PathDiffResult, CommitFile, PostCheckoutHookAction, RepositoryGitPaths, ErrorFields,
 } from './service-contracts.js';
 export type { RepositoryGitPaths } from './service-contracts.js';
+import { isMainThread } from 'node:worker_threads';
+import {
+  resolveGitBinary,
+} from './git-binary.js';
+import { runGitReadWorkerTask } from './git-read-worker-client.js';
+import { runSharedGitReadTask } from './git-read-shared.js';
 
 const fsp = fs.promises;
 const _require = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
-let resolvedGitBinary: string | null = null;
 const worktreeBootstrapState = new Map<string, WorktreeBootstrapState>();
 const activeWorktreeBootstrapTasks = new Map<string, Set<Promise<unknown>>>();
 const worktreeSetupCancellations = new Map<string, AbortController>();
 const remoteExistenceCache = new Map<string, { exists: boolean; checkedAt: number }>();
-const SIMPLE_GIT_SAFE_BINARY_PATTERN = /^([a-z]:)?([a-z0-9/.\\_~-]+)$/i;
 const SIMPLE_GIT_UNSAFE_BINARY_WARNING = 'Invalid value supplied for custom binary, restricted characters must be removed';
 const REMOTE_EXISTENCE_CACHE_TTL_MS = 30_000;
 const gitIndexMutationQueues = new Map<string, Promise<unknown>>();
@@ -58,6 +62,23 @@ const GIT_NULL_REF = '0'.repeat(40);
 const WORKTREE_INDEX_LOCK_RETRY_DELAY_MS = 250;
 const WORKTREE_INDEX_LOCK_STALE_DELAY_MS = 750;
 const WORKTREE_COMMAND_OUTPUT_MAX_CHARS = 20 * 1024 * 1024;
+
+const throwIfGitReadCancelled = (options: GitReadOptions = {}, fallbackError?: unknown) => {
+  const sharedCancelled = options.cancellationView
+    ? Atomics.load(options.cancellationView, 0) !== 0
+    : false;
+  if (!sharedCancelled && !options.signal?.aborted) {
+    return;
+  }
+
+  if (options.signal?.reason instanceof Error) {
+    throw options.signal.reason;
+  }
+  if (fallbackError instanceof Error) {
+    throw fallbackError;
+  }
+  throw Object.assign(new Error('Git read cancelled'), { code: 'ABORT_ERR' });
+};
 
 const toBootstrapStateKey = (directory: string) => {
   const normalized = normalizeDirectoryPath(directory);
@@ -242,47 +263,6 @@ const hasActiveWorktreeBootstrap = async (directory: string) => {
   return false;
 };
 
-const isExecutableFile = (candidate: string | null): candidate is string => {
-  if (typeof candidate !== 'string' || candidate.trim().length === 0) {
-    return false;
-  }
-  try {
-    const stat = fs.statSync(candidate);
-    if (!stat.isFile()) {
-      return false;
-    }
-    if (process.platform === 'win32') {
-      const ext = path.extname(candidate).toLowerCase();
-      return ext.length === 0 || ext === '.exe' || ext === '.cmd' || ext === '.bat' || ext === '.com';
-    }
-    fs.accessSync(candidate, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const normalizeGitExecutableCandidate = (candidate: string) => {
-  const trimmed = candidate.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const ext = path.extname(trimmed).toLowerCase();
-  if (ext === '.cmd' || ext === '.bat' || ext === '.com') {
-    const exeCandidate = trimmed.slice(0, -ext.length) + '.exe';
-    if (isExecutableFile(exeCandidate)) {
-      return exeCandidate;
-    }
-  }
-
-  return trimmed;
-};
-
-const isSafeSimpleGitBinary = (candidate: string) => (
-  SIMPLE_GIT_SAFE_BINARY_PATTERN.test(candidate)
-);
-
 const createSimpleGit = (options: GitFactoryOptions) => {
   if (!options?.unsafe?.allowUnsafeCustomBinary) {
     return simpleGit(options);
@@ -301,93 +281,6 @@ const createSimpleGit = (options: GitFactoryOptions) => {
   } finally {
     console.warn = originalWarn;
   }
-};
-
-const listPathExecutableCandidates = (binaryName: string) => {
-  const currentPath = process.env.PATH || '';
-  const seen = new Set<string>();
-  const matches = [];
-  for (const segment of currentPath.split(path.delimiter)) {
-    const dir = segment.trim();
-    if (!dir || seen.has(dir)) {
-      continue;
-    }
-    seen.add(dir);
-    matches.push(path.join(dir, binaryName));
-  }
-  return matches;
-};
-
-const listWindowsGitInstallCandidates = () => {
-  const roots = [
-    process.env.ProgramFiles,
-    process.env['ProgramFiles(x86)'],
-    process.env.LocalAppData,
-  ]
-    .map((value) => (isPrimitiveString(value) ? value.trim() : ''))
-    .filter(Boolean);
-
-  const candidates = [];
-  for (const root of roots) {
-    candidates.push(path.join(root, 'Git', 'cmd', 'git.exe'));
-    candidates.push(path.join(root, 'Git', 'bin', 'git.exe'));
-    candidates.push(path.join(root, 'Git', 'mingw64', 'bin', 'git.exe'));
-    candidates.push(path.join(root, 'Programs', 'Git', 'cmd', 'git.exe'));
-    candidates.push(path.join(root, 'Programs', 'Git', 'bin', 'git.exe'));
-  }
-  return candidates;
-};
-
-const resolveExplicitGitBinary = () => {
-  const explicit = [process.env.GIT_BINARY, process.env.OPENCHAMBER_GIT_BINARY]
-    .map((value) => (isPrimitiveString(value) ? value.trim() : ''))
-    .filter(Boolean);
-  for (const candidate of explicit) {
-    const normalized = normalizeGitExecutableCandidate(candidate);
-    if (isExecutableFile(normalized)) {
-      return normalized;
-    }
-  }
-  return null;
-};
-
-const resolveGitBinary = () => {
-  if (process.platform !== 'win32') {
-    return resolveExplicitGitBinary() || 'git';
-  }
-  if (resolvedGitBinary) {
-    return resolvedGitBinary;
-  }
-
-  const explicit = resolveExplicitGitBinary();
-  if (explicit) {
-    resolvedGitBinary = explicit;
-    return resolvedGitBinary;
-  }
-
-  const pathDiscovered = [
-    ...listPathExecutableCandidates('git.exe'),
-    ...listPathExecutableCandidates('git'),
-  ]
-    .map(normalizeGitExecutableCandidate)
-    .filter(Boolean)
-    .filter((candidate) => isExecutableFile(candidate));
-  if (pathDiscovered.length > 0) {
-    resolvedGitBinary = 'git';
-    return resolvedGitBinary;
-  }
-
-  const discovered = [
-    ...listWindowsGitInstallCandidates(),
-  ]
-    .map(normalizeGitExecutableCandidate)
-    .filter(Boolean)
-    .filter((candidate) => isExecutableFile(candidate));
-
-  const preferredExe = discovered.find((candidate) => isSafeSimpleGitBinary(candidate) && candidate.toLowerCase().endsWith('.exe'))
-    || discovered.find((candidate) => candidate.toLowerCase().endsWith('.exe'));
-  resolvedGitBinary = preferredExe || discovered[0] || 'git.exe';
-  return resolvedGitBinary;
 };
 
 const getGitBinary = () => resolveGitBinary();
@@ -467,8 +360,11 @@ const simpleGitEnvOptions = (env: NodeJS.ProcessEnv) => {
   return { allowEnvironment: Object.keys(env), unsafe };
 };
 
-const createGit = async (directory: string, { stallTimeoutMs = 0, optionalLocks = true, extraEnv }: GitOptions = {}) => {
+const createGit = async (directory: string, options: GitOptions = {}) => {
+  const { signal, stallTimeoutMs = 0, optionalLocks = true, extraEnv } = options;
+  throwIfGitReadCancelled(options);
   const env = { ...(await buildGitEnv(directory)), ...extraEnv };
+  throwIfGitReadCancelled(options);
   if (!optionalLocks) {
     env.GIT_OPTIONAL_LOCKS = '0';
   }
@@ -484,15 +380,18 @@ const createGit = async (directory: string, { stallTimeoutMs = 0, optionalLocks 
   if (!isPrimitiveString(baseDir) || !baseDir.trim()) {
     throw new Error('Git directory is required');
   }
-  const options: GitFactoryOptions = {
+  const gitOptions: GitFactoryOptions = {
     baseDir,
     spawnOptions,
     binary,
     unsafe,
     allowEnvironment,
+    ...(timeout ? { timeout } : {}),
   };
-  if (timeout) options.timeout = timeout;
-  return createSimpleGit(options).env(env);
+  if (signal) {
+    gitOptions.abort = signal;
+  }
+  return createSimpleGit(gitOptions).env(env);
 };
 
 const createGitForGlobalConfig = async () => createGit(os.homedir());
@@ -586,26 +485,40 @@ const isInsideOrSameDirectory = (root: string, target: string) => {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 };
 
-const toRepositoryRoot = (directoryPath: string, topLevel: string) => {
-  const normalizedTopLevel = normalizeGitOutputPath(topLevel.trim());
-  return path.isAbsolute(normalizedTopLevel)
-    ? path.resolve(normalizedTopLevel)
-    : path.resolve(directoryPath, normalizedTopLevel);
+const resolveGitOutputPath = (directoryPath: string, value?: string) => {
+  const normalized = normalizeGitOutputPath(String(value || '').trim());
+  if (!normalized) {
+    throw new Error('Git returned an empty repository path');
+  }
+  return path.isAbsolute(normalized)
+    ? path.resolve(normalized)
+    : path.resolve(directoryPath, normalized);
 };
 
-const resolveGitRepositoryRoot = async (directoryPath: string, git: SimpleGit) => (
-  toRepositoryRoot(directoryPath, await git.raw(['rev-parse', '--show-toplevel']))
-);
+const resolveGitRepositoryPaths = async (directoryPath: string, git: SimpleGit) => {
+  const output = await git.raw(['rev-parse', '--show-toplevel', '--absolute-git-dir']);
+  const [topLevel, absoluteGitDir] = String(output || '').split(/\r?\n/);
+  return {
+    repoRoot: resolveGitOutputPath(directoryPath, topLevel),
+    gitDir: resolveGitOutputPath(directoryPath, absoluteGitDir),
+  };
+};
 
-const createRepositoryGitContext = async (directory: string, gitOptions: GitOptions = {}) => {
+const resolveGitRepositoryRoot = async (directoryPath: string, git: SimpleGit) => {
+  const { repoRoot } = await resolveGitRepositoryPaths(directoryPath, git);
+  return repoRoot;
+};
+
+const createRepositoryGitContext = async (directory: string, options: GitOptions = {}) => {
   const directoryPath = normalizeDirectoryPath(directory);
   if (!isPrimitiveString(directoryPath) || !directoryPath.trim()) {
     throw new Error('Git directory is required');
   }
-  const directoryGit = await createGit(directoryPath, gitOptions);
-  const repoRoot = await resolveGitRepositoryRoot(directoryPath, directoryGit);
-  const git = path.resolve(directoryPath) === repoRoot ? directoryGit : await createGit(repoRoot, gitOptions);
-  return { directoryPath, directoryGit, repoRoot, git };
+  const directoryGit = await createGit(directoryPath, options);
+  const { repoRoot, gitDir } = await resolveGitRepositoryPaths(directoryPath, directoryGit);
+  throwIfGitReadCancelled(options);
+  const git = path.resolve(directoryPath) === repoRoot ? directoryGit : await createGit(repoRoot, options);
+  return { directoryPath, directoryGit, repoRoot, gitDir, git };
 };
 
 export async function getRepositoryRoot(directory: string) {
@@ -632,8 +545,8 @@ const GIT_PATH_ERROR_MESSAGES = {
 
 const createGitPathError = (code: keyof typeof GIT_PATH_ERROR_MESSAGES, filePath: string) => Object.assign(new Error(GIT_PATH_ERROR_MESSAGES[code](filePath)), { code });
 
-const readGitEntryMode = async (repoRoot: string, args: string[], repoPath: string) => {
-  const result = await runGitCommand(repoRoot, args);
+const readGitEntryMode = async (repoRoot: string, args: string[], repoPath: string, options: GitReadOptions = {}) => {
+  const result = await runGitCommand(repoRoot, args, options);
   if (!result.success) return null;
   for (const record of result.stdout.split('\0')) {
     const tab = record.indexOf('\t');
@@ -644,9 +557,11 @@ const readGitEntryMode = async (repoRoot: string, args: string[], repoPath: stri
   return null;
 };
 
-const resolveGitFileContext = async (directoryPath: string, git: SimpleGit, filePath: string | undefined, repoRootOverride: string | null = null) => {
+const resolveGitFileContext = async (directoryPath: string, git: SimpleGit, filePath: string | undefined, repoRootOverride: string | null = null, options: GitReadOptions = {}) => {
   if (filePath === undefined) throw new TypeError('Git file path is required');
+  const assertActive = (error?: unknown) => throwIfGitReadCancelled(options, error);
   const repoRoot = repoRootOverride || await resolveGitRepositoryRoot(directoryPath, git);
+  assertActive();
   const candidates = Array.from(new Set([
     path.resolve(repoRoot, filePath),
     path.resolve(directoryPath, filePath),
@@ -663,8 +578,9 @@ const resolveGitFileContext = async (directoryPath: string, git: SimpleGit, file
     const worktreeEntry = await fsp.lstat(absolutePath).catch(() => null);
     const isSymbolicLink = worktreeEntry?.isSymbolicLink() ?? false;
     const existsInWorktree = worktreeEntry?.isFile() || isSymbolicLink;
-    const indexMode = await readGitEntryMode(repoRoot, ['ls-files', '--stage', '-z', '--', `:(literal)${repoPath}`], repoPath);
-    const headMode = await readGitEntryMode(repoRoot, ['ls-tree', '-z', 'HEAD', '--', repoPath], repoPath);
+    const indexMode = await readGitEntryMode(repoRoot, ['ls-files', '--stage', '-z', '--', `:(literal)${repoPath}`], repoPath, options);
+    const headMode = await readGitEntryMode(repoRoot, ['ls-tree', '-z', 'HEAD', '--', repoPath], repoPath, options);
+    assertActive();
 
     if (existsInWorktree || indexMode || headMode) {
       return {
@@ -690,19 +606,19 @@ const resolveGitFileContext = async (directoryPath: string, git: SimpleGit, file
   throw createGitPathError(GIT_PATH_NOT_FOUND, filePath);
 };
 
-const readSubmoduleState = async (repoRoot: string, fileContext: GitFileContext) => {
-  const status = await runGitCommand(repoRoot, ['status', '--porcelain=v2', '-z', '--', `:(literal)${fileContext.repoPath}`]);
+const readSubmoduleState = async (repoRoot: string, fileContext: GitFileContext, options: GitReadOptions = {}) => {
+  const status = await runGitCommand(repoRoot, ['status', '--porcelain=v2', '-z', '--', `:(literal)${fileContext.repoPath}`], options);
   if (!status.success) {
     throw new Error(status.message || 'Failed to read submodule status');
   }
   const record = status.stdout.split('\0').find((entry) => /^[12u] /.test(entry))?.split(' ');
   const hasConflict = record?.[0] === 'u';
-  const readHead = async () => (await runGitCommand(repoRoot, ['rev-parse', '--verify', '--quiet', `HEAD:${fileContext.repoPath}`])).stdout.trim();
+  const readHead = async () => (await runGitCommand(repoRoot, ['rev-parse', '--verify', '--quiet', `HEAD:${fileContext.repoPath}`], options)).stdout.trim();
   const head = record && !hasConflict ? record[6] : await readHead();
   const index = hasConflict ? '' : (record ? record[7] : head);
   const flags = record ? record[2] : 'S...';
   const initialized = await fsp.lstat(path.join(fileContext.absolutePath, '.git')).then(() => true, () => false);
-  const worktree = initialized ? await runGitCommand(fileContext.absolutePath, ['rev-parse', '--verify', 'HEAD']) : null;
+  const worktree = initialized ? await runGitCommand(fileContext.absolutePath, ['rev-parse', '--verify', 'HEAD'], options) : null;
   const commitOrNull = (value: string | undefined) => (value && !/^0+$/.test(value) ? value : null);
 
   return {
@@ -1054,7 +970,7 @@ const getRemoteExistenceCacheKey = (directory: string, remoteName: string) => {
   return `${path.resolve(normalizedDirectory)}\0${remoteName}`;
 };
 
-const hasRemote = async (git: SimpleGit, directory: string, remoteName: string) => {
+const hasRemote = async (git: SimpleGit, directory: string, remoteName: string, assertActive: (error?: unknown) => void = () => {}) => {
   const remote = String(remoteName || '').trim();
   if (!remote) {
     return false;
@@ -1066,10 +982,12 @@ const hasRemote = async (git: SimpleGit, directory: string, remoteName: string) 
     return cached.exists;
   }
 
+  assertActive();
   const exists = await git
     .raw(['remote', 'get-url', '--', remote])
     .then((value) => String(value || '').trim().length > 0)
     .catch(() => false);
+  assertActive();
 
   remoteExistenceCache.set(key, { exists, checkedAt: Date.now() });
   return exists;
@@ -1096,7 +1014,7 @@ const _buildRawGitOptions = (raw: string[] | Record<string, string | boolean | n
   });
 };
 
-const getRemoteBranchComparison = async (git: SimpleGit, remoteName: string, branchName: string) => {
+const getRemoteBranchComparison = async (git: SimpleGit, remoteName: string, branchName: string, assertActive: (error?: unknown) => void = () => {}) => {
   const remote = String(remoteName || '').trim();
   const branch = String(branchName || '').trim();
   if (!remote || !branch) {
@@ -1104,10 +1022,12 @@ const getRemoteBranchComparison = async (git: SimpleGit, remoteName: string, bra
   }
 
   const remoteRef = `refs/remotes/${remote}/${branch}`;
+  assertActive();
   const exists = await git
     .raw(['rev-parse', '--verify', remoteRef])
     .then((value) => String(value || '').trim())
     .catch(() => '');
+  assertActive();
   if (!exists) {
     return null;
   }
@@ -1116,6 +1036,7 @@ const getRemoteBranchComparison = async (git: SimpleGit, remoteName: string, bra
     .raw(['rev-list', '--left-right', '--count', `HEAD...${remoteRef}`])
     .then((value) => String(value || '').trim())
     .catch(() => '');
+  assertActive();
   const counts = parseAheadBehindCounts(countsRaw);
   if (!counts) {
     return null;
@@ -1143,19 +1064,21 @@ const isMissingDirectoryError = <Failure>(error: Failure) => {
   return /directory that does not exist|does not exist|no such file or directory/i.test(text);
 };
 
-const runGitCommand = async (cwd: string, args: string[], { env: envOverride, timeoutMs = 0 }: GitCommandOptions = {}): Promise<GitCommandResult> => {
+const runGitCommand = async (cwd: string, args: string[], options: GitCommandOptions = {}): Promise<GitCommandResult> => {
+  const { timeoutMs = 0, env: envOverride } = options;
+  throwIfGitReadCancelled(options);
   try {
-    const options: import('node:child_process').ExecFileOptionsWithStringEncoding = {
+    const env = envOverride || await buildGitEnv(cwd);
+    throwIfGitReadCancelled(options);
+    const { stdout, stderr } = await execFileAsync(getGitBinary(), args, {
       cwd,
-      env: envOverride || await buildGitEnv(cwd),
+      env,
       windowsHide: true,
       maxBuffer: 20 * 1024 * 1024,
-    };
-    if (timeoutMs > 0) {
-      options.timeout = timeoutMs;
-      options.killSignal = 'SIGKILL';
-    }
-    const { stdout, stderr } = await execFileAsync(getGitBinary(), args, options);
+      ...(timeoutMs > 0 ? { timeout: timeoutMs, killSignal: 'SIGKILL' } : {}),
+      signal: options.signal,
+    });
+    throwIfGitReadCancelled(options);
     return {
       success: true,
       exitCode: 0,
@@ -1163,6 +1086,7 @@ const runGitCommand = async (cwd: string, args: string[], { env: envOverride, ti
       stderr: String(stderr || ''),
     };
   } catch (error) {
+    throwIfGitReadCancelled(options, error);
     const code = errorField(error, 'code');
     return {
       success: false,
@@ -2616,7 +2540,7 @@ const probeRepository = async (directoryPath: string, { strict = false, failOnGi
 
   const reason = unsupportedRepositoryRootReason(topLevel);
   if (!reason) {
-    return { isRepository: true, repoRoot: topLevel ? toRepositoryRoot(directoryPath, topLevel) : null };
+    return { isRepository: true, repoRoot: topLevel ? resolveGitOutputPath(directoryPath, topLevel) : null };
   }
   if (!warnedUnsupportedRoots.has(topLevel)) {
     warnedUnsupportedRoots.add(topLevel);
@@ -2805,7 +2729,8 @@ const killProcessTree = (child: ChildProcess) => {
   child.kill('SIGKILL');
 };
 
-const listUntrackedFilesBounded = async (repoRoot: string, dirPath: string, limit: number) => {
+const listUntrackedFilesBounded = async (repoRoot: string, dirPath: string, limit: number, options: GitReadOptions = {}) => {
+  throwIfGitReadCancelled(options);
   const env = await buildGitEnv(repoRoot);
   return new Promise<{ paths: string[]; truncated: boolean }>((resolve, reject) => {
     const child = spawn(getGitBinary(), ['ls-files', '--others', '--exclude-standard', '-z', '--', dirPath], {
@@ -2819,10 +2744,19 @@ const listUntrackedFilesBounded = async (repoRoot: string, dirPath: string, limi
     let truncated = false;
     let settled = false;
     let stallTimer: ReturnType<typeof setTimeout> | null = null;
-    const finish = (error?: Error) => {
+    let childError: Error | null = null;
+    let cancellationError: Error | null = null;
+    const onAbort = () => {
+      cancellationError = options.signal?.reason instanceof Error
+        ? options.signal.reason
+        : Object.assign(new Error('Git read cancelled'), { code: 'ABORT_ERR' });
+      child.kill();
+    };
+    const finish = (error?: Error | null) => {
       if (settled) return;
       settled = true;
       if (stallTimer) clearTimeout(stallTimer);
+      options.signal?.removeEventListener('abort', onAbort);
       if (error) {
         reject(error);
         return;
@@ -2849,13 +2783,20 @@ const listUntrackedFilesBounded = async (repoRoot: string, dirPath: string, limi
         if (paths.length > limit) {
           truncated = true;
           killProcessTree(child);
-          finish();
           return;
         }
       }
     });
-    child.on('error', (error) => finish(error));
+    child.on('error', (error) => { childError = error; });
     child.on('close', (code) => {
+      if (cancellationError) {
+        finish(cancellationError);
+        return;
+      }
+      if (childError) {
+        finish(childError);
+        return;
+      }
       if (truncated) {
         finish();
         return;
@@ -2867,12 +2808,15 @@ const listUntrackedFilesBounded = async (repoRoot: string, dirPath: string, limi
       if (pending) paths.push(pending);
       finish();
     });
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    if (options.signal?.aborted) onAbort();
   });
 };
 
-const expandUntrackedDirectories = async (repoRoot: string, files: FileStatusResult[]) => {
+const expandUntrackedDirectories = async (repoRoot: string, files: FileStatusResult[], options: GitReadOptions = {}) => {
   const expanded = [];
   for (const file of files) {
+    throwIfGitReadCancelled(options);
     const isUntrackedDirectory = file.path.endsWith('/')
       && (file.working_dir || '').trim() === '?'
       && (file.index || '').trim() === '?';
@@ -2880,8 +2824,9 @@ const expandUntrackedDirectories = async (repoRoot: string, files: FileStatusRes
       expanded.push(file);
       continue;
     }
-    const listing = await listUntrackedFilesBounded(repoRoot, file.path, UNTRACKED_DIRECTORY_EXPANSION_LIMIT)
+    const listing = await listUntrackedFilesBounded(repoRoot, file.path, UNTRACKED_DIRECTORY_EXPANSION_LIMIT, options)
       .catch((error) => {
+        throwIfGitReadCancelled(options, error);
         console.warn(`[GitService] Could not expand untracked directory ${file.path}:`, error?.message || error);
         return null;
       });
@@ -2897,20 +2842,9 @@ const expandUntrackedDirectories = async (repoRoot: string, files: FileStatusRes
 };
 
 const MAX_CONCURRENT_STATUS_READS = 4;
-const statusRefresh = createSerialRefresh<{ lightMode: boolean }, Awaited<ReturnType<typeof readStatus>>>({ maxConcurrent: MAX_CONCURRENT_STATUS_READS });
-
-export async function getStatus(directory: string, options: { mode?: string | undefined } = {}) {
-  const normalizedDirectory = normalizeDirectoryPath(directory);
-  if (!isPrimitiveString(normalizedDirectory) || !normalizedDirectory.trim()) {
-    throw new Error('directory is required');
-  }
-  const lightMode = options.mode === 'light';
-  return statusRefresh.run(
-    normalizedDirectory,
-    { lightMode },
-    (requests) => readStatus(normalizedDirectory, requests.every((request) => request.lightMode)),
-  );
-}
+type StatusRequest = { lightMode: boolean; signal?: AbortSignal | undefined };
+type StatusOptions = GitReadOptions & { mode?: string | undefined };
+const statusRefresh = createSerialRefresh<StatusRequest, Awaited<ReturnType<typeof getStatusDirect>>>({ maxConcurrent: MAX_CONCURRENT_STATUS_READS });
 
 export async function getTrackingBranch(directory: string) {
   const normalizedDirectory = normalizeDirectoryPath(directory);
@@ -2949,29 +2883,37 @@ export async function getPathsWithoutChanges(directory: string, paths: string[])
   return unchanged;
 }
 
-export async function isAncestorOfHead(directory: string, sha: string) {
+export async function isAncestorOfHead(directory: string, sha: string, options: GitReadOptions = {}) {
+  throwIfGitReadCancelled(options);
   const normalizedDirectory = normalizeDirectoryPath(directory);
   const normalizedSha = isPrimitiveString(sha) ? sha.trim() : '';
   if (!normalizedDirectory || !/^[0-9a-f]{7,64}$/i.test(normalizedSha)) {
     return false;
   }
-  const result = await runGitCommand(normalizedDirectory, ['merge-base', '--is-ancestor', normalizedSha, 'HEAD']);
+  if (isMainThread && process.platform === 'win32') {
+    return runGitReadWorkerTask('ancestor', { directory: normalizedDirectory, sha: normalizedSha }, { signal: options.signal });
+  }
+  const result = await runGitCommand(normalizedDirectory, ['merge-base', '--is-ancestor', normalizedSha, 'HEAD'], options);
   return result.success;
 }
 
 const PATCH_EQUIVALENCE_TIMEOUT_MS = 5_000;
 
-export async function isPatchEquivalentOfHead(directory: string, sha: string) {
+export async function isPatchEquivalentOfHead(directory: string, sha: string, options: GitReadOptions = {}) {
+  throwIfGitReadCancelled(options);
   const normalizedDirectory = normalizeDirectoryPath(directory);
   const normalizedSha = String(sha ?? '').trim();
   if (!normalizedDirectory || !/^[0-9a-f]{7,64}$/i.test(normalizedSha)) {
     return false;
   }
+  if (isMainThread && process.platform === 'win32') {
+    return runGitReadWorkerTask('patch-equivalent', { directory: normalizedDirectory, sha: normalizedSha }, { signal: options.signal });
+  }
 
   const cherry = await runGitCommand(
     normalizedDirectory,
     ['cherry', 'HEAD', normalizedSha, `${normalizedSha}^`],
-    { timeoutMs: PATCH_EQUIVALENCE_TIMEOUT_MS },
+    { ...options, timeoutMs: PATCH_EQUIVALENCE_TIMEOUT_MS },
   );
   if (!cherry.success) {
     return false;
@@ -2984,30 +2926,51 @@ export async function isPatchEquivalentOfHead(directory: string, sha: string) {
   });
 }
 
-async function readStatus(normalizedDirectory: string, lightMode: boolean) {
-  try {
-    const repository = await probeRepository(normalizedDirectory);
-    if (!repository.isRepository) {
-      throw new Error('fatal: not a git repository (or any of the parent directories): .git');
-    }
+export async function readStatusNumstat(git: Pick<SimpleGit, 'raw'>, options: GitReadOptions = {}) {
+  const results = await Promise.allSettled([
+    git.raw(['diff', '--cached', '--numstat', '-z']),
+    git.raw(['diff-files', '-M', '--numstat', '-z']),
+  ]);
+  throwIfGitReadCancelled(options);
+  return results.map((result) => result.status === 'fulfilled' ? result.value : '');
+}
 
-    const gitOptions = { stallTimeoutMs: GIT_STATUS_STALL_TIMEOUT_MS, optionalLocks: false };
-    const { directoryPath, repoRoot, git } = repository.repoRoot
-      ? { directoryPath: normalizedDirectory, repoRoot: repository.repoRoot, git: await createGit(repository.repoRoot, gitOptions) }
-      : await createRepositoryGitContext(normalizedDirectory, gitOptions);
+const getStatusDirect = async (directory: string, options: StatusOptions = {}) => {
+  const lightMode = options.mode === 'light';
+  const normalizedDirectory = normalizeDirectoryPath(directory);
+  if (typeof normalizedDirectory !== 'string' || !normalizedDirectory.trim()) {
+    throw new Error('directory is required');
+  }
+  const assertActive = (error?: unknown) => throwIfGitReadCancelled(options, error);
+  assertActive();
+
+  try {
+    const { directoryPath, repoRoot, gitDir, git } = await createRepositoryGitContext(normalizedDirectory, {
+      signal: options.signal, stallTimeoutMs: GIT_STATUS_STALL_TIMEOUT_MS, optionalLocks: false,
+    }).catch((error) => {
+      assertActive(error);
+      if (isNotGitRepositoryError(error) || isMissingDirectoryError(error)) throw error;
+      throw Object.assign(error, { code: 'GIT_REPOSITORY_UNREADABLE' });
+    });
+    assertActive();
+    if (unsupportedRepositoryRootReason(repoRoot)) {
+      throw new Error('fatal: not a git repository (unsupported repository root)');
+    }
 
     const [status, headProbe] = await Promise.all([
       git.status(['-unormal']),
-      runGitCommand(repoRoot, ['rev-parse', '--verify', '--quiet', 'HEAD'], { timeoutMs: GIT_PROBE_TIMEOUT_MS }),
+      runGitCommand(repoRoot, ['rev-parse', '--verify', '--quiet', 'HEAD'], { timeoutMs: GIT_PROBE_TIMEOUT_MS, signal: options.signal }),
     ]);
-    status.files = await expandUntrackedDirectories(repoRoot, status.files);
+    assertActive();
+    status.files = await expandUntrackedDirectories(repoRoot, status.files, options);
+    assertActive();
 
-    const [stagedStatsRaw, workingStatsRaw] = lightMode
-      ? ['', '']
-      : await Promise.all([
-          git.raw(['diff', '--cached', '--numstat', '-z']).catch(() => ''),
-          git.raw(['diff-files', '-M', '--numstat', '-z']).catch(() => ''),
-        ]);
+    let stagedStatsRaw = '';
+    let workingStatsRaw = '';
+    if (!lightMode) {
+      [stagedStatsRaw, workingStatsRaw] = await readStatusNumstat(git, options);
+      assertActive();
+    }
 
     const stagedDiffStats: Record<string, DiffStats> = {};
     const workingDiffStats: Record<string, DiffStats> = {};
@@ -3046,6 +3009,7 @@ async function readStatus(normalizedDirectory: string, lightMode: boolean) {
 
     if (!lightMode) {
       for (const file of status.files) {
+        assertActive();
         if (newFileStats.length >= MAX_NEW_FILE_STATS) {
           break;
         }
@@ -3124,10 +3088,12 @@ async function readStatus(normalizedDirectory: string, lightMode: boolean) {
     const selectBaseRefForUnpublished = async () => {
       const candidates = [];
 
+      assertActive();
       const originHead = await git
         .raw(['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'])
         .then((value) => String(value || '').trim())
         .catch(() => '');
+      assertActive();
 
       if (originHead) {
         candidates.push(originHead.replace(/^refs\/remotes\//, ''));
@@ -3137,10 +3103,12 @@ async function readStatus(normalizedDirectory: string, lightMode: boolean) {
 
       for (const ref of candidates) {
         if (ref === status.current) continue;
+        assertActive();
         const exists = await git
           .raw(['rev-parse', '--verify', ref])
           .then((value) => String(value || '').trim())
           .catch(() => '');
+        assertActive();
         if (exists) return ref;
       }
 
@@ -3155,11 +3123,13 @@ async function readStatus(normalizedDirectory: string, lightMode: boolean) {
 
     if (!lightMode && !tracking && status.current) {
       const baseRef = await selectBaseRefForUnpublished();
+      assertActive();
       if (baseRef) {
         const countRaw = await git
           .raw(['rev-list', '--count', 'HEAD', '--not', baseRef, '--remotes'])
           .then((value) => String(value || '').trim())
           .catch(() => '');
+        assertActive();
         const count = parseInt(countRaw, 10);
         if (Number.isFinite(count)) {
           ahead = count;
@@ -3173,40 +3143,35 @@ async function readStatus(normalizedDirectory: string, lightMode: boolean) {
       !lightMode
       && status.current
       && (!tracking || !tracking.startsWith('upstream/'))
-      && await hasRemote(git, directoryPath, 'upstream')
+      && await hasRemote(git, directoryPath, 'upstream', assertActive)
     ) {
-      upstreamComparison = await getRemoteBranchComparison(git, 'upstream', status.current);
+      assertActive();
+      upstreamComparison = await getRemoteBranchComparison(git, 'upstream', status.current, assertActive);
+      assertActive();
     }
 
     let mergeInProgress = null;
     let rebaseInProgress = null;
-    const [mergeHeadPath = '', mergeMsgPath = '', rebaseMergePath = '', rebaseApplyPath = ''] = await git
-      .raw(['rev-parse', '--git-path', 'MERGE_HEAD', '--git-path', 'MERGE_MSG', '--git-path', 'rebase-merge', '--git-path', 'rebase-apply'])
-      .then((value) => String(value || '').split(/\r?\n/).slice(0, 4).map((line) => (
-        line.trim() ? path.resolve(repoRoot, normalizeGitOutputPath(line.trim())) : ''
-      )))
-      .catch(() => []);
-    const pathExists = (target: string) => (target ? fsp.stat(target).then(() => true).catch(() => false) : false);
 
     try {
-      if (await pathExists(mergeHeadPath)) {
-        const mergeHead = await git.raw(['rev-parse', 'MERGE_HEAD']).catch(() => '');
-        const headSha = mergeHead.trim().slice(0, 7);
-        if (headSha) {
-          const mergeMsg = mergeMsgPath ? await fsp.readFile(mergeMsgPath, 'utf8').catch(() => '') : '';
-          mergeInProgress = {
-            head: headSha,
-            message: mergeMsg.split('\n')[0] || '',
-          };
-        }
+      const mergeHead = await fsp.readFile(path.join(gitDir, 'MERGE_HEAD'), 'utf8').catch(() => '');
+      const mergeObjectId = mergeHead.split(/\r?\n/, 1)[0]?.trim() || '';
+      if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(mergeObjectId)) {
+        const mergeMsg = await fsp.readFile(path.join(gitDir, 'MERGE_MSG'), 'utf8').catch(() => '');
+        mergeInProgress = {
+          head: mergeObjectId.slice(0, 7),
+          message: mergeMsg.split('\n')[0] || '',
+        };
       }
     } catch {
       void 0;
     }
 
     try {
-      const rebaseMergeExists = await pathExists(rebaseMergePath);
-      const rebaseApplyExists = await pathExists(rebaseApplyPath);
+      const rebaseMergePath = path.join(gitDir, 'rebase-merge');
+      const rebaseApplyPath = path.join(gitDir, 'rebase-apply');
+      const rebaseMergeExists = await fsp.stat(rebaseMergePath).then(() => true).catch(() => false);
+      const rebaseApplyExists = await fsp.stat(rebaseApplyPath).then(() => true).catch(() => false);
       
       if (rebaseMergeExists || rebaseApplyExists) {
         const rebasePath = rebaseMergeExists ? rebaseMergePath : rebaseApplyPath;
@@ -3227,7 +3192,9 @@ async function readStatus(normalizedDirectory: string, lightMode: boolean) {
       void 0;
     }
 
+    assertActive();
     return {
+      isGitRepository: true as const,
       current: status.current,
       tracking,
       unborn: headProbe.exitCode === 1,
@@ -3247,12 +3214,71 @@ async function readStatus(normalizedDirectory: string, lightMode: boolean) {
       rebaseInProgress,
     };
   } catch (error) {
+    assertActive(error);
     if (isNotGitRepositoryError(error) || isMissingDirectoryError(error)) {
       throw new Error('fatal: not a git repository (or any of the parent directories): .git');
     }
     console.error('Failed to get Git status:', error);
     throw error;
   }
+};
+
+const statusAbortError = (signal?: AbortSignal) => signal?.reason instanceof Error
+  ? signal.reason
+  : Object.assign(new Error('Git read cancelled'), { code: 'ABORT_ERR' });
+
+const waitForStatusRefresh = <Value>(promise: Promise<Value>, signal?: AbortSignal): Promise<Value> => {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(statusAbortError(signal));
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(statusAbortError(signal));
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
+};
+
+const executeStatusRefresh = async (directory: string, requests: StatusRequest[]) => {
+  const active = requests.filter((request) => !request.signal?.aborted);
+  if (active.length === 0) throw statusAbortError(requests.at(-1)?.signal);
+
+  const controller = new AbortController();
+  const abortIfUnused = () => {
+    if (!controller.signal.aborted && active.every((request) => request.signal?.aborted)) {
+      controller.abort(statusAbortError(active.find((request) => request.signal?.aborted)?.signal));
+    }
+  };
+  for (const request of active) request.signal?.addEventListener('abort', abortIfUnused, { once: true });
+  abortIfUnused();
+
+  const lightMode = active.every((request) => request.lightMode);
+  try {
+    if (process.platform === 'win32') {
+      return await runGitReadWorkerTask('status', {
+        directory,
+        mode: lightMode ? 'light' : undefined,
+      }, { signal: controller.signal });
+    }
+    return await getStatusDirect(directory, { mode: lightMode ? 'light' : undefined, signal: controller.signal });
+  } finally {
+    for (const request of active) request.signal?.removeEventListener('abort', abortIfUnused);
+  }
+};
+
+export async function getStatus(directory: string, options: StatusOptions = {}) {
+  throwIfGitReadCancelled(options);
+  if (!isMainThread) return getStatusDirect(directory, options);
+
+  const normalizedDirectory = normalizeDirectoryPath(directory);
+  if (typeof normalizedDirectory !== 'string' || !normalizedDirectory.trim()) {
+    throw new Error('directory is required');
+  }
+  const request = { lightMode: options.mode === 'light', signal: options.signal };
+  const refresh = statusRefresh.run(
+    normalizedDirectory,
+    request,
+    (requests) => executeStatusRefresh(normalizedDirectory, requests),
+  );
+  return waitForStatusRefresh(refresh, options.signal);
 }
 
 const getNoIndexDiff = async (repoRoot: string, repoPath: string, contextLines: number) => {
@@ -3815,22 +3841,22 @@ const looksBinaryBySniff = async (absolutePath: string) => {
   }
 };
 
-const isBinaryDiff = async (directoryPath: string, filePath: string, staged: boolean) => {
+const isBinaryDiff = async (directoryPath: string, filePath: string, staged: boolean, options: GitReadOptions = {}) => {
   const args = ['diff', '--numstat'];
   if (staged) {
     args.push('--cached');
   }
   args.push('--', filePath);
 
-  const result = await runGitCommand(directoryPath, args);
+  const result = await runGitCommand(directoryPath, args, options);
   if (parseIsBinaryFromNumstat(result.stdout)) {
     return true;
   }
 
   if (!staged) {
-    const tracked = await runGitCommand(directoryPath, ['ls-files', '--error-unmatch', '--', filePath]).then((r) => r.success);
+    const tracked = await runGitCommand(directoryPath, ['ls-files', '--error-unmatch', '--', filePath], options).then((r) => r.success);
     if (!tracked) {
-      const noIndex = await runGitCommand(directoryPath, ['diff', '--no-index', '--numstat', '--', '/dev/null', filePath]);
+      const noIndex = await runGitCommand(directoryPath, ['diff', '--no-index', '--numstat', '--', '/dev/null', filePath], options);
       if (parseIsBinaryFromNumstat(noIndex.stdout) || parseIsBinaryFromNumstat(noIndex.stderr) || parseIsBinaryFromNumstat(noIndex.message)) {
         return true;
       }
@@ -3844,20 +3870,25 @@ const isBinaryDiff = async (directoryPath: string, filePath: string, staged: boo
   return false;
 };
 
-export async function getFileDiff(directory: string, { path: filePath, staged = false, previousPath }: DiffOptions = {}) {
+const getFileDiffDirect = async (directory: string, options: DiffOptions = {}) => {
+  const { path: filePath, staged = false, previousPath, signal } = options;
+  const assertActive = (error?: unknown) => throwIfGitReadCancelled(options, error);
   if (!directory || !filePath) {
     throw new Error('directory and path are required for getFileDiff');
   }
 
-  const { directoryPath, directoryGit, repoRoot, git } = await createRepositoryGitContext(directory);
+  assertActive();
+  const { directoryPath, directoryGit, repoRoot, git } = await createRepositoryGitContext(directory, options);
+  assertActive();
   const isImage = isImageFile(filePath) || isOfficeDocument(filePath);
   const mimeType = isImage ? getImageMimeType(filePath) : null;
-  const fileContext = await resolveGitFileContext(directoryPath, directoryGit, filePath, repoRoot);
+  const fileContext = await resolveGitFileContext(directoryPath, directoryGit, filePath, repoRoot, options);
+  assertActive();
   const { absolutePath, repoPath, isSymbolicLink } = fileContext;
   const originalRepoPath = previousPath || repoPath;
 
   if (fileContext.isSubmodule) {
-    const submodule = await readSubmoduleState(repoRoot, fileContext);
+    const submodule = await readSubmoduleState(repoRoot, fileContext, options);
     const describeCommit = (commit: string | null) => (commit ? `Subproject commit ${commit}\n` : '');
     return {
       original: describeCommit(submodule.headCommit),
@@ -3870,7 +3901,9 @@ export async function getFileDiff(directory: string, { path: filePath, staged = 
 
   if (!isImage && !isSymbolicLink) {
     const isBinaryBySniff = await looksBinaryBySniff(absolutePath);
-    const isBinary = isBinaryBySniff || (await isBinaryDiff(repoRoot, repoPath, staged));
+    assertActive();
+    const isBinary = isBinaryBySniff || (await isBinaryDiff(repoRoot, repoPath, staged, options));
+    assertActive();
     if (isBinary) {
       return {
         original: '',
@@ -3893,17 +3926,20 @@ export async function getFileDiff(directory: string, { path: filePath, staged = 
           encoding: 'buffer',
           windowsHide: true,
           maxBuffer: 50 * 1024 * 1024,
+          signal,
         });
+        assertActive();
         if (stdout && stdout.length > 0) {
           original = `data:${mimeType};base64,${stdout.toString('base64')}`;
           break;
         }
       } else {
         original = await git.show([revision]);
+        assertActive();
         break;
       }
-    } catch {
-      void 0;
+    } catch (error) {
+      assertActive(error);
     }
   }
 
@@ -3916,12 +3952,15 @@ export async function getFileDiff(directory: string, { path: filePath, staged = 
           encoding: 'buffer',
           windowsHide: true,
           maxBuffer: 50 * 1024 * 1024,
+          signal,
         });
+        assertActive();
         if (stdout && stdout.length > 0) {
           modified = `data:${mimeType};base64,${stdout.toString('base64')}`;
         }
       } else {
         modified = await git.show([`:${repoPath}`]);
+        assertActive();
       }
     } else {
       if (isSymbolicLink) {
@@ -3945,6 +3984,7 @@ export async function getFileDiff(directory: string, { path: filePath, staged = 
       }
     }
   } catch (error) {
+    assertActive(error);
     if (error && isObjectValue(error) && errorField(error, 'code') === 'ENOENT') {
       modified = '';
     } else {
@@ -3953,12 +3993,25 @@ export async function getFileDiff(directory: string, { path: filePath, staged = 
     }
   }
 
+  assertActive();
   return {
     original: original.replace(/\r\n/g, '\n'),
     modified: modified.replace(/\r\n/g, '\n'),
     path: filePath,
     isBinary: false,
   };
+};
+
+export async function getFileDiff(directory: string, options: DiffOptions = {}) {
+  if (process.platform === 'win32' && isMainThread) {
+    return runGitReadWorkerTask('file-diff', {
+      directory,
+      path: options.path,
+      staged: options.staged,
+      previousPath: options.previousPath,
+    }, { signal: options.signal });
+  }
+  return getFileDiffDirect(directory, options);
 }
 
 export async function revertFile(directory: string, filePath: string, options: { scope?: unknown } = {}) {
@@ -4887,8 +4940,8 @@ export async function isWorktreeDirectoryPinned(directory: string) {
   return parseBranchPin(await readGitConfigValue(directoryPath, `branch.${branch}.openchamberPinned`)) !== null;
 }
 
-const readGitConfigValue = async (directory: string, key: string) => {
-  const result = await runGitCommand(directory, ['config', '--get', key]);
+const readGitConfigValue = async (directory: string, key: string, options: GitReadOptions = {}) => {
+  const result = await runGitCommand(directory, ['config', '--get', key], options);
   return result.success ? String(result.stdout || '').replace(/\r?\n$/, '') : '';
 };
 
@@ -4974,18 +5027,22 @@ export async function markGeneratedBranchName(directory: string, branch: string,
   }
 }
 
-export async function readRenameableGeneratedBranch(directory: string, checkedOutBranch: string | null = null) {
+export async function readRenameableGeneratedBranch(directory: string, checkedOutBranch: string | null = null, options: GitReadOptions = {}) {
+  throwIfGitReadCancelled(options);
   const directoryPath = normalizeDirectoryPath(directory);
   if (!directoryPath) return null;
+  if (isMainThread && process.platform === 'win32') {
+    return runGitReadWorkerTask('renameable-branch', { directory: directoryPath, checkedOutBranch }, { signal: options.signal });
+  }
   let branch = String(checkedOutBranch || '').trim();
   if (!branch) {
-    const head = await runGitCommand(directoryPath, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+    const head = await runGitCommand(directoryPath, ['symbolic-ref', '--quiet', '--short', 'HEAD'], options);
     branch = head.success ? String(head.stdout || '').trim() : '';
   }
   if (!branch) return null;
-  if ((await readGitConfigValue(directoryPath, `branch.${branch}.openchamberGeneratedName`)).trim() !== branch) return null;
-  if ((await readGitConfigValue(directoryPath, `branch.${branch}.remote`)).trim()) return null;
-  const remote = await runGitCommand(directoryPath, ['for-each-ref', '--format=%(refname)', `refs/remotes/*/${branch}`]);
+  if ((await readGitConfigValue(directoryPath, `branch.${branch}.openchamberGeneratedName`, options)).trim() !== branch) return null;
+  if ((await readGitConfigValue(directoryPath, `branch.${branch}.remote`, options)).trim()) return null;
+  const remote = await runGitCommand(directoryPath, ['for-each-ref', '--format=%(refname)', `refs/remotes/*/${branch}`], options);
   if (!remote.success || String(remote.stdout || '').trim()) return null;
   return branch;
 }
@@ -7190,6 +7247,84 @@ export async function renameBranch(directory: string, oldName: string, newName: 
     if (errorField(error, 'statusCode') !== 409) console.error('Failed to rename branch:', error);
     throw error;
   }
+}
+
+const getPrGitContextDirect = async (directory: string, branch: string, options: GitReadOptions = {}) => {
+  const normalizedDirectory = normalizeDirectoryPath(directory);
+  const normalizedBranch = cleanBranchName(String(branch || '').trim());
+  if (!normalizedDirectory || !normalizedBranch) {
+    throw new Error('directory and branch are required');
+  }
+
+  const assertActive = (error?: unknown) => throwIfGitReadCancelled(options, error);
+  assertActive();
+  const git = await createGit(normalizedDirectory, { signal: options.signal });
+  assertActive();
+
+  const tracking = await git
+    .raw([
+      'for-each-ref',
+      '--count=1',
+      '--format=%(upstream:short)',
+      `refs/heads/${normalizedBranch}`,
+    ])
+    .then((value) => String(value || '').trim() || null)
+    .catch((error) => {
+      assertActive(error);
+      return null;
+    });
+  assertActive();
+
+  const remotes = await git
+    .getRemotes(true)
+    .then((entries) => entries.map((remote) => ({
+      name: remote.name,
+      fetchUrl: remote.refs.fetch,
+      pushUrl: remote.refs.push,
+    })))
+    .catch((error) => {
+      assertActive(error);
+      return [];
+    });
+  assertActive();
+  return { tracking, remotes };
+};
+
+const getPrGitContextTaskKey = (directory: string, branch: string) => {
+  const normalizedDirectory = normalizeDirectoryPath(directory);
+  const normalizedBranch = cleanBranchName(String(branch || '').trim());
+  if (!normalizedDirectory || !normalizedBranch) {
+    throw new Error('directory and branch are required');
+  }
+  const directoryValue = path.resolve(normalizedDirectory);
+  const directoryKey = process.platform === 'win32'
+    ? directoryValue.replace(/\\/g, '/').toLowerCase()
+    : directoryValue;
+  return `pr-context\0${directoryKey}\0${normalizedBranch}`;
+};
+
+export interface GitReadResults {
+  status: Awaited<ReturnType<typeof getStatusDirect>>;
+  'pr-context': Awaited<ReturnType<typeof getPrGitContextDirect>>;
+  ancestor: boolean;
+  'patch-equivalent': boolean;
+  'file-diff': Awaited<ReturnType<typeof getFileDiffDirect>>;
+  'renameable-branch': string | null;
+}
+
+export async function getPrGitContext(directory: string, branch: string, options: GitReadOptions = {}) {
+  if (!isMainThread) {
+    return getPrGitContextDirect(directory, branch, options);
+  }
+
+  const key = getPrGitContextTaskKey(directory, branch);
+  return runSharedGitReadTask(
+    key,
+    (signal) => process.platform === 'win32'
+      ? runGitReadWorkerTask('pr-context', { directory, branch }, { signal })
+      : getPrGitContextDirect(directory, branch, { signal }),
+    { signal: options.signal },
+  );
 }
 
 export async function getRemotes(directory: string) {

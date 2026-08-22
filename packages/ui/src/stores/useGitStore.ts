@@ -32,6 +32,7 @@ const DIFF_CACHE_MAX_ENTRIES = 30;
 const DIFF_CACHE_MAX_TOTAL_SIZE_BYTES = 20 * 1024 * 1024;
 const DIFF_CACHE_MAX_GLOBAL_ENTRIES = 200;
 type GitStatusFetchMode = 'full' | 'light';
+type GitStatusReader = 'authoritative' | 'passive';
 type GitStatusRequestOptions = { mode?: 'light'; fresh?: boolean };
 
 export type NestedRepoDiscovery = string[] | null | 'unsupported';
@@ -84,7 +85,7 @@ interface GitStore {
   fetchIdentity: (directory: string, git: GitAPI) => Promise<void>;
   fetchAll: (directory: string, git: GitAPI, options?: { force?: boolean; silentIfCached?: boolean }) => Promise<void>;
 
-  ensureStatus: (directory: string, git: GitAPI) => Promise<void>;
+  ensurePassiveStatus: (directory: string, git: GitAPI) => Promise<void>;
   ensureAll: (directory: string, git: GitAPI) => Promise<void>;
   moveStatusPathsOptimistically: (directory: string, paths: string[], direction: 'stage' | 'unstage') => GitStatus | null;
   restoreStatus: (directory: string, status: GitStatus | null) => void;
@@ -116,6 +117,7 @@ interface GitStore {
 interface GitAPI {
   checkIsGitRepository: (directory: string) => Promise<boolean>;
   getGitStatus: (directory: string, options?: GitStatusRequestOptions) => Promise<GitStatus>;
+  getPassiveGitStatus?: (directory: string, options?: { mode?: 'light' }) => Promise<GitStatus>;
   getGitBranches: (directory: string, options?: GitBranchListOptions) => Promise<GitBranch>;
   getGitLog?: (directory: string, options?: { maxCount?: number }) => Promise<GitLogResponse>;
   getCurrentGitIdentity?: (directory: string) => Promise<GitIdentitySummary | null>;
@@ -125,6 +127,7 @@ interface GitAPI {
 const inFlightDiffFetchesByDirectory = new Map<string, Set<string>>();
 const diffFetchGenerationByDirectory = new Map<string, number>();
 const inFlightStatusFetches = new Map<string, { promise: Promise<boolean>; statusMutationRevision: number }>();
+const inFlightPassiveStatusFetches = new Map<string, Promise<boolean>>();
 const inFlightEnsureAllByDirectory = new Map<string, Promise<void>>();
 const unreadableReadsInARow = new Map<string, number>();
 const directoriesAskingRemotes = new Set<string>();
@@ -136,8 +139,8 @@ let activeGitRuntimeKey = getRuntimeKey();
 
 const runtimeDirectoryKey = (runtimeKey: string, directory: string) =>
   JSON.stringify([runtimeKey, directory.trim()]);
-const getStatusFetchKey = (runtimeKey: string, directory: string, mode: GitStatusFetchMode): string =>
-  JSON.stringify([runtimeKey, directory, mode]);
+const getStatusFetchKey = (runtimeKey: string, directory: string, mode: GitStatusFetchMode, reader: GitStatusReader): string =>
+  JSON.stringify([runtimeKey, directory, mode, reader]);
 const channelKey = (runtimeKey: string, directory: string, channel: string) =>
   JSON.stringify([runtimeKey, directory, channel]);
 
@@ -204,6 +207,13 @@ const getInFlightDiffs = (directory: string): Set<string> => {
   const created = new Set<string>();
   inFlightDiffFetchesByDirectory.set(key, created);
   return created;
+};
+
+const withPassiveStatusReader = (git: GitAPI): GitAPI => {
+  if (!git.getPassiveGitStatus) {
+    return git;
+  }
+  return { ...git, getGitStatus: git.getPassiveGitStatus };
 };
 
 const createEmptyDirectoryState = (): DirectoryGitState => ({
@@ -689,6 +699,7 @@ export const useGitStore = create<GitStore>()(
         requestGenerationByChannel.clear();
         statusMutationRevisionByDirectory.clear();
         inFlightStatusFetches.clear();
+        inFlightPassiveStatusFetches.clear();
         inFlightEnsureAllByDirectory.clear();
         directoriesAskingRemotes.clear();
         inFlightNestedRepoDiscovery.clear();
@@ -737,17 +748,18 @@ export const useGitStore = create<GitStore>()(
           return false;
         }
         const statusFetchMode: GitStatusFetchMode = options.mode ?? 'full';
+        const statusReader: GitStatusReader = git.getPassiveGitStatus && git.getGitStatus === git.getPassiveGitStatus ? 'passive' : 'authoritative';
         const runtimeKey = getRuntimeKey();
-        const statusFetchKey = getStatusFetchKey(runtimeKey, directory, statusFetchMode);
+        const statusFetchKey = getStatusFetchKey(runtimeKey, directory, statusFetchMode, statusReader);
         const statusMutationRevision = getStatusMutationRevision(runtimeKey, directory);
         if (!options.force) {
           const existing = inFlightStatusFetches.get(statusFetchKey)
-            ?? (statusFetchMode === 'light' ? inFlightStatusFetches.get(getStatusFetchKey(runtimeKey, directory, 'full')) : undefined);
+            ?? (statusFetchMode === 'light' ? inFlightStatusFetches.get(getStatusFetchKey(runtimeKey, directory, 'full', statusReader)) : undefined);
           if (existing && existing.statusMutationRevision === statusMutationRevision) {
             return existing.promise;
           }
         }
-
+        inFlightPassiveStatusFetches.delete(runtimeDirectoryKey(getRuntimeKey(), directory));
         const token = startRequest(directory, 'status', true);
         const fetchPromise = (async () => {
           const { silent = false } = options;
@@ -769,19 +781,31 @@ export const useGitStore = create<GitStore>()(
 
           try {
             const now = Date.now();
-            const shouldProbeRepository =
-              dirState.isGitRepo === null ||
-              dirState.isGitRepo === undefined ||
-              now - (dirState.lastRepoCheckAt || 0) > REPO_CHECK_STALE_THRESHOLD;
+            let statusOptions: GitStatusRequestOptions | undefined;
+            if (options.mode || options.force) {
+              statusOptions = {};
+              if (options.mode) statusOptions.mode = options.mode;
+              if (options.force) statusOptions.fresh = true;
+            }
+            const newStatus = await git.getGitStatus(directory, statusOptions);
+            if (!isRequestCurrent(token, directory)) return false;
+            unreadableReadsInARow.delete(runtimeDirectoryKey(getRuntimeKey(), directory));
+            if (getWorktreeBootstrapState(directory)?.status === 'pending') return false;
 
-            let isRepo = dirState.isGitRepo === true;
-            if (shouldProbeRepository) {
-              isRepo = await git.checkIsGitRepository(directory);
+            let isRepo = newStatus.isGitRepository;
+            let repositoryCheckedAt = now;
+            // Adapters without a repository marker retain their existing probe/cache contract.
+            if (isRepo === undefined) {
+              const shouldProbe = dirState.isGitRepo == null || now - dirState.lastRepoCheckAt > REPO_CHECK_STALE_THRESHOLD;
+              isRepo = shouldProbe ? await git.checkIsGitRepository(directory) : dirState.isGitRepo === true;
+              repositoryCheckedAt = shouldProbe ? now : dirState.lastRepoCheckAt;
               if (!isRequestCurrent(token, directory)) return false;
             }
 
+            // Bootstrap snapshots cannot establish either repository presence or absence.
+            if (getWorktreeBootstrapState(directory)?.status === 'pending') return false;
+            unreadableReadsInARow.delete(runtimeDirectoryKey(getRuntimeKey(), directory));
             if (!isRepo) {
-              unreadableReadsInARow.delete(runtimeDirectoryKey(getRuntimeKey(), directory));
               const newDirectories = new Map(get().directories);
               const currentDirState = newDirectories.get(directory) ?? dirState;
               newDirectories.set(directory, {
@@ -790,23 +814,13 @@ export const useGitStore = create<GitStore>()(
                 repoUnreadable: null,
                 status: null,
                 isLoadingStatus: false,
-                lastRepoCheckAt: now,
+                lastRepoCheckAt: repositoryCheckedAt,
                 lastStatusFetch: now,
               });
               set({ directories: newDirectories });
               return false;
             }
 
-            let statusOptions: GitStatusRequestOptions | undefined;
-            if (options.mode || options.force) {
-              statusOptions = {};
-              if (options.mode) statusOptions.mode = options.mode;
-              if (options.force) statusOptions.fresh = true;
-            }
-            const newStatus = await git.getGitStatus(directory, statusOptions);
-            unreadableReadsInARow.delete(runtimeDirectoryKey(getRuntimeKey(), directory));
-            if (!isRequestCurrent(token, directory)) return false;
-            if (getWorktreeBootstrapState(directory)?.status === 'pending') return false;
 
             const latestState = get().directories.get(directory) ?? createEmptyDirectoryState();
             if (hasStatusChanged(latestState.status, newStatus)) {
@@ -856,7 +870,7 @@ export const useGitStore = create<GitStore>()(
                 status: mergedStatus,
                 diffCache: nextDiffCache,
                 indexRevision: indexStatusChanged ? currentDirState.indexRevision + 1 : currentDirState.indexRevision,
-                lastRepoCheckAt: shouldProbeRepository ? now : currentDirState.lastRepoCheckAt,
+                lastRepoCheckAt: repositoryCheckedAt,
                 lastStatusFetch: Date.now(),
                 lastStatusChange: hasFileContentChange ? Date.now() : currentDirState.lastStatusChange,
               });
@@ -869,7 +883,7 @@ export const useGitStore = create<GitStore>()(
                 ...currentDirState,
                 isGitRepo: true,
                 repoUnreadable: null,
-                lastRepoCheckAt: shouldProbeRepository ? now : currentDirState.lastRepoCheckAt,
+                lastRepoCheckAt: repositoryCheckedAt,
                 lastStatusFetch: Date.now(),
                 lastStatusChange: currentDirState.lastStatusChange,
               });
@@ -1437,13 +1451,30 @@ export const useGitStore = create<GitStore>()(
         return get().directories.get(directory)?.isGitRepo === true;
       },
 
-      ensureStatus: async (directory, git) => {
+      ensurePassiveStatus: async (directory, git) => {
         const dirState = get().directories.get(directory);
         const now = Date.now();
-        if (dirState?.status && now - dirState.lastStatusFetch < STATUS_STALE_THRESHOLD) {
+        const statusIsFresh = now - (dirState?.lastStatusFetch ?? 0) < STATUS_STALE_THRESHOLD;
+        if (statusIsFresh && (dirState?.isGitRepo === false || dirState?.status?.diffStats !== undefined)) {
           return;
         }
-        await get().fetchStatus(directory, git, { silent: Boolean(dirState?.status) });
+
+        const key = runtimeDirectoryKey(getRuntimeKey(), directory);
+        const existing = inFlightPassiveStatusFetches.get(key);
+        if (existing) {
+          await existing;
+          return;
+        }
+
+        const request = get().fetchStatus(directory, withPassiveStatusReader(git), { silent: Boolean(dirState?.status) });
+        inFlightPassiveStatusFetches.set(key, request);
+        try {
+          await request;
+        } finally {
+          if (inFlightPassiveStatusFetches.get(key) === request) {
+            inFlightPassiveStatusFetches.delete(key);
+          }
+        }
       },
 
       ensureAll: (directory, git) => {
@@ -1457,7 +1488,7 @@ export const useGitStore = create<GitStore>()(
           const needsFullStatus = !dirState?.status || dirState.status.diffStats === undefined;
 
           if (needsFullStatus || now - (dirState?.lastStatusFetch ?? 0) >= STATUS_STALE_THRESHOLD) {
-            await get().fetchStatus(directory, git, { silent: Boolean(dirState?.status) });
+            await get().ensurePassiveStatus(directory, git);
           }
 
           const updatedState = get().directories.get(directory);

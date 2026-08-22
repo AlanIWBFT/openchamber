@@ -79,11 +79,15 @@ const bodyField = <Body>(body: Body, key: string) => (hasProperties(body) ? body
 const STATUS_CACHE_TTL_MS = 90_000;
 const STATUS_RESOLVE_TIMEOUT_MS = 12_000;
 
-const withTimeout = async <Value>(promise: Promise<Value>, timeoutMs: number, label: string) => {
+const withTimeout = async <Value>(task: (signal: AbortSignal) => Promise<Value>, timeoutMs: number, label: string) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const controller = new AbortController();
+  const promise = Promise.resolve().then(() => task(controller.signal));
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
-      reject(Object.assign(new Error(`${label} timed out after ${timeoutMs}ms`), { code: 'ETIMEDOUT' }));
+      const error = Object.assign(new Error(`${label} timed out after ${timeoutMs}ms`), { code: 'ETIMEDOUT' });
+      controller.abort(error);
+      reject(error);
     }, timeoutMs);
     timer.unref?.();
   });
@@ -434,6 +438,8 @@ export function registerProviderRoutes(app: Router, {
     };
 
     const isTransientFailure = (impl: RegisteredProvider, cause: unknown) => {
+      const code = routeError(cause)?.code;
+      if (code === 'ETIMEDOUT' || code === 'GIT_READ_WORKER_UNAVAILABLE') return true;
       const upstreamStatus = upstreamStatusOf(cause);
       if (upstreamStatus === 429 || (isInteger(upstreamStatus) && upstreamStatus >= 500)) return true;
       if (Number.isInteger(upstreamStatus)) return false;
@@ -730,7 +736,7 @@ export function registerProviderRoutes(app: Router, {
       const started = statusCache.begin();
       try {
         const status = await withTimeout(
-          impl.resources.changeRequestStatus({ session, context: trustedContext, directory, branch, remote, force }),
+          (signal) => impl.resources.changeRequestStatus({ session, context: trustedContext, directory, branch, remote, force }, { signal }),
           STATUS_RESOLVE_TIMEOUT_MS,
           `${label} change request status`,
         );

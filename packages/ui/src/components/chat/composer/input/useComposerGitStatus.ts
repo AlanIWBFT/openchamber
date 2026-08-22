@@ -9,7 +9,7 @@ export function useComposerGitStatus(
     currentDirectory: string | undefined,
     runtimeGit: ReturnType<typeof useRuntimeAPIs>['git'],
 ) {
-    const ensureGitStatus = useGitStore((state) => state.ensureStatus);
+    const ensureGitStatus = useGitStore((state) => state.ensurePassiveStatus);
 
     const fetchGitStatus = useGitStore((state) => state.fetchStatus);
 

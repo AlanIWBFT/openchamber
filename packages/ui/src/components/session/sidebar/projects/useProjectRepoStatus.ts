@@ -27,7 +27,7 @@ export const useProjectRepoStatus = (args: Args): void => {
   } = args;
 
   const { git } = useRuntimeAPIs();
-  const ensureStatus = useGitStore((state) => state.ensureStatus);
+  const ensureStatus = useGitStore((state) => state.ensurePassiveStatus);
   const gitRuntimeKey = useGitStore((state) => state.runtimeKey);
   const requestedStatusRef = React.useRef<{ runtimeKey: string; git: RuntimeAPIs['git']; paths: Set<string> } | null>(null);
 

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { readEnterprisePolicy } from '../enterprise-mode.js';
 import { clearAppImageArgv0FromProcessEnv } from '../inherited-env.js';
+import { resolveGitBinary } from '../git/git-binary.js';
 import { mergePathValues } from './path-utils.js';
 import { bundledOpenCodeServerLaunch, isBundledOpenCodeServer, isRetiredBundledCliSetting, resolveBundledOpenCodeServer } from './bundled-opencode-server.js';
 import type { SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
@@ -1204,82 +1205,12 @@ export const createOpenCodeEnvRuntime = (deps: OpenCodeEnvDependencies) => {
     return null;
   };
 
-  const resolveExplicitGitBinary = () => {
-    const explicit = [process.env.GIT_BINARY, process.env.OPENCHAMBER_GIT_BINARY]
-      .map((value) => (isString(value) ? value.trim() : ''))
-      .filter(Boolean);
-    return explicit.find((candidate) => isExecutable(candidate)) || null;
-  };
-
   const resolveGitBinaryForSpawn = () => {
-    if (process.platform !== 'win32') {
-      return resolveExplicitGitBinary() || 'git';
-    }
-
+    if (process.platform !== 'win32') return resolveGitBinary();
     if (state.resolvedGitBinary) {
       return state.resolvedGitBinary;
     }
-
-    const explicit = resolveExplicitGitBinary();
-    if (explicit) {
-      state.resolvedGitBinary = explicit;
-      return state.resolvedGitBinary;
-    }
-
-    const candidates: string[] = [];
-    const normalizeGitCandidate = (candidate: string | null) => {
-      if (candidate === null) {
-        return '';
-      }
-      const trimmed = candidate.trim();
-      if (!trimmed) {
-        return '';
-      }
-      const ext = path.extname(trimmed).toLowerCase();
-      if (ext === '.cmd' || ext === '.bat' || ext === '.com') {
-        const exeCandidate = trimmed.slice(0, -ext.length) + '.exe';
-        if (isExecutable(exeCandidate)) {
-          return exeCandidate;
-        }
-      }
-      return trimmed;
-    };
-
-    const pathCandidate = normalizeGitCandidate(searchPathFor('git'));
-    if (pathCandidate && isExecutable(pathCandidate)) {
-      candidates.push(pathCandidate);
-    }
-
-    const pathExeCandidate = normalizeGitCandidate(searchPathFor('git.exe'));
-    if (pathExeCandidate && isExecutable(pathExeCandidate)) {
-      candidates.push(pathExeCandidate);
-    }
-
-    const programRoots = [
-      process.env.ProgramFiles,
-      process.env['ProgramFiles(x86)'],
-      process.env.LocalAppData,
-    ]
-      .map((value) => (isString(value) ? value.trim() : ''))
-      .filter(Boolean);
-    for (const root of programRoots) {
-      const installCandidates = [
-        path.join(root, 'Git', 'cmd', 'git.exe'),
-        path.join(root, 'Git', 'bin', 'git.exe'),
-        path.join(root, 'Git', 'mingw64', 'bin', 'git.exe'),
-        path.join(root, 'Programs', 'Git', 'cmd', 'git.exe'),
-        path.join(root, 'Programs', 'Git', 'bin', 'git.exe'),
-      ];
-      for (const candidate of installCandidates) {
-        const normalized = normalizeGitCandidate(candidate);
-        if (normalized && isExecutable(normalized)) {
-          candidates.push(normalized);
-        }
-      }
-    }
-
-    const preferredExe = candidates.find((candidate) => candidate.toLowerCase().endsWith('.exe'));
-    state.resolvedGitBinary = preferredExe || candidates[0] || 'git.exe';
+    state.resolvedGitBinary = resolveGitBinary();
     return state.resolvedGitBinary;
   };
 

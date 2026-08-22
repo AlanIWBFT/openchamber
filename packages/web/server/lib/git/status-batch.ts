@@ -18,7 +18,7 @@ const requestSchema = z.object({
 
 export function registerGitStatusBatchRoute(
   app: StatusBatchApp,
-  readDirectory: (directory: string, mode: 'light' | undefined) => Promise<StatusBatchDirectoryResult>,
+  readDirectory: (directory: string, mode: 'light' | undefined, signal: AbortSignal) => Promise<StatusBatchDirectoryResult>,
 ) {
   app.post('/api/git/status/batch', async (req, res) => {
     const parsed = requestSchema.safeParse(req.body);
@@ -26,7 +26,8 @@ export function registerGitStatusBatchRoute(
     const directories = [...new Set(parsed.data.directories)];
     let closed = false;
     let next = 0;
-    const onClose = () => { closed = true; };
+    const controller = new AbortController();
+    const onClose = () => { closed = true; controller.abort(); };
     res.on('close', onClose);
     res.setHeader('Content-Type', 'application/x-ndjson');
     res.setHeader('Cache-Control', 'no-store, no-transform');
@@ -38,7 +39,7 @@ export function registerGitStatusBatchRoute(
         if (directory === undefined) return;
         let entry;
         try {
-          entry = { directory, ...await readDirectory(directory, parsed.data.mode) };
+          entry = { directory, ...await readDirectory(directory, parsed.data.mode, controller.signal) };
         } catch (error) {
           if (!hasErrorFields(error)) throw new TypeError(`Cannot read properties of ${String(error)} (reading 'message')`);
           entry = { directory, error: error.message || 'Git status failed', code: error.code ?? null };

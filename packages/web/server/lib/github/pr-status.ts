@@ -1,10 +1,22 @@
 import { stat } from 'node:fs/promises';
-import { getRemotes, getTrackingBranch, isAncestorOfHead, isPatchEquivalentOfHead } from '../git/index.js';
-import { resolveGitHubRepoFromDirectory } from './repo/index.js';
+import { getPrGitContext, isAncestorOfHead, isPatchEquivalentOfHead } from '../git/index.js';
+import { GIT_READ_WORKER_UNAVAILABLE_CODE } from '../git/git-read-worker-client.js';
+import { failureCode } from '../git/git-read-protocol.js';
+import { parseGitHubRemoteUrl } from './repo/index.js';
+import { isTrustedGitHubHostOrStored } from './host-trust.js';
 import { noteIfGitHubRateLimit } from './rate-limit.js';
 import { getOctokitCacheIdentity } from './octokit.js';
 import { hasProperty, isDiscoveryText, isCacheIdentity } from './contracts.js';
 import type { Octokit, RestEndpointMethodTypes, DiscoveryPull as Pull, DiscoveryMetadata as RepoMetadata, DiscoveryRepository as Repository, RemoteCandidate, RankedCandidate, HistoricalEntry, PullList, PendingPullList, StatusInput, FoundPull, FindBranchPrInput } from './contracts.js';
+
+const throwIfAborted = (signal?: AbortSignal) => {
+  if (!signal?.aborted) {
+    return;
+  }
+  throw signal.reason instanceof Error
+    ? signal.reason
+    : Object.assign(new Error('PR status resolution cancelled'), { code: 'ABORT_ERR' });
+};
 
 const directoryExists = async (dir: string) => {
   if (!dir) return false;
@@ -255,22 +267,18 @@ const getRepoMetadata = async (octokit: Octokit, repo: Repository) => {
   }
 };
 
-const resolveRemoteCandidates = async (directory: string, rankedRemoteNames: string[]) => {
-  const resolvedRemotes = await Promise.all(
-    rankedRemoteNames.map((remoteName) =>
-      resolveGitHubRepoFromDirectory(directory, remoteName)
-        .then((resolved) => ({ remoteName, repo: resolved?.repo || null }))
-        .catch(() => ({ remoteName, repo: null })),
-    ),
-  );
-
+const resolveRemoteCandidates = async (remotes: Awaited<ReturnType<typeof getPrGitContext>>['remotes'], rankedRemoteNames: string[]) => {
+  const remotesByName = new Map(remotes.map((remote) => [remote.name, remote]));
   const results = [];
   const seenRepoKeys = new Set();
-  for (const { remoteName, repo } of resolvedRemotes) {
+  for (const remoteName of rankedRemoteNames) {
+    const remote = remotesByName.get(remoteName);
+    const repo = parseGitHubRemoteUrl(remote?.fetchUrl || remote?.pushUrl || '');
     const repoKey = repoCacheKey(repo);
     if (!repo || !repoKey || seenRepoKeys.has(repoKey)) {
       continue;
     }
+    if (!await isTrustedGitHubHostOrStored(repo.host).catch(() => false)) continue;
     seenRepoKeys.add(repoKey);
     results.push({ remoteName, repo });
   }
@@ -581,21 +589,23 @@ const isTerminalPr = (pr: Pull) => Boolean(pr) && (pr.state === 'closed' || Bool
 const isHistoricalPrOfCheckout = async (directory: string, pr: Pick<Pull, 'head'>, {
   isAncestor = isAncestorOfHead,
   isPatchEquivalent = isPatchEquivalentOfHead,
-} = {}) => {
+  signal,
+}: { isAncestor?: typeof isAncestorOfHead; isPatchEquivalent?: typeof isPatchEquivalentOfHead; signal?: AbortSignal | undefined } = {}) => {
+  throwIfAborted(signal);
   const headSha = normalizeText(pr?.head?.sha);
   if (!headSha) {
     return false;
   }
   try {
-    if (await isAncestor(directory, headSha)) {
-      return true;
-    }
-  } catch {
-    return false;
-  }
-  try {
-    return await isPatchEquivalent(directory, headSha);
-  } catch {
+    const matches = await isAncestor(directory, headSha, { signal });
+    throwIfAborted(signal);
+    if (matches) return true;
+    const equivalent = await isPatchEquivalent(directory, headSha, { signal });
+    throwIfAborted(signal);
+    return equivalent;
+  } catch (error) {
+    throwIfAborted(signal);
+    if (failureCode(error) === GIT_READ_WORKER_UNAVAILABLE_CODE) throw error;
     return false;
   }
 };
@@ -674,7 +684,8 @@ const findBranchPrCandidates = async ({ octokit, target, branch, sourceCandidate
 
 export { findBranchPrCandidates };
 
-export async function resolveGitHubPrStatus({ octokit, directory, branch, remoteName, sourceRemoteName = null, force = false, requestHost }: StatusInput) {
+export async function resolveGitHubPrStatus({ octokit, directory, branch, remoteName, sourceRemoteName = null, force = false, requestHost, signal }: StatusInput & { signal?: AbortSignal }, { readGitContext = getPrGitContext } = {}) {
+  throwIfAborted(signal);
   if (!(await directoryExists(directory))) {
     return { repo: null, pr: null, defaultBranch: null, resolvedRemoteName: null };
   }
@@ -682,13 +693,12 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
   const normalizedBranch = normalizeText(branch);
   const normalizedRemoteName = normalizeText(remoteName) || 'origin';
 
-  const [tracking, remotes] = await Promise.all([
-    getTrackingBranch(directory).catch(() => null),
-    getRemotes(directory).catch(() => []),
-  ]);
+  const gitContext = await readGitContext(directory, normalizedBranch, { signal });
+  throwIfAborted(signal);
+  const remotes = Array.isArray(gitContext.remotes) ? gitContext.remotes : [];
 
-  const trackingRemoteName = parseTrackingRemoteName(tracking);
-  const trackingBranchName = parseTrackingBranchName(tracking);
+  const trackingRemoteName = parseTrackingRemoteName(gitContext.tracking);
+  const trackingBranchName = parseTrackingBranchName(gitContext.tracking);
   const branchCandidates: string[] = [];
   pushUnique(branchCandidates, normalizedBranch);
   pushUnique(branchCandidates, trackingBranchName);
@@ -698,7 +708,8 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
     trackingRemoteName,
   );
 
-  const resolvedRemoteTargets = await resolveRemoteCandidates(directory, rankedRemoteNames);
+  const resolvedRemoteTargets = await resolveRemoteCandidates(remotes, rankedRemoteNames);
+  throwIfAborted(signal);
 
   const requestHostKey = normalizeLower(requestHost) || 'github.com';
   const hostTargets = resolvedRemoteTargets.filter(
@@ -730,10 +741,12 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
   let fallbackRepo = resolvedTargets[0].repo;
   let fallbackRemoteName = resolvedTargets[0].remoteName;
   let fallbackDefaultBranch = await getRepoDefaultBranch(octokit, fallbackRepo);
+  throwIfAborted(signal);
 
   let historicalMatch: FoundPull | null = null;
 
   for (const target of resolvedTargets) {
+    throwIfAborted(signal);
     const defaultBranch = await getRepoDefaultBranch(octokit, target.repo);
     if (!fallbackRepo) {
       fallbackRepo = target.repo;
@@ -743,6 +756,7 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
 
     const hasCrossRepoSource = sourceCandidates.some((candidate) => normalizeRepoKey(candidate.repo?.owner, candidate.repo?.repo) !== normalizeRepoKey(target.repo?.owner, target.repo?.repo));
     for (const candidateBranch of branchCandidates) {
+      throwIfAborted(signal);
       if (defaultBranch && defaultBranch === candidateBranch && !hasCrossRepoSource) {
         continue;
       }
@@ -758,6 +772,7 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
         coverage,
         includeHistory: isPrimaryAssociation,
       });
+      throwIfAborted(signal);
       if (open) {
         return {
           repo: target.repo,
@@ -778,6 +793,7 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
   }
 
   for (const candidateBranch of branchCandidates) {
+    throwIfAborted(signal);
     if (coverage.authoritative) {
       break;
     }
@@ -797,7 +813,7 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
     }
   }
 
-  if (historicalMatch && await isHistoricalPrOfCheckout(directory, historicalMatch.pr)) {
+  if (historicalMatch && await isHistoricalPrOfCheckout(directory, historicalMatch.pr, { signal })) {
     return historicalMatch;
   }
 

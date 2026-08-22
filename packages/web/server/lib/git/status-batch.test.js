@@ -2,6 +2,51 @@ import { createServer } from 'node:http';
 import express from 'express';
 import { expect, test } from 'vitest';
 import { registerGitStatusBatchRoute } from './status-batch.js';
+import { runGitStatusTask } from './status-tasks.js';
+
+test('disconnect releases only that batch’s share of a directory read', async () => {
+  const started = Promise.withResolvers();
+  const shared = Promise.withResolvers();
+  const cancelled = Promise.withResolvers();
+  const entered = [];
+  const signals = new Map();
+  const read = (directory, _mode, signal) => runGitStatusTask(directory, { signal }, async underlying => {
+    signals.set(directory, underlying);
+    entered.push(directory);
+    if (entered.length === 2) started.resolve();
+    if (directory === '/kept') return shared.promise;
+    return new Promise((_resolve, reject) => underlying.addEventListener('abort', () => {
+      cancelled.resolve();
+      reject(underlying.reason);
+    }, { once: true }));
+  });
+  const app = express();
+  app.use(express.json());
+  registerGitStatusBatchRoute(app, read);
+  const server = createServer(app);
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const controller = new AbortController();
+  const result = { isGitRepository: true, status: {} };
+  try {
+    const other = read('/kept');
+    await fetch(`http://127.0.0.1:${server.address().port}/api/git/status/batch`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+      body: JSON.stringify({ directories: ['/kept', '/abandoned'] }),
+    });
+    await started.promise;
+    controller.abort();
+    await cancelled.promise;
+    expect(signals.get('/kept').aborted).toBe(false);
+    shared.resolve(result);
+    expect(await other).toBe(result);
+    expect(entered.sort()).toEqual(['/abandoned', '/kept']);
+  } finally {
+    controller.abort();
+    shared.resolve(result);
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
 
 test('streams fast and failed directories while a slow directory is still running', async () => {
   const slow = Promise.withResolvers();

@@ -259,7 +259,7 @@ export interface ProviderImplementation<MutationInput = Json, ProviderTarget = J
     readCredential(input: { instance: string; credentialId: string; credentialRevision?: number }): Promise<TransportCredential | null>;
   };
   resources: {
-    changeRequestStatus(input: ReadInput & { branch: string; force: boolean }): Promise<object>;
+    changeRequestStatus(input: ReadInput & { branch: string; force: boolean }, options?: { signal?: AbortSignal }): Promise<object>;
     listChangeRequests(input: ReadInput & { page: number; query?: string | undefined; state: string; people: string; labels?: string[] }): Promise<object>;
     changeRequestContext(input: ReadInput & {
       number: number; project?: ProjectSelector | undefined; includeDiff: boolean; includeCIDetails: boolean; includeTimeline: boolean;
