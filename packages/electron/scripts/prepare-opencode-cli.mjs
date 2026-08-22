@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveOpenCodeCliTarget, resolveTargetArchitecture } from './target-architecture.mjs';
+import { resolveLocalOpenCodeBunRuntime, resolveOpenCodeCliTarget, resolveTargetArchitecture } from './target-architecture.mjs';
 import { parseOpenCodeCliVersion, readPinnedOpenCodeCliVersion } from './opencode-cli-version.mjs';
 import { requireOpenCodeNativeHelpers } from './opencode-native-helpers.mjs';
 
@@ -122,19 +122,31 @@ const prepareFromLocalSource = ({ sourceRoot, version, targetArchitecture, outpu
   if (!fs.statSync(opencodePackagePath, { throwIfNoEntry: false })?.isFile()) {
     throw new Error(`Local OpenCode package not found: ${opencodePackagePath}`);
   }
+  const compileExecutablePath = resolveLocalOpenCodeBunRuntime({
+    platform: process.platform,
+    targetArchitecture,
+    sourceRoot,
+    environment: process.env,
+  });
+  if (compileExecutablePath && !fs.statSync(compileExecutablePath, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Local Bun runtime not found: ${compileExecutablePath}`);
+  }
 
-  const args = ['run', '--cwd', opencodePackageRoot, 'build', `--target=${cliTarget.buildTarget}`, '--skip-web-ui'];
+  // Invoke the builder directly so its package script cannot select another Bun from PATH.
+  const args = [path.join(opencodePackageRoot, 'script', 'build.ts'), `--target=${cliTarget.buildTarget}`, '--skip-web-ui'];
   if (process.platform === 'win32') args.push('--windows-gui-subsystem');
   const channel = 'dev';
+  const environment = {
+    ...process.env,
+    OPENCODE_CHANNEL: channel,
+    OPENCODE_VERSION: version,
+  };
+  if (compileExecutablePath) environment.OPENCODE_COMPILE_EXECUTABLE_PATH = compileExecutablePath;
 
   console.log(`[electron] building bundled OpenCode CLI from local source (${channel}): ${sourceRoot}`);
-  run(process.env.BUN?.trim() || (process.platform === 'win32' ? 'bun.exe' : 'bun'), args, {
+  run(compileExecutablePath || process.env.BUN?.trim() || (process.platform === 'win32' ? 'bun.exe' : 'bun'), args, {
     cwd: sourceRoot,
-    env: {
-      ...process.env,
-      OPENCODE_CHANNEL: channel,
-      OPENCODE_VERSION: version,
-    },
+    env: environment,
     stdio: 'inherit',
   });
 
