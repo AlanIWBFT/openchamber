@@ -784,7 +784,7 @@ const SortableProjectRow: React.FC<{
 export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, onOpenChange, variant = 'drawer', footer }) => {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
-  const ensureGitStatus = useGitStore((state) => state.ensureStatus);
+  const ensureGitStatus = useGitStore((state) => state.ensurePassiveStatus);
   const liveSessions = useAllLiveSessions();
   const globalActiveSessions = useGlobalSessionsStore((state) => state.activeSessions);
   const hasLoadedGlobalSessions = useGlobalSessionsStore((state) => state.hasLoaded);

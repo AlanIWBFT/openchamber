@@ -15,6 +15,7 @@ export const createWebGitAPI = (): GitAPI => ({
   checkIsGitRepository: gitApiHttp.checkIsGitRepository,
   getGitStatus: gitApiHttp.getGitStatus,
   prefetchProjectStatuses: gitApiHttp.prefetchProjectStatuses,
+  getPassiveGitStatus: gitApiHttp.getPassiveGitStatus,
   getGitDiff: gitApiHttp.getGitDiff,
   getGitFileDiff: gitApiHttp.getGitFileDiff,
   getGitRangeDiff: gitApiHttp.getGitRangeDiff,
