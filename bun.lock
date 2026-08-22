@@ -453,6 +453,7 @@
     "@legendapp/list@3.7.1": "bun-patches/@legendapp%2Flist@3.7.1.patch",
     "bun-pty@0.6.0": "bun-patches/bun-pty@0.6.0.patch",
     "@tanstack/virtual-core@3.19.10": "bun-patches/@tanstack+virtual-core+3.19.10.patch",
+    "simple-git@4.0.2": "bun-patches/simple-git@4.0.2.patch",
   },
   "overrides": {
     "@codemirror/autocomplete": "6.20.4",
