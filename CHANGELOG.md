@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Desktop/Remote instances: a managed remote server can now also be published to the remote machine's own network, so other devices there reach it without the SSH tunnel. It requires a UI password, and stays private to the tunnel otherwise.
 - Desktop/Remote instances: disconnecting from a connection set to not keep the server running now actually stops that remote server.
 - Chat: in a chat without a project, the work status card again steps aside when the context panel is open, instead of sitting next to it.
+- **Settings:** the project selector on Providers, Agents, MCP, Commands and Skills now only changes what those pages show. It used to switch the whole app, so opening another project's configuration moved your chat, session list and file tree with it.
 - Settings/Providers: the provider you select no longer jumps to a different one on its own. Changing the chat's model or agent, and background provider refreshes, used to move the settings selection with them.
 - **Chat sessions:** start chats without choosing a project. They live in their own Chats section, rather than inheriting a project's repository and worktree context.
 - **Skills catalog:** browse curated GitHub skill collections in a card-based catalog with cross-source search, skill counts, stars, recent updates, and links back to each skill's repository.
