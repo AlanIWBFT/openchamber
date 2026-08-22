@@ -25,7 +25,7 @@
     "Electron runtime dependencies installed via bun install",
     "Bun available for sidecar compilation",
     "macOS: Xcode + build tools for notarized packaging",
-    "Windows: NSIS installed for installer creation",
+    "Windows: NSIS installed for installer creation; .NET 10 SDK and Visual Studio 2022 C++ tools for local NativeAOT process broker builds",
     "Linux: native x64 or arm64 host (no cross-arch packaging); FUSE/libfuse2 to run AppImages, or APPIMAGE_EXTRACT_AND_RUN=1"
   ],
   "scripts": {

@@ -1619,6 +1619,12 @@ const spawnLocalServer = async () => {
   }
   process.env.OPENCHAMBER_DIST_DIR = resolveWebDistDir();
   process.env.OPENCHAMBER_RUNTIME = 'desktop';
+  const processBroker = path.join(resourceRoot(), 'opencode-cli', 'OpenCode.ProcessBroker.exe');
+  if (process.platform === 'win32' && fs.statSync(processBroker, { throwIfNoEntry: false })?.isFile()) {
+    process.env.OPENCHAMBER_PROCESS_BROKER_PATH = processBroker;
+  } else {
+    delete process.env.OPENCHAMBER_PROCESS_BROKER_PATH;
+  }
   // OpenCode uses process cwd as a fallback directory; app userData would make
   // packaged desktop look like a separate empty workspace.
   process.env.OPENCHAMBER_OPENCODE_CWD = resolveManagedOpenCodeCwd({
