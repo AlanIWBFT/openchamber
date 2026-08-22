@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
   normalizeTargetArchitecture,
   readElectronBuilderArchitecture,
+  resolveLocalOpenCodeBunRuntime,
   resolveOpenCodeCliTarget,
   resolveTargetArchitecture,
 } from './target-architecture.mjs';
@@ -69,11 +71,56 @@ test('keeps native ARM64 targets outside the Windows workaround', () => {
     });
   }
 });
+test('uses a non-baseline OpenCode target for native Windows x64 source builds', () => {
+  const targetArchitecture = resolveTargetArchitecture({
+    platform: 'win32',
+    hostArchitecture: 'x64',
+    environment: {},
+  });
 
-test('selects one baseline target on every supported x64 platform', () => {
-  for (const [platform, target] of [['win32', 'windows'], ['darwin', 'darwin'], ['linux', 'linux']]) {
+  assert.deepEqual(resolveOpenCodeCliTarget({ platform: 'win32', targetArchitecture }), {
+    architecture: 'x64',
+    buildTarget: 'opencode-windows-x64',
+    packageDirectory: 'cli-windows-x64',
+    baseline: false,
+  });
+});
+
+test('resolves the sibling patched Bun runtime only for native Windows x64 source builds', () => {
+  const sourceRoot = path.resolve('fixtures', 'opencode');
+
+  assert.equal(
+    resolveLocalOpenCodeBunRuntime({
+      platform: 'win32',
+      targetArchitecture: normalizeTargetArchitecture('x64'),
+      sourceRoot,
+      environment: {},
+    }),
+    path.resolve(sourceRoot, '..', 'bun-v1.3.14-shim-hardlink', 'build', 'release', 'bun.exe'),
+  );
+  assert.equal(resolveLocalOpenCodeBunRuntime({
+    platform: 'win32',
+    targetArchitecture: normalizeTargetArchitecture('arm64'),
+    sourceRoot,
+    environment: {},
+  }), null);
+});
+
+test('selects baseline source targets on non-Windows x64 platforms', () => {
+  for (const [platform, target] of [['darwin', 'darwin'], ['linux', 'linux']]) {
     assert.deepEqual(resolveOpenCodeCliTarget({ platform, targetArchitecture: normalizeTargetArchitecture('x64') }), {
       architecture: 'x64', buildTarget: `opencode-${target}-x64-baseline`, packageDirectory: `cli-${target}-x64-baseline`, baseline: true,
     });
+  }
+});
+
+test('an explicit Bun runtime wins over the Windows fallback on every platform', () => {
+  for (const platform of ['win32', 'darwin', 'linux']) {
+    assert.equal(resolveLocalOpenCodeBunRuntime({
+      platform,
+      targetArchitecture: normalizeTargetArchitecture('x64'),
+      sourceRoot: path.resolve('fixtures', 'opencode'),
+      environment: { OPENCHAMBER_OPENCODE_BUN_RUNTIME: ' ./selected-bun ' },
+    }), path.resolve('selected-bun'));
   }
 });
