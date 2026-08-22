@@ -269,6 +269,7 @@ export const dict = {
   'sessions.sidebar.empty.noMatches.description': 'Essayez un autre titre, branche, dossier ou chemin.',
   'sessions.sidebar.activity.recentTitle': 'récent',
   'sessions.sidebar.activity.chatsTitle': 'discussions',
+  'sessions.sidebar.activity.chatsEmpty': 'Aucune discussion pour le moment.',
   'chat.chatInput.chooseProject': 'Choisir un projet',
   'sessions.archivePage.allDirectories': 'Tous les répertoires',
   'sessions.sidebar.header.displayMode.stickyHeaders': 'Épingler les en-têtes de projet',

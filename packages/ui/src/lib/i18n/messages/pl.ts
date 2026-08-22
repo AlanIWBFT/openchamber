@@ -250,6 +250,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.empty.noMatches.description': 'Spróbuj innego tytułu, gałęzi, folderu lub ścieżki.',
   'sessions.sidebar.activity.recentTitle': 'ostatnie',
   'sessions.sidebar.activity.chatsTitle': 'czaty',
+  'sessions.sidebar.activity.chatsEmpty': 'Nie ma jeszcze czatów.',
   'chat.chatInput.chooseProject': 'Wybierz projekt',
   'sessions.archivePage.allDirectories': 'Wszystkie katalogi',
   'sessions.sidebar.header.displayMode.stickyHeaders': 'Przyklejone nagłówki projektów',

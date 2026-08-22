@@ -439,6 +439,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.empty.noMatches.description": "Tente com outro título, branch, pasta ou caminho.",
   "sessions.sidebar.activity.recentTitle": "recente",
   "sessions.sidebar.activity.chatsTitle": "conversas",
+  "sessions.sidebar.activity.chatsEmpty": "Ainda não há conversas.",
   "chat.chatInput.chooseProject": "Escolher projeto",
   "sessions.archivePage.allDirectories": "Todos os diretórios",
   "sessions.sidebar.header.displayMode.stickyHeaders": "Cabeçalhos de projeto fixos",

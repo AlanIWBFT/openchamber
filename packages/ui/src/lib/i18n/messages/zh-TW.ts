@@ -452,6 +452,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.empty.noMatches.description': '請嘗試其他標題、分支、資料夾或路徑。',
   'sessions.sidebar.activity.recentTitle': '最近',
   'sessions.sidebar.activity.chatsTitle': '聊天',
+  'sessions.sidebar.activity.chatsEmpty': '尚無聊天。',
   'chat.chatInput.chooseProject': '選擇專案',
   'sessions.archivePage.allDirectories': '所有目錄',
   'sessions.sidebar.header.displayMode.stickyHeaders': '固定專案標題',

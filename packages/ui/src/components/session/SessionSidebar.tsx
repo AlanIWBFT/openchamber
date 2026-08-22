@@ -1790,10 +1790,11 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
       folderScopeKey: chatsRoot,
       folderScopes,
       draftTarget: 'chat',
+      emptyMessage: t('sessions.sidebar.activity.chatsEmpty'),
       sessions: items.map((item) => item.node),
     };
     return renderGroupSessions(group, 'managed-chats', null, true);
-  }, [homeDirectory, renderGroupSessions, renderSessionNode]);
+  }, [homeDirectory, renderGroupSessions, renderSessionNode, t]);
 
   const topContent = React.useMemo(
     () => (!isVSCode && !hasSessionSearchQuery && hasActivitySectionItems) ? (
