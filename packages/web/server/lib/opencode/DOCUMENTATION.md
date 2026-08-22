@@ -117,7 +117,7 @@ This module provides OpenCode server integration utilities for the web server ru
 The runtime maintains active-session count incrementally from idempotent activity phase transitions. Repeated status events are suppressed only when both the status and recovery metadata are unchanged; advancing retry attempts must update snapshots and synthetic events immediately. Upstream stall-timeout and lifecycle health checks read the active count in O(1); the hourly cleanup removes activity phases older than 24 hours without broadcasting synthetic state transitions. Snapshot generation remains reserved for the session-activity API.
 
 ## Public exports (lifecycle.js)
-- `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration. The optional `onOpenCodeRestarted` dependency (default `null`) is fired after a successful managed restart. `index.js` rebinds event-stream readers to the possibly-new port (#2638), then calls `interruptBusySessionsAfterRestart()` and broadcasts one `opencode-restart-interrupted` UI notification when interrupted turns exist (#2943).
+- `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration. The optional `onOpenCodeRestarted` dependency (default `null`) is fired after a successful managed restart. `index.js` rebinds event-stream readers to the possibly-new port (#2638), then calls `interruptBusySessionsAfterRestart()` and broadcasts one `opencode-restart-interrupted` UI notification when interrupted turns exist (#2943). The optional `onOpenCodeReady` dependency fires only after bootstrap or restart reaches its final ready state; OpenChamber uses that boundary to start scheduled tasks, the global watcher, and managed-process health monitoring.
 - Returned API:
   - `startOpenCode()`
   - `restartOpenCode()`
@@ -125,6 +125,8 @@ The runtime maintains active-session count incrementally from idempotent activit
   - `waitForAgentPresence(agentName, timeoutMs?, intervalMs?)`
   - `refreshOpenCodeAfterConfigChange(reason, options?)`
   - `bootstrapOpenCodeAtStartup()`
+  - `getOpenCodeStartupState()`
+  - `onOpenCodeStartupState(listener)`
   - `startHealthMonitoring(healthCheckIntervalMs)`
   - `waitForPortRelease(port, timeoutMs, hostname?)`
   - `killProcessOnPort(port)`
@@ -144,6 +146,19 @@ be replaced by injected values. External OpenCode processes receive no
 OpenChamber tool injection. Managed launch env strips AppImage `ARGV0` before
 spawn so zsh-backed OpenCode tools do not rewrite child argv[0] to the AppImage
 path (#2588).
+
+Managed launch enables OpenCode's versioned startup protocol. While OpenCode
+reports a database migration in progress, the normal 30-second server-listening
+watchdog is suspended so a valid transaction is never killed solely for taking
+longer than ordinary startup. The watchdog restarts after migration completion;
+a migration failure drains process output through stdio close, with a five-second
+upper bound before cleanup, so the root diagnostic is preserved and then
+surfaces without an automatic retry.
+Scheduled tasks, the global watcher, and managed health monitoring start only
+after final readiness and use the same activation path after a successful retry.
+The startup pipeline retains the authoritative bootstrap promise, and the
+returned web server controller exposes it together with replayable lifecycle
+state for the Electron startup page.
 
 Before spawn, `applyProviderEnvAliases` fills unset Google credential aliases
 from any present sibling (`GOOGLE_GENERATIVE_AI_API_KEY`, `GOOGLE_API_KEY`,
