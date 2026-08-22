@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+import { replaceFileWithRetry } from './windows-file-replace.mjs';
+
 const LOCAL_HOST_ID = 'local';
 const DEFAULT_CONNECTION_TIMEOUT_SEC = 60;
 const DEFAULT_LOCAL_BIND_HOST = '127.0.0.1';
@@ -81,7 +83,7 @@ const writeJsonRoot = async (settingsFilePath, root) => {
   const tmp = `${settingsFilePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   try {
     await fsp.writeFile(tmp, JSON.stringify(root, null, 2));
-    await fsp.rename(tmp, settingsFilePath);
+    await replaceFileWithRetry(tmp, settingsFilePath);
   } catch (error) {
     await fsp.rm(tmp, { force: true }).catch(() => {});
     throw error;
