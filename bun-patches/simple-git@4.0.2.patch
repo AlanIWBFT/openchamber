@@ -1,0 +1,43 @@
+diff --git a/dist/index.mjs b/dist/index.mjs
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -773,7 +773,7 @@
+           T = C || T;
+         }
+       });
+-      const k = ve(n, r, a);
++      const k = this._executor._spawn(n, r, a);
+       k.stdout.on(
+         "data",
+         Et(y, "stdOut", o, i.step("stdOut"))
+@@ -828,7 +828,7 @@
+ class Dn {
+-  constructor(e, n, r) {
+-    this.cwd = e, this._scheduler = n, this._plugins = r, this._chain = this.chain();
++  constructor(e, n, r, spawn) {
++    this.cwd = e, this._scheduler = n, this._plugins = r, this._spawn = spawn, this._chain = this.chain();
+   }
+   chain() {
+     return new Pn(this, this._scheduler, this._plugins);
+   }
+@@ -2267,7 +2267,8 @@
+   this._plugins = e, this._executor = new Dn(
+     t.baseDir,
+     new Xr(t.maxConcurrentProcesses),
+-    e
++    e,
++    t.spawn || ve
+   ), this._trimmed = t.trimmed;
+ }
+ (f.prototype = Object.create(le.prototype)).constructor = f;
+diff --git a/dist/src/lib/types/index.d.ts b/dist/src/lib/types/index.d.ts
+--- a/dist/src/lib/types/index.d.ts
++++ b/dist/src/lib/types/index.d.ts
+@@ -49,6 +49,7 @@
+ export interface SimpleGitPluginConfig {
+     abort: AbortSignal;
++    spawn: typeof import('child_process').spawn;
+     /**
+      * Environment variables in the guarded `GitEnvKeys` set (every `GIT_`-prefixed
+      * key plus known-vulnerable non-prefixed keys such as `EDITOR` / `PAGER`) are
+      * removed from the child process environment unless named here. A guarded key
