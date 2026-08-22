@@ -6,6 +6,7 @@ import { parseOpenCodeCliVersion, readPinnedOpenCodeCliVersion } from './opencod
 import { resolveTargetArchitecture } from './target-architecture.mjs';
 import { readPeArchitecture } from './windows-executable.mjs';
 import { requireOpenCodeNativeHelpers } from './opencode-native-helpers.mjs';
+import { assertWindowsGuiSubsystem } from './pe-subsystem.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
@@ -39,6 +40,7 @@ const assertBinary = (binaryPath, expectedVersion) => {
     throw new Error(`Bundled OpenCode CLI is not executable: ${binaryPath}`);
   }
   if (process.platform === 'win32') {
+    if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) assertWindowsGuiSubsystem(binaryPath);
     const target = resolveTargetArchitecture().node;
     const actualArchitecture = readPeArchitecture(binaryPath);
     if (actualArchitecture !== target) {
