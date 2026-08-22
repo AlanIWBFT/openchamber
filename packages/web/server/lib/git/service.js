@@ -20,6 +20,7 @@ import {
 } from './git-binary.js';
 import { runGitReadWorkerTask } from './git-read-worker-client.js';
 import { runSharedGitReadTask } from './git-read-shared.js';
+import { execFileWithProcessBroker, getProcessBrokerSpawn } from './process-broker.js';
 
 const fsp = fs.promises;
 const require = createRequire(import.meta.url);
@@ -216,6 +217,10 @@ const createSimpleGit = (options) => {
 };
 
 const getGitBinary = () => resolveGitBinary();
+const execGitFileAsync = (args, options) => (
+  execFileWithProcessBroker(getGitBinary(), args, options)
+  || execFileAsync(getGitBinary(), args, options)
+);
 
 const isSocketPath = async (candidate) => {
   if (!candidate || typeof candidate !== 'string') {
@@ -389,6 +394,11 @@ const createGit = async (directory, options = {}) => {
     unsafe,
     ...(timeout ? { timeout } : {}),
   };
+  const managedSpawn = getProcessBrokerSpawn();
+  if (managedSpawn) {
+    gitOptions.spawn = managedSpawn;
+    gitOptions.completion = { onClose: true, onExit: false };
+  }
   if (signal) {
     gitOptions.abort = signal;
   }
@@ -1087,7 +1097,7 @@ const runGitCommand = async (cwd, args, options = {}) => {
   try {
     const env = envOverride || await buildGitEnv(cwd);
     throwIfGitReadCancelled(options);
-    const { stdout, stderr } = await execFileAsync(getGitBinary(), args, {
+    const { stdout, stderr } = await execGitFileAsync(args, {
       cwd,
       env,
       windowsHide: true,
@@ -2699,7 +2709,9 @@ const listUntrackedFilesBounded = async (repoRoot, dirPath, limit, options = {})
   throwIfGitReadCancelled(options);
   const env = await buildGitEnv(repoRoot);
   return new Promise((resolve, reject) => {
-    const child = spawn(getGitBinary(), ['ls-files', '--others', '--exclude-standard', '-z', '--', dirPath], {
+    const brokerSpawn = getProcessBrokerSpawn();
+    const spawnProcess = brokerSpawn ?? spawn;
+    const child = spawnProcess(getGitBinary(), ['ls-files', '--others', '--exclude-standard', '-z', '--', dirPath], {
       cwd: repoRoot,
       env,
       windowsHide: true,
@@ -2712,11 +2724,15 @@ const listUntrackedFilesBounded = async (repoRoot, dirPath, limit, options = {})
     let stallTimer = null;
     let childError = null;
     let cancellationError = null;
+    const terminate = () => {
+      if (brokerSpawn) child.kill();
+      else killProcessTree(child);
+    };
     const onAbort = () => {
       cancellationError = options.signal?.reason instanceof Error
         ? options.signal.reason
         : Object.assign(new Error('Git read cancelled'), { code: 'ABORT_ERR' });
-      child.kill();
+      terminate();
     };
     const finish = (error) => {
       if (settled) return;
@@ -2734,14 +2750,14 @@ const listUntrackedFilesBounded = async (repoRoot, dirPath, limit, options = {})
     const armStallTimer = () => {
       if (stallTimer) clearTimeout(stallTimer);
       stallTimer = setTimeout(() => {
-        killProcessTree(child);
-        finish(new Error(`git ls-files produced no output for ${GIT_UNTRACKED_LISTING_STALL_TIMEOUT_MS}ms in ${dirPath}`));
+        childError = new Error(`git ls-files produced no output for ${GIT_UNTRACKED_LISTING_STALL_TIMEOUT_MS}ms in ${dirPath}`);
+        terminate();
       }, GIT_UNTRACKED_LISTING_STALL_TIMEOUT_MS);
     };
     armStallTimer();
     child.stdout.on('data', (chunk) => {
+      if (truncated || childError || cancellationError) return;
       armStallTimer();
-      if (truncated) return;
       pending += chunk.toString('utf8');
       const records = pending.split('\0');
       pending = records.pop() ?? '';
@@ -2750,7 +2766,8 @@ const listUntrackedFilesBounded = async (repoRoot, dirPath, limit, options = {})
         paths.push(record);
         if (paths.length > limit) {
           truncated = true;
-          killProcessTree(child);
+          clearTimeout(stallTimer);
+          terminate();
           return;
         }
       }
@@ -3760,7 +3777,7 @@ const getFileDiffDirect = async (directory, options = {}) => {
     if (isImage) {
       // For images, use git show with raw output and convert to base64
       try {
-        const { stdout } = await execFileAsync(getGitBinary(), ['show', `HEAD:${repoPath}`], {
+        const { stdout } = await execGitFileAsync(['show', `HEAD:${repoPath}`], {
           cwd: repoRoot,
           encoding: 'buffer',
           windowsHide: true,
@@ -3788,7 +3805,7 @@ const getFileDiffDirect = async (directory, options = {}) => {
   try {
     if (staged) {
       if (isImage) {
-        const { stdout } = await execFileAsync(getGitBinary(), ['show', `:${repoPath}`], {
+        const { stdout } = await execGitFileAsync(['show', `:${repoPath}`], {
           cwd: repoRoot,
           encoding: 'buffer',
           windowsHide: true,

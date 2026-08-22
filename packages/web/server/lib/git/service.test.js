@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -76,25 +78,47 @@ import {
 // ---------------------------------------------------------------------------
 
 describe('status cancellation cleanup', () => {
-  it.each([0, 1])('waits for both numstat reads to settle after cancellation (first: %s)', async (first) => {
-    const scopes = [Promise.withResolvers(), Promise.withResolvers()];
+  it.each([0, 1])('waits for both numstat processes to close after cancellation (first: %s)', async (first) => {
     const controller = new AbortController();
     const reason = new Error('status timed out');
-    const git = { raw: (args) => scopes[args.includes('--cached') ? 0 : 1].promise };
+    const children = [];
+    const git = simpleGit({
+      baseDir: process.cwd(),
+      abort: controller.signal,
+      completion: { onClose: true, onExit: false },
+      spawn() {
+        const child = new EventEmitter();
+        child.stdout = new PassThrough();
+        child.stderr = new PassThrough();
+        child.kill = vi.fn(() => true);
+        child.finish = () => {
+          if (child.closed) return;
+          child.closed = true;
+          child.stdout.end('1\t0\tfile.txt\n');
+          child.stderr.end();
+          child.emit('exit', 1, null);
+          child.emit('close', 1, null);
+        };
+        children.push(child);
+        return child;
+      },
+    });
     let settled = false;
     const result = readStatusNumstat(git, { signal: controller.signal }).then(
       (value) => { settled = true; return value; },
       (error) => { settled = true; return error; },
     );
     try {
+      await vi.waitFor(() => expect(children).toHaveLength(2));
       controller.abort(reason);
-      scopes[first].reject(reason);
+      for (const child of children) expect(child.kill).toHaveBeenCalledOnce();
+      children[first].finish();
       await new Promise((resolve) => setImmediate(resolve));
       expect(settled).toBe(false);
-      scopes[1 - first].resolve('1\t0\tfile.txt\n');
+      children[1 - first].finish();
       expect(await result).toBe(reason);
     } finally {
-      for (const scope of scopes) scope.resolve('');
+      for (const child of children) child.finish();
       await result;
     }
   });
@@ -2105,6 +2129,7 @@ describe('createWorktree', () => {
         { timeout: 5_000 }
       ).toBe('refs/heads/main');
       expect(readBranchConfig(created.path, 'openchamber/fallback-wt', 'remote')).toBe('origin');
+      await expect.poll(() => getWorktreeBootstrapStatus(created.path).then((status) => status.status), { timeout: 5_000 }).toBe('ready');
     } finally {
       if (previousXdgDataHome === undefined) {
         delete process.env.XDG_DATA_HOME;
@@ -2137,6 +2162,7 @@ describe('createWorktree', () => {
       expect(created.sourceFetchFailed).toBe(true);
       const expectedHead = runGit(repository, ['rev-parse', 'next']).trim();
       expect(runGit(created.path, ['rev-parse', 'HEAD']).trim()).toBe(expectedHead);
+      await expect.poll(() => getWorktreeBootstrapStatus(created.path).then((status) => status.status), { timeout: 5_000 }).toBe('ready');
     } finally {
       if (previousXdgDataHome === undefined) {
         delete process.env.XDG_DATA_HOME;
