@@ -37,6 +37,7 @@ import { setActionRefs } from "./session-actions"
 import { setSyncRefs, getAllSyncSessions } from "./sync-refs"
 import { useSessionUIStore } from "./session-ui-store"
 import { stripSessionDiffSnapshots } from "./sanitize"
+import { upsertSessionRecord } from "./session-records"
 import { applySessionEventToGlobalSessions } from "./session-event-router"
 import { syncDebug } from "./debug"
 import { getReconnectCandidateSessionIds, mergeBootstrapSessions } from "./reconnect-recovery"
@@ -86,22 +87,29 @@ import {
 // Context
 // ---------------------------------------------------------------------------
 
-type SyncSystem = {
+type SyncRuntime = {
   childStores: ChildStoreManager
   messageLoader: SessionMessageLoader
   runtimeKey: string
   sdk: OpencodeClient
+}
+
+type SyncSystem = SyncRuntime & {
   directory: string
 }
 
 const SYNC_CONTEXT_GLOBAL_KEY = "__openchamber_sync_context__"
+const SYNC_RUNTIME_CONTEXT_GLOBAL_KEY = "__openchamber_sync_runtime_context__"
 type SyncGlobal = typeof globalThis & {
   [SYNC_CONTEXT_GLOBAL_KEY]?: React.Context<SyncSystem | null>
+  [SYNC_RUNTIME_CONTEXT_GLOBAL_KEY]?: React.Context<SyncRuntime | null>
 }
 
 const syncGlobal = globalThis as SyncGlobal
 const SyncContext = syncGlobal[SYNC_CONTEXT_GLOBAL_KEY] ?? createContext<SyncSystem | null>(null)
 syncGlobal[SYNC_CONTEXT_GLOBAL_KEY] = SyncContext
+const SyncRuntimeContext = syncGlobal[SYNC_RUNTIME_CONTEXT_GLOBAL_KEY] ?? createContext<SyncRuntime | null>(null)
+syncGlobal[SYNC_RUNTIME_CONTEXT_GLOBAL_KEY] = SyncRuntimeContext
 
 type SdkResult<T> = {
   data?: T
@@ -134,6 +142,12 @@ function assertSdkSuccess<T>(result: SdkResult<T>, operation: string): T | undef
 function useSyncSystem() {
   const ctx = useContext(SyncContext)
   if (!ctx) throw new Error("useSyncSystem must be used within <SyncProvider>")
+  return ctx
+}
+
+export function useSyncRuntime() {
+  const ctx = useContext(SyncRuntimeContext)
+  if (!ctx) throw new Error("useSyncRuntime must be used within <SyncProvider>")
   return ctx
 }
 
@@ -1408,28 +1422,13 @@ async function resyncDirectoryAfterReconnect(
 
     const nextSession = stripSessionDiffSnapshots(session)
     store.setState((state: DirectoryStore) => {
-      const sessionIndex = state.session.findIndex((item) => item.id === nextSession.id)
-      let sessions = state.session
-      let sessionChanged = false
+      const sessions = upsertSessionRecord(state.session, nextSession)
       let sessionTotal = state.sessionTotal
 
-      if (sessionIndex >= 0) {
-        if (!haveEquivalentSyncSnapshots(sessions[sessionIndex], nextSession)) {
-          sessions = [...state.session]
-          sessions[sessionIndex] = nextSession
-          sessionChanged = true
-        }
-      } else {
-        sessions = [...state.session]
-        sessions.push(nextSession)
-        sessions.sort((a, b) => cmp(a.id, b.id))
-        if (!nextSession.parentID) sessionTotal += 1
-        sessionChanged = true
-      }
-
-      if (!sessionChanged) {
+      if (sessions === state.session) {
         return state
       }
+      if (!state.session.some((item) => item.id === nextSession.id) && !nextSession.parentID) sessionTotal += 1
 
       return {
         session: sessions,
@@ -2024,15 +2023,13 @@ export function SyncProvider(props: {
   const pipelineHasConnectedRef = useRef(false)
   const pipelineDisconnectedBeforeFirstConnectRef = useRef(false)
 
+  const runtime = useMemo<SyncRuntime>(
+    () => ({ childStores, messageLoader, runtimeKey, sdk: props.sdk }),
+    [childStores, messageLoader, props.sdk, runtimeKey],
+  )
   const system = useMemo<SyncSystem>(
-    () => ({
-      childStores,
-      messageLoader,
-      runtimeKey,
-      sdk: props.sdk,
-      directory: props.directory,
-    }),
-    [childStores, messageLoader, props.sdk, props.directory, runtimeKey],
+    () => ({ ...runtime, directory: props.directory }),
+    [props.directory, runtime],
   )
 
   const triggerDirectoryResync = useCallback((directory: string, reason: SessionMaterializationReason) => {
@@ -2547,7 +2544,14 @@ export function SyncProvider(props: {
     return unsubscribe
   }, [props.directory, childStores])
 
-  return <SyncContext.Provider value={system}>{props.children}</SyncContext.Provider>
+  // Directory navigation must not republish stable runtime dependencies.
+  return (
+    <SyncContext.Provider value={system}>
+      <SyncRuntimeContext.Provider value={runtime}>
+        {props.children}
+      </SyncRuntimeContext.Provider>
+    </SyncContext.Provider>
+  )
 }
 
 // ---------------------------------------------------------------------------

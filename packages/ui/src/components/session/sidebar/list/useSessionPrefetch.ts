@@ -14,7 +14,7 @@ type Args = {
   currentSessionId: string | null;
   sortedSessions: Session[];
   recentSessions?: Session[];
-  prefetchSession: (sessionId: string, directory: string) => Promise<void>;
+  prefetchSession: (target: { directory: string; sessionID: string }) => Promise<void>;
 };
 
 type PrefetchRequest = {
@@ -22,6 +22,10 @@ type PrefetchRequest = {
   directory: string;
   generation: number;
 };
+
+const getPrefetchRequestKey = (request: Pick<PrefetchRequest, 'directory' | 'sessionId'>): string => (
+  `${request.directory}\n${request.sessionId}`
+);
 
 const sessionDirectory = (session: Session | null | undefined): string | null => {
   const directory = session?.directory?.trim();
@@ -34,10 +38,6 @@ export const useSessionPrefetch = ({ enabled = true, currentSessionId, sortedSes
   const sessionPrefetchInFlightRef = React.useRef<Set<string>>(new Set());
   const generationRef = React.useRef(0);
   const prefetchDisabled = React.useMemo(() => isVSCodeRuntime(), []);
-
-  const requestKey = React.useCallback((request: Pick<PrefetchRequest, 'directory' | 'sessionId'>) => (
-    `${request.directory}\n${request.sessionId}`
-  ), []);
 
   const clearPendingPrefetches = React.useCallback(() => {
     generationRef.current += 1;
@@ -68,16 +68,16 @@ export const useSessionPrefetch = ({ enabled = true, currentSessionId, sortedSes
         continue;
       }
 
-      const key = requestKey(request);
+      const key = getPrefetchRequestKey(request);
       sessionPrefetchInFlightRef.current.add(key);
-      void prefetchSession(request.sessionId, request.directory)
+      void prefetchSession({ directory: request.directory, sessionID: request.sessionId })
         .catch(() => undefined)
         .finally(() => {
           sessionPrefetchInFlightRef.current.delete(key);
           pumpSessionPrefetchQueue();
         });
     }
-  }, [enabled, prefetchDisabled, prefetchSession, requestKey]);
+  }, [enabled, prefetchDisabled, prefetchSession]);
 
   const scheduleSessionPrefetch = React.useCallback((session: Session | null | undefined) => {
     const sessionId = session?.id;
@@ -86,7 +86,7 @@ export const useSessionPrefetch = ({ enabled = true, currentSessionId, sortedSes
       return;
     }
     const request = { sessionId, directory, generation: generationRef.current };
-    const key = requestKey(request);
+    const key = getPrefetchRequestKey(request);
 
     // Already renderable in sync
     if (getSyncSessionMaterializationStatus(sessionId, directory).renderable) {
@@ -97,7 +97,7 @@ export const useSessionPrefetch = ({ enabled = true, currentSessionId, sortedSes
       return;
     }
 
-    if (sessionPrefetchQueueRef.current.some((candidate) => requestKey(candidate) === key)) {
+    if (sessionPrefetchQueueRef.current.some((candidate) => getPrefetchRequestKey(candidate) === key)) {
       return;
     }
 
@@ -117,7 +117,7 @@ export const useSessionPrefetch = ({ enabled = true, currentSessionId, sortedSes
       pumpSessionPrefetchQueue();
     }, SESSION_PREFETCH_HOVER_DELAY_MS);
     sessionPrefetchTimersRef.current.set(key, timer);
-  }, [currentSessionId, enabled, prefetchDisabled, pumpSessionPrefetchQueue, requestKey]);
+  }, [currentSessionId, enabled, prefetchDisabled, pumpSessionPrefetchQueue]);
 
   React.useEffect(() => {
     clearPendingPrefetches();

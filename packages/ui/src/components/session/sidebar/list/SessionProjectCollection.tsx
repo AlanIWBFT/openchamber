@@ -1,6 +1,6 @@
 import React from 'react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSync } from '@/sync/use-sync';
+import { usePrefetchSessionMessages } from '@/sync/use-sync';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { getGitHubPrStatusKey, useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
@@ -148,7 +148,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     if (sessionId === useSessionUIStore.getState().currentSessionId) return;
     setCurrentSession(sessionId, sessionDirectory);
   }, [setCurrentSession]);
-  const sync = useSync();
+  const prefetchSession = usePrefetchSessionMessages();
   const { buildGroupedSessions, filterSessionNodesForSearch, buildGroupSearchText } = useSessionGrouping({
     homeDirectory: view.homeDirectory,
     worktreeMetadata: topology.worktreeMetadata,
@@ -487,7 +487,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     <SessionPrefetchEffect
       sortedSessions={collection.orderedSessions}
       recentSessions={recentSessions}
-      prefetchSession={sync.prefetchSession}
+      prefetchSession={prefetchSession}
     />
     <SessionProjectScroller model={scrollerModel} view={scrollerView} actions={scrollerActionSet} />
     <SessionBulkActions
