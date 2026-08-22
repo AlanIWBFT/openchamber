@@ -164,6 +164,7 @@ export interface GitRemoteComparison {
 }
 
 export interface GitStatus {
+  isGitRepository?: boolean;
   current: string;
   tracking: string | null;
   ahead: number;
@@ -590,6 +591,7 @@ export interface GitAPI {
   checkIsGitRepository(directory: string): Promise<boolean>;
   getGitStatus(directory: string, options?: { mode?: 'light'; fresh?: boolean }): Promise<GitStatus>;
   getGitDiff(directory: string, options: GetGitDiffOptions): Promise<GitPathDiffResponse>;
+  getPassiveGitStatus?(directory: string, options?: { mode?: 'light' }): Promise<GitStatus>;
   getGitFileDiff(directory: string, options: GetGitFileDiffOptions): Promise<GitFileDiffResponse>;
   getGitRangeDiff?(directory: string, options: GetGitRangeDiffOptions): Promise<GitDiffResponse>;
   getGitRangeFiles?(directory: string, options: GetGitRangeFilesOptions): Promise<GitRangeFileEntry[]>;
