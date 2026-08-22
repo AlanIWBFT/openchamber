@@ -1606,6 +1606,12 @@ const spawnLocalServer = async () => {
   if (!lanAccessBlockedByEnterprise && !lanAccessBlockedByMissingPassword) {
     delete process.env.OPENCHAMBER_DESKTOP_LAN_ACCESS_BLOCKED_REASON;
   }
+  const processBroker = path.join(resourceRoot(), 'opencode-cli', 'OpenCode.ProcessBroker.exe');
+  if (process.platform === 'win32' && fs.statSync(processBroker, { throwIfNoEntry: false })?.isFile()) {
+    assignInjectedEnv(process.env, { OPENCHAMBER_PROCESS_BROKER_PATH: processBroker });
+  } else {
+    delete process.env.OPENCHAMBER_PROCESS_BROKER_PATH;
+  }
   if (!desktopUiPassword) {
     delete process.env.OPENCHAMBER_UI_PASSWORD;
   }
