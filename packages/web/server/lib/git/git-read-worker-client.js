@@ -1,4 +1,5 @@
 import { SHARE_ENV, Worker } from 'node:worker_threads';
+import { getProcessBrokerWorkerData } from './process-broker.js';
 
 export const GIT_READ_WORKER_UNAVAILABLE_CODE = 'GIT_READ_WORKER_UNAVAILABLE';
 const GIT_READ_WORKER_POOL_SIZE = 4;
@@ -20,10 +21,13 @@ const createWorkerError = (payload) => {
   return error;
 };
 
-const defaultCreateWorker = () => new Worker(
-  new URL('./git-read-worker.js', import.meta.url),
-  { env: SHARE_ENV },
-);
+const defaultCreateWorker = () => {
+  const workerData = getProcessBrokerWorkerData();
+  return new Worker(
+    new URL('./git-read-worker.js', import.meta.url),
+    { env: SHARE_ENV, ...(workerData && { workerData }) },
+  );
+};
 
 export class GitReadWorkerClient {
   constructor({ createWorker = defaultCreateWorker, poolSize = GIT_READ_WORKER_POOL_SIZE } = {}) {

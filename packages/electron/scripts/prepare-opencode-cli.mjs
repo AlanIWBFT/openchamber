@@ -16,6 +16,7 @@ const cacheRoot = path.join(electronRoot, '.cache', 'opencode-cli');
 const rootPackagePath = path.join(workspaceRoot, 'package.json');
 const sqliteFinalizerMarker = 'openchamber-sqlite-finalizer.capability';
 const windowsRecycleHelper = 'OpenCode.Windows.RecycleBin.dll';
+const windowsProcessBroker = 'OpenCode.ProcessBroker.exe';
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -178,9 +179,14 @@ const prepareFromLocalSource = ({ sourceRoot, version, targetArchitecture, outpu
   if (process.platform === 'win32' && !fs.statSync(builtRecycleHelper, { throwIfNoEntry: false })?.isFile()) {
     throw new Error(`Local OpenCode build is missing Windows Recycle Bin helper: ${builtRecycleHelper}`);
   }
+  const builtProcessBroker = path.join(path.dirname(builtBinary), windowsProcessBroker);
+  if (process.platform === 'win32' && !fs.statSync(builtProcessBroker, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Local OpenCode build is missing Windows process broker: ${builtProcessBroker}`);
+  }
   stageBinary(builtBinary, outputBinary, version);
   if (process.platform === 'win32') {
     fs.copyFileSync(builtRecycleHelper, path.join(outputDir, windowsRecycleHelper));
+    fs.copyFileSync(builtProcessBroker, path.join(outputDir, windowsProcessBroker));
   }
   fs.copyFileSync(builtMarker, path.join(outputDir, sqliteFinalizerMarker));
   console.log(`[electron] prepared local OpenCode CLI ${version}: ${outputBinary}`);
@@ -261,6 +267,7 @@ const main = async () => {
   const existingVersion = readBinaryVersion(outputBinary);
   if (existingVersion === version) {
     fs.rmSync(path.join(outputDir, sqliteFinalizerMarker), { force: true });
+    fs.rmSync(path.join(outputDir, windowsProcessBroker), { force: true });
     console.log(`[electron] bundled OpenCode CLI already prepared: ${outputBinary} (${version})`);
     return;
   }
@@ -284,6 +291,7 @@ const main = async () => {
 
   stageBinary(extractedBinary, outputBinary, version);
   fs.rmSync(path.join(outputDir, sqliteFinalizerMarker), { force: true });
+  fs.rmSync(path.join(outputDir, windowsProcessBroker), { force: true });
 
   const preparedVersion = readBinaryVersion(outputBinary);
   if (preparedVersion !== version) {
