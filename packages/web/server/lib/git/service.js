@@ -12,6 +12,7 @@ import {
 } from './git-binary.js';
 import { runGitReadWorkerTask } from './git-read-worker-client.js';
 import { runSharedGitReadTask } from './git-read-shared.js';
+import { execFileWithProcessBroker, getProcessBrokerSpawn } from './process-broker.js';
 
 const fsp = fs.promises;
 const require = createRequire(import.meta.url);
@@ -136,6 +137,10 @@ const createSimpleGit = (options) => {
 };
 
 const getGitBinary = () => resolveGitBinary();
+const execGitFileAsync = (args, options) => (
+  execFileWithProcessBroker(getGitBinary(), args, options)
+  || execFileAsync(getGitBinary(), args, options)
+);
 
 /**
  * Escape an SSH key path for use in core.sshCommand.
@@ -293,6 +298,11 @@ const createGit = async (directory, options = {}) => {
     unsafe,
     ...(timeout ? { timeout } : {}),
   };
+  const managedSpawn = getProcessBrokerSpawn();
+  if (managedSpawn) {
+    gitOptions.spawn = managedSpawn;
+    gitOptions.completion = { onClose: true, onExit: false };
+  }
   if (signal) {
     gitOptions.abort = signal;
   }
@@ -955,7 +965,7 @@ const runGitCommand = async (cwd, args, options = {}) => {
   try {
     const env = await buildGitEnv();
     throwIfGitReadCancelled(options);
-    const { stdout, stderr } = await execFileAsync(getGitBinary(), args, {
+    const { stdout, stderr } = await execGitFileAsync(args, {
       cwd,
       env,
       windowsHide: true,
@@ -3306,7 +3316,7 @@ const getFileDiffDirect = async (directory, options = {}) => {
     if (isImage) {
       // For images, use git show with raw output and convert to base64
       try {
-        const { stdout } = await execFileAsync(getGitBinary(), ['show', `HEAD:${repoPath}`], {
+        const { stdout } = await execGitFileAsync(['show', `HEAD:${repoPath}`], {
           cwd: repoRoot,
           encoding: 'buffer',
           windowsHide: true,
@@ -3334,7 +3344,7 @@ const getFileDiffDirect = async (directory, options = {}) => {
   try {
     if (staged) {
       if (isImage) {
-        const { stdout } = await execFileAsync(getGitBinary(), ['show', `:${repoPath}`], {
+        const { stdout } = await execGitFileAsync(['show', `:${repoPath}`], {
           cwd: repoRoot,
           encoding: 'buffer',
           windowsHide: true,
