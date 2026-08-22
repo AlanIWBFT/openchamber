@@ -44,9 +44,9 @@ export const useNestedGitDirectory = (
     gitDirectory && gitDirectory !== root ? gitDirectory : null,
   );
 
-  const { ensureStatus, ensureNestedRepos, selectNestedRepo, clearNestedRepoSelection } = useGitStore(
+  const { ensurePassiveStatus, ensureNestedRepos, selectNestedRepo, clearNestedRepoSelection } = useGitStore(
     useShallow((state) => ({
-      ensureStatus: state.ensureStatus,
+      ensurePassiveStatus: state.ensurePassiveStatus,
       ensureNestedRepos: state.ensureNestedRepos,
       selectNestedRepo: state.selectNestedRepo,
       clearNestedRepoSelection: state.clearNestedRepoSelection,
@@ -58,8 +58,8 @@ export const useNestedGitDirectory = (
   React.useEffect(() => {
     if (!enabled || !root) return;
     if (rootIsGitRepo !== null) return;
-    void ensureStatus(root, git);
-  }, [enabled, ensureStatus, git, root, rootIsGitRepo]);
+    void ensurePassiveStatus(root, git);
+  }, [enabled, ensurePassiveStatus, git, root, rootIsGitRepo]);
 
   // Discover nested repositories once the root probe confirms it is not one.
   React.useEffect(() => {

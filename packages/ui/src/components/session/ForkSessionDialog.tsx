@@ -51,7 +51,7 @@ export function ForkSessionDialog(props: ForkSessionDialogProps) {
   const resolvedWorktreeProjectDirectory = metadataProjectDirectory ?? worktreeProjectDirectory;
   const git = useRuntimeAPIs().git;
   const isGitRepository = useIsGitRepo(resolvedWorktreeProjectDirectory);
-  const ensureGitStatus = useGitStore((state) => state.ensureStatus);
+  const ensureGitStatus = useGitStore((state) => state.ensurePassiveStatus);
 
   const loadProviders = useConfigStore((state) => state.loadProviders);
   const loadConfigAgents = useConfigStore((state) => state.loadAgents);
