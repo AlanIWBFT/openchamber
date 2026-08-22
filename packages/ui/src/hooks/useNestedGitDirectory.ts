@@ -59,9 +59,9 @@ export const useNestedGitDirectory = (
     gitDirectory && gitDirectory !== root ? gitDirectory : null,
   );
 
-  const { ensureStatus, recheckRepository, ensureNestedRepos, selectNestedRepo, clearNestedRepoSelection } = useGitStore(
+  const { ensurePassiveStatus, recheckRepository, ensureNestedRepos, selectNestedRepo, clearNestedRepoSelection } = useGitStore(
     useShallow((state) => ({
-      ensureStatus: state.ensureStatus,
+      ensurePassiveStatus: state.ensurePassiveStatus,
       recheckRepository: state.recheckRepository,
       ensureNestedRepos: state.ensureNestedRepos,
       selectNestedRepo: state.selectNestedRepo,
@@ -74,8 +74,8 @@ export const useNestedGitDirectory = (
   React.useEffect(() => {
     if (!enabled || !root) return;
     if (rootIsGitRepo !== null) return;
-    void ensureStatus(root, git);
-  }, [enabled, ensureStatus, git, root, rootIsGitRepo]);
+    void ensurePassiveStatus(root, git);
+  }, [enabled, ensurePassiveStatus, git, root, rootIsGitRepo]);
 
   // A cached "not a repository" answer may be stale: `git init` in a terminal
   // or by an agent leaves no event behind. So may a cached "no commits yet"
