@@ -1,4 +1,4 @@
-## [Unreleased]
+## [1.20.0] - 2026-08-23
 
 - **/btw side questions:** type `/btw` followed by your question to ask something off-topic in a temporary session forked from the current conversation. The answer streams into a panel above the composer; collapse it, keep it as a full session, or discard it without touching the chat (thanks to @jaygupta17).
 - **Skills catalog:** browse curated GitHub skill collections in a card-based catalog with cross-source search and direct links to each skill's repository.
