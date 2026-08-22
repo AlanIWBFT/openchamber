@@ -70,7 +70,7 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
   const leaveWorkStatus = useLeaveWorkStatus();
   const openTrackerItem = useOpenTrackerItem();
   const { git } = useRuntimeAPIs();
-  const ensureStatus = useGitStore((state) => state.ensureStatus);
+  const ensureStatus = useGitStore((state) => state.ensurePassiveStatus);
   const fetchStatus = useGitStore((state) => state.fetchStatus);
   const clearDiffCache = useGitStore((state) => state.clearDiffCache);
 
