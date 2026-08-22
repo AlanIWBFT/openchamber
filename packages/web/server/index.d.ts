@@ -1,6 +1,14 @@
 import type { Express } from "express";
 import type { Server } from "http";
 
+export type OpenCodeStartupState =
+  | { phase: "idle" | "launching" | "migrating" | "ready" }
+  | { phase: "failed"; error: string };
+
+export type OpenCodeStartupResult =
+  | { status: "ready" }
+  | { status: "failed"; error: string };
+
 export interface WebUiServerController {
   expressApp: Express;
   httpServer: Server;
@@ -20,6 +28,9 @@ export interface WebUiServerController {
     };
   };
   isReady: () => boolean;
+  getOpenCodeStartupState: () => OpenCodeStartupState;
+  onOpenCodeStartupState: (listener: (state: OpenCodeStartupState) => void) => () => void;
+  waitForOpenCodeStartup: () => Promise<OpenCodeStartupResult>;
   restartOpenCode: () => Promise<void>;
   stop: (options?: { exitProcess?: boolean; deadline?: number }) => Promise<void>;
 }
