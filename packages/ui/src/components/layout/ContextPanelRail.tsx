@@ -241,7 +241,7 @@ export const ContextPanelRail: React.FC = () => {
   const gitDirectory = useEffectiveGitDirectory(gitRoot);
   const gitStatus = useGitStatus(gitDirectory);
   const { git } = useRuntimeAPIs();
-  const ensureGitStatus = useGitStore((state) => state.ensureStatus);
+  const ensureGitStatus = useGitStore((state) => state.ensurePassiveStatus);
   const fetchGitStatus = useGitStore((state) => state.fetchStatus);
   // The chat keeps the root's status warm and fresh; a remembered nested repository has nobody
   // reading it until its panel opens, so the badge reads it itself: once, and again on each

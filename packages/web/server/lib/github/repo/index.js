@@ -51,8 +51,7 @@ export async function resolveGitHubRepoFromDirectory(directory, remoteName = 'or
   // a host the user stored a per-host PAT for resolves. Any other host reports
   // `repo: null`, the same shape as a remote that is not GitHub, so every
   // route skips them and no token is ever minted for the host. This is the
-  // single choke point every remote resolution (and `resolveRemoteCandidates`
-  // per remote) passes through.
+  // same gate used by `resolveRemoteCandidates` after its batched remote read.
   return {
     repo: repo && (await isTrustedGitHubHostOrStored(repo.host)) ? repo : null,
     remoteUrl,

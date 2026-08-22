@@ -308,7 +308,7 @@ export function createGitHubResources({
     /** Cached contexts drop with their mutation's target, whichever directory read them. */
     invalidateContexts: (scope) => contextCache.invalidate(scope),
 
-    changeRequestStatus: async ({ session, directory, branch, remote, force = false }) => {
+    changeRequestStatus: async ({ session, directory, branch, remote, force = false }, { signal } = {}) => {
       const { octokit, user } = accountOf(session);
       const identity = identityOf(session);
       const { rateLimit } = await load();
@@ -321,7 +321,7 @@ export function createGitHubResources({
       try {
         const sourceRemoteName = await readContributorSourceRemote(directory, branch);
         const resolved = await resolvePrStatus({
-          octokit, directory, branch, remoteName: remote, sourceRemoteName, force, requestHost: hostRepo?.host,
+          octokit, directory, branch, remoteName: remote, sourceRemoteName, force, requestHost: hostRepo?.host, signal,
         });
         if (!resolved.repo) return noProject;
         const project = mapProject(resolved.repo, identity);

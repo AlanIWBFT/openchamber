@@ -76,7 +76,7 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
   const desktopProjectActionsContext = useProjectActionsContext();
   const projectActionsContext = mobile ? null : desktopProjectActionsContext;
   const { git } = useRuntimeAPIs();
-  const ensureStatus = useGitStore((state) => state.ensureStatus);
+  const ensureStatus = useGitStore((state) => state.ensurePassiveStatus);
   const fetchStatus = useGitStore((state) => state.fetchStatus);
   const clearDiffCache = useGitStore((state) => state.clearDiffCache);
 
