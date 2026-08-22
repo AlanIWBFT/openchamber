@@ -8,7 +8,7 @@ This package owns the native shell: windows, menus, deep links, native notificat
 
 Desktop starts the OpenChamber web server in the same Electron main process. There is no separate sidecar subprocess for the OpenChamber server.
 
-On Windows, latency-sensitive Git status, PR-context, and per-file diff reads are dispatched to a fixed pool of eight persistent Node Worker Threads owned by that in-process server. Each worker has a file-backed module entry but remains a thread inside `OpenChamber.exe`; none is another executable or helper process. This keeps security-product delays in Git process creation off the Electron main event loop while allowing eight independent reads to progress.
+On Windows, latency-sensitive Git status, PR-context, and per-file diff reads are dispatched to a fixed pool of four persistent Node Worker Threads owned by that in-process server. The workers share one persistent `OpenCode.ProcessBroker.exe`, staged with the local OpenCode CLI. The self-contained .NET 10 NativeAOT broker creates each Git process detached from a console and atomically assigns its complete process tree to a per-command Job Object. Worker Threads remain in-process; the broker owns only process creation, pipes, cancellation, and cleanup.
 
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
 
@@ -153,7 +153,10 @@ On Windows, a local fork build also stages `OpenCode.Windows.RecycleBin.dll`
 and `OpenCode.ProcessBroker.exe` beside `opencode.exe`, from the V2 CLI's
 `packages/cli/dist/cli-*/bin` output. PowerShell lanes use the managed DLL for
 Recycle Bin operations and lock diagnostics; the NativeAOT broker owns Git/rg
-process jobs. Local staged and packaged verification requires both helpers.
+process jobs for the CLI and OpenChamber's Git runtime. Local staged and packaged
+verification requires both helpers and checks the broker's target architecture,
+GUI subsystem, protocol 2 and NativeAOT identity. The broker needs no separately
+installed .NET runtime. Upstream archives without this sidecar use normal spawning.
 
 The Electron workspace package trusts Electron's install script so `bun install` downloads the platform runtime in fresh checkouts and worktrees.
 
