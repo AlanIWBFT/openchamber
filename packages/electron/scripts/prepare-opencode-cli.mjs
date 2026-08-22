@@ -150,6 +150,7 @@ const prepareFromLocalSource = ({ sourceRoot, version, targetArchitecture, outpu
 
   const args = ['run', '--cwd', opencodePackageRoot, 'build', '--single', `--target=${cliTarget.buildTarget}`];
   if (cliTarget.baseline) args.push('--baseline');
+  if (process.platform === 'win32') args.push('--windows-gui-subsystem');
   args.push('--skip-embed-web-ui');
   const channel = 'dev';
   const environment = {

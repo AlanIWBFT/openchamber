@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertWindowsGuiSubsystem } from './pe-subsystem.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
@@ -45,6 +46,9 @@ const assertBinary = (binaryPath, expectedVersion) => {
   }
   if (process.platform !== 'win32' && (stat.mode & 0o111) === 0) {
     throw new Error(`Bundled OpenCode CLI is not executable: ${binaryPath}`);
+  }
+  if (process.platform === 'win32' && process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) {
+    assertWindowsGuiSubsystem(binaryPath);
   }
   const actualVersion = runVersion(binaryPath);
   if (actualVersion !== expectedVersion) {
