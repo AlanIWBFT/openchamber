@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { clearAppImageArgv0FromProcessEnv } from '../inherited-env.js';
+import { resolveGitBinary } from '../git/git-binary.js';
 import { mergePathValues } from './path-utils.js';
 
 // Login-shell probes source the user's rc files. A slow or interactive rc
@@ -1135,78 +1136,10 @@ export const createOpenCodeEnvRuntime = (deps) => {
   };
 
   const resolveGitBinaryForSpawn = () => {
-    if (process.platform !== 'win32') {
-      return 'git';
-    }
-
     if (state.resolvedGitBinary) {
       return state.resolvedGitBinary;
     }
-
-    const explicit = [process.env.GIT_BINARY, process.env.OPENCHAMBER_GIT_BINARY]
-      .map((value) => (typeof value === 'string' ? value.trim() : ''))
-      .filter(Boolean);
-    for (const candidate of explicit) {
-      if (isExecutable(candidate)) {
-        state.resolvedGitBinary = candidate;
-        return state.resolvedGitBinary;
-      }
-    }
-
-    const candidates = [];
-    const normalizeGitCandidate = (candidate) => {
-      if (typeof candidate !== 'string') {
-        return '';
-      }
-      const trimmed = candidate.trim();
-      if (!trimmed) {
-        return '';
-      }
-      const ext = path.extname(trimmed).toLowerCase();
-      if (ext === '.cmd' || ext === '.bat' || ext === '.com') {
-        const exeCandidate = trimmed.slice(0, -ext.length) + '.exe';
-        if (isExecutable(exeCandidate)) {
-          return exeCandidate;
-        }
-      }
-      return trimmed;
-    };
-
-    const pathCandidate = normalizeGitCandidate(searchPathFor('git'));
-    if (pathCandidate && isExecutable(pathCandidate)) {
-      candidates.push(pathCandidate);
-    }
-
-    const pathExeCandidate = normalizeGitCandidate(searchPathFor('git.exe'));
-    if (pathExeCandidate && isExecutable(pathExeCandidate)) {
-      candidates.push(pathExeCandidate);
-    }
-
-    const programRoots = [
-      process.env.ProgramFiles,
-      process.env['ProgramFiles(x86)'],
-      process.env.LocalAppData,
-    ]
-      .map((value) => (typeof value === 'string' ? value.trim() : ''))
-      .filter(Boolean);
-    for (const root of programRoots) {
-      const installCandidates = [
-        path.join(root, 'Git', 'cmd', 'git.exe'),
-        path.join(root, 'Git', 'bin', 'git.exe'),
-        path.join(root, 'Git', 'mingw64', 'bin', 'git.exe'),
-        path.join(root, 'Programs', 'Git', 'cmd', 'git.exe'),
-        path.join(root, 'Programs', 'Git', 'bin', 'git.exe'),
-      ];
-      for (const candidate of installCandidates) {
-        const normalized = normalizeGitCandidate(candidate);
-        if (normalized && isExecutable(normalized)) {
-          candidates.push(normalized);
-        }
-      }
-    }
-
-    const preferredExe = candidates.find((candidate) => candidate.toLowerCase().endsWith('.exe'));
-    state.resolvedGitBinary = preferredExe || candidates[0] || 'git.exe';
+    state.resolvedGitBinary = resolveGitBinary();
     return state.resolvedGitBinary;
   };
 

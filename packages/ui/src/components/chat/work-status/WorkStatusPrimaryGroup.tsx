@@ -47,7 +47,7 @@ const formatPercent = (percent: number): string => `${Math.min(percent, 999).toF
 export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, goalRow, showSession, showRepository }) => {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
-  const ensureStatus = useGitStore((state) => state.ensureStatus);
+  const ensureStatus = useGitStore((state) => state.ensurePassiveStatus);
   const fetchStatus = useGitStore((state) => state.fetchStatus);
   const clearDiffCache = useGitStore((state) => state.clearDiffCache);
 

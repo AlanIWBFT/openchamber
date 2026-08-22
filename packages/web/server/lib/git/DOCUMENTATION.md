@@ -7,6 +7,10 @@ This module provides Git repository operations for the web server runtime, inclu
 - `packages/web/server/lib/git/`: Git module directory containing all Git-related functionality.
   - `index.js`: Public API entry point imported by `packages/web/server/index.js`.
   - `routes.js`: Express route registration for `/api/git/*` endpoints.
+  - `status-tasks.js`: Process-wide authoritative/passive status task coordination and timeout ownership for Git status routes.
+  - `git-binary.js`: Git executable validation and Git for Windows launcher-to-runtime resolution.
+  - `git-read-worker-client.js` / `git-read-worker.js`: Fixed pool of four persistent Windows Worker Threads for latency-sensitive Git status, PR-context, and per-file diff reads. These are in-process threads, not helper executables or sidecar processes.
+  - `git-read-shared.js`: In-flight coalescing with per-caller cancellation for narrow shared Git reads.
   - `service.js`: Core Git operations (repository, branch, worktree, commit, merge/rebase, status/diff, log).
   - `credentials.js`: Git credentials management.
   - `identity-storage.js`: Git identity (user.name, user.email) storage.
@@ -24,11 +28,17 @@ The following functions are exported and used by the web server:
 - `getRemoteUrl(directory, remoteName)`: Get URL for a specific remote.
 
 ### Status and Diff Operations
-- `getStatus(directory)`: Get comprehensive Git status including current branch, tracking, ahead/behind, file changes, diff stats, merge/rebase state.
+- `getStatus(directory)`: Get comprehensive Git status including current branch, tracking, ahead/behind, file changes, diff stats, merge/rebase state. One `rev-parse` resolves both the repository root and absolute Git metadata directory; merge/rebase metadata is then read from validated files rather than launching separate probes.
+- `getPrGitContext(directory, branch)`: Read only the branch tracking ref and configured remote URLs. It deliberately skips repository-root discovery, working-tree status, diff stats, and per-remote URL probes.
+- On Windows, automatically discovered `cmd\git.exe` and `bin\git.exe` launchers are resolved to an existing runtime executable under the same Git installation (`mingw64`, `mingw32`, `clangarm64`, or `ucrt64`). OpenChamber therefore spawns and aborts the actual Git process rather than an intermediate launcher. Explicit `GIT_BINARY` and `OPENCHAMBER_GIT_BINARY` values remain authoritative, apart from the existing adjacent `.cmd`/`.bat`/`.com` to `.exe` normalization.
+- On Windows, `getStatus`, `getPrGitContext`, and `getFileDiff` run through a fixed pool of four persistent Worker Threads. Each lane executes one read at a time, allowing up to four independent Git read chains without blocking Electron's main event loop. If an active read times out, only that lane opens its circuit; it is not terminated or replaced, and it reopens only after the blocked call returns and the worker acknowledges cancellation.
+- Queued work continues on healthy lanes. Requests receive HTTP 503 only when every lane is recovering. GitHub PR status serves its last cached value when available, preserving the existing badge during that recovery window.
+- `GET /api/git/status`: Authoritative status read. It always starts a new service load and never joins an older request, so mutation-triggered refreshes cannot receive a pre-mutation snapshot.
+- `GET /api/git/status/passive`: Passive mount/navigation read. Concurrent requests for the same directory and mode share one process-wide in-flight service task; completed results are not cached by the server. Every status task has a 30-second hard deadline. Expiry aborts the task's `simple-git` process and returns HTTP 504. On Windows, the timed-out lane cannot launch another Git process until that call has actually returned, while healthy lanes continue serving queued reads.
 - `getDiff(directory, { path, staged, contextLines })`: Get diff output for files or entire working tree. Untracked symbolic links are represented as link entries without following their targets.
 - `getRangeDiff(directory, { base, head, path, contextLines })`: Get diff between two refs. Uses three-dot `base...head` semantics, so work merged into `head` from `base` is excluded and only the branch's own changes are returned. Prefers `origin/<base>` when that remote-tracking ref exists, so a stale local base branch does not resurface already-merged commits. Exposed as `GET /api/git/range-diff` (`path` optional; omit it for the whole range).
 - `getRangeFiles(directory, { base, head })`: Get list of changed files between two refs.
-- `getFileDiff(directory, { path, staged })`: Get original and modified file contents for a single file (handles images as data URLs and symbolic links as their link-target text).
+- `getFileDiff(directory, { path, staged })`: Get original and modified file contents for a single file (handles images as data URLs and symbolic links as their link-target text). On Windows the complete repository discovery, file probing, binary detection, and content-read chain runs in the shared Git Worker pool, so its `rev-parse`, `cat-file`, `diff`, `ls-files`, and `show` process launches never fall back to Electron's main thread. The HTTP route has a 30-second hard deadline; expiry aborts the active lane, returns HTTP 504, and leaves that lane unavailable until its blocked process launch actually returns.
 - `listUntrackedPaths(directory)`: List individual untracked file paths honoring ignore rules. Much cheaper than `getStatus` when that is all a caller needs. Deliberately not `--directory`: collapsed directory entries end in a slash and are rejected by the per-file diff helpers, so a caller would silently lose every file inside a new directory.
 - `getUntrackedDiffs(directory, filePaths, { concurrency, contextLines })`: Diffs for untracked files against an empty tree. Resolves the repository context once instead of per file (`getDiff` re-resolves every call, costing an extra `rev-parse` each time) and bounds how many diff processes run at once. Returns one entry per input path in order; unreadable paths yield `''` rather than failing the batch.
 - `collectDiffs(directory, files)`: Collect diff output for multiple files.
@@ -109,6 +119,7 @@ The following functions are internal helpers used by exported functions:
 ## Response Contracts
 
 ### Status Response
+- `isGitRepository`: `true` for repository status and `false` for the soft non-repository response. Status clients use this result directly rather than issuing a separate repository probe.
 - `current`: Current branch name.
 - `tracking`: Upstream branch (e.g., 'origin/main').
 - `ahead`: Number of commits ahead of upstream.

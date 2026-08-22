@@ -8,6 +8,8 @@ This package owns the native shell: windows, menus, deep links, native notificat
 
 Desktop starts the OpenChamber web server in the same Electron main process. There is no separate sidecar subprocess for the OpenChamber server.
 
+On Windows, latency-sensitive Git status, PR-context, and per-file diff reads are dispatched to a fixed pool of eight persistent Node Worker Threads owned by that in-process server. Each worker has a file-backed module entry but remains a thread inside `OpenChamber.exe`; none is another executable or helper process. This keeps security-product delays in Git process creation off the Electron main event loop while allowing eight independent reads to progress.
+
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
 
 Same-origin session-chat iframes complete an authenticated parent-frame handshake before creating their SDK client. The parent supplies its active in-memory endpoint and credentials; when relay is active it also supplies the public relay descriptor without any pairing grant, because Electron preload and IPC are unavailable inside the iframe. The iframe establishes its own transport and rebinds its SDK before rendering. Additional windows retain their own per-window runtime bootstrap instead of being overwritten by the main window. Credentials are never placed in iframe URLs, and other child pages do not receive this runtime state.

@@ -1,7 +1,16 @@
 import { stat } from 'node:fs/promises';
-import { getRemotes, getStatus } from '../git/index.js';
-import { resolveGitHubRepoFromDirectory } from './repo/index.js';
+import { getPrGitContext } from '../git/index.js';
+import { parseGitHubRemoteUrl } from './repo/index.js';
 import { noteIfGitHubRateLimit } from './rate-limit.js';
+
+const throwIfAborted = (signal) => {
+  if (!signal?.aborted) {
+    return;
+  }
+  throw signal.reason instanceof Error
+    ? signal.reason
+    : Object.assign(new Error('PR status resolution cancelled'), { code: 'ABORT_ERR' });
+};
 
 const directoryExists = async (dir) => {
   if (!dir) return false;
@@ -235,21 +244,13 @@ const getRepoMetadata = async (octokit, repo) => {
   }
 };
 
-const resolveRemoteCandidates = async (directory, rankedRemoteNames) => {
-  // Resolve every ranked remote concurrently — they're independent git lookups.
-  // Dedup afterwards in rank order so the result is identical to the previous
-  // sequential pass, just without paying each lookup's latency back-to-back.
-  const resolvedRemotes = await Promise.all(
-    rankedRemoteNames.map((remoteName) =>
-      resolveGitHubRepoFromDirectory(directory, remoteName)
-        .then((resolved) => ({ remoteName, repo: resolved?.repo || null }))
-        .catch(() => ({ remoteName, repo: null })),
-    ),
-  );
-
+const resolveRemoteCandidates = (remotes, rankedRemoteNames) => {
+  const remotesByName = new Map(remotes.map((remote) => [remote.name, remote]));
   const results = [];
   const seenRepoKeys = new Set();
-  for (const { remoteName, repo } of resolvedRemotes) {
+  for (const remoteName of rankedRemoteNames) {
+    const remote = remotesByName.get(remoteName);
+    const repo = parseGitHubRemoteUrl(remote?.fetchUrl || remote?.pushUrl || '');
     const repoKey = normalizeRepoKey(repo?.owner, repo?.repo);
     if (!repo || !repoKey || seenRepoKeys.has(repoKey)) {
       continue;
@@ -632,7 +633,8 @@ const findBranchPrCandidates = async ({ octokit, target, branch, sourceCandidate
 // Exported for focused unit tests of open-versus-historical branch matching.
 export { findBranchPrCandidates };
 
-export async function resolveGitHubPrStatus({ octokit, directory, branch, remoteName, force = false }) {
+export async function resolveGitHubPrStatus({ octokit, directory, branch, remoteName, force = false, signal }) {
+  throwIfAborted(signal);
   // A deleted worktree can still have a session in the sidebar that keeps
   // requesting its PR status. Bail before touching git or GitHub for a
   // directory that no longer exists — otherwise every poll spends a git call
@@ -644,13 +646,12 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
   const normalizedBranch = normalizeText(branch);
   const normalizedRemoteName = normalizeText(remoteName) || 'origin';
 
-  const [status, remotes] = await Promise.all([
-    getStatus(directory).catch(() => null),
-    getRemotes(directory).catch(() => []),
-  ]);
+  const gitContext = await getPrGitContext(directory, normalizedBranch, { signal });
+  throwIfAborted(signal);
+  const remotes = Array.isArray(gitContext.remotes) ? gitContext.remotes : [];
 
-  const trackingRemoteName = parseTrackingRemoteName(status?.tracking);
-  const trackingBranchName = parseTrackingBranchName(status?.tracking);
+  const trackingRemoteName = parseTrackingRemoteName(gitContext.tracking);
+  const trackingBranchName = parseTrackingBranchName(gitContext.tracking);
   const branchCandidates = [];
   pushUnique(branchCandidates, normalizedBranch);
   pushUnique(branchCandidates, trackingBranchName);
@@ -660,7 +661,8 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
     trackingRemoteName,
   );
 
-  const resolvedRemoteTargets = await resolveRemoteCandidates(directory, rankedRemoteNames);
+  const resolvedRemoteTargets = resolveRemoteCandidates(remotes, rankedRemoteNames);
+  throwIfAborted(signal);
   const resolvedTargets = await expandRepoNetwork(
     octokit,
     resolvedRemoteTargets.map((target, index) => ({ ...target, priority: index })),
@@ -691,6 +693,7 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
   let fallbackRepo = resolvedTargets[0].repo;
   let fallbackRemoteName = resolvedTargets[0].remoteName;
   let fallbackDefaultBranch = await getRepoDefaultBranch(octokit, fallbackRepo);
+  throwIfAborted(signal);
 
   // The first closed/merged PR found, in target priority order. It is only
   // returned once every target has been checked for an open PR, so an open
@@ -698,6 +701,7 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
   let historicalMatch = null;
 
   for (const target of resolvedTargets) {
+    throwIfAborted(signal);
     const defaultBranch = await getRepoDefaultBranch(octokit, target.repo);
     if (!fallbackRepo) {
       fallbackRepo = target.repo;
@@ -707,6 +711,7 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
 
     const hasCrossRepoSource = sourceCandidates.some((candidate) => normalizeRepoKey(candidate.repo?.owner, candidate.repo?.repo) !== normalizeRepoKey(target.repo?.owner, target.repo?.repo));
     for (const candidateBranch of branchCandidates) {
+      throwIfAborted(signal);
       if (defaultBranch && defaultBranch === candidateBranch && !hasCrossRepoSource) {
         continue;
       }
@@ -726,6 +731,7 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
         coverage,
         includeHistory: isPrimaryAssociation,
       });
+      throwIfAborted(signal);
       if (open) {
         return {
           repo: target.repo,
@@ -746,6 +752,7 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
   }
 
   for (const candidateBranch of branchCandidates) {
+    throwIfAborted(signal);
     if (coverage.authoritative) {
       break;
     }
