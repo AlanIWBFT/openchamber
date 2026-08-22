@@ -196,6 +196,7 @@
   },
   "patchedDependencies": {
     "@tanstack/virtual-core@3.17.3": "bun-patches/@tanstack+virtual-core+3.17.3.patch",
-    "bun-pty@0.4.8": "bun-patches/bun-pty@0.4.8.patch"
+    "bun-pty@0.4.8": "bun-patches/bun-pty@0.4.8.patch",
+    "simple-git@3.36.0": "bun-patches/simple-git@3.36.0.patch"
   }
 }
