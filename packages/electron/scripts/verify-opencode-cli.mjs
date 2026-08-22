@@ -3,13 +3,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseOpenCodeCliVersion, readPinnedOpenCodeCliVersion } from './opencode-cli-version.mjs';
-import { resolveTargetArchitecture } from './target-architecture.mjs';
+import { resolveOpenCodeCliTarget, resolveTargetArchitecture } from './target-architecture.mjs';
 import { readPeArchitecture } from './windows-executable.mjs';
 import { requireOpenCodeNativeHelpers } from './opencode-native-helpers.mjs';
+import { detectExecutableArch } from './ensure-electron.mjs';
 import { assertWindowsGuiSubsystem } from './pe-subsystem.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
+const windowsProcessBroker = 'OpenCode.ProcessBroker.exe';
+const windowsProcessBrokerProtocol = '2';
+const windowsProcessBrokerRuntime = 'nativeaot';
 
 const binaryName = () => process.platform === 'win32' ? 'opencode.exe' : 'opencode';
 
@@ -61,6 +65,43 @@ const assertBinary = (binaryPath, expectedVersion) => {
   console.log(`[electron] verified bundled OpenCode CLI ${actualVersion}: ${binaryPath}`);
 };
 
+const assertWindowsProcessBroker = (binaryPath) => {
+  if (process.platform !== 'win32') return;
+  const broker = path.join(path.dirname(binaryPath), windowsProcessBroker);
+  if (!fs.statSync(broker, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Bundled OpenCode CLI is missing the Windows process broker: ${broker}`);
+  }
+  const expectedArchitecture = resolveOpenCodeCliTarget({
+    platform: process.platform,
+    targetArchitecture: resolveTargetArchitecture(),
+  }).architecture;
+  const actualArchitecture = detectExecutableArch(broker);
+  if (actualArchitecture !== expectedArchitecture) {
+    throw new Error(`Windows process broker architecture mismatch: expected ${expectedArchitecture}, got ${actualArchitecture || '(unknown)'}: ${broker}`);
+  }
+  assertWindowsGuiSubsystem(broker);
+  const protocol = spawnSync(broker, ['--protocol-version'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 15000,
+    windowsHide: true,
+  });
+  if (protocol.status !== 0 || protocol.stdout.trim() !== windowsProcessBrokerProtocol) {
+    const detail = protocol.error?.message || protocol.stderr.trim() || protocol.stdout.trim() || `exit ${protocol.status}`;
+    throw new Error(`Windows process broker protocol/runtime check failed: expected ${windowsProcessBrokerProtocol}, got ${detail}: ${broker}`);
+  }
+  const runtime = spawnSync(broker, ['--runtime-kind'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 15000,
+    windowsHide: true,
+  });
+  if (runtime.status !== 0 || runtime.stdout.trim() !== windowsProcessBrokerRuntime) {
+    const detail = runtime.error?.message || runtime.stderr.trim() || runtime.stdout.trim() || `exit ${runtime.status}`;
+    throw new Error(`Windows process broker must be NativeAOT: expected ${windowsProcessBrokerRuntime}, got ${detail}: ${broker}`);
+  }
+};
+
 const findPackagedBinaries = () => {
   const distDir = path.join(electronRoot, 'dist');
   if (!fs.existsSync(distDir)) return [];
@@ -100,6 +141,7 @@ const main = () => {
     assertBinary(binaryPath, expectedVersion);
     if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) {
       requireOpenCodeNativeHelpers(binaryPath);
+      assertWindowsProcessBroker(binaryPath);
     }
     return;
   }
@@ -112,6 +154,7 @@ const main = () => {
     assertBinary(packagedBinary, expectedVersion);
     if (process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR?.trim()) {
       requireOpenCodeNativeHelpers(packagedBinary);
+      assertWindowsProcessBroker(packagedBinary);
     }
   }
 };
