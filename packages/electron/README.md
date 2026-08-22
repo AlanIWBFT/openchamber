@@ -12,6 +12,13 @@ On Windows, latency-sensitive Git status, PR-context, and per-file diff reads ar
 
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
 
+For a local runtime, the startup page remains authoritative until the managed
+OpenCode bootstrap reports ready. OpenCode database migrations are shown on the
+startup page and may run longer than the normal server-listening timeout without
+being killed. A migration/startup failure stays outside the application UI and
+offers an explicit retry or quit choice. A configured reachable remote runtime
+does not wait for the local managed OpenCode bootstrap.
+
 Same-origin session-chat iframes complete an authenticated parent-frame handshake before creating their SDK client. The parent supplies its active in-memory endpoint and credentials; when relay is active it also supplies the public relay descriptor without any pairing grant, because Electron preload and IPC are unavailable inside the iframe. The iframe establishes its own transport and rebinds its SDK before rendering. Additional windows retain their own per-window runtime bootstrap instead of being overwritten by the main window. Credentials are never placed in iframe URLs, and other child pages do not receive this runtime state.
 
 The preload bridge exposes desktop-only APIs to the web UI through `window.__OPENCHAMBER_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI.
