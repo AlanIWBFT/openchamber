@@ -146,8 +146,8 @@ Important properties:
 
 - `directories: Map<string, DirectoryGitState>` is the source of truth
 - loading state is per-directory, not global
-- `ensureStatus()` and `ensureAll()` are the preferred entry points for consumers
-- in-flight dedupe exists for status and `ensureAll()`
+- `ensurePassiveStatus()` and `ensureAll()` are the preferred entry points for mounted consumers; explicit mutations use authoritative `fetchStatus()` reconciliation
+- in-flight dedupe exists for passive status demand and `ensureAll()`
 - runtime reset replaces all live entries with that runtime's persisted branch seeds and invalidates old completions
 - status, branches, log, identity, repository probes, and prefetch diffs commit through runtime and per-channel generations
 - status mutations advance a revision so older refreshes cannot undo optimistic or confirmed index changes

@@ -331,11 +331,40 @@ describe('symlink diffs', () => {
   });
 });
 
+describe.runIf(canRunGit())('getFileDiff', () => {
+  it('returns tracked and working-tree contents through the runtime path', async () => {
+    const { tmpDir, git } = await createTempRepo();
+    await writeFile(tmpDir, 'file.txt', 'before\n');
+    await git.add('file.txt');
+    await git.commit('Initial');
+    await writeFile(tmpDir, 'file.txt', 'after\n');
+
+    await expect(getFileDiff(tmpDir, { path: 'file.txt' })).resolves.toEqual({
+      original: 'before\n',
+      modified: 'after\n',
+      path: 'file.txt',
+      isBinary: false,
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // getStatus
 // ---------------------------------------------------------------------------
 
 describe('getStatus', () => {
+  it('honors an abort signal before starting Git status work', async () => {
+    if (!canRunGit()) return;
+
+    const repo = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    const controller = new AbortController();
+    const reason = Object.assign(new Error('Git status timed out'), { code: 'GIT_STATUS_TIMEOUT' });
+    controller.abort(reason);
+
+    await expect(getStatus(repo, { signal: controller.signal })).rejects.toBe(reason);
+  });
+
   it('handles repositories without upstream tracking', async () => {
     if (!canRunGit()) return;
 
@@ -384,6 +413,70 @@ describe('getStatus', () => {
     } finally {
       process.chdir(previousCwd);
     }
+  });
+
+  it('reads merge and rebase state from the repository metadata directory', async () => {
+    if (!canRunGit()) return;
+
+    const repo = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
+    runGit(repo, ['add', 'README.md']);
+    runGit(repo, ['commit', '-m', 'Initial commit']);
+    const head = runGit(repo, ['rev-parse', 'HEAD']).trim();
+    const gitDir = path.join(repo, '.git');
+
+    fs.writeFileSync(path.join(gitDir, 'MERGE_HEAD'), `${head}\n`);
+    fs.writeFileSync(path.join(gitDir, 'MERGE_MSG'), 'Merge test branch\n\nDetails\n');
+    const mergeStatus = await getStatus(repo);
+    expect(mergeStatus.mergeInProgress).toEqual({
+      head: head.slice(0, 7),
+      message: 'Merge test branch',
+    });
+
+    fs.writeFileSync(path.join(gitDir, 'MERGE_HEAD'), 'not-an-object-id\n');
+    await expect(getStatus(repo)).resolves.toMatchObject({ mergeInProgress: null });
+
+    fs.rmSync(path.join(gitDir, 'MERGE_HEAD'));
+    fs.rmSync(path.join(gitDir, 'MERGE_MSG'));
+    const rebaseDir = path.join(gitDir, 'rebase-merge');
+    fs.mkdirSync(rebaseDir);
+    fs.writeFileSync(path.join(rebaseDir, 'head-name'), 'refs/heads/feature\n');
+    fs.writeFileSync(path.join(rebaseDir, 'onto'), `${head}\n`);
+    const rebaseStatus = await getStatus(repo);
+    expect(rebaseStatus.rebaseInProgress).toEqual({
+      headName: 'feature',
+      onto: head.slice(0, 7),
+    });
+  });
+
+  it('reads operation state from a linked worktree git directory', async () => {
+    if (!canRunGit()) return;
+
+    const repo = createTempDir();
+    const worktree = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
+    runGit(repo, ['add', 'README.md']);
+    runGit(repo, ['commit', '-m', 'Initial commit']);
+    const head = runGit(repo, ['rev-parse', 'HEAD']).trim();
+    fs.rmSync(worktree, { recursive: true, force: true });
+    runGit(repo, ['worktree', 'add', '-b', 'feature/status-test', worktree, 'HEAD']);
+    const gitDir = path.resolve(runGit(worktree, ['rev-parse', '--absolute-git-dir']).trim());
+
+    fs.writeFileSync(path.join(gitDir, 'MERGE_HEAD'), `${head}\n`);
+    fs.writeFileSync(path.join(gitDir, 'MERGE_MSG'), 'Linked worktree merge\n');
+
+    await expect(getStatus(worktree)).resolves.toMatchObject({
+      mergeInProgress: {
+        head: head.slice(0, 7),
+        message: 'Linked worktree merge',
+      },
+    });
   });
 
   it('supports a folder with nested git repositories from a foreign cwd', async () => {

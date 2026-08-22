@@ -119,6 +119,25 @@ export async function checkIsGitRepository(directory: string): Promise<boolean> 
 export async function getGitStatus(directory: string, options?: { mode?: 'light' }): Promise<GitStatus> {
   const mode = options?.mode;
   const runtimeKey = getRuntimeKey();
+  invalidateGitStatusCache(directory);
+  const cacheVersion = getStatusCacheVersion(runtimeKey, directory);
+  const response = await runtimeFetch(buildUrl(`${API_BASE}/status`, directory, mode ? { mode } : undefined));
+  if (!response.ok) {
+    throw new Error(`Failed to get git status: ${response.statusText}`);
+  }
+  const payload = await response.json() as GitStatus;
+  if (getStatusCacheVersion(runtimeKey, directory) === cacheVersion) {
+    gitStatusCache.set(getStatusCacheKey(runtimeKey, directory, mode), {
+      value: payload,
+      expiresAt: Date.now() + GIT_STATUS_CACHE_TTL_MS,
+    });
+  }
+  return payload;
+}
+
+export async function getPassiveGitStatus(directory: string, options?: { mode?: 'light' }): Promise<GitStatus> {
+  const mode = options?.mode;
+  const runtimeKey = getRuntimeKey();
   const key = getStatusCacheKey(runtimeKey, directory, mode);
   const now = Date.now();
   const cached = gitStatusCache.get(key);
@@ -133,7 +152,7 @@ export async function getGitStatus(directory: string, options?: { mode?: 'light'
 
   const task = (async () => {
     const cacheVersion = getStatusCacheVersion(runtimeKey, directory);
-    const response = await runtimeFetch(buildUrl(`${API_BASE}/status`, directory, mode ? { mode } : undefined));
+    const response = await runtimeFetch(buildUrl(`${API_BASE}/status/passive`, directory, mode ? { mode } : undefined));
     if (!response.ok) {
       throw new Error(`Failed to get git status: ${response.statusText}`);
     }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   getGitBranches,
+  getPassiveGitStatus,
   getGitStatus,
   gitFetch,
   stageGitFile,
@@ -120,7 +121,7 @@ describe('gitApiHttp index mutations', () => {
 });
 
 describe('gitApiHttp status cache', () => {
-  test('invalidates cached status after fetch', async () => {
+  test('invalidates cached passive status after fetch', async () => {
     installWindowMock();
     const calls: FetchCall[] = [];
     let statusRequestCount = 0;
@@ -149,19 +150,69 @@ describe('gitApiHttp status cache', () => {
 
     try {
       const directory = '/repo-cache-fetch';
-      const first = await getGitStatus(directory);
-      const cached = await getGitStatus(directory);
+      const first = await getPassiveGitStatus(directory);
+      const cached = await getPassiveGitStatus(directory);
       await gitFetch(directory, { remote: 'origin' });
-      const afterFetch = await getGitStatus(directory);
+      const afterFetch = await getPassiveGitStatus(directory);
 
       expect(first.behind).toBe(0);
       expect(cached.behind).toBe(0);
       expect(afterFetch.behind).toBe(2);
       expect(statusRequestCount).toBe(2);
       expect(calls.map((call) => String(call.input))).toEqual([
-        '/api/git/status?directory=%2Frepo-cache-fetch',
+        '/api/git/status/passive?directory=%2Frepo-cache-fetch',
         '/api/git/fetch?directory=%2Frepo-cache-fetch',
-        '/api/git/status?directory=%2Frepo-cache-fetch',
+        '/api/git/status/passive?directory=%2Frepo-cache-fetch',
+      ]);
+    } finally {
+      restoreMocks();
+    }
+  });
+
+  test('does not cache authoritative status reads', async () => {
+    installWindowMock();
+    const calls = installFetchMock();
+    try {
+      await getGitStatus('/repo-authoritative');
+      await getGitStatus('/repo-authoritative');
+
+      expect(calls.map((call) => String(call.input))).toEqual([
+        '/api/git/status?directory=%2Frepo-authoritative',
+        '/api/git/status?directory=%2Frepo-authoritative',
+      ]);
+    } finally {
+      restoreMocks();
+    }
+  });
+
+  test('publishes an authoritative result over an older passive cache entry', async () => {
+    installWindowMock();
+    const calls: FetchCall[] = [];
+    let requestCount = 0;
+    globalThis.fetch = (async (input, init) => {
+      calls.push({ input, init });
+      requestCount += 1;
+      return new Response(JSON.stringify({
+        current: requestCount === 1 ? 'old' : 'fresh',
+        tracking: null,
+        ahead: 0,
+        behind: 0,
+        files: [],
+        isClean: true,
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const directory = '/repo-authoritative-publish';
+      expect((await getPassiveGitStatus(directory)).current).toBe('old');
+      expect((await getGitStatus(directory)).current).toBe('fresh');
+      expect((await getPassiveGitStatus(directory)).current).toBe('fresh');
+      expect(calls.map((call) => String(call.input))).toEqual([
+        '/api/git/status/passive?directory=%2Frepo-authoritative-publish',
+        '/api/git/status?directory=%2Frepo-authoritative-publish',
       ]);
     } finally {
       restoreMocks();

@@ -416,7 +416,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const currentGitStatus = useGitStore((state) =>
         currentDirectory ? state.directories.get(currentDirectory)?.status ?? null : null,
     );
-    const ensureGitStatus = useGitStore((state) => state.ensureStatus);
+    const ensureGitStatus = useGitStore((state) => state.ensurePassiveStatus);
     const fetchGitStatus = useGitStore((state) => state.fetchStatus);
     const clearGitDiffCache = useGitStore((state) => state.clearDiffCache);
     const setSessionAutoAccept = usePermissionStore((state) => state.setSessionAutoAccept);
