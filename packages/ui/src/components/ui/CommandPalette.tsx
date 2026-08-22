@@ -169,7 +169,7 @@ export const CommandPalette: React.FC = () => {
   const effectiveDirectory = useEffectiveDirectory();
   const searchFiles = useFileSearchStore((s) => s.searchFiles);
   const { files: filesApi, git: gitApi } = useRuntimeAPIs();
-  const ensureGitStatus = useGitStore((s) => s.ensureStatus);
+  const ensureGitStatus = useGitStore((s) => s.ensurePassiveStatus);
   const { isMobile } = useDeviceInfo();
   const projectActions = useProjectActions();
   // Run or Stop must match what the action is doing now.

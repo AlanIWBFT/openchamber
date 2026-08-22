@@ -28,11 +28,15 @@ import { isProviderUsername } from './provider-id.js';
 const STATUS_CACHE_TTL_MS = 90_000;
 const STATUS_RESOLVE_TIMEOUT_MS = 12_000;
 
-const withTimeout = async (promise, timeoutMs, label) => {
+const withTimeout = async (task, timeoutMs, label) => {
   let timer;
+  const controller = new AbortController();
+  const promise = Promise.resolve().then(() => task(controller.signal));
   const timeout = new Promise((_resolve, reject) => {
     timer = setTimeout(() => {
-      reject(Object.assign(new Error(`${label} timed out after ${timeoutMs}ms`), { code: 'ETIMEDOUT' }));
+      const error = Object.assign(new Error(`${label} timed out after ${timeoutMs}ms`), { code: 'ETIMEDOUT' });
+      controller.abort(error);
+      reject(error);
     }, timeoutMs);
     timer.unref?.();
   });
@@ -389,6 +393,7 @@ export function registerProviderRoutes(app, {
     };
 
     const isTransientFailure = (impl, error) => {
+      if (error?.code === 'ETIMEDOUT' || error?.code === 'GIT_READ_WORKER_UNAVAILABLE') return true;
       const upstreamStatus = upstreamStatusOf(error);
       if (upstreamStatus === 429 || (Number.isInteger(upstreamStatus) && upstreamStatus >= 500)) return true;
       if (Number.isInteger(upstreamStatus)) return false;
@@ -668,7 +673,7 @@ export function registerProviderRoutes(app, {
       const started = statusCache.begin();
       try {
         const status = await withTimeout(
-          impl.resources.changeRequestStatus({ session, context: trustedContext, directory, branch, remote, force }),
+          (signal) => impl.resources.changeRequestStatus({ session, context: trustedContext, directory, branch, remote, force }, { signal }),
           STATUS_RESOLVE_TIMEOUT_MS,
           `${label} change request status`,
         );

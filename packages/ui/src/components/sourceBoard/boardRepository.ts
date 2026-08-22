@@ -187,12 +187,12 @@ function useFolderRepositories(root: string | null) {
     const { git } = useRuntimeAPIs();
     const rootIsGitRepo = useIsGitRepo(root);
     const nestedRepos = useNestedRepos(root);
-    const ensureStatus = useGitStore((state) => state.ensureStatus);
+    const ensurePassiveStatus = useGitStore((state) => state.ensurePassiveStatus);
     const ensureNestedRepos = useGitStore((state) => state.ensureNestedRepos);
 
     React.useEffect(() => {
-        if (root && rootIsGitRepo === null) void ensureStatus(root, git);
-    }, [ensureStatus, git, root, rootIsGitRepo]);
+        if (root && rootIsGitRepo === null) void ensurePassiveStatus(root, git);
+    }, [ensurePassiveStatus, git, root, rootIsGitRepo]);
     React.useEffect(() => {
         if (root && rootIsGitRepo === false) void ensureNestedRepos(root);
     }, [ensureNestedRepos, root, rootIsGitRepo]);
