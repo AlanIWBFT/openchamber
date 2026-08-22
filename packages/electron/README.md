@@ -243,6 +243,8 @@ source builds retain the sibling fallback
 targets are non-baseline; release downloads remain baseline. The builder is
 invoked directly rather than through a package script that could select another
 Bun from PATH.
+The staged and packaged local-source verifier rejects Windows console-subsystem
+CLI artifacts before executing their version check.
 
 Managed local Desktop startup prefers OpenCode binaries in this order:
 
