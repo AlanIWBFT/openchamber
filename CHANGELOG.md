@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Desktop/Remote instances: disconnecting from a connection set to not keep the server running now actually stops that remote server.
 - Chat: in a chat without a project, the work status card again steps aside when the context panel is open, instead of sitting next to it.
 - Settings/General: changing the default model, variant or agent no longer repoints an open chat that already carries a model you picked for it. Chats following the default still switch immediately.
+- Settings/Projects: a project can now pin a thinking level next to its model, for models that offer levels. Both sit in one Defaults for new chats group, laid out like the Sessions defaults.
 - **Settings:** the project selector on Providers, Agents, MCP, Commands and Skills now only changes what those pages show. It used to switch the whole app, so opening another project's configuration moved your chat, session list and file tree with it.
 - Settings/Providers: the provider you select no longer jumps to a different one on its own. Changing the chat's model or agent, and background provider refreshes, used to move the settings selection with them.
 - **Chat sessions:** start chats without choosing a project. They live in their own Chats section, rather than inheriting a project's repository and worktree context.

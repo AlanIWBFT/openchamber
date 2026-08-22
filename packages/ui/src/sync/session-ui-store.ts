@@ -1181,6 +1181,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     void activateConfigForDirectory(configDirectory).then(() => {
       useConfigStore.getState().applyDefaultModelAgentSelection({
         projectDefaultModel: selectedProject?.defaultModel,
+        projectDefaultVariant: selectedProject?.defaultVariant,
       })
     })
 

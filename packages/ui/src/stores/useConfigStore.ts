@@ -291,6 +291,7 @@ const resolveDefaultAgentModelSelection = ({
     agents,
     providers,
     projectDefaultModel,
+    projectDefaultVariant,
     settingsDefaultAgent,
     settingsDefaultModel,
     settingsDefaultVariant,
@@ -300,6 +301,7 @@ const resolveDefaultAgentModelSelection = ({
     agents: Agent[];
     providers: ProviderWithModelList[];
     projectDefaultModel?: string;
+    projectDefaultVariant?: string;
     settingsDefaultAgent?: string;
     settingsDefaultModel?: string;
     settingsDefaultVariant?: string;
@@ -355,7 +357,9 @@ const resolveDefaultAgentModelSelection = ({
         if (parsed && hasProviderModel(providers, parsed.providerId, parsed.modelId)) {
             providerId = parsed.providerId;
             modelId = parsed.modelId;
-            variant = resolveVariant(providerId, modelId, projectDefaultModel ? undefined : settingsDefaultVariant);
+            // A project default carries its own variant; the settings variant
+            // belongs to the settings model and must not leak onto it.
+            variant = resolveVariant(providerId, modelId, projectDefaultModel ? projectDefaultVariant : settingsDefaultVariant);
         }
     }
 
@@ -1097,7 +1101,7 @@ interface ConfigStore {
     cycleCurrentVariant: () => void;
     getCurrentModelVariants: () => string[];
     setAgent: (agentName: string | undefined) => void;
-    applyDefaultModelAgentSelection: (options?: { projectDefaultModel?: string }) => void;
+    applyDefaultModelAgentSelection: (options?: { projectDefaultModel?: string; projectDefaultVariant?: string }) => void;
     applyOpenCodeConfigDefaults: (directory?: string | null, source?: string, config?: Config) => void;
     setSelectedProvider: (providerId: string) => void;
     setSettingsDefaultModel: (model: string | undefined) => void;
@@ -2603,6 +2607,7 @@ export const useConfigStore = create<ConfigStore>()(
                         agents,
                         providers,
                         projectDefaultModel: options?.projectDefaultModel,
+                        projectDefaultVariant: options?.projectDefaultVariant,
                         settingsDefaultAgent,
                         settingsDefaultModel,
                         settingsDefaultVariant,
