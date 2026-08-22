@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { resolveBunExecutable } from './bun-executable.mjs';
+import { explicitServiceBundler } from './service-bundler.mjs';
 import { forkInputsCurrent, sourceRootFor } from './fork-server-inputs.mjs';
 
 // Bundling takes seconds and the native packages are small; past this, the network is the problem.
@@ -27,20 +28,22 @@ const stagedFor = (dir, version) => {
 // Stages the server for this machine when the checkout has none, or one for another version or target.
 // A failure throws at once with what to run by hand: preparing downloads the native packages from npm.
 export const ensureBundledOpenCodeServer = (repoRoot, source, callerEnv = process.env) => {
+  const bundler = explicitServiceBundler(callerEnv);
   const electronDir = path.join(repoRoot, 'packages', 'electron');
   const dir = path.join(electronDir, 'resources', 'opencode-server');
   const version = readJson(path.join(electronDir, 'package.json')).devDependencies['@opencode/server'];
   const current = () => {
     const manifest = stagedFor(dir, version);
-    return manifest && (!source || forkInputsCurrent(electronDir, source, manifest));
+    return manifest && (!source || forkInputsCurrent(electronDir, source, manifest, bundler));
   };
   if (current()) return dir;
   const env = { ...callerEnv };
+  if (bundler) env.OPENCHAMBER_OPENCODE_BUN_RUNTIME = bundler;
   if (source) env.OPENCHAMBER_OPENCODE_SOURCE_DIR = source;
   delete env.OPENCHAMBER_TARGET_ARCH;
   delete env.ELECTRON_BUILDER_ARCH;
   delete env.OPENCHAMBER_OPENCODE_SERVER_PLATFORM;
-  const result = spawnSync(resolveBunExecutable(), ['./scripts/prepare-opencode-server.mjs'], {
+  const result = spawnSync(bundler ?? resolveBunExecutable({ env }), ['./scripts/prepare-opencode-server.mjs'], {
     cwd: electronDir,
     env,
     encoding: 'utf8',

@@ -41,7 +41,7 @@
     "build:web-assets": "node ./scripts/build-web-assets.mjs",
     "build": "bun -e \"process.exit(0)\"",
     "ensure:electron": "node ./scripts/ensure-electron.mjs",
-    "prepare:opencode-server": "bun ./scripts/prepare-opencode-server.mjs",
+    "prepare:opencode-server": "node ./scripts/run-prepare-opencode-server.mjs",
     "prepare:ripgrep": "node ./scripts/prepare-ripgrep.mjs",
     "verify:opencode-server": "node ./scripts/verify-opencode-server.mjs --staged",
     "verify:opencode-server:packaged": "node ./scripts/verify-opencode-server.mjs --packaged",

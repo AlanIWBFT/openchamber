@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { explicitServiceBundler } from './service-bundler.mjs';
 
 export const sourceRootFor = (repo, env) => fs.realpathSync(env.OPENCHAMBER_OPENCODE_SOURCE_DIR || path.resolve(repo, '..', 'opencode'));
 export const cachePath = (electron) => path.join(electron, '.cache', 'opencode-server', 'fork-inputs.json');
@@ -34,18 +35,19 @@ export function inputIds(files, cwd, env = process.env) {
   return `xxh3-128\n${ids.join('\n')}`;
 }
 
-export function forkInputsCurrent(electron, source, manifest) {
+export function forkInputsCurrent(electron, source, manifest, bundler = explicitServiceBundler()) {
   if (!manifest?.fork) return false;
   try {
     const record = JSON.parse(fs.readFileSync(cachePath(electron), 'utf8'));
-    return record.root === source && record.stamp === manifest.fork.stamp && record.ids === inputIds(record.files, source);
+    return (record.bundler ?? null) === bundler && record.root === source && record.stamp === manifest.fork.stamp && record.ids === inputIds(record.files, source);
   } catch {
     return false;
   }
 }
 
-export function recordForkInputs(electron, source, inputs, extra) {
+export function recordForkInputs(electron, source, inputs, extra, bundler = explicitServiceBundler()) {
   const files = new Set(extra);
+  if (bundler) files.add(bundler);
   for (const input of inputs) {
     const file = path.resolve(input);
     if (!fs.statSync(file).isFile()) throw new Error(`Missing bundled input: ${file}`);
@@ -69,6 +71,6 @@ export function recordForkInputs(electron, source, inputs, extra) {
   const commit = execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: source, encoding: 'utf8', windowsHide: true }).trim();
   const dest = cachePath(electron);
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.writeFileSync(dest, JSON.stringify({ root: source, stamp, ids, files: sorted }));
+  fs.writeFileSync(dest, JSON.stringify({ root: source, stamp, ids, files: sorted, bundler }));
   return { commit, stamp };
 }

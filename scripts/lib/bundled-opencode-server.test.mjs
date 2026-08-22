@@ -5,6 +5,12 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { devOpenCodeEnv, ensureBundledOpenCodeServer } from './bundled-opencode-server.mjs';
+import { explicitServiceBundler } from './service-bundler.mjs';
+
+test('service preparation rejects an invalid override without selecting another Bun', () => {
+  assert.throws(() => explicitServiceBundler({ OPENCHAMBER_OPENCODE_BUN_RUNTIME: os.tmpdir() }), /Local Bun runtime not found/);
+  assert.equal(explicitServiceBundler({ OPENCHAMBER_OPENCODE_BUN_RUNTIME: process.execPath }), fs.realpathSync(process.execPath));
+});
 
 test('a CLI the caller names wins and nothing is prepared', () => {
   const env = devOpenCodeEnv('missing checkout', { OPENCODE_BINARY: process.execPath, OPENCHAMBER_BUNDLED_OPENCODE_SERVER_DIR: 'unused' });
