@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
   normalizeTargetArchitecture,
   readElectronBuilderArchitecture,
+  resolveLocalOpenCodeBunRuntime,
   resolveOpenCodeCliTarget,
   resolveTargetArchitecture,
 } from './target-architecture.mjs';
@@ -65,6 +67,38 @@ test('uses an explicit baseline OpenCode target for Windows ARM64 packages', () 
     buildTarget: 'windows-x64',
     baseline: true,
   });
+});
+
+test('uses a non-baseline OpenCode target for native Windows x64 source builds', () => {
+  const targetArchitecture = resolveTargetArchitecture({
+    platform: 'win32',
+    hostArchitecture: 'x64',
+    environment: {},
+  });
+
+  assert.deepEqual(resolveOpenCodeCliTarget({ platform: 'win32', targetArchitecture }), {
+    architecture: 'x64',
+    buildTarget: 'windows-x64',
+    baseline: false,
+  });
+});
+
+test('resolves the sibling patched Bun runtime only for native Windows x64 source builds', () => {
+  const sourceRoot = path.resolve('fixtures', 'opencode');
+
+  assert.equal(
+    resolveLocalOpenCodeBunRuntime({
+      platform: 'win32',
+      targetArchitecture: normalizeTargetArchitecture('x64'),
+      sourceRoot,
+    }),
+    path.resolve(sourceRoot, '..', 'bun-v1.3.14-shim-hardlink', 'build', 'release', 'bun.exe'),
+  );
+  assert.equal(resolveLocalOpenCodeBunRuntime({
+    platform: 'win32',
+    targetArchitecture: normalizeTargetArchitecture('arm64'),
+    sourceRoot,
+  }), null);
 });
 
 test('keeps native ARM64 OpenCode targets outside the Windows workaround', () => {
