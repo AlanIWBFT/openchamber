@@ -385,7 +385,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
               const isSystem = command.isBuiltIn;
               const isOpenChamberBadge = command.isOpenChamber;
               return (
-                <AutocompleteRowTooltip description={command.description} active={index === selectedIndex}>
+                <AutocompleteRowTooltip description={command.description} active={!isMobile && index === selectedIndex}>
                 <div
                   key={command.id}
                   ref={(el) => { itemRefs.current[index] = el; }}
