@@ -26,8 +26,23 @@ const MANAGED_STDERR_TAIL_MAX_BYTES = 32 * 1024;
 const HEALTH_FAILURE_DETAIL_MAX_LENGTH = 256;
 const MANAGED_SHUTDOWN_TIMEOUT_MS = 5000;
 const MANAGED_PROCESS_TERMINATION_TIMEOUT_MS = 2000;
+const MIGRATION_FAILURE_EXIT_TIMEOUT_MS = 5000;
 const SQLITE_FINALIZE_ARGUMENT = '__openchamber-sqlite-finalize';
 const SQLITE_FINALIZE_ENV = 'OPENCHAMBER_SQLITE_FINALIZE';
+const OPENCODE_STARTUP_PROTOCOL_ENV = 'OPENCODE_STARTUP_PROTOCOL';
+const OPENCODE_LIFECYCLE_PREFIX = 'opencode lifecycle ';
+const OPENCODE_MIGRATION_FAILED = 'OPENCHAMBER_OPENCODE_MIGRATION_FAILED';
+
+const parseOpenCodeMigrationState = (line) => {
+  if (!line.startsWith(OPENCODE_LIFECYCLE_PREFIX)) return null;
+  try {
+    const payload = JSON.parse(line.slice(OPENCODE_LIFECYCLE_PREFIX.length));
+    if (payload?.version !== 1 || payload?.type !== 'database-migration') return null;
+    return ['started', 'completed', 'failed'].includes(payload.state) ? payload.state : null;
+  } catch {
+    return null;
+  }
+};
 
 const getBoundedTextTail = (value, maxBytes) => {
   const buffer = Buffer.from(String(value ?? ''));
@@ -114,8 +129,37 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     reapManagedOrphanedProcesses = reapOrphanedProcesses,
     getWarmupDirectories = async () => [],
     onOpenCodeRestarted = null,
+    onOpenCodeReady = null,
     now = Date.now,
   } = deps;
+
+  const notifyOpenCodeReady = () => {
+    try {
+      onOpenCodeReady?.();
+    } catch (error) {
+      console.warn('Failed to activate OpenCode-ready dependents:', error?.message ?? error);
+    }
+  };
+
+  let openCodeStartupState = { phase: 'idle' };
+  const openCodeStartupListeners = new Set();
+  const publishOpenCodeStartupState = (phase, error) => {
+    const next = error ? { phase, error } : { phase };
+    if (openCodeStartupState.phase === next.phase && openCodeStartupState.error === next.error) return;
+    openCodeStartupState = next;
+    for (const listener of openCodeStartupListeners) {
+      try {
+        listener(openCodeStartupState);
+      } catch {
+      }
+    }
+  };
+  const getOpenCodeStartupState = () => ({ ...openCodeStartupState });
+  const onOpenCodeStartupState = (listener) => {
+    openCodeStartupListeners.add(listener);
+    listener(getOpenCodeStartupState());
+    return () => openCodeStartupListeners.delete(listener);
+  };
 
   const killProcessOnPort = (port, timeoutMs = 5000) => {
     if (!port || process.platform === 'win32') return;
@@ -590,7 +634,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     try {
       const url = await new Promise((resolve, reject) => {
         let stdout = '';
+        let stdoutTail = '';
         let stderr = '';
+        let migrationActive = false;
+        let migrationFailed = false;
+        let migrationExit = null;
+        let migrationProcessError = null;
         let done = false;
         const finish = (handler, value) => {
           if (done) return;
@@ -599,14 +648,72 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           child.stdout?.off('data', onStdout);
           child.stderr?.off('data', onStderr);
           child.off('exit', onExit);
+          child.off('close', onClose);
           child.off('error', onError);
           handler(value);
         };
 
+        let timer = null;
+        const createExitError = (code, signal) => {
+          const reason = signal ? `signal ${signal}` : `code ${code}`;
+          const appBundleHint = process.platform === 'darwin' && /\/OpenCode\.app\/Contents\/MacOS\/(?:OpenCode|opencode-cli)$/i.test(binary)
+            ? ' The configured binary appears to point at the macOS desktop app bundle; OpenChamber needs the standalone opencode CLI.'
+            : '';
+          return new Error(`OpenCode process exited before serving with ${reason}. Binary used: ${binary}.${appBundleHint} ${formatCapturedOutput({ stdout, stderr })}`);
+        };
+        const createMigrationFailureError = () => {
+          let error;
+          if (migrationExit) {
+            error = createExitError(migrationExit.code, migrationExit.signal);
+          } else if (migrationProcessError) {
+            error = new Error(`OpenCode process failed during database migration: ${migrationProcessError?.message ?? migrationProcessError}. ${formatCapturedOutput({ stdout, stderr })}`);
+          } else {
+            error = new Error(`OpenCode database migration failed and the process did not exit. ${formatCapturedOutput({ stdout, stderr })}`);
+          }
+          error.code = OPENCODE_MIGRATION_FAILED;
+          return error;
+        };
+        const armMigrationFailureTimeout = () => {
+          if (timer) return;
+          timer = setTimeout(() => finish(reject, createMigrationFailureError()), MIGRATION_FAILURE_EXIT_TIMEOUT_MS);
+        };
+        const armStartupTimeout = () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            finish(reject, new Error(`Timeout waiting for OpenCode to start after ${timeout}ms`));
+          }, timeout);
+        };
+
         const onStdout = (chunk) => {
-          stdout += chunk.toString();
-          const lines = stdout.split('\n');
+          const text = chunk.toString();
+          stdout += text;
+          stdoutTail += text;
+          const lines = stdoutTail.split(/\r?\n/);
+          stdoutTail = lines.pop() || '';
           for (const line of lines) {
+            if (migrationFailed) continue;
+            const migrationState = parseOpenCodeMigrationState(line);
+            if (migrationState === 'started') {
+              migrationActive = true;
+              clearTimeout(timer);
+              timer = null;
+              publishOpenCodeStartupState('migrating');
+              continue;
+            }
+            if (migrationState === 'completed' && migrationActive) {
+              migrationActive = false;
+              publishOpenCodeStartupState('launching');
+              armStartupTimeout();
+              continue;
+            }
+            if (migrationState === 'failed') {
+              migrationActive = false;
+              migrationFailed = true;
+              clearTimeout(timer);
+              timer = null;
+              armMigrationFailureTimeout();
+              continue;
+            }
             if (!line.startsWith('opencode server listening')) continue;
             const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
             if (!match) {
@@ -624,24 +731,41 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         };
 
         const onExit = (code, signal) => {
-          const reason = signal ? `signal ${signal}` : `code ${code}`;
-          const appBundleHint = process.platform === 'darwin' && /\/OpenCode\.app\/Contents\/MacOS\/(?:OpenCode|opencode-cli)$/i.test(binary)
-            ? ' The configured binary appears to point at the macOS desktop app bundle; OpenChamber needs the standalone opencode CLI.'
-            : '';
-          finish(reject, new Error(`OpenCode process exited before serving with ${reason}. Binary used: ${binary}.${appBundleHint} ${formatCapturedOutput({ stdout, stderr })}`));
+          if (migrationActive || migrationFailed) {
+            migrationActive = false;
+            migrationFailed = true;
+            migrationExit = { code, signal };
+            armMigrationFailureTimeout();
+            return;
+          }
+          finish(reject, createExitError(code, signal));
+        };
+
+        const onClose = (code, signal) => {
+          if (!migrationActive && !migrationFailed) return;
+          migrationActive = false;
+          migrationFailed = true;
+          migrationExit ??= { code, signal };
+          finish(reject, createMigrationFailureError());
         };
 
         const onError = (error) => {
+          if (migrationActive || migrationFailed) {
+            migrationActive = false;
+            migrationFailed = true;
+            migrationProcessError = error;
+            armMigrationFailureTimeout();
+            return;
+          }
           finish(reject, error);
         };
 
-        const timer = setTimeout(() => {
-          finish(reject, new Error(`Timeout waiting for OpenCode to start after ${timeout}ms`));
-        }, timeout);
+        armStartupTimeout();
 
         child.stdout?.on('data', onStdout);
         child.stderr?.on('data', onStderr);
         child.on('exit', onExit);
+        child.on('close', onClose);
         child.on('error', onError);
       });
 
@@ -853,6 +977,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           ...managedOpenCodeEnv,
           PATH: envPath,
           OPENCODE_SERVER_PASSWORD: openCodePassword,
+          [OPENCODE_STARTUP_PROTOCOL_ENV]: '1',
         })),
       });
       assertNotShuttingDown();
@@ -912,6 +1037,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
   const startOpenCode = async () => {
     assertNotShuttingDown();
+    publishOpenCodeStartupState('launching');
     let lastError = null;
     for (let attempt = 1; attempt <= START_OPEN_CODE_MAX_ATTEMPTS; attempt += 1) {
       try {
@@ -920,6 +1046,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         state.openCodeProcess = serverInstance;
         state.startingOpenCodeProcess = null;
         syncToHmrState();
+        publishOpenCodeStartupState('ready');
         return serverInstance;
       } catch (error) {
         lastError = error;
@@ -931,6 +1058,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           break;
         }
         if (error?.code === 'OPENCODE_BINARY_INVALID') {
+          break;
+        }
+        if (error?.code === OPENCODE_MIGRATION_FAILED) {
           break;
         }
         if (attempt >= START_OPEN_CODE_MAX_ATTEMPTS) {
@@ -947,6 +1077,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       }
     }
 
+    const message = lastError instanceof Error ? lastError.message : String(lastError);
+    publishOpenCodeStartupState('failed', message);
     throw lastError;
   };
 
@@ -985,6 +1117,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           setupProxy(state.expressApp);
           ensureOpenCodeApiPrefix();
         }
+        notifyOpenCodeReady();
         return;
       }
 
@@ -1040,6 +1173,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       } catch (error) {
         console.warn('Failed to rebind event stream after OpenCode restart:', error?.message ?? error);
       }
+      notifyOpenCodeReady();
     })();
 
     try {
@@ -1189,6 +1323,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   const bootstrapOpenCodeAtStartup = async () => {
     const bootstrapStartedAt = performance.now();
     let bootstrapError = null;
+    publishOpenCodeStartupState('launching');
     recordStartupPerformance('opencode.bootstrap.start');
     try {
       // Before doing anything, reap any OpenCode process WE spawned in a prior
@@ -1274,8 +1409,15 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       },
     );
     if (!bootstrapError && !state.isShuttingDown) {
+      publishOpenCodeStartupState('ready');
+      notifyOpenCodeReady();
       void warmOpenCodeDirectories();
     }
+    if (bootstrapError) {
+      publishOpenCodeStartupState('failed', bootstrapError instanceof Error ? bootstrapError.message : String(bootstrapError));
+      return { status: 'failed', error: bootstrapError instanceof Error ? bootstrapError.message : String(bootstrapError) };
+    }
+    return { status: 'ready' };
   };
 
   // OpenCode initializes each project directory lazily on its first
@@ -1483,5 +1625,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     startHealthMonitoring,
     triggerHealthCheck,
     waitForPortRelease,
+    getOpenCodeStartupState,
+    onOpenCodeStartupState,
   };
 };

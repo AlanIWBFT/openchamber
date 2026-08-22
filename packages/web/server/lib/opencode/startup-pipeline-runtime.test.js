@@ -19,7 +19,7 @@ describe('startup pipeline runtime', () => {
       }),
     });
 
-    await runtime.run({
+    const result = await runtime.run({
       app: {},
       setupProxy: vi.fn(),
       staticRoutesRuntime: { registerStaticRoutes: vi.fn() },
@@ -28,7 +28,10 @@ describe('startup pipeline runtime', () => {
         setActivePort: (port) => order.push(`port:${port}`),
       },
       scheduleOpenCodeApiDetection: () => order.push('detect'),
-      bootstrapOpenCodeAtStartup: () => order.push('bootstrap'),
+      bootstrapOpenCodeAtStartup: () => {
+        order.push('bootstrap');
+        return { status: 'ready' };
+      },
       process: {},
       crypto: {},
       server: {},
@@ -36,5 +39,6 @@ describe('startup pipeline runtime', () => {
     });
 
     expect(order).toEqual(['listen', 'port:3901', 'detect', 'bootstrap']);
+    await expect(result.openCodeStartup).resolves.toEqual({ status: 'ready' });
   });
 });

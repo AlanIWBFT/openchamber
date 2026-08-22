@@ -11,6 +11,59 @@ const QUIT_COPY = {
   ja: { title: 'OpenChamber を終了しています', detail: 'バックグラウンドのクリーンアップを完了しています...' },
 };
 
+const STARTUP_COPY = {
+  en: {
+    launching: { title: 'Starting OpenChamber', detail: 'Preparing the local OpenCode server...' },
+    migrating: { title: 'Updating local data', detail: 'This one-time upgrade may take several minutes. Keep OpenChamber open.' },
+    failure: { title: 'OpenCode could not start', detail: 'OpenChamber could not prepare the local OpenCode server.', retry: 'Retry', quit: 'Quit' },
+  },
+  fr: {
+    launching: { title: 'Démarrage d’OpenChamber', detail: 'Préparation du serveur OpenCode local...' },
+    migrating: { title: 'Mise à jour des données locales', detail: 'Cette mise à niveau unique peut prendre plusieurs minutes. Gardez OpenChamber ouvert.' },
+    failure: { title: 'Impossible de démarrer OpenCode', detail: 'OpenChamber n’a pas pu préparer le serveur OpenCode local.', retry: 'Réessayer', quit: 'Quitter' },
+  },
+  'zh-CN': {
+    launching: { title: '正在启动 OpenChamber', detail: '正在准备本地 OpenCode 服务器...' },
+    migrating: { title: '正在升级本地数据', detail: '此一次性升级可能需要几分钟，请保持 OpenChamber 开启。' },
+    failure: { title: '无法启动 OpenCode', detail: 'OpenChamber 无法完成本地 OpenCode 服务器的准备工作。', retry: '重试', quit: '退出' },
+  },
+  'zh-TW': {
+    launching: { title: '正在啟動 OpenChamber', detail: '正在準備本機 OpenCode 伺服器...' },
+    migrating: { title: '正在升級本機資料', detail: '此一次性升級可能需要幾分鐘，請保持 OpenChamber 開啟。' },
+    failure: { title: '無法啟動 OpenCode', detail: 'OpenChamber 無法完成本機 OpenCode 伺服器的準備工作。', retry: '重試', quit: '結束' },
+  },
+  uk: {
+    launching: { title: 'Запуск OpenChamber', detail: 'Підготовка локального сервера OpenCode...' },
+    migrating: { title: 'Оновлення локальних даних', detail: 'Це одноразове оновлення може тривати кілька хвилин. Не закривайте OpenChamber.' },
+    failure: { title: 'Не вдалося запустити OpenCode', detail: 'OpenChamber не вдалося підготувати локальний сервер OpenCode.', retry: 'Повторити', quit: 'Вийти' },
+  },
+  es: {
+    launching: { title: 'Iniciando OpenChamber', detail: 'Preparando el servidor local de OpenCode...' },
+    migrating: { title: 'Actualizando los datos locales', detail: 'Esta actualización única puede tardar varios minutos. Mantén OpenChamber abierto.' },
+    failure: { title: 'No se pudo iniciar OpenCode', detail: 'OpenChamber no pudo preparar el servidor local de OpenCode.', retry: 'Reintentar', quit: 'Salir' },
+  },
+  'pt-BR': {
+    launching: { title: 'Iniciando o OpenChamber', detail: 'Preparando o servidor OpenCode local...' },
+    migrating: { title: 'Atualizando os dados locais', detail: 'Esta atualização única pode levar alguns minutos. Mantenha o OpenChamber aberto.' },
+    failure: { title: 'Não foi possível iniciar o OpenCode', detail: 'O OpenChamber não conseguiu preparar o servidor OpenCode local.', retry: 'Tentar novamente', quit: 'Sair' },
+  },
+  ko: {
+    launching: { title: 'OpenChamber 시작 중', detail: '로컬 OpenCode 서버를 준비하는 중...' },
+    migrating: { title: '로컬 데이터 업데이트 중', detail: '이 일회성 업그레이드는 몇 분 정도 걸릴 수 있습니다. OpenChamber를 열어 두세요.' },
+    failure: { title: 'OpenCode를 시작할 수 없음', detail: 'OpenChamber가 로컬 OpenCode 서버를 준비하지 못했습니다.', retry: '다시 시도', quit: '종료' },
+  },
+  pl: {
+    launching: { title: 'Uruchamianie OpenChamber', detail: 'Przygotowywanie lokalnego serwera OpenCode...' },
+    migrating: { title: 'Aktualizowanie danych lokalnych', detail: 'Ta jednorazowa aktualizacja może potrwać kilka minut. Nie zamykaj OpenChamber.' },
+    failure: { title: 'Nie udało się uruchomić OpenCode', detail: 'OpenChamber nie mógł przygotować lokalnego serwera OpenCode.', retry: 'Ponów', quit: 'Zakończ' },
+  },
+  ja: {
+    launching: { title: 'OpenChamber を起動しています', detail: 'ローカル OpenCode サーバーを準備しています...' },
+    migrating: { title: 'ローカルデータを更新しています', detail: 'この一度限りのアップグレードには数分かかる場合があります。OpenChamber を開いたままにしてください。' },
+    failure: { title: 'OpenCode を起動できませんでした', detail: 'OpenChamber はローカル OpenCode サーバーを準備できませんでした。', retry: '再試行', quit: '終了' },
+  },
+};
+
 const escapeHtml = (value) => String(value)
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -96,9 +149,8 @@ export const buildSplashLogoSvg = ({ ariaLabel = 'OpenChamber', decorative = fal
   </g>
 </svg>`;
 
-export const buildQuitPageHtml = ({ locale, colors = {} } = {}) => {
+const buildStatusPageHtml = ({ locale, colors, copy }) => {
   const resolvedLocale = normalizeQuitLocale(locale);
-  const copy = QUIT_COPY[resolvedLocale];
   const backgroundLight = safeColor(colors.backgroundLight, '#f5f5f4');
   const foregroundLight = safeColor(colors.foregroundLight, '#1c1917');
   const backgroundDark = safeColor(colors.backgroundDark, '#0c0a09');
@@ -131,3 +183,22 @@ export const buildQuitPageHtml = ({ locale, colors = {} } = {}) => {
 </body>
 </html>`;
 };
+
+export const getStartupPageCopy = (locale, phase = 'launching') => {
+  const copy = STARTUP_COPY[normalizeQuitLocale(locale)];
+  return phase === 'migrating' ? copy.migrating : copy.launching;
+};
+
+export const getStartupFailureDialogCopy = (locale) => STARTUP_COPY[normalizeQuitLocale(locale)].failure;
+
+export const buildStartupPageHtml = ({ locale, colors = {} } = {}) => buildStatusPageHtml({
+  locale,
+  colors,
+  copy: getStartupPageCopy(locale),
+});
+
+export const buildQuitPageHtml = ({ locale, colors = {} } = {}) => buildStatusPageHtml({
+  locale,
+  colors,
+  copy: QUIT_COPY[normalizeQuitLocale(locale)],
+});

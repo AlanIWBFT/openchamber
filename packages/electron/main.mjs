@@ -12,7 +12,7 @@ import { promisify } from 'node:util';
 import updaterPkg from 'electron-updater';
 import { ElectronSshManager } from './ssh-manager.mjs';
 import { replaceFileWithRetry } from './windows-file-replace.mjs';
-import { buildQuitPageHtml, buildSplashLogoSvg, closeMiniChatWindows, isOpenCodeTerminationFailure } from './quit-page.mjs';
+import { buildQuitPageHtml, buildStartupPageHtml, closeMiniChatWindows, getStartupFailureDialogCopy, getStartupPageCopy, isOpenCodeTerminationFailure } from './quit-page.mjs';
 import { createTrayController } from './tray.mjs';
 import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { resolveStartupUrlProbePlan, shouldIgnoreLoopbackConnectionLimit } from './startup-url-selection.mjs';
@@ -255,6 +255,8 @@ const state = {
   requestHeaders: {},
   bootOutcome: null,
   startupResolved: false,
+  openCodeStartupPhase: 'launching',
+  openCodeStartupUnsubscribe: null,
   initScript: null,
   mainWindow: null,
   quitRequested: false,
@@ -1648,6 +1650,10 @@ const spawnLocalServer = async () => {
 
   state.serverHandle = handle;
   state.sidecarUrl = url;
+  state.openCodeStartupUnsubscribe?.();
+  state.openCodeStartupUnsubscribe = handle.onOpenCodeStartupState?.((startupState) => {
+    setOpenCodeStartupPhase(startupState.phase);
+  }) || null;
   recordElectronStartupPerformance('electron.server.ready', {
     durationMs: performance.now() - serverStartedAt,
   });
@@ -1706,6 +1712,8 @@ const launchDetachedOpenCodeKiller = (processInfo) => {
 };
 
 const stopSidecar = async () => {
+  state.openCodeStartupUnsubscribe?.();
+  state.openCodeStartupUnsubscribe = null;
   const serverModule = state.serverModule;
   state.serverHandle = null;
   state.sidecarUrl = null;
@@ -1811,60 +1819,63 @@ const computeBootOutcome = ({ envTargetUrl, probe, config, localAvailable }) => 
 
 const buildStartupSplashHtml = () => {
   const settings = readSettingsRoot();
-  const splashBgLight = typeof settings.splashBgLight === 'string' ? settings.splashBgLight.trim() : '#f5f5f4';
-  const splashFgLight = typeof settings.splashFgLight === 'string' ? settings.splashFgLight.trim() : '#1c1917';
-  const splashBgDark = typeof settings.splashBgDark === 'string' ? settings.splashBgDark.trim() : '#0c0a09';
-  const splashFgDark = typeof settings.splashFgDark === 'string' ? settings.splashFgDark.trim() : '#fafaf9';
+  return buildStartupPageHtml({
+    locale: app.getLocale(),
+    colors: {
+      backgroundLight: settings.splashBgLight,
+      foregroundLight: settings.splashFgLight,
+      backgroundDark: settings.splashBgDark,
+      foregroundDark: settings.splashFgDark,
+    },
+  });
+};
 
-  return `<!doctype html>
-  <html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      :root { color-scheme: light dark; }
-      :root {
-        --splash-background: ${splashBgLight};
-        --splash-stroke: ${splashFgLight};
-        --splash-face-fill: rgba(0, 0, 0, 0.15);
-        --splash-cell-fill: rgba(0, 0, 0, 0.4);
-        --splash-logo-fill: var(--splash-stroke);
-      }
-      body {
-        margin: 0;
-        font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-        display: grid;
-        place-items: center;
-        height: 100vh;
-        background: var(--splash-background);
-        color: var(--splash-stroke);
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --splash-background: ${splashBgDark};
-          --splash-stroke: ${splashFgDark};
-          --splash-face-fill: rgba(255, 255, 255, 0.15);
-          --splash-cell-fill: rgba(255, 255, 255, 0.35);
-        }
-      }
-      @supports (color: color-mix(in srgb, white 50%, transparent)) {
-        :root {
-          --splash-face-fill: color-mix(in srgb, var(--splash-stroke) 15%, transparent);
-          --splash-cell-fill: color-mix(in srgb, var(--splash-stroke) 35%, transparent);
-        }
-      }
-      .stack {
-        display: grid;
-        justify-items: center;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="stack">
-      ${buildSplashLogoSvg({ ariaLabel: 'OpenChamber loading icon' })}
-    </div>
-  </body>
-  </html>`;
+const updateStartupPageDocument = (browserWindow, phase) => {
+  if (!browserWindow || browserWindow.isDestroyed() || state.startupResolved || state.quitInProgress) return;
+  const copy = getStartupPageCopy(app.getLocale(), phase);
+  const script = `(() => { const title = document.querySelector('h1'); const detail = document.querySelector('p'); if (title) title.textContent = ${JSON.stringify(copy.title)}; if (detail) detail.textContent = ${JSON.stringify(copy.detail)}; document.title = ${JSON.stringify(copy.title)}; })()`;
+  void browserWindow.webContents.executeJavaScript(script).catch(() => {});
+};
+
+const setOpenCodeStartupPhase = (phase) => {
+  state.openCodeStartupPhase = phase;
+  updateStartupPageDocument(state.mainWindow, phase);
+};
+
+const waitForLocalOpenCodeStartup = async () => {
+  const controller = state.serverHandle;
+  if (!controller?.waitForOpenCodeStartup) return true;
+  let result;
+  try {
+    result = await controller.waitForOpenCodeStartup();
+  } catch (error) {
+    log.warn('[electron] OpenCode startup wait failed:', error);
+    result = { status: 'failed' };
+  }
+  while (result?.status !== 'ready') {
+    if (!state.mainWindow || state.mainWindow.isDestroyed()) return false;
+    const copy = getStartupFailureDialogCopy(app.getLocale());
+    const choice = await dialog.showMessageBox(state.mainWindow, {
+      type: 'error',
+      title: copy.title,
+      message: copy.title,
+      detail: copy.detail,
+      buttons: [copy.retry, copy.quit],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (choice.response === 1) return false;
+    setOpenCodeStartupPhase('launching');
+    try {
+      await controller.restartOpenCode();
+      return true;
+    } catch (error) {
+      log.warn('[electron] OpenCode startup retry failed:', error);
+      result = { status: 'failed' };
+    }
+  }
+  return true;
 };
 
 const isBenignNavigationAbort = (error) => {
@@ -2670,6 +2681,9 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     if (initScript) {
       void browserWindow.webContents.executeJavaScript(initScript).catch(() => {});
     }
+    if (browserWindow.__ocLabel === 'main') {
+      updateStartupPageDocument(browserWindow, state.openCodeStartupPhase);
+    }
   });
 
   browserWindow.webContents.on('did-finish-load', () => {
@@ -2710,6 +2724,8 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
 
 const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig = {}) => {
   if (state.quitInProgress) return state.mainWindow;
+  state.openCodeStartupUnsubscribe?.();
+  state.openCodeStartupUnsubscribe = null;
   state.startupResolved = true;
   state.localOrigin = localOrigin;
   state.apiBaseUrl = typeof runtimeConfig.apiBaseUrl === 'string' ? runtimeConfig.apiBaseUrl : state.apiBaseUrl;
@@ -3065,6 +3081,10 @@ const resolveInitialUrl = async () => {
     config,
     localAvailable,
   });
+
+  if (localUrl && apiBaseUrl === localUrl && !(await waitForLocalOpenCodeStartup())) {
+    throw new Error('Local OpenCode startup was cancelled');
+  }
 
   return { initialUrl, localOrigin, localUiUrl, bootOutcome, apiBaseUrl, clientToken, requestHeaders };
 };
