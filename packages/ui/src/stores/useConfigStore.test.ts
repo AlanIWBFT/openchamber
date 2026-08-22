@@ -405,6 +405,60 @@ describe('useConfigStore provider persistence', () => {
     expect(state.currentVariant).toBe('fast');
   });
 
+  test('the settings provider selection survives a refresh that no longer lists it', async () => {
+    // Plugin-registered providers vanish from the list while OpenCode restarts.
+    // A refresh in that window used to move the user to another provider while
+    // they were reading or editing the one they picked.
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      currentProviderId: 'live',
+      currentModelId: 'live-model',
+      selectedProviderId: 'plugin-provider',
+      directoryScoped: {},
+    });
+
+    liveProviderId = 'live';
+    await useConfigStore.getState().loadProviders({ source: 'test:missing-selection' });
+
+    const state = useConfigStore.getState();
+    expect(state.providers.map((entry) => entry.id)).toEqual(['live']);
+    expect(state.selectedProviderId).toBe('plugin-provider');
+    expect(state.directoryScoped[DIRECTORY]?.selectedProviderId).toBe('plugin-provider');
+  });
+
+  test('an empty settings provider selection is filled from the refreshed list', async () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      currentProviderId: '',
+      currentModelId: '',
+      selectedProviderId: '',
+      directoryScoped: {},
+    });
+
+    liveProviderId = 'live';
+    await useConfigStore.getState().loadProviders({ source: 'test:empty-selection' });
+
+    expect(useConfigStore.getState().selectedProviderId).toBe('live');
+  });
+
+  test('changing the chat provider leaves the settings provider selection alone', async () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [provider('anthropic'), provider('openai')],
+      currentProviderId: 'anthropic',
+      currentModelId: 'anthropic-model',
+      selectedProviderId: 'openai',
+      directoryScoped: {},
+    });
+
+    useConfigStore.getState().setProvider('anthropic');
+
+    const state = useConfigStore.getState();
+    expect(state.currentProviderId).toBe('anthropic');
+    expect(state.selectedProviderId).toBe('openai');
+    expect(state.directoryScoped[DIRECTORY]?.selectedProviderId).toBe('openai');
+  });
+
   test('provider reload preserves the add-provider sentinel selection', async () => {
     // The user has opened the "Add provider" form, which sets selectedProviderId
     // to the sentinel. A background provider refresh must not navigate them away
