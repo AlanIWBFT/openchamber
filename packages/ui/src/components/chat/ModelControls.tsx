@@ -2342,7 +2342,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         </TooltipTrigger>
                         <DropdownMenuContent
                             side="top"
-                            className="w-[min(380px,calc(100vw-2rem))] p-0 flex flex-col"
+                            className="w-[min(380px,calc(100vw-2rem))] max-h-[calc(100dvh-var(--oc-header-height,56px)-0.5rem)] p-0 flex flex-col"
                             align="end"
                             alignOffset={-40}
                             onKeyDownCapture={handleModelShortcutKeyDownCapture}
@@ -2401,6 +2401,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                         </div>
                                     );
                                 }}
+                                maxHeightClassName="max-h-[min(400px,calc(100dvh-var(--oc-header-height,56px)-4rem))] flex-1"
                                 tooltipsEnabled={agentMenuOpen}
                                 onEscape={() => setAgentMenuOpen(false)}
                             />
@@ -2734,7 +2735,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                     </div>
                                 </DropdownMenuTrigger>
                             </TooltipTrigger>
-                            <DropdownMenuContent side="top" align="end" alignOffset={-40} className="w-[min(280px,calc(100vw-2rem))] p-0 flex flex-col">
+                            <DropdownMenuContent side="top" align="end" alignOffset={-40} className="w-[min(280px,calc(100vw-2rem))] max-h-[calc(100dvh-var(--oc-header-height,56px)-0.5rem)] p-0 flex flex-col">
                                 <div className="p-2 border-b border-border/40">
                                     <div className="relative">
                                         <Icon name="search" className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
@@ -2750,7 +2751,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                         />
                                     </div>
                                 </div>
-                                <ScrollableOverlay outerClassName="max-h-[min(400px,calc(100dvh-12rem))] flex-1">
+                                <ScrollableOverlay outerClassName="max-h-[min(400px,calc(100dvh-var(--oc-header-height,56px)-4rem))] flex-1">
                                     <div className="p-1">
                                         {!agentSearchQuery.trim() && defaultAgentName && (
                                             <>

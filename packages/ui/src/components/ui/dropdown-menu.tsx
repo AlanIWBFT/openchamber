@@ -128,6 +128,7 @@ function DropdownMenuContent({
           }}
           className={cn(
             dropdownMenuPopupClass,
+            "max-h-[calc(100dvh-var(--oc-header-height,56px)-0.5rem)] overflow-y-auto",
             className
           )}
           {...props}
