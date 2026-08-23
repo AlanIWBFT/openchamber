@@ -17,7 +17,9 @@ type AsChildRenderProps = {
 
 type SelectPortalContextValue = {
   portalContainer: HTMLElement | null;
+  collisionBoundary: Element | null;
   setPortalContainer: (container: HTMLElement | null) => void;
+  setCollisionBoundary: (boundary: Element | null) => void;
 };
 
 const SelectPortalContext = React.createContext<SelectPortalContextValue | null>(null);
@@ -44,10 +46,13 @@ function Select<Value extends string = string>({
   ...props
 }: SelectRootProps<Value>) {
   const [portalContainer, setPortalContainer] = React.useState<HTMLElement | null>(null);
+  const [collisionBoundary, setCollisionBoundary] = React.useState<Element | null>(null);
   const portalContextValue = React.useMemo<SelectPortalContextValue>(() => ({
     portalContainer,
+    collisionBoundary,
     setPortalContainer,
-  }), [portalContainer]);
+    setCollisionBoundary,
+  }), [collisionBoundary, portalContainer]);
 
   const handleValueChange = React.useCallback(
     (value: unknown, eventDetails: SelectRootChangeEventDetails) => {
@@ -119,6 +124,7 @@ function SelectTrigger({
     }
     const element = target instanceof HTMLElement ? target : null;
     portalContext.setPortalContainer(resolveDialogContainer(element));
+    portalContext.setCollisionBoundary(element?.closest('main') ?? null);
   }, [portalContext]);
 
   const asChildRender: AsChildRenderProps | null = asChild && React.isValidElement(children)
@@ -164,6 +170,7 @@ type SelectContentExtra = {
   side?: "top" | "right" | "bottom" | "left";
   align?: "start" | "center" | "end";
   collisionAvoidance?: React.ComponentProps<typeof BaseSelect.Positioner>["collisionAvoidance"];
+  constrainToMain?: boolean;
 };
 
 function SelectContent({
@@ -176,6 +183,7 @@ function SelectContent({
   side,
   align,
   collisionAvoidance,
+  constrainToMain = false,
   ...props
 }: React.ComponentProps<typeof BaseSelect.Popup> & SelectContentExtra) {
   const portalContext = React.useContext(SelectPortalContext);
@@ -190,6 +198,7 @@ function SelectContent({
         side={side}
         align={align}
         collisionAvoidance={collisionAvoidance}
+        collisionBoundary={constrainToMain ? portalContext?.collisionBoundary ?? undefined : undefined}
         className="absolute z-[120] pointer-events-auto"
       >
         <BaseSelect.Popup
@@ -198,7 +207,7 @@ function SelectContent({
             color: 'var(--surface-elevated-foreground)',
           }}
           className={cn(
-            "oc-glass-popover oc-glass-floating pointer-events-auto transition-all duration-150 ease-out data-[starting-style]:opacity-0 data-[starting-style]:scale-95 data-[ending-style]:opacity-0 data-[ending-style]:scale-95 relative z-[120] max-h-[min(var(--available-height),calc(100dvh-var(--oc-header-height,56px)-0.5rem))] min-w-[8rem] origin-[var(--transform-origin)] overflow-x-hidden rounded-xl",
+            "oc-glass-popover oc-glass-floating pointer-events-auto transition-all duration-150 ease-out data-[starting-style]:opacity-0 data-[starting-style]:scale-95 data-[ending-style]:opacity-0 data-[ending-style]:scale-95 relative z-[120] max-h-[var(--available-height)] min-w-[8rem] origin-[var(--transform-origin)] overflow-x-hidden rounded-xl",
             !alignItemWithTrigger &&
               "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
             fitContent && "w-max min-w-0",
@@ -208,7 +217,7 @@ function SelectContent({
         >
           <ScrollableOverlay
             outerClassName={cn(
-              "max-h-[min(var(--available-height),calc(100dvh-var(--oc-header-height,56px)-0.5rem))]",
+              "max-h-[var(--available-height)]",
               fitContent ? "w-max" : "w-full"
             )}
             className={cn(
