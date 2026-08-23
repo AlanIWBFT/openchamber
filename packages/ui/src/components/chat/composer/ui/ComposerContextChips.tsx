@@ -20,12 +20,12 @@ export interface ComposerContextChipsProps {
     reviewCount: number;
     prCommentCount: number;
     prCheckCount: number;
-    previewConsoleCount: number;
     previewAnnotationCount: number;
+    chatQuoteCount: number;
     draftTarget: InlineCommentDraftTarget | null;
     onRemoveDraft: (target: InlineCommentDraftTarget, draftId: string) => void;
     onRemoveReviewDrafts: () => void;
-    onRemovePreviewDrafts: (source: 'preview-console' | 'preview-annotation' | 'pr-comment' | 'pr-check') => void;
+    onRemovePreviewDrafts: (source: 'preview-annotation' | 'pr-comment' | 'pr-check' | 'chat-quote') => void;
     colors: Theme['colors'];
 }
 
@@ -72,8 +72,8 @@ export function ComposerContextChips(props: ComposerContextChipsProps) {
         reviewCount,
         prCommentCount,
         prCheckCount,
-        previewConsoleCount,
         previewAnnotationCount,
+        chatQuoteCount,
         draftTarget,
         onRemoveDraft,
         onRemoveReviewDrafts,
@@ -141,13 +141,14 @@ export function ComposerContextChips(props: ComposerContextChipsProps) {
                 />
             ) : null}
 
-            {previewConsoleCount > 0 ? (
+            {chatQuoteCount > 0 ? (
                 <CountChip
-                    label={t('chat.chatInput.devServerLogs')}
-                    count={previewConsoleCount}
-                    removeLabel={t('chat.chatInput.devServerLogsRemove')}
-                    onRemove={() => onRemovePreviewDrafts('preview-console')}
+                    label={t('chat.chatInput.chatQuoteContext')}
+                    count={chatQuoteCount}
+                    removeLabel={t('chat.chatInput.chatQuoteContextRemove')}
+                    onRemove={() => onRemovePreviewDrafts('chat-quote')}
                     colors={colors}
+                    icon={<Icon name="chat-1" className="h-3.5 w-3.5 text-muted-foreground" />}
                 />
             ) : null}
 
