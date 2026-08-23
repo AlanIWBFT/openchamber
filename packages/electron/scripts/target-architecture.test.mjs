@@ -3,6 +3,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  ensureElectronBuilderArchitecture,
   normalizeTargetArchitecture,
   readElectronBuilderArchitecture,
   resolveLocalOpenCodeBunRuntime,
@@ -19,6 +20,19 @@ test('normalizes host and release architecture aliases', () => {
 test('reads a single electron-builder target architecture', () => {
   assert.equal(readElectronBuilderArchitecture(['--linux', '--arch=aarch64']), 'arm64');
   assert.equal(readElectronBuilderArchitecture(['--linux', '--x64']), 'x64');
+});
+
+test('supplies an explicit Electron architecture when Windows or Linux would otherwise infer it from the runtime', () => {
+  assert.deepEqual(ensureElectronBuilderArchitecture({
+    platform: 'win32',
+    targetArchitecture: normalizeTargetArchitecture('arm64'),
+    builderArgs: ['--win'],
+  }), ['--win', '--arm64']);
+  assert.deepEqual(ensureElectronBuilderArchitecture({
+    platform: 'linux',
+    targetArchitecture: normalizeTargetArchitecture('arm64'),
+    builderArgs: ['--arm64'],
+  }), ['--arm64']);
 });
 
 test('rejects unsupported architectures', () => {
@@ -91,6 +105,7 @@ test('resolves the sibling patched Bun runtime only for native Windows x64 sourc
       platform: 'win32',
       targetArchitecture: normalizeTargetArchitecture('x64'),
       sourceRoot,
+      environment: {},
     }),
     path.resolve(sourceRoot, '..', 'bun-v1.3.14-shim-hardlink', 'build', 'release', 'bun.exe'),
   );
@@ -98,7 +113,19 @@ test('resolves the sibling patched Bun runtime only for native Windows x64 sourc
     platform: 'win32',
     targetArchitecture: normalizeTargetArchitecture('arm64'),
     sourceRoot,
+    environment: {},
   }), null);
+});
+
+test('prefers an explicitly configured OpenCode Bun runtime for source builds', () => {
+  const configuredRuntime = path.resolve('fixtures', 'bun-v1.4.0-release', 'bun.exe');
+
+  assert.equal(resolveLocalOpenCodeBunRuntime({
+    platform: 'win32',
+    targetArchitecture: normalizeTargetArchitecture('arm64'),
+    sourceRoot: path.resolve('fixtures', 'opencode'),
+    environment: { OPENCHAMBER_OPENCODE_BUN_RUNTIME: configuredRuntime },
+  }), configuredRuntime);
 });
 
 test('keeps native ARM64 OpenCode targets outside the Windows workaround', () => {
