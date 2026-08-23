@@ -71,6 +71,16 @@ type GitHubIssueContext = {
     url: string;
 };
 
+type FileQuoteContext = {
+    kind: 'file-quote';
+    fileLabel: string;
+    /** Present when the fragment could be located in the file source. */
+    startLine?: number;
+    endLine?: number;
+    quote: string;
+    text: string;
+};
+
 type ChatQuoteContext = {
     kind: 'chat-quote';
     /** The message the quote came from, when known. */
@@ -92,6 +102,7 @@ export type ContextPartPayload =
     | BrowserAnnotationContext
     | PrCommentContext
     | PrCheckContext
+    | FileQuoteContext
     | ChatQuoteContext
     | GitHubIssueContext
     | GitHubPrContext;
@@ -128,6 +139,13 @@ export function formatContextText(payload: ContextPartPayload): string {
             return payload.text ? `${payload.prompt}\n\n${payload.text}` : payload.prompt;
         case 'pr-comment':
             return `Attached GitHub PR comment (${payload.label}):\n\n${payload.body}${payload.text ? `\n\n${payload.text}` : ''}`;
+        case 'file-quote': {
+            const location = payload.startLine != null && payload.endLine != null
+                ? ` lines ${payload.startLine}-${payload.endLine}`
+                : '';
+            const quoted = payload.quote.split('\n').map((line) => `> ${line}`).join('\n');
+            return `Comment on this fragment of \`${payload.fileLabel}\`${location}:\n${quoted}${payload.text ? `\n\n${payload.text}` : ''}`;
+        }
         case 'chat-quote': {
             const quoted = payload.quote.split('\n').map((line) => `> ${line}`).join('\n');
             return `Comment on this fragment of an earlier message in this conversation:\n${quoted}${payload.text ? `\n\n${payload.text}` : ''}`;
@@ -179,6 +197,14 @@ export function contextPayloadFromDraft(draft: InlineCommentDraft): ContextPartP
             return { kind: 'pr-comment', label: draft.fileLabel, body: draft.code, text: draft.text };
         case 'pr-check':
             return { kind: 'pr-check', label: draft.fileLabel, output: draft.code, text: draft.text };
+        case 'file-quote': {
+            const payload: FileQuoteContext = { kind: 'file-quote', fileLabel: draft.fileLabel, quote: draft.code, text: draft.text };
+            if (draft.startLine > 0 && draft.endLine > 0) {
+                payload.startLine = draft.startLine;
+                payload.endLine = draft.endLine;
+            }
+            return payload;
+        }
         case 'chat-quote': {
             const payload: ChatQuoteContext = { kind: 'chat-quote', quote: draft.code, text: draft.text };
             if (draft.fileLabel) payload.messageId = draft.fileLabel;
@@ -243,6 +269,14 @@ const contextPayloadSchema = z.discriminatedUnion('kind', [
         kind: z.literal('pr-check'),
         label: z.string(),
         output: z.string(),
+        text: z.string(),
+    }),
+    z.object({
+        kind: z.literal('file-quote'),
+        fileLabel: z.string(),
+        startLine: z.number().optional(),
+        endLine: z.number().optional(),
+        quote: z.string(),
         text: z.string(),
     }),
     z.object({

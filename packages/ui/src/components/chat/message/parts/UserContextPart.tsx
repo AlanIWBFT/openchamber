@@ -113,6 +113,15 @@ const UserContextPart: React.FC<{ payload: ContextPartPayload }> = ({ payload })
                     text={payload.text}
                 />
             );
+        case 'file-quote': {
+            const file = basename(payload.fileLabel);
+            const summary = payload.startLine != null && payload.endLine != null
+                ? (payload.startLine === payload.endLine
+                    ? t('chat.message.context.codeCommentLine', { file, line: payload.startLine })
+                    : t('chat.message.context.codeComment', { file, start: payload.startLine, end: payload.endLine }))
+                : t('chat.message.context.fileQuote', { file });
+            return <ContextCard icon="chat-1" summary={summary} title={payload.fileLabel} body={payload.quote} text={payload.text} />;
+        }
         case 'chat-quote':
             return (
                 <ContextCard

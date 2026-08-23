@@ -8,6 +8,7 @@ export const dict = {
   'chat.message.context.codeComment': 'Comment on {file}, lines {start}-{end}',
   'chat.message.context.codeCommentLine': 'Comment on {file}, line {line}',
   'chat.message.context.chatQuote': 'Quoted from an earlier message',
+  'chat.message.context.fileQuote': 'Selection from {file}',
   'chat.chatInput.chatQuoteContext': 'Chat quotes',
   'chat.chatInput.chatQuoteContextRemove': 'Remove chat quotes',
   'chat.chatInput.contextPreview.selectedLabel': 'Selected text',

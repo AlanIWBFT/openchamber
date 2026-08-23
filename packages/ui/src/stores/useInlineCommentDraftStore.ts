@@ -5,7 +5,7 @@ import { getRuntimeKey } from '@/lib/runtime-switch';
 import { normalizePath } from '@/lib/pathNormalization';
 import { createDeferredSafeJSONStorage } from './utils/safeStorage';
 
-export type InlineCommentSource = 'diff' | 'plan' | 'file' | 'preview-annotation' | 'terminal' | 'pr-comment' | 'pr-check' | 'chat-quote';
+export type InlineCommentSource = 'diff' | 'plan' | 'file' | 'preview-annotation' | 'terminal' | 'pr-comment' | 'pr-check' | 'chat-quote' | 'file-quote';
 
 export type InlineCommentDraftTarget = {
   directory: string;
@@ -170,7 +170,7 @@ const EMPTY_PERSISTED_STATE: InlineCommentDraftState = { drafts: {}, touchedAt: 
 const persistedDraftSchema = z.object({
   id: z.string(),
   sessionKey: z.string(),
-  source: z.enum(['diff', 'plan', 'file', 'preview-annotation', 'terminal', 'pr-comment', 'pr-check', 'chat-quote']),
+  source: z.enum(['diff', 'plan', 'file', 'preview-annotation', 'terminal', 'pr-comment', 'pr-check', 'chat-quote', 'file-quote']),
   fileLabel: z.string(),
   startLine: z.number(),
   endLine: z.number(),

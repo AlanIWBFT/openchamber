@@ -2907,6 +2907,7 @@ export const dict = {
   'chat.message.context.codeComment': 'Kommentar zu {file}, Zeilen {start}-{end}',
   'chat.message.context.codeCommentLine': 'Kommentar zu {file}, Zeile {line}',
   'chat.message.context.chatQuote': 'Zitat aus einer früheren Nachricht',
+  'chat.message.context.fileQuote': 'Auswahl aus {file}',
   'chat.chatInput.chatQuoteContext': 'Chat-Zitate',
   'chat.chatInput.chatQuoteContextRemove': 'Chat-Zitate entfernen',
   'chat.chatInput.contextPreview.selectedLabel': 'Ausgewählter Text',

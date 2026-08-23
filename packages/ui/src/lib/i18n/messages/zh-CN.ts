@@ -9,6 +9,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.message.context.codeComment': '对 {file} 第 {start}-{end} 行的评论',
   'chat.message.context.codeCommentLine': '对 {file} 第 {line} 行的评论',
   'chat.message.context.chatQuote': '引用自先前的消息',
+  'chat.message.context.fileQuote': '来自 {file} 的选择',
   'chat.chatInput.chatQuoteContext': '聊天引用',
   'chat.chatInput.chatQuoteContextRemove': '移除聊天引用',
   'chat.chatInput.contextPreview.selectedLabel': '所选文本',

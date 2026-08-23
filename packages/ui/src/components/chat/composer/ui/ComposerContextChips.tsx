@@ -40,14 +40,14 @@ type ChipGroup = {
     drafts: InlineCommentDraft[];
 };
 
-const REVIEW_SOURCES: readonly InlineCommentSource[] = ['diff', 'file', 'plan'];
+const REVIEW_SOURCES: readonly InlineCommentSource[] = ['diff', 'file', 'plan', 'file-quote'];
 
 /** Sources whose drafts carry a user-written comment that can be edited. */
 const editableSource = (source: InlineCommentSource): boolean => source !== 'terminal';
 
 /** Captured code/output kinds read better monospaced; quoted prose does not. */
 const monoSource = (source: InlineCommentSource): boolean =>
-    source !== 'chat-quote' && source !== 'preview-annotation';
+    source !== 'chat-quote' && source !== 'preview-annotation' && source !== 'file-quote';
 
 const basename = (path: string): string => {
     const segments = path.split('/').filter(Boolean);
@@ -259,6 +259,12 @@ export function ComposerContextChips({ draftTarget, colors }: ComposerContextChi
                 return t('chat.message.context.prCheck', { label: draft.fileLabel });
             case 'chat-quote':
                 return t('chat.message.context.chatQuote');
+            case 'file-quote':
+                return draft.startLine > 0 && draft.endLine > 0
+                    ? (draft.startLine === draft.endLine
+                        ? t('chat.message.context.codeCommentLine', { file: basename(draft.fileLabel), line: draft.startLine })
+                        : t('chat.message.context.codeComment', { file: basename(draft.fileLabel), start: draft.startLine, end: draft.endLine }))
+                    : t('chat.message.context.fileQuote', { file: basename(draft.fileLabel) });
             default:
                 return draft.startLine === draft.endLine
                     ? t('chat.message.context.codeCommentLine', { file: basename(draft.fileLabel), line: draft.startLine })

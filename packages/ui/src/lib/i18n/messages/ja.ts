@@ -9,6 +9,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.message.context.codeComment': '{file} の {start}〜{end} 行へのコメント',
   'chat.message.context.codeCommentLine': '{file} の {line} 行へのコメント',
   'chat.message.context.chatQuote': '以前のメッセージからの引用',
+  'chat.message.context.fileQuote': '{file} からの選択',
   'chat.chatInput.chatQuoteContext': 'チャット引用',
   'chat.chatInput.chatQuoteContextRemove': 'チャット引用を削除',
   'chat.chatInput.contextPreview.selectedLabel': '選択したテキスト',

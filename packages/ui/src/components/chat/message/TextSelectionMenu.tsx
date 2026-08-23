@@ -18,6 +18,7 @@ import { isVSCodeRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import { rangeToMarkdown, trimSelectionValue, wrapMarkdownSelectionForChat } from './selectionMarkdown';
 import { focusChatInput } from '@/components/chat/composer/editor/dom';
+import { collectSelectionOverlayRects } from '@/lib/selectionOverlayRects';
 
 interface TextSelectionMenuProps {
   containerRef: React.RefObject<HTMLElement | null>;
@@ -67,56 +68,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
       return;
     }
 
-    const textRects: DOMRect[] = [];
-    const pushNodeRects = (node: Text) => {
-      const nodeRange = document.createRange();
-      nodeRange.selectNodeContents(node);
-      if (node === range.startContainer) nodeRange.setStart(node, range.startOffset);
-      if (node === range.endContainer) nodeRange.setEnd(node, range.endOffset);
-      // Text rects cover only the glyph box; the native selection paints the
-      // full line box, so each rect is stretched to its element's line-height.
-      const lineHeight = node.parentElement
-        ? Number.parseFloat(window.getComputedStyle(node.parentElement).lineHeight)
-        : Number.NaN;
-      for (const rect of nodeRange.getClientRects()) {
-        if (rect.width <= 0 || rect.height <= 0) continue;
-        if (Number.isFinite(lineHeight) && lineHeight > rect.height) {
-          const expand = (lineHeight - rect.height) / 2;
-          textRects.push(new DOMRect(rect.left, rect.top - expand, rect.width, lineHeight));
-        } else {
-          textRects.push(rect);
-        }
-      }
-    };
-    const root = range.commonAncestorContainer;
-    if (root instanceof Text) {
-      pushNodeRects(root);
-    } else {
-      // SAFETY: the walker is created with SHOW_TEXT, so every node it
-      // yields is a Text node.
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        if (range.intersectsNode(node)) pushNodeRects(node as Text);
-      }
-    }
-
-    // Merge rects that sit on the same visual line into one strip, the way
-    // the native selection paints a line box.
-    const lines: Array<{ left: number; right: number; top: number; bottom: number }> = [];
-    for (const rect of textRects) {
-      const line = lines.find((candidate) => (
-        Math.abs(candidate.top - rect.top) < 6 && Math.abs(candidate.bottom - rect.bottom) < 6
-      ));
-      if (line) {
-        line.left = Math.min(line.left, rect.left);
-        line.right = Math.max(line.right, rect.right);
-        line.top = Math.min(line.top, rect.top);
-        line.bottom = Math.max(line.bottom, rect.bottom);
-      } else {
-        lines.push({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom });
-      }
-    }
-    setCommentRects(lines.map((line) => new DOMRect(line.left, line.top, line.right - line.left, line.bottom - line.top)));
+    setCommentRects(collectSelectionOverlayRects(range));
   }, []);
 
   React.useEffect(() => {

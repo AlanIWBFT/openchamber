@@ -68,6 +68,13 @@ describe('model-facing text', () => {
             .toBe('Comment on this fragment of an earlier message in this conversation:\n> first line\n> second line\n\nwhy so?');
     });
 
+    test('file quotes carry the fragment with an optional line range', () => {
+        expect(formatContextText(contextPayloadFromDraft(draft({ source: 'file-quote', fileLabel: 'docs/CHANGELOG.md', startLine: 12, endLine: 13, code: 'a\nb', text: 'why?' }))))
+            .toBe('Comment on this fragment of `docs/CHANGELOG.md` lines 12-13:\n> a\n> b\n\nwhy?');
+        expect(formatContextText(contextPayloadFromDraft(draft({ source: 'file-quote', fileLabel: 'docs/CHANGELOG.md', startLine: 0, endLine: 0, code: 'a', text: '' }))))
+            .toBe('Comment on this fragment of `docs/CHANGELOG.md`:\n> a');
+    });
+
     test('PR comments and checks keep their attachment wording', () => {
         expect(formatContextText(contextPayloadFromDraft(draft({ source: 'pr-comment', fileLabel: 'octo/repo#7', code: 'the comment', text: '' }))))
             .toBe('Attached GitHub PR comment (octo/repo#7):\n\nthe comment');
@@ -91,6 +98,8 @@ describe('round-trip through part metadata', () => {
             contextPayloadFromDraft(draft({ source: 'pr-comment' })),
             contextPayloadFromDraft(draft({ source: 'pr-check' })),
             contextPayloadFromDraft(draft({ source: 'chat-quote', fileLabel: 'msg_1' })),
+            contextPayloadFromDraft(draft({ source: 'file-quote', startLine: 3, endLine: 5 })),
+            contextPayloadFromDraft(draft({ source: 'file-quote', startLine: 0, endLine: 0 })),
         ];
         for (const payload of payloads) {
             expect(readContextPart(asPart(payload))).toEqual(payload);

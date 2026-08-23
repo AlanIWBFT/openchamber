@@ -9,6 +9,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.message.context.codeComment': 'Коментар до {file}, рядки {start}-{end}',
   'chat.message.context.codeCommentLine': 'Коментар до {file}, рядок {line}',
   'chat.message.context.chatQuote': 'Цитата з попереднього повідомлення',
+  'chat.message.context.fileQuote': 'Виділене з {file}',
   'chat.chatInput.chatQuoteContext': 'Цитати з чату',
   'chat.chatInput.chatQuoteContextRemove': 'Прибрати цитати з чату',
   'chat.chatInput.contextPreview.selectedLabel': 'Виділений текст',

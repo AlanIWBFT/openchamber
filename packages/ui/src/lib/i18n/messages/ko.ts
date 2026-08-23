@@ -9,6 +9,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.message.context.codeComment': '{file} {start}-{end}행에 대한 댓글',
   'chat.message.context.codeCommentLine': '{file} {line}행에 대한 댓글',
   'chat.message.context.chatQuote': '이전 메시지에서 인용',
+  'chat.message.context.fileQuote': '{file}에서 선택한 부분',
   'chat.chatInput.chatQuoteContext': '채팅 인용',
   'chat.chatInput.chatQuoteContextRemove': '채팅 인용 제거',
   'chat.chatInput.contextPreview.selectedLabel': '선택한 텍스트',
