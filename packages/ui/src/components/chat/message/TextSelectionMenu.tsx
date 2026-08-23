@@ -616,7 +616,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
         }}
         placeholder={t('chat.textSelection.comment.placeholder')}
         className={cn(
-          'flex-1 resize-none bg-transparent text-sm leading-5 text-[var(--surface-foreground)] outline-none placeholder:text-[var(--surface-mutedForeground)]',
+          'flex-1 resize-none bg-transparent text-sm leading-5 text-[var(--surface-foreground)] outline-none placeholder:text-[var(--surface-mutedForeground)] placeholder:opacity-60',
           // The width cap sizes the floating desktop pill; on mobile the pill
           // spans the bottom bar and the cap would strand slack space to the
           // right of the attach button.
