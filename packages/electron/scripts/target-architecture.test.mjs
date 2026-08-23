@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  ensureElectronBuilderArchitecture,
   normalizeTargetArchitecture,
   readElectronBuilderArchitecture,
   resolveTargetArchitecture,
@@ -16,6 +17,19 @@ test('normalizes host and release architecture aliases', () => {
 test('reads a single electron-builder target architecture', () => {
   assert.equal(readElectronBuilderArchitecture(['--linux', '--arch=aarch64']), 'arm64');
   assert.equal(readElectronBuilderArchitecture(['--linux', '--x64']), 'x64');
+});
+
+test('supplies an explicit Electron architecture when Windows or Linux would otherwise infer it from the runtime', () => {
+  assert.deepEqual(ensureElectronBuilderArchitecture({
+    platform: 'win32',
+    targetArchitecture: normalizeTargetArchitecture('arm64'),
+    builderArgs: ['--win'],
+  }), ['--win', '--arm64']);
+  assert.deepEqual(ensureElectronBuilderArchitecture({
+    platform: 'linux',
+    targetArchitecture: normalizeTargetArchitecture('arm64'),
+    builderArgs: ['--arm64'],
+  }), ['--arm64']);
 });
 
 test('rejects unsupported architectures', () => {
