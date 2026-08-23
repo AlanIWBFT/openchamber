@@ -264,37 +264,33 @@ export function materializeSessionSnapshots(
   const order = options.order ?? createMessageOrderState()
   const skipPartTypes = options.skipPartTypes ?? new Set<string>()
   const snapshots = records.filter((record) => !!record?.info?.id)
-  const nextMessages = sortOrderedMessages(snapshots.map((record) => record.info), order)
   const existingMessages = state.message[sessionID]
   const currentMessages = existingMessages ?? []
-  const incomingByID = new Map(nextMessages.map((message) => [message.id, message] as const))
-  let reconciledCurrentMessages = currentMessages
-  for (let index = 0; index < currentMessages.length; index += 1) {
-    const existing = currentMessages[index]
-    const incoming = incomingByID.get(existing.id)
-    if (
-      existing.role !== "assistant"
-      || existing.error?.name !== "MessageAbortedError"
-      || incoming?.role !== "assistant"
-      || incoming.time.completed === undefined
-    ) continue
-    if (reconciledCurrentMessages === currentMessages) reconciledCurrentMessages = [...currentMessages]
-    reconciledCurrentMessages[index] = incoming
-  }
+  const currentByID = new Map(currentMessages.map((message) => [message.id, message] as const))
+  const nextMessages = sortOrderedMessages(snapshots.map((record) => {
+    const incoming = record.info
+    const existing = currentByID.get(incoming.id)
+    return existing?.role === "assistant"
+      && existing.error?.name === "MessageAbortedError"
+      && incoming.role === "assistant"
+      && incoming.time.completed === undefined
+      ? existing
+      : incoming
+  }), order)
   const isComplete = options.mode === "complete"
   const isRecent = options.mode === "recent"
   const recentBoundary = isRecent ? options.recentBoundary : undefined
   const recentIDs = new Set(nextMessages.map((message) => message.id))
   const retainedMessages = recentBoundary === undefined
-    ? reconciledCurrentMessages
-    : reconciledCurrentMessages.filter((message) => {
+    ? currentMessages
+    : currentMessages.filter((message) => {
       if (recentIDs.has(message.id)) return true
       const seq = order.message.get(message.id)
       return seq === undefined || seq < recentBoundary
     })
   const messages = isComplete
     ? nextMessages
-    : mergeMessages(isRecent ? retainedMessages : reconciledCurrentMessages, nextMessages, order)
+    : mergeMessages(isRecent ? retainedMessages : currentMessages, nextMessages, order)
   const messagesChanged = messages !== currentMessages || (existingMessages === undefined && snapshots.length === 0)
 
   let partsChanged = false

@@ -131,11 +131,13 @@ describe("applyDirectoryEvent", () => {
       message: { ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "user", time: { created: 1 } } as Message] },
       part: { msg_1: [optimisticText, optimisticFile] },
     })
+    const order = createMessageOrderState()
 
     expect(applyDirectoryEvent(draft, {
+      seq: 1,
       type: "message.part.updated",
       properties: { part: serverText },
-    } as Event)).toBe(true)
+    } as Event, { order })).toBe(true)
     expect(draft.part.msg_1).toEqual([serverText, optimisticFile])
   })
 
