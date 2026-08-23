@@ -11,7 +11,7 @@ mock.module('@/components/chat/markdown/markdownSyntaxVars', () => ({
   getMarkdownSyntaxVars: () => ({}),
 }));
 mock.module('@/components/code/useWorkerHighlightedLines', () => ({
-  useWorkerHighlightedLines: () => null,
+  useWorkerHighlightedLines: () => ({ lines: null }),
 }));
 
 const { VirtualizedCodeBlock } = await import('./VirtualizedCodeBlock');
