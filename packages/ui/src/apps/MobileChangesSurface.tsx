@@ -628,6 +628,7 @@ const MobileDiffDetail: React.FC<{
           <MobileChangesState icon message={t('mobile.changes.diffDetail.imageUnavailable')} />
         ) : (
           <ScrollShadow
+            viewportClassName="h-full"
             className="h-full overflow-y-auto overflow-x-hidden p-3"
             data-diff-virtual-root
             data-diff-virtual-content

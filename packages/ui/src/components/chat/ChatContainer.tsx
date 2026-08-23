@@ -327,7 +327,8 @@ const ChatViewport = React.memo(({
         >
             <div className="absolute inset-0">
                 <ScrollShadow
-                    className="absolute inset-0 overflow-y-auto overflow-x-hidden z-0 chat-scroll overlay-scrollbar-target"
+                    viewportClassName="absolute inset-0"
+                    className="min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden chat-scroll overlay-scrollbar-target"
                     ref={scrollRef}
                     style={CHAT_SCROLL_STYLE}
                     observeMutations={false}
@@ -335,7 +336,6 @@ const ChatViewport = React.memo(({
                     tabIndex={0}
                     onClick={focusScrollContainer}
                     onScroll={handleHistoryScroll}
-                    data-scroll-shadow="true"
                     data-scrollbar="chat"
                 >
                     <div className="relative z-0 min-h-full">

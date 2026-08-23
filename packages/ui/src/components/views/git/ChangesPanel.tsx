@@ -488,6 +488,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
       <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
         <ScrollShadow
           ref={scrollRef}
+          viewportClassName="min-h-0 w-full flex-1"
           className="overlay-scrollbar-target overlay-scrollbar-container min-h-0 w-full flex-1 overflow-x-hidden overflow-y-auto"
         >
           {shouldVirtualize ? (

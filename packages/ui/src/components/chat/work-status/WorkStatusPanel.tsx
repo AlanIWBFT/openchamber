@@ -242,6 +242,7 @@ export const WorkStatusPanel: React.FC<Props> = ({ sessionId, directory, visible
       <WorkStatusPresenceProvider onChange={setRenderedSections}>
       <ScrollShadow
         ref={restore}
+        viewportClassName="min-h-0 flex-1 [--scroll-shadow-color:color-mix(in_srgb,var(--surface-muted)_var(--oc-glass-opacity),transparent)]"
         onScroll={handleScroll}
         size={24}
         className="oc-hide-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-2"

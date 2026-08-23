@@ -47,6 +47,16 @@ export const ScrollableOverlay = React.forwardRef<HTMLElement, ScrollableOverlay
     ...rest
   }, ref) => {
     const containerRef = React.useRef<HTMLElement | null>(null);
+    const containerSizeClassName = fillContainer
+      ? "flex-1 min-h-0 w-full"
+      : "flex-none w-full h-auto";
+    const containerClassName = cn(
+      "overlay-scrollbar-target overlay-scrollbar-container",
+      preventOverscroll && "overscroll-none",
+      containerSizeClassName,
+      disableHorizontal ? "overflow-y-auto overflow-x-hidden" : "overflow-auto",
+      className,
+    );
 
     React.useImperativeHandle(ref, () => containerRef.current as HTMLElement, []);
 
@@ -62,16 +72,11 @@ export const ScrollableOverlay = React.forwardRef<HTMLElement, ScrollableOverlay
           <ScrollShadow
             as={Component}
             ref={containerRef as React.Ref<HTMLElement>}
+            viewportClassName={containerSizeClassName}
             size={scrollShadowSize}
             hideTopShadow={hideTopScrollShadow}
             hideBottomShadow={hideBottomScrollShadow}
-            className={cn(
-              "overlay-scrollbar-target overlay-scrollbar-container",
-              preventOverscroll && "overscroll-none",
-              fillContainer ? "flex-1 min-h-0 w-full" : "flex-none w-full h-auto",
-              disableHorizontal ? "overflow-y-auto overflow-x-hidden" : "overflow-auto",
-              className
-            )}
+            className={containerClassName}
             style={style as React.CSSProperties}
             observeMutations={observeMutations}
             {...rest}
@@ -81,13 +86,7 @@ export const ScrollableOverlay = React.forwardRef<HTMLElement, ScrollableOverlay
         ) : (
           <Component
             ref={containerRef as React.Ref<HTMLElement>}
-            className={cn(
-              "overlay-scrollbar-target overlay-scrollbar-container",
-              preventOverscroll && "overscroll-none",
-              fillContainer ? "flex-1 min-h-0 w-full" : "flex-none w-full h-auto",
-              disableHorizontal ? "overflow-y-auto overflow-x-hidden" : "overflow-auto",
-              className
-            )}
+            className={containerClassName}
             style={style}
             {...rest}
           >

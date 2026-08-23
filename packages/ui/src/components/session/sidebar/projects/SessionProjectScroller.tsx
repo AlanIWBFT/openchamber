@@ -10,7 +10,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { formatDirectoryName, formatPathForDisplay, cn } from '@/lib/utils';
+import { formatDirectoryName, formatPathForDisplay } from '@/lib/utils';
 import type { SessionGroup } from '../types';
 import { ProjectHeaderIdentity, SortableGroupItem, SortableProjectItem } from './sortableItems';
 import { SessionGroupSection, type SessionGroupSectionProps } from './SessionGroupSection';
@@ -155,7 +155,7 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
   // Keep per-scroll measurements out of React state so the interaction guard
   // can read the current fade boundary without rerendering the sidebar.
   const topFadeSizeRef = React.useRef(0);
-  // Update the compositor-owned mask on every scroll, but cross the React
+  // Update the viewport-owned fade on every scroll, but cross the React
   // render boundary only when the sticky identity overlay appears or hides.
   const syncTopFade = React.useCallback((scroller: HTMLElement) => {
     const hasTopScroll = scroller.scrollTop > 1;
@@ -163,8 +163,9 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
       ? Math.min(TOP_FADE_MIN_SIZE + scroller.scrollTop, TOP_FADE_MAX_SIZE)
       : 0;
     topFadeSizeRef.current = topFadeSize;
-    scroller.style.setProperty('--scroll-shadow-top-size', `${topFadeSize}px`);
-    scroller.style.setProperty(
+    const fadeRoot = scroller.closest<HTMLElement>('.oc-sticky-fade-root');
+    fadeRoot?.style.setProperty('--scroll-shadow-top-size', `${topFadeSize}px`);
+    fadeRoot?.style.setProperty(
       '--scroll-shadow-top-clear-size',
       `${Math.min(Math.max(topFadeSize - 8, 0), TOP_FADE_CLEAR_MAX_SIZE)}px`,
     );
@@ -192,7 +193,7 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
     }
   }
   // The IntersectionObserver reports the stuck header asynchronously, a frame or
-  // two after the (synchronous) mask has already hidden the real header — which
+  // two after the synchronous fade has already hidden the real header — which
   // otherwise leaves a one-frame gap where the title blinks out with no crisp
   // replacement. Seed the overlay with the topmost rendered project so it is
   // ready in the same frame; the observer then corrects it. When shared sessions
@@ -202,11 +203,11 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
   const leadingProjectLabel = leadingProject ? getProjectLabel(leadingProject, view.homeDirectory) : null;
 
   if (model.projectSections.length === 0) {
-    return <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 pb-1 pl-2.5 pr-2', view.mobileVariant ? '' : '')}>{model.topContent}{model.emptyState}</ScrollableOverlay>;
+    return <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className="space-y-1 pb-1 pl-2.5 pr-2">{model.topContent}{model.emptyState}</ScrollableOverlay>;
   }
 
   if (model.sectionsForRender.length === 0) {
-    return <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 pb-1 pl-2.5 pr-2', view.mobileVariant ? '' : '')}>{model.searchEmptyState}</ScrollableOverlay>;
+    return <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className="space-y-1 pb-1 pl-2.5 pr-2">{model.searchEmptyState}</ScrollableOverlay>;
   }
 
   return (
@@ -217,21 +218,21 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
     // rows appear below naturally.
     <div
       className="oc-sticky-fade-root relative flex min-h-0 flex-1"
+      // SAFETY: this custom property configures the viewport-owned edge fade.
+      style={enableStickyFade ? { '--scroll-shadow-top-size': '0px' } as React.CSSProperties : undefined}
       onPointerDownCapture={enableStickyFade ? blockObscuredInteraction : undefined}
       onClickCapture={enableStickyFade ? blockObscuredInteraction : undefined}
       onContextMenuCapture={enableStickyFade ? blockObscuredInteraction : undefined}
     >
-    <ScrollableOverlay
-      ref={scrollContainerRef}
-      useScrollShadow
-      hideTopScrollShadow={!enableStickyFade}
-      scrollShadowSize={96}
-      outerClassName="flex-1 min-h-0"
-      className={cn('oc-sidebar-scroller oc-sticky-fade-scroller space-y-1.5 pb-1 pl-2.5 pr-2 [overflow-anchor:none]', view.mobileVariant ? '' : '')}
-      // SAFETY: the custom property is the only dynamic CSS declaration here.
-      style={enableStickyFade ? { '--scroll-shadow-top-size': '0px' } as React.CSSProperties : undefined}
-      onScroll={enableStickyFade ? (event) => syncTopFade(event.currentTarget) : undefined}
-    >
+      <ScrollableOverlay
+        ref={scrollContainerRef}
+        useScrollShadow
+        hideTopScrollShadow={!enableStickyFade}
+        scrollShadowSize={96}
+        outerClassName="flex-1 min-h-0"
+        className="oc-sidebar-scroller space-y-1.5 pb-1 pl-2.5 pr-2 [overflow-anchor:none]"
+        onScroll={enableStickyFade ? (event) => syncTopFade(event.currentTarget) : undefined}
+      >
       {model.topContent}
       {view.showOnlyMainWorkspace ? (
         <div className="space-y-[0.6rem] py-1">
@@ -372,7 +373,7 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
           <DragOverlay dropAnimation={null} />
         </DndContext>
       )}
-    </ScrollableOverlay>
+      </ScrollableOverlay>
       {enableStickyFade && (leadingProject || model.hasSharedSessions) ? (
         <div
           className="oc-sticky-fade-overlay pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center gap-1.5 py-1 pl-4 pr-5"

@@ -256,85 +256,80 @@ div[data-chat-input-footer="true"] {
   -webkit-appearance: none;
 }
 
-/* Scroll shadow (HeroUI) fallback styling to ensure visible gradients without the Tailwind plugin */
-[data-scroll-shadow="true"] {
-  --scroll-shadow-size: var(--scroll-shadow-size, 48px);
+/* Scroll edge fades live on the viewport, never on the scrolling content. */
+[data-scroll-shadow-viewport]::before,
+[data-scroll-shadow-viewport]::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  z-index: 10;
+  opacity: 0;
 }
 
-[data-scroll-shadow="true"][data-orientation="vertical"] {
-  mask-mode: alpha;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: 100% 100%;
-  mask-size: 100% 100%;
+[data-scroll-shadow-viewport][data-orientation="vertical"]::before,
+[data-scroll-shadow-viewport][data-orientation="vertical"]::after {
+  inset-inline: 0;
 }
 
-[data-scroll-shadow="true"][data-orientation="vertical"][data-top-bottom-scroll="true"] {
-  mask-image: linear-gradient(
+[data-scroll-shadow-viewport][data-orientation="vertical"]::before {
+  top: 0;
+  height: var(--scroll-shadow-top-size, var(--scroll-shadow-size));
+  background: linear-gradient(
     to bottom,
-    transparent 0%,
-    transparent var(--scroll-shadow-top-clear-size, 0px),
-    #000 var(--scroll-shadow-top-size, var(--scroll-shadow-size)),
-    #000 calc(100% - var(--scroll-shadow-size)),
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    transparent var(--scroll-shadow-top-clear-size, 0px),
-    #000 var(--scroll-shadow-top-size, var(--scroll-shadow-size)),
-    #000 calc(100% - var(--scroll-shadow-size)),
+    var(--scroll-shadow-color, var(--surface-background)) 0,
+    var(--scroll-shadow-color, var(--surface-background)) var(--scroll-shadow-top-clear-size, 0px),
     transparent 100%
   );
 }
 
-[data-scroll-shadow="true"][data-orientation="vertical"][data-top-scroll="true"] {
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    transparent var(--scroll-shadow-top-clear-size, 0px),
-    #000 var(--scroll-shadow-top-size, var(--scroll-shadow-size)),
-    #000 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    transparent var(--scroll-shadow-top-clear-size, 0px),
-    #000 var(--scroll-shadow-top-size, var(--scroll-shadow-size)),
-    #000 100%
-  );
+[data-scroll-shadow-viewport][data-orientation="vertical"]::after {
+  bottom: 0;
+  height: var(--scroll-shadow-size);
+  background: linear-gradient(to top, var(--scroll-shadow-color, var(--surface-background)), transparent);
+}
+
+[data-scroll-shadow-viewport][data-orientation="horizontal"]::before,
+[data-scroll-shadow-viewport][data-orientation="horizontal"]::after {
+  inset-block: 0;
+  width: var(--scroll-shadow-size);
+}
+
+[data-scroll-shadow-viewport][data-orientation="horizontal"]::before {
+  left: 0;
+  background: linear-gradient(to right, var(--scroll-shadow-color, var(--surface-background)), transparent);
+}
+
+[data-scroll-shadow-viewport][data-orientation="horizontal"]::after {
+  right: 0;
+  background: linear-gradient(to left, var(--scroll-shadow-color, var(--surface-background)), transparent);
+}
+
+[data-scroll-shadow-viewport][data-top-scroll="true"]::before,
+[data-scroll-shadow-viewport][data-top-bottom-scroll="true"]::before,
+[data-scroll-shadow-viewport][data-bottom-scroll="true"]::after,
+[data-scroll-shadow-viewport][data-top-bottom-scroll="true"]::after,
+[data-scroll-shadow-viewport][data-left-scroll="true"]::before,
+[data-scroll-shadow-viewport][data-left-right-scroll="true"]::before,
+[data-scroll-shadow-viewport][data-right-scroll="true"]::after,
+[data-scroll-shadow-viewport][data-left-right-scroll="true"]::after {
+  opacity: 1;
 }
 
 /* Sticky-fade overlay: the crisp duplicate identity stays
-   mounted and its visibility is driven synchronously by the scroller's own
-   top-scroll data attribute — the same signal that engages the mask — so the
-   overlay appears in the exact frame the mask hides the real header (no blink).
+   mounted and its visibility is driven synchronously by the viewport's
+   top-scroll data attribute, so the overlay appears in the exact frame the
+   edge fade covers the real header (no blink).
    ScrollShadow sets data-top-scroll when nothing is below the viewport and
    data-top-bottom-scroll when content is both above and below. */
 .oc-sticky-fade-overlay {
   opacity: 0;
 }
 
-.oc-sticky-fade-root:has(.oc-sticky-fade-scroller[data-top-scroll="true"]) .oc-sticky-fade-overlay,
-.oc-sticky-fade-root:has(.oc-sticky-fade-scroller[data-top-bottom-scroll="true"]) .oc-sticky-fade-overlay {
+.oc-sticky-fade-root:has(
+  [data-scroll-shadow-viewport]:is([data-top-scroll="true"], [data-top-bottom-scroll="true"])
+) .oc-sticky-fade-overlay {
   opacity: 1;
 }
-
-[data-scroll-shadow="true"][data-orientation="vertical"][data-bottom-scroll="true"] {
-  mask-image: linear-gradient(
-    to bottom,
-    #000 0%,
-    #000 calc(100% - var(--scroll-shadow-size)),
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    #000 0%,
-    #000 calc(100% - var(--scroll-shadow-size)),
-    transparent 100%
-  );
-}
-
 
 @keyframes spin-once {
   from {

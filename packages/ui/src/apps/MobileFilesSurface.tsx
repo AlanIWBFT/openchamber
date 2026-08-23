@@ -278,7 +278,7 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose 
         </div>
       </div>
 
-      <ScrollShadow className="min-h-0 flex-1 overflow-y-auto px-4 pb-3">
+      <ScrollShadow viewportClassName="min-h-0 flex-1" className="min-h-0 flex-1 overflow-y-auto px-4 pb-3">
         {directoryError ? (
           <MobileFilesState message={directoryError} />
         ) : query.trim() ? (

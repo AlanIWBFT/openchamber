@@ -1782,6 +1782,7 @@ export function ScheduledTaskEditorDialog(props: {
         </header>
 
         <ScrollShadow
+          viewportClassName="flex-1 min-h-0"
           className="flex-1 min-h-0 overflow-auto [scrollbar-gutter:stable_both-edges]"
           size={64}
           hideTopShadow

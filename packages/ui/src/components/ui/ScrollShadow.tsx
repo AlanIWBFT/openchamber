@@ -1,7 +1,9 @@
 import React from "react";
+import { cn } from "@/lib/utils";
 
 export type ScrollShadowProps = React.HTMLAttributes<HTMLElement> & {
   as?: React.ElementType;
+  viewportClassName?: string;
   orientation?: "vertical" | "horizontal";
   offset?: number;
   size?: number;
@@ -12,22 +14,23 @@ export type ScrollShadowProps = React.HTMLAttributes<HTMLElement> & {
   onVisibilityChange?: (state: "both" | "none" | "top" | "bottom" | "left" | "right") => void;
 };
 
-function mergeRefs<T>(...refs: Array<React.Ref<T>>): React.RefCallback<T> {
-  return (value) => {
-    refs.forEach((ref) => {
-      if (typeof ref === "function") {
-        ref(value);
-      } else if (ref && typeof ref === "object") {
-        (ref as React.MutableRefObject<T | null>).current = value;
-      }
-    });
-  };
-}
+type EdgeState = "both" | "none" | "top" | "bottom" | "left" | "right";
+type ScrollShadowViewportStyle = React.CSSProperties & { "--scroll-shadow-size": string };
+
+const EDGE_ATTRIBUTES = [
+  "data-top-scroll",
+  "data-bottom-scroll",
+  "data-top-bottom-scroll",
+  "data-left-scroll",
+  "data-right-scroll",
+  "data-left-right-scroll",
+] as const;
 
 export const ScrollShadow = React.forwardRef<HTMLElement, ScrollShadowProps>(
-      (
+  (
       {
         as: Component = "div",
+        viewportClassName,
         orientation = "vertical",
         offset = 0,
         size = 48,
@@ -40,52 +43,46 @@ export const ScrollShadow = React.forwardRef<HTMLElement, ScrollShadowProps>(
         className,
         children,
         ...rest
-    },
+      },
     ref,
   ) => {
     const internalRef = React.useRef<HTMLElement>(null);
-    const visibleRef = React.useRef<"both" | "none" | "top" | "bottom" | "left" | "right">("none");
+    const viewportRef = React.useRef<HTMLDivElement>(null);
+    const visibleRef = React.useRef<EdgeState>("none");
+    const edgeStateRef = React.useRef("");
+    React.useImperativeHandle(ref, () => {
+      const element = internalRef.current;
+      if (!element) throw new Error("ScrollShadow scroll element is unavailable");
+      return element;
+    }, []);
 
-    const dataScrollShadow = (rest as Record<string, unknown>)["data-scroll-shadow"];
-    delete (rest as Record<string, unknown>)["data-scroll-shadow"];
-
-    const mergedStyle = React.useMemo<React.CSSProperties>(() => {
-      const next: React.CSSProperties = {
-        ...(style as React.CSSProperties),
-      };
-      (next as Record<string, string>)["--scroll-shadow-size"] = `${size}px`;
-      return next;
-    }, [size, style]);
-
-    const setAttributes = React.useCallback(
-      (el: HTMLElement, hasBefore: boolean, hasAfter: boolean, prefix: "top" | "left", suffix: "bottom" | "right") => {
-        const bothKey = `${prefix}${suffix.charAt(0).toUpperCase()}${suffix.slice(1)}Scroll` as const;
-
-        if (hasBefore && hasAfter) {
-          (el.dataset as Record<string, string>)[bothKey] = "true";
-          el.removeAttribute(`data-${prefix}-scroll`);
-          el.removeAttribute(`data-${suffix}-scroll`);
-        } else {
-          el.dataset[`${prefix}Scroll`] = String(hasBefore);
-          el.dataset[`${suffix}Scroll`] = String(hasAfter);
-          el.removeAttribute(`data-${prefix}-${suffix}-scroll`);
-        }
-      },
-      [],
+    const viewportStyle = React.useMemo<ScrollShadowViewportStyle>(
+      () => ({ "--scroll-shadow-size": `${size}px` }),
+      [size],
     );
 
     const clearAttributes = React.useCallback((el: HTMLElement) => {
-      ["top", "bottom", "top-bottom", "left", "right", "left-right"].forEach((attr) => {
-        el.removeAttribute(`data-${attr}-scroll`);
-      });
+      EDGE_ATTRIBUTES.forEach((attribute) => el.removeAttribute(attribute));
     }, []);
+
+    const setEdgeAttribute = React.useCallback((el: HTMLElement, state: EdgeState) => {
+      clearAttributes(el);
+      if (state === "none") return;
+      const attribute = state === "both"
+        ? orientation === "vertical" ? "data-top-bottom-scroll" : "data-left-right-scroll"
+        : `data-${state}-scroll`;
+      el.setAttribute(attribute, "true");
+    }, [clearAttributes, orientation]);
 
     const checkOverflow = React.useCallback(() => {
       const el = internalRef.current;
-      if (!el) return;
+      const viewport = viewportRef.current;
+      if (!el || !viewport) return;
 
       if (!isEnabled) {
-        clearAttributes(el);
+        clearAttributes(viewport);
+        edgeStateRef.current = "";
+        visibleRef.current = "none";
         return;
       }
 
@@ -97,25 +94,29 @@ export const ScrollShadow = React.forwardRef<HTMLElement, ScrollShadowProps>(
         orientation === "vertical"
           ? el.scrollTop > offset + SUBPIXEL_TOLERANCE
           : el.scrollLeft > offset + SUBPIXEL_TOLERANCE;
-      let hasAfter =
+      const hasAfter =
         orientation === "vertical"
           ? el.scrollHeight - (el.scrollTop + el.clientHeight) > offset + SUBPIXEL_TOLERANCE
           : el.scrollWidth - (el.scrollLeft + el.clientWidth) > offset + SUBPIXEL_TOLERANCE;
 
-      const effectiveHasBefore = hideTopShadow && orientation === "vertical" ? false : hasBefore;
-
-      if (hideBottomShadow && orientation === "vertical") {
-        hasAfter = false;
+      const effectiveHasBefore = hasBefore && !(orientation === "vertical" && hideTopShadow);
+      const effectiveHasAfter = hasAfter && !(orientation === "vertical" && hideBottomShadow);
+      const beforeEdge = orientation === "vertical" ? "top" : "left";
+      const afterEdge = orientation === "vertical" ? "bottom" : "right";
+      let next: EdgeState = "none";
+      if (effectiveHasBefore && effectiveHasAfter) next = "both";
+      else if (effectiveHasBefore) next = beforeEdge;
+      else if (effectiveHasAfter) next = afterEdge;
+      const edgeState = `${orientation}:${next}`;
+      if (edgeState !== edgeStateRef.current) {
+        edgeStateRef.current = edgeState;
+        setEdgeAttribute(viewport, next);
       }
-
-      setAttributes(el, effectiveHasBefore, hasAfter, orientation === "vertical" ? "top" : "left", orientation === "vertical" ? "bottom" : "right");
-
-      const next = effectiveHasBefore && hasAfter ? "both" : effectiveHasBefore ? (orientation === "vertical" ? "top" : "left") : hasAfter ? (orientation === "vertical" ? "bottom" : "right") : "none";
       if (next !== visibleRef.current) {
         visibleRef.current = next;
         onVisibilityChange?.(next);
       }
-    }, [clearAttributes, hideTopShadow, hideBottomShadow, isEnabled, offset, onVisibilityChange, orientation, setAttributes]);
+    }, [clearAttributes, hideTopShadow, hideBottomShadow, isEnabled, offset, onVisibilityChange, orientation, setEdgeAttribute]);
 
     React.useEffect(() => {
       const el = internalRef.current;
@@ -132,9 +133,9 @@ export const ScrollShadow = React.forwardRef<HTMLElement, ScrollShadowProps>(
       };
 
       const handleScroll = () => checkOverflow(); // Scroll should be immediate
-      const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(throttledCheck) : null;
+      const resizeObserver = "ResizeObserver" in globalThis ? new ResizeObserver(throttledCheck) : null;
       const mutationObserver =
-        observeMutations && typeof MutationObserver !== "undefined" ? new MutationObserver(throttledCheck) : null;
+        observeMutations && "MutationObserver" in globalThis ? new MutationObserver(throttledCheck) : null;
 
       checkOverflow();
 
@@ -157,16 +158,23 @@ export const ScrollShadow = React.forwardRef<HTMLElement, ScrollShadowProps>(
     }, [checkOverflow, observeMutations]);
 
     return (
-      <Component
-        {...rest}
-        ref={mergeRefs(internalRef, ref)}
-        className={className}
+      <div
+        ref={viewportRef}
+        className={cn("relative flex min-h-0 min-w-0 flex-col", viewportClassName)}
+        data-scroll-shadow-viewport
         data-orientation={orientation}
-        data-scroll-shadow={dataScrollShadow ?? true}
-        style={mergedStyle}
+        style={viewportStyle}
       >
-        {children}
-      </Component>
+        <Component
+          {...rest}
+          ref={internalRef}
+          className={className}
+          data-scroll-shadow-scroller
+          style={style}
+        >
+          {children}
+        </Component>
+      </div>
     );
   },
 );
