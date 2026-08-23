@@ -50,6 +50,17 @@ export const readElectronBuilderArchitecture = (args = []) => {
   return [...architectures][0];
 };
 
+export const ensureElectronBuilderArchitecture = ({
+  platform = process.platform,
+  targetArchitecture,
+  builderArgs = [],
+}) => {
+  const args = [...builderArgs];
+  if (!['linux', 'win32'].includes(platform) || readElectronBuilderArchitecture(args)) return args;
+  args.push(`--${normalizeTargetArchitecture(targetArchitecture?.electronBuilder, 'Electron target architecture').electronBuilder}`);
+  return args;
+};
+
 export const resolveTargetArchitecture = ({
   platform = process.platform,
   hostArchitecture = process.arch,
@@ -97,7 +108,14 @@ export const resolveOpenCodeCliTarget = ({ platform = process.platform, targetAr
   };
 };
 
-export const resolveLocalOpenCodeBunRuntime = ({ platform = process.platform, targetArchitecture, sourceRoot }) => {
+export const resolveLocalOpenCodeBunRuntime = ({
+  platform = process.platform,
+  targetArchitecture,
+  sourceRoot,
+  environment = process.env,
+}) => {
+  const configuredRuntime = environment.OPENCHAMBER_OPENCODE_BUN_RUNTIME?.trim();
+  if (configuredRuntime) return path.resolve(configuredRuntime);
   if (platform !== 'win32' || targetArchitecture?.node !== 'x64') return null;
   return path.resolve(sourceRoot, '..', LOCAL_WINDOWS_X64_BUN_RUNTIME);
 };
