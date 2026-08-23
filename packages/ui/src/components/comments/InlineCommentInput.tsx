@@ -149,7 +149,7 @@ export function InlineCommentInput({
       onPointerDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
     >
-      <div className="rounded-xl border border-[var(--interactive-border)] bg-[var(--surface-elevated)] shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]">
+      <div className="oc-glass-popover rounded-xl border border-[var(--interactive-border)] shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]">
         {(fileLabel || displayRange) ? (
           <div className="flex items-center gap-2 px-3 pt-2 text-xs font-medium text-[var(--surface-mutedForeground)] opacity-60">
             {fileLabel ? <span className="max-w-[200px] truncate">{fileLabel}</span> : null}

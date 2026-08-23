@@ -323,7 +323,7 @@ export function ComposerContextChips({ draftTarget, colors }: ComposerContextChi
         <div className="relative" ref={containerRef}>
             {openGroup ? (
                 <div
-                    className="absolute bottom-full left-0 z-30 mb-1.5 w-full max-w-[480px] overflow-hidden rounded-xl border border-[var(--interactive-border)] bg-[var(--surface-elevated)] shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]"
+                    className="oc-glass-popover absolute bottom-full left-0 z-30 mb-1.5 w-full max-w-[480px] overflow-hidden rounded-xl border border-[var(--interactive-border)] shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]"
                     onMouseEnter={cancelClose}
                     onMouseLeave={scheduleClose}
                 >

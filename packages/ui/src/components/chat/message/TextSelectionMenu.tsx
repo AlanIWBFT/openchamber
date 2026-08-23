@@ -540,8 +540,8 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
   const commentInput = (
     <div
       className={cn(
-        'flex items-end gap-2 rounded-3xl border border-[var(--interactive-border)]',
-        'bg-[var(--surface-elevated)] pl-4 shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]',
+        'oc-glass-popover flex items-end gap-2 rounded-3xl border border-[var(--interactive-border)]',
+        'pl-4 shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]',
         'py-1 pr-1',
         'transition-[opacity,transform] duration-200 ease-out will-change-[opacity,transform]',
         isOpening ? 'opacity-0 translate-y-[4px]' : 'opacity-100 translate-y-0'
@@ -624,8 +624,8 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
         ref={menuRef}
         className={cn(
           'fixed left-3 right-3 bottom-0 z-50 mx-auto max-w-[420px]',
-          'rounded-2xl border border-[var(--interactive-border)]',
-          'bg-[var(--surface-elevated)] p-2 shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]',
+          'oc-glass-popover rounded-2xl border border-[var(--interactive-border)]',
+          'p-2 shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]',
           'safe-area-bottom',
           'transition-[opacity,transform] duration-200 ease-out will-change-[opacity,transform]',
           isOpening ? 'opacity-0 translate-y-[4px]' : 'opacity-100 translate-y-0'
@@ -722,8 +722,8 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
         <div
           className={cn(
             'flex items-center whitespace-nowrap',
-            'rounded-full border border-[var(--interactive-border)]',
-            'bg-[var(--surface-elevated)] shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]',
+            'oc-glass-popover rounded-full border border-[var(--interactive-border)]',
+            'shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]',
             'p-1',
             'transition-[opacity,transform] duration-200 ease-out will-change-[opacity,transform]',
             isOpening ? 'opacity-0 translate-y-[4px]' : 'opacity-100 translate-y-0'

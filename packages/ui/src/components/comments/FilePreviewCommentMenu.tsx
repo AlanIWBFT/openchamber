@@ -231,8 +231,8 @@ export function FilePreviewCommentMenu({ containerRef, filePath, fileContent }: 
         <div
           className={cn(
             'flex items-center whitespace-nowrap',
-            'rounded-full border border-[var(--interactive-border)]',
-            'bg-[var(--surface-elevated)] shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]',
+            'oc-glass-popover rounded-full border border-[var(--interactive-border)]',
+            'shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]',
             'p-1',
           )}
         >
