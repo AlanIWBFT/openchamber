@@ -144,6 +144,7 @@ const prepareFromLocalSource = ({ sourceRoot, version, targetArchitecture, outpu
     platform: process.platform,
     targetArchitecture,
     sourceRoot,
+    environment: process.env,
   });
   if (compileExecutablePath && !fs.statSync(compileExecutablePath, { throwIfNoEntry: false })?.isFile()) {
     throw new Error(`Local Bun runtime not found: ${compileExecutablePath}`);
