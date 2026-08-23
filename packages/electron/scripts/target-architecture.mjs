@@ -50,6 +50,17 @@ export const readElectronBuilderArchitecture = (args = []) => {
   return [...architectures][0];
 };
 
+export const ensureElectronBuilderArchitecture = ({
+  platform = process.platform,
+  targetArchitecture,
+  builderArgs = [],
+}) => {
+  const args = [...builderArgs];
+  if (!['linux', 'win32'].includes(platform) || readElectronBuilderArchitecture(args)) return args;
+  args.push(`--${normalizeTargetArchitecture(targetArchitecture?.electronBuilder, 'Electron target architecture').electronBuilder}`);
+  return args;
+};
+
 export const resolveTargetArchitecture = ({
   platform = process.platform,
   hostArchitecture = process.arch,
