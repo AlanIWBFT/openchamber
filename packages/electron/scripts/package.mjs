@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { canaryBuildConfig } from './canary-build-config.mjs';
-import { resolveTargetArchitecture } from './target-architecture.mjs';
+import { ensureElectronBuilderArchitecture, resolveTargetArchitecture } from './target-architecture.mjs';
 
 const env = { ...process.env };
-const builderArgs = process.argv.slice(2);
+let builderArgs = process.argv.slice(2);
 
 if (env.OPENCHAMBER_DESKTOP_CHANNEL === 'canary') {
   const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -18,6 +18,11 @@ if (env.OPENCHAMBER_DESKTOP_CHANNEL === 'canary') {
   console.log('[electron] building Canary: the release app with the Canary icons');
 }
 const targetArchitecture = resolveTargetArchitecture({ environment: env, builderArgs });
+builderArgs = ensureElectronBuilderArchitecture({
+  platform: process.platform,
+  targetArchitecture,
+  builderArgs,
+});
 
 if (process.platform === 'win32' && !env.CSC_LINK && !env.WINDOWS_CSC_LINK) {
   env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
@@ -36,12 +41,6 @@ const bunBinary = bunBinaryCandidates.find((candidate) => {
   }
   return false;
 }) || (process.platform === 'win32' ? 'bun.exe' : 'bun');
-
-if (process.platform === 'linux' && !builderArgs.some((argument) => (
-  argument === '--x64' || argument === '--arm64' || argument === '--arch' || argument.startsWith('--arch=')
-))) {
-  builderArgs.push(`--${targetArchitecture.electronBuilder}`);
-}
 
 const child = spawn(bunBinary, ['x', 'electron-builder', ...builderArgs], {
   env,
