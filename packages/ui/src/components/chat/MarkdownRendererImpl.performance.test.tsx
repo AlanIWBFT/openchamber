@@ -6,6 +6,7 @@ import type { TextPart } from '@opencode-ai/sdk/v2';
 
 type OperationCounts = {
   innerHTMLWrites: number;
+  spriteIconInnerHTMLWrites: number;
   querySelectorAllCalls: number;
   appendCalls: number;
   replaceCalls: number;
@@ -75,6 +76,7 @@ let detachedMarkdownDomCacheStats: () => { sessions: number; entries: number };
 
 const makeCounts = (): OperationCounts => ({
   innerHTMLWrites: 0,
+  spriteIconInnerHTMLWrites: 0,
   querySelectorAllCalls: 0,
   appendCalls: 0,
   replaceCalls: 0,
@@ -204,7 +206,10 @@ const initializePerformanceDom = async (): Promise<void> => {
     configurable: true,
     get: innerHTMLDescriptor.get,
     set(value: string) {
-      if (activeCounts) activeCounts.innerHTMLWrites += 1;
+      if (activeCounts) {
+        activeCounts.innerHTMLWrites += 1;
+        if (value.includes('href="#oc-')) activeCounts.spriteIconInnerHTMLWrites += 1;
+      }
       innerHTMLDescriptor.set?.call(this, value);
     },
   });
@@ -243,7 +248,7 @@ const initializePerformanceDom = async (): Promise<void> => {
   } });
   const svgSetAttribute = SVGElement.prototype.setAttribute;
   Object.defineProperty(SVGElement.prototype, 'setAttribute', { configurable: true, value: function (name: string, value: string): void {
-    if (name === 'viewBox' && activeCounts) {
+    if (name === 'viewBox' && activeCounts && this.closest('[data-markdown="mermaid"]')) {
       activeCounts.viewBoxWrites += 1;
       activeCounts.geometrySequence.push('write');
     }
@@ -313,6 +318,17 @@ afterAll(() => {
 });
 
 describe('MarkdownRenderer DOM mount performance contract', () => {
+  test('builds Markdown sprite controls without parsing SVG markup', async () => {
+    const mounted = await mountFixture(1);
+
+    const spriteControlCount = mounted.host.querySelectorAll('[data-md-action] use[href^="#oc-"]').length;
+    const spriteIconInnerHTMLWrites = mounted.operations.spriteIconInnerHTMLWrites;
+    await act(async () => mounted.root.unmount());
+
+    expect(spriteControlCount).toBeGreaterThan(0);
+    expect(spriteIconInnerHTMLWrites).toBe(0);
+  });
+
   test('reuses settled Markdown DOM without parsing or decorating it again', async () => {
     clearDetachedMarkdownDomCache();
     const content = '# Cached viewport\n\nA settled paragraph.';
