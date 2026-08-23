@@ -391,7 +391,13 @@ const ChatViewport = React.memo(({
                         <div className="flex-shrink-0" style={{ height: isMobile ? '40px' : '10vh' }} aria-hidden="true" />
                     </div>
                 </ScrollShadow>
-                <OverlayScrollbar containerRef={scrollRef} suppressVisibility={isProgrammaticFollowActive} userIntentOnly observeMutations={false} />
+                <OverlayScrollbar
+                  containerRef={scrollRef}
+                  disableHorizontal
+                  suppressVisibility={isProgrammaticFollowActive}
+                  userIntentOnly
+                  observeMutations={false}
+                />
                 {showPromptNavigator && promptTurnIds.length >= 2 ? (
                     <PromptNavigatorRail
                         turnIds={promptTurnIds}
