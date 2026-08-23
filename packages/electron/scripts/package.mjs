@@ -1,11 +1,16 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveTargetArchitecture } from './target-architecture.mjs';
+import { ensureElectronBuilderArchitecture, resolveTargetArchitecture } from './target-architecture.mjs';
 
 const env = { ...process.env };
-const builderArgs = process.argv.slice(2);
-const targetArchitecture = resolveTargetArchitecture({ environment: env, builderArgs });
+const requestedBuilderArgs = process.argv.slice(2);
+const targetArchitecture = resolveTargetArchitecture({ environment: env, builderArgs: requestedBuilderArgs });
+const builderArgs = ensureElectronBuilderArchitecture({
+  platform: process.platform,
+  targetArchitecture,
+  builderArgs: requestedBuilderArgs,
+});
 
 if (process.platform === 'win32' && !env.CSC_LINK && !env.WINDOWS_CSC_LINK) {
   env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
@@ -24,12 +29,6 @@ const bunBinary = bunBinaryCandidates.find((candidate) => {
   }
   return false;
 }) || (process.platform === 'win32' ? 'bun.exe' : 'bun');
-
-if (process.platform === 'linux' && !builderArgs.some((argument) => (
-  argument === '--x64' || argument === '--arm64' || argument === '--arch' || argument.startsWith('--arch=')
-))) {
-  builderArgs.push(`--${targetArchitecture.electronBuilder}`);
-}
 
 const child = spawn(bunBinary, ['x', 'electron-builder', ...builderArgs], {
   env,
