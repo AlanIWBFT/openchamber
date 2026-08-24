@@ -3098,6 +3098,7 @@ export const dict: Record<I18nKey, string> = {
 
   'chat.workStatus.ariaLabel': '作業状況',
   'chat.workStatus.context.label': 'コンテキスト',
+  'chat.workStatus.cost.breakdown': 'セッション {session} · サブエージェント {subagents}',
   'chat.workStatus.git.changedFileSingle': '{count} 件のファイルを変更',
   'chat.workStatus.git.changedFilePlural': '{count} 件のファイルを変更',
   'chat.workStatus.pr.untitled': 'タイトルなしのプルリクエスト',

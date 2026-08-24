@@ -3099,6 +3099,7 @@ export const dict: Record<I18nKey, string> = {
   "quota.window.premiumInteractions": "Premium interactions",
   'chat.workStatus.ariaLabel': 'Стан роботи',
   'chat.workStatus.context.label': 'Контекст',
+  'chat.workStatus.cost.breakdown': "Сеанс {session} · Субагенти {subagents}",
   'chat.workStatus.git.changedFileSingle': 'Змінено {count} файл',
   'chat.workStatus.git.changedFilePlural': 'Змінено {count} файлів',
   'chat.workStatus.pr.untitled': 'Pull request без назви',

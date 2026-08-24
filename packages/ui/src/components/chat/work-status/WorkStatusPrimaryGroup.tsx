@@ -194,8 +194,13 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
   // Rollup total: own cost plus every descendant subagent's cost, recursively
   // (see useSubagentCostRollup). Shown here instead of session.cost alone, so
   // spend that ran in a spawned subagent doesn't hide from the reader.
-  const { totalCost } = useSubagentCostRollup(sessionId);
+  const { totalCost, ownCost, subagentCost, subagentCount } = useSubagentCostRollup(sessionId);
   const cost = totalCost !== null && totalCost > 0 ? totalCost : null;
+  // The total answers "what has this cost"; the split answers "why is it more
+  // than the session I am looking at". Only worth a line once subagents exist —
+  // without them the total *is* the session's own cost and the row would
+  // restate the number directly above it.
+  const showCostBreakdown = cost !== null && subagentCount > 0 && subagentCost > 0;
   const hasSession = showSession && (usagePercent !== null || cost !== null || Boolean(goalRow));
   const hasRepository = showRepository && Boolean(branch || changed || prSummary || attentionLabel);
 
@@ -224,6 +229,17 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
                 )}
               />
               <WorkStatusMeter percent={usagePercent} color={meterColor} />
+              {/* Caption, not a row: it explains the figure above it rather
+                  than reporting a reading of its own, so it carries no icon
+                  and no label column. */}
+              {showCostBreakdown ? (
+                <p className="mx-1 mb-1 truncate text-[11px] leading-4 text-muted-foreground tabular-nums">
+                  {t('chat.workStatus.cost.breakdown', {
+                    session: formatCost(ownCost),
+                    subagents: formatCost(subagentCost),
+                  })}
+                </p>
+              ) : null}
             </>
           ) : null}
           {/* Below the context readout: the goal is a standing instruction,

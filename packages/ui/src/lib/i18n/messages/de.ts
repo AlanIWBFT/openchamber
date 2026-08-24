@@ -3096,6 +3096,7 @@ export const dict = {
   'updateDialog.changelog.title': 'Neuigkeiten',
   'chat.workStatus.ariaLabel': 'Arbeitsstatus',
   'chat.workStatus.context.label': 'Kontext',
+  'chat.workStatus.cost.breakdown': 'Sitzung {session} · Unteragenten {subagents}',
   'chat.workStatus.git.changedFileSingle': '{count} Datei geändert',
   'chat.workStatus.git.changedFilePlural': '{count} Dateien geändert',
   'chat.workStatus.pr.untitled': 'Pull Request ohne Titel',

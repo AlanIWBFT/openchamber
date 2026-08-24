@@ -3098,6 +3098,7 @@ export const dict = {
   'quota.window.premiumInteractions': 'Premium interactions',
   'chat.workStatus.ariaLabel': 'Work status',
   'chat.workStatus.context.label': 'Context',
+  'chat.workStatus.cost.breakdown': 'Session {session} · Subagents {subagents}',
   'chat.workStatus.git.changedFileSingle': '{count} file changed',
   'chat.workStatus.git.changedFilePlural': '{count} files changed',
   'chat.workStatus.pr.untitled': 'Untitled pull request',

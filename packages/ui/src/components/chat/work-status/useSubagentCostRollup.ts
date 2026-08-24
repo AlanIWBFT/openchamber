@@ -5,11 +5,21 @@ import { buildChildrenIndex, computeSubtreeCost } from './subagentCost';
 
 export type SubagentCostRollup = {
   totalCost: number | null;
+  /** The root session's own spend, excluding every subagent. */
+  ownCost: number;
+  /** Everything the subagents cost between them: `totalCost - ownCost`. */
+  subagentCost: number;
   subagentCount: number;
   perChildCost: Map<string, number>;
 };
 
-const EMPTY_ROLLUP: SubagentCostRollup = { totalCost: null, subagentCount: 0, perChildCost: new Map() };
+const EMPTY_ROLLUP: SubagentCostRollup = {
+  totalCost: null,
+  ownCost: 0,
+  subagentCost: 0,
+  subagentCount: 0,
+  perChildCost: new Map(),
+};
 
 function countDescendants(id: string, childrenByParent: Map<string, Session[]>, visited: Set<string>): number {
   if (visited.has(id)) return 0;
@@ -34,13 +44,20 @@ export function computeRollup(liveSessions: Session[], sessionId: string | null)
   const totalCost = computeSubtreeCost(sessionId, sessionsById, childrenByParent);
 
   const perChildCost = new Map<string, number>();
+  let subagentCost = 0;
   for (const child of childrenByParent.get(sessionId) ?? []) {
-    perChildCost.set(child.id, computeSubtreeCost(child.id, sessionsById, childrenByParent));
+    const childSubtree = computeSubtreeCost(child.id, sessionsById, childrenByParent);
+    perChildCost.set(child.id, childSubtree);
+    subagentCost += childSubtree;
   }
 
+  // Derived by subtraction rather than read back off the session, so the split
+  // always adds up to the total the panel shows even if a cycle guard trimmed
+  // part of the walk.
+  const ownCost = totalCost - subagentCost;
   const subagentCount = countDescendants(sessionId, childrenByParent, new Set());
 
-  return { totalCost, subagentCount, perChildCost };
+  return { totalCost, ownCost, subagentCost, subagentCount, perChildCost };
 }
 
 /**
