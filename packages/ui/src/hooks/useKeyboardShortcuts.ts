@@ -1,6 +1,7 @@
 import React from 'react';
 import { isTerminalEventTarget } from '@/lib/terminalFocus';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { closeSessionTabAndActivateNeighbour } from '@/lib/sessionTabs';
 import { useSelectionStore } from '@/sync/selection-store';
 import * as sessionActions from '@/sync/session-actions';
 import { normalizeContextPanelDirectoryKey, useUIStore } from '@/stores/useUIStore';
@@ -296,6 +297,14 @@ export const useKeyboardShortcuts = () => {
         }).catch((error) => {
           console.warn('[keyboard-shortcuts] failed to open draft mini chat window', error);
         });
+        return;
+      }
+
+      if (!isVSCodeRuntime() && eventMatchesShortcut(e, combo('close_session_tab'))) {
+        e.preventDefault();
+        if (currentSessionId) {
+          closeSessionTabAndActivateNeighbour(currentSessionId);
+        }
         return;
       }
 

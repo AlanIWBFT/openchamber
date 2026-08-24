@@ -31,6 +31,7 @@ import { Icon } from '@/components/icon/Icon';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { useSessionTabsStore } from '@/stores/useSessionTabsStore';
+import { closeSessionTabAndActivateNeighbour } from '@/lib/sessionTabs';
 import { useGlobalSessionsStore, resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useGlobalSessionStatus } from '@/sync/sync-context';
@@ -391,13 +392,11 @@ export const SessionTabsStrip: React.FC<{
   const { t } = useI18n();
   const tabIds = useSessionTabsStore((state) => state.tabIds);
   const ensureTab = useSessionTabsStore((state) => state.ensureTab);
-  const closeTab = useSessionTabsStore((state) => state.closeTab);
   const closeOtherTabs = useSessionTabsStore((state) => state.closeOtherTabs);
   const reorderTabs = useSessionTabsStore((state) => state.reorderTabs);
 
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
-  const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
   const activeSessions = useGlobalSessionsStore((state) => state.activeSessions);
 
   // Opening a session anywhere (sidebar, palette, deep link) adds its tab.
@@ -425,20 +424,9 @@ export const SessionTabsStrip: React.FC<{
     setCurrentSession(tab.id, resolveGlobalSessionDirectory(tab.session));
   }, [setCurrentSession]);
 
-  const activateNeighbour = React.useCallback((closedId: string) => {
-    const index = tabs.findIndex((tab) => tab.id === closedId);
-    const neighbour = tabs[index + 1] ?? tabs[index - 1] ?? null;
-    if (neighbour) {
-      handleSelect(neighbour);
-    } else {
-      openNewSessionDraft();
-    }
-  }, [tabs, handleSelect, openNewSessionDraft]);
-
   const handleClose = React.useCallback((id: string) => {
-    if (id === currentSessionId) activateNeighbour(id);
-    closeTab(id);
-  }, [activateNeighbour, closeTab, currentSessionId]);
+    closeSessionTabAndActivateNeighbour(id);
+  }, []);
 
   const handleCloseOthers = React.useCallback((id: string) => {
     closeOtherTabs(id);
