@@ -1471,26 +1471,9 @@ const probeShellEnv = (shell, mode) => {
   return Object.keys(env).length > 0 ? env : null;
 };
 
-const queryWindowsRegistryValue = (key, name) => {
-  const result = spawnSync('reg.exe', ['query', key, '/v', name], {
-    encoding: 'utf8',
-    windowsHide: true,
-  });
-  if (result.error || result.status !== 0) return '';
-  const line = String(result.stdout || '')
-    .split(/\r?\n/)
-    .map((entry) => entry.trim())
-    .find((entry) => entry.toLowerCase().startsWith(name.toLowerCase()));
-  if (!line) return '';
-  const match = line.match(/^\S+\s+REG_\S+\s+(.+)$/);
-  return match?.[1]?.trim() || '';
-};
-
 const expandWindowsEnvRefs = (value) => String(value || '').replace(/%([^%]+)%/g, (_match, key) => process.env[key] || '');
 
 const loadWindowsEnv = () => {
-  const machinePath = queryWindowsRegistryValue('HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment', 'Path');
-  const userPath = queryWindowsRegistryValue('HKCU\\Environment', 'Path');
   const homeDir = os.homedir();
   const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
   const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
@@ -1502,31 +1485,39 @@ const loadWindowsEnv = () => {
     path.join(localAppData, 'Programs', 'Cursor', 'resources', 'app', 'bin'),
     path.join(appData, 'npm'),
   ];
-  return {
-    PATH: [machinePath, userPath, process.env.PATH, ...commonPaths]
-      .map(expandWindowsEnvRefs)
-      .filter(Boolean)
-      .join(path.delimiter),
-  };
+  const windowsPath = [process.env.PATH, ...commonPaths]
+    .map(expandWindowsEnvRefs)
+    .filter(Boolean)
+    .join(path.delimiter);
+  const probeEnv = { ...process.env };
+  for (const key of Object.keys(probeEnv)) {
+    if (key.toLowerCase() === 'path') delete probeEnv[key];
+  }
+  probeEnv.Path = windowsPath;
+  return probeWindowsShellEnvSnapshot({ spawnSync, env: probeEnv }) || { PATH: windowsPath };
 };
 
-// Finder-launched apps on macOS inherit a minimal PATH (no /opt/homebrew, mise, asdf, etc.).
-// Probe the user's login shell once so the sidecar sees the same PATH / tool env as `$SHELL -il`.
+// Probe the desktop environment once so the in-process server and its children inherit the
+// same profile variables and tool PATH without repeating the probe during server import.
 const loadShellEnv = () => {
   if (shellEnvProbed) return cachedShellEnv;
   shellEnvProbed = true;
   if (process.platform === 'win32') {
     cachedShellEnv = loadWindowsEnv();
-    return cachedShellEnv;
+    preloadLoginShellEnvSnapshot(cachedShellEnv);
+  } else {
+    const shell = process.env.SHELL || '/bin/sh';
+    cachedShellEnv = isNushell(shell) ? null : probeShellEnv(shell, '-il') || probeShellEnv(shell, '-l');
   }
-  const shell = process.env.SHELL || '/bin/sh';
-  if (isNushell(shell)) return null;
-  cachedShellEnv = probeShellEnv(shell, '-il') || probeShellEnv(shell, '-l');
   return cachedShellEnv;
 };
 
 // Merge the user's login-shell env (PATH, etc.) into this process before we
 import { pathLooksUserConfigured, mergePathValues } from '@openchamber/web/server/lib/opencode/path-utils.js';
+import {
+  preloadLoginShellEnvSnapshot,
+  probeWindowsShellEnvSnapshot,
+} from '@openchamber/web/server/lib/opencode/env-runtime.js';
 import { clearAppImageArgv0FromProcessEnv } from '@openchamber/web/server/lib/inherited-env.js';
 
 // import/start the server in-process. The server and its children (opencode

@@ -48,7 +48,7 @@ import {
 } from './lib/event-stream/index.js';
 import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/search.js';
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
-import { createOpenCodeEnvRuntime } from './lib/opencode/env-runtime.js';
+import { consumePreloadedLoginShellEnvSnapshot, createOpenCodeEnvRuntime } from './lib/opencode/env-runtime.js';
 import { resolveOpenCodeEnvConfig } from './lib/opencode/env-config.js';
 import { createHmrStateRuntime } from './lib/opencode/hmr-state-runtime.js';
 import { createOpenCodeNetworkRuntime } from './lib/opencode/network-runtime.js';
@@ -686,7 +686,7 @@ const ENV_CONFIGURED_API_PREFIX = normalizeApiPrefix(
   console.warn('Ignoring configured OpenCode API prefix; API runs at root.');
 }
 
-let cachedLoginShellEnvSnapshot;
+let cachedLoginShellEnvSnapshot = consumePreloadedLoginShellEnvSnapshot();
 let resolvedOpencodeBinary = null;
 let resolvedOpencodeBinarySource = null;
 let resolvedNodeBinary = null;
