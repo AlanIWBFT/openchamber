@@ -1,7 +1,8 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 import { clearAppImageArgv0FromProcessEnv } from '../inherited-env.js';
 import { resolveGitBinary } from '../git/git-binary.js';
 import { mergePathValues } from './path-utils.js';
@@ -93,47 +94,6 @@ const buildWindowsRegistryFallbackSnapshot = (machinePath, userPath, getEnvValue
   return fallbackPath ? { PATH: fallbackPath } : null;
 };
 
-const runWindowsShellEnvProcess = (command, args, options) => new Promise((resolve, reject) => {
-  const { maxBuffer = WINDOWS_SHELL_ENV_MAX_BUFFER, encoding: _encoding, ...spawnOptions } = options;
-  const child = spawn(command, args, {
-    ...spawnOptions,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  const stdout = [];
-  let stdoutLength = 0;
-  let stderrLength = 0;
-  let outputError = null;
-
-  const checkOutputLength = (nextLength) => {
-    if (nextLength <= maxBuffer || outputError) return;
-    outputError = new Error(`Windows shell environment probe exceeded ${maxBuffer} bytes`);
-    child.kill();
-  };
-
-  child.stdout.on('data', (chunk) => {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    stdoutLength += buffer.length;
-    checkOutputLength(stdoutLength);
-    if (!outputError) stdout.push(buffer);
-  });
-  child.stderr.on('data', (chunk) => {
-    stderrLength += Buffer.byteLength(chunk);
-    checkOutputLength(stderrLength);
-  });
-  child.once('error', reject);
-  child.once('close', (code, signal) => {
-    if (outputError) {
-      reject(outputError);
-      return;
-    }
-    if (code !== 0) {
-      reject(new Error(`Windows shell environment probe exited with ${code ?? signal ?? 'unknown status'}`));
-      return;
-    }
-    resolve({ stdout: Buffer.concat(stdout, stdoutLength).toString('utf8') });
-  });
-});
-
 export const preloadLoginShellEnvSnapshot = (snapshot) => {
   preloadedLoginShellEnvSnapshot = snapshot;
 };
@@ -183,31 +143,32 @@ export const probeWindowsShellEnvSnapshot = ({ spawnSync: runSpawnSync = spawnSy
   return buildWindowsRegistryFallbackSnapshot(machinePath, userPath, getEnvValue);
 };
 
-export const probeWindowsShellEnvSnapshotAsync = async ({ runProcess = runWindowsShellEnvProcess, env = process.env } = {}) => {
-  const { getEnvValue, powershellCandidates, processOptions } = createWindowsShellEnvProbeContext(env);
+const createWindowsShellEnvWorker = (env) => new Worker(
+  new URL('./windows-shell-env-worker.js', import.meta.url),
+  { workerData: { env } },
+);
 
-  for (const shellPath of powershellCandidates) {
-    try {
-      const result = await runProcess(shellPath, ['-NoLogo', '-Command', WINDOWS_SHELL_ENV_PS_SCRIPT], processOptions);
-      const parsed = parseNullSeparatedEnvSnapshot(typeof result?.stdout === 'string' ? result.stdout : '');
-      if (parsed) return parsed;
-    } catch {
-    }
-  }
-
-  const queryRegistryPath = async (key) => {
-    try {
-      const result = await runProcess('reg.exe', ['query', key, '/v', 'Path'], processOptions);
-      return parseWindowsRegistryPath(result?.stdout);
-    } catch {
-      return '';
-    }
+export const probeWindowsShellEnvSnapshotInWorker = ({ createWorker = createWindowsShellEnvWorker, env = process.env } = {}) => new Promise((resolve, reject) => {
+  let settled = false;
+  const settle = (callback, value) => {
+    if (settled) return;
+    settled = true;
+    callback(value);
   };
 
-  const machinePath = await queryRegistryPath('HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment');
-  const userPath = await queryRegistryPath('HKCU\\Environment');
-  return buildWindowsRegistryFallbackSnapshot(machinePath, userPath, getEnvValue);
-};
+  let worker;
+  try {
+    worker = createWorker(env);
+  } catch (error) {
+    settle(reject, error);
+    return;
+  }
+  worker.once('message', (snapshot) => settle(resolve, snapshot));
+  worker.once('error', (error) => settle(reject, error));
+  worker.once('exit', (code) => {
+    if (!settled) settle(reject, new Error(`Windows shell environment worker exited before returning a snapshot (code ${code})`));
+  });
+});
 
 export const createOpenCodeEnvRuntime = (deps) => {
   const {
