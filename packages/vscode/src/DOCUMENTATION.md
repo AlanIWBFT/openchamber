@@ -44,6 +44,8 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 The webview CSP permits `blob:` only for `worker-src` so shared UI parsers can run bounded local decompression off the main thread. Blob scripts remain disallowed by `script-src`.
 
+The webview build emits each worker as one self-contained file. VS Code webviews cannot load module imports from inside a worker, so allowing worker URLs in the CSP is not enough when Rollup splits Shiki grammars into separate chunks.
+
 - `bridge-localfs-proxy-runtime.ts`
   - Local `/api/fs/read` and `/api/fs/raw` proxy helpers and shared proxy utility helpers.
   - Workspace-contained Markdown gallery images use these local filesystem
