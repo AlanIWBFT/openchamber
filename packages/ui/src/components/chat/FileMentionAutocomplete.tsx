@@ -15,6 +15,7 @@ import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight';
 import { mentionServerQuery, rankFileMentionResults } from './fileMentionResults';
+import { matchesRankQuery, rankByQuery } from '@/lib/search/fuzzySearch';
 import { AutocompleteRowTooltip } from './composer/ui/AutocompleteRowTooltip';
 
 type FileInfo = ProjectFileSearchHit;
@@ -95,14 +96,12 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
     ].filter((value): value is string => typeof value === 'string' && value.length > 0);
 
     const seen = new Set<string>();
-    const queryLower = normalizedSearchQuery.toLowerCase();
     const mapped = ordered
       .filter((filePath) => {
         if (seen.has(filePath)) return false;
         seen.add(filePath);
         const relative = filePath.startsWith(`${projectRoot}/`) ? filePath.slice(projectRoot.length + 1) : filePath;
-        if (!queryLower) return true;
-        return relative.toLowerCase().includes(queryLower);
+        return matchesRankQuery([relative], normalizedSearchQuery);
       })
       .slice(0, 6)
       .map((filePath) => {
@@ -256,21 +255,15 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
 
   React.useEffect(() => {
     const visibleAgents = getVisibleAgents();
-    const normalizedQuery = (searchQuery ?? '').trim().toLowerCase();
-    const filtered = visibleAgents
+    const subagents = visibleAgents
       .filter((agent) => agent.mode && agent.mode !== 'primary')
-      .filter((agent) => {
-        if (!normalizedQuery) return true;
-        const haystack = `${agent.name} ${agent.description ?? ''}`.toLowerCase();
-        return haystack.includes(normalizedQuery);
-      })
       .map((agent) => ({
         name: agent.name,
         description: agent.description,
         mode: agent.mode,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    setAgents(filtered);
+    setAgents(rankByQuery(subagents, searchQuery ?? '', (agent) => [agent.name, agent.description]));
   }, [getVisibleAgents, searchQuery]);
 
   React.useEffect(() => {

@@ -1,3 +1,4 @@
+import { rankByQuery } from '@/lib/search/fuzzySearch';
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { Icon } from '@/components/icon/Icon';
@@ -67,7 +68,7 @@ export function ArchiveView(): React.ReactNode {
   // while not searching.
   const filteredSessions = React.useMemo(() => {
     if (normalizedQuery) {
-      return sortedSessions.filter((session) => (session.title ?? '').toLowerCase().includes(normalizedQuery));
+      return rankByQuery(sortedSessions, normalizedQuery, (session) => [session.title]);
     }
     if (selectedDirectory === null) return sortedSessions;
     return buckets.find((bucket) => bucket.directory === selectedDirectory)?.sessions ?? [];
