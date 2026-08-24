@@ -30,15 +30,20 @@ window options live in `early-startup.mjs` so the early window and any later
 main window are built from one definition; both bundles import that module at
 runtime rather than inlining it, or the handoff would see two copies.
 
-Login-shell environment discovery starts as soon as `main.mjs` runs and
-proceeds asynchronously, so shell startup files run while the window comes up.
+Login-shell environment discovery starts from the entry's shared
+`early-startup.mjs` owner and overlaps window creation and main-module loading.
 Startup callers share one probe and await its result before reading
-shell-provided server flags or importing the backend. The probe tries
+shell-provided server flags or importing the backend. On macOS/Linux it tries
 interactive login, then login-only on failure, with a five-second timeout per
-attempt. Text that shell startup files print to stdout before the environment
-is discarded, so a banner never fuses with the first variable. Failure
-preserves the inherited process environment. Confirmed quit cancels an
-in-flight probe and waits for its process to exit.
+attempt. Failure preserves the inherited process environment. Confirmed quit
+cancels an in-flight macOS/Linux probe and waits for its process to exit.
+Windows runs profile discovery and registry fallback in a Worker, preserving
+the existing no-timeout probe behavior while keeping process creation off the
+main thread. The server receives the result through the upstream in-memory
+snapshot handoff. Local server startup shares one promise, including failures.
+
+Text that shell startup files print to stdout before the environment is
+discarded, so a banner never fuses with the first variable.
 
 `bun run profile:startup` measures a packaged build's launch in an isolated
 profile; see `scripts/perf/DOCUMENTATION.md`.
@@ -88,6 +93,7 @@ IPC results if its endpoint changes while the read is pending.
 | `main.mjs` | Electron main process, app lifecycle, windows, menus, deep links, native IPC handlers, updates, local server startup |
 | `electron-host-probe.mjs` | Chromium direct-host probes, identity checks, attempt deadlines, and response cleanup |
 | `host-probe-policy.mjs` | Selector fast attempt and unreachable-only retry policy |
+| `startup-single-flight.mjs` | One-shot startup promise coordinator that retains the first success or failure to prevent duplicate local server initialization |
 | `startup-url-selection.mjs` | Pure bundled/HMR startup probe and loopback connection-limit policy |
 | `remote-page-policy.mjs` | What remote-safe IPC accepts from and returns to another server's page: splash colour parsing, host list without credentials |
 | `shell-environment.mjs` | Asynchronous login-shell environment discovery and shared one-shot probe |

@@ -574,7 +574,7 @@ export const takeDeferredAppEvents = () => {
 const expandWindowsEnvRefs = (value) => String(value || '').replace(/%([^%]+)%/g, (_match, key) => process.env[key] || '');
 
 const loadWindowsEnv = async () => {
-  const { probeWindowsShellEnvSnapshot } = await import('@openchamber/web/server/lib/opencode/env-runtime.js');
+  const { probeWindowsShellEnvSnapshotInWorker } = await import('@openchamber/web/server/lib/opencode/env-runtime.js');
   const homeDir = os.homedir();
   const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
   const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
@@ -595,22 +595,30 @@ const loadWindowsEnv = async () => {
     if (key.toLowerCase() === 'path') delete probeEnv[key];
   }
   probeEnv.Path = windowsPath;
-  return probeWindowsShellEnvSnapshot({ spawnSync, env: probeEnv }) || { PATH: windowsPath };
+  return (await probeWindowsShellEnvSnapshotInWorker({ env: probeEnv })) || { PATH: windowsPath };
 };
 
 // Finder-launched apps on macOS inherit a minimal PATH (no /opt/homebrew, mise, asdf, etc.).
 // One shared probe that the backend awaits before it starts. The entry module
 // starts it as early as it can so the user's shell startup files run while
-// the window comes up instead of on the critical path; on Windows the loader
-// still performs synchronous probes, so it waits until the splash is on screen.
+// the window comes up instead of on the critical path. Windows process creation
+// runs in a Worker so it cannot block the main thread's first paint.
 export const shellEnvironmentAbort = new AbortController();
 const loadShellEnv = createShellEnvironmentLoader({ loadWindowsEnv, signal: shellEnvironmentAbort.signal });
 
-export const shellEnvironmentProbeBlocksMainThread = process.platform === 'win32';
+export const shellEnvironmentProbeBlocksMainThread = false;
+let shellEnvironmentProbe;
 
 // Clear before probing/merging so login-shell snapshots and children never
 // inherit the AppImage path as argv[0] via zsh's ARGV0 parameter (#2588).
 export const startShellEnvironmentProbe = () => {
   clearAppImageArgv0FromProcessEnv();
-  return loadShellEnv();
+  if (!shellEnvironmentProbe) {
+    const startedAt = performance.now();
+    shellEnvironmentProbe = loadShellEnv().then((snapshot) => {
+      recordEarlyStartupMark('electron.shell-env.ready', { durationMs: performance.now() - startedAt });
+      return snapshot;
+    });
+  }
+  return shellEnvironmentProbe;
 };
