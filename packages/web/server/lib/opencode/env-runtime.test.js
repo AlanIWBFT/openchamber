@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -5,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   createOpenCodeEnvRuntime,
   probeWindowsShellEnvSnapshot,
+  probeWindowsShellEnvSnapshotInWorker,
 } from './env-runtime.js';
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
@@ -202,8 +204,8 @@ describe('OpenCode env runtime', () => {
     setPlatform('win32');
     const calls = [];
     const { runtime, state } = createRuntime({}, {
-      spawnSync: (command, args) => {
-        calls.push({ command, args });
+      spawnSync: (command, args, options) => {
+        calls.push({ command, args, options });
         return {
           status: 0,
           stdout: 'OPENCHAMBER_PROFILE_TEST=value\0Path=C:\\Shell\0',
@@ -217,6 +219,10 @@ describe('OpenCode env runtime', () => {
       PATH: 'C:\\Shell',
     });
     expect(calls.map((call) => call.command)).toEqual(['pwsh.exe']);
+    expect(calls[0].args[0]).toBe('-Command');
+    expect(calls[0].args).not.toContain('-NonInteractive');
+    expect(calls[0].options).toMatchObject({ windowsHide: true });
+    expect(calls[0].options.timeout).toBeUndefined();
   });
 
   it('queries registry paths only after all Windows PowerShell probes fail', () => {
@@ -243,6 +249,40 @@ describe('OpenCode env runtime', () => {
     expect(calls.slice(0, 2).map((call) => call.command)).toEqual(['pwsh.exe', 'powershell.exe']);
     expect(calls[2].command).toMatch(/powershell\.exe$/i);
     expect(calls.slice(3).map((call) => call.command)).toEqual(['reg.exe', 'reg.exe']);
+  });
+
+  it('starts the Windows environment worker immediately with the explicit probe environment', async () => {
+    const probeEnv = {
+      Path: 'C:\\Process',
+      SystemRoot: 'C:\\Windows',
+    };
+    const worker = new EventEmitter();
+    let receivedEnv;
+    const probing = probeWindowsShellEnvSnapshotInWorker({
+      env: probeEnv,
+      createWorker: (env) => {
+        receivedEnv = env;
+        return worker;
+      },
+    });
+
+    expect(receivedEnv).toBe(probeEnv);
+    const snapshot = {
+      OPENCHAMBER_PROFILE_TEST: 'value',
+      PATH: 'C:\\Shell',
+    };
+    worker.emit('message', snapshot);
+    await expect(probing).resolves.toBe(snapshot);
+  });
+
+  it('rejects when the Windows environment worker exits before returning a snapshot', async () => {
+    const worker = new EventEmitter();
+    const probing = probeWindowsShellEnvSnapshotInWorker({
+      createWorker: () => worker,
+    });
+
+    worker.emit('exit', 1);
+    await expect(probing).rejects.toThrow('exited before returning a snapshot (code 1)');
   });
 
   it('searches an explicit PATH without mutating the process environment', () => {
