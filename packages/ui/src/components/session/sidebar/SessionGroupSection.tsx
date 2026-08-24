@@ -1,3 +1,4 @@
+import { matchesRankQuery } from '@/lib/search/fuzzySearch';
 import React from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Session } from '@opencode-ai/sdk/v2';
@@ -483,7 +484,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
         return true;
       }
 
-      const folderMatches = entry.folder.name.toLowerCase().includes(normalizedSessionSearchQuery);
+      const folderMatches = matchesRankQuery([entry.folder.name], normalizedSessionSearchQuery);
       if (folderMatches || entry.nodes.length > 0) {
         keepByFolderId.set(folderId, true);
         return true;
