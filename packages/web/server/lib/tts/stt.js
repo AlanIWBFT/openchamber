@@ -5,8 +5,15 @@
  * (e.g. faster-whisper, whisper.cpp) using the OpenAI Node SDK.
  */
 
-import OpenAI, { toFile } from 'openai';
 import { normalizeCustomOpenAIBaseURL } from './base-url.js';
+
+let openAiModulePromise = null;
+const loadOpenAiModule = () => {
+  if (!openAiModulePromise) {
+    openAiModulePromise = import('openai');
+  }
+  return openAiModulePromise;
+};
 
 /**
  * Transcribe an audio buffer via an OpenAI-compatible /v1/audio/transcriptions endpoint.
@@ -30,6 +37,8 @@ export async function transcribeAudio({ audioBuffer, mimeType, model, baseURL, a
   if (!normalizedBaseURL) {
     throw new Error('Custom server URL is required');
   }
+
+  const { default: OpenAI, toFile } = await loadOpenAiModule();
 
   const clientOpts = {
     apiKey: apiKey || process.env.OPENAI_API_KEY || 'not-required',

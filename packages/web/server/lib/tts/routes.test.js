@@ -1,9 +1,26 @@
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
 import { registerTtsRoutes } from './routes.js';
 import { normalizeCustomOpenAIBaseURL } from './base-url.js';
+import { transcribeAudio } from './stt.js';
+
+const openAiMocks = vi.hoisted(() => ({
+  construct: vi.fn(),
+  createTranscription: vi.fn(),
+  toFile: vi.fn(),
+}));
+
+vi.mock('openai', () => ({
+  default: class MockOpenAI {
+    constructor(options) {
+      openAiMocks.construct(options);
+      this.audio = { transcriptions: { create: openAiMocks.createTranscription } };
+    }
+  },
+  toFile: openAiMocks.toFile,
+}));
 
 const createApp = (sayTTSCapability = null) => {
   const app = express();
@@ -92,6 +109,41 @@ describe('tts routes', () => {
       summary: 'Notification text that should fall back cleanly.',
       summarized: false,
       reason: 'Model summarization provider unavailable',
+    });
+  });
+});
+
+describe('OpenAI-compatible transcription', () => {
+  beforeEach(() => {
+    openAiMocks.construct.mockClear();
+    openAiMocks.createTranscription.mockReset();
+    openAiMocks.toFile.mockReset();
+  });
+
+  it('loads the OpenAI client on the first transcription request', async () => {
+    const file = { name: 'audio.wav' };
+    openAiMocks.toFile.mockResolvedValue(file);
+    openAiMocks.createTranscription.mockResolvedValue({ text: 'transcribed text' });
+
+    await expect(transcribeAudio({
+      audioBuffer: Buffer.from([1, 2, 3]),
+      mimeType: 'audio/wav',
+      model: 'whisper-test',
+      baseURL: 'http://localhost:8080/v1',
+      apiKey: 'test-key',
+      language: 'en',
+    })).resolves.toBe('transcribed text');
+
+    expect(openAiMocks.construct).toHaveBeenCalledWith({
+      apiKey: 'test-key',
+      baseURL: 'http://localhost:8080/v1',
+    });
+    expect(openAiMocks.toFile).toHaveBeenCalledWith(expect.any(Buffer), 'audio.wav', { type: 'audio/wav' });
+    expect(openAiMocks.createTranscription).toHaveBeenCalledWith({
+      file,
+      model: 'whisper-test',
+      response_format: 'json',
+      language: 'en',
     });
   });
 });
