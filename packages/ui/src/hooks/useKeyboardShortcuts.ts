@@ -300,7 +300,7 @@ export const useKeyboardShortcuts = () => {
         return;
       }
 
-      if (!isVSCodeRuntime() && eventMatchesShortcut(e, combo('close_session_tab'))) {
+      if (!isVSCodeRuntime() && useUIStore.getState().sessionTabsEnabled && eventMatchesShortcut(e, combo('close_session_tab'))) {
         e.preventDefault();
         if (currentSessionId) {
           closeSessionTabAndActivateNeighbour(currentSessionId);

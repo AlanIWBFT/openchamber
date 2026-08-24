@@ -436,6 +436,7 @@ export const Header: React.FC = () => {
   const openContextPlan = useUIStore((state) => state.openContextPlan);
   const closeContextPanel = useUIStore((state) => state.closeContextPanel);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
+  const sessionTabsEnabled = useUIStore((state) => state.sessionTabsEnabled);
 
   const getCurrentModel = useConfigStore((state) => state.getCurrentModel);
   const runtimeApis = useRuntimeAPIs();
@@ -1654,7 +1655,7 @@ export const Header: React.FC = () => {
               </span>
             ) : null}
           </div>
-        ) : isVSCode ? (
+        ) : (isVSCode || !sessionTabsEnabled) ? (
           <div className="app-region-no-drag mr-3 flex min-w-0 max-w-full items-center gap-0.5 py-0.5 -my-0.5 text-left">
             {!isSidebarOpen ? (
               <SessionSwitcherDropdown align="start">
@@ -1876,7 +1877,7 @@ export const Header: React.FC = () => {
           </div>
         )}
 
-        {activeSurfaceHeader || isVSCode ? <div className="flex-1" /> : null}
+        {activeSurfaceHeader || isVSCode || !sessionTabsEnabled ? <div className="flex-1" /> : null}
 
         <div className="flex shrink-0 items-center gap-1">
           {showDesktopHeaderContextUsage && stableDesktopContextUsage ? (
