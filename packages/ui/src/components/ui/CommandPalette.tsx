@@ -81,7 +81,6 @@ export const CommandPalette: React.FC = () => {
 
   const isCommandPaletteOpen = useUIStore((s) => s.isCommandPaletteOpen);
   const setCommandPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen);
-  const setActiveSurface = useUIStore((s) => s.setActiveSurface);
   const setSettingsDialogOpen = useUIStore((s) => s.setSettingsDialogOpen);
   const setSettingsPage = useUIStore((s) => s.setSettingsPage);
   const setSessionSwitcherOpen = useUIStore((s) => s.setSessionSwitcherOpen);
@@ -170,7 +169,6 @@ export const CommandPalette: React.FC = () => {
         shortcutId: 'new_chat',
         searchText: t('commandPalette.item.newSession'),
         onSelect: run(() => {
-          setActiveSurface('chat');
           setSessionSwitcherOpen(false);
           openNewSessionDraft();
         }),
@@ -263,8 +261,7 @@ export const CommandPalette: React.FC = () => {
     t,
     run,
     isMobile,
-    setActiveSurface,
-    setSessionSwitcherOpen,
+        setSessionSwitcherOpen,
     openNewSessionDraft,
     toggleSidebar,
     openContextSurface,

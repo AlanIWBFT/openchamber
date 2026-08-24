@@ -391,7 +391,6 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   const updateProjectMeta = useProjectsStore((state) => state.updateProjectMeta);
   const reorderProjects = useProjectsStore((state) => state.reorderProjects);
 
-  const setActiveSurface = useUIStore((state) => state.setActiveSurface);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const toggleHelpDialog = useUIStore((state) => state.toggleHelpDialog);
@@ -848,7 +847,6 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     sessionSearchQuery,
     setSessionSearchQuery,
     setIsSessionSearchOpen,
-    setActiveSurface,
     setSessionSwitcherOpen,
     setCurrentSession,
     updateSessionTitle,
@@ -1698,7 +1696,6 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         alwaysShowActions={alwaysShowSidebarActions}
         activeProjectId={activeProjectId}
         setActiveProjectIdOnly={setActiveProjectIdOnly}
-        setActiveSurface={setActiveSurface}
         setSessionSwitcherOpen={setSessionSwitcherOpen}
         openNewSessionDraft={openNewSessionDraftFromTree}
         addSessionToFolder={addSessionToFolder}
@@ -1741,8 +1738,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
       alwaysShowSidebarActions,
       activeProjectId,
       setActiveProjectIdOnly,
-      setActiveSurface,
-      setSessionSwitcherOpen,
+        setSessionSwitcherOpen,
       openNewSessionDraftFromTree,
       addSessionToFolder,
       stableCreateFolderAndStartRename,
@@ -1763,12 +1759,11 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
 
   const handleOpenNewSessionDraftFromHeader = React.useCallback(() => {
     useUIStore.getState().closeMainSurfaces();
-    setActiveSurface('chat');
     if (mobileVariant) {
       setSessionSwitcherOpen(false);
     }
     openNewSessionDraft();
-  }, [mobileVariant, openNewSessionDraft, setActiveSurface, setSessionSwitcherOpen]);
+  }, [mobileVariant, openNewSessionDraft, setSessionSwitcherOpen]);
 
   const renderChatsSection = React.useCallback((items: ActivityItem[]) => {
     const chatsRoot = getChatsRootForHome(homeDirectory)
@@ -1850,12 +1845,11 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     setBulkDeleteConfirm,
   });
   const handleOpenMultiRunFromHeader = React.useCallback(() => {
-    setActiveSurface('chat');
     if (mobileVariant) {
       setSessionSwitcherOpen(false);
     }
     openMultiRunLauncher();
-  }, [mobileVariant, openMultiRunLauncher, setActiveSurface, setSessionSwitcherOpen]);
+  }, [mobileVariant, openMultiRunLauncher, setSessionSwitcherOpen]);
 
   return (
     // One shared tooltip provider for the whole sidebar: session tooltips open
@@ -1889,7 +1883,6 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         handleSessionSelect={stableHandleSessionSelect}
         mobileVariant={mobileVariant}
         openNewSessionDraft={openNewSessionDraft}
-        setActiveSurface={setActiveSurface}
         setSessionSwitcherOpen={setSessionSwitcherOpen}
         sessionOwnerBySessionId={sessionOwnership.bySessionId}
       />
@@ -1959,7 +1952,6 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         alwaysShowActions={alwaysShowSidebarActions}
         toggleProject={toggleProject}
         setActiveProjectIdOnly={setActiveProjectIdOnly}
-        setActiveSurface={setActiveSurface}
         setSessionSwitcherOpen={setSessionSwitcherOpen}
         openNewSessionDraft={openNewSessionDraftFromTree}
         openNewWorktreeDialog={openNewWorktreeDialog}
@@ -2033,8 +2025,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         open={newWorktreeDialogOpen}
         onOpenChange={setNewWorktreeDialogOpen}
         onWorktreeCreated={(worktreePath, options) => {
-          setActiveSurface('chat');
-          if (mobileVariant) {
+                if (mobileVariant) {
             setSessionSwitcherOpen(false);
           }
           if (options?.sessionId) {

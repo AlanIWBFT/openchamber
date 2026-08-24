@@ -434,7 +434,6 @@ export const Header: React.FC = () => {
   const openContextOverview = useUIStore((state) => state.openContextOverview);
   const openContextPlan = useUIStore((state) => state.openContextPlan);
   const closeContextPanel = useUIStore((state) => state.closeContextPanel);
-  const activeSurface = useUIStore((state) => state.activeSurface);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
 
   const getCurrentModel = useConfigStore((state) => state.getCurrentModel);
@@ -612,7 +611,6 @@ export const Header: React.FC = () => {
   }, [setWorkStatusOverlayOpen, setWorkStatusPanelEnabled, workStatusOverlayOpen, workStatusPanelEnabled, workStatusPanelFits]);
   const showDesktopHeaderContextUsage = !isVSCode
     && !workStatusPanelVisible
-    && activeSurface === 'chat'
     && !!stableDesktopContextUsage
     && stableDesktopContextUsage.totalTokens > 0;
   const desktopHeaderDisplayPercentage = stableDesktopContextUsage && stableDesktopContextUsage.contextLimit > 0
@@ -1153,9 +1151,6 @@ export const Header: React.FC = () => {
   // Reset plan tab availability when session changes
   React.useEffect(() => {
     if (!planModeEnabled) {
-      if (useUIStore.getState().activeSurface === 'plan') {
-        useUIStore.getState().setActiveSurface('chat');
-      }
       return;
     }
 
@@ -1164,11 +1159,6 @@ export const Header: React.FC = () => {
     const sessionKey = `${currentSessionId || 'none'}:${sessionDirectory || 'none'}:${currentSession?.created || 0}:${currentSession?.slug || 'none'}`;
     if (lastPlanSessionKeyRef.current !== sessionKey) {
       lastPlanSessionKeyRef.current = sessionKey;
-    }
-
-    // If plan is not available but user is on plan tab, switch them back to chat
-    if (!planTabAvailable && useUIStore.getState().activeSurface === 'plan') {
-      useUIStore.getState().setActiveSurface('chat');
     }
   }, [
     planModeEnabled,
@@ -1759,7 +1749,7 @@ export const Header: React.FC = () => {
             className={cn(desktopHeaderIconButtonClass, 'mr-1')}
             Icon={'picture-in-picture-2'}
           />
-          {activeSurface === 'chat' && !isVSCode ? (
+          {!isVSCode ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button

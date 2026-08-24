@@ -102,7 +102,6 @@ export const useMenuActions = (
   const toggleHelpDialog = useUIStore((s) => s.toggleHelpDialog);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const setSessionSwitcherOpen = useUIStore((s) => s.setSessionSwitcherOpen);
-  const setActiveSurface = useUIStore((s) => s.setActiveSurface);
   const setSettingsDialogOpen = useUIStore((s) => s.setSettingsDialogOpen);
   const setAboutDialogOpen = useUIStore((s) => s.setAboutDialogOpen);
   const checkForUpdates = useUpdateStore((state) => state.checkForUpdates);
@@ -151,10 +150,9 @@ export const useMenuActions = (
     const nextSession = sessions[nextIndex];
     if (!nextSession) return;
 
-    setActiveSurface('chat');
     setSessionSwitcherOpen(false);
     useSessionUIStore.getState().setCurrentSession(nextSession.id);
-  }, [setActiveSurface, setSessionSwitcherOpen]);
+  }, [setSessionSwitcherOpen]);
 
   const navigateProject = React.useCallback((direction: -1 | 1) => {
     const { activeProjectId, projects, setActiveProject } = useProjectsStore.getState();
@@ -191,8 +189,7 @@ export const useMenuActions = (
           break;
 
         case 'new-session':
-          setActiveSurface('chat');
-          setSessionSwitcherOpen(false);
+                setSessionSwitcherOpen(false);
           {
             const sessionState = useSessionUIStore.getState();
             const directory = useDirectoryStore.getState().currentDirectory;
@@ -203,8 +200,7 @@ export const useMenuActions = (
           break;
 
         case 'new-worktree-session':
-          setActiveSurface('chat');
-          setSessionSwitcherOpen(false);
+                setSessionSwitcherOpen(false);
           createWorktreeSession();
           break;
 
@@ -341,7 +337,6 @@ export const useMenuActions = (
       onToggleMemoryDebug,
       openNewSessionDraft,
       setAboutDialogOpen,
-      setActiveSurface,
       setSessionSwitcherOpen,
       setCommandPaletteOpen,
       setSettingsDialogOpen,

@@ -28,7 +28,6 @@ export function ArchiveView(): React.ReactNode {
   const { t } = useI18n();
   const open = useUIStore((state) => state.isArchivePageOpen);
   const setOpen = useUIStore((state) => state.setArchivePageOpen);
-  const setActiveSurface = useUIStore((state) => state.setActiveSurface);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
   const unarchiveSession = useSessionUIStore((state) => state.unarchiveSession);
   const homeDirectory = useDirectoryStore((state) => state.homeDirectory);
@@ -86,9 +85,8 @@ export function ArchiveView(): React.ReactNode {
   const openSession = React.useCallback((session: Session) => {
     const directory = normalizePath(resolveGlobalSessionDirectory(session));
     setCurrentSession(session.id, directory ?? undefined);
-    setActiveSurface('chat');
     setOpen(false);
-  }, [setActiveSurface, setCurrentSession, setOpen]);
+  }, [setCurrentSession, setOpen]);
 
   const restoreSession = React.useCallback((session: Session) => {
     void unarchiveSession(session.id).then((success) => {

@@ -151,7 +151,6 @@ export const captureSelectionMarkdownForChat = (): string | null => {
 export const addSelectionToChat = (): boolean => {
   const markdown = captureSelectionMarkdownForChat();
 
-  useUIStore.getState().setActiveSurface('chat');
   useUIStore.getState().setSessionSwitcherOpen(false);
 
   if (markdown) {

@@ -36,7 +36,6 @@ const SettingsWindow = lazyWithChunkRecovery(() => import('@/components/views/Se
  */
 export const MainLayout: React.FC = () => {
     const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
-    const activeSurface = useUIStore((state) => state.activeSurface);
     const setIsMobile = useUIStore((state) => state.setIsMobile);
     const isSettingsDialogOpen = useUIStore((state) => state.isSettingsDialogOpen);
     const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
@@ -71,12 +70,8 @@ export const MainLayout: React.FC = () => {
             const draftOpened = Boolean(state.newSessionDraft?.open) && state.newSessionDraft !== prev.newSessionDraft;
             if (sessionSelected || draftOpened) closeSurfacePages();
         });
-        const unsubscribeTab = useUIStore.subscribe((state, prev) => {
-            if (state.activeSurface !== prev.activeSurface) closeSurfacePages();
-        });
         return () => {
             unsubscribeSession();
-            unsubscribeTab();
         };
     }, []);
     const { isMobile } = useDeviceInfo();
@@ -89,8 +84,6 @@ export const MainLayout: React.FC = () => {
             setIsMobile(isMobile);
         }
     }, [isMobile, setIsMobile]);
-
-    const isChatActive = activeSurface === 'chat';
 
     return (
         <DiffWorkerProvider>
@@ -127,8 +120,8 @@ export const MainLayout: React.FC = () => {
                                         which the context panel animates. */}
                                     <div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden" data-page-scroll-lock="true" data-chat-area="true">
                                         <main className="flex-1 overflow-hidden bg-background relative" data-page-scroll-lock="true">
-                                            <div className={cn('absolute inset-0', (!isChatActive || isSurfacePageOpen) && 'invisible')}>
-                                                <ErrorBoundary><ChatView active={isChatActive && !isSettingsDialogOpen && !isSurfacePageOpen} /></ErrorBoundary>
+                                            <div className={cn('absolute inset-0', isSurfacePageOpen && 'invisible')}>
+                                                <ErrorBoundary><ChatView active={!isSettingsDialogOpen && !isSurfacePageOpen} /></ErrorBoundary>
                                             </div>
                                             {isMultiRunLauncherOpen && (
                                                 <div className="absolute inset-0 z-10 bg-background">

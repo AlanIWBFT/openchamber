@@ -1006,8 +1006,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 return;
             }
 
-            const { activeSurface } = useUIStore.getState();
-            if (activeSurface !== 'chat' || hasBlockingChatOverlay()) {
+            if (hasBlockingChatOverlay()) {
                 return;
             }
 

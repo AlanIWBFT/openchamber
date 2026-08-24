@@ -44,13 +44,11 @@ export const useProjectTodoSend = (options: {
   const sendMessage = useSessionUIStore((state) => state.sendMessage);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
   const setPendingInputText = useInputStore((state) => state.setPendingInputText);
-  const setActiveSurface = useUIStore((state) => state.setActiveSurface);
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
 
   const routeToChat = React.useCallback(() => {
-    setActiveSurface('chat');
     setSessionSwitcherOpen(false);
-  }, [setActiveSurface, setSessionSwitcherOpen]);
+  }, [setSessionSwitcherOpen]);
 
   const sendToCurrentSession = React.useCallback(
     (todoText: string) => {

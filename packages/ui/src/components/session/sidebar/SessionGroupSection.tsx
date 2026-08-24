@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button';
 import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
 import { sessionEvents } from '@/lib/sessionEvents';
-import type { WorkspaceSurface } from '@/stores/useUIStore';
 import { SessionFolderItem } from '../SessionFolderItem';
 import type { SortableDragHandleProps } from './sortableItems';
 import { DroppableFolderWrapper, SessionFolderDndScope } from './sessionFolderDnd';
@@ -84,7 +83,6 @@ type Props = {
   alwaysShowActions: boolean;
   activeProjectId: string | null;
   setActiveProjectIdOnly: (id: string) => void;
-  setActiveSurface: (tab: WorkspaceSurface) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
   openNewSessionDraft: (options?: { selectedProjectId?: string | null; directoryOverride?: string | null; targetFolderId?: string; target?: 'chat' | 'project' }) => void;
   addSessionToFolder: (scopeKey: string, folderId: string, sessionId: string) => void;
@@ -265,7 +263,6 @@ const areGroupPropsEqual = (prev: Props, next: Props): boolean => {
     && prev.alwaysShowActions === next.alwaysShowActions
     && prev.activeProjectId === next.activeProjectId
     && prev.setActiveProjectIdOnly === next.setActiveProjectIdOnly
-    && prev.setActiveSurface === next.setActiveSurface
     && prev.setSessionSwitcherOpen === next.setSessionSwitcherOpen
     && prev.openNewSessionDraft === next.openNewSessionDraft
     && prev.addSessionToFolder === next.addSessionToFolder
@@ -307,7 +304,6 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
     alwaysShowActions,
     activeProjectId,
     setActiveProjectIdOnly,
-    setActiveSurface,
     setSessionSwitcherOpen,
     openNewSessionDraft,
     addSessionToFolder,
@@ -880,7 +876,6 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
             depth={0}
             onNewSession={() => {
               if (projectId && projectId !== activeProjectId) setActiveProjectIdOnly(projectId);
-              setActiveSurface('chat');
               if (mobileVariant) setSessionSwitcherOpen(false);
                openNewSessionDraft({
                  selectedProjectId: projectId,
@@ -1248,8 +1243,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
                   onClick={(event) => {
                     event.stopPropagation();
                     if (projectId && projectId !== activeProjectId) setActiveProjectIdOnly(projectId);
-                    setActiveSurface('chat');
-                    if (mobileVariant) setSessionSwitcherOpen(false);
+                          if (mobileVariant) setSessionSwitcherOpen(false);
                     openNewSessionDraft({ selectedProjectId: projectId, directoryOverride: group.directory });
                   }}
                   className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"

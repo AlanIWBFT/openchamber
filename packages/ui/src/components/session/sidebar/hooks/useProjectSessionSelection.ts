@@ -2,7 +2,6 @@ import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import type { SessionGroup, SessionNode } from '../types';
 import { normalizePath } from '../utils';
-import type { WorkspaceSurface } from '@/stores/useUIStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
@@ -22,7 +21,6 @@ type Args = {
   newSessionDraftOpen: boolean;
   mobileVariant: boolean;
   openNewSessionDraft: (options?: { selectedProjectId?: string | null; directoryOverride?: string | null }) => void;
-  setActiveSurface: (tab: WorkspaceSurface) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
 };
 
@@ -101,7 +99,6 @@ export const useProjectSessionSelection = (args: Args): void => {
     newSessionDraftOpen,
     mobileVariant,
     openNewSessionDraft,
-    setActiveSurface,
     setSessionSwitcherOpen,
   } = args;
 
@@ -205,7 +202,6 @@ export const useProjectSessionSelection = (args: Args): void => {
     previousActiveProjectRef.current = activeProjectId;
 
     if (selection.kind === 'open-draft') {
-      setActiveSurface('chat');
       if (mobileVariant) {
         setSessionSwitcherOpen(false);
       }
@@ -232,7 +228,6 @@ export const useProjectSessionSelection = (args: Args): void => {
     openNewSessionDraft,
     projectSections,
     projectSessionMeta,
-    setActiveSurface,
     setSessionSwitcherOpen,
     setActiveSessionByProject,
   ]);

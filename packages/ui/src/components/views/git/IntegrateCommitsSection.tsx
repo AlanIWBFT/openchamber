@@ -18,7 +18,6 @@ import { toast } from '@/components/ui';
 import { Icon } from "@/components/icon/Icon";
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useInputStore } from '@/sync/input-store';
-import { useUIStore } from '@/stores/useUIStore';
 import { rankByQuery } from '@/lib/search/fuzzySearch';
 import { getGitCommitSummaries } from '@/lib/gitApi';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
@@ -65,7 +64,6 @@ export const IntegrateCommitsSection: React.FC<{
 }) => {
   const { t } = useI18n();
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
-  const setActiveSurface = useUIStore((s) => s.setActiveSurface);
   const [branchDropdownOpen, setBranchDropdownOpen] = React.useState(false);
   const [branchSearch, setBranchSearch] = React.useState('');
   const searchInputRef = React.useRef<HTMLInputElement>(null);
@@ -235,8 +233,6 @@ export const IntegrateCommitsSection: React.FC<{
           { text: context.payloadText, synthetic: true },
         ],
       });
-      // Navigate to chat tab so user sees the new session
-      setActiveSurface('chat');
       return;
     }
 
@@ -251,8 +247,7 @@ export const IntegrateCommitsSection: React.FC<{
       { text: context.instructionsText, synthetic: true },
       { text: context.payloadText, synthetic: true },
     ]);
-    setActiveSurface('chat');
-  }, [currentSessionId, setActiveSurface, buildConflictContext, openNewSessionDraft, setPendingInputText, setPendingSyntheticParts, t]);
+  }, [currentSessionId, buildConflictContext, openNewSessionDraft, setPendingInputText, setPendingSyntheticParts, t]);
 
   const handleMove = React.useCallback(async () => {
     if (ui.kind !== 'ready') return;

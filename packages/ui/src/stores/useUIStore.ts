@@ -7,17 +7,11 @@ import type { ShortcutCombo } from '@/lib/shortcuts';
 import type { DraftStarterRef } from '@/lib/draftStarters';
 import { DEFAULT_MONO_FONT, DEFAULT_UI_FONT, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 import { getStoredMobileKeyboardMode, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
-import { getRuntimeKey } from '@/lib/runtime-switch';
 import type { TerminalShell } from '@/lib/api/types';
 import { useFilesViewTabsStore } from './useFilesViewTabsStore';
 import { isWindowsArm64 } from '@/lib/platform';
 import { isVSCodeRuntime } from '@/lib/desktop';
 
-/**
- * The primary view on mobile and the desktop's promoted full-screen view.
- * Desktop context-panel content is not represented here.
- */
-export type WorkspaceSurface = 'chat' | 'plan' | 'git' | 'diff' | 'terminal' | 'files' | 'context';
 export type PendingDiffScope = 'working' | 'staged' | 'turn' | 'branch';
 export type ContextPanelMode = 'diff' | 'walkthrough' | 'file' | 'context' | 'plan' | 'chat' | 'browser' | 'git' | 'pr' | 'notes' | 'terminal';
 export type MermaidRenderingMode = 'svg' | 'ascii';
@@ -81,7 +75,6 @@ type PendingFileNavigation = {
   column: number;
 };
 
-export type WorkspaceSurfaceGuard = (nextSurface: WorkspaceSurface) => boolean;
 export type EventStreamStatus =
   | 'idle'
   | 'connecting'
@@ -133,14 +126,8 @@ const CONTEXT_PANEL_MAX_WIDTH = 1400;
 const CONTEXT_PANEL_MAX_TABS = 12;
 const CONTEXT_PANEL_MAX_LABEL_LENGTH = 120;
 const LEFT_SIDEBAR_MIN_WIDTH = 280;
-const activeSurfaceByRuntime = new Map<string, WorkspaceSurface>();
 /** Separates browser tabs opened in the same millisecond. */
 let browserTabSequence = 0;
-
-const runtimeMemoryKey = (value?: string | null): string => {
-  const key = (value ?? getRuntimeKey()).trim();
-  return key || 'default';
-};
 
 // Shared with rail/panel consumers so contextPanelByDirectory lookups agree on keys.
 export const normalizeContextPanelDirectoryKey = (value: string): string => normalizeDirectoryPath(value);
@@ -652,9 +639,6 @@ interface UIStore {
   workStatusHiddenSections: string[];
   isSessionSwitcherOpen: boolean;
   isSessionDropdownOpen: boolean;
-  activeSurface: WorkspaceSurface;
-  surfaceGuard: WorkspaceSurfaceGuard | null;
-  sidebarOpenBeforeFullscreenTab: boolean | null;
   pendingDiffFile: string | null;
   pendingDiffStaged: boolean;
   pendingDiffScope: PendingDiffScope | null;
@@ -844,10 +828,6 @@ interface UIStore {
   setWorkStatusHiddenSections: (sectionIds: string[]) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
   setSessionDropdownOpen: (open: boolean) => void;
-  setActiveSurface: (surface: WorkspaceSurface) => void;
-  prepareForRuntimeSwitch: (runtimeKey?: string | null) => void;
-  restoreForRuntimeSwitch: (runtimeKey?: string | null) => void;
-  setSurfaceGuard: (guard: WorkspaceSurfaceGuard | null) => void;
   setPendingDiffFile: (filePath: string | null, staged?: boolean, scope?: PendingDiffScope | null) => void;
   setPendingFileNavigation: (navigation: PendingFileNavigation | null) => void;
   setPendingFileFocusPath: (path: string | null) => void;
@@ -1019,9 +999,6 @@ export const useUIStore = create<UIStore>()(
         workStatusHiddenSections: [],
         isSessionSwitcherOpen: false,
         isSessionDropdownOpen: false,
-        activeSurface: 'chat',
-        surfaceGuard: null,
-        sidebarOpenBeforeFullscreenTab: null,
         pendingDiffFile: null,
         pendingDiffStaged: false,
         pendingDiffScope: null,
@@ -1633,31 +1610,6 @@ export const useUIStore = create<UIStore>()(
           set({ isSessionDropdownOpen: open });
         },
 
-        setSurfaceGuard: (guard) => {
-          if (get().surfaceGuard === guard) {
-            return;
-          }
-          set({ surfaceGuard: guard });
-        },
-
-        setActiveSurface: (surface) => {
-          const guard = get().surfaceGuard;
-          if (guard && !guard(surface)) {
-            return;
-          }
-          activeSurfaceByRuntime.set(runtimeMemoryKey(), surface);
-          set({ activeSurface: surface });
-        },
-
-        prepareForRuntimeSwitch: (runtimeKey?: string | null) => {
-          activeSurfaceByRuntime.set(runtimeMemoryKey(runtimeKey), get().activeSurface);
-        },
-
-        restoreForRuntimeSwitch: (runtimeKey?: string | null) => {
-          const restored = activeSurfaceByRuntime.get(runtimeMemoryKey(runtimeKey)) ?? 'chat';
-          set({ activeSurface: restored });
-        },
-
         setPendingDiffFile: (filePath, staged = false, scope = null) => {
           set({
             pendingDiffFile: filePath,
@@ -1675,11 +1627,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         navigateToDiff: (filePath, staged = false, scope = null) => {
-          const guard = get().surfaceGuard;
-          if (guard && !guard('diff')) {
-            return;
-          }
-          set({ pendingDiffFile: filePath, pendingDiffStaged: staged, pendingDiffScope: scope, activeSurface: 'diff' });
+          set({ pendingDiffFile: filePath, pendingDiffStaged: staged, pendingDiffScope: scope });
         },
 
         consumePendingDiffFile: () => {

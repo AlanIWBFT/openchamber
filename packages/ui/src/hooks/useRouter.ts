@@ -3,7 +3,6 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore, type ContextPanelMode } from '@/stores/useUIStore';
 import { parseRoute, updateBrowserURL, hasRouteParams } from '@/lib/router';
 import type { RouteState, AppRouteState } from '@/lib/router';
-import type { WorkspaceSurface } from '@/stores/useUIStore';
 import { resolveSettingsSlug } from '@/lib/settings/metadata';
 import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -50,7 +49,6 @@ export function useRouter(): void {
 
   // Get store actions (stable references)
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
-  const setActiveSurface = useUIStore((state) => state.setActiveSurface);
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
   const navigateToDiff = useUIStore((state) => state.navigateToDiff);
@@ -109,7 +107,7 @@ export function useRouter(): void {
         isApplyingRouteRef.current = false;
       }
     },
-    [setCurrentSession, setActiveSurface, setSettingsDialogOpen, setSettingsPage, navigateToDiff]
+    [setCurrentSession, setSettingsDialogOpen, setSettingsPage, navigateToDiff]
   );
 
   /**
@@ -121,10 +119,8 @@ export function useRouter(): void {
 
     return {
       sessionId: sessionState.currentSessionId,
-      tab: uiState.activeSurface,
       isSettingsOpen: uiState.isSettingsDialogOpen,
       settingsPath: uiState.settingsPage,
-      diffFile: uiState.pendingDiffFile,
     };
   }, []);
 
@@ -170,9 +166,7 @@ export function useRouter(): void {
         updateBrowserURL({
           ...getCurrentAppState(),
           sessionId: route.sessionId ?? useSessionUIStore.getState().currentSessionId,
-          tab: route.tab ?? useUIStore.getState().activeSurface,
           settingsPath: route.settingsPath ?? useUIStore.getState().settingsPage,
-          diffFile: route.diffFile ?? useUIStore.getState().pendingDiffFile,
         }, { replace: true, force: true });
       }
     };
@@ -209,10 +203,8 @@ export function useRouter(): void {
       return;
     }
 
-    let prevSurface: WorkspaceSurface = useUIStore.getState().activeSurface;
     let prevSettingsOpen: boolean = useUIStore.getState().isSettingsDialogOpen;
     let prevSettingsPath: string = useUIStore.getState().settingsPage;
-    let prevDiffFile: string | null = useUIStore.getState().pendingDiffFile;
 
     const unsubscribe = useUIStore.subscribe((state) => {
       // Skip if we're currently applying a route
@@ -220,19 +212,13 @@ export function useRouter(): void {
         return;
       }
 
-      const surfaceChanged = state.activeSurface !== prevSurface;
       const settingsOpenChanged = state.isSettingsDialogOpen !== prevSettingsOpen;
       const settingsPathChanged = state.settingsPage !== prevSettingsPath;
-      const diffFileChanged = state.pendingDiffFile !== prevDiffFile && state.activeSurface === 'diff';
 
-      // Update tracking vars
-      prevSurface = state.activeSurface;
       prevSettingsOpen = state.isSettingsDialogOpen;
       prevSettingsPath = state.settingsPage;
-      prevDiffFile = state.pendingDiffFile;
 
-      // Only sync if something relevant changed
-      if (surfaceChanged || settingsOpenChanged || settingsPathChanged || diffFileChanged) {
+      if (settingsOpenChanged || settingsPathChanged) {
         syncURLFromState();
       }
     });
@@ -260,10 +246,6 @@ export function useRouter(): void {
         if (uiState.isSettingsDialogOpen) {
           setSettingsDialogOpen(false);
         }
-        // Reset to chat when no route view is specified.
-        if (uiState.activeSurface !== 'chat') {
-          setActiveSurface('chat');
-        }
       }
     };
 
@@ -272,5 +254,5 @@ export function useRouter(): void {
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [applyRoute, isVSCode, isEmbeddedChat, setActiveSurface, setSettingsDialogOpen]);
+  }, [applyRoute, isVSCode, isEmbeddedChat, setSettingsDialogOpen]);
 }

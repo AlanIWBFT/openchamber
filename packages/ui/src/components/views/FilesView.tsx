@@ -939,7 +939,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
 
   const [confirmDiscardOpen, setConfirmDiscardOpen] = React.useState(false);
   const pendingSelectFileRef = React.useRef<FileNode | null>(null);
-  const pendingTabRef = React.useRef<import('@/stores/useUIStore').WorkspaceSurface | null>(null);
   const pendingClosePathRef = React.useRef<string | null>(null);
   const skipDirtyOnceRef = React.useRef(false);
   const copiedContentTimeoutRef = React.useRef<number | null>(null);
@@ -1029,7 +1028,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   const [isDragging, setIsDragging] = React.useState(false);
 
   // Session/config for sending comments
-  const setSurfaceGuard = useUIStore((state) => state.setSurfaceGuard);
   const pendingFileNavigation = useUIStore((state) => state.pendingFileNavigation);
   const setPendingFileNavigation = useUIStore((state) => state.setPendingFileNavigation);
   const pendingFileFocusPath = useUIStore((state) => state.pendingFileFocusPath);
@@ -1098,10 +1096,9 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   React.useEffect(() => {
     setLineSelection(null);
     reset();
-    setSurfaceGuard(null);
     setDraftContent('');
     setIsSaving(false);
-  }, [selectedFile?.path, reset, setSurfaceGuard]);
+  }, [selectedFile?.path, reset]);
 
   React.useEffect(() => {
     setCommentSelection(lineSelection);
@@ -1712,32 +1709,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   }, [contentDetectedBinary, draftContent, fileContent, fileLoading, files, isDirty, loadedFileLineEnding, loadedFilePath, readFileStat, root, selectedFile, t]);
 
   React.useEffect(() => {
-    if (!isDirty) {
-      setSurfaceGuard(null);
-      return;
-    }
-
-    const guard = (_nextTab: import('@/stores/useUIStore').WorkspaceSurface) => {
-      if (skipDirtyOnceRef.current) {
-        skipDirtyOnceRef.current = false;
-        return true;
-      }
-      setConfirmDiscardOpen(true);
-      pendingTabRef.current = _nextTab;
-      return false;
-    };
-
-    setSurfaceGuard(guard);
-
-    return () => {
-      const currentGuard = useUIStore.getState().surfaceGuard;
-      if (currentGuard === guard) {
-        setSurfaceGuard(null);
-      }
-    };
-  }, [isDirty, setSurfaceGuard]);
-
-  React.useEffect(() => {
     if (autoSaveEnabled) {
       return;
     }
@@ -2136,11 +2107,9 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
 
   const discardAndContinue = React.useCallback(() => {
     const nextFile = pendingSelectFileRef.current;
-    const nextTab = pendingTabRef.current;
     const closePath = pendingClosePathRef.current;
 
     pendingSelectFileRef.current = null;
-    pendingTabRef.current = null;
     pendingClosePathRef.current = null;
 
     // Allow one guarded navigation (tab/file) without re-opening dialog.
@@ -2179,15 +2148,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
       return;
     }
 
-    if (nextTab) {
-      setSurfaceGuard(null);
-      useUIStore.getState().setActiveSurface(nextTab);
-    }
-  }, [displayedContent, handleSelectFile, isMobile, removeOpenPath, root, selectedFile?.path, setSurfaceGuard, setSelectedPath]);
+  }, [displayedContent, handleSelectFile, isMobile, removeOpenPath, root, selectedFile?.path, setSelectedPath]);
 
   const saveAndContinue = React.useCallback(async () => {
     const nextFile = pendingSelectFileRef.current;
-    const nextTab = pendingTabRef.current;
     const closePath = pendingClosePathRef.current;
 
     const saved = await saveDraft();
@@ -2197,7 +2161,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     }
 
     pendingSelectFileRef.current = null;
-    pendingTabRef.current = null;
     pendingClosePathRef.current = null;
 
     // We'll proceed after saving; suppress guard reopening.
@@ -2233,11 +2196,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
       return;
     }
 
-    if (nextTab) {
-      setSurfaceGuard(null);
-      useUIStore.getState().setActiveSurface(nextTab);
-    }
-  }, [handleSelectFile, isMobile, removeOpenPath, root, saveDraft, selectedFile?.path, setSurfaceGuard, setSelectedPath]);
+  }, [handleSelectFile, isMobile, removeOpenPath, root, saveDraft, selectedFile?.path, setSelectedPath]);
 
   const handleCloseFile = React.useCallback((path: string) => {
     const isActive = selectedFile?.path === path;
