@@ -1670,7 +1670,49 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
 
 type SettingsRuntimeContext = { runtimeKey: string; generation: number };
 type SettingsMutation = { revision: number; changes: Partial<DesktopSettings> };
-type SettingsOperation = SettingsRuntimeContext & { id: number; revision: number };
+type SettingsOperation = { revision: number };
+
+class SettingsMutationTracker {
+  private revision = 0;
+  private mutations: SettingsMutation[] = [];
+  private operations = new Set<SettingsOperation>();
+
+  record(changes: Partial<DesktopSettings>): number {
+    this.revision += 1;
+    this.mutations.push({ revision: this.revision, changes });
+    return this.revision;
+  }
+
+  begin(revision = this.revision): SettingsOperation {
+    const operation = { revision };
+    this.operations.add(operation);
+    return operation;
+  }
+
+  reconcile(settings: DesktopSettings, operation: SettingsOperation): DesktopSettings {
+    let reconciled = settings;
+    for (const mutation of this.mutations) {
+      if (mutation.revision <= operation.revision) continue;
+      reconciled = { ...reconciled, ...mutation.changes };
+    }
+    return reconciled;
+  }
+
+  finish(operation: SettingsOperation): void {
+    if (!this.operations.delete(operation)) return;
+    if (this.operations.size === 0) {
+      this.mutations = [];
+      return;
+    }
+    const oldestRevision = Math.min(...[...this.operations].map(({ revision }) => revision));
+    this.mutations = this.mutations.filter((mutation) => mutation.revision > oldestRevision);
+  }
+
+  reset(): void {
+    this.mutations = [];
+    this.operations.clear();
+  }
+}
 
 // Short-lived cache + in-flight dedup for settings fetches to avoid repeated GET calls during startup
 let _settingsRuntimeGeneration = 0;
@@ -1681,52 +1723,10 @@ let _pendingSettingsContext: SettingsRuntimeContext | null = null;
 let _settingsFlushTimer: ReturnType<typeof setTimeout> | null = null;
 let _settingsFlushWaiters: Array<() => void> = [];
 let _settingsLifecycleInitialized = false;
-let _settingsMutationRevision = 0;
-let _settingsOperationId = 0;
 let _pendingSettingsRevision = 0;
-let _settingsMutations: SettingsMutation[] = [];
-const _settingsOperations = new Map<number, SettingsOperation>();
+const _settingsMutationTracker = new SettingsMutationTracker();
 const SETTINGS_CACHE_TTL = 2_000; // 2 seconds — covers the startup burst
 const SETTINGS_DEBOUNCE_MS = 200;
-
-const recordSettingsMutation = (changes: Partial<DesktopSettings>): number => {
-  _settingsMutationRevision += 1;
-  _settingsMutations.push({ revision: _settingsMutationRevision, changes });
-  return _settingsMutationRevision;
-};
-
-const beginSettingsOperation = (
-  revision = _settingsMutationRevision,
-  context = captureSettingsRuntimeContext(),
-): SettingsOperation => {
-  _settingsOperationId += 1;
-  const operation = { id: _settingsOperationId, revision, ...context };
-  _settingsOperations.set(operation.id, operation);
-  return operation;
-};
-
-const reconcileSettingsOperation = (
-  settings: DesktopSettings,
-  operation: SettingsOperation,
-): DesktopSettings => {
-  let reconciled = settings;
-  for (const mutation of _settingsMutations) {
-    if (mutation.revision <= operation.revision) continue;
-    reconciled = { ...reconciled, ...mutation.changes };
-  }
-  return reconciled;
-};
-
-const finishSettingsOperation = (operation: SettingsOperation): void => {
-  if (!isSettingsRuntimeContextCurrent(operation)) return;
-  _settingsOperations.delete(operation.id);
-  if (_settingsOperations.size === 0) {
-    _settingsMutations = [];
-    return;
-  }
-  const oldestOperationRevision = Math.min(...[..._settingsOperations.values()].map(({ revision }) => revision));
-  _settingsMutations = _settingsMutations.filter((mutation) => mutation.revision > oldestOperationRevision);
-};
 
 const captureSettingsRuntimeContext = (): SettingsRuntimeContext => ({
   runtimeKey: getRuntimeKey(),
@@ -1753,8 +1753,7 @@ const ensureSettingsRuntimeLifecycle = (): void => {
   subscribeRuntimeEndpointChanged((detail) => {
     if (detail.runtimeKey === detail.previousRuntimeKey) return;
     _settingsRuntimeGeneration += 1;
-    _settingsMutations = [];
-    _settingsOperations.clear();
+    _settingsMutationTracker.reset();
     _pendingSettingsRevision = 0;
     _settingsCache = null;
     _settingsInflight = null;
@@ -1829,7 +1828,7 @@ export const syncDesktopSettings = async (): Promise<void> => {
   }
   ensureSettingsRuntimeLifecycle();
   const context = captureSettingsRuntimeContext();
-  const operation = beginSettingsOperation(_settingsMutationRevision, context);
+  const operation = _settingsMutationTracker.begin();
 
   const persistApis = [getPersistApi(), useSessionDisplayStore.persist];
 
@@ -1868,10 +1867,10 @@ export const syncDesktopSettings = async (): Promise<void> => {
   // prevent server settings from reaching the Zustand store.
   const applySettings = async (loadedSettings: DesktopSettings) => {
     if (!isSettingsRuntimeContextCurrent(context)) return;
-    let settings = reconcileSettingsOperation(loadedSettings, operation);
+    let settings = _settingsMutationTracker.reconcile(loadedSettings, operation);
     await waitForHydration();
     if (!isSettingsRuntimeContextCurrent(context)) return;
-    settings = reconcileSettingsOperation(loadedSettings, operation);
+    settings = _settingsMutationTracker.reconcile(loadedSettings, operation);
     const shouldPersistCraftGoalMigration = settings.draftStartersCraftGoalAdded !== true
       || settings.draftStartersScheduleTaskAdded !== true;
     // `autoSaveEnabled` is new to the settings backend. Until the server has a
@@ -1953,7 +1952,7 @@ export const syncDesktopSettings = async (): Promise<void> => {
   } catch (error) {
     console.warn('Failed to synchronise settings:', error);
   } finally {
-    finishSettingsOperation(operation);
+    _settingsMutationTracker.finish(operation);
   }
 };
 
@@ -1974,7 +1973,7 @@ async function _flushSettingsUpdate(): Promise<void> {
       dispatchSettingsSaveState('saved');
       return;
     }
-    const operation = beginSettingsOperation(revision, context);
+    const operation = _settingsMutationTracker.begin(revision);
 
     try {
       const runtimeSettings = getRuntimeSettingsAPI();
@@ -1983,7 +1982,7 @@ async function _flushSettingsUpdate(): Promise<void> {
           const updated = await runtimeSettings.save(changes);
           if (!isSettingsRuntimeContextCurrent(context)) return;
           if (updated) {
-            const reconciled = reconcileSettingsOperation(updated, operation);
+            const reconciled = _settingsMutationTracker.reconcile(updated, operation);
             applyDesktopUiPreferences(reconciled);
             dispatchSettingsSynced(reconciled);
             _settingsCache = null;
@@ -2017,7 +2016,7 @@ async function _flushSettingsUpdate(): Promise<void> {
         const updated = sanitizeWebSettings(await response.json().catch(() => null));
         if (!isSettingsRuntimeContextCurrent(context)) return;
         if (updated) {
-          const reconciled = reconcileSettingsOperation(updated, operation);
+          const reconciled = _settingsMutationTracker.reconcile(updated, operation);
           applyDesktopUiPreferences(reconciled);
           dispatchSettingsSynced(reconciled);
           dispatchSettingsSaveState('saved');
@@ -2033,7 +2032,7 @@ async function _flushSettingsUpdate(): Promise<void> {
         }
       }
     } finally {
-      finishSettingsOperation(operation);
+      _settingsMutationTracker.finish(operation);
     }
   } finally {
     waiters.forEach((resolve) => resolve());
@@ -2054,7 +2053,7 @@ export const updateDesktopSettings = async (changes: Partial<DesktopSettings>): 
 
   _pendingSettingsChanges = { ...(_pendingSettingsChanges ?? {}), ...changes };
   _pendingSettingsContext = context;
-  _pendingSettingsRevision = recordSettingsMutation(changes);
+  _pendingSettingsRevision = _settingsMutationTracker.record(changes);
   dispatchSettingsSaveState('saving');
 
   if (_settingsFlushTimer) {
