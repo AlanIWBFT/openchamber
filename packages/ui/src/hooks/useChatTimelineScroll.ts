@@ -547,9 +547,13 @@ export const useChatTimelineScroll = ({
                     // The turn still fits: leave the viewport exactly where the
                     // user is reading.
                     if (!metrics || metrics.scrollDeltaToRevealEnd <= 1) return;
+                    // Animated: successive corrections restart the smooth scroll
+                    // from the current position, so streaming reads as one
+                    // continuous glide instead of a per-line hop. A real user
+                    // gesture interrupts the native smooth scroll on its own.
                     void list.scrollToOffset({
                         offset: list.getState().scroll + metrics.scrollDeltaToRevealEnd,
-                        animated: false,
+                        animated: true,
                     });
                     return;
                 }
