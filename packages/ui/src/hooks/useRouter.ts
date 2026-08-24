@@ -1,11 +1,12 @@
 import React from 'react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useUIStore } from '@/stores/useUIStore';
+import { useUIStore, type ContextPanelMode } from '@/stores/useUIStore';
 import { parseRoute, updateBrowserURL, hasRouteParams } from '@/lib/router';
 import type { RouteState, AppRouteState } from '@/lib/router';
 import type { WorkspaceSurface } from '@/stores/useUIStore';
 import { resolveSettingsSlug } from '@/lib/settings/metadata';
 import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
+import { useDirectoryStore } from '@/stores/useDirectoryStore';
 
 /**
  * Check if running in VS Code webview context.
@@ -88,9 +89,16 @@ export function useRouter(): void {
           setSettingsDialogOpen(false);
         }
 
-        // 3. Apply the view selected by the legacy URL parameter.
-        if (route.tab) {
-          setActiveSurface(route.tab);
+        // 3. Apply the view selected by the legacy URL parameter. Desktop
+        // surfaces live in the context panel, so a non-chat tab deep link
+        // opens the matching panel surface; activeSurface itself stays 'chat'
+        // (nothing renders non-chat surfaces in the main area).
+        if (route.tab && route.tab !== 'chat') {
+          const directory = useDirectoryStore.getState().currentDirectory;
+          if (directory) {
+            const mode: ContextPanelMode = route.tab === 'files' ? 'file' : route.tab;
+            useUIStore.getState().openContextSurface(directory, mode);
+          }
         }
 
         // 4. Apply diff file (only if going to diff tab)

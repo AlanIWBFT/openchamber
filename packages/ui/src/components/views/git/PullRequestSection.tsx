@@ -327,7 +327,7 @@ export const PullRequestSection: React.FC<{
   const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
-  const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
+  const setActiveSurface = useUIStore((state) => state.setActiveSurface);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const newSessionDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
   const { isMobile, hasTouchInput, screenWidth } = useDeviceInfo();
@@ -986,14 +986,14 @@ export const PullRequestSection: React.FC<{
           text: '',
         });
       }
-      setActiveMainTab('chat');
+      setActiveSurface('chat');
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       toast.error(t('gitView.pr.toast.loadChecksFailed'), { description: message });
     } finally {
       setIsAttachingChecks(false);
     }
-  }, [directory, ensurePrContext, github, pr, resolveDraftTarget, setActiveMainTab, status?.repo, t]);
+  }, [directory, ensurePrContext, github, pr, resolveDraftTarget, setActiveSurface, status?.repo, t]);
 
   const sendCommentsToChat = React.useCallback(async () => {
     if (!github?.prContext) {
@@ -1021,14 +1021,14 @@ export const PullRequestSection: React.FC<{
       for (const comment of timelineComments) {
         attachCommentDraft(target, comment);
       }
-      setActiveMainTab('chat');
+      setActiveSurface('chat');
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       toast.error(t('gitView.pr.toast.loadPrCommentsFailed'), { description: message });
     } finally {
       setIsAttachingComments(false);
     }
-  }, [attachCommentDraft, directory, ensurePrContext, github, pr, resolveDraftTarget, setActiveMainTab, status?.repo, t, timelineComments]);
+  }, [attachCommentDraft, directory, ensurePrContext, github, pr, resolveDraftTarget, setActiveSurface, status?.repo, t, timelineComments]);
 
   const sendSingleCommentToChat = React.useCallback(async (comment: TimelineCommentItem) => {
     const target = resolveDraftTarget();
@@ -1037,8 +1037,8 @@ export const PullRequestSection: React.FC<{
     }
 
     attachCommentDraft(target, comment);
-    setActiveMainTab('chat');
-  }, [attachCommentDraft, resolveDraftTarget, setActiveMainTab]);
+    setActiveSurface('chat');
+  }, [attachCommentDraft, resolveDraftTarget, setActiveSurface]);
 
   const refresh = React.useCallback(async (options?: { force?: boolean; onlyExistingPr?: boolean; silent?: boolean; markInitialResolved?: boolean }) => {
     await refreshPrStatus(prStatusKey, options);

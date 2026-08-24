@@ -41,7 +41,7 @@ export const ConflictDialog: React.FC<ConflictDialogProps> = ({
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const setPendingInputText = useInputStore((state) => state.setPendingInputText);
   const setPendingSyntheticParts = useInputStore((state) => state.setPendingSyntheticParts);
-  const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
+  const setActiveSurface = useUIStore((state) => state.setActiveSurface);
 
   const [isLoading, setIsLoading] = React.useState(false);
   const [conflictDetails, setConflictDetails] = React.useState<MergeConflictDetails | null>(null);
@@ -137,7 +137,7 @@ export const ConflictDialog: React.FC<ConflictDialogProps> = ({
       { text: context.payloadText, synthetic: true },
     ]);
 
-    setActiveMainTab('chat');
+    setActiveSurface('chat');
     onClearState?.();
     onOpenChange(false);
   };
@@ -159,7 +159,7 @@ export const ConflictDialog: React.FC<ConflictDialogProps> = ({
       ],
     });
     // Navigate to chat tab so user sees the new session
-    setActiveMainTab('chat');
+    setActiveSurface('chat');
     onClearState?.();
     onOpenChange(false);
   };

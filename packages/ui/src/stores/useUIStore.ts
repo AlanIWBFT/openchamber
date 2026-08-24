@@ -17,9 +17,7 @@ import { isVSCodeRuntime } from '@/lib/desktop';
  * The primary view on mobile and the desktop's promoted full-screen view.
  * Desktop context-panel content is not represented here.
  */
-export type WorkspaceSurface = 'chat' | 'plan' | 'git' | 'diff' | 'terminal' | 'files' | 'context' | 'diagram';
-/** @deprecated Use WorkspaceSurface. */
-export type MainTab = WorkspaceSurface;
+export type WorkspaceSurface = 'chat' | 'plan' | 'git' | 'diff' | 'terminal' | 'files' | 'context';
 export type PendingDiffScope = 'working' | 'staged' | 'turn' | 'branch';
 export type ContextPanelMode = 'diff' | 'walkthrough' | 'file' | 'context' | 'plan' | 'chat' | 'browser' | 'git' | 'pr' | 'notes' | 'terminal';
 export type MermaidRenderingMode = 'svg' | 'ascii';
@@ -84,8 +82,6 @@ type PendingFileNavigation = {
 };
 
 export type WorkspaceSurfaceGuard = (nextSurface: WorkspaceSurface) => boolean;
-/** @deprecated Use WorkspaceSurfaceGuard. */
-export type MainTabGuard = WorkspaceSurfaceGuard;
 export type EventStreamStatus =
   | 'idle'
   | 'connecting'
@@ -658,15 +654,10 @@ interface UIStore {
   isSessionDropdownOpen: boolean;
   activeSurface: WorkspaceSurface;
   surfaceGuard: WorkspaceSurfaceGuard | null;
-  /** @deprecated Use activeSurface. */
-  activeMainTab: WorkspaceSurface;
-  /** @deprecated Use surfaceGuard. */
-  mainTabGuard: WorkspaceSurfaceGuard | null;
   sidebarOpenBeforeFullscreenTab: boolean | null;
   pendingDiffFile: string | null;
   pendingDiffStaged: boolean;
   pendingDiffScope: PendingDiffScope | null;
-  pendingDiagramFile: string | null;
   pendingFileNavigation: PendingFileNavigation | null;
   pendingFileFocusPath: string | null;
   isMobile: boolean;
@@ -854,21 +845,14 @@ interface UIStore {
   setSessionSwitcherOpen: (open: boolean) => void;
   setSessionDropdownOpen: (open: boolean) => void;
   setActiveSurface: (surface: WorkspaceSurface) => void;
-  /** @deprecated Use setActiveSurface. */
-  setActiveMainTab: (surface: WorkspaceSurface) => void;
   prepareForRuntimeSwitch: (runtimeKey?: string | null) => void;
   restoreForRuntimeSwitch: (runtimeKey?: string | null) => void;
   setSurfaceGuard: (guard: WorkspaceSurfaceGuard | null) => void;
-  /** @deprecated Use setSurfaceGuard. */
-  setMainTabGuard: (guard: WorkspaceSurfaceGuard | null) => void;
   setPendingDiffFile: (filePath: string | null, staged?: boolean, scope?: PendingDiffScope | null) => void;
-  setPendingDiagramFile: (filePath: string | null) => void;
   setPendingFileNavigation: (navigation: PendingFileNavigation | null) => void;
   setPendingFileFocusPath: (path: string | null) => void;
   navigateToDiff: (filePath: string, staged?: boolean, scope?: PendingDiffScope | null) => void;
   consumePendingDiffFile: () => string | null;
-  navigateToDiagram: (filePath: string) => void;
-  consumePendingDiagramFile: () => string | null;
   setIsMobile: (isMobile: boolean) => void;
   toggleCommandPalette: () => void;
   setCommandPaletteOpen: (open: boolean) => void;
@@ -1037,13 +1021,10 @@ export const useUIStore = create<UIStore>()(
         isSessionDropdownOpen: false,
         activeSurface: 'chat',
         surfaceGuard: null,
-        activeMainTab: 'chat',
-        mainTabGuard: null,
         sidebarOpenBeforeFullscreenTab: null,
         pendingDiffFile: null,
         pendingDiffStaged: false,
         pendingDiffScope: null,
-        pendingDiagramFile: null,
         pendingFileNavigation: null,
         pendingFileFocusPath: null,
         isMobile: false,
@@ -1656,10 +1637,8 @@ export const useUIStore = create<UIStore>()(
           if (get().surfaceGuard === guard) {
             return;
           }
-          set({ surfaceGuard: guard, mainTabGuard: guard });
+          set({ surfaceGuard: guard });
         },
-
-        setMainTabGuard: (guard) => get().setSurfaceGuard(guard),
 
         setActiveSurface: (surface) => {
           const guard = get().surfaceGuard;
@@ -1667,10 +1646,8 @@ export const useUIStore = create<UIStore>()(
             return;
           }
           activeSurfaceByRuntime.set(runtimeMemoryKey(), surface);
-          set({ activeSurface: surface, activeMainTab: surface });
+          set({ activeSurface: surface });
         },
-
-        setActiveMainTab: (surface) => get().setActiveSurface(surface),
 
         prepareForRuntimeSwitch: (runtimeKey?: string | null) => {
           activeSurfaceByRuntime.set(runtimeMemoryKey(runtimeKey), get().activeSurface);
@@ -1678,7 +1655,7 @@ export const useUIStore = create<UIStore>()(
 
         restoreForRuntimeSwitch: (runtimeKey?: string | null) => {
           const restored = activeSurfaceByRuntime.get(runtimeMemoryKey(runtimeKey)) ?? 'chat';
-          set({ activeSurface: restored, activeMainTab: restored });
+          set({ activeSurface: restored });
         },
 
         setPendingDiffFile: (filePath, staged = false, scope = null) => {
@@ -1687,10 +1664,6 @@ export const useUIStore = create<UIStore>()(
             pendingDiffStaged: filePath ? staged : false,
             pendingDiffScope: filePath ? scope : null,
           });
-        },
-
-        setPendingDiagramFile: (filePath) => {
-          set({ pendingDiagramFile: filePath });
         },
 
         setPendingFileNavigation: (navigation) => {
@@ -1706,7 +1679,7 @@ export const useUIStore = create<UIStore>()(
           if (guard && !guard('diff')) {
             return;
           }
-          set({ pendingDiffFile: filePath, pendingDiffStaged: staged, pendingDiffScope: scope, activeSurface: 'diff', activeMainTab: 'diff' });
+          set({ pendingDiffFile: filePath, pendingDiffStaged: staged, pendingDiffScope: scope, activeSurface: 'diff' });
         },
 
         consumePendingDiffFile: () => {
@@ -1715,22 +1688,6 @@ export const useUIStore = create<UIStore>()(
             set({ pendingDiffFile: null, pendingDiffStaged: false, pendingDiffScope: null });
           }
           return pendingDiffFile;
-        },
-
-        navigateToDiagram: (filePath) => {
-          const guard = get().surfaceGuard;
-          if (guard && !guard('diagram')) {
-            return;
-          }
-          set({ pendingDiagramFile: filePath, activeSurface: 'diagram', activeMainTab: 'diagram' });
-        },
-
-        consumePendingDiagramFile: () => {
-          const { pendingDiagramFile } = get();
-          if (pendingDiagramFile) {
-            set({ pendingDiagramFile: null });
-          }
-          return pendingDiagramFile;
         },
 
         setIsMobile: (isMobile) => {
@@ -2498,18 +2455,20 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createDeferredSafeJSONStorage(),
-        version: 15,
+        version: 16,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
             return persistedState;
           }
           const state = persistedState as Record<string, unknown>;
 
-          // v14 -> v15: rename the historic main-tab field. The selected
-          // mobile or promoted desktop view remains unchanged.
-          if (version < 15) {
-            state.activeSurface = state.activeMainTab;
-            state.activeMainTab = state.activeSurface;
+          // v15 -> v16: the main-area surface concept is gone from persistence
+          // (the chat always owns the desktop main area; panel surfaces have
+          // their own state). Drop the historic fields so a stored non-chat
+          // value cannot rehydrate into a blank main area.
+          if (version < 16) {
+            delete state.activeMainTab;
+            delete state.activeSurface;
           }
 
           // v13 -> v14: the separate 'preview' surface merged into 'browser'.
@@ -2717,9 +2676,6 @@ export const useUIStore = create<UIStore>()(
           workStatusPanelEnabled: state.workStatusPanelEnabled,
           workStatusHiddenSections: state.workStatusHiddenSections,
           isSessionSwitcherOpen: state.isSessionSwitcherOpen,
-          activeSurface: state.activeSurface,
-          // Keep the deprecated mirror synchronized while consumers migrate.
-          activeMainTab: state.activeSurface,
           sidebarSection: state.sidebarSection,
           settingsPage: state.settingsPage,
           settingsHasOpenedOnce: state.settingsHasOpenedOnce,

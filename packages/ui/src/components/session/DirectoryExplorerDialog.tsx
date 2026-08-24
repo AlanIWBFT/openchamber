@@ -148,7 +148,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   const homeDirectory = useDirectoryStore((s) => s.homeDirectory);
   const projects = useProjectsStore((s) => s.projects);
   const addProject = useProjectsStore((s) => s.addProject);
-  const setActiveMainTab = useUIStore((s) => s.setActiveMainTab);
+  const setActiveSurface = useUIStore((s) => s.setActiveSurface);
   const setSessionSwitcherOpen = useUIStore((s) => s.setSessionSwitcherOpen);
   const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
   const gitIdentityProfiles = useGitIdentitiesStore((s) => s.profiles);
@@ -411,11 +411,11 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   }, [onOpenChange]);
 
   const openProjectDraft = React.useCallback((projectId: string, projectPath: string) => {
-    setActiveMainTab('chat');
+    setActiveSurface('chat');
     if (isMobile) setSessionSwitcherOpen(false);
     openNewSessionDraft({ selectedProjectId: projectId, directoryOverride: projectPath });
     handleClose();
-  }, [handleClose, isMobile, openNewSessionDraft, setActiveMainTab, setSessionSwitcherOpen]);
+  }, [handleClose, isMobile, openNewSessionDraft, setActiveSurface, setSessionSwitcherOpen]);
 
   const handleQuickAdd = React.useCallback((event: React.MouseEvent, path: string) => {
     event.stopPropagation();

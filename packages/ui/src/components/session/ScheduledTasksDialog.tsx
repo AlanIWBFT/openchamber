@@ -370,7 +370,7 @@ export function ScheduledTasksDialog() {
     setOpen(false);
     if (isMobile) {
       useFilesViewTabsStore.getState().setSelectedPath(selectedProject.path, task.loopFile, { allowOutsideRoot: true });
-      useUIStore.getState().setActiveMainTab('files');
+      useUIStore.getState().setActiveSurface('files');
       return;
     }
     useUIStore.getState().openContextFile(selectedProject.path, task.loopFile);
@@ -397,7 +397,7 @@ export function ScheduledTasksDialog() {
         // this surface (MainLayout closes surfaces on session selection).
         const project = projects.find((entry) => entry.id === selectedProjectID);
         useSessionUIStore.getState().setCurrentSession(sessionId, project?.path ?? null);
-        useUIStore.getState().setActiveMainTab('chat');
+        useUIStore.getState().setActiveSurface('chat');
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('sessions.scheduledTasks.dialog.toast.runFailed'));

@@ -19,7 +19,7 @@ export interface RouteState {
 /**
  * Valid values for the legacy `tab` URL parameter.
  */
-export const VALID_TABS: readonly WorkspaceSurface[] = ['chat', 'git', 'diff', 'terminal', 'files', 'diagram'] as const;
+export const VALID_TABS: readonly WorkspaceSurface[] = ['chat', 'git', 'diff', 'terminal', 'files'] as const;
 
 /**
  * Valid settings section values for URL routing.

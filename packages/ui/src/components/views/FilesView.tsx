@@ -939,7 +939,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
 
   const [confirmDiscardOpen, setConfirmDiscardOpen] = React.useState(false);
   const pendingSelectFileRef = React.useRef<FileNode | null>(null);
-  const pendingTabRef = React.useRef<import('@/stores/useUIStore').MainTab | null>(null);
+  const pendingTabRef = React.useRef<import('@/stores/useUIStore').WorkspaceSurface | null>(null);
   const pendingClosePathRef = React.useRef<string | null>(null);
   const skipDirtyOnceRef = React.useRef(false);
   const copiedContentTimeoutRef = React.useRef<number | null>(null);
@@ -1029,7 +1029,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   const [isDragging, setIsDragging] = React.useState(false);
 
   // Session/config for sending comments
-  const setMainTabGuard = useUIStore((state) => state.setMainTabGuard);
+  const setSurfaceGuard = useUIStore((state) => state.setSurfaceGuard);
   const pendingFileNavigation = useUIStore((state) => state.pendingFileNavigation);
   const setPendingFileNavigation = useUIStore((state) => state.setPendingFileNavigation);
   const pendingFileFocusPath = useUIStore((state) => state.pendingFileFocusPath);
@@ -1098,10 +1098,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   React.useEffect(() => {
     setLineSelection(null);
     reset();
-    setMainTabGuard(null);
+    setSurfaceGuard(null);
     setDraftContent('');
     setIsSaving(false);
-  }, [selectedFile?.path, reset, setMainTabGuard]);
+  }, [selectedFile?.path, reset, setSurfaceGuard]);
 
   React.useEffect(() => {
     setCommentSelection(lineSelection);
@@ -1713,11 +1713,11 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
 
   React.useEffect(() => {
     if (!isDirty) {
-      setMainTabGuard(null);
+      setSurfaceGuard(null);
       return;
     }
 
-    const guard = (_nextTab: import('@/stores/useUIStore').MainTab) => {
+    const guard = (_nextTab: import('@/stores/useUIStore').WorkspaceSurface) => {
       if (skipDirtyOnceRef.current) {
         skipDirtyOnceRef.current = false;
         return true;
@@ -1727,15 +1727,15 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
       return false;
     };
 
-    setMainTabGuard(guard);
+    setSurfaceGuard(guard);
 
     return () => {
-      const currentGuard = useUIStore.getState().mainTabGuard;
+      const currentGuard = useUIStore.getState().surfaceGuard;
       if (currentGuard === guard) {
-        setMainTabGuard(null);
+        setSurfaceGuard(null);
       }
     };
-  }, [isDirty, setMainTabGuard]);
+  }, [isDirty, setSurfaceGuard]);
 
   React.useEffect(() => {
     if (autoSaveEnabled) {
@@ -2180,10 +2180,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     }
 
     if (nextTab) {
-      setMainTabGuard(null);
-      useUIStore.getState().setActiveMainTab(nextTab);
+      setSurfaceGuard(null);
+      useUIStore.getState().setActiveSurface(nextTab);
     }
-  }, [displayedContent, handleSelectFile, isMobile, removeOpenPath, root, selectedFile?.path, setMainTabGuard, setSelectedPath]);
+  }, [displayedContent, handleSelectFile, isMobile, removeOpenPath, root, selectedFile?.path, setSurfaceGuard, setSelectedPath]);
 
   const saveAndContinue = React.useCallback(async () => {
     const nextFile = pendingSelectFileRef.current;
@@ -2234,10 +2234,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     }
 
     if (nextTab) {
-      setMainTabGuard(null);
-      useUIStore.getState().setActiveMainTab(nextTab);
+      setSurfaceGuard(null);
+      useUIStore.getState().setActiveSurface(nextTab);
     }
-  }, [handleSelectFile, isMobile, removeOpenPath, root, saveDraft, selectedFile?.path, setMainTabGuard, setSelectedPath]);
+  }, [handleSelectFile, isMobile, removeOpenPath, root, saveDraft, selectedFile?.path, setSurfaceGuard, setSelectedPath]);
 
   const handleCloseFile = React.useCallback((path: string) => {
     const isActive = selectedFile?.path === path;

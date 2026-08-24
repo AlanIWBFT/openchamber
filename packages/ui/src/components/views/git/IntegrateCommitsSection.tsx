@@ -65,7 +65,7 @@ export const IntegrateCommitsSection: React.FC<{
 }) => {
   const { t } = useI18n();
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
-  const setActiveMainTab = useUIStore((s) => s.setActiveMainTab);
+  const setActiveSurface = useUIStore((s) => s.setActiveSurface);
   const [branchDropdownOpen, setBranchDropdownOpen] = React.useState(false);
   const [branchSearch, setBranchSearch] = React.useState('');
   const searchInputRef = React.useRef<HTMLInputElement>(null);
@@ -236,7 +236,7 @@ export const IntegrateCommitsSection: React.FC<{
         ],
       });
       // Navigate to chat tab so user sees the new session
-      setActiveMainTab('chat');
+      setActiveSurface('chat');
       return;
     }
 
@@ -251,8 +251,8 @@ export const IntegrateCommitsSection: React.FC<{
       { text: context.instructionsText, synthetic: true },
       { text: context.payloadText, synthetic: true },
     ]);
-    setActiveMainTab('chat');
-  }, [currentSessionId, setActiveMainTab, buildConflictContext, openNewSessionDraft, setPendingInputText, setPendingSyntheticParts, t]);
+    setActiveSurface('chat');
+  }, [currentSessionId, setActiveSurface, buildConflictContext, openNewSessionDraft, setPendingInputText, setPendingSyntheticParts, t]);
 
   const handleMove = React.useCallback(async () => {
     if (ui.kind !== 'ready') return;
