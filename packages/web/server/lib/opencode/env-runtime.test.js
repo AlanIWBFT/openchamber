@@ -245,6 +245,29 @@ describe('OpenCode env runtime', () => {
     }
   });
 
+  it('does not query the registry when the Windows PowerShell probe succeeds', () => {
+    setPlatform('win32');
+    const calls = [];
+    const { runtime, state } = createRuntime({}, {
+      spawnSync: (command, args, options) => {
+        calls.push({ command, args, options });
+        return {
+          status: 0,
+          stdout: 'OPENCHAMBER_PROFILE_TEST=value\0Path=C:\\Shell\0',
+        };
+      },
+    });
+    state.cachedLoginShellEnvSnapshot = undefined;
+
+    expect(runtime.getLoginShellEnvSnapshot()).toMatchObject({
+      OPENCHAMBER_PROFILE_TEST: 'value',
+      PATH: 'C:\\Shell',
+    });
+    expect(calls.map((call) => call.command)).toEqual(['pwsh.exe']);
+    expect(calls[0].args).toContain('-NoProfile');
+    expect(calls[0].options).toMatchObject({ windowsHide: true, timeout: 10_000 });
+  });
+
   it('uses a login-shell snapshot provided by the host instead of probing the shell', () => {
     let probes = 0;
     const spawnSyncSpy = () => { probes += 1; return { status: 0, stdout: 'PATH=/from/probe\0' }; };

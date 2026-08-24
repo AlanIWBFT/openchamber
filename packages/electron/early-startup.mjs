@@ -513,6 +513,7 @@ const loadWindowsEnv = () => {
     path.join(appData, 'npm'),
   ];
   return {
+    ...Object.fromEntries(Object.entries(process.env).filter(([name]) => name.toLowerCase() !== 'path')),
     PATH: [machinePath, userPath, process.env.PATH, ...commonPaths]
       .map(expandWindowsEnvRefs)
       .filter(Boolean)
