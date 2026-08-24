@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 import { clearAppImageArgv0FromProcessEnv } from '../inherited-env.js';
 import { resolveGitBinary } from '../git/git-binary.js';
 import { mergePathValues } from './path-utils.js';
@@ -11,6 +12,14 @@ import { mergePathValues } from './path-utils.js';
 // hostage: a probe that overruns is abandoned and resolution falls through
 // to the next candidate. Electron's own login-shell probe uses the same bound.
 const SHELL_PROBE_TIMEOUT_MS = 5_000;
+const WINDOWS_SHELL_ENV_MAX_BUFFER = 10 * 1024 * 1024;
+const WINDOWS_SHELL_ENV_PS_SCRIPT = [
+  '$entries = [ordered]@{}',
+  'Get-ChildItem Env: | ForEach-Object { $entries[$_.Name] = $_.Value }',
+  "$pathValues = @([Environment]::GetEnvironmentVariable('Path', 'Machine'), [Environment]::GetEnvironmentVariable('Path', 'User'), [Environment]::GetEnvironmentVariable('Path', 'Process')) | Where-Object { $_ }",
+  "if ($pathValues.Count -gt 0) { $entries['Path'] = ($pathValues -join ';') }",
+  "$entries.GetEnumerator() | ForEach-Object { [Console]::Out.Write($_.Name); [Console]::Out.Write('='); [Console]::Out.Write($_.Value); [Console]::Out.Write([char]0) }",
+].join('; ');
 
 const parseNullSeparatedEnvSnapshot = (raw) => {
   if (typeof raw !== 'string' || raw.length === 0) {
@@ -46,36 +55,53 @@ const parseNullSeparatedEnvSnapshot = (raw) => {
   return result;
 };
 
-export const probeWindowsShellEnvSnapshot = ({ spawnSync: runSpawnSync = spawnSync, env = process.env } = {}) => {
+const createWindowsShellEnvProbeContext = (env) => {
   const getEnvValue = (name) => {
     if (Object.hasOwn(env, name)) return env[name] ?? '';
     const key = Object.keys(env).find((candidate) => candidate.toLowerCase() === name.toLowerCase());
     return key ? env[key] ?? '' : '';
   };
+  return {
+    getEnvValue,
+    powershellCandidates: [
+      'pwsh.exe',
+      'powershell.exe',
+      path.join(getEnvValue('SystemRoot') || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+    ],
+    processOptions: {
+      encoding: 'utf8',
+      maxBuffer: WINDOWS_SHELL_ENV_MAX_BUFFER,
+      windowsHide: true,
+      env,
+    },
+  };
+};
+
+const parseWindowsRegistryPath = (stdout) => {
+  const line = String(stdout || '')
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find((entry) => entry.toLowerCase().startsWith('path'));
+  return line?.match(/^\S+\s+REG_\S+\s+(.+)$/)?.[1]?.trim() || '';
+};
+
+const buildWindowsRegistryFallbackSnapshot = (machinePath, userPath, getEnvValue) => {
+  const fallbackPath = [machinePath, userPath, getEnvValue('PATH')]
+    .map((value) => String(value || '').replace(/%([^%]+)%/g, (_match, key) => getEnvValue(key)))
+    .filter(Boolean)
+    .join(';');
+  return fallbackPath ? { PATH: fallbackPath } : null;
+};
+
+export const probeWindowsShellEnvSnapshot = ({ spawnSync: runSpawnSync = spawnSync, env = process.env } = {}) => {
+  const { getEnvValue, powershellCandidates, processOptions } = createWindowsShellEnvProbeContext(env);
   const parseResult = (stdout) => parseNullSeparatedEnvSnapshot(typeof stdout === 'string' ? stdout : '');
-
-  const psScript = [
-    '$entries = [ordered]@{}',
-    'Get-ChildItem Env: | ForEach-Object { $entries[$_.Name] = $_.Value }',
-    "$pathValues = @([Environment]::GetEnvironmentVariable('Path', 'Machine'), [Environment]::GetEnvironmentVariable('Path', 'User'), [Environment]::GetEnvironmentVariable('Path', 'Process')) | Where-Object { $_ }",
-    "if ($pathValues.Count -gt 0) { $entries['Path'] = ($pathValues -join ';') }",
-    "$entries.GetEnumerator() | ForEach-Object { [Console]::Out.Write($_.Name); [Console]::Out.Write('='); [Console]::Out.Write($_.Value); [Console]::Out.Write([char]0) }",
-  ].join('; ');
-
-  const powershellCandidates = [
-    'pwsh.exe',
-    'powershell.exe',
-    path.join(getEnvValue('SystemRoot') || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
-  ];
 
   for (const shellPath of powershellCandidates) {
     try {
-      const result = runSpawnSync(shellPath, ['-NoLogo', '-Command', psScript], {
-        encoding: 'utf8',
+      const result = runSpawnSync(shellPath, ['-Command', WINDOWS_SHELL_ENV_PS_SCRIPT], {
+        ...processOptions,
         stdio: ['ignore', 'pipe', 'pipe'],
-        maxBuffer: 10 * 1024 * 1024,
-        windowsHide: true,
-        env,
       });
       if (result.status !== 0) {
         continue;
@@ -91,18 +117,11 @@ export const probeWindowsShellEnvSnapshot = ({ spawnSync: runSpawnSync = spawnSy
   const queryRegistryPath = (key) => {
     try {
       const result = runSpawnSync('reg.exe', ['query', key, '/v', 'Path'], {
-        encoding: 'utf8',
+        ...processOptions,
         stdio: ['ignore', 'pipe', 'pipe'],
-        maxBuffer: 10 * 1024 * 1024,
-        windowsHide: true,
-        env,
       });
       if (result.status !== 0) return '';
-      const line = String(result.stdout || '')
-        .split(/\r?\n/)
-        .map((entry) => entry.trim())
-        .find((entry) => entry.toLowerCase().startsWith('path'));
-      return line?.match(/^\S+\s+REG_\S+\s+(.+)$/)?.[1]?.trim() || '';
+      return parseWindowsRegistryPath(result.stdout);
     } catch {
       return '';
     }
@@ -110,12 +129,35 @@ export const probeWindowsShellEnvSnapshot = ({ spawnSync: runSpawnSync = spawnSy
 
   const machinePath = queryRegistryPath('HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment');
   const userPath = queryRegistryPath('HKCU\\Environment');
-  const fallbackPath = [machinePath, userPath, getEnvValue('PATH')]
-    .map((value) => String(value || '').replace(/%([^%]+)%/g, (_match, key) => getEnvValue(key)))
-    .filter(Boolean)
-    .join(';');
-  return fallbackPath ? { PATH: fallbackPath } : null;
+  return buildWindowsRegistryFallbackSnapshot(machinePath, userPath, getEnvValue);
 };
+
+const createWindowsShellEnvWorker = (env) => new Worker(
+  new URL('./windows-shell-env-worker.js', import.meta.url),
+  { workerData: { env } },
+);
+
+export const probeWindowsShellEnvSnapshotInWorker = ({ createWorker = createWindowsShellEnvWorker, env = process.env } = {}) => new Promise((resolve, reject) => {
+  let settled = false;
+  const settle = (callback, value) => {
+    if (settled) return;
+    settled = true;
+    callback(value);
+  };
+
+  let worker;
+  try {
+    worker = createWorker(env);
+  } catch (error) {
+    settle(reject, error);
+    return;
+  }
+  worker.once('message', (snapshot) => settle(resolve, snapshot));
+  worker.once('error', (error) => settle(reject, error));
+  worker.once('exit', (code) => {
+    if (!settled) settle(reject, new Error(`Windows shell environment worker exited before returning a snapshot (code ${code})`));
+  });
+});
 
 export const createOpenCodeEnvRuntime = (deps) => {
   const {

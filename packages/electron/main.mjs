@@ -52,6 +52,7 @@ import {
   usesFramelessChrome,
   wasEarlyWindowClosed,
 } from './early-startup.mjs';
+import { createStartupSingleFlight } from './startup-single-flight.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { probeDirectHostWithRetry } from './host-probe-policy.mjs';
 import { probeElectronHostWithDeadline } from './electron-host-probe.mjs';
@@ -112,6 +113,7 @@ const ELECTRON_STARTUP_PERF_PHASES = new Set([
   'electron.app.ready',
   'electron.window.created',
   'electron.main.loaded',
+  'electron.shell-env.ready',
   'electron.server.start',
   'electron.server.ready',
   'electron.navigation.start',
@@ -1301,12 +1303,14 @@ const inheritUserShellEnv = async () => {
   }
 };
 
+const isLocalServerSkipped = () => process.env.OPENCHAMBER_SKIP_LOCAL_SERVER === '1';
+
 const shouldSkipLocalServer = async () => {
   await inheritUserShellEnv();
-  return process.env.OPENCHAMBER_SKIP_LOCAL_SERVER === '1';
+  return isLocalServerSkipped();
 };
 
-const spawnLocalServer = async () => {
+const startLocalServer = async () => {
   const serverStartedAt = performance.now();
   recordElectronStartupPerformance('electron.server.start');
   await inheritUserShellEnv();
@@ -1432,6 +1436,8 @@ const spawnLocalServer = async () => {
 
   return url;
 };
+
+const spawnLocalServer = createStartupSingleFlight(startLocalServer);
 
 const killSidecar = async () => {
   const handle = state.serverHandle;
@@ -2286,6 +2292,19 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
     if (initScript) {
       void browserWindow.webContents.executeJavaScript(initScript).catch(() => {});
     }
+    if (browserWindow.__ocLabel === 'main') {
+      // Electron can skip ready-to-show for fast local documents on Windows.
+      if (
+        process.platform === 'win32' &&
+        !state.startupResolved &&
+        !state.quitInProgress &&
+        classifyStartupDocument(browserWindow.webContents.getURL()) === 'splash' &&
+        !browserWindow.isVisible()
+      ) {
+        browserWindow.show();
+        browserWindow.focus();
+      }
+    }
   });
 
   browserWindow.webContents.on('did-finish-load', () => {
@@ -2628,10 +2647,10 @@ const resolveMiniChatRuntimeConfig = (browserWindow, args = {}) => {
 };
 
 const resolveInitialUrl = async () => {
+  const skipLocalServer = await shouldSkipLocalServer();
   const hmrUiPort = process.env.OPENCHAMBER_HMR_UI_PORT || '5173';
   const hmrUiUrl = `http://127.0.0.1:${hmrUiPort}`;
   const usePackagedUi = shouldUsePackagedUi();
-  const skipLocalServer = await shouldSkipLocalServer();
   const startupProbePlan = resolveStartupUrlProbePlan({
     development: isDev,
     packagedUi: usePackagedUi,
@@ -5271,7 +5290,7 @@ app.whenReady().then(async () => {
     state.requestHeaders = sanitizeRuntimeRequestHeaders(requestHeaders || {});
     // Serverless background startup re-probes the remote when a window is
     // eventually opened instead of trusting reachability from login time.
-    state.startupResolved = !(await shouldSkipLocalServer());
+    state.startupResolved = !isLocalServerSkipped();
     state.initScript = buildInitScript(localOrigin, state.bootOutcome, apiBaseUrl, clientToken, state.requestHeaders);
     log.info('[electron] started in background without window');
     replayDeferredAppEvents();
