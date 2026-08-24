@@ -219,8 +219,9 @@ const SessionTabItem: React.FC<{
                       onClose(tab.id);
                     }
                   }}
+                  data-controls-open={overlayVisible ? 'true' : 'false'}
                   className={cn(
-                    'group/session-tab relative flex h-7 w-full min-w-0 select-none items-center rounded-md px-2',
+                    'session-tab group/session-tab relative flex h-7 w-full min-w-0 select-none items-center rounded-md px-2',
                     isActive
                       ? 'bg-interactive-selection'
                       : cn(
@@ -235,7 +236,11 @@ const SessionTabItem: React.FC<{
                     overlayVisible && 'pr-10',
                   )}
                   >
-                    <div className="session-tab-title min-w-0 flex-1 overflow-hidden whitespace-nowrap">
+                    <div className={cn(
+                      'min-w-0 flex-1 overflow-hidden whitespace-nowrap',
+                      !suppressControls && 'session-tab-title',
+                    )}
+                    >
                       {isActive ? children : (
                         <span className="text-[13px] font-medium leading-4">{title}</span>
                       )}

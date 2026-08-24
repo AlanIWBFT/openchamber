@@ -1804,7 +1804,6 @@ html.desktop-runtime .markdown-content [data-openchamber-file-link="true"] {
   height: 12px;
   border-radius: 9999px;
   background: var(--border);
-  opacity: 0.6;
 }
 .session-tab-slot[data-active='true'] + .session-tab-slot::before,
 .session-tab-slot:not([data-active='true']):hover::before,
@@ -1826,8 +1825,16 @@ html.desktop-runtime .markdown-content [data-openchamber-file-link="true"] {
 
 /* Session tab titles: fade out instead of "..." — the ellipsis reads as
    clutter next to the tab's status dot and hover controls. Short titles
-   never reach the fade zone (the span spans the tab, not the text). */
+   never reach the fade zone (the span spans the tab, not the text). The
+   fade belongs to the resting state only: while the tab is hovered or its
+   controls are open, the title clips hard so the smear never sits next to
+   the menu/close/rename controls. */
 .session-tab-title {
   -webkit-mask-image: linear-gradient(to right, black calc(100% - 14px), transparent);
   mask-image: linear-gradient(to right, black calc(100% - 14px), transparent);
+}
+.session-tab:hover .session-tab-title,
+.session-tab[data-controls-open='true'] .session-tab-title {
+  -webkit-mask-image: none;
+  mask-image: none;
 }

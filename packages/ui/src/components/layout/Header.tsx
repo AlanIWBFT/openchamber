@@ -1855,7 +1855,7 @@ export const Header: React.FC = () => {
                   </button>
                 </form>
               ) : (
-                <span className="truncate text-[13px] font-medium leading-4 text-foreground max-w-full">
+                <span className="block overflow-hidden whitespace-nowrap text-[13px] font-medium leading-4 text-foreground max-w-full">
                   {isNewSessionDraftOpen ? t('sessions.switcher.draftTitle') : currentSessionTitle}
                 </span>
               )}
