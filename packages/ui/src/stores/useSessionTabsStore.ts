@@ -24,6 +24,8 @@ interface SessionTabsStore {
   removeTabs: (sessionIds: readonly string[]) => void;
 }
 
+const MAX_SESSION_TABS = 20;
+
 type PersistedSessionTabs = { tabIds: string[] };
 
 export const useSessionTabsStore = create<SessionTabsStore>()(
@@ -36,7 +38,11 @@ export const useSessionTabsStore = create<SessionTabsStore>()(
           if (!sessionId) return;
           const { tabIds } = get();
           if (tabIds.includes(sessionId)) return;
-          set({ tabIds: [...tabIds, sessionId] });
+          // Soft cap: with auto-add the strip only ever grows, so past the cap
+          // the oldest tab (never the one being opened, which lands last)
+          // leaves the working set.
+          const next = [...tabIds, sessionId];
+          set({ tabIds: next.length > MAX_SESSION_TABS ? next.slice(next.length - MAX_SESSION_TABS) : next });
         },
 
         closeTab: (sessionId) => {

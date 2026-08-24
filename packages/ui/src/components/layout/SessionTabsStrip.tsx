@@ -98,6 +98,81 @@ const useTabProjectLabel = (directory: string | null): string | null =>
   }, [directory]));
 
 /**
+ * Tooltip body for one tab. Lives in its own component so the branch,
+ * worktree, PR and project subscriptions exist only while the tooltip is
+ * open — the resting tab pays only for its status dot.
+ */
+const SessionTabTooltipBody: React.FC<{ tab: SessionTab; title: string }> = ({ tab, title }) => {
+  const { t } = useI18n();
+  const directory = normalizePath(resolveGlobalSessionDirectory(tab.session) ?? null);
+  const projectLabel = useTabProjectLabel(directory);
+  const worktreeMetadata = useSessionUIStore((state) => state.worktreeMetadata);
+  const allBranches = useGitAllBranches();
+  const branchLabel = React.useMemo(() => {
+    const meta = worktreeMetadata.get(tab.id);
+    if (meta?.branch?.trim()) return meta.branch.trim();
+    if (directory) return allBranches.get(directory)?.trim() || null;
+    return null;
+  }, [worktreeMetadata, allBranches, tab.id, directory]);
+  const prSummary = usePrVisualSummary(directory && branchLabel ? getGitHubPrStatusKey(directory, branchLabel) : null);
+  const prIconColor = prSummary ? `var(--pr-${prSummary.visualState})` : undefined;
+  const prStatusLabel = React.useMemo(() => {
+    if (!prSummary) return null;
+    switch (prSummary.visualState) {
+      case 'merged':
+        return t('sessions.sidebar.group.pr.status.merged');
+      case 'open':
+        return (prSummary.canMerge === true || prSummary.mergeableState === 'clean' || prSummary.checks?.state === 'success')
+          ? t('sessions.sidebar.group.pr.status.readyToMerge')
+          : t('sessions.sidebar.group.pr.status.open');
+      case 'blocked':
+        return prSummary.mergeableState === 'dirty'
+          ? t('sessions.sidebar.group.pr.status.mergeConflicts')
+          : t('sessions.sidebar.group.pr.status.mergeBlocked');
+      case 'draft':
+        return t('sessions.sidebar.group.pr.status.draft');
+      case 'closed':
+        return t('sessions.sidebar.group.pr.status.closed');
+      default:
+        return null;
+    }
+  }, [prSummary, t]);
+  const sessionTimestamp = tab.session.time?.updated || tab.session.time?.created || 0;
+  return (
+    <div className="flex min-w-44 flex-col gap-1.5 text-left text-xs">
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0 truncate font-medium text-foreground">{title}</span>
+        {sessionTimestamp ? (
+          <span className="flex-shrink-0 text-muted-foreground" title={formatSessionDateLabel(sessionTimestamp)}>
+            {formatSessionCompactDateLabel(sessionTimestamp)}
+          </span>
+        ) : null}
+      </div>
+      {projectLabel ? (
+        <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+          <Icon name="folder" className="h-3 w-3 flex-shrink-0" />
+          <span className="min-w-0 truncate">{projectLabel}</span>
+        </div>
+      ) : null}
+      {branchLabel ? (
+        <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+          <Icon name="git-branch" className="h-3 w-3 flex-shrink-0" style={prIconColor ? { color: prIconColor } : undefined} />
+          <span className="min-w-0 truncate">{branchLabel}</span>
+        </div>
+      ) : null}
+      {prSummary && prStatusLabel ? (
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Icon name="git-pull-request" className="h-3 w-3 flex-shrink-0" style={prIconColor ? { color: prIconColor } : undefined} />
+          <span className="min-w-0 truncate" style={prIconColor ? { color: prIconColor } : undefined}>
+            #{prSummary.number} · {prStatusLabel}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+/**
  * One tab, active or not. The tab drags to reorder; the menu and close
  * controls sit in a hover-revealed overlay at the tab's end (menu first,
  * close after it). One session menu — supplied by the header via
@@ -138,41 +213,6 @@ const SessionTabItem: React.FC<{
   const dotLabel = isStreaming
     ? t('sessions.sidebar.session.status.active')
     : t('sessions.sidebar.session.status.unread');
-
-  const directory = normalizePath(resolveGlobalSessionDirectory(tab.session) ?? null);
-  const projectLabel = useTabProjectLabel(directory);
-  const worktreeMetadata = useSessionUIStore((state) => state.worktreeMetadata);
-  const allBranches = useGitAllBranches();
-  const branchLabel = React.useMemo(() => {
-    const meta = worktreeMetadata.get(tab.id);
-    if (meta?.branch?.trim()) return meta.branch.trim();
-    if (directory) return allBranches.get(directory)?.trim() || null;
-    return null;
-  }, [worktreeMetadata, allBranches, tab.id, directory]);
-  const prSummary = usePrVisualSummary(directory && branchLabel ? getGitHubPrStatusKey(directory, branchLabel) : null);
-  const prIconColor = prSummary ? `var(--pr-${prSummary.visualState})` : undefined;
-  const prStatusLabel = React.useMemo(() => {
-    if (!prSummary) return null;
-    switch (prSummary.visualState) {
-      case 'merged':
-        return t('sessions.sidebar.group.pr.status.merged');
-      case 'open':
-        return (prSummary.canMerge === true || prSummary.mergeableState === 'clean' || prSummary.checks?.state === 'success')
-          ? t('sessions.sidebar.group.pr.status.readyToMerge')
-          : t('sessions.sidebar.group.pr.status.open');
-      case 'blocked':
-        return prSummary.mergeableState === 'dirty'
-          ? t('sessions.sidebar.group.pr.status.mergeConflicts')
-          : t('sessions.sidebar.group.pr.status.mergeBlocked');
-      case 'draft':
-        return t('sessions.sidebar.group.pr.status.draft');
-      case 'closed':
-        return t('sessions.sidebar.group.pr.status.closed');
-      default:
-        return null;
-    }
-  }, [prSummary, t]);
-  const sessionTimestamp = tab.session.time?.updated || tab.session.time?.created || 0;
 
   const menuArgsFor = (components: SessionTabMenuComponents): SessionTabMenuArgs => ({
     session: tab.session,
@@ -309,36 +349,7 @@ const SessionTabItem: React.FC<{
           </TooltipTrigger>
           {!anyMenuOpen && !isDragging ? (
             <TooltipContent side="bottom" sideOffset={8} className="max-w-xs text-left">
-              <div className="flex min-w-44 flex-col gap-1.5 text-left text-xs">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="min-w-0 truncate font-medium text-foreground">{title}</span>
-                  {sessionTimestamp ? (
-                    <span className="flex-shrink-0 text-muted-foreground" title={formatSessionDateLabel(sessionTimestamp)}>
-                      {formatSessionCompactDateLabel(sessionTimestamp)}
-                    </span>
-                  ) : null}
-                </div>
-                {projectLabel ? (
-                  <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-                    <Icon name="folder" className="h-3 w-3 flex-shrink-0" />
-                    <span className="min-w-0 truncate">{projectLabel}</span>
-                  </div>
-                ) : null}
-                {branchLabel ? (
-                  <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-                    <Icon name="git-branch" className="h-3 w-3 flex-shrink-0" style={prIconColor ? { color: prIconColor } : undefined} />
-                    <span className="min-w-0 truncate">{branchLabel}</span>
-                  </div>
-                ) : null}
-                {prSummary && prStatusLabel ? (
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <Icon name="git-pull-request" className="h-3 w-3 flex-shrink-0" style={prIconColor ? { color: prIconColor } : undefined} />
-                    <span className="min-w-0 truncate" style={prIconColor ? { color: prIconColor } : undefined}>
-                      #{prSummary.number} · {prStatusLabel}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
+              <SessionTabTooltipBody tab={tab} title={title} />
             </TooltipContent>
           ) : null}
         </Tooltip>
