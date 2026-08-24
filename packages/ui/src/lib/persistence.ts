@@ -1679,7 +1679,19 @@ class SettingsMutationTracker {
 
   record(changes: Partial<DesktopSettings>): number {
     this.revision += 1;
-    this.mutations.push({ revision: this.revision, changes });
+    if (this.operations.size > 0) {
+      const latest = this.mutations.at(-1);
+      // A new segment is only needed when an operation started after the last one.
+      const crossedOperationBoundary = latest
+        ? [...this.operations].some((operation) => operation.revision >= latest.revision)
+        : true;
+      if (latest && !crossedOperationBoundary) {
+        latest.revision = this.revision;
+        latest.changes = { ...latest.changes, ...changes };
+      } else {
+        this.mutations.push({ revision: this.revision, changes });
+      }
+    }
     return this.revision;
   }
 
