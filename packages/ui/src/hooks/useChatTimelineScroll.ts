@@ -56,7 +56,13 @@ export interface AnimationHandlers {
 // hook stays testable without a renderer and does not hard-depend on the list
 // implementation.
 export interface TimelineListHandle {
-    getState: () => TimelineListMeasurementState & { readonly scroll: number };
+    getState: () => TimelineListMeasurementState & {
+        readonly scroll: number;
+        readonly listen?: (
+            listenerType: 'totalSize',
+            callback: (value: number) => void,
+        ) => () => void;
+    };
     getScrollableNode: () => HTMLElement | null;
     scrollToEnd: (options?: { animated?: boolean }) => unknown;
     scrollToOffset: (params: { offset: number; animated?: boolean }) => unknown;
@@ -554,6 +560,22 @@ export const useChatTimelineScroll = ({
             });
         });
     }, [isLiveFollowActive, realContentOverflowsViewport]);
+
+    // The streaming tail grows inside one row without changing the entries
+    // array, so data-change callbacks are silent for the entire stream. The
+    // list's total content size is the authoritative growth signal; every
+    // change re-runs the same guarded correction.
+    const onTimelineDataChangeRef = React.useRef(onTimelineDataChange);
+    onTimelineDataChangeRef.current = onTimelineDataChange;
+    React.useEffect(() => {
+        if (!scrollNode) return;
+        const listen = listRef.current?.getState().listen;
+        if (!listen) return;
+        const unsubscribe = listen('totalSize', () => {
+            onTimelineDataChangeRef.current();
+        });
+        return unsubscribe;
+    }, [scrollNode]);
 
     // ── gesture opt-out ─────────────────────────────────────────────────────
     const onManualNavigationRef = React.useRef(onManualNavigation);
