@@ -152,6 +152,7 @@ const GeneralSectionContent: React.FC = () => {
             {!isVSCode && <OpenChamberToolsSettings />}
             <OpenChamberVisualSettings visibleSettings={[
                 'fileEditorKeymap',
+                ...(!isVSCode ? ['sessionTabs' as const] : []),
                 'autoSaveEnabled',
                 'expandedEditorToolbar',
                 ...(!isVSCode ? ['terminalQuickKeys' as const] : []),
