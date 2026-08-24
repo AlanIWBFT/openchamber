@@ -49,7 +49,7 @@ import type { SessionContextUsage } from '@/stores/types/sessionTypes';
 import { DesktopHostSwitcherDialog } from '@/components/desktop/DesktopHostSwitcher';
 import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
 import { SessionSwitcherDropdown } from '@/components/session/SessionSwitcherDropdown';
-import { SessionTabsStrip } from './SessionTabsStrip';
+import { SessionTabsStrip, type SessionTabMenuArgs } from './SessionTabsStrip';
 import { canUseElectronDesktopIPC, invokeDesktop, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag, type UpdateInfo } from '@/lib/desktop';
 import { desktopHostsGet, redactSensitiveUrl } from '@/lib/desktopHosts';
 import {
@@ -928,7 +928,7 @@ export const Header: React.FC = () => {
   const [isHeaderSessionMenuOpen, setIsHeaderSessionMenuOpen] = React.useState(false);
   const pendingHeaderRenameRef = React.useRef(false);
   const [headerSessionTitleDraft, setHeaderSessionTitleDraft] = React.useState('');
-  const [pendingHeaderRetentionAction, setPendingHeaderRetentionAction] = React.useState<'archive' | 'delete' | null>(null);
+  const [pendingHeaderRetentionAction, setPendingHeaderRetentionAction] = React.useState<{ action: 'archive' | 'delete'; sessionId: string } | null>(null);
   const headerRenameFormRef = React.useRef<HTMLFormElement | null>(null);
 
   React.useEffect(() => {
@@ -966,18 +966,18 @@ export const Header: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleDocumentMouseDown);
   }, [isRenamingHeaderSession, saveHeaderSessionRename]);
 
-  const copyCurrentSessionId = React.useCallback(() => {
-    if (!currentSessionId) return;
-    void copyTextToClipboard(currentSessionId).then((result) => {
+  const copySessionIdFor = React.useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    void copyTextToClipboard(sessionId).then((result) => {
       toast[result.ok ? 'success' : 'error'](t(result.ok
         ? 'sessions.sidebar.session.copyId.success'
         : 'sessions.sidebar.session.copyId.error'));
     }).catch(() => toast.error(t('sessions.sidebar.session.copyId.error')));
-  }, [currentSessionId, t]);
+  }, [t]);
 
-  const shareCurrentSession = React.useCallback(async () => {
-    if (!currentSessionId) return;
-    const result = await shareSession(currentSessionId);
+  const shareSessionFor = React.useCallback(async (sessionId: string) => {
+    if (!sessionId) return;
+    const result = await shareSession(sessionId);
     if (result?.share?.url) {
       const copied = await copyTextToClipboard(result.share.url);
       toast[copied.ok ? 'success' : 'warning'](t('sessions.sidebar.session.share.successTitle'), {
@@ -988,25 +988,24 @@ export const Header: React.FC = () => {
       return;
     }
     toast.error(t('sessions.sidebar.session.share.error'));
-  }, [currentSessionId, shareSession, t]);
+  }, [shareSession, t]);
 
-  const copyCurrentSessionShareUrl = React.useCallback(() => {
-    const shareUrl = currentSession?.shareUrl;
+  const copySessionShareUrl = React.useCallback((shareUrl: string | null | undefined) => {
     if (!shareUrl) return;
     void copyTextToClipboard(shareUrl).then((result) => {
       toast[result.ok ? 'success' : 'error'](t(result.ok
         ? 'sessions.sidebar.session.menu.copied'
         : 'sessions.sidebar.session.share.copyUrlError'));
     }).catch(() => toast.error(t('sessions.sidebar.session.share.copyUrlError')));
-  }, [currentSession?.shareUrl, t]);
+  }, [t]);
 
-  const unshareCurrentSession = React.useCallback(async () => {
-    if (!currentSessionId) return;
-    const result = await unshareSession(currentSessionId);
+  const unshareSessionFor = React.useCallback(async (sessionId: string) => {
+    if (!sessionId) return;
+    const result = await unshareSession(sessionId);
     toast[result ? 'success' : 'error'](t(result
       ? 'sessions.sidebar.session.unshare.success'
       : 'sessions.sidebar.session.unshare.error'));
-  }, [currentSessionId, t, unshareSession]);
+  }, [t, unshareSession]);
 
   const exportCurrentSession = React.useCallback(async () => {
     if (!currentSessionId || !openDirectory) {
@@ -1059,9 +1058,9 @@ export const Header: React.FC = () => {
   }, [currentSessionId, isCurrentSessionActive, isCurrentSessionMovingToWorktree, sessionDirectory, t]);
 
   const confirmHeaderRetentionAction = React.useCallback(async () => {
-    if (!currentSessionId || !pendingHeaderRetentionAction) return;
+    if (!pendingHeaderRetentionAction) return;
     const sessions = useGlobalSessionsStore.getState().activeSessions;
-    const ids = [currentSessionId];
+    const ids = [pendingHeaderRetentionAction.sessionId];
     for (let index = 0; index < ids.length; index += 1) {
       const parentId = ids[index];
       for (const session of sessions) {
@@ -1070,7 +1069,7 @@ export const Header: React.FC = () => {
         }
       }
     }
-    const action = pendingHeaderRetentionAction;
+    const action = pendingHeaderRetentionAction.action;
     setPendingHeaderRetentionAction(null);
     const result = action === 'archive' ? await archiveSessions(ids) : await deleteSessions(ids);
     const failedIds = result.failedIds;
@@ -1083,7 +1082,7 @@ export const Header: React.FC = () => {
     toast.success(t(action === 'archive'
       ? 'sessions.sidebar.session.archive.success'
       : 'sessions.sidebar.session.delete.success'));
-  }, [archiveSessions, currentSessionId, deleteSessions, pendingHeaderRetentionAction, t]);
+  }, [archiveSessions, deleteSessions, pendingHeaderRetentionAction, t]);
 
   // Full-page surfaces (Scheduled, Archive, Worktrees, Multi-run) replace the
   // chat area; while one is open the header shows the surface identity
@@ -1531,6 +1530,75 @@ export const Header: React.FC = () => {
 
   const showMiniChatHeaderAction = hasElectronDesktopIPC && (isNewSessionDraftOpen || Boolean(currentSessionId));
 
+  const renderSessionTabMenu = React.useCallback(({ session, isActive, select, closeOtherTabs }: SessionTabMenuArgs) => {
+    const shareUrl = session.share?.url ?? null;
+    const canMoveToWorktree = isActive && !isVSCode && !isChatContext && currentSession && !currentSession.parentId;
+    return (
+      <>
+        <DropdownMenuItem onClick={() => { if (!isActive) select(); pendingHeaderRenameRef.current = true; }}>
+          <Icon name="pencil-ai" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.rename')}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => copySessionIdFor(session.id)}>
+          <Icon name="file-copy" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.copyId')}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {shareUrl ? (
+          <>
+            <DropdownMenuItem onClick={() => copySessionShareUrl(shareUrl)}>
+              <Icon name="file-copy" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.copyLink')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void unshareSessionFor(session.id)}>
+              <Icon name="link-unlink-m" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.unshare')}
+            </DropdownMenuItem>
+          </>
+        ) : (
+          <DropdownMenuItem onClick={() => void shareSessionFor(session.id)}>
+            <Icon name="share-2" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.share')}
+          </DropdownMenuItem>
+        )}
+        {isActive ? (
+          <DropdownMenuItem onClick={() => void exportCurrentSession()}>
+            <Icon name="download" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.exportMarkdown')}
+          </DropdownMenuItem>
+        ) : null}
+        {canMoveToWorktree ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="block">
+                <DropdownMenuItem
+                  disabled={!sessionDirectory || isCurrentSessionActive || isCurrentSessionMovingToWorktree}
+                  onClick={moveCurrentSessionToWorktree}
+                  className="w-full"
+                >
+                  <Icon name="folder-shared" className="mr-2 size-4" />
+                  {t('sessions.sidebar.session.menu.moveToWorktree')}
+                </DropdownMenuItem>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-72">
+              {isCurrentSessionMovingToWorktree
+                ? t('sessions.sidebar.session.moveToWorktree.tooltipMoving')
+                : isCurrentSessionActive
+                  ? t('sessions.sidebar.session.moveToWorktree.tooltipBusy')
+                  : t('sessions.sidebar.session.moveToWorktree.tooltip')}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={closeOtherTabs}>
+          <Icon name="close-circle" className="mr-2 size-4" />{t('header.sessionTabs.closeOtherTabs')}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setPendingHeaderRetentionAction({ action: 'archive', sessionId: session.id })}>
+          <Icon name="inbox-archive" className="mr-2 size-4" />{t('sessions.sidebar.bulkActions.archive')}
+        </DropdownMenuItem>
+        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setPendingHeaderRetentionAction({ action: 'delete', sessionId: session.id })}>
+          <Icon name="delete-bin" className="mr-2 size-4" />{t('sessions.sidebar.bulkActions.delete')}
+        </DropdownMenuItem>
+      </>
+    );
+  }, [copySessionIdFor, copySessionShareUrl, currentSession, exportCurrentSession, isChatContext, isCurrentSessionActive, isCurrentSessionMovingToWorktree, isVSCode, moveCurrentSessionToWorktree, sessionDirectory, shareSessionFor, t, unshareSessionFor]);
+
   const renderDesktop = () => (
     <div
       onMouseDown={handleDragStart}
@@ -1678,15 +1746,15 @@ export const Header: React.FC = () => {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="min-w-[190px]">
                     <DropdownMenuItem onClick={() => { pendingHeaderRenameRef.current = true; }}><Icon name="pencil-ai" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.rename')}</DropdownMenuItem>
-                    <DropdownMenuItem onClick={copyCurrentSessionId}><Icon name="file-copy" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.copyId')}</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => currentSessionId && copySessionIdFor(currentSessionId)}><Icon name="file-copy" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.copyId')}</DropdownMenuItem>
                     <DropdownMenuSeparator />
                     {currentSession?.shareUrl ? (
                       <>
-                        <DropdownMenuItem onClick={copyCurrentSessionShareUrl}><Icon name="file-copy" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.copyLink')}</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => void unshareCurrentSession()}><Icon name="link-unlink-m" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.unshare')}</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => copySessionShareUrl(currentSession?.shareUrl)}><Icon name="file-copy" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.copyLink')}</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => { if (currentSessionId) void unshareSessionFor(currentSessionId); }}><Icon name="link-unlink-m" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.unshare')}</DropdownMenuItem>
                       </>
                     ) : (
-                      <DropdownMenuItem onClick={() => void shareCurrentSession()}><Icon name="share-2" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.share')}</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => { if (currentSessionId) void shareSessionFor(currentSessionId); }}><Icon name="share-2" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.share')}</DropdownMenuItem>
                     )}
                     <DropdownMenuItem onClick={() => void exportCurrentSession()}><Icon name="download" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.exportMarkdown')}</DropdownMenuItem>
                     {!isVSCode && !isChatContext && currentSession && !currentSession.parentId ? (
@@ -1713,8 +1781,8 @@ export const Header: React.FC = () => {
                       </Tooltip>
                     ) : null}
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setPendingHeaderRetentionAction('archive')}><Icon name="inbox-archive" className="mr-2 size-4" />{t('sessions.sidebar.bulkActions.archive')}</DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setPendingHeaderRetentionAction('delete')}><Icon name="delete-bin" className="mr-2 size-4" />{t('sessions.sidebar.bulkActions.delete')}</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { if (currentSessionId) setPendingHeaderRetentionAction({ action: 'archive', sessionId: currentSessionId }); }}><Icon name="inbox-archive" className="mr-2 size-4" />{t('sessions.sidebar.bulkActions.archive')}</DropdownMenuItem>
+                    <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => { if (currentSessionId) setPendingHeaderRetentionAction({ action: 'delete', sessionId: currentSessionId }); }}><Icon name="delete-bin" className="mr-2 size-4" />{t('sessions.sidebar.bulkActions.delete')}</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : null}
@@ -1734,65 +1802,13 @@ export const Header: React.FC = () => {
               </SessionSwitcherDropdown>
             ) : null}
             <SessionTabsStrip
-              menuOpen={isHeaderSessionMenuOpen}
-              menu={currentSessionId && !isNewSessionDraftOpen && !isRenamingHeaderSession ? (
-                <DropdownMenu
-                  open={isHeaderSessionMenuOpen}
-                  onOpenChange={setIsHeaderSessionMenuOpen}
-                  onOpenChangeComplete={(open) => {
-                    if (!open && pendingHeaderRenameRef.current) {
-                      pendingHeaderRenameRef.current = false;
-                      beginHeaderSessionRename();
-                    }
-                  }}
-                >
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="xs" className="size-5 min-w-0 px-0 text-muted-foreground hover:bg-transparent hover:text-foreground" aria-label={t('header.sessionActions.openAria')}>
-                      <Icon name="more" className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-[190px]">
-                    <DropdownMenuItem onClick={() => { pendingHeaderRenameRef.current = true; }}><Icon name="pencil-ai" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.rename')}</DropdownMenuItem>
-                    <DropdownMenuItem onClick={copyCurrentSessionId}><Icon name="file-copy" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.copyId')}</DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    {currentSession?.shareUrl ? (
-                      <>
-                        <DropdownMenuItem onClick={copyCurrentSessionShareUrl}><Icon name="file-copy" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.copyLink')}</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => void unshareCurrentSession()}><Icon name="link-unlink-m" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.unshare')}</DropdownMenuItem>
-                      </>
-                    ) : (
-                      <DropdownMenuItem onClick={() => void shareCurrentSession()}><Icon name="share-2" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.share')}</DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem onClick={() => void exportCurrentSession()}><Icon name="download" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.exportMarkdown')}</DropdownMenuItem>
-                    {!isVSCode && !isChatContext && currentSession && !currentSession.parentId ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="block">
-                            <DropdownMenuItem
-                              disabled={!sessionDirectory || isCurrentSessionActive || isCurrentSessionMovingToWorktree}
-                              onClick={moveCurrentSessionToWorktree}
-                              className="w-full"
-                            >
-                              <Icon name="folder-shared" className="mr-2 size-4" />
-                              {t('sessions.sidebar.session.menu.moveToWorktree')}
-                            </DropdownMenuItem>
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent side="right" className="max-w-72">
-                          {isCurrentSessionMovingToWorktree
-                            ? t('sessions.sidebar.session.moveToWorktree.tooltipMoving')
-                            : isCurrentSessionActive
-                              ? t('sessions.sidebar.session.moveToWorktree.tooltipBusy')
-                              : t('sessions.sidebar.session.moveToWorktree.tooltip')}
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : null}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setPendingHeaderRetentionAction('archive')}><Icon name="inbox-archive" className="mr-2 size-4" />{t('sessions.sidebar.bulkActions.archive')}</DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setPendingHeaderRetentionAction('delete')}><Icon name="delete-bin" className="mr-2 size-4" />{t('sessions.sidebar.bulkActions.delete')}</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null}
+              renderMenu={renderSessionTabMenu}
+              onMenuOpenChangeComplete={(open) => {
+                if (!open && pendingHeaderRenameRef.current) {
+                  pendingHeaderRenameRef.current = false;
+                  beginHeaderSessionRename();
+                }
+              }}
             >
             <div className="flex min-w-0 flex-col justify-center">
               {isRenamingHeaderSession ? (
@@ -1933,10 +1949,10 @@ export const Header: React.FC = () => {
       <Dialog open={pendingHeaderRetentionAction !== null} onOpenChange={(open) => { if (!open) setPendingHeaderRetentionAction(null); }}>
         <DialogContent showCloseButton={false} className="max-w-sm gap-5">
           <DialogHeader>
-            <DialogTitle>{pendingHeaderRetentionAction === 'delete'
+            <DialogTitle>{pendingHeaderRetentionAction?.action === 'delete'
               ? t('sessions.sidebar.dialogs.deleteSession.title')
               : t('sessions.sidebar.dialogs.archiveSession.title')}</DialogTitle>
-            <DialogDescription>{pendingHeaderRetentionAction === 'delete'
+            <DialogDescription>{pendingHeaderRetentionAction?.action === 'delete'
               ? t('sessions.sidebar.dialogs.deleteSession.single', { sessionTitle: currentSessionTitle })
               : t('sessions.sidebar.dialogs.archiveSession.single', { sessionTitle: currentSessionTitle })}</DialogDescription>
           </DialogHeader>
@@ -1945,7 +1961,7 @@ export const Header: React.FC = () => {
               {t('sessions.sidebar.dialogs.cancel')}
             </Button>
             <Button variant="destructive" size="sm" onClick={() => void confirmHeaderRetentionAction()}>
-              {pendingHeaderRetentionAction === 'delete'
+              {pendingHeaderRetentionAction?.action === 'delete'
                 ? t('sessions.sidebar.bulkActions.delete')
                 : t('sessions.sidebar.bulkActions.archive')}
             </Button>

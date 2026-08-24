@@ -20,113 +20,75 @@ import type { Session } from '@opencode-ai/sdk/v2';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Icon } from '@/components/icon/Icon';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
-import { copyTextToClipboard } from '@/lib/clipboard';
 import { useSessionTabsStore } from '@/stores/useSessionTabsStore';
 import { useGlobalSessionsStore, resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
 const restrictToXAxis: Modifier = ({ transform }) => ({ ...transform, y: 0 });
 
+type SessionTab = { id: string; session: Session };
+
+export type SessionTabMenuArgs = {
+  session: Session;
+  isActive: boolean;
+  select: () => void;
+  closeOtherTabs: () => void;
+};
+
 /**
- * Sortable shell for the active tab: the pill itself drags, while the
- * interactive content inside (rename form, menu) stops pointer-down so a text
- * selection or menu click never starts a drag. The close button and the
- * session menu (passed down from the header) reveal on hover, exactly like on
- * inactive tabs.
+ * One tab, active or not. The tab drags to reorder; the menu and close
+ * controls sit in a hover-revealed overlay at the tab's end (menu first,
+ * close after it). The single session menu is supplied by the header via
+ * `renderMenu`, bound to this tab's session; right-click opens it without
+ * changing which tab is active. The overlay stays visible until the menu's
+ * close animation completes, so the popup never loses its anchor mid-flight
+ * (that was the top-left corner flash).
  */
-const ActiveTabShell: React.FC<{
-  id: string;
-  menu: React.ReactNode;
-  menuOpen: boolean;
-  onClose: () => void;
-  closeLabel: string;
-  children: React.ReactNode;
-}> = ({ id, menu, menuOpen, onClose, closeLabel, children }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+const SessionTabItem: React.FC<{
+  tab: SessionTab;
+  isActive: boolean;
+  onSelect: (tab: SessionTab) => void;
+  onClose: (id: string) => void;
+  renderMenu: (args: SessionTabMenuArgs) => React.ReactNode;
+  closeOtherTabs: (id: string) => void;
+  onMenuOpenChangeComplete?: (open: boolean) => void;
+  children?: React.ReactNode;
+}> = ({ tab, isActive, onSelect, onClose, renderMenu, closeOtherTabs, onMenuOpenChangeComplete, children }) => {
+  const { t } = useI18n();
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  // Keeps the overlay (the menu's anchor) mounted through the close animation.
+  const [menuVisible, setMenuVisible] = React.useState(false);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.id });
+
+  const title = tab.session.title?.trim() || t('sessions.sidebar.session.untitled');
+  const overlayVisible = menuOpen || menuVisible;
+
+  const openMenu = React.useCallback(() => {
+    setMenuVisible(true);
+    setMenuOpen(true);
+  }, []);
+
   return (
     <div
       ref={setNodeRef}
       style={{ transform: DndCSS.Translate.toString(transform), transition }}
       className={cn('session-tab-slot flex h-7 w-44 shrink-0 touch-none', isDragging && 'z-10 opacity-60')}
-      data-active-session-tab
-      data-active="true"
+      data-active={isActive ? 'true' : 'false'}
+      {...(isActive ? { 'data-active-session-tab': true } : {})}
       {...attributes}
       {...listeners}
     >
       <div
         role="tab"
-        aria-selected
-        className="group/session-tab relative flex h-7 w-full min-w-0 items-center rounded-md bg-interactive-selection px-2"
-      >
-        <div className={cn('min-w-0 flex-1', 'group-hover/session-tab:pr-10', menuOpen && 'pr-10')}>
-          {children}
-        </div>
-        <div
-          onPointerDown={(event) => event.stopPropagation()}
-          className={cn(
-            'absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5',
-            'opacity-0 transition-opacity duration-150',
-            'group-hover/session-tab:flex group-hover/session-tab:opacity-100',
-            menuOpen && 'flex opacity-100',
-          )}
-        >
-          <button
-            type="button"
-            aria-label={closeLabel}
-            onClick={onClose}
-            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
-          >
-            <Icon name="close" className="size-4" />
-          </button>
-          {menu}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-type SessionTab = { id: string; session: Session };
-
-/**
- * One inactive tab: a soft pill with the session title. The "..." menu trigger
- * has no reserved footprint — it appears at the tab's end on hover (or while
- * its menu is open), nudging the title, mirroring the sidebar row mechanic.
- * The reveal itself is opacity-only; the layout change is instant.
- */
-const InactiveSessionTab: React.FC<{
-  tab: SessionTab;
-  onSelect: (tab: SessionTab) => void;
-  onClose: (id: string) => void;
-  onCloseOthers: (id: string) => void;
-}> = ({ tab, onSelect, onClose, onCloseOthers }) => {
-  const { t } = useI18n();
-  const [menuOpen, setMenuOpen] = React.useState(false);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.id });
-
-  const title = tab.session.title?.trim() || t('sessions.sidebar.session.untitled');
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: DndCSS.Translate.toString(transform), transition }}
-      className={cn('session-tab-slot flex h-7 w-44 shrink-0', isDragging && 'z-10 opacity-60')}
-      data-active="false"
-      {...attributes}
-      {...listeners}
-    >
-      <div
-        role="tab"
-        aria-selected={false}
-        tabIndex={0}
-        onClick={() => onSelect(tab)}
-        onKeyDown={(event) => {
+        aria-selected={isActive}
+        tabIndex={isActive ? undefined : 0}
+        onClick={isActive ? undefined : () => onSelect(tab)}
+        onKeyDown={isActive ? undefined : (event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
             onSelect(tab);
@@ -138,22 +100,27 @@ const InactiveSessionTab: React.FC<{
             onClose(tab.id);
           }
         }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openMenu();
+        }}
         className={cn(
-          'group/session-tab relative flex h-7 w-full min-w-0 cursor-pointer touch-none select-none items-center rounded-md px-2',
-          'text-muted-foreground transition-colors duration-150 hover:bg-interactive-hover hover:text-foreground',
-          menuOpen && 'bg-interactive-hover text-foreground',
+          'group/session-tab relative flex h-7 w-full min-w-0 select-none items-center rounded-md px-2',
+          isActive
+            ? 'bg-interactive-selection'
+            : cn(
+              'cursor-pointer text-muted-foreground transition-colors duration-150 hover:bg-interactive-hover hover:text-foreground',
+              overlayVisible && 'bg-interactive-hover text-foreground',
+            ),
         )}
-        title={title}
+        title={isActive ? undefined : title}
       >
-        <span
-          className={cn(
-            'min-w-0 flex-1 truncate text-[13px] font-medium leading-4',
-            'group-hover/session-tab:pr-10',
-            menuOpen && 'pr-10',
+        <div className={cn('min-w-0 flex-1', 'group-hover/session-tab:pr-10', overlayVisible && 'pr-10')}>
+          {isActive ? children : (
+            <span className="block min-w-0 truncate text-[13px] font-medium leading-4">{title}</span>
           )}
-        >
-          {title}
-        </span>
+        </div>
         <div
           onClick={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
@@ -161,9 +128,38 @@ const InactiveSessionTab: React.FC<{
             'absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5',
             'opacity-0 transition-opacity duration-150',
             'group-hover/session-tab:flex group-hover/session-tab:opacity-100',
-            menuOpen && 'flex opacity-100',
+            overlayVisible && 'flex opacity-100',
           )}
         >
+          <DropdownMenu
+            open={menuOpen}
+            onOpenChange={(open) => {
+              setMenuOpen(open);
+              if (open) setMenuVisible(true);
+            }}
+            onOpenChangeComplete={(open) => {
+              if (!open) setMenuVisible(false);
+              onMenuOpenChangeComplete?.(open);
+            }}
+          >
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={t('header.sessionTabs.tabMenuAria')}
+                className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+              >
+                <Icon name="more" className="size-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-[190px]">
+              {renderMenu({
+                session: tab.session,
+                isActive,
+                select: () => onSelect(tab),
+                closeOtherTabs: () => closeOtherTabs(tab.id),
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             type="button"
             aria-label={t('header.sessionTabs.closeTab')}
@@ -172,32 +168,6 @@ const InactiveSessionTab: React.FC<{
           >
             <Icon name="close" className="size-4" />
           </button>
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={t('header.sessionTabs.tabMenuAria')}
-              className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
-            >
-              <Icon name="more" className="size-4" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[190px]">
-            <DropdownMenuItem onClick={() => onClose(tab.id)}>
-              <Icon name="close" className="mr-2 size-4" />
-              {t('header.sessionTabs.closeTab')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onCloseOthers(tab.id)}>
-              <Icon name="close-circle" className="mr-2 size-4" />
-              {t('header.sessionTabs.closeOtherTabs')}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => void copyTextToClipboard(tab.id)}>
-              <Icon name="file-copy" className="mr-2 size-4" />
-              {t('sessions.sidebar.session.menu.copyId')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
         </div>
       </div>
     </div>
@@ -208,20 +178,19 @@ const InactiveSessionTab: React.FC<{
  * The header's horizontal working set of sessions (web/desktop only).
  *
  * Every session the user opens joins the strip once; the tab whose session is
- * current renders `children` — the header's existing title block with rename,
- * meta row and the full session menu — inside a softly selected pill. Closing
- * a tab only removes it from the strip; closing the active one activates its
- * neighbour. Ids whose session has not loaded (or was archived/deleted) stay
- * in the store but do not render, so a partial session list never destroys
- * the working set.
+ * current renders `children` — the header's title/rename block — inside a
+ * selected pill. Closing a tab only removes it from the strip; closing the
+ * active one activates its neighbour. Ids whose session has not loaded (or
+ * was archived/deleted) stay in the store but do not render, so a partial
+ * session list never destroys the working set.
  */
 export const SessionTabsStrip: React.FC<{
-  /** The header's session menu for the active tab (already a DropdownMenu). */
-  menu?: React.ReactNode;
-  /** Whether that menu is open, so the hover overlay stays visible. */
-  menuOpen?: boolean;
+  /** Menu items for one tab's session, supplied by the header. */
+  renderMenu: (args: SessionTabMenuArgs) => React.ReactNode;
+  /** Fires when a tab menu finishes opening/closing (deferred rename hook). */
+  onMenuOpenChangeComplete?: (open: boolean) => void;
   children: React.ReactNode;
-}> = ({ menu = null, menuOpen = false, children }) => {
+}> = ({ renderMenu, onMenuOpenChangeComplete, children }) => {
   const { t } = useI18n();
   const tabIds = useSessionTabsStore((state) => state.tabIds);
   const ensureTab = useSessionTabsStore((state) => state.ensureTab);
@@ -330,32 +299,6 @@ export const SessionTabsStrip: React.FC<{
 
   const tabIdsInOrder = React.useMemo(() => tabs.map((tab) => tab.id), [tabs]);
 
-  const renderTab = (tab: SessionTab) => {
-    if (tab.id === currentSessionId) {
-      return (
-        <ActiveTabShell
-          key={tab.id}
-          id={tab.id}
-          menu={menu}
-          menuOpen={menuOpen}
-          onClose={() => handleClose(tab.id)}
-          closeLabel={t('header.sessionTabs.closeTab')}
-        >
-          {children}
-        </ActiveTabShell>
-      );
-    }
-    return (
-      <InactiveSessionTab
-        key={tab.id}
-        tab={tab}
-        onSelect={handleSelect}
-        onClose={handleClose}
-        onCloseOthers={handleCloseOthers}
-      />
-    );
-  };
-
   // A brand-new draft (no session yet) shows as a transient active pill after
   // the tabs; it becomes a real tab once the first message creates the session.
   const showDraftPill = !currentSessionId || !tabs.some((tab) => tab.id === currentSessionId);
@@ -365,7 +308,7 @@ export const SessionTabsStrip: React.FC<{
       <div
         ref={scrollRef}
         onScroll={updateEdges}
-        className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        className="session-tabs-scroll flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto overscroll-x-contain"
         style={maskImage ? { maskImage, WebkitMaskImage: maskImage } : undefined}
       >
         <DndContext
@@ -375,7 +318,20 @@ export const SessionTabsStrip: React.FC<{
           onDragEnd={handleDragEnd}
         >
           <SortableContext items={tabIdsInOrder} strategy={horizontalListSortingStrategy}>
-            {tabs.map(renderTab)}
+            {tabs.map((tab) => (
+              <SessionTabItem
+                key={tab.id}
+                tab={tab}
+                isActive={tab.id === currentSessionId}
+                onSelect={handleSelect}
+                onClose={handleClose}
+                renderMenu={renderMenu}
+                closeOtherTabs={handleCloseOthers}
+                onMenuOpenChangeComplete={onMenuOpenChangeComplete}
+              >
+                {tab.id === currentSessionId ? children : null}
+              </SessionTabItem>
+            ))}
           </SortableContext>
         </DndContext>
         {showDraftPill ? (
