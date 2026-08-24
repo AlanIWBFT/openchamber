@@ -352,7 +352,7 @@ export const CommandPalette: React.FC = () => {
       return;
     }
     let cancelled = false;
-    void searchFiles(currentRoot, trimmedQuery, 10, { type: 'file' })
+    void searchFiles(currentRoot, trimmedQuery, 40, { type: 'file' })
       .then((results) => {
         if (cancelled) return;
         setFileResults(
