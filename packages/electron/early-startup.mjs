@@ -571,27 +571,10 @@ export const takeDeferredAppEvents = () => {
   return deferredAppEvents.splice(0);
 };
 
-const queryWindowsRegistryValue = (key, name) => {
-  const result = spawnSync('reg.exe', ['query', key, '/v', name], {
-    encoding: 'utf8',
-    windowsHide: true,
-    timeout: 10_000,
-  });
-  if (result.error || result.status !== 0) return '';
-  const line = String(result.stdout || '')
-    .split(/\r?\n/)
-    .map((entry) => entry.trim())
-    .find((entry) => entry.toLowerCase().startsWith(name.toLowerCase()));
-  if (!line) return '';
-  const match = line.match(/^\S+\s+REG_\S+\s+(.+)$/);
-  return match?.[1]?.trim() || '';
-};
-
 const expandWindowsEnvRefs = (value) => String(value || '').replace(/%([^%]+)%/g, (_match, key) => process.env[key] || '');
 
-const loadWindowsEnv = () => {
-  const machinePath = queryWindowsRegistryValue('HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment', 'Path');
-  const userPath = queryWindowsRegistryValue('HKCU\\Environment', 'Path');
+const loadWindowsEnv = async () => {
+  const { probeWindowsShellEnvSnapshot } = await import('@openchamber/web/server/lib/opencode/env-runtime.js');
   const homeDir = os.homedir();
   const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
   const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
@@ -603,19 +586,23 @@ const loadWindowsEnv = () => {
     path.join(localAppData, 'Programs', 'Cursor', 'resources', 'app', 'bin'),
     path.join(appData, 'npm'),
   ];
-  return {
-    PATH: [machinePath, userPath, process.env.PATH, ...commonPaths]
-      .map(expandWindowsEnvRefs)
-      .filter(Boolean)
-      .join(path.delimiter),
-  };
+  const windowsPath = [process.env.PATH, ...commonPaths]
+    .map(expandWindowsEnvRefs)
+    .filter(Boolean)
+    .join(path.delimiter);
+  const probeEnv = { ...process.env };
+  for (const key of Object.keys(probeEnv)) {
+    if (key.toLowerCase() === 'path') delete probeEnv[key];
+  }
+  probeEnv.Path = windowsPath;
+  return probeWindowsShellEnvSnapshot({ spawnSync, env: probeEnv }) || { PATH: windowsPath };
 };
 
 // Finder-launched apps on macOS inherit a minimal PATH (no /opt/homebrew, mise, asdf, etc.).
 // One shared probe that the backend awaits before it starts. The entry module
 // starts it as early as it can so the user's shell startup files run while
 // the window comes up instead of on the critical path; on Windows the loader
-// is synchronous registry reads, so it waits until the splash is on screen.
+// still performs synchronous probes, so it waits until the splash is on screen.
 export const shellEnvironmentAbort = new AbortController();
 const loadShellEnv = createShellEnvironmentLoader({ loadWindowsEnv, signal: shellEnvironmentAbort.signal });
 
