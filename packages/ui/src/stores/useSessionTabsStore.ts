@@ -24,7 +24,7 @@ interface SessionTabsStore {
   removeTabs: (sessionIds: readonly string[]) => void;
 }
 
-const MAX_SESSION_TABS = 20;
+const MAX_SESSION_TABS = 10;
 
 type PersistedSessionTabs = { tabIds: string[] };
 
