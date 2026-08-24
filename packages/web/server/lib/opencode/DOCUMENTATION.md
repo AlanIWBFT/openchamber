@@ -179,6 +179,8 @@ Managed health failures are classified as `timeout`, `connection_refused`, `conn
 
 ## Public exports (env-runtime.js)
 - `createOpenCodeEnvRuntime(dependencies)`: creates runtime that owns OpenCode CLI environment and binary discovery state.
+- `probeWindowsShellEnvSnapshot(options?)`: probes profile environment through PowerShell, falling back to machine and user registry PATH values only when all PowerShell candidates fail.
+- `preloadLoginShellEnvSnapshot(snapshot)` / `consumePreloadedLoginShellEnvSnapshot()`: one-time in-memory handoff from Electron to its in-process server so Desktop owns the Windows probe while standalone server startup continues probing for itself.
 - OpenCode CLI resolution order is persisted settings, environment overrides, bundled Desktop CLI when available, PATH, known install locations, then platform shell discovery.
 - Returned API:
   - `applyLoginShellEnvSnapshot()`
