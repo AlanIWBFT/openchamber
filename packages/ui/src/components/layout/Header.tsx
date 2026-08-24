@@ -926,24 +926,36 @@ export const Header: React.FC = () => {
   const deleteSessions = useSessionUIStore((state) => state.deleteSessions);
   const [isRenamingHeaderSession, setIsRenamingHeaderSession] = React.useState(false);
   const [isHeaderSessionMenuOpen, setIsHeaderSessionMenuOpen] = React.useState(false);
-  const pendingHeaderRenameRef = React.useRef(false);
+  /** Session id whose rename was requested from a tab menu; survives the
+      activation that a Rename on an inactive tab performs first. */
+  const pendingHeaderRenameRef = React.useRef<string | null>(null);
   const [headerSessionTitleDraft, setHeaderSessionTitleDraft] = React.useState('');
   const [pendingHeaderRetentionAction, setPendingHeaderRetentionAction] = React.useState<{ action: 'archive' | 'delete'; sessionId: string } | null>(null);
   const headerRenameFormRef = React.useRef<HTMLFormElement | null>(null);
 
-  React.useEffect(() => {
-    pendingHeaderRenameRef.current = false;
-    setIsHeaderSessionMenuOpen(false);
-    setIsRenamingHeaderSession(false);
-    setHeaderSessionTitleDraft('');
-    setPendingHeaderRetentionAction(null);
-  }, [currentSessionId]);
 
   const beginHeaderSessionRename = React.useCallback(() => {
     if (!currentSessionId) return;
     setHeaderSessionTitleDraft(currentSession?.title?.trim() || currentSessionTitle);
     setIsRenamingHeaderSession(true);
   }, [currentSession?.title, currentSessionId, currentSessionTitle]);
+
+  const beginHeaderSessionRenameRef = React.useRef(beginHeaderSessionRename);
+  beginHeaderSessionRenameRef.current = beginHeaderSessionRename;
+
+  React.useEffect(() => {
+    setIsHeaderSessionMenuOpen(false);
+    setPendingHeaderRetentionAction(null);
+    if (currentSessionId && pendingHeaderRenameRef.current === currentSessionId) {
+      // Rename on an inactive tab activates it first; the switch itself is
+      // when the rename can begin (the menu may close before or after it).
+      pendingHeaderRenameRef.current = null;
+      beginHeaderSessionRenameRef.current();
+      return;
+    }
+    setIsRenamingHeaderSession(false);
+    setHeaderSessionTitleDraft('');
+  }, [currentSessionId]);
 
   const saveHeaderSessionRename = React.useCallback(async () => {
     if (!currentSessionId) return;
@@ -1536,7 +1548,7 @@ export const Header: React.FC = () => {
     const canMoveToWorktree = isActive && !isVSCode && !isChatContext && currentSession && !currentSession.parentId;
     return (
       <>
-        <Item onClick={() => { if (!isActive) select(); pendingHeaderRenameRef.current = true; }}>
+        <Item onClick={() => { if (!isActive) select(); pendingHeaderRenameRef.current = session.id; }}>
           <Icon name="pencil-ai" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.rename')}
         </Item>
         <Item onClick={() => copySessionIdFor(session.id)}>
@@ -1734,8 +1746,8 @@ export const Header: React.FC = () => {
                   open={isHeaderSessionMenuOpen}
                   onOpenChange={setIsHeaderSessionMenuOpen}
                   onOpenChangeComplete={(open) => {
-                    if (!open && pendingHeaderRenameRef.current) {
-                      pendingHeaderRenameRef.current = false;
+                    if (!open && pendingHeaderRenameRef.current && pendingHeaderRenameRef.current === currentSessionId) {
+                      pendingHeaderRenameRef.current = null;
                       beginHeaderSessionRename();
                     }
                   }}
@@ -1746,7 +1758,7 @@ export const Header: React.FC = () => {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="min-w-[190px]">
-                    <DropdownMenuItem onClick={() => { pendingHeaderRenameRef.current = true; }}><Icon name="pencil-ai" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.rename')}</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { pendingHeaderRenameRef.current = currentSessionId; }}><Icon name="pencil-ai" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.rename')}</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => currentSessionId && copySessionIdFor(currentSessionId)}><Icon name="file-copy" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.copyId')}</DropdownMenuItem>
                     <DropdownMenuSeparator />
                     {currentSession?.shareUrl ? (
@@ -1806,8 +1818,8 @@ export const Header: React.FC = () => {
               renderMenu={renderSessionTabMenu}
               suppressActiveTabControls={isRenamingHeaderSession}
               onMenuOpenChangeComplete={(open) => {
-                if (!open && pendingHeaderRenameRef.current) {
-                  pendingHeaderRenameRef.current = false;
+                if (!open && pendingHeaderRenameRef.current && pendingHeaderRenameRef.current === currentSessionId) {
+                  pendingHeaderRenameRef.current = null;
                   beginHeaderSessionRename();
                 }
               }}

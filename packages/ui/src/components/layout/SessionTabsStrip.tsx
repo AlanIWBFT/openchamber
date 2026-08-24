@@ -222,10 +222,11 @@ const SessionTabItem: React.FC<{
                   data-controls-open={overlayVisible ? 'true' : 'false'}
                   className={cn(
                     'session-tab group/session-tab relative flex h-7 w-full min-w-0 select-none items-center rounded-md px-2',
+                    'transition-colors duration-75',
                     isActive
                       ? 'bg-interactive-selection'
                       : cn(
-                        'cursor-pointer text-muted-foreground transition-colors duration-150 hover:bg-interactive-hover hover:text-foreground',
+                        'cursor-pointer text-muted-foreground hover:bg-interactive-hover hover:text-foreground',
                         overlayVisible && 'bg-interactive-hover text-foreground',
                       ),
                   )}
