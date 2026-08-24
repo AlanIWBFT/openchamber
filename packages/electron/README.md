@@ -53,6 +53,7 @@ The preload bridge exposes desktop-only APIs to the web UI through `window.__OPE
 | `main.mjs` | Electron main process, app lifecycle, windows, menus, deep links, native IPC handlers, updates, local server startup |
 | `electron-host-probe.mjs` | Chromium direct-host probes, identity checks, attempt deadlines, and response cleanup |
 | `host-probe-policy.mjs` | Selector fast attempt and unreachable-only retry policy |
+| `startup-single-flight.mjs` | One-shot startup promise coordinator that retains the first success or failure to prevent duplicate local server initialization |
 | `startup-url-selection.mjs` | Pure bundled/HMR startup probe and loopback connection-limit policy |
 | `shell-environment.mjs` | Asynchronous login-shell environment discovery and shared one-shot probe |
 | `preload.mjs` | Safe bridge from the rendered UI to Electron IPC |
