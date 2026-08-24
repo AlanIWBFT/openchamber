@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
 - Files: in a rendered markdown preview, select text and choose Comment to attach exactly that fragment (with a source line range when it can be located) plus your note to the next message.
 - Composer: hovering or tapping a context chip above the input opens a stacked preview of everything attached, where a comment can be edited in place or an item removed before sending.
 - Mobile: the chat comment input overlays the composer exactly and rides the keyboard; Enter makes a new line there, with attach on the button.
+- **Terminal:** terminals no longer vanish or die behind your back. Opening the app in another browser tab, on another device, or after a reload now shows the terminals already running on the server instead of an empty list, and terminals sitting in background tabs are no longer closed by the server's idle cleanup while the app is open.
+- Chat: @ file mentions now rank files and directories together by how well they match, so the file you typed is at the top instead of below unrelated directories. Multi-word queries match in any order, and long paths keep the folder next to the file name visible so identical-looking index.md rows are distinguishable.
+- Search: Ctrl/Cmd+P now matches the whole file path, not just the file name — searching a folder name like "solo-is-a" finds the file inside it.
+- Terminal: mobile keyboards no longer capitalize the first letter of every command on iOS and Android.
 - Desktop: a freshly installed or updated build no longer keeps loading the previous version's interface from cache.
 - Chat: OpenCode notices now share one style.
 - UI: draft target menus stay inside the chat area instead of overlapping the header.
