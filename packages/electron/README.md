@@ -8,6 +8,8 @@ This package owns the native shell: windows, menus, deep links, native notificat
 
 Desktop starts the OpenChamber web server in the same Electron main process. There is no separate sidecar subprocess for the OpenChamber server.
 
+On Windows, Desktop starts login-shell environment discovery in a one-shot Node Worker Thread immediately after acquiring the single-instance lock. PowerShell profile evaluation and any registry fallback therefore overlap Electron initialization without blocking the main thread; the completed snapshot is still applied before startup reads environment-controlled server settings.
+
 On Windows, latency-sensitive Git status, PR-context, and per-file diff reads are dispatched to a fixed pool of four persistent Node Worker Threads owned by that in-process server. The workers share one persistent `OpenCode.ProcessBroker.exe`, staged with the local OpenCode CLI. The self-contained .NET 10 NativeAOT broker creates each Git process detached from a console and atomically assigns its complete process tree to a per-command Job Object. Worker Threads remain in-process; the broker owns only process creation, pipes, cancellation, and cleanup.
 
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.

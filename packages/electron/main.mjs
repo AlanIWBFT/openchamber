@@ -40,7 +40,7 @@ import { mintOutsideFileGrant } from '@openchamber/web/server/lib/fs/routes.js';
 import { pathLooksUserConfigured, mergePathValues } from '@openchamber/web/server/lib/opencode/path-utils.js';
 import {
   preloadLoginShellEnvSnapshot,
-  probeWindowsShellEnvSnapshotAsync,
+  probeWindowsShellEnvSnapshotInWorker,
 } from '@openchamber/web/server/lib/opencode/env-runtime.js';
 import { clearAppImageArgv0FromProcessEnv } from '@openchamber/web/server/lib/inherited-env.js';
 
@@ -69,7 +69,7 @@ const loadWindowsEnv = async () => {
     if (key.toLowerCase() === 'path') delete probeEnv[key];
   }
   probeEnv.Path = windowsPath;
-  return (await probeWindowsShellEnvSnapshotAsync({ env: probeEnv })) || { PATH: windowsPath };
+  return (await probeWindowsShellEnvSnapshotInWorker({ env: probeEnv })) || { PATH: windowsPath };
 };
 
 const __filename = fileURLToPath(import.meta.url);
