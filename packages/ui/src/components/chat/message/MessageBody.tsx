@@ -489,6 +489,20 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
     const [copyHintVisible, setCopyHintVisible] = React.useState(false);
     const copyHintTimeoutRef = React.useRef<number | null>(null);
 
+    // One expanded state for the whole message: text parts and context cards
+    // collapse and expand together, with a single collapse control up here
+    // instead of one per part.
+    const collapsibleUserMessages = useUIStore((state) => state.collapsibleUserMessages);
+    const [messageExpanded, setMessageExpanded] = React.useState(false);
+    const expandMessage = React.useCallback(() => setMessageExpanded(true), []);
+    const collapseMessage = React.useCallback((event: React.MouseEvent) => {
+        event.stopPropagation();
+        setMessageExpanded(false);
+    }, []);
+    React.useEffect(() => {
+        if (!collapsibleUserMessages) setMessageExpanded(false);
+    }, [collapsibleUserMessages]);
+
     const userContentParts = React.useMemo(() => {
         return parts.filter((part) => {
             if (part.type === 'text') {
@@ -716,6 +730,16 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
             style={CONTAIN_LAYOUT_STYLE}
             onTouchStart={isTouchContext && canCopyMessage && hasCopyableText ? revealCopyHint : undefined}
         >
+            {collapsibleUserMessages && messageExpanded && (
+                <button
+                    type="button"
+                    onClick={collapseMessage}
+                    className="absolute top-0 right-0 z-10 flex items-center justify-center rounded-sm bg-[var(--surface-elevated)] p-0.5 text-[var(--surface-mutedForeground)] transition-colors hover:bg-[var(--interactive-hover)] hover:text-[var(--surface-foreground)]"
+                    aria-label={t('chat.message.userText.collapseAria')}
+                >
+                    <Icon name="arrow-up-s" className="h-3.5 w-3.5" />
+                </button>
+            )}
             <div
                 className={cn(
                     'leading-relaxed text-foreground/90 text-base overflow-x-hidden',
@@ -760,6 +784,8 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
                                 messageId={messageId}
                                 isMobile={isMobile}
                                 agentMention={mentionForPart}
+                                messageExpanded={messageExpanded}
+                                onExpandMessage={expandMessage}
                             />
                         </React.Fragment>
                     );
