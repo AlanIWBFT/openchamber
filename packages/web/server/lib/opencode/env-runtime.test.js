@@ -7,6 +7,7 @@ import {
   createOpenCodeEnvRuntime,
   preloadLoginShellEnvSnapshot,
   probeWindowsShellEnvSnapshot,
+  probeWindowsShellEnvSnapshotAsync,
 } from './env-runtime.js';
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
@@ -159,6 +160,63 @@ describe('OpenCode env runtime', () => {
         if (command !== 'reg.exe') return { status: 1, stdout: '' };
         const value = args[1] === 'HKCU\\Environment' ? '%SystemRoot%\\UserBin' : 'C:\\Machine';
         return { status: 0, stdout: `    Path    REG_EXPAND_SZ    ${value}\r\n` };
+      },
+    });
+
+    expect(snapshot).toEqual({
+      PATH: 'C:\\Machine;C:\\Windows\\UserBin;C:\\Process',
+    });
+    expect(calls).toHaveLength(5);
+    expect(calls.slice(0, 2).map((call) => call.command)).toEqual(['pwsh.exe', 'powershell.exe']);
+    expect(calls[2].command).toMatch(/powershell\.exe$/i);
+    expect(calls.slice(3).map((call) => call.command)).toEqual(['reg.exe', 'reg.exe']);
+  });
+
+  it('starts the async Windows PowerShell probe immediately without querying registry', async () => {
+    setPlatform('win32');
+    const probeEnv = {
+      Path: 'C:\\Process',
+      SystemRoot: 'C:\\Windows',
+    };
+    const calls = [];
+    let completeProbe;
+    const probing = probeWindowsShellEnvSnapshotAsync({
+      env: probeEnv,
+      runProcess: (command, args, options) => {
+        calls.push({ command, args, options });
+        return new Promise((resolve) => {
+          completeProbe = () => resolve({ stdout: 'OPENCHAMBER_PROFILE_TEST=value\0Path=C:\\Shell\0' });
+        });
+      },
+    });
+
+    expect(calls.map((call) => call.command)).toEqual(['pwsh.exe']);
+    expect(calls[0].args.slice(0, 2)).toEqual(['-NoLogo', '-Command']);
+    expect(calls[0].args).not.toContain('-NonInteractive');
+    expect(calls[0].options).toMatchObject({ windowsHide: true, env: probeEnv });
+    expect(calls[0].options.timeout).toBeUndefined();
+    completeProbe();
+    await expect(probing).resolves.toMatchObject({
+      OPENCHAMBER_PROFILE_TEST: 'value',
+      PATH: 'C:\\Shell',
+    });
+    expect(calls.map((call) => call.command)).toEqual(['pwsh.exe']);
+  });
+
+  it('queries registry paths asynchronously only after all PowerShell probes fail', async () => {
+    setPlatform('win32');
+    const probeEnv = {
+      Path: 'C:\\Process',
+      SystemRoot: 'C:\\Windows',
+    };
+    const calls = [];
+    const snapshot = await probeWindowsShellEnvSnapshotAsync({
+      env: probeEnv,
+      runProcess: async (command, args) => {
+        calls.push({ command, args });
+        if (command !== 'reg.exe') throw new Error('unavailable');
+        const value = args[1] === 'HKCU\\Environment' ? '%SystemRoot%\\UserBin' : 'C:\\Machine';
+        return { stdout: `    Path    REG_EXPAND_SZ    ${value}\r\n` };
       },
     });
 

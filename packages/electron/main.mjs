@@ -16,6 +16,7 @@ import { buildQuitPageHtml, buildStartupPageHtml, closeMiniChatWindows, getStart
 import { createTrayController } from './tray.mjs';
 import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { resolveStartupUrlProbePlan, shouldIgnoreLoopbackConnectionLimit } from './startup-url-selection.mjs';
+import { createStartupSingleFlight } from './startup-single-flight.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { assertUpdaterCapability } from './updater-capability.mjs';
 import { checkForDesktopUpdate } from './updater-check.mjs';
@@ -35,8 +36,40 @@ import {
 import { unsupportedAppSpecificOpenError, validateLocalPath } from './path-open-utils.mjs';
 import { shouldAllowBrowserPanelCertificateError } from './browser-panel-security.mjs';
 import { mintOutsideFileGrant } from '@openchamber/web/server/lib/fs/routes.js';
+import { pathLooksUserConfigured, mergePathValues } from '@openchamber/web/server/lib/opencode/path-utils.js';
+import {
+  preloadLoginShellEnvSnapshot,
+  probeWindowsShellEnvSnapshotAsync,
+} from '@openchamber/web/server/lib/opencode/env-runtime.js';
+import { clearAppImageArgv0FromProcessEnv } from '@openchamber/web/server/lib/inherited-env.js';
 
 const execFileAsync = promisify(execFile);
+
+const expandWindowsEnvRefs = (value) => String(value || '').replace(/%([^%]+)%/g, (_match, key) => process.env[key] || '');
+
+const loadWindowsEnv = async () => {
+  const homeDir = os.homedir();
+  const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
+  const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
+  const commonPaths = [
+    path.join(homeDir, '.opencode', 'bin'),
+    path.join(homeDir, '.bun', 'bin'),
+    path.join(homeDir, '.local', 'bin'),
+    path.join(localAppData, 'Programs', 'Microsoft VS Code', 'bin'),
+    path.join(localAppData, 'Programs', 'Cursor', 'resources', 'app', 'bin'),
+    path.join(appData, 'npm'),
+  ];
+  const windowsPath = [process.env.PATH, ...commonPaths]
+    .map(expandWindowsEnvRefs)
+    .filter(Boolean)
+    .join(path.delimiter);
+  const probeEnv = { ...process.env };
+  for (const key of Object.keys(probeEnv)) {
+    if (key.toLowerCase() === 'path') delete probeEnv[key];
+  }
+  probeEnv.Path = windowsPath;
+  return (await probeWindowsShellEnvSnapshotAsync({ env: probeEnv })) || { PATH: windowsPath };
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -125,6 +158,16 @@ try {
 } catch {
 }
 
+const windowsShellEnvProbeStartedAt = process.platform === 'win32' ? performance.now() : null;
+const windowsShellEnvProbePromise = process.platform === 'win32'
+  ? loadWindowsEnv().then((snapshot) => {
+      recordElectronStartupPerformance('electron.shell-env.ready', {
+        durationMs: performance.now() - windowsShellEnvProbeStartedAt,
+      });
+      return snapshot;
+    })
+  : null;
+
 log.initialize();
 log.transports.file.maxSize = 5 * 1024 * 1024;
 log.transports.file.level = 'info';
@@ -141,6 +184,7 @@ Object.assign(console, log.functions);
 const STARTUP_PERF_ENABLED_VALUES = new Set(['1', 'true']);
 const ELECTRON_STARTUP_PERF_PHASES = new Set([
   'electron.app.ready',
+  'electron.shell-env.ready',
   'electron.server.start',
   'electron.server.ready',
   'electron.navigation.start',
@@ -1440,8 +1484,7 @@ const mapUpdaterProgressEvent = (payload) => ({
 });
 
 const SHELL_ENV_TIMEOUT_MS = 5_000;
-let cachedShellEnv = null;
-let shellEnvProbed = false;
+let shellEnvPromise = null;
 
 const isNushell = (shell) => {
   const name = path.basename(shell).toLowerCase();
@@ -1470,64 +1513,31 @@ const probeShellEnv = (shell, mode) => {
   return Object.keys(env).length > 0 ? env : null;
 };
 
-const expandWindowsEnvRefs = (value) => String(value || '').replace(/%([^%]+)%/g, (_match, key) => process.env[key] || '');
-
-const loadWindowsEnv = () => {
-  const homeDir = os.homedir();
-  const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
-  const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
-  const commonPaths = [
-    path.join(homeDir, '.opencode', 'bin'),
-    path.join(homeDir, '.bun', 'bin'),
-    path.join(homeDir, '.local', 'bin'),
-    path.join(localAppData, 'Programs', 'Microsoft VS Code', 'bin'),
-    path.join(localAppData, 'Programs', 'Cursor', 'resources', 'app', 'bin'),
-    path.join(appData, 'npm'),
-  ];
-  const windowsPath = [process.env.PATH, ...commonPaths]
-    .map(expandWindowsEnvRefs)
-    .filter(Boolean)
-    .join(path.delimiter);
-  const probeEnv = { ...process.env };
-  for (const key of Object.keys(probeEnv)) {
-    if (key.toLowerCase() === 'path') delete probeEnv[key];
-  }
-  probeEnv.Path = windowsPath;
-  return probeWindowsShellEnvSnapshot({ spawnSync, env: probeEnv }) || { PATH: windowsPath };
-};
-
 // Probe the desktop environment once so the in-process server and its children inherit the
 // same profile variables and tool PATH without repeating the probe during server import.
 const loadShellEnv = () => {
-  if (shellEnvProbed) return cachedShellEnv;
-  shellEnvProbed = true;
-  if (process.platform === 'win32') {
-    cachedShellEnv = loadWindowsEnv();
-    preloadLoginShellEnvSnapshot(cachedShellEnv);
-  } else {
+  if (shellEnvPromise) return shellEnvPromise;
+  shellEnvPromise = (async () => {
+    if (process.platform === 'win32') {
+      const snapshot = await windowsShellEnvProbePromise;
+      preloadLoginShellEnvSnapshot(snapshot);
+      return snapshot;
+    }
     const shell = process.env.SHELL || '/bin/sh';
-    cachedShellEnv = isNushell(shell) ? null : probeShellEnv(shell, '-il') || probeShellEnv(shell, '-l');
-  }
-  return cachedShellEnv;
+    return isNushell(shell) ? null : probeShellEnv(shell, '-il') || probeShellEnv(shell, '-l');
+  })();
+  return shellEnvPromise;
 };
-
-// Merge the user's login-shell env (PATH, etc.) into this process before we
-import { pathLooksUserConfigured, mergePathValues } from '@openchamber/web/server/lib/opencode/path-utils.js';
-import {
-  preloadLoginShellEnvSnapshot,
-  probeWindowsShellEnvSnapshot,
-} from '@openchamber/web/server/lib/opencode/env-runtime.js';
-import { clearAppImageArgv0FromProcessEnv } from '@openchamber/web/server/lib/inherited-env.js';
 
 // import/start the server in-process. The server and its children (opencode
 // CLI, git, etc.) inherit process.env directly now — there is no sidecar
 // subprocess to hand a custom env to.
-const inheritUserShellEnv = () => {
+const inheritUserShellEnv = async () => {
   // Clear before probing/merging so login-shell snapshots and children never
   // inherit the AppImage path as argv[0] via zsh's ARGV0 parameter (#2588).
   clearAppImageArgv0FromProcessEnv();
 
-  const shellEnv = loadShellEnv();
+  const shellEnv = await loadShellEnv();
   if (!shellEnv) return;
 
   const homeDir = os.homedir();
@@ -1548,15 +1558,17 @@ const inheritUserShellEnv = () => {
   }
 };
 
-const shouldSkipLocalServer = () => {
-  inheritUserShellEnv();
-  return process.env.OPENCHAMBER_SKIP_LOCAL_SERVER === '1';
+const isLocalServerSkipped = () => process.env.OPENCHAMBER_SKIP_LOCAL_SERVER === '1';
+
+const shouldSkipLocalServer = async () => {
+  await inheritUserShellEnv();
+  return isLocalServerSkipped();
 };
 
-const spawnLocalServer = async () => {
+const startLocalServer = async () => {
   const serverStartedAt = performance.now();
   recordElectronStartupPerformance('electron.server.start');
-  inheritUserShellEnv();
+  await inheritUserShellEnv();
 
   const settings = readSettingsRoot();
   const storedPort = Number.isFinite(settings.desktopLocalPort) ? settings.desktopLocalPort : null;
@@ -1670,6 +1682,8 @@ const spawnLocalServer = async () => {
 
   return url;
 };
+
+const spawnLocalServer = createStartupSingleFlight(startLocalServer);
 
 const stopSidecar = async () => {
   state.openCodeStartupUnsubscribe?.();
@@ -2658,6 +2672,17 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     }
     if (browserWindow.__ocLabel === 'main') {
       updateStartupPageDocument(browserWindow, state.openCodeStartupPhase);
+      // Electron can skip ready-to-show for fast local documents on Windows.
+      if (
+        process.platform === 'win32' &&
+        !state.startupResolved &&
+        !state.quitInProgress &&
+        classifyStartupDocument(browserWindow.webContents.getURL()) === 'splash' &&
+        !browserWindow.isVisible()
+      ) {
+        browserWindow.show();
+        browserWindow.focus();
+      }
     }
   });
 
@@ -2980,10 +3005,10 @@ const resolveMiniChatRuntimeConfig = (browserWindow, args = {}) => {
 };
 
 const resolveInitialUrl = async () => {
+  const skipLocalServer = await shouldSkipLocalServer();
   const hmrUiPort = process.env.OPENCHAMBER_HMR_UI_PORT || '5173';
   const hmrUiUrl = `http://127.0.0.1:${hmrUiPort}`;
   const usePackagedUi = shouldUsePackagedUi();
-  const skipLocalServer = shouldSkipLocalServer();
   const startupProbePlan = resolveStartupUrlProbePlan({
     development: isDev,
     packagedUi: usePackagedUi,
@@ -5477,7 +5502,7 @@ app.whenReady().then(async () => {
     state.requestHeaders = sanitizeRuntimeRequestHeaders(requestHeaders || {});
     // Serverless background startup re-probes the remote when a window is
     // eventually opened instead of trusting reachability from login time.
-    state.startupResolved = !shouldSkipLocalServer();
+    state.startupResolved = !isLocalServerSkipped();
     state.initScript = buildInitScript(localOrigin, state.bootOutcome, apiBaseUrl, clientToken, state.requestHeaders);
     log.info('[electron] started in background without window');
     return;
