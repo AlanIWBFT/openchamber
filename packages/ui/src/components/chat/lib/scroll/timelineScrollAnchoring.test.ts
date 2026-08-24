@@ -184,12 +184,14 @@ describe('getAnchoredTurnMetrics', () => {
 });
 
 describe('resolveTimelineIsAtEnd', () => {
-    test('prefers the near-end threshold over the exact content bottom', () => {
-        expect(resolveTimelineIsAtEnd({ isNearEnd: true, isAtEnd: false })).toBe(true);
-        expect(resolveTimelineIsAtEnd({ isNearEnd: false, isAtEnd: true })).toBe(false);
+    test('uses a tight distance band against the full content length', () => {
+        expect(resolveTimelineIsAtEnd({ contentLength: 2000, scroll: 1400, scrollLength: 600 })).toBe(true);
+        expect(resolveTimelineIsAtEnd({ contentLength: 2000, scroll: 1365, scrollLength: 600 })).toBe(true);
+        expect(resolveTimelineIsAtEnd({ contentLength: 2000, scroll: 1300, scrollLength: 600 })).toBe(false);
     });
 
-    test('falls back to the exact end when near-end is unavailable', () => {
+    test('falls back to the list flags when distances are unavailable', () => {
+        expect(resolveTimelineIsAtEnd({ isNearEnd: true, isAtEnd: false })).toBe(true);
         expect(resolveTimelineIsAtEnd({ isAtEnd: true })).toBe(true);
     });
 

@@ -108,15 +108,35 @@ export const getAnchoredTurnMetrics = ({
     };
 };
 
-// "At the end" for follow purposes is the NEAR-end threshold, not the exact
-// content bottom: the timeline's footer (status row plus bottom spacer) sits
-// below the last row, so requiring the exact bottom would drop out of follow —
-// and pop the scroll-to-bottom pill — while the user is still looking at the
-// live edge. `isAtEnd` is only the fallback for states that predate the
-// near-end signal.
+// "At the end" for follow purposes is a tight band, not the list's isNearEnd
+// (half a viewport): that band hid the scroll-to-bottom pill and re-armed
+// follow while the user had genuinely scrolled away, yanking them back on the
+// next stream chunk. Distance is measured against the full content length —
+// reserved anchored end space included — so a parked anchored turn counts as
+// the live edge.
+export const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
+
 export const resolveTimelineIsAtEnd = (
-    state: { readonly isNearEnd?: boolean; readonly isAtEnd?: boolean } | undefined,
-): boolean | undefined => state?.isNearEnd ?? state?.isAtEnd;
+    state: {
+        readonly contentLength?: number;
+        readonly scroll?: number;
+        readonly scrollLength?: number;
+        readonly isNearEnd?: boolean;
+        readonly isAtEnd?: boolean;
+    } | undefined,
+): boolean | undefined => {
+    if (!state) return undefined;
+    const { contentLength, scroll, scrollLength } = state;
+    if (
+        typeof contentLength === 'number'
+        && typeof scroll === 'number'
+        && typeof scrollLength === 'number'
+        && Number.isFinite(contentLength)
+    ) {
+        return contentLength - (scroll + scrollLength) <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
+    }
+    return state.isNearEnd ?? state.isAtEnd;
+};
 
 export interface ChatListAnchoredEndSpace {
     readonly anchorIndex: number;

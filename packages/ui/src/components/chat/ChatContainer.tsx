@@ -361,10 +361,6 @@ const ChatViewport = React.memo(({
 
             <SessionRecapNote sessionId={currentSessionId} directory={directory} isMobile={isMobile} />
 
-            <div className="mb-3">
-                <StatusRowContainer />
-            </div>
-
             <div className="flex-shrink-0" style={{ height: isMobile ? '40px' : '10vh' }} aria-hidden="true" />
         </>
     ), [currentSessionId, directory, isMobile, sessionPermissions, sessionQuestions]);
@@ -417,6 +413,13 @@ const ChatViewport = React.memo(({
                     scrollContainerProps={scrollContainerProps}
                 />
                 <OverlayScrollbar containerRef={scrollRef} suppressVisibility={isProgrammaticFollowActive} userIntentOnly observeMutations={false} />
+                {/* Static above the composer: inside the list it walked down
+                    with every streamed line while a turn was anchored. */}
+                <div className="pointer-events-none absolute inset-x-0 bottom-2 z-10">
+                    <div className="pointer-events-auto [&:not(:has(*))]:hidden">
+                        <StatusRowContainer />
+                    </div>
+                </div>
                 {showPromptNavigator && promptTurnIds.length >= 2 ? (
                     <PromptNavigatorRail
                         turnIds={promptTurnIds}

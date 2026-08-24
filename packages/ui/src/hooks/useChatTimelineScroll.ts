@@ -136,6 +136,9 @@ export const useChatTimelineScroll = ({
     // it may load older pages without disturbing the read position.
     const [isPinned, setIsPinned] = React.useState(true);
     const [isFollowingProgrammatically, setIsFollowingProgrammatically] = React.useState(false);
+    // True after a real gesture until an explicit opt back in; drives the
+    // overlay scrollbar suppression instead of the anchor's mere existence.
+    const [userOwnsScroll, setUserOwnsScroll] = React.useState(false);
 
     const modeRef = React.useRef<TimelineScrollMode>('following-end');
     const isAtEndRef = React.useRef(true);
@@ -203,13 +206,25 @@ export const useChatTimelineScroll = ({
         setAnchorMessageId(null);
     }, []);
 
-    // A real gesture: stop every automatic movement until the user opts back in.
+    // A real gesture: stop every automatic movement until the user opts back
+    // in. The anchored END SPACE stays — collapsing it mid-gesture clamps the
+    // viewport back to the end — only the anchor machinery is disarmed.
     const onManualNavigation = React.useCallback(() => {
         userGenerationRef.current += 1;
         modeRef.current = 'free-scrolling';
         liveFollowGenerationRef.current = null;
-        clearAnchor();
-    }, [clearAnchor]);
+        setUserOwnsScroll(true);
+        armedForNextUserMessageRef.current = false;
+        pendingAnchorRef.current = null;
+        positionedAnchorRef.current = null;
+        settledAnchorRef.current = null;
+        activeAnchorIndexRef.current = null;
+        pendingAnchorRestoreRef.current = null;
+        if (anchorRestoreFrameRef.current !== null) {
+            cancelAnimationFrame(anchorRestoreFrameRef.current);
+            anchorRestoreFrameRef.current = null;
+        }
+    }, []);
 
     const isLiveFollowActive = React.useCallback(() => (
         liveFollowGenerationRef.current === userGenerationRef.current
@@ -267,6 +282,7 @@ export const useChatTimelineScroll = ({
     const goToBottom = React.useCallback((mode: 'instant' | 'smooth' = 'instant') => {
         isAtEndRef.current = true;
         setIsPinned(true);
+        setUserOwnsScroll(false);
         modeRef.current = 'following-end';
         // Returning to the end is an explicit opt back IN to live follow.
         liveFollowGenerationRef.current = userGenerationRef.current;
@@ -279,9 +295,14 @@ export const useChatTimelineScroll = ({
     // row is created by the store), so the next new user message id claims it.
     const scrollToBottomOnSend = React.useCallback(() => {
         isAtEndRef.current = true;
+        setUserOwnsScroll(false);
         modeRef.current = 'anchoring-new-turn';
         liveFollowGenerationRef.current = userGenerationRef.current;
         armedForNextUserMessageRef.current = true;
+        // The optimistic row is not committed yet; the next NEW user message id
+        // relative to this baseline claims the anchor, independent of whether
+        // the commit lands before or after this call.
+        armBaselineUserMessageIdRef.current = lastArmedUserMessageIdRef.current;
         pendingAnchorRef.current = null;
         positionedAnchorRef.current = null;
         settledAnchorRef.current = null;
@@ -289,13 +310,16 @@ export const useChatTimelineScroll = ({
         hideScrollButton();
     }, [hideScrollButton]);
 
-    // Claim the anchor as soon as the sent row exists in the timeline.
+    // Claim the anchor as soon as the sent row exists in the timeline. The
+    // comparison is against the baseline captured when the send armed the
+    // anchor, so the claim works whether the optimistic row committed before
+    // or after the arming call.
     const lastArmedUserMessageIdRef = React.useRef<string | null>(lastUserMessageId);
+    const armBaselineUserMessageIdRef = React.useRef<string | null>(lastUserMessageId);
     React.useEffect(() => {
-        const previous = lastArmedUserMessageIdRef.current;
         lastArmedUserMessageIdRef.current = lastUserMessageId;
         if (!armedForNextUserMessageRef.current) return;
-        if (!lastUserMessageId || lastUserMessageId === previous) return;
+        if (!lastUserMessageId || lastUserMessageId === armBaselineUserMessageIdRef.current) return;
         armedForNextUserMessageRef.current = false;
         pendingAnchorRef.current = lastUserMessageId;
         setAnchorMessageId(lastUserMessageId);
@@ -308,6 +332,7 @@ export const useChatTimelineScroll = ({
         // Entering a session always returns to the live edge. Late async growth
         // is handled by the list staying at the end, not by a timed hold.
         isAtEndRef.current = true;
+        setUserOwnsScroll(false);
         modeRef.current = 'following-end';
         liveFollowGenerationRef.current = userGenerationRef.current;
         clearAnchor();
@@ -336,8 +361,11 @@ export const useChatTimelineScroll = ({
         isAtEndRef.current = isAtEnd;
         setIsPinned(isAtEnd);
         if (isAtEnd) {
-            modeRef.current = 'following-end';
+            if (modeRef.current !== 'anchoring-new-turn') {
+                modeRef.current = 'following-end';
+            }
             liveFollowGenerationRef.current = userGenerationRef.current;
+            setUserOwnsScroll(false);
             hideScrollButton();
         } else {
             modeRef.current = 'free-scrolling';
@@ -349,6 +377,10 @@ export const useChatTimelineScroll = ({
 
     // Park the anchored row near the top once the list has measured it.
     const onAnchorReady = React.useCallback((messageId: string, anchorIndex: number) => {
+        // The anchored end space can be remeasured long after the send (turn
+        // completion, images decoding). Only the send-time anchoring mode may
+        // position the viewport.
+        if (modeRef.current !== 'anchoring-new-turn') return;
         if (pendingAnchorRef.current === messageId) {
             pendingAnchorRef.current = null;
         }
@@ -404,7 +436,7 @@ export const useChatTimelineScroll = ({
     // against sub-pixel drift and only while the user has not taken over.
     const onAnchorSizeChanged = React.useCallback((messageId: string) => {
         if (settledAnchorRef.current !== messageId) return;
-        if (isLiveFollowActive()) return;
+        if (!isLiveFollowActive()) return;
         const scrollOffset = listRef.current?.getState().scroll;
         if (scrollOffset === undefined) return;
 
@@ -530,25 +562,48 @@ export const useChatTimelineScroll = ({
     React.useEffect(() => {
         if (!scrollNode) return;
 
-        const handleGesture = () => {
+        const contentScrollsUp = () => {
+            const list = listRef.current;
+            return list ? realContentOverflowsViewport(list) : false;
+        };
+        const gesture = () => {
             onManualNavigationRef.current();
+        };
+        const handleWheel = (event: WheelEvent) => {
+            // Scrolling toward the end is not opting out of follow.
+            if (event.deltaY < 0 && contentScrollsUp()) gesture();
+        };
+        const handleTouchMove = () => {
+            if (!isAtEndRef.current && contentScrollsUp()) gesture();
+        };
+        const handlePointerDown = (event: PointerEvent) => {
+            // The scrollbar track is the scroll node itself; a tap on a row
+            // only breaks follow when the viewport already left the end.
+            if ((event.target === scrollNode || !isAtEndRef.current) && contentScrollsUp()) gesture();
+        };
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if ((event.key === 'PageUp' || event.key === 'Home' || event.key === 'ArrowUp') && contentScrollsUp()) {
+                gesture();
+            }
         };
         const handleScroll = () => {
             queueSave();
         };
 
-        scrollNode.addEventListener('wheel', handleGesture, { passive: true });
-        scrollNode.addEventListener('touchmove', handleGesture, { passive: true });
-        scrollNode.addEventListener('pointerdown', handleGesture, { passive: true });
+        scrollNode.addEventListener('wheel', handleWheel, { passive: true });
+        scrollNode.addEventListener('touchmove', handleTouchMove, { passive: true });
+        scrollNode.addEventListener('pointerdown', handlePointerDown, { passive: true });
+        scrollNode.addEventListener('keydown', handleKeyDown);
         scrollNode.addEventListener('scroll', handleScroll, { passive: true });
 
         return () => {
-            scrollNode.removeEventListener('wheel', handleGesture);
-            scrollNode.removeEventListener('touchmove', handleGesture);
-            scrollNode.removeEventListener('pointerdown', handleGesture);
+            scrollNode.removeEventListener('wheel', handleWheel);
+            scrollNode.removeEventListener('touchmove', handleTouchMove);
+            scrollNode.removeEventListener('pointerdown', handlePointerDown);
+            scrollNode.removeEventListener('keydown', handleKeyDown);
             scrollNode.removeEventListener('scroll', handleScroll);
         };
-    }, [queueSave, scrollNode]);
+    }, [queueSave, realContentOverflowsViewport, scrollNode]);
 
     // ── session lifecycle ───────────────────────────────────────────────────
     const lastSessionKeyRef = React.useRef<string | null>(null);
@@ -561,6 +616,7 @@ export const useChatTimelineScroll = ({
         // Persist the outgoing session's position before the new one takes over.
         flushSave();
         isAtEndRef.current = true;
+        setUserOwnsScroll(false);
         modeRef.current = 'following-end';
         liveFollowGenerationRef.current = userGenerationRef.current;
         clearAnchor();
@@ -570,8 +626,8 @@ export const useChatTimelineScroll = ({
     // Suppress the overlay scrollbar thumb while automatic movement owns the
     // scroll position, so it does not jump on each correction.
     React.useEffect(() => {
-        setIsFollowingProgrammatically(!showScrollButton && anchorMessageId === null);
-    }, [anchorMessageId, showScrollButton]);
+        setIsFollowingProgrammatically(!showScrollButton && !userOwnsScroll);
+    }, [showScrollButton, userOwnsScroll]);
 
     React.useEffect(() => () => {
         cancelShowButtonTimer();
