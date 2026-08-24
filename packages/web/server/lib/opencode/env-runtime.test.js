@@ -2,7 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createOpenCodeEnvRuntime } from './env-runtime.js';
+import {
+  consumePreloadedLoginShellEnvSnapshot,
+  createOpenCodeEnvRuntime,
+  preloadLoginShellEnvSnapshot,
+  probeWindowsShellEnvSnapshot,
+} from './env-runtime.js';
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
 const originalComSpec = process.env.ComSpec;
@@ -30,6 +35,7 @@ const setPlatform = (platform) => {
 };
 
 afterEach(() => {
+  consumePreloadedLoginShellEnvSnapshot();
   Object.defineProperty(process, 'platform', {
     value: originalPlatform,
   });
@@ -118,6 +124,82 @@ const createRuntime = (settings, options = {}) => {
 };
 
 describe('OpenCode env runtime', () => {
+  it('does not query the registry when the Windows PowerShell probe succeeds', () => {
+    setPlatform('win32');
+    const calls = [];
+    const { runtime, state } = createRuntime({}, {
+      spawnSync: (command, args) => {
+        calls.push({ command, args });
+        return {
+          status: 0,
+          stdout: 'OPENCHAMBER_PROFILE_TEST=value\0Path=C:\\Shell\0',
+        };
+      },
+    });
+    state.cachedLoginShellEnvSnapshot = undefined;
+
+    expect(runtime.getLoginShellEnvSnapshot()).toMatchObject({
+      OPENCHAMBER_PROFILE_TEST: 'value',
+      PATH: 'C:\\Shell',
+    });
+    expect(calls.map((call) => call.command)).toEqual(['pwsh.exe']);
+  });
+
+  it('queries registry paths only after all Windows PowerShell probes fail', () => {
+    setPlatform('win32');
+    const probeEnv = {
+      Path: 'C:\\Process',
+      SystemRoot: 'C:\\Windows',
+    };
+    const calls = [];
+    const snapshot = probeWindowsShellEnvSnapshot({
+      env: probeEnv,
+      spawnSync: (command, args) => {
+        calls.push({ command, args });
+        if (command !== 'reg.exe') return { status: 1, stdout: '' };
+        const value = args[1] === 'HKCU\\Environment' ? '%SystemRoot%\\UserBin' : 'C:\\Machine';
+        return { status: 0, stdout: `    Path    REG_EXPAND_SZ    ${value}\r\n` };
+      },
+    });
+
+    expect(snapshot).toEqual({
+      PATH: 'C:\\Machine;C:\\Windows\\UserBin;C:\\Process',
+    });
+    expect(calls).toHaveLength(5);
+    expect(calls.slice(0, 2).map((call) => call.command)).toEqual(['pwsh.exe', 'powershell.exe']);
+    expect(calls[2].command).toMatch(/powershell\.exe$/i);
+    expect(calls.slice(3).map((call) => call.command)).toEqual(['reg.exe', 'reg.exe']);
+  });
+
+  it('consumes a preloaded Electron snapshot without probing again', () => {
+    const snapshot = {
+      OPENCHAMBER_PROFILE_TEST: 'value',
+      PATH: 'C:\\Shell',
+    };
+    preloadLoginShellEnvSnapshot(snapshot);
+    const { runtime, state } = createRuntime({}, {
+      spawnSync: () => {
+        throw new Error('unexpected environment probe');
+      },
+    });
+    state.cachedLoginShellEnvSnapshot = consumePreloadedLoginShellEnvSnapshot();
+
+    expect(runtime.getLoginShellEnvSnapshot()).toBe(snapshot);
+    expect(consumePreloadedLoginShellEnvSnapshot()).toBeUndefined();
+  });
+
+  it('preserves a preloaded null snapshot without retrying the probe', () => {
+    preloadLoginShellEnvSnapshot(null);
+    const { runtime, state } = createRuntime({}, {
+      spawnSync: () => {
+        throw new Error('unexpected environment probe');
+      },
+    });
+    state.cachedLoginShellEnvSnapshot = consumePreloadedLoginShellEnvSnapshot();
+
+    expect(runtime.getLoginShellEnvSnapshot()).toBeNull();
+  });
+
   it('searches an explicit PATH without mutating the process environment', () => {
     const defaultDir = createTempDir('openchamber-default-path-');
     const explicitDir = createTempDir('openchamber-explicit-path-');
