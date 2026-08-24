@@ -14,7 +14,7 @@ import { formatDirectoryName, formatPathForDisplay } from '@/lib/utils';
 import type { SessionGroup } from '../types';
 import { ProjectHeaderIdentity, SortableGroupItem, SortableProjectItem } from './sortableItems';
 import { SessionGroupSection, type SessionGroupSectionProps } from './SessionGroupSection';
-import { buildGroupRenderDescriptors, type ProjectSection } from './sessionProjectRender';
+import { buildGroupRenderDescriptors, selectRenderedProjectSections, type ProjectSection } from './sessionProjectRender';
 import { formatProjectLabel } from '../utils';
 import { useI18n } from '@/lib/i18n';
 import type { ProjectSortOrder } from '@/stores/useSessionDisplayStore';
@@ -78,6 +78,8 @@ type SessionProjectScrollerModel = {
   sectionsForRender: ProjectSection[];
   projectSections: ProjectSection[];
   activeProjectId: string | null;
+  singleProjectMode: boolean;
+  singleProjectId: string | null;
   emptyState: React.ReactNode;
   searchEmptyState: React.ReactNode;
   projectRepoStatus: Map<string, boolean | null>;
@@ -114,6 +116,7 @@ type SessionProjectScrollerActions = {
   reorderProjects: (fromIndex: number, toIndex: number) => void;
   setGroupOrderByProject: React.Dispatch<React.SetStateAction<Map<string, string[]>>>;
   renderProjectStatusIndicator?: (projectId: string, groups: SessionGroup[]) => React.ReactNode;
+  setSingleProjectId: (id: string) => void;
 };
 
 type Props = {
@@ -139,7 +142,7 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
   const { t } = useI18n();
   const { model, view, actions } = props;
   const isInlineEditing = model.state.editingId !== null;
-  const enableStickyFade = view.isDesktopShellRuntime && view.stickyZoneHeaders;
+  const enableStickyFade = view.isDesktopShellRuntime && view.stickyZoneHeaders && !model.singleProjectMode;
   const projectSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -180,7 +183,12 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
     event.preventDefault();
     event.stopPropagation();
   }, []);
-  const hasProjectScroller = model.projectSections.length > 0 && model.sectionsForRender.length > 0;
+  const renderedSections = selectRenderedProjectSections(
+    model.sectionsForRender,
+    model.singleProjectMode,
+    model.singleProjectId,
+  );
+  const hasProjectScroller = model.projectSections.length > 0 && renderedSections.length > 0;
   React.useLayoutEffect(() => {
     if (enableStickyFade && hasProjectScroller && scrollContainerRef.current) {
       syncTopFade(scrollContainerRef.current);
@@ -199,8 +207,17 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
   // ready in the same frame; the observer then corrects it. When shared sessions
   // lead the list, the Recent fallback below owns the top instead of a project.
   const leadingProject =
-    stuckProject ?? (model.hasSharedSessions ? null : model.sectionsForRender[0]?.project ?? null);
+    stuckProject ?? (model.hasSharedSessions ? null : renderedSections[0]?.project ?? null);
   const leadingProjectLabel = leadingProject ? getProjectLabel(leadingProject, view.homeDirectory) : null;
+  const projectPickerOptions = React.useMemo(() => model.projectSections.map((section) => ({
+    id: section.project.id,
+    projectLabel: getProjectLabel(section.project, view.homeDirectory),
+    projectDescription: formatPathForDisplay(section.project.normalizedPath, view.homeDirectory),
+    projectIcon: section.project.icon,
+    projectColor: section.project.color,
+    projectIconImage: section.project.iconImage,
+    projectIconBackground: section.project.iconBackground,
+  })), [model.projectSections, view.homeDirectory]);
 
   if (model.projectSections.length === 0) {
     return <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className="space-y-1 pb-1 pl-2.5 pr-2">{model.topContent}{model.emptyState}</ScrollableOverlay>;
@@ -237,7 +254,7 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
       {view.showOnlyMainWorkspace ? (
         <div className="space-y-[0.6rem] py-1">
           {(() => {
-            const activeSection = model.sectionsForRender.find((section) => section.project.id === model.activeProjectId) ?? model.sectionsForRender[0];
+            const activeSection = renderedSections.find((section) => section.project.id === model.activeProjectId) ?? renderedSections[0];
             if (!activeSection) {
               return view.hasSessionSearchQuery ? model.searchEmptyState : model.emptyState;
             }
@@ -270,20 +287,20 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
             actions.reorderProjects(oldIndex, newIndex);
           }}
         >
-            <SortableContext items={model.sectionsForRender.map((section) => section.project.id)} strategy={verticalListSortingStrategy}>
-            {model.sectionsForRender.map((section) => {
+            <SortableContext items={renderedSections.map((section) => section.project.id)} strategy={verticalListSortingStrategy}>
+            {renderedSections.map((section) => {
               const project = section.project;
               const projectKey = project.id;
               const projectLabel = getProjectLabel(project, view.homeDirectory);
               const projectDescription = formatPathForDisplay(project.normalizedPath, view.homeDirectory);
-              const isCollapsed = view.collapsedProjects.has(projectKey);
+              const isCollapsed = model.singleProjectMode ? false : view.collapsedProjects.has(projectKey);
               const isRepo = model.projectRepoStatus.get(projectKey);
 
               return (
                 <SortableProjectItem
                   key={projectKey}
                   id={projectKey}
-                  disabled={view.projectSortOrder !== 'manual'}
+                  disabled={model.singleProjectMode || view.projectSortOrder !== 'manual'}
                   projectLabel={projectLabel}
                   projectDescription={projectDescription}
                   projectIcon={project.icon}
@@ -298,8 +315,10 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
                   alwaysShowActions={view.alwaysShowActions}
                    statusIndicator={isCollapsed ? actions.renderProjectStatusIndicator?.(projectKey, section.groups) : null}
                     openSidebarMenuKey={model.state.openSidebarMenuKey}
-                    setOpenSidebarMenuKey={model.state.setOpenSidebarMenuKey}
-                  onToggle={() => actions.toggleProject(projectKey)}
+                  setOpenSidebarMenuKey={model.state.setOpenSidebarMenuKey}
+                  projectPickerOptions={model.singleProjectMode ? projectPickerOptions : undefined}
+                  onProjectSelect={model.singleProjectMode ? actions.setSingleProjectId : undefined}
+                  onToggle={() => { if (!model.singleProjectMode) actions.toggleProject(projectKey); }}
                   onNewSession={() => {
                     if (projectKey !== model.activeProjectId) actions.setActiveProjectIdOnly(projectKey);
                     if (view.mobileVariant) actions.setSessionSwitcherOpen(false);

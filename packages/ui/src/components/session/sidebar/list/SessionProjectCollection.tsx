@@ -1,4 +1,5 @@
 import React from 'react';
+import type { Session } from '@opencode-ai/sdk/v2';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { usePrefetchSessionMessages } from '@/sync/use-sync';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
@@ -24,8 +25,17 @@ import type { useSessionProjectViewState } from '../projects/useSessionProjectVi
 import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
 import type { DeleteSessionConfirmState } from '../sessions/useSessionActions';
 import { useExpandedParents } from '../sessions/useExpandedParents';
+import { SessionGroupSection } from '../projects/SessionGroupSection';
+import { CHAT_DRAFT_PROJECT_ID, getChatsRootForHome, getChatsRootFromDirectory } from '@/lib/chatDirectories';
+import { isCapacitorApp } from '@/lib/platform';
 
 const PR_NO_PR_RETRY_MS = 5 * 60_000;
+
+const isRootSession = (session: Session): boolean => {
+  // SAFETY: OpenCode attaches parentID to hierarchical session records,
+  // although the SDK's base Session type does not currently declare it.
+  return !(session as Session & { parentID?: string | null }).parentID;
+};
 
 type Project = {
   id: string;
@@ -122,8 +132,13 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     });
   }, []);
   const showRecentSection = useSessionDisplayStore((state) => state.showRecentSection);
+  const projectDisplayMode = useSessionDisplayStore((state) => state.projectDisplayMode);
+  const singleProjectId = useSessionDisplayStore((state) => state.singleProjectId);
+  const setSingleProjectId = useSessionDisplayStore((state) => state.setSingleProjectId);
+  const supportsSingleProjectMode = !topology.isVSCode && !isCapacitorApp();
+  const singleProjectMode = supportsSingleProjectMode && projectDisplayMode === 'single';
   const recentSessions = useRecentSessionCollection({
-    enabled: showRecentSection,
+    enabled: showRecentSection && !singleProjectMode,
     isVSCode: topology.isVSCode,
     pinnedSessionIds: collection.pinnedSessionIds,
     sessionOrderRanks: collection.sessionOrderRanks,
@@ -269,6 +284,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     editingId,
     editTitle,
     copiedSessionId,
+    sessionBatchSize: singleProjectMode && !view.useGroupedSections ? 20 : undefined,
     setEditingId,
     setEditTitle,
     toggleParent,
@@ -309,6 +325,8 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     view.hasSessionSearchQuery,
     view.mobileVariant,
     view.normalizedSessionSearchQuery,
+    view.useGroupedSections,
+    singleProjectMode,
   ]);
   const groupActions = React.useMemo(() => ({
     showMoreGroupSessions,
@@ -327,8 +345,55 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     scrollerActions.setActiveProjectIdOnly,
     scrollerActions.setSessionSwitcherOpen,
   ]);
+  const chatGroup = React.useMemo<SessionGroup | null>(() => {
+    if (topology.isVSCode) return null;
+    const chatsRoot = getChatsRootForHome(view.homeDirectory)
+      ?? collection.chatSessions.map((session) => getChatsRootFromDirectory(session.directory)).find(Boolean)
+      ?? null;
+    if (!chatsRoot) return null;
+    const folderScopes = Array.from(new Set([
+      chatsRoot,
+      ...collection.chatSessions.map((session) => normalizePath(session.directory ?? null)).filter(Boolean),
+    ])).filter((directory): directory is string => Boolean(directory))
+      .map((directory) => ({ scopeKey: directory, directory }));
+    return {
+      id: 'managed-chats',
+      label: '',
+      branch: null,
+      description: null,
+      isMain: true,
+      worktree: null,
+      directory: chatsRoot,
+      folderScopeKey: chatsRoot,
+      folderScopes,
+      draftTarget: 'chat',
+      sessions: collection.chatSessions
+        .filter((session) => !session.time?.archived && isRootSession(session))
+        .map((session) => ({ session, children: (collection.childrenMap.get(session.id) ?? []).filter((child) => !child.time?.archived).map((child) => ({ session: child, children: [], worktree: null })), worktree: null })),
+    };
+  }, [collection.chatSessions, collection.childrenMap, topology.isVSCode, view.homeDirectory]);
+  const renderChatsSection = React.useCallback(() => {
+    if (!chatGroup) return null;
+    return <SessionGroupSection
+      {...groupProps}
+      {...groupActions}
+      group={chatGroup}
+      groupKey="managed-chats"
+      projectId={null}
+      hideGroupLabel
+      sessionBatchSize={20}
+      scrollContainerRef={undefined}
+      openSidebarMenuKey={openSidebarMenuKey}
+      setOpenSidebarMenuKey={setOpenSidebarMenuKey}
+    />;
+  }, [chatGroup, groupActions, groupProps, openSidebarMenuKey]);
+  const handleOpenNewChat = React.useCallback(() => {
+    scrollerActions.setActiveMainTab('chat');
+    if (view.mobileVariant) scrollerActions.setSessionSwitcherOpen(false);
+    scrollerActions.openNewSessionDraft({ selectedProjectId: CHAT_DRAFT_PROJECT_ID, directoryOverride: null });
+  }, [scrollerActions, view.mobileVariant]);
   const recentSection = React.useMemo(() => (
-    !topology.isVSCode && showRecentSection ? <RecentSessionSection
+    !topology.isVSCode ? <RecentSessionSection
       projects={topology.projects}
       availableWorktreesByProject={topology.availableWorktreesByProject}
       gitBranches={topology.gitBranches}
@@ -362,6 +427,10 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       setDeleteSessionConfirm={setDeleteSessionConfirm}
       startFolderRename={startFolderRename}
       setCopiedSessionId={setCopiedSessionId}
+      chatSessions={collection.chatSessions}
+      renderChatsSection={renderChatsSection}
+      onNewChat={handleOpenNewChat}
+      showRecentSection={showRecentSection && !singleProjectMode}
     /> : null
   ), [
     alwaysShowActions,
@@ -378,12 +447,16 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     recentSessions,
     rowActions,
     showRecentSection,
+    singleProjectMode,
+    handleOpenNewChat,
+    renderChatsSection,
     startFolderRename,
     toggleParent,
     topology.availableWorktreesByProject,
     topology.gitBranches,
     topology.isVSCode,
     topology.projects,
+    collection.chatSessions,
     view.hasSessionSearchQuery,
     view.homeDirectory,
     view.isDesktopShellRuntime,
@@ -396,6 +469,14 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     sectionsForRender: orderedSectionsForRender,
     projectSections,
     activeProjectId: view.activeProjectId,
+    singleProjectMode,
+    singleProjectId: singleProjectMode
+      ? (projectSections.some((section) => section.project.id === singleProjectId)
+        ? singleProjectId
+        : (projectSections.some((section) => section.project.id === view.activeProjectId)
+          ? view.activeProjectId
+          : projectSections[0]?.project.id ?? null))
+      : null,
     emptyState: view.emptyState,
     searchEmptyState: view.searchEmptyState,
     projectRepoStatus: topology.projectRepoStatus,
@@ -416,6 +497,8 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     view.searchEmptyState,
     visibleSessionCountByGroup,
     recentSection,
+    singleProjectId,
+    singleProjectMode,
   ]);
   const scrollerView = React.useMemo(() => ({
     homeDirectory: view.homeDirectory,
@@ -456,6 +539,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     reorderProjects: scrollerActions.reorderProjects,
     setGroupOrderByProject,
     renderProjectStatusIndicator: scrollerActions.renderProjectStatusIndicator,
+    setSingleProjectId,
   }), [
     groupActions,
     scrollerActions.openNewSessionDraft,
@@ -470,6 +554,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     setGroupOrderByProject,
     toggleProject,
     scrollerActions.renderProjectStatusIndicator,
+    setSingleProjectId,
   ]);
   return <>
     <ProjectSessionSelectionEffect

@@ -35,6 +35,8 @@ type ProjectHeaderIdentityProps = ProjectIdentityProps & {
   alwaysShowActions?: boolean;
 };
 
+type ProjectPickerOption = ProjectIdentityProps & { projectDescription: string };
+
 export const ProjectHeaderIdentity: React.FC<ProjectHeaderIdentityProps> = ({
   id,
   projectLabel,
@@ -121,6 +123,8 @@ export interface SortableProjectItemProps extends ProjectIdentityProps {
   statusIndicator?: React.ReactNode;
   openSidebarMenuKey: string | null;
   setOpenSidebarMenuKey: (key: string | null) => void;
+  projectPickerOptions?: ProjectPickerOption[];
+  onProjectSelect?: (projectId: string) => void;
 }
 
 export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
@@ -150,6 +154,8 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   statusIndicator = null,
   openSidebarMenuKey,
   setOpenSidebarMenuKey,
+  projectPickerOptions,
+  onProjectSelect,
 }) => {
   const { t } = useI18n();
   const stickyZoneHeaders = useSessionDisplayStore((state) => state.stickyZoneHeaders);
@@ -166,6 +172,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   const menuInstanceKey = `project:${id}`;
   const isMenuOpen = openSidebarMenuKey === menuInstanceKey;
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
+  const isProjectPicker = Boolean(projectPickerOptions && onProjectSelect);
 
   const handleMenuOpenChange = React.useCallback((open: boolean) => {
     if (open) setIsContextMenuOpen(false);
@@ -273,7 +280,28 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
               className="relative flex items-center gap-1 py-1 pl-4 pr-3.5"
               {...attributes}
             >
-              <Tooltip>
+              {isProjectPicker ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                      aria-label={t('sessions.sidebar.project.selectAria', { project: projectLabel })}
+                    >
+                      <ProjectHeaderIdentity id={id} projectLabel={projectLabel} projectIcon={projectIcon} projectColor={projectColor} projectIconImage={projectIconImage} projectIconBackground={projectIconBackground} />
+                      <Icon name="arrow-down-s" className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-[70vh] min-w-[220px] overflow-y-auto">
+                    {projectPickerOptions?.map((option) => (
+                      <DropdownMenuItem key={option.id} onClick={() => onProjectSelect?.(option.id)} className="flex items-center justify-between gap-3" title={option.projectDescription}>
+                        <ProjectHeaderIdentity {...option} />
+                        {option.id === id ? <Icon name="check" className="h-4 w-4 flex-shrink-0 text-primary" /> : null}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : <Tooltip>
                 <TooltipTrigger asChild>
                     <button
                       type="button"
@@ -305,7 +333,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                 <TooltipContent side="right" sideOffset={8}>
                   {projectDescription}
                 </TooltipContent>
-              </Tooltip>
+              </Tooltip>}
 
               <div className={cn(
                 'absolute top-1/2 z-10 flex -translate-y-1/2 items-center gap-1',

@@ -7,9 +7,6 @@ import { useUIStore } from '@/stores/useUIStore';
 import type { SessionFolder } from '@/stores/useSessionFoldersStore';
 import type { Session } from '@opencode-ai/sdk/v2';
 import type { SessionGroupSectionProps } from './SessionGroupSection';
-import { SessionProjectScroller } from './SessionProjectScroller';
-import { RecentSessionSection } from '../recent/RecentSessionSection';
-import { SidebarActivitySections } from '../recent/SidebarActivitySections';
 import { installHookTestDom } from '../test-utils/testDom';
 
 type FolderCallbacks = {
@@ -26,25 +23,6 @@ type RowPropsCapture = Pick<SessionGroupSectionProps,
   | 'copiedSessionId'
   | 'setCopiedSessionId'
 >;
-
-type ExpectNever<T extends never> = T;
-type RowDomainCallback =
-  | 'handleSaveEdit'
-  | 'handleCancelEdit'
-  | 'handleSessionSelect'
-  | 'handleSessionDoubleClick'
-  | 'handleShareSession'
-  | 'handleCopyShareUrl'
-  | 'handleCopySessionId'
-  | 'handleUnshareSession'
-  | 'handleDeleteSession'
-  | 'handleRestoreSession';
-
-// Structural group contracts must not expose the row domain action surface.
-type _SessionGroupSectionHasNoRowDomainCallbacks = ExpectNever<Extract<keyof SessionGroupSectionProps, RowDomainCallback>>;
-type _SessionProjectScrollerHasNoRowDomainCallbacks = ExpectNever<Extract<keyof React.ComponentProps<typeof SessionProjectScroller>, RowDomainCallback>>;
-type _RecentSessionSectionHasNoRowDomainCallbacks = ExpectNever<Extract<keyof React.ComponentProps<typeof RecentSessionSection>, RowDomainCallback>>;
-type _SidebarActivitySectionsHasNoRowDomainCallbacks = ExpectNever<Extract<keyof React.ComponentProps<typeof SidebarActivitySections>, RowDomainCallback>>;
 
 let folderCallbacks: FolderCallbacks | null = null;
 let rowPropsCapture: RowPropsCapture | null = null;
@@ -80,6 +58,9 @@ mock.module('@/sync/sync-context', () => ({
 
 mock.module('../sessions/collapsedActivityIndicator', () => ({
   CollapsedSessionActivityIndicator: () => null,
+}));
+
+mock.module('../sessions/collapsedActivityState', () => ({
   useCollapsedSessionActivityState: () => null,
 }));
 

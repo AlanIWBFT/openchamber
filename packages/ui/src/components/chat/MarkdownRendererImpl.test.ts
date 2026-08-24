@@ -48,6 +48,7 @@ let hookStates: Array<{ current: null } | undefined> = [];
 let activeFakeDocument: FakeDocument | null = null;
 
 const makeFakeElement = (ownerDocument: { createElement: () => FakeElement }): FakeElement => {
+    void ownerDocument;
     let html = '';
     const element: FakeElement = {
         childNodes: [],
@@ -184,6 +185,7 @@ const fakeReact = {
         return factory();
     },
     useRef: <T>(current: T) => {
+        void current;
         const index = hookCursor;
         hookCursor += 1;
         if (!hookStates[index]) hookStates[index] = { current: null };

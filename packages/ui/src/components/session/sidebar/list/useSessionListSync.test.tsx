@@ -74,7 +74,6 @@ mock.module('./useAuthoritativeSessionCleanup', () => ({
 const { useSessionListSync } = await import('./useSessionListSync');
 
 const projects = [{ id: 'project', path: '/project' }];
-const projectDirectories = new Set(['/project']);
 const worktree: WorktreeMetadata = { path: '/worktree', projectDirectory: '/project', branch: 'feature', label: 'feature' };
 
 const LifecycleProbe: React.FC<{ isVSCode: boolean }> = ({ isVSCode }) => {

@@ -12,7 +12,7 @@ import {
 import type { SessionNodeRenderExtras } from '../sessions/sessionNodeItemUtils';
 import { SessionTreeItem, type SessionTreeItemProps } from '../sessions/SessionTreeItem';
 
-type ActivityItem = {
+export type ActivityItem = {
   node: SessionNode;
   projectId: string | null;
   groupDirectory: string | null;
@@ -23,7 +23,7 @@ type ActivityItem = {
 };
 
 type ActivitySection = {
-  key: 'active-now';
+  key: 'active-now' | 'chats';
   title: string;
   items: ActivityItem[];
 };
@@ -46,6 +46,8 @@ type Props = {
   openSidebarMenuKey: string | null;
   mobileVariant: boolean;
   alwaysShowActions: boolean;
+  onNewChat?: () => void;
+  renderChatsSection?: (items: ActivityItem[]) => React.ReactNode;
 } & Pick<SessionTreeItemProps,
   | 'setEditingId'
   | 'setEditTitle'
@@ -142,7 +144,7 @@ export function SidebarActivitySections(props: Props): React.ReactNode {
     });
   }, [props.editingId, props.openSidebarMenuKey]);
 
-  const visibleSections = sections.filter((section) => section.items.length > 0);
+  const visibleSections = sections.filter((section) => section.items.length > 0 || section.key === 'chats');
   if (visibleSections.length === 0) {
     return null;
   }
@@ -159,7 +161,8 @@ export function SidebarActivitySections(props: Props): React.ReactNode {
         );
         const visibleItems = section.items.slice(0, visibleLimit);
         const remainingCount = section.items.length - visibleItems.length;
-        const canShowFewer = !flatVariant && section.items.length > initialVisibleCount && remainingCount === 0;
+        const usesCustomRenderer = section.key === 'chats' && Boolean(props.renderChatsSection);
+        const canShowFewer = !usesCustomRenderer && !flatVariant && section.items.length > initialVisibleCount && remainingCount === 0;
         const getRenderExtras = buildRenderExtras(visibleItems.map((item) => item.node));
         const renderItem = (item: ActivityItem) => (
           <SessionTreeItem
@@ -218,28 +221,39 @@ export function SidebarActivitySections(props: Props): React.ReactNode {
         return (
           <div key={section.key} className="relative space-y-1">
             <div className={cn(
+              'relative group/chats',
               '-ml-2.5 -mr-2',
               stickyZoneHeaders && 'sticky top-0 z-20 bg-sidebar',
             )} data-sidebar-sticky-header={stickyZoneHeaders ? 'true' : undefined}>
               <button
                 type="button"
                 onClick={() => toggleSection(section.key)}
-                className="group flex w-full items-center gap-1.5 py-1 pl-4 pr-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                className={cn('group flex w-full items-center gap-1.5 py-1 pl-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50', section.key === 'chats' ? 'pr-10' : 'pr-3.5')}
                 aria-expanded={!isCollapsed}
               >
                 <span className="inline-flex h-3.5 w-3.5 items-center justify-center">
-                  <Icon name="history" className={cn('h-3.5 w-3.5 text-muted-foreground/80', 'group-hover:hidden')} />
+                  <Icon name={section.key === 'chats' ? 'chat-4' : 'history'} className={cn('h-3.5 w-3.5 text-muted-foreground/80', 'group-hover:hidden')} />
                   <span className="hidden h-3.5 w-3.5 items-center justify-center text-muted-foreground group-hover:inline-flex">
                     {isCollapsed ? <Icon name="arrow-right-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-down-s" className="h-3.5 w-3.5" />}
                   </span>
                 </span>
                 <span className="text-[14px] font-semibold lowercase text-foreground">{section.title}</span>
               </button>
+              {section.key === 'chats' && props.onNewChat ? (
+                <button
+                  type="button"
+                  onClick={(event) => { event.stopPropagation(); props.onNewChat?.(); }}
+                  className={cn('absolute right-0.5 top-1/2 z-10 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50', props.alwaysShowActions ? 'opacity-100' : 'opacity-0 pointer-events-none group-hover/chats:opacity-100 group-hover/chats:pointer-events-auto group-focus-within/chats:opacity-100 group-focus-within/chats:pointer-events-auto')}
+                  aria-label={t('sessions.sidebar.header.actions.newSession')}
+                >
+                  <Icon name="add" className="h-4 w-4" />
+                </button>
+              ) : null}
             </div>
             {!isCollapsed ? (
               <div className={cn('space-y-0.5')}>
-                {visibleItems.map(renderItem)}
-                {remainingCount > 0 ? (
+                {usesCustomRenderer ? props.renderChatsSection?.(section.items) : visibleItems.map(renderItem)}
+                {!usesCustomRenderer && remainingCount > 0 ? (
                   <button
                     type="button"
                     onClick={() => showMoreSessions(section.key, visibleItems.length, section.items.length)}

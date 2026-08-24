@@ -32,7 +32,6 @@ import {
   selectFolderIdsForProjection,
   selectFolderRootNodes,
 } from '../sessions/sessionNodeItemUtils';
-import type { SessionNodeRenderExtras } from '../sessions/sessionNodeItemUtils';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
 
 type FolderScope = { scopeKey: string; directory: string | null };
@@ -40,7 +39,8 @@ import { getGitHubPrStatusKey, usePrVisualSummary } from '@/stores/useGitHubPrSt
 import { useI18n } from '@/lib/i18n';
 import { useChildStoreManager } from '@/sync/sync-context';
 import { canRequestNativeDirectoryAccess, requestDirectoryAccess } from '@/lib/desktop';
-import { CollapsedSessionActivityIndicator, useCollapsedSessionActivityState } from '../sessions/collapsedActivityIndicator';
+import { CollapsedSessionActivityIndicator } from '../sessions/collapsedActivityIndicator';
+import { useCollapsedSessionActivityState } from '../sessions/collapsedActivityState';
 import { SessionTreeItem, type SessionTreeItemProps } from '../sessions/SessionTreeItem';
 import { FolderDeleteConfirmDialog } from '../shell/ConfirmDialogs';
 
@@ -445,18 +445,6 @@ function SessionGroupSectionBase(props: SessionGroupSectionProps): React.ReactNo
     return allFoldersForGroupBase.filter(({ folder }) => visibleFolderIds.has(folder.id));
   }, [allFoldersForGroupBase, group.isArchivedBucket, hasSessionSearchQuery, normalizedSessionSearchQuery]);
 
-  const groupSessionIds = React.useMemo(() => {
-    const ids = new Set<string>();
-    const visit = (nodes: SessionNode[]) => nodes.forEach((node) => {
-      ids.add(node.session.id);
-      visit(node.children);
-    });
-    visit(sourceGroupNodes);
-    return ids;
-  }, [sourceGroupNodes]);
-  const groupExpansionKeys = React.useMemo(() => new Set(
-    [...groupSessionIds].map((id) => `project:${group.isArchivedBucket ? 'archived' : 'active'}:${id}`),
-  ), [group.isArchivedBucket, groupSessionIds]);
   const effectiveEditingId = editingId;
   const effectiveOpenMenuKey = openSidebarMenuKey;
   const effectiveExpandedParents = expandedParents;

@@ -27,6 +27,18 @@ describe("upsertSessionRecord", () => {
     expect(result[1]).toBe(current[1])
   })
 
+  test("replaces a same-ID record when an unlisted semantic field changes", () => {
+    const current = [session("a")]
+    // SAFETY: The runtime SDK payload may contain an additive field before the local Session type is updated.
+    const incoming = {
+      ...session("a"),
+      // SDK records can gain fields independently of this synchronization boundary.
+      customField: "changed",
+    } as Session
+
+    expect(upsertSessionRecord(current, incoming)).not.toBe(current)
+  })
+
   const changes: Array<[string, Partial<Session>, Partial<Session>]> = [
     ["scalars", { workspaceID: "one", path: "a", parentID: "p", cost: 1, agent: "a" }, { workspaceID: "two", path: "b", parentID: "q", cost: 2, agent: "b" }],
     ["tokens", { tokens: { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } } }, { tokens: { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 6 } } }],

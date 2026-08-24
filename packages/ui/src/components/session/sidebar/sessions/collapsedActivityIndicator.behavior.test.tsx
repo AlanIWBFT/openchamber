@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { useGlobalSessionStatusStore } from '@/sync/global-session-status';
 import { useNotificationStore } from '@/sync/notification-store';
-import { useCollapsedSessionActivityState } from './collapsedActivityIndicator';
+import { useCollapsedSessionActivityState } from './collapsedActivityState';
 import type { SessionNode } from '../types';
 import { installHookTestDom } from '../test-utils/testDom';
 

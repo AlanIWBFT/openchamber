@@ -56,7 +56,6 @@ describe('SessionTreeItem public behavior', () => {
     const sharedSession = session('same-session');
     const rowNode = { session: sharedSession, children: [], worktree: null };
     const noop = () => undefined;
-    const noopWithValue = (_value: string | null) => undefined;
 
     const Harness = () => {
       const [editingId, setEditingId] = React.useState<string | null>(null);

@@ -274,7 +274,7 @@ export const useSessionGrouping = (args: Args) => {
 
       return groups;
     },
-    [args.homeDirectory, args.worktreeMetadata, args.pinnedSessionIds, args.sessionOrderRanks, args.gitBranches, args.isVSCode, t],
+    [args.homeDirectory, args.worktreeMetadata, args.sessionOrderRanks, args.gitBranches, args.isVSCode, t],
   );
 
   return {

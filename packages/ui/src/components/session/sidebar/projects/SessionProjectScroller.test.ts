@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { buildGroupRenderDescriptors } from './sessionProjectRender';
+import { buildGroupRenderDescriptors, selectRenderedProjectSections } from './sessionProjectRender';
 import type { SessionGroup } from '../types';
+import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
 
 const makeGroup = (id: string, overrides: Partial<SessionGroup> = {}): SessionGroup => ({
   id,
@@ -66,5 +67,25 @@ describe('buildGroupRenderDescriptors', () => {
     };
 
     expect(buildGroupRenderDescriptors(section, { mainWorkspaceOnly: false }).map((descriptor) => descriptor.hideGroupLabel)).toEqual([false, false]);
+  });
+});
+
+describe('single-project scroller projection', () => {
+  test('renders only the selected project from persisted display state', () => {
+    const previous = useSessionDisplayStore.getState();
+    const sections = [
+      { project: { id: 'project-a', normalizedPath: '/workspace/a' }, groups: [] },
+      { project: { id: 'project-b', normalizedPath: '/workspace/b' }, groups: [] },
+    ];
+
+    try {
+      useSessionDisplayStore.setState({ projectDisplayMode: 'single', singleProjectId: 'project-b' });
+      const state = useSessionDisplayStore.getState();
+
+      expect(selectRenderedProjectSections(sections, state.projectDisplayMode === 'single', state.singleProjectId)
+        .map((section) => section.project.id)).toEqual(['project-b']);
+    } finally {
+      useSessionDisplayStore.setState(previous, true);
+    }
   });
 });

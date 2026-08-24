@@ -2,7 +2,7 @@ import React from 'react';
 import { SessionNodeItem } from './SessionNodeItem';
 import type { SessionNodeItemProps } from './SessionNodeItem';
 import type { SessionNode } from '../types';
-import type { SessionNodeChildRenderExtras, SessionNodeRenderExtras } from './sessionNodeItemUtils';
+import type { SessionNodeRenderExtras } from './sessionNodeItemUtils';
 import { useSessionActions, type DeleteSessionConfirmState } from './useSessionActions';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
 import { useUIStore } from '@/stores/useUIStore';

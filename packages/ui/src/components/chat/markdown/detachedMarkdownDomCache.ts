@@ -2,6 +2,7 @@ export type DetachedMarkdownDomKey = {
   scope: string;
   id: string;
   locale: string;
+  directory: string;
 };
 
 export type DetachedMarkdownDom = DetachedMarkdownDomKey & {
@@ -79,7 +80,7 @@ export class DetachedMarkdownDomCache {
     // A fragment is a move-only resource; taking it removes cache ownership.
     session.delete(entryKey);
     if (session.size === 0) this.sessions.delete(sessionKey);
-    if (entry.locale !== key.locale) return null;
+    if (entry.locale !== key.locale || entry.directory !== key.directory) return null;
     return entry.fragment;
   }
 

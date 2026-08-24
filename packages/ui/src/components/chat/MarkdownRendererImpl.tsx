@@ -1080,8 +1080,9 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
       scope: `${runtimeKey}\0${settledPart.sessionID}`,
       id: `${settledPart.messageID}\0${settledPart.id}\0${imageMode}`,
       locale,
+      directory: effectiveDirectory,
     };
-  }, [content.length, imageMode, isStreaming, locale, runtimeKey, settledPart]);
+  }, [content.length, effectiveDirectory, imageMode, isStreaming, locale, runtimeKey, settledPart]);
   // Identity for the fade-in wrapper: a new part/message restarts the animation.
   const fadeKey = `markdown-${part?.id ? `part-${part.id}` : `message-${messageId}`}`;
 

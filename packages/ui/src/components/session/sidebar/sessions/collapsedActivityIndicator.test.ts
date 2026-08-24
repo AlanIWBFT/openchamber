@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Session } from '@opencode-ai/sdk/v2';
-import { getSessionNodesActivityState } from './collapsedActivityIndicator';
+import { getSessionNodesActivityState } from './collapsedActivityState';
 import type { SessionNode } from '../types';
 
 // SAFETY: the fixture supplies the minimal SDK identity fields used by the activity projection.

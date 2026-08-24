@@ -5,7 +5,14 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { deriveRecentSessions } from '../recent/activitySections';
 import { applyGlobalSessionStatusEvent, useGlobalSessionStatusStore } from '@/sync/global-session-status';
-import { getDescendantIds, projectSidebarActiveSessions, projectSidebarCollection, useRecentSessionCollection } from './sessionCollection';
+import {
+  buildSidebarSessionProjection,
+  getDescendantIds,
+  partitionSidebarSessions,
+  projectSidebarActiveSessions,
+  projectSidebarCollection,
+  useRecentSessionCollection,
+} from './sessionCollection';
 
 const installMinimalDom = () => {
   const descriptors = new Map<string, PropertyDescriptor | undefined>();
@@ -156,6 +163,80 @@ describe('projectSidebarCollection', () => {
     expect(projectAfter).toEqual(projectBefore);
     expect(recentBefore).toEqual([]);
     expect(recentAfter.map((entry) => entry.id)).toEqual(['old-root']);
+  });
+
+  test('keeps managed Chats in a dedicated projection and out of project and Recent ownership', () => {
+    const managed = session('managed', '/home/.config/openchamber/chats/2026-08-24/session-managed');
+    const project = session('project', '/workspace/a');
+    const projects = projectSidebarCollection({
+      globalActiveSessions: [managed, project],
+      liveSessions: [],
+      knownDirectories: new Set(['/workspace/a']),
+      isVSCode: false,
+    });
+
+    expect(projects.map((entry) => entry.id)).toEqual(['project']);
+    expect(partitionSidebarSessions([managed, project], false).chatSessions.map((entry) => entry.id)).toEqual(['managed']);
+    expect(deriveRecentSessions(projects, new Set(['managed', 'project']), 200_000_000)
+      .map((entry) => entry.id)).toEqual(['project']);
+  });
+
+  test('keeps managed Chats out of the VS Code sidebar', () => {
+    const managed = session('managed', '/home/.config/openchamber/chats/2026-08-24/session-managed');
+
+    expect(partitionSidebarSessions([managed], true)).toEqual({ projectSessions: [], chatSessions: [] });
+    expect(projectSidebarCollection({
+      globalActiveSessions: [managed],
+      liveSessions: [],
+      knownDirectories: new Set(),
+      isVSCode: true,
+    })).toEqual([]);
+  });
+
+  test('excludes a /btw fork before project ownership and restores it when the marker is removed', () => {
+    const fork = {
+      ...session('fork', '/home/.config/openchamber/chats/2026-08-24/session-fork'),
+      metadata: { openchamber: { kind: 'btw', originalSessionID: 'parent' } },
+    };
+    const project = session('project', '/workspace/a');
+    const input = {
+      liveSessions: [],
+      knownDirectories: new Set(['/workspace/a']),
+      isVSCode: false,
+    };
+
+    expect(projectSidebarCollection({ ...input, globalActiveSessions: [fork, project] }).map((entry) => entry.id)).toEqual(['project']);
+    expect(partitionSidebarSessions([fork], false).chatSessions).toEqual([]);
+
+    const promoted = {
+      ...fork,
+      metadata: { openchamber: {} },
+    };
+    expect(partitionSidebarSessions([promoted], false).chatSessions.map((entry) => entry.id)).toEqual(['fork']);
+  });
+
+  test('keeps a ranked managed root and its active child in the Chats hierarchy', () => {
+    const managedRoot = { ...session('managed-root', '/home/.config/openchamber/chats/2026-08-24/session-root'), time: { created: 1, updated: 1 } };
+    const managedChild = {
+      ...session('managed-child', '/home/.config/openchamber/chats/2026-08-24/session-root'),
+      parentID: 'managed-root',
+      time: { created: 2, updated: 2 },
+    };
+    const projectRoot = { ...session('project-root', '/workspace/a'), time: { created: 3, updated: 3 } };
+
+    const projection = buildSidebarSessionProjection({
+      globalActiveSessions: [projectRoot, managedRoot, managedChild],
+      liveSessions: [],
+      knownDirectories: new Set(['/workspace/a']),
+      isVSCode: false,
+      pinnedSessionIds: new Set(),
+      sessionOrderRanks: new Map([['managed-root', 10]]),
+    });
+
+    expect(projection.projectSessions.map((entry) => entry.id)).toEqual(['project-root']);
+    expect(projection.chatSessions.map((entry) => entry.id)).toEqual(['managed-root', 'managed-child']);
+    expect(projection.orderedSessions.map((entry) => entry.id)).toEqual(['managed-root', 'managed-child', 'project-root']);
+    expect(projection.childrenMap.get('managed-root')?.map((entry) => entry.id)).toEqual(['managed-child']);
   });
 });
 

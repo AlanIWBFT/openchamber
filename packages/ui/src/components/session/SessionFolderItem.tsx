@@ -4,7 +4,8 @@ import type { SessionFolder } from '@/stores/useSessionFoldersStore';
 import { useI18n } from '@/lib/i18n';
 import { Icon } from "@/components/icon/Icon";
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { CollapsedActivityIndicator, type CollapsedActivityState } from './sidebar/sessions/collapsedActivityIndicator';
+import { CollapsedActivityIndicator } from './sidebar/sessions/collapsedActivityIndicator';
+import type { CollapsedActivityState } from './sidebar/sessions/collapsedActivityState';
 
 interface SessionFolderItemProps<TSessionNode> {
   folder: SessionFolder;
@@ -56,9 +57,7 @@ const SessionFolderItemBase = <TSessionNode,>({
   onToggle,
   onRename,
   onDelete,
-   children,
-  groupDirectory,
-  projectId,
+  children,
   mobileVariant = false,
   alwaysShowActions = mobileVariant,
   isRenaming = false,

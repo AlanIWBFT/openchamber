@@ -5,6 +5,7 @@ import { formatDirectoryName } from '@/lib/utils';
 import type { WorktreeMetadata } from '@/types/worktree';
 import { SidebarActivitySections } from './SidebarActivitySections';
 import { deriveRecentActivitySections, type RecentSessionLocation } from './activitySections';
+import type { ActivityItem } from './SidebarActivitySections';
 import type { SessionTreeItemProps } from '../sessions/SessionTreeItem';
 import type { SessionNode } from '../types';
 import { formatProjectLabel, normalizePath } from '../utils';
@@ -29,6 +30,10 @@ type Props = {
   openSidebarMenuKey: string | null;
   mobileVariant: boolean;
   alwaysShowActions: boolean;
+  chatSessions: Session[];
+  renderChatsSection: (items: ActivityItem[]) => React.ReactNode;
+  onNewChat: () => void;
+  showRecentSection: boolean;
 } & Pick<SessionTreeItemProps,
   | 'setEditingId'
   | 'setEditTitle'
@@ -59,6 +64,8 @@ export const RecentSessionSection: React.FC<Props> = (props) => {
     childrenMap,
     pinnedSessionIds,
     recentSessions,
+    chatSessions,
+    showRecentSection,
   } = props;
   const { t } = useI18n();
   const sessionLocationById = React.useMemo(() => {
@@ -104,15 +111,28 @@ export const RecentSessionSection: React.FC<Props> = (props) => {
     }),
     [childrenMap],
   );
-  const sections = React.useMemo(() => deriveRecentActivitySections({
+  const recentSections = React.useMemo(() => deriveRecentActivitySections({
     sessions: recentSessions,
     getSessionLocation,
     getSessionNode,
     query: hasSessionSearchQuery ? normalizedSessionSearchQuery : '',
   }), [getSessionLocation, getSessionNode, hasSessionSearchQuery, normalizedSessionSearchQuery, recentSessions]);
+  const sections = React.useMemo(() => [
+    {
+      key: 'chats' as const,
+      title: t('sessions.sidebar.activity.chatsTitle'),
+      items: chatSessions.map((session) => ({
+        node: getSessionNode(session),
+        projectId: null,
+        groupDirectory: session.directory ?? null,
+        secondaryMeta: null,
+      })),
+    },
+    ...(showRecentSection ? recentSections.map((section) => ({ ...section, title: t('sessions.sidebar.activity.recentTitle') })) : []),
+  ], [chatSessions, getSessionNode, recentSections, showRecentSection, t]);
   return (
     <SidebarActivitySections
-      sections={sections.map((section) => ({ ...section, title: t('sessions.sidebar.activity.recentTitle') }))}
+      sections={sections}
       variant="section"
       isDesktopShellRuntime={isDesktopShellRuntime}
       pinnedSessionIds={pinnedSessionIds}
@@ -126,6 +146,8 @@ export const RecentSessionSection: React.FC<Props> = (props) => {
       openSidebarMenuKey={props.openSidebarMenuKey}
       mobileVariant={props.mobileVariant}
       alwaysShowActions={props.alwaysShowActions}
+      onNewChat={props.onNewChat}
+      renderChatsSection={props.renderChatsSection}
       setEditingId={props.setEditingId}
       setEditTitle={props.setEditTitle}
       toggleParent={props.toggleParent}

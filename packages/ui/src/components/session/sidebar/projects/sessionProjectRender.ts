@@ -13,6 +13,14 @@ export type ProjectSection = {
   groups: SessionGroup[];
 };
 
+export const selectRenderedProjectSections = (
+  sections: ProjectSection[],
+  singleProjectMode: boolean,
+  singleProjectId: string | null,
+): ProjectSection[] => singleProjectMode
+  ? sections.filter((section) => section.project.id === singleProjectId)
+  : sections;
+
 type GroupRenderDescriptor = {
   group: SessionGroup;
   groupKey: string;

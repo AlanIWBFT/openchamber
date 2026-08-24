@@ -75,7 +75,6 @@ export const useSessionActions = (args: Args) => {
     setDeleteSessionConfirm,
     setEditingId,
     setEditTitle,
-    copiedSessionId,
     setCopiedSessionId,
   } = args;
 
@@ -155,7 +154,7 @@ export const useSessionActions = (args: Args) => {
     } catch {
       return false;
     }
-  }, []);
+  }, [setCopiedSessionId]);
 
   const handleShareSession = React.useCallback(async (session: Session) => {
     const result = await shareSession(session.id);
@@ -308,7 +307,7 @@ export const useSessionActions = (args: Args) => {
     handleDeleteSession,
     handleRestoreSession,
     confirmDeleteSession,
-  }), [copiedSessionId, handleCancelEdit, handleCopySessionId, handleCopyShareUrl, handleDeleteSession,
+  }), [handleCancelEdit, handleCopySessionId, handleCopyShareUrl, handleDeleteSession,
     handleRestoreSession, handleSaveEdit, handleSessionDoubleClick, handleSessionSelect, handleShareSession,
     handleUnshareSession, confirmDeleteSession]);
 };

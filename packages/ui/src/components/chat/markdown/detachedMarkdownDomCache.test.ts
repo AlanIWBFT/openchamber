@@ -5,7 +5,7 @@ import { DetachedMarkdownDomCache, type DetachedMarkdownDom } from './detachedMa
 
 Object.assign(globalThis, { document: new Window().document });
 
-const keyFor = ({ scope, id, locale }: DetachedMarkdownDom) => ({ scope, id, locale });
+const keyFor = ({ scope, id, locale, directory }: DetachedMarkdownDom) => ({ scope, id, locale, directory });
 
 const createEntry = (
   document: Document,
@@ -21,6 +21,7 @@ const createEntry = (
     scope: `runtime:${sessionId}`,
     id: `${messageId}:${partId}`,
     locale: 'en',
+    directory: '/repo-a',
     fragment,
   };
 };
@@ -51,11 +52,13 @@ describe('DetachedMarkdownDomCache', () => {
       scope: 'runtime:session-a',
       id: 'message-2:part',
       locale: 'en',
+      directory: '/repo-a',
     })).toBeNull();
     expect(cache.take({
       scope: 'runtime:session-c',
       id: 'message-5:part',
       locale: 'en',
+      directory: '/repo-a',
     })).not.toBeNull();
   });
 
@@ -73,6 +76,15 @@ describe('DetachedMarkdownDomCache', () => {
     expect(cache.stats()).toEqual({ sessions: 2, entries: 2 });
     expect(cache.take(keyFor(otherRuntime))).not.toBeNull();
     expect(cache.take(keyFor(replacement))?.firstChild).toBe(replacementNode);
+  });
+
+  test('does not restore file-link DOM under another directory', () => {
+    const cache = new DetachedMarkdownDomCache({ maxSessions: 2, maxEntriesPerSession: 2 });
+    const entry = createEntry(document, 'session', 'message', 'part');
+
+    cache.store(entry);
+
+    expect(cache.take({ ...keyFor(entry), directory: '/repo-b' })).toBeNull();
   });
 
   test('refreshes session LRU and clears all entries', () => {
