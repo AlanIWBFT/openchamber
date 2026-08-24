@@ -49,6 +49,7 @@ import type { SessionContextUsage } from '@/stores/types/sessionTypes';
 import { DesktopHostSwitcherDialog } from '@/components/desktop/DesktopHostSwitcher';
 import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
 import { SessionSwitcherDropdown } from '@/components/session/SessionSwitcherDropdown';
+import { SessionTabsStrip } from './SessionTabsStrip';
 import { canUseElectronDesktopIPC, invokeDesktop, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag, type UpdateInfo } from '@/lib/desktop';
 import { desktopHostsGet, redactSensitiveUrl } from '@/lib/desktopHosts';
 import {
@@ -1572,7 +1573,7 @@ export const Header: React.FC = () => {
               </span>
             ) : null}
           </div>
-        ) : (
+        ) : isVSCode ? (
           <div className="app-region-no-drag mr-3 flex min-w-0 max-w-full items-center gap-0.5 py-0.5 -my-0.5 text-left">
             {!isSidebarOpen ? (
               <SessionSwitcherDropdown align="start">
@@ -1585,6 +1586,154 @@ export const Header: React.FC = () => {
                 </button>
               </SessionSwitcherDropdown>
             ) : null}
+            <div className="flex min-w-0 flex-col justify-center px-1">
+              {isRenamingHeaderSession ? (
+                <form
+                  ref={headerRenameFormRef}
+                  className="flex w-full min-w-0 items-center gap-2 leading-tight"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveHeaderSessionRename();
+                  }}
+                >
+                  <input
+                    value={headerSessionTitleDraft}
+                    onChange={(event) => setHeaderSessionTitleDraft(event.target.value)}
+                    autoFocus
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === 'Escape') {
+                        setIsRenamingHeaderSession(false);
+                      }
+                    }}
+                    placeholder={t('sessions.sidebar.session.menu.rename')}
+                    className="min-w-0 flex-1 bg-transparent typography-ui-label text-[14px] font-normal leading-tight outline-none placeholder:text-muted-foreground"
+                  />
+                  <button
+                    type="submit"
+                    aria-label={t('sessions.sidebar.session.rename.save')}
+                    title={t('sessions.sidebar.session.rename.save')}
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                  >
+                    <Icon name="check" className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsRenamingHeaderSession(false)}
+                    aria-label={t('sessions.sidebar.session.rename.cancel')}
+                    title={t('sessions.sidebar.session.rename.cancel')}
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                  >
+                    <Icon name="close" className="size-4" />
+                  </button>
+                </form>
+              ) : (
+                <span className="truncate typography-ui-label text-[14px] font-normal leading-tight text-foreground max-w-full">
+                  {isNewSessionDraftOpen ? t('sessions.switcher.draftTitle') : currentSessionTitle}
+                </span>
+              )}
+              {showHeaderMetaRow ? (
+                <span className="flex min-w-0 max-w-full items-center gap-1.5 truncate typography-micro text-[10.5px] font-normal leading-tight text-muted-foreground/75">
+                  {activeProjectLabel ? <span className="truncate">{activeProjectLabel}</span> : null}
+                  {currentBranchLabel ? (
+                    <span className="inline-flex min-w-0 items-center gap-0.5">
+                      <Icon name="git-branch" className="h-3 w-3 flex-shrink-0 text-muted-foreground/70" />
+                      <span className="truncate">{currentBranchLabel}</span>
+                    </span>
+                  ) : null}
+                  {!isNewSessionDraftOpen && worktreeBadgeKind ? (
+                    <span className={cn(
+                      "inline-flex min-w-0 items-center gap-0.5",
+                      worktreeBadgeKind === 'attention' || worktreeBadgeKind === 'invalid' || worktreeBadgeKind === 'missing' ? 'text-status-warning' : 'text-muted-foreground/60'
+                    )}>
+                      <Icon name="alert" className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">{worktreeBadge}</span>
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
+            </div>
+            <div className={cn(
+              'flex h-[18px] shrink-0 items-center justify-center',
+              // Top-aligned only when the title has a metadata line under it;
+              // alone, the title is centred and the button must follow.
+              showHeaderMetaRow ? 'self-start' : 'self-center',
+            )}>
+              {currentSessionId && !isNewSessionDraftOpen && !isRenamingHeaderSession ? (
+                <DropdownMenu
+                  open={isHeaderSessionMenuOpen}
+                  onOpenChange={setIsHeaderSessionMenuOpen}
+                  onOpenChangeComplete={(open) => {
+                    if (!open && pendingHeaderRenameRef.current) {
+                      pendingHeaderRenameRef.current = false;
+                      beginHeaderSessionRename();
+                    }
+                  }}
+                >
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="xs" className="h-[18px] w-6 px-0 text-muted-foreground hover:bg-transparent hover:text-foreground" aria-label={t('header.sessionActions.openAria')}>
+                      <Icon name="more" className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-[190px]">
+                    <DropdownMenuItem onClick={() => { pendingHeaderRenameRef.current = true; }}><Icon name="pencil-ai" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.rename')}</DropdownMenuItem>
+                    <DropdownMenuItem onClick={copyCurrentSessionId}><Icon name="file-copy" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.copyId')}</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {currentSession?.shareUrl ? (
+                      <>
+                        <DropdownMenuItem onClick={copyCurrentSessionShareUrl}><Icon name="file-copy" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.copyLink')}</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => void unshareCurrentSession()}><Icon name="link-unlink-m" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.unshare')}</DropdownMenuItem>
+                      </>
+                    ) : (
+                      <DropdownMenuItem onClick={() => void shareCurrentSession()}><Icon name="share-2" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.share')}</DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => void exportCurrentSession()}><Icon name="download" className="mr-2 size-4" />{t('sessions.sidebar.session.menu.exportMarkdown')}</DropdownMenuItem>
+                    {!isVSCode && !isChatContext && currentSession && !currentSession.parentId ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="block">
+                            <DropdownMenuItem
+                              disabled={!sessionDirectory || isCurrentSessionActive || isCurrentSessionMovingToWorktree}
+                              onClick={moveCurrentSessionToWorktree}
+                              className="w-full"
+                            >
+                              <Icon name="folder-shared" className="mr-2 size-4" />
+                              {t('sessions.sidebar.session.menu.moveToWorktree')}
+                            </DropdownMenuItem>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-72">
+                          {isCurrentSessionMovingToWorktree
+                            ? t('sessions.sidebar.session.moveToWorktree.tooltipMoving')
+                            : isCurrentSessionActive
+                              ? t('sessions.sidebar.session.moveToWorktree.tooltipBusy')
+                              : t('sessions.sidebar.session.moveToWorktree.tooltip')}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setPendingHeaderRetentionAction('archive')}><Icon name="inbox-archive" className="mr-2 size-4" />{t('sessions.sidebar.bulkActions.archive')}</DropdownMenuItem>
+                    <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setPendingHeaderRetentionAction('delete')}><Icon name="delete-bin" className="mr-2 size-4" />{t('sessions.sidebar.bulkActions.delete')}</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="app-region-no-drag flex h-full min-w-0 flex-1 items-center gap-0.5 text-left">
+            {!isSidebarOpen ? (
+              <SessionSwitcherDropdown align="start">
+                <button
+                  type="button"
+                  className={desktopHeaderIconButtonClass}
+                  aria-label={t('sessions.switcher.openAria')}
+                >
+                  <Icon name="history" className="h-[18px] w-[18px]" />
+                </button>
+              </SessionSwitcherDropdown>
+            ) : null}
+            <SessionTabsStrip>
             <div className="flex min-w-0 flex-col justify-center px-1">
               {isRenamingHeaderSession ? (
                 <form
@@ -1717,6 +1866,7 @@ export const Header: React.FC = () => {
                 </DropdownMenu>
               ) : null}
             </div>
+            </SessionTabsStrip>
           </div>
         )}
 
