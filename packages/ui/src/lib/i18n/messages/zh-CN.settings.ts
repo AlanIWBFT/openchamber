@@ -2008,8 +2008,6 @@ export const settingsDict = {
   'settings.openchamber.visual.field.stickyUserHeader': '固定用户消息头',
   'settings.openchamber.visual.field.promptNavigatorEnabledAria': '提示词导航',
   'settings.openchamber.visual.field.promptNavigatorEnabled': '提示词导航',
-  'settings.openchamber.visual.field.expandedEditorToolbarAria': 'Always show editor toolbar',
-  'settings.openchamber.visual.field.expandedEditorToolbar': 'Always show editor toolbar (docked under the file tabs)',
   'settings.openchamber.visual.field.autoSaveEnabledAria': '自动保存文件',
   'settings.openchamber.visual.field.autoSaveEnabled': '自动保存文件',
   'settings.openchamber.visual.field.autoSaveEnabledInfo': '停止输入后自动保存文件编辑内容。关闭后需手动保存。',

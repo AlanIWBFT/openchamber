@@ -2031,8 +2031,6 @@ export const settingsDict = {
   'settings.openchamber.visual.field.stickyUserHeader': 'Sticky User Header',
   'settings.openchamber.visual.field.promptNavigatorEnabledAria': 'Prompt navigator',
   'settings.openchamber.visual.field.promptNavigatorEnabled': 'Prompt Navigator',
-  'settings.openchamber.visual.field.expandedEditorToolbarAria': 'Always show editor toolbar',
-  'settings.openchamber.visual.field.expandedEditorToolbar': 'Always show editor toolbar (docked under the file tabs)',
   'settings.openchamber.visual.field.autoSaveEnabledAria': 'Auto-save files',
   'settings.openchamber.visual.field.autoSaveEnabled': 'Auto-save files',
   'settings.openchamber.visual.field.autoSaveEnabledInfo': 'Automatically save file edits after you stop typing. Disable to require manual save.',

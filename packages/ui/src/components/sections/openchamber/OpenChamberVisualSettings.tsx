@@ -266,7 +266,7 @@ const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' 
     return mode === 'markdown' ? 'markdown' : 'plain';
 };
 
-type VisibleSetting = 'sessionAssist' | 'sessionGoal' | 'theme' | 'windowControlsPosition' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'fontSize' | 'terminalFontSize' | 'terminalShell' | 'terminalLoginShell' | 'editorFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'chatRenderMode' | 'messageTransport' | 'activityRenderMode' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'promptNavigatorEnabled' | 'wideChatLayout' | 'codeBlockLineWrap' | 'splitAssistantMessageActions' | 'subagentReadOnlyBanner' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'fileViewerPreview' | 'reasoning' | 'showToolFileIcons' | 'showTurnChangedFiles' | 'expandedTools' | 'followUpBehavior' | 'terminalQuickKeys' | 'fileEditorKeymap' | 'persistDraft' | 'inputSpellcheck' | 'reportUsage' | 'expandedEditorToolbar' | 'autoSaveEnabled' | 'sessionTabs';
+type VisibleSetting = 'sessionAssist' | 'sessionGoal' | 'theme' | 'windowControlsPosition' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'fontSize' | 'terminalFontSize' | 'terminalShell' | 'terminalLoginShell' | 'editorFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'chatRenderMode' | 'messageTransport' | 'activityRenderMode' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'promptNavigatorEnabled' | 'wideChatLayout' | 'codeBlockLineWrap' | 'splitAssistantMessageActions' | 'subagentReadOnlyBanner' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'fileViewerPreview' | 'reasoning' | 'showToolFileIcons' | 'showTurnChangedFiles' | 'expandedTools' | 'followUpBehavior' | 'terminalQuickKeys' | 'fileEditorKeymap' | 'persistDraft' | 'inputSpellcheck' | 'reportUsage' | 'autoSaveEnabled' | 'sessionTabs';
 
 const WINDOW_CONTROLS_POSITION_OPTIONS: Array<{ id: DesktopWindowControlsPosition; labelKey: string }> = [
     { id: 'left', labelKey: 'settings.openchamber.desktopNetwork.option.windowControlsLeft' },
@@ -315,8 +315,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const promptNavigatorEnabled = useUIStore(state => state.promptNavigatorEnabled);
     const setStickyUserHeader = useUIStore(state => state.setStickyUserHeader);
     const setPromptNavigatorEnabled = useUIStore(state => state.setPromptNavigatorEnabled);
-    const expandedEditorToolbar = useUIStore(state => state.expandedEditorToolbar);
-    const setExpandedEditorToolbar = useUIStore(state => state.setExpandedEditorToolbar);
     const autoSaveEnabled = useUIStore(state => state.autoSaveEnabled);
     const setAutoSaveEnabled = useUIStore(state => state.setAutoSaveEnabled);
     const wideChatLayoutEnabled = useUIStore(state => state.wideChatLayoutEnabled);
@@ -500,11 +498,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         void updateDesktopSettings({ draftStartersVisible: enabled });
     }, [setDraftStartersVisible]);
 
-    const handleExpandedEditorToolbarChange = React.useCallback((enabled: boolean) => {
-        setExpandedEditorToolbar(enabled);
-        void updateDesktopSettings({ expandedEditorToolbar: enabled });
-    }, [setExpandedEditorToolbar]);
-
     const handleCollapsibleUserMessagesChange = React.useCallback((enabled: boolean) => {
         setCollapsibleUserMessages(enabled);
         void updateDesktopSettings({ collapsibleUserMessages: enabled });
@@ -623,7 +616,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         ? hasLocalizationSettings
         : (shouldShow('theme') || showWindowControlsPositionSetting || shouldShow('pwaInstallName') || shouldShow('pwaOrientation') || shouldShow('timeFormat') || shouldShow('weekStart'));
     const hasLayoutSettings = shouldShow('fontSize') || shouldShow('terminalFontSize') || shouldShow('editorFontSize') || shouldShow('spacing') || (shouldShow('inputBarOffset') && isMobile);
-    const hasNavigationSettings = (shouldShow('terminalQuickKeys') && !isMobile) || ((shouldShow('terminalShell') || shouldShow('terminalLoginShell')) && !isVSCode) || shouldShow('fileEditorKeymap') || shouldShow('autoSaveEnabled') || (shouldShow('expandedEditorToolbar') && !isVSCode) || (shouldShow('sessionTabs') && !isVSCode && !isMobile);
+    const hasNavigationSettings = (shouldShow('terminalQuickKeys') && !isMobile) || ((shouldShow('terminalShell') || shouldShow('terminalLoginShell')) && !isVSCode) || shouldShow('fileEditorKeymap') || shouldShow('autoSaveEnabled') || (shouldShow('sessionTabs') && !isVSCode && !isMobile);
     const hasBehaviorSettings = shouldShow('mermaidRendering')
         || (shouldShow('sessionGoal') && !isVSCode)
         || shouldShow('userMessageRendering')
@@ -1438,20 +1431,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 </SettingsRadioGroup>
                             </SettingsControlGroup>
                         )}
-                        {shouldShow('sessionTabs') && !isVSCode && !isMobile && (
-                            <SettingsControlGroup
-                                title={t('settings.openchamber.visual.field.sessionTabsGroup')}
-                                settingsItem="appearance.session-tabs"
-                            >
-                                <SettingsCheckboxRow
-                                    checked={sessionTabsEnabled}
-                                    onChange={setSessionTabsEnabled}
-                                    label={t('settings.openchamber.visual.field.sessionTabs')}
-                                    ariaLabel={t('settings.openchamber.visual.field.sessionTabsAria')}
-                                    info={t('settings.openchamber.visual.field.sessionTabsInfo')}
-                                />
-                            </SettingsControlGroup>
-                        )}
                         <div className={SETTINGS_OPTION_STACK_CLASS}>
                             {shouldShow('autoSaveEnabled') && (
                                 <SettingsCheckboxRow
@@ -1461,25 +1440,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                     ariaLabel={t('settings.openchamber.visual.field.autoSaveEnabledAria')}
                                     info={t('settings.openchamber.visual.field.autoSaveEnabledInfo')}
                                     settingsItem="appearance.auto-save-enabled"
-                                />
-                            )}
-                            {shouldShow('expandedEditorToolbar') && !isVSCode && (
-                                <SettingsCheckboxRow
-                                    checked={expandedEditorToolbar}
-                                    onChange={handleExpandedEditorToolbarChange}
-                                    label={t('settings.openchamber.visual.field.expandedEditorToolbar')}
-                                    ariaLabel={t('settings.openchamber.visual.field.expandedEditorToolbarAria')}
-                                    settingsItem="appearance.expanded-editor-toolbar"
-                                />
-                            )}
-                            {shouldShow('terminalQuickKeys') && !isMobile && (
-                                <SettingsCheckboxRow
-                                    checked={showTerminalQuickKeysOnDesktop}
-                                    onChange={setShowTerminalQuickKeysOnDesktop}
-                                    label={t('settings.openchamber.visual.field.terminalQuickKeys')}
-                                    ariaLabel={t('settings.openchamber.visual.field.terminalQuickKeysAria')}
-                                    settingsItem="appearance.terminal-quick-keys"
-                                    info={t('settings.openchamber.visual.field.terminalQuickKeysTooltip')}
                                 />
                             )}
                             {showTerminalShellSetting && (
@@ -1511,7 +1471,31 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                     settingsItem="appearance.terminal-login-shell"
                                 />
                             )}
+                            {shouldShow('terminalQuickKeys') && !isMobile && (
+                                <SettingsCheckboxRow
+                                    checked={showTerminalQuickKeysOnDesktop}
+                                    onChange={setShowTerminalQuickKeysOnDesktop}
+                                    label={t('settings.openchamber.visual.field.terminalQuickKeys')}
+                                    ariaLabel={t('settings.openchamber.visual.field.terminalQuickKeysAria')}
+                                    settingsItem="appearance.terminal-quick-keys"
+                                    info={t('settings.openchamber.visual.field.terminalQuickKeysTooltip')}
+                                />
+                            )}
                         </div>
+                        {shouldShow('sessionTabs') && !isVSCode && !isMobile && (
+                            <SettingsControlGroup
+                                title={t('settings.openchamber.visual.field.sessionTabsGroup')}
+                                settingsItem="appearance.session-tabs"
+                            >
+                                <SettingsCheckboxRow
+                                    checked={sessionTabsEnabled}
+                                    onChange={setSessionTabsEnabled}
+                                    label={t('settings.openchamber.visual.field.sessionTabs')}
+                                    ariaLabel={t('settings.openchamber.visual.field.sessionTabsAria')}
+                                    info={t('settings.openchamber.visual.field.sessionTabsInfo')}
+                                />
+                            </SettingsControlGroup>
+                        )}
                     </SettingsSection>
                 )}
 

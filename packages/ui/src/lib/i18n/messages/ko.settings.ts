@@ -2008,8 +2008,6 @@ export const settingsDict = {
   'settings.openchamber.visual.field.stickyUserHeader': '고정 사용자 헤더',
   'settings.openchamber.visual.field.promptNavigatorEnabledAria': '프롬프트 탐색기',
   'settings.openchamber.visual.field.promptNavigatorEnabled': '프롬프트 탐색기',
-  'settings.openchamber.visual.field.expandedEditorToolbarAria': 'Always show editor toolbar',
-  'settings.openchamber.visual.field.expandedEditorToolbar': 'Always show editor toolbar (docked under the file tabs)',
   'settings.openchamber.visual.field.autoSaveEnabledAria': '파일 자동 저장',
   'settings.openchamber.visual.field.autoSaveEnabled': '파일 자동 저장',
   'settings.openchamber.visual.field.autoSaveEnabledInfo': '입력을 멈춘 후 파일 편집 내용을 자동으로 저장합니다. 끄면 수동으로 저장해야 합니다.',

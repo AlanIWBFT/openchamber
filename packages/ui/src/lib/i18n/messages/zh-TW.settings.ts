@@ -1915,8 +1915,6 @@ export const settingsDict = {
   'settings.openchamber.visual.field.stickyUserHeader': '固定使用者訊息標頭',
   'settings.openchamber.visual.field.promptNavigatorEnabledAria': '提示詞導覽',
   'settings.openchamber.visual.field.promptNavigatorEnabled': '提示詞導覽',
-  'settings.openchamber.visual.field.expandedEditorToolbarAria': 'Always show editor toolbar',
-  'settings.openchamber.visual.field.expandedEditorToolbar': 'Always show editor toolbar (docked under the file tabs)',
   'settings.openchamber.visual.field.autoSaveEnabledAria': '自動儲存檔案',
   'settings.openchamber.visual.field.autoSaveEnabled': '自動儲存檔案',
   'settings.openchamber.visual.field.autoSaveEnabledInfo': '停止輸入後自動儲存檔案編輯內容。關閉後需手動儲存。',

@@ -2008,8 +2008,6 @@ export const settingsDict = {
   "settings.openchamber.visual.field.stickyUserHeader": "Encabezado de usuario fijo",
   "settings.openchamber.visual.field.promptNavigatorEnabledAria": "Navegador de prompts",
   "settings.openchamber.visual.field.promptNavigatorEnabled": "Navegador de prompts",
-  "settings.openchamber.visual.field.expandedEditorToolbarAria": "Mostrar siempre la barra de herramientas del editor",
-  "settings.openchamber.visual.field.expandedEditorToolbar": "Mostrar siempre la barra de herramientas del editor (anclada bajo las pestañas)",
   "settings.openchamber.visual.field.autoSaveEnabledAria": "Guardado automático de archivos",
   "settings.openchamber.visual.field.autoSaveEnabled": "Guardado automático de archivos",
   "settings.openchamber.visual.field.autoSaveEnabledInfo": "Guarda automáticamente las ediciones del archivo después de dejar de escribir. Desactívalo para exigir un guardado manual.",

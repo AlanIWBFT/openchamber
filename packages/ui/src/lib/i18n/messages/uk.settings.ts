@@ -2008,8 +2008,6 @@ export const settingsDict = {
   "settings.openchamber.visual.field.stickyUserHeader": "Закріплений заголовок користувача",
   "settings.openchamber.visual.field.promptNavigatorEnabledAria": "Навігатор промптів",
   "settings.openchamber.visual.field.promptNavigatorEnabled": "Навігатор промптів",
-  "settings.openchamber.visual.field.expandedEditorToolbarAria": "Завжди показувати панель інструментів редактора",
-  "settings.openchamber.visual.field.expandedEditorToolbar": "Завжди показувати панель інструментів редактора (закріплена під вкладками)",
   "settings.openchamber.visual.field.autoSaveEnabledAria": "Автозбереження файлів",
   "settings.openchamber.visual.field.autoSaveEnabled": "Автозбереження файлів",
   "settings.openchamber.visual.field.autoSaveEnabledInfo": "Автоматично зберігати зміни у файлі після того, як ви припините друкувати. Вимкніть, щоб зберігати лише вручну.",

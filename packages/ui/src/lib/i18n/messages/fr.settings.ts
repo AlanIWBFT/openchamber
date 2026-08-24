@@ -1915,8 +1915,6 @@ export const settingsDict = {
   'settings.openchamber.visual.field.stickyUserHeader': 'En-tête utilisateur collant',
   'settings.openchamber.visual.field.promptNavigatorEnabledAria': 'Navigateur de prompts',
   'settings.openchamber.visual.field.promptNavigatorEnabled': 'Navigateur de prompts',
-  'settings.openchamber.visual.field.expandedEditorToolbarAria': 'Toujours afficher la barre d’outils de l’éditeur',
-  'settings.openchamber.visual.field.expandedEditorToolbar': 'Toujours afficher la barre d’outils de l’éditeur (ancrée sous les onglets de fichiers)',
   'settings.openchamber.visual.field.autoSaveEnabledAria': 'Enregistrement automatique des fichiers',
   'settings.openchamber.visual.field.autoSaveEnabled': 'Enregistrement automatique des fichiers',
   'settings.openchamber.visual.field.autoSaveEnabledInfo': 'Enregistre automatiquement les modifications après l’arrêt de la saisie. Désactivez pour exiger un enregistrement manuel.',

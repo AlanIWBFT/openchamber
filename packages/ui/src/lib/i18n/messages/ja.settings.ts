@@ -2041,8 +2041,6 @@ export const settingsDict = {
   'settings.openchamber.visual.field.stickyUserHeader': 'ユーザーヘッダー固定',
   'settings.openchamber.visual.field.promptNavigatorEnabledAria': 'プロンプトナビゲーター',
   'settings.openchamber.visual.field.promptNavigatorEnabled': 'プロンプトナビゲーター',
-  'settings.openchamber.visual.field.expandedEditorToolbarAria': 'エディターツールバーを常に表示',
-  'settings.openchamber.visual.field.expandedEditorToolbar': 'エディターツールバーを常に表示（ファイルタブの下にドッキング）',
   'settings.openchamber.visual.field.autoSaveEnabledAria': 'ファイルの自動保存',
   'settings.openchamber.visual.field.autoSaveEnabled': 'ファイルの自動保存',
   'settings.openchamber.visual.field.autoSaveEnabledInfo': '入力を止めた後にファイルの編集内容を自動保存します。無効にすると手動保存が必要になります。',

@@ -787,7 +787,6 @@ interface UIStore {
   collapsibleUserMessages: boolean;
   stickyUserHeader: boolean;
   promptNavigatorEnabled: boolean;
-  expandedEditorToolbar: boolean;
   showSplitAssistantMessageActions: boolean;
   allowPromptingSubagentSessions: boolean;
   isExpandedInput: boolean;
@@ -960,7 +959,6 @@ interface UIStore {
   setCollapsibleUserMessages: (value: boolean) => void;
   setStickyUserHeader: (value: boolean) => void;
   setPromptNavigatorEnabled: (value: boolean) => void;
-  setExpandedEditorToolbar: (value: boolean) => void;
   setShowSplitAssistantMessageActions: (value: boolean) => void;
   setAllowPromptingSubagentSessions: (value: boolean) => void;
   viewPagerPage: 'left' | 'center' | 'right';
@@ -1121,7 +1119,6 @@ export const useUIStore = create<UIStore>()(
         collapsibleUserMessages: true,
         stickyUserHeader: false,
         promptNavigatorEnabled: true,
-        expandedEditorToolbar: false,
         showSplitAssistantMessageActions: false,
         allowPromptingSubagentSessions: false,
         draftStartersVisible: true,
@@ -2357,9 +2354,6 @@ export const useUIStore = create<UIStore>()(
         setPromptNavigatorEnabled: (value) => {
           set({ promptNavigatorEnabled: value });
         },
-        setExpandedEditorToolbar: (value: boolean) => {
-          set({ expandedEditorToolbar: value });
-        },
         setShowSplitAssistantMessageActions: (value) => {
           set({ showSplitAssistantMessageActions: value });
         },
@@ -2411,7 +2405,7 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createDeferredSafeJSONStorage(),
-        version: 16,
+        version: 17,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
             return persistedState;
@@ -2425,6 +2419,11 @@ export const useUIStore = create<UIStore>()(
           if (version < 16) {
             delete state.activeMainTab;
             delete state.activeSurface;
+          }
+
+          // v16 -> v17: the editor toolbar is always docked; the preference is gone.
+          if (version < 17) {
+            delete state.expandedEditorToolbar;
           }
 
           // v13 -> v14: the separate 'preview' surface merged into 'browser'.
@@ -2714,7 +2713,6 @@ export const useUIStore = create<UIStore>()(
           collapsibleUserMessages: state.collapsibleUserMessages,
           stickyUserHeader: state.stickyUserHeader,
           promptNavigatorEnabled: state.promptNavigatorEnabled,
-          expandedEditorToolbar: state.expandedEditorToolbar,
           showSplitAssistantMessageActions: state.showSplitAssistantMessageActions,
           allowPromptingSubagentSessions: state.allowPromptingSubagentSessions,
           draftStartersVisible: state.draftStartersVisible,

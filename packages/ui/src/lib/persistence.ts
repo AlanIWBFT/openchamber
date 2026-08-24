@@ -578,7 +578,6 @@ const materializeAuthoritativeUiSettings = (settings: DesktopSettings): DesktopS
     messageStreamTransport: 'auto',
     stickyUserHeader: defaults.stickyUserHeader,
     promptNavigatorEnabled: defaults.promptNavigatorEnabled,
-    expandedEditorToolbar: defaults.expandedEditorToolbar,
     wideChatLayoutEnabled: defaults.wideChatLayoutEnabled,
     showSplitAssistantMessageActions: defaults.showSplitAssistantMessageActions,
     draftStartersVisible: defaults.draftStartersVisible,
@@ -841,9 +840,6 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   }
   if (typeof settings.promptNavigatorEnabled === 'boolean' && settings.promptNavigatorEnabled !== store.promptNavigatorEnabled) {
     store.setPromptNavigatorEnabled(settings.promptNavigatorEnabled);
-  }
-  if (typeof settings.expandedEditorToolbar === 'boolean' && settings.expandedEditorToolbar !== store.expandedEditorToolbar) {
-    store.setExpandedEditorToolbar(settings.expandedEditorToolbar);
   }
   if (typeof settings.wideChatLayoutEnabled === 'boolean' && settings.wideChatLayoutEnabled !== store.wideChatLayoutEnabled) {
     store.setWideChatLayoutEnabled(settings.wideChatLayoutEnabled);
@@ -1510,9 +1506,6 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (typeof candidate.promptNavigatorEnabled === 'boolean') {
     result.promptNavigatorEnabled = candidate.promptNavigatorEnabled;
-  }
-  if (typeof candidate.expandedEditorToolbar === 'boolean') {
-    result.expandedEditorToolbar = candidate.expandedEditorToolbar;
   }
   if (typeof candidate.wideChatLayoutEnabled === 'boolean') {
     result.wideChatLayoutEnabled = candidate.wideChatLayoutEnabled;
