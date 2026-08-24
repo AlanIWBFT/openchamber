@@ -1453,7 +1453,7 @@ const inheritUserShellEnv = async () => {
   // The server would otherwise snapshot the same shell again, synchronously,
   // on this thread. Windows keeps the server's own registry-based snapshot:
   // the desktop loader only knows PATH there.
-  if (process.platform !== 'win32') provideLoginShellEnvSnapshot(shellEnv);
+  provideLoginShellEnvSnapshot(shellEnv);
   if (!shellEnv) return;
 
   const homeDir = os.homedir();
