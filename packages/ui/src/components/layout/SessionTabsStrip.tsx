@@ -26,7 +26,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { dropdownMenuItemClass, dropdownMenuPopupClass, dropdownMenuSeparatorClass } from '@/components/ui/dropdown-menu.styles';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Icon } from '@/components/icon/Icon';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
@@ -36,15 +35,6 @@ import { useGlobalSessionsStore, resolveGlobalSessionDirectory } from '@/stores/
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useGlobalSessionStatus } from '@/sync/sync-context';
 import { useSessionUnseenCount } from '@/sync/notification-store';
-import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useGitAllBranches } from '@/stores/useGitStore';
-import { getGitHubPrStatusKey, usePrVisualSummary } from '@/stores/useGitHubPrStatusStore';
-import {
-  formatProjectLabel,
-  formatSessionCompactDateLabel,
-  formatSessionDateLabel,
-  normalizePath,
-} from '@/components/session/sidebar/utils';
 
 const restrictToXAxis: Modifier = ({ transform }) => ({ ...transform, y: 0 });
 
@@ -83,96 +73,6 @@ const contextComponents: SessionTabMenuComponents = {
   ),
 };
 
-/** Resolve the project a session directory belongs to, for the hover tooltip. */
-const useTabProjectLabel = (directory: string | null): string | null =>
-  useProjectsStore(React.useCallback((state) => {
-    if (!directory) return null;
-    const dir = normalizePath(directory);
-    if (!dir) return null;
-    for (const project of state.projects) {
-      const path = normalizePath(project.path);
-      if (path && (dir === path || dir.startsWith(`${path}/`))) {
-        return formatProjectLabel(project.label?.trim() || path.split('/').pop() || path);
-      }
-    }
-    return null;
-  }, [directory]));
-
-/**
- * Tooltip body for one tab. Lives in its own component so the branch,
- * worktree, PR and project subscriptions exist only while the tooltip is
- * open — the resting tab pays only for its status dot.
- */
-const SessionTabTooltipBody: React.FC<{ tab: SessionTab; title: string }> = ({ tab, title }) => {
-  const { t } = useI18n();
-  const directory = normalizePath(resolveGlobalSessionDirectory(tab.session) ?? null);
-  const projectLabel = useTabProjectLabel(directory);
-  const worktreeMetadata = useSessionUIStore((state) => state.worktreeMetadata);
-  const allBranches = useGitAllBranches();
-  const branchLabel = React.useMemo(() => {
-    const meta = worktreeMetadata.get(tab.id);
-    if (meta?.branch?.trim()) return meta.branch.trim();
-    if (directory) return allBranches.get(directory)?.trim() || null;
-    return null;
-  }, [worktreeMetadata, allBranches, tab.id, directory]);
-  const prSummary = usePrVisualSummary(directory && branchLabel ? getGitHubPrStatusKey(directory, branchLabel) : null);
-  const prIconColor = prSummary ? `var(--pr-${prSummary.visualState})` : undefined;
-  const prStatusLabel = React.useMemo(() => {
-    if (!prSummary) return null;
-    switch (prSummary.visualState) {
-      case 'merged':
-        return t('sessions.sidebar.group.pr.status.merged');
-      case 'open':
-        return (prSummary.canMerge === true || prSummary.mergeableState === 'clean' || prSummary.checks?.state === 'success')
-          ? t('sessions.sidebar.group.pr.status.readyToMerge')
-          : t('sessions.sidebar.group.pr.status.open');
-      case 'blocked':
-        return prSummary.mergeableState === 'dirty'
-          ? t('sessions.sidebar.group.pr.status.mergeConflicts')
-          : t('sessions.sidebar.group.pr.status.mergeBlocked');
-      case 'draft':
-        return t('sessions.sidebar.group.pr.status.draft');
-      case 'closed':
-        return t('sessions.sidebar.group.pr.status.closed');
-      default:
-        return null;
-    }
-  }, [prSummary, t]);
-  const sessionTimestamp = tab.session.time?.updated || tab.session.time?.created || 0;
-  return (
-    <div className="flex min-w-44 flex-col gap-1.5 text-left text-xs">
-      <div className="flex items-center justify-between gap-3">
-        <span className="min-w-0 truncate font-medium text-foreground">{title}</span>
-        {sessionTimestamp ? (
-          <span className="flex-shrink-0 text-muted-foreground" title={formatSessionDateLabel(sessionTimestamp)}>
-            {formatSessionCompactDateLabel(sessionTimestamp)}
-          </span>
-        ) : null}
-      </div>
-      {projectLabel ? (
-        <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-          <Icon name="folder" className="h-3 w-3 flex-shrink-0" />
-          <span className="min-w-0 truncate">{projectLabel}</span>
-        </div>
-      ) : null}
-      {branchLabel ? (
-        <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-          <Icon name="git-branch" className="h-3 w-3 flex-shrink-0" style={prIconColor ? { color: prIconColor } : undefined} />
-          <span className="min-w-0 truncate">{branchLabel}</span>
-        </div>
-      ) : null}
-      {prSummary && prStatusLabel ? (
-        <div className="flex min-w-0 items-center gap-1.5">
-          <Icon name="git-pull-request" className="h-3 w-3 flex-shrink-0" style={prIconColor ? { color: prIconColor } : undefined} />
-          <span className="min-w-0 truncate" style={prIconColor ? { color: prIconColor } : undefined}>
-            #{prSummary.number} · {prStatusLabel}
-          </span>
-        </div>
-      ) : null}
-    </div>
-  );
-};
-
 /**
  * One tab, active or not. The tab drags to reorder; the menu and close
  * controls sit in a hover-revealed overlay at the tab's end (menu first,
@@ -203,7 +103,6 @@ const SessionTabItem: React.FC<{
 
   const title = tab.session.title?.trim() || t('sessions.sidebar.session.untitled');
   const overlayVisible = !suppressControls && (menuOpen || menuVisible);
-  const anyMenuOpen = menuOpen || contextMenuOpen;
 
   // Session state for the dot and the hover tooltip.
   const sessionStatus = useGlobalSessionStatus(tab.id);
@@ -238,9 +137,7 @@ const SessionTabItem: React.FC<{
         onOpenChange={setContextMenuOpen}
         onOpenChangeComplete={(open) => onMenuOpenChangeComplete?.(open)}
       >
-        <Tooltip delayDuration={700}>
-          <TooltipTrigger asChild>
-            <ContextMenu.Trigger
+        <ContextMenu.Trigger
               render={(triggerProps) => (
                 <div
                   {...triggerProps}
@@ -346,14 +243,7 @@ const SessionTabItem: React.FC<{
                   ) : null}
                 </div>
               )}
-            />
-          </TooltipTrigger>
-          {!anyMenuOpen && !isDragging ? (
-            <TooltipContent side="bottom" sideOffset={8} className="max-w-xs text-left">
-              <SessionTabTooltipBody tab={tab} title={title} />
-            </TooltipContent>
-          ) : null}
-        </Tooltip>
+        />
         <ContextMenu.Portal>
           <ContextMenu.Positioner className="app-region-no-drag z-50">
             <ContextMenu.Popup
