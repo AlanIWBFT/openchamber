@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Work status: the session cost now counts what its subagents spent, with a line under the context meter splitting the session's own cost from the subagents' share, and each subagent's cost shown next to it in the Subagents list. Previously a session that delegated most of its work looked far cheaper than it was.
 - **Chat context attachments:** everything you attach to a message — diff/file/plan comments, terminal selections, browser annotations, PR comments and failed checks, linked issues and PRs — now shows up in the conversation as a compact context card: a header naming the source, the captured content behind an expander, and your comment below it. Previously most of these arrived as a wall of raw text inside your message.
 - **Chat: comment on a reply.** Select text in a chat message and choose Comment to attach that quote with your note to the next message. The selection stays highlighted while you type, and the selection menu itself was restyled — Add to chat is now Add to input.
 - **Diff: comment like a review.** Hovering a line shows a + button in the gutter; clicking it, clicking a line, or dragging across lines opens the comment editor for that line or range. The comment editor and saved-comment cards now match the chat's comment style.
