@@ -1739,6 +1739,7 @@ export const Header: React.FC = () => {
                 <form
                   ref={headerRenameFormRef}
                   className="flex w-full min-w-0 items-center gap-2 leading-tight"
+                  onPointerDown={(event) => event.stopPropagation()}
                   onSubmit={(event) => {
                     event.preventDefault();
                     void saveHeaderSessionRename();
@@ -1755,7 +1756,7 @@ export const Header: React.FC = () => {
                       }
                     }}
                     placeholder={t('sessions.sidebar.session.menu.rename')}
-                    className="min-w-0 flex-1 bg-transparent typography-ui-label text-[14px] font-normal leading-tight outline-none placeholder:text-muted-foreground"
+                    className="min-w-0 flex-1 bg-transparent text-[13px] font-medium leading-4 outline-none placeholder:text-muted-foreground"
                   />
                   <button
                     type="submit"
@@ -1776,36 +1777,16 @@ export const Header: React.FC = () => {
                   </button>
                 </form>
               ) : (
-                <span className="truncate typography-ui-label text-[14px] font-normal leading-tight text-foreground max-w-full">
+                <span className="truncate text-[13px] font-medium leading-4 text-foreground max-w-full">
                   {isNewSessionDraftOpen ? t('sessions.switcher.draftTitle') : currentSessionTitle}
                 </span>
               )}
-              {showHeaderMetaRow ? (
-                <span className="flex min-w-0 max-w-full items-center gap-1.5 truncate typography-micro text-[10.5px] font-normal leading-tight text-muted-foreground/75">
-                  {activeProjectLabel ? <span className="truncate">{activeProjectLabel}</span> : null}
-                  {currentBranchLabel ? (
-                    <span className="inline-flex min-w-0 items-center gap-0.5">
-                      <Icon name="git-branch" className="h-3 w-3 flex-shrink-0 text-muted-foreground/70" />
-                      <span className="truncate">{currentBranchLabel}</span>
-                    </span>
-                  ) : null}
-                  {!isNewSessionDraftOpen && worktreeBadgeKind ? (
-                    <span className={cn(
-                      "inline-flex min-w-0 items-center gap-0.5",
-                      worktreeBadgeKind === 'attention' || worktreeBadgeKind === 'invalid' || worktreeBadgeKind === 'missing' ? 'text-status-warning' : 'text-muted-foreground/60'
-                    )}>
-                      <Icon name="alert" className="h-3 w-3 flex-shrink-0" />
-                      <span className="truncate">{worktreeBadge}</span>
-                    </span>
-                  ) : null}
-                </span>
-              ) : null}
             </div>
             <div className={cn(
               'flex h-[18px] shrink-0 items-center justify-center',
               // Top-aligned only when the title has a metadata line under it;
               // alone, the title is centred and the button must follow.
-              showHeaderMetaRow ? 'self-start' : 'self-center',
+              'self-center',
             )}>
               {currentSessionId && !isNewSessionDraftOpen && !isRenamingHeaderSession ? (
                 <DropdownMenu

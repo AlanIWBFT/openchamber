@@ -45,15 +45,16 @@ const ActiveTabShell: React.FC<{ id: string; children: React.ReactNode }> = ({ i
     <div
       ref={setNodeRef}
       style={{ transform: DndCSS.Translate.toString(transform), transition }}
-      className={cn('h-9 shrink-0 touch-none', isDragging && 'z-10 opacity-60')}
+      className={cn('session-tab-slot flex h-7 w-56 min-w-16 max-w-56 flex-shrink touch-none', isDragging && 'z-10 opacity-60')}
       data-active-session-tab
+      data-active="true"
       {...attributes}
       {...listeners}
     >
       <div
         role="tab"
         aria-selected
-        className="flex h-9 min-w-0 max-w-[340px] items-center rounded-[10px] bg-interactive-selection px-3"
+        className="flex h-7 w-full min-w-0 items-center rounded-md bg-interactive-selection px-2"
       >
         {children}
       </div>
@@ -85,7 +86,8 @@ const InactiveSessionTab: React.FC<{
     <div
       ref={setNodeRef}
       style={{ transform: DndCSS.Translate.toString(transform), transition }}
-      className={cn('h-8 shrink-0', isDragging && 'z-10 opacity-60')}
+      className={cn('session-tab-slot flex h-7 w-56 min-w-10 max-w-56 flex-shrink', isDragging && 'z-10 opacity-60')}
+      data-active="false"
       {...attributes}
       {...listeners}
     >
@@ -107,13 +109,19 @@ const InactiveSessionTab: React.FC<{
           }
         }}
         className={cn(
-          'group/session-tab flex h-8 max-w-[200px] cursor-pointer touch-none select-none items-center rounded-[10px] px-3',
-          'text-muted-foreground transition-colors duration-150 hover:bg-interactive-hover/40 hover:text-foreground',
-          menuOpen && 'bg-interactive-hover/40 text-foreground',
+          'group/session-tab relative flex h-7 w-full min-w-0 cursor-pointer touch-none select-none items-center rounded-md px-2',
+          'text-muted-foreground transition-colors duration-150 hover:bg-interactive-hover hover:text-foreground',
+          menuOpen && 'bg-interactive-hover text-foreground',
         )}
         title={title}
       >
-        <span className="min-w-0 truncate typography-ui-label text-[13px] font-normal leading-tight">
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate text-[13px] font-medium leading-4',
+            'group-hover/session-tab:pr-5',
+            menuOpen && 'pr-5',
+          )}
+        >
           {title}
         </span>
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -124,10 +132,10 @@ const InactiveSessionTab: React.FC<{
               onClick={(event) => event.stopPropagation()}
               onPointerDown={(event) => event.stopPropagation()}
               className={cn(
-                'ml-0 hidden w-0 shrink-0 items-center justify-center overflow-hidden rounded-md text-muted-foreground',
+                'absolute right-1 top-1/2 hidden size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground',
                 'opacity-0 transition-opacity duration-150 hover:text-foreground',
-                'group-hover/session-tab:ml-1.5 group-hover/session-tab:flex group-hover/session-tab:h-5 group-hover/session-tab:w-5 group-hover/session-tab:opacity-100',
-                menuOpen && 'ml-1.5 flex h-5 w-5 opacity-100',
+                'group-hover/session-tab:flex group-hover/session-tab:opacity-100',
+                menuOpen && 'flex opacity-100',
               )}
             >
               <Icon name="more" className="size-4" />
@@ -298,7 +306,7 @@ export const SessionTabsStrip: React.FC<{ children: React.ReactNode }> = ({ chil
       <div
         ref={scrollRef}
         onScroll={updateEdges}
-        className="flex min-w-0 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         style={maskImage ? { maskImage, WebkitMaskImage: maskImage } : undefined}
       >
         <DndContext
@@ -315,7 +323,8 @@ export const SessionTabsStrip: React.FC<{ children: React.ReactNode }> = ({ chil
           <div
             role="tab"
             aria-selected
-            className="flex h-9 min-w-0 max-w-[340px] shrink-0 items-center rounded-[10px] bg-interactive-selection px-3"
+            className="session-tab-slot flex h-7 w-56 min-w-16 max-w-56 flex-shrink items-center rounded-md bg-interactive-selection px-2"
+            data-active="true"
           >
             {children}
           </div>
