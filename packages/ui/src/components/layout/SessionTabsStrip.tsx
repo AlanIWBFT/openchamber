@@ -37,15 +37,24 @@ const restrictToXAxis: Modifier = ({ transform }) => ({ ...transform, y: 0 });
 /**
  * Sortable shell for the active tab: the pill itself drags, while the
  * interactive content inside (rename form, menu) stops pointer-down so a text
- * selection or menu click never starts a drag.
+ * selection or menu click never starts a drag. The close button and the
+ * session menu (passed down from the header) reveal on hover, exactly like on
+ * inactive tabs.
  */
-const ActiveTabShell: React.FC<{ id: string; children: React.ReactNode }> = ({ id, children }) => {
+const ActiveTabShell: React.FC<{
+  id: string;
+  menu: React.ReactNode;
+  menuOpen: boolean;
+  onClose: () => void;
+  closeLabel: string;
+  children: React.ReactNode;
+}> = ({ id, menu, menuOpen, onClose, closeLabel, children }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   return (
     <div
       ref={setNodeRef}
       style={{ transform: DndCSS.Translate.toString(transform), transition }}
-      className={cn('session-tab-slot flex h-7 w-56 min-w-16 max-w-56 flex-shrink touch-none', isDragging && 'z-10 opacity-60')}
+      className={cn('session-tab-slot flex h-7 w-44 shrink-0 touch-none', isDragging && 'z-10 opacity-60')}
       data-active-session-tab
       data-active="true"
       {...attributes}
@@ -54,9 +63,30 @@ const ActiveTabShell: React.FC<{ id: string; children: React.ReactNode }> = ({ i
       <div
         role="tab"
         aria-selected
-        className="flex h-7 w-full min-w-0 items-center rounded-md bg-interactive-selection px-2"
+        className="group/session-tab relative flex h-7 w-full min-w-0 items-center rounded-md bg-interactive-selection px-2"
       >
-        {children}
+        <div className={cn('min-w-0 flex-1', 'group-hover/session-tab:pr-10', menuOpen && 'pr-10')}>
+          {children}
+        </div>
+        <div
+          onPointerDown={(event) => event.stopPropagation()}
+          className={cn(
+            'absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5',
+            'opacity-0 transition-opacity duration-150',
+            'group-hover/session-tab:flex group-hover/session-tab:opacity-100',
+            menuOpen && 'flex opacity-100',
+          )}
+        >
+          <button
+            type="button"
+            aria-label={closeLabel}
+            onClick={onClose}
+            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+          >
+            <Icon name="close" className="size-4" />
+          </button>
+          {menu}
+        </div>
       </div>
     </div>
   );
@@ -86,7 +116,7 @@ const InactiveSessionTab: React.FC<{
     <div
       ref={setNodeRef}
       style={{ transform: DndCSS.Translate.toString(transform), transition }}
-      className={cn('session-tab-slot flex h-7 w-56 min-w-10 max-w-56 flex-shrink', isDragging && 'z-10 opacity-60')}
+      className={cn('session-tab-slot flex h-7 w-44 shrink-0', isDragging && 'z-10 opacity-60')}
       data-active="false"
       {...attributes}
       {...listeners}
@@ -118,25 +148,36 @@ const InactiveSessionTab: React.FC<{
         <span
           className={cn(
             'min-w-0 flex-1 truncate text-[13px] font-medium leading-4',
-            'group-hover/session-tab:pr-5',
-            menuOpen && 'pr-5',
+            'group-hover/session-tab:pr-10',
+            menuOpen && 'pr-10',
           )}
         >
           {title}
         </span>
+        <div
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          className={cn(
+            'absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5',
+            'opacity-0 transition-opacity duration-150',
+            'group-hover/session-tab:flex group-hover/session-tab:opacity-100',
+            menuOpen && 'flex opacity-100',
+          )}
+        >
+          <button
+            type="button"
+            aria-label={t('header.sessionTabs.closeTab')}
+            onClick={() => onClose(tab.id)}
+            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+          >
+            <Icon name="close" className="size-4" />
+          </button>
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
               aria-label={t('header.sessionTabs.tabMenuAria')}
-              onClick={(event) => event.stopPropagation()}
-              onPointerDown={(event) => event.stopPropagation()}
-              className={cn(
-                'absolute right-1 top-1/2 hidden size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground',
-                'opacity-0 transition-opacity duration-150 hover:text-foreground',
-                'group-hover/session-tab:flex group-hover/session-tab:opacity-100',
-                menuOpen && 'flex opacity-100',
-              )}
+              className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
             >
               <Icon name="more" className="size-4" />
             </button>
@@ -157,6 +198,7 @@ const InactiveSessionTab: React.FC<{
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </div>
     </div>
   );
@@ -173,7 +215,13 @@ const InactiveSessionTab: React.FC<{
  * in the store but do not render, so a partial session list never destroys
  * the working set.
  */
-export const SessionTabsStrip: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const SessionTabsStrip: React.FC<{
+  /** The header's session menu for the active tab (already a DropdownMenu). */
+  menu?: React.ReactNode;
+  /** Whether that menu is open, so the hover overlay stays visible. */
+  menuOpen?: boolean;
+  children: React.ReactNode;
+}> = ({ menu = null, menuOpen = false, children }) => {
   const { t } = useI18n();
   const tabIds = useSessionTabsStore((state) => state.tabIds);
   const ensureTab = useSessionTabsStore((state) => state.ensureTab);
@@ -284,7 +332,18 @@ export const SessionTabsStrip: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const renderTab = (tab: SessionTab) => {
     if (tab.id === currentSessionId) {
-      return <ActiveTabShell key={tab.id} id={tab.id}>{children}</ActiveTabShell>;
+      return (
+        <ActiveTabShell
+          key={tab.id}
+          id={tab.id}
+          menu={menu}
+          menuOpen={menuOpen}
+          onClose={() => handleClose(tab.id)}
+          closeLabel={t('header.sessionTabs.closeTab')}
+        >
+          {children}
+        </ActiveTabShell>
+      );
     }
     return (
       <InactiveSessionTab
@@ -323,10 +382,10 @@ export const SessionTabsStrip: React.FC<{ children: React.ReactNode }> = ({ chil
           <div
             role="tab"
             aria-selected
-            className="session-tab-slot flex h-7 w-56 min-w-16 max-w-56 flex-shrink items-center rounded-md bg-interactive-selection px-2"
+            className="session-tab-slot flex h-7 w-44 shrink-0 items-center rounded-md bg-interactive-selection px-2"
             data-active="true"
           >
-            {children}
+            <div className="min-w-0 flex-1">{children}</div>
           </div>
         ) : null}
       </div>
