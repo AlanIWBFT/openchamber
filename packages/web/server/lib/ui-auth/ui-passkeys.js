@@ -2,12 +2,14 @@ import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import {
-  generateAuthenticationOptions,
-  generateRegistrationOptions,
-  verifyAuthenticationResponse,
-  verifyRegistrationResponse,
-} from '@simplewebauthn/server';
+
+let simpleWebAuthnModulePromise = null;
+const loadSimpleWebAuthnModule = () => {
+  if (!simpleWebAuthnModulePromise) {
+    simpleWebAuthnModulePromise = import('@simplewebauthn/server');
+  }
+  return simpleWebAuthnModulePromise;
+};
 
 const DEFAULT_STORE_VERSION = 1;
 const DEFAULT_CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -326,6 +328,7 @@ export const createUiPasskeys = ({
       throw error;
     }
 
+    const { generateRegistrationOptions } = await loadSimpleWebAuthnModule();
     const options = await generateRegistrationOptions({
       rpName,
       rpID,
@@ -375,8 +378,8 @@ export const createUiPasskeys = ({
       throw error;
     }
 
+    const { verifyRegistrationResponse } = await loadSimpleWebAuthnModule();
     registrationChallenges.delete(requestId);
-
     const verification = await verifyRegistrationResponse({
       response,
       expectedChallenge: matchingRecord.challenge,
@@ -437,6 +440,7 @@ export const createUiPasskeys = ({
       throw error;
     }
 
+    const { generateAuthenticationOptions } = await loadSimpleWebAuthnModule();
     const options = await generateAuthenticationOptions({
       rpID,
       userVerification: 'required',
@@ -483,8 +487,8 @@ export const createUiPasskeys = ({
       throw error;
     }
 
+    const { verifyAuthenticationResponse } = await loadSimpleWebAuthnModule();
     authenticationChallenges.delete(requestId);
-
     const verification = await verifyAuthenticationResponse({
       response,
       expectedChallenge: matchingRecord.challenge,
