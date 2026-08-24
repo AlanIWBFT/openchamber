@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file.
 - Sessions: headers now find archived sessions too, so an archived session's title no longer goes missing.
 - UI: the timeline dialog now fits small screens instead of squeezing the message list to a couple of rows (thanks to @gaojunran).
 - UI: the btw panel's shadow is lighter, matching the composer.
+- Devices: re-pairing a phone (or logging in again) keeps the device's existing name in Connected Devices instead of resetting it to "OpenChamber Mobile".
+- Relay: paired devices no longer get logged out when the app restarts (for example during an update) while another local OpenChamber process is running — the restarted app keeps serving them instead of a bystander process taking over.
 
 ## [1.20.0] - 2026-08-23
 
