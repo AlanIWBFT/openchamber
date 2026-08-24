@@ -301,3 +301,24 @@ describe('ui auth client credential seam', () => {
     expect(expiresAt).toBeLessThanOrEqual(Date.now() + 124_000);
   });
 });
+
+describe('ui auth passkeys', () => {
+  it('loads WebAuthn support when registration begins', async () => {
+    const { createUiPasskeys } = await import('./ui-passkeys.js');
+    const passkeys = createUiPasskeys({
+      passwordBinding: 'password-binding',
+      storeFile: path.join(dataDir, 'lazy-passkeys.json'),
+      readSettingsFromDiskMigrated: async () => ({}),
+    });
+
+    const result = await passkeys.beginRegistration({
+      headers: { host: 'localhost:57123' },
+      socket: { encrypted: false },
+      hostname: 'localhost',
+    }, { label: 'Test device' });
+
+    expect(typeof result.requestId).toBe('string');
+    expect(typeof result.optionsJSON.challenge).toBe('string');
+    passkeys.dispose();
+  });
+});
