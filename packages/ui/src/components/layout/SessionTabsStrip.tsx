@@ -15,63 +15,172 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS as DndCSS } from '@dnd-kit/utilities';
+import { ContextMenu } from '@base-ui/react/context-menu';
 import type { Session } from '@opencode-ai/sdk/v2';
 
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { dropdownMenuItemClass, dropdownMenuPopupClass, dropdownMenuSeparatorClass } from '@/components/ui/dropdown-menu.styles';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Icon } from '@/components/icon/Icon';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { useSessionTabsStore } from '@/stores/useSessionTabsStore';
 import { useGlobalSessionsStore, resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { useGlobalSessionStatus } from '@/sync/sync-context';
+import { useSessionUnseenCount } from '@/sync/notification-store';
+import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useGitAllBranches } from '@/stores/useGitStore';
+import { getGitHubPrStatusKey, usePrVisualSummary } from '@/stores/useGitHubPrStatusStore';
+import {
+  formatProjectLabel,
+  formatSessionCompactDateLabel,
+  formatSessionDateLabel,
+  normalizePath,
+} from '@/components/session/sidebar/utils';
 
 const restrictToXAxis: Modifier = ({ transform }) => ({ ...transform, y: 0 });
 
 type SessionTab = { id: string; session: Session };
+
+export type SessionTabMenuComponents = {
+  Item: React.ComponentType<{
+    className?: string;
+    disabled?: boolean;
+    onClick?: React.MouseEventHandler;
+    children?: React.ReactNode;
+  }>;
+  Separator: React.ComponentType<{ className?: string }>;
+};
 
 export type SessionTabMenuArgs = {
   session: Session;
   isActive: boolean;
   select: () => void;
   closeOtherTabs: () => void;
+  /** Menu primitives for the surface the menu opens in (dropdown or context menu). */
+  components: SessionTabMenuComponents;
 };
+
+const dropdownComponents: SessionTabMenuComponents = {
+  Item: DropdownMenuItem,
+  Separator: DropdownMenuSeparator,
+};
+
+const contextComponents: SessionTabMenuComponents = {
+  Item: ({ className, ...props }) => (
+    <ContextMenu.Item className={cn(dropdownMenuItemClass, className)} {...props} />
+  ),
+  Separator: ({ className, ...props }) => (
+    <ContextMenu.Separator className={cn(dropdownMenuSeparatorClass, className)} {...props} />
+  ),
+};
+
+/** Resolve the project a session directory belongs to, for the hover tooltip. */
+const useTabProjectLabel = (directory: string | null): string | null =>
+  useProjectsStore(React.useCallback((state) => {
+    if (!directory) return null;
+    const dir = normalizePath(directory);
+    if (!dir) return null;
+    for (const project of state.projects) {
+      const path = normalizePath(project.path);
+      if (path && (dir === path || dir.startsWith(`${path}/`))) {
+        return formatProjectLabel(project.label?.trim() || path.split('/').pop() || path);
+      }
+    }
+    return null;
+  }, [directory]));
 
 /**
  * One tab, active or not. The tab drags to reorder; the menu and close
  * controls sit in a hover-revealed overlay at the tab's end (menu first,
- * close after it). The single session menu is supplied by the header via
- * `renderMenu`, bound to this tab's session; right-click opens it without
- * changing which tab is active. The overlay stays visible until the menu's
- * close animation completes, so the popup never loses its anchor mid-flight
- * (that was the top-left corner flash).
+ * close after it). One session menu — supplied by the header via
+ * `renderMenu` — backs both the "..." dropdown and the right-click context
+ * menu, which opens under the cursor without changing the active tab. The
+ * dropdown's anchor overlay stays mounted through the close animation so the
+ * popup never flashes detached. While the active tab is renaming, the
+ * overlay is suppressed entirely — only the rename controls show.
  */
 const SessionTabItem: React.FC<{
   tab: SessionTab;
   isActive: boolean;
+  suppressControls: boolean;
   onSelect: (tab: SessionTab) => void;
   onClose: (id: string) => void;
   renderMenu: (args: SessionTabMenuArgs) => React.ReactNode;
   closeOtherTabs: (id: string) => void;
   onMenuOpenChangeComplete?: (open: boolean) => void;
   children?: React.ReactNode;
-}> = ({ tab, isActive, onSelect, onClose, renderMenu, closeOtherTabs, onMenuOpenChangeComplete, children }) => {
+}> = ({ tab, isActive, suppressControls, onSelect, onClose, renderMenu, closeOtherTabs, onMenuOpenChangeComplete, children }) => {
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = React.useState(false);
-  // Keeps the overlay (the menu's anchor) mounted through the close animation.
+  // Keeps the overlay (the dropdown's anchor) mounted through the close animation.
   const [menuVisible, setMenuVisible] = React.useState(false);
+  const [contextMenuOpen, setContextMenuOpen] = React.useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.id });
 
   const title = tab.session.title?.trim() || t('sessions.sidebar.session.untitled');
-  const overlayVisible = menuOpen || menuVisible;
+  const overlayVisible = !suppressControls && (menuOpen || menuVisible);
+  const anyMenuOpen = menuOpen || contextMenuOpen;
 
-  const openMenu = React.useCallback(() => {
-    setMenuVisible(true);
-    setMenuOpen(true);
-  }, []);
+  // Session state for the dot and the hover tooltip.
+  const sessionStatus = useGlobalSessionStatus(tab.id);
+  const isStreaming = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
+  const unseenCount = useSessionUnseenCount(tab.id);
+  const showUnread = unseenCount > 0 && !isActive && !isStreaming;
+  const showDot = isStreaming || showUnread;
+  const dotLabel = isStreaming
+    ? t('sessions.sidebar.session.status.active')
+    : t('sessions.sidebar.session.status.unread');
+
+  const directory = normalizePath(resolveGlobalSessionDirectory(tab.session) ?? null);
+  const projectLabel = useTabProjectLabel(directory);
+  const worktreeMetadata = useSessionUIStore((state) => state.worktreeMetadata);
+  const allBranches = useGitAllBranches();
+  const branchLabel = React.useMemo(() => {
+    const meta = worktreeMetadata.get(tab.id);
+    if (meta?.branch?.trim()) return meta.branch.trim();
+    if (directory) return allBranches.get(directory)?.trim() || null;
+    return null;
+  }, [worktreeMetadata, allBranches, tab.id, directory]);
+  const prSummary = usePrVisualSummary(directory && branchLabel ? getGitHubPrStatusKey(directory, branchLabel) : null);
+  const prIconColor = prSummary ? `var(--pr-${prSummary.visualState})` : undefined;
+  const prStatusLabel = React.useMemo(() => {
+    if (!prSummary) return null;
+    switch (prSummary.visualState) {
+      case 'merged':
+        return t('sessions.sidebar.group.pr.status.merged');
+      case 'open':
+        return (prSummary.canMerge === true || prSummary.mergeableState === 'clean' || prSummary.checks?.state === 'success')
+          ? t('sessions.sidebar.group.pr.status.readyToMerge')
+          : t('sessions.sidebar.group.pr.status.open');
+      case 'blocked':
+        return prSummary.mergeableState === 'dirty'
+          ? t('sessions.sidebar.group.pr.status.mergeConflicts')
+          : t('sessions.sidebar.group.pr.status.mergeBlocked');
+      case 'draft':
+        return t('sessions.sidebar.group.pr.status.draft');
+      case 'closed':
+        return t('sessions.sidebar.group.pr.status.closed');
+      default:
+        return null;
+    }
+  }, [prSummary, t]);
+  const sessionTimestamp = tab.session.time?.updated || tab.session.time?.created || 0;
+
+  const menuArgsFor = (components: SessionTabMenuComponents): SessionTabMenuArgs => ({
+    session: tab.session,
+    isActive,
+    select: () => onSelect(tab),
+    closeOtherTabs: () => closeOtherTabs(tab.id),
+    components,
+  });
 
   return (
     <div
@@ -83,93 +192,162 @@ const SessionTabItem: React.FC<{
       {...attributes}
       {...listeners}
     >
-      <div
-        role="tab"
-        aria-selected={isActive}
-        tabIndex={isActive ? undefined : 0}
-        onClick={isActive ? undefined : () => onSelect(tab)}
-        onKeyDown={isActive ? undefined : (event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            onSelect(tab);
-          }
-        }}
-        onAuxClick={(event) => {
-          if (event.button === 1) {
-            event.preventDefault();
-            onClose(tab.id);
-          }
-        }}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openMenu();
-        }}
-        className={cn(
-          'group/session-tab relative flex h-7 w-full min-w-0 select-none items-center rounded-md px-2',
-          isActive
-            ? 'bg-interactive-selection'
-            : cn(
-              'cursor-pointer text-muted-foreground transition-colors duration-150 hover:bg-interactive-hover hover:text-foreground',
-              overlayVisible && 'bg-interactive-hover text-foreground',
-            ),
-        )}
-        title={isActive ? undefined : title}
+      <ContextMenu.Root
+        open={contextMenuOpen}
+        onOpenChange={setContextMenuOpen}
+        onOpenChangeComplete={(open) => onMenuOpenChangeComplete?.(open)}
       >
-        <div className={cn('min-w-0 flex-1', 'group-hover/session-tab:pr-10', overlayVisible && 'pr-10')}>
-          {isActive ? children : (
-            <span className="block min-w-0 truncate text-[13px] font-medium leading-4">{title}</span>
-          )}
-        </div>
-        <div
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-          className={cn(
-            'absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5',
-            'opacity-0 transition-opacity duration-150',
-            'group-hover/session-tab:flex group-hover/session-tab:opacity-100',
-            overlayVisible && 'flex opacity-100',
-          )}
-        >
-          <DropdownMenu
-            open={menuOpen}
-            onOpenChange={(open) => {
-              setMenuOpen(open);
-              if (open) setMenuVisible(true);
-            }}
-            onOpenChangeComplete={(open) => {
-              if (!open) setMenuVisible(false);
-              onMenuOpenChangeComplete?.(open);
-            }}
-          >
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label={t('header.sessionTabs.tabMenuAria')}
-                className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
-              >
-                <Icon name="more" className="size-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-[190px]">
-              {renderMenu({
-                session: tab.session,
-                isActive,
-                select: () => onSelect(tab),
-                closeOtherTabs: () => closeOtherTabs(tab.id),
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <button
-            type="button"
-            aria-label={t('header.sessionTabs.closeTab')}
-            onClick={() => onClose(tab.id)}
-            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
-          >
-            <Icon name="close" className="size-4" />
-          </button>
-        </div>
-      </div>
+        <Tooltip delayDuration={700}>
+          <TooltipTrigger asChild>
+            <ContextMenu.Trigger
+              render={(triggerProps) => (
+                <div
+                  {...triggerProps}
+                  role="tab"
+                  aria-selected={isActive}
+                  tabIndex={isActive ? undefined : 0}
+                  onClick={isActive ? undefined : () => onSelect(tab)}
+                  onKeyDown={isActive ? undefined : (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onSelect(tab);
+                    }
+                  }}
+                  onAuxClick={(event) => {
+                    if (event.button === 1) {
+                      event.preventDefault();
+                      onClose(tab.id);
+                    }
+                  }}
+                  className={cn(
+                    'group/session-tab relative flex h-7 w-full min-w-0 select-none items-center rounded-md px-2',
+                    isActive
+                      ? 'bg-interactive-selection'
+                      : cn(
+                        'cursor-pointer text-muted-foreground transition-colors duration-150 hover:bg-interactive-hover hover:text-foreground',
+                        overlayVisible && 'bg-interactive-hover text-foreground',
+                      ),
+                  )}
+                >
+                  <div className={cn(
+                    'flex min-w-0 flex-1 items-center',
+                    !suppressControls && 'group-hover/session-tab:pr-10',
+                    overlayVisible && 'pr-10',
+                  )}
+                  >
+                    <div className="session-tab-title min-w-0 flex-1 overflow-hidden whitespace-nowrap">
+                      {isActive ? children : (
+                        <span className="text-[13px] font-medium leading-4">{title}</span>
+                      )}
+                    </div>
+                    {showDot ? (
+                      <span
+                        className={cn(
+                          'ml-1.5 h-1.5 w-1.5 shrink-0 rounded-full',
+                          isStreaming ? 'bg-primary' : 'bg-[var(--status-info)]',
+                          !suppressControls && 'group-hover/session-tab:opacity-0',
+                          overlayVisible && 'opacity-0',
+                        )}
+                        aria-label={dotLabel}
+                      />
+                    ) : null}
+                  </div>
+                  {!suppressControls ? (
+                    <div
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      className={cn(
+                        'absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5',
+                        'opacity-0 transition-opacity duration-150',
+                        'group-hover/session-tab:flex group-hover/session-tab:opacity-100',
+                        overlayVisible && 'flex opacity-100',
+                      )}
+                    >
+                      <DropdownMenu
+                        open={menuOpen}
+                        onOpenChange={(open) => {
+                          setMenuOpen(open);
+                          if (open) setMenuVisible(true);
+                        }}
+                        onOpenChangeComplete={(open) => {
+                          if (!open) setMenuVisible(false);
+                          onMenuOpenChangeComplete?.(open);
+                        }}
+                      >
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={t('header.sessionTabs.tabMenuAria')}
+                            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                          >
+                            <Icon name="more" className="size-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="min-w-[190px]">
+                          {renderMenu(menuArgsFor(dropdownComponents))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <button
+                        type="button"
+                        aria-label={t('header.sessionTabs.closeTab')}
+                        onClick={() => onClose(tab.id)}
+                        className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                      >
+                        <Icon name="close" className="size-4" />
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            />
+          </TooltipTrigger>
+          {!anyMenuOpen && !isDragging ? (
+            <TooltipContent side="bottom" sideOffset={8} className="max-w-xs text-left">
+              <div className="flex min-w-44 flex-col gap-1.5 text-left text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="min-w-0 truncate font-medium text-foreground">{title}</span>
+                  {sessionTimestamp ? (
+                    <span className="flex-shrink-0 text-muted-foreground" title={formatSessionDateLabel(sessionTimestamp)}>
+                      {formatSessionCompactDateLabel(sessionTimestamp)}
+                    </span>
+                  ) : null}
+                </div>
+                {projectLabel ? (
+                  <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                    <Icon name="folder" className="h-3 w-3 flex-shrink-0" />
+                    <span className="min-w-0 truncate">{projectLabel}</span>
+                  </div>
+                ) : null}
+                {branchLabel ? (
+                  <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                    <Icon name="git-branch" className="h-3 w-3 flex-shrink-0" style={prIconColor ? { color: prIconColor } : undefined} />
+                    <span className="min-w-0 truncate">{branchLabel}</span>
+                  </div>
+                ) : null}
+                {prSummary && prStatusLabel ? (
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <Icon name="git-pull-request" className="h-3 w-3 flex-shrink-0" style={prIconColor ? { color: prIconColor } : undefined} />
+                    <span className="min-w-0 truncate" style={prIconColor ? { color: prIconColor } : undefined}>
+                      #{prSummary.number} · {prStatusLabel}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            </TooltipContent>
+          ) : null}
+        </Tooltip>
+        <ContextMenu.Portal>
+          <ContextMenu.Positioner className="app-region-no-drag z-50">
+            <ContextMenu.Popup
+              data-slot="dropdown-menu-content"
+              style={{ color: 'var(--surface-elevated-foreground)' }}
+              className={cn(dropdownMenuPopupClass, 'min-w-[190px]')}
+            >
+              {renderMenu(menuArgsFor(contextComponents))}
+            </ContextMenu.Popup>
+          </ContextMenu.Positioner>
+        </ContextMenu.Portal>
+      </ContextMenu.Root>
     </div>
   );
 };
@@ -189,8 +367,10 @@ export const SessionTabsStrip: React.FC<{
   renderMenu: (args: SessionTabMenuArgs) => React.ReactNode;
   /** Fires when a tab menu finishes opening/closing (deferred rename hook). */
   onMenuOpenChangeComplete?: (open: boolean) => void;
+  /** While the active tab renames, its hover controls stay hidden. */
+  suppressActiveTabControls?: boolean;
   children: React.ReactNode;
-}> = ({ renderMenu, onMenuOpenChangeComplete, children }) => {
+}> = ({ renderMenu, onMenuOpenChangeComplete, suppressActiveTabControls = false, children }) => {
   const { t } = useI18n();
   const tabIds = useSessionTabsStore((state) => state.tabIds);
   const ensureTab = useSessionTabsStore((state) => state.ensureTab);
@@ -323,6 +503,7 @@ export const SessionTabsStrip: React.FC<{
                 key={tab.id}
                 tab={tab}
                 isActive={tab.id === currentSessionId}
+                suppressControls={tab.id === currentSessionId && suppressActiveTabControls}
                 onSelect={handleSelect}
                 onClose={handleClose}
                 renderMenu={renderMenu}

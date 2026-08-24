@@ -1336,6 +1336,14 @@ html:not(.dark) .chat-scroll {
   background: transparent !important;
 }
 
+/* The marked renderer uses its own code-body wrapper instead of Streamdown's. */
+.markdown-content [data-md-code-body],
+.markdown-content [data-md-code-body] pre,
+.markdown-content [data-md-code-body] code,
+.markdown-content [data-md-code-body] [data-md-code-lines] {
+  background: transparent !important;
+}
+
 .markdown-content [data-md-code-lines] {
   display: block;
   min-width: 100%;
@@ -1814,4 +1822,12 @@ html.desktop-runtime .markdown-content [data-openchamber-file-link="true"] {
   display: none;
   width: 0;
   height: 0;
+}
+
+/* Session tab titles: fade out instead of "..." — the ellipsis reads as
+   clutter next to the tab's status dot and hover controls. Short titles
+   never reach the fade zone (the span spans the tab, not the text). */
+.session-tab-title {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 14px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 14px), transparent);
 }
