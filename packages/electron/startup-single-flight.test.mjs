@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
+import { createStartupSingleFlight } from './startup-single-flight.mjs';
 
 // Runs the real openMainWindow body without importing Electron or a server.
 const main = readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
@@ -81,4 +82,41 @@ test('a serverless background start still probes again when the window opens', a
 
   assert.equal(calls.resolveInitialUrl, 1);
   assert.equal(calls.activated, 1);
+});
+
+test('shares one startup promise across concurrent callers', async () => {
+  let calls = 0;
+  let completeStartup;
+  const start = createStartupSingleFlight(() => {
+    calls += 1;
+    return new Promise((resolve) => {
+      completeStartup = resolve;
+    });
+  });
+
+  const first = start();
+  const second = start();
+  assert.strictEqual(second, first);
+  assert.equal(calls, 1);
+
+  completeStartup('ready');
+  assert.equal(await first, 'ready');
+  assert.strictEqual(start(), first);
+  assert.equal(calls, 1);
+});
+
+test('retains a rejected startup promise without retrying', async () => {
+  const failure = new Error('startup failed');
+  let calls = 0;
+  const start = createStartupSingleFlight(async () => {
+    calls += 1;
+    throw failure;
+  });
+
+  const first = start();
+  await assert.rejects(first, failure);
+  const second = start();
+  assert.strictEqual(second, first);
+  await assert.rejects(second, failure);
+  assert.equal(calls, 1);
 });
