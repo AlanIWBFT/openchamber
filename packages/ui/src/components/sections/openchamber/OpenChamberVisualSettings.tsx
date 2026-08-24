@@ -32,7 +32,6 @@ import { CODE_FONT_OPTIONS, DEFAULT_MONO_FONT, DEFAULT_UI_FONT, UI_FONT_OPTIONS,
 import { useI18n, type Locale } from '@/lib/i18n';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { normalizeMobileKeyboardMode, supportsMobileKeyboardResizeContent, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
-import { getStoredMobileLayoutPreference, setStoredMobileLayoutPreference, type MobileLayoutPreference } from '@/lib/mobileLayoutPreference';
 import {
     setDirectoryShowHidden,
     useDirectoryShowHidden,
@@ -148,17 +147,6 @@ const MOBILE_KEYBOARD_MODE_OPTIONS: Option<MobileKeyboardMode>[] = [
         id: 'resize-content',
         labelKey: 'settings.openchamber.visual.option.mobileKeyboardMode.resizeContent.label',
         descriptionKey: 'settings.openchamber.visual.option.mobileKeyboardMode.resizeContent.description',
-    },
-];
-
-const MOBILE_LAYOUT_OPTIONS: Array<{ value: MobileLayoutPreference; labelKey: string }> = [
-    {
-        value: 'default',
-        labelKey: 'settings.openchamber.visual.option.mobileLayout.default',
-    },
-    {
-        value: 'new',
-        labelKey: 'settings.openchamber.visual.option.mobileLayout.new',
     },
 ];
 
@@ -629,10 +617,9 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const hasThemeSettings = shouldShow('theme') && !isVSCode;
     const showWindowControlsPositionSetting = shouldShow('windowControlsPosition') && showWindowControlsPosition;
     const hasLocalizationSettings = shouldShow('theme') || shouldShow('timeFormat') || shouldShow('weekStart');
-    const showMobileLayoutSetting = isMobile && isWebRuntime() && !isDesktopShell() && !isVSCode;
     const hasAppearanceSettings = isVSCode
         ? hasLocalizationSettings
-        : (shouldShow('theme') || showWindowControlsPositionSetting || showMobileLayoutSetting || shouldShow('pwaInstallName') || shouldShow('pwaOrientation') || shouldShow('timeFormat') || shouldShow('weekStart'));
+        : (shouldShow('theme') || showWindowControlsPositionSetting || shouldShow('pwaInstallName') || shouldShow('pwaOrientation') || shouldShow('timeFormat') || shouldShow('weekStart'));
     const hasLayoutSettings = shouldShow('fontSize') || shouldShow('terminalFontSize') || shouldShow('editorFontSize') || shouldShow('spacing') || (shouldShow('inputBarOffset') && isMobile);
     const hasNavigationSettings = (shouldShow('terminalQuickKeys') && !isMobile) || ((shouldShow('terminalShell') || shouldShow('terminalLoginShell')) && !isVSCode) || shouldShow('fileEditorKeymap') || shouldShow('autoSaveEnabled') || (shouldShow('expandedEditorToolbar') && !isVSCode);
     const hasBehaviorSettings = shouldShow('mermaidRendering')
@@ -723,7 +710,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
             ? [...terminalLoginShells.filter((shell) => shell !== terminalShell), terminalShell]
             : terminalLoginShells.filter((shell) => shell !== terminalShell));
     };
-    const [mobileLayoutPreference, setMobileLayoutPreference] = React.useState<MobileLayoutPreference>(() => getStoredMobileLayoutPreference());
     const [pwaInstallName, setPwaInstallName] = React.useState('');
     const [pwaOrientation, setPwaOrientation] = React.useState<'system' | 'portrait' | 'landscape'>('system');
     const selectedTimeFormatLabel = React.useMemo(() => {
@@ -742,16 +728,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         const option = MOBILE_KEYBOARD_MODE_OPTIONS.find((item) => item.id === mobileKeyboardMode);
         return option ? tUnsafe(option.labelKey) : undefined;
     }, [mobileKeyboardMode, tUnsafe]);
-
-    const handleMobileLayoutPreferenceChange = React.useCallback((value: MobileLayoutPreference) => {
-        if (value === mobileLayoutPreference) {
-            return;
-        }
-
-        setMobileLayoutPreference(value);
-        setStoredMobileLayoutPreference(value);
-        window.location.reload();
-    }, [mobileLayoutPreference]);
 
     const applyPwaInstallName = React.useCallback(async (value: string) => {
         if (typeof window === 'undefined') {
@@ -877,21 +853,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             ))}
                                         </SettingsRadioGroup>
 
-                                        {showMobileLayoutSetting && (
-                                            <SettingsInset>
-                                                <SettingsStackedField label={t('settings.openchamber.visual.section.mobileLayout')}>
-                                                    <SettingsChipGroup
-                                                        value={mobileLayoutPreference}
-                                                        options={MOBILE_LAYOUT_OPTIONS.map((option) => ({
-                                                            value: option.value,
-                                                            label: tUnsafe(option.labelKey),
-                                                        }))}
-                                                        onChange={handleMobileLayoutPreferenceChange}
-                                                        aria-label={t('settings.openchamber.visual.section.mobileLayout')}
-                                                    />
-                                                </SettingsStackedField>
-                                            </SettingsInset>
-                                        )}
                                     </div>
 
                                     <div className={SETTINGS_FIELDS_STACK_CLASS}>
