@@ -525,9 +525,17 @@ export const shellEnvironmentAbort = new AbortController();
 const loadShellEnv = createShellEnvironmentLoader({ loadWindowsEnv, signal: shellEnvironmentAbort.signal });
 
 export const shellEnvironmentProbeBlocksMainThread = process.platform === 'win32';
+let shellEnvironmentProbe;
 
 // external: #2588 Clear AppImage ARGV0 before shell discovery because zsh applies it to child argv[0].
 export const startShellEnvironmentProbe = () => {
   clearAppImageArgv0FromProcessEnv();
-  return loadShellEnv();
+  if (!shellEnvironmentProbe) {
+    const startedAt = performance.now();
+    shellEnvironmentProbe = loadShellEnv().then((snapshot) => {
+      recordEarlyStartupMark('electron.shell-env.ready', { durationMs: performance.now() - startedAt });
+      return snapshot;
+    });
+  }
+  return shellEnvironmentProbe;
 };

@@ -37,8 +37,9 @@ Browser read-aloud. It uses the host's `libspeechd` and speech-dispatcher servic
 with an installed synthesis module, such as espeak-ng. The shell does not install
 or manage those system services. Windows and macOS keep their native speech backends.
 
-Login-shell environment discovery starts as soon as `main.mjs` runs and
-proceeds asynchronously, so shell startup files run while the window comes up.
+Login-shell environment discovery is owned by `early-startup.mjs`. On macOS
+and Linux it starts while the splash window opens. Local server startup shares
+one promise across callers, including a rejected startup.
 Startup callers share one probe and await its result before reading
 shell-provided server flags or importing the backend. The probe tries
 interactive login, then login-only on failure, with a five-second timeout per
