@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - Search: Ctrl/Cmd+P now matches the whole file path, not just the file name — searching a folder name like "solo-is-a" finds the file inside it.
 - **Search in dropdowns:** every searchable picker — branches, projects, agents, models, providers, stashes, SSH hosts, skills, archived sessions — now uses one matcher: best matches come first, multi-word queries match in any order, and punctuation doesn't matter (so "gpt4o" finds "gpt-4o"). The git branch and gitmoji pickers also stopped silently dropping rows that a second, built-in filter didn't like. Sidebar session search and the Todos/Memory/Plans/Notes filters match the same way now.
 - Terminal: mobile keyboards no longer capitalize the first letter of every command on iOS and Android.
+- Mobile: narrowing a browser window past phone size now switches into the mobile app layout (and back when widened) instead of squeezing the desktop layout. The old/new mobile layout setting is gone — phones always get the mobile layout.
 - Desktop: a freshly installed or updated build no longer keeps loading the previous version's interface from cache.
 - Chat: OpenCode notices now share one style.
 - UI: draft target menus stay inside the chat area instead of overlapping the header.
