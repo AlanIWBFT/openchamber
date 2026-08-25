@@ -48,7 +48,7 @@ import type { SnippetAutocompleteHandle } from './SnippetAutocomplete';
 import { cn } from "@/lib/utils";
 import { ModelControls } from './ModelControls';
 import { parseAgentMentions } from '@/lib/messages/agentMentions';
-import { StatusRow } from './StatusRow';
+import { ComposerStatusBar } from './ComposerStatusBar';
 import { PendingChangesBar } from './PendingChangesBar';
 import { useChatSurfaceMode } from './useChatSurfaceMode';
 import { MobileAgentButton } from './MobileAgentButton';
@@ -220,7 +220,7 @@ const MemoModelControls = React.memo(ModelControls);
 const MemoComposerDictation = React.memo(ComposerDictation);
 const MemoMobileAgentButton = React.memo(MobileAgentButton);
 const MemoMobileModelButton = React.memo(MobileModelButton);
-const MemoStatusRow = React.memo(StatusRow);
+const MemoComposerStatusBar = React.memo(ComposerStatusBar);
 
 interface ChatInputProps {
     onOpenSettings?: () => void;
@@ -2656,9 +2656,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     sessionId={currentSessionId}
                     directory={currentSessionDirectoryForSync ?? currentDirectory}
                 />
-                <MemoStatusRow
+                <MemoComposerStatusBar
                     showAbortStatus={showAbortStatus}
-                    showAssistantStatus={false}
                     showTodos={composerStatusExtrasEnabled}
                     leftAccessory={!composerStatusExtrasEnabled || newSessionDraftOpen || !hasPendingChanges
                         ? null
