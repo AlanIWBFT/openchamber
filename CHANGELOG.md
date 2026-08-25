@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 - Fixed the selected project or session briefly jumping back to a previous choice when settings responses arrived out of order.
 - Fixed sessions staying on "loading sessions" forever after the connection to OpenCode went half-open — stalled reads now time out and retry instead of holding bootstrap hostage (thanks @herjarsa).
 - Files: previews of files above the editable size cap now show the whole file instead of the first 200k characters, virtualized so opening and scrolling a huge file no longer freezes the app (thanks @gaojunran).
+- VSCode: the chat view no longer stays stuck on its loading screen on slow or remote connections (for example code-server behind a reverse proxy) — the connection status is re-sent until the webview is ready to hear it (thanks @VinciYan).
 - Terminal: mobile keyboards no longer capitalize the first letter of every command on iOS and Android.
 - Desktop: a freshly installed or updated build no longer keeps loading the previous version's interface from cache.
 - Devices: re-pairing a phone (or logging in again) keeps the device's existing name in Connected Devices instead of resetting it to "OpenChamber Mobile".
