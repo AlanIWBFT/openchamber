@@ -8,6 +8,8 @@ This package owns the native shell: windows, menus, deep links, native notificat
 
 Desktop starts the OpenChamber web server in the same Electron main process. There is no separate sidecar subprocess for the OpenChamber server.
 
+`server-preload-env.test.mjs` exercises the isolated `process.env` access guard used to audit dependency graphs considered for import while login-shell discovery is still running. `bundle:main` runs this audit suite before every Electron main-process bundle.
+
 On Windows, latency-sensitive Git status, PR-context, and per-file diff reads are dispatched to a fixed pool of four persistent Node Worker Threads owned by that in-process server. The workers share one persistent `OpenCode.ProcessBroker.exe`, staged with the local OpenCode CLI. The self-contained .NET 10 NativeAOT broker creates each Git process detached from a console and atomically assigns its complete process tree to a per-command Job Object. Worker Threads remain in-process; the broker owns only process creation, pipes, cancellation, and cleanup.
 
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
@@ -94,6 +96,7 @@ IPC results if its endpoint changes while the read is pending.
 | `electron-host-probe.mjs` | Chromium direct-host probes, identity checks, attempt deadlines, and response cleanup |
 | `host-probe-policy.mjs` | Selector fast attempt and unreachable-only retry policy |
 | `startup-single-flight.mjs` | One-shot startup promise coordinator that retains the first success or failure to prevent duplicate local server initialization |
+| `server-preload-env.test.mjs` | Isolated import-graph environment audit run by tests and before `bundle:main` |
 | `startup-url-selection.mjs` | Pure bundled/HMR startup probe and loopback connection-limit policy |
 | `remote-page-policy.mjs` | What remote-safe IPC accepts from and returns to another server's page: splash colour parsing, host list without credentials |
 | `shell-environment.mjs` | Asynchronous login-shell environment discovery and shared one-shot probe |
@@ -104,7 +107,7 @@ IPC results if its endpoint changes while the read is pending.
 | `scripts/build-web-assets.mjs` | Builds `packages/web` and stages UI assets into `resources/web-dist` |
 | `scripts/prepare-opencode-cli.mjs` | Stages the pinned OpenCode CLI from a release or local source into `resources/opencode-cli` |
 | `scripts/opencode-cli-version.mjs` | Reads the pinned OpenCode CLI version and parses `opencode --version` output |
-| `scripts/bundle-main.mjs` | Bundles Electron main code into `dist-bundle/{entry,main,early-startup}.mjs` for packaging |
+| `scripts/bundle-main.mjs` | Bundles Electron main code into `dist-bundle/{entry,main,early-startup}.mjs` for packaging after the preload environment audit passes |
 | `scripts/rebuild-native.mjs` | Rebuilds native modules against the Electron runtime |
 | `scripts/package.mjs` | Runs `electron-builder`, with unsigned Windows builds when signing env is missing |
 | `resources/` | Packaged web assets, icons, and macOS entitlements |
