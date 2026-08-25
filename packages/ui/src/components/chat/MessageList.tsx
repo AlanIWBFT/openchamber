@@ -1061,7 +1061,11 @@ const TimelineList = React.memo(({
                 contentInsetEndAdjustment={composerOverlayHeight}
                 // While a turn is anchored, the reserved end space — not the
                 // live edge — defines where the viewport rests.
-                maintainScrollAtEnd={anchoredEndSpace || !streamingAutoFollowEnabled
+                // Also released while the width resizes: re-pinning against
+                // rows that are still re-measuring shakes the pinned
+                // viewport; the owning hook re-asserts the end once the
+                // resize settles.
+                maintainScrollAtEnd={anchoredEndSpace || !streamingAutoFollowEnabled || isWidthResizing
                     ? false
                     : { animated: false, on: { dataChange: true, itemLayout: true, layout: true } }}
                 // Prepending older history must not move what the user is

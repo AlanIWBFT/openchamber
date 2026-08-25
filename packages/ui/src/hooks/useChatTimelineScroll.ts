@@ -508,7 +508,45 @@ export const useChatTimelineScroll = ({
     const streamingAutoFollowEnabledRef = React.useRef(streamingAutoFollowEnabled);
     streamingAutoFollowEnabledRef.current = streamingAutoFollowEnabled;
 
+    // While the list width is resizing, every pinning write fights the
+    // per-frame row re-measure and the pinned viewport shakes. Corrections
+    // stand down for the whole resize (visible content is held by the list's
+    // size compensation instead), and the live edge is re-asserted once with
+    // a single instant write after the resize settles.
+    const widthResizingRef = React.useRef(false);
+    React.useEffect(() => {
+        if (!scrollNode || typeof ResizeObserver === 'undefined') return;
+        let lastWidth: number | null = null;
+        let quietTimer: ReturnType<typeof setTimeout> | null = null;
+        const observer = new ResizeObserver((observerEntries) => {
+            const width = observerEntries[observerEntries.length - 1]?.contentRect.width;
+            if (typeof width !== 'number') return;
+            if (lastWidth === null) {
+                lastWidth = width;
+                return;
+            }
+            if (Math.abs(width - lastWidth) < 1) return;
+            lastWidth = width;
+            widthResizingRef.current = true;
+            if (quietTimer !== null) clearTimeout(quietTimer);
+            quietTimer = setTimeout(() => {
+                quietTimer = null;
+                widthResizingRef.current = false;
+                if (modeRef.current !== 'following-end' || !isLiveFollowActive()) return;
+                const node = listRef.current?.getScrollableNode();
+                if (!node) return;
+                node.scrollTop = node.scrollHeight + 4096;
+            }, 350);
+        });
+        observer.observe(scrollNode);
+        return () => {
+            observer.disconnect();
+            if (quietTimer !== null) clearTimeout(quietTimer);
+        };
+    }, [isLiveFollowActive, scrollNode]);
+
     const onTimelineDataChange = React.useCallback(() => {
+        if (widthResizingRef.current) return;
         if (!streamingAutoFollowEnabledRef.current) return;
         if (!isLiveFollowActive()) return;
 
