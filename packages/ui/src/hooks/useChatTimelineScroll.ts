@@ -220,6 +220,9 @@ export const useChatTimelineScroll = ({
         modeRef.current = 'free-scrolling';
         liveFollowGenerationRef.current = null;
         setUserOwnsScroll(true);
+        // The end may already have been left by our own movement, in which
+        // case no further at-end transition will fire — offer the way back now.
+        if (!isAtEndRef.current) scheduleShowScrollButton();
         armedForNextUserMessageRef.current = false;
         pendingAnchorRef.current = null;
         positionedAnchorRef.current = null;
@@ -230,7 +233,7 @@ export const useChatTimelineScroll = ({
             cancelAnimationFrame(anchorRestoreFrameRef.current);
             anchorRestoreFrameRef.current = null;
         }
-    }, []);
+    }, [scheduleShowScrollButton]);
 
     const isLiveFollowActive = React.useCallback(() => (
         liveFollowGenerationRef.current === userGenerationRef.current
@@ -357,8 +360,9 @@ export const useChatTimelineScroll = ({
 
     const onIsAtEndChange = React.useCallback((isAtEnd: boolean) => {
         // While an automatic movement owns the viewport, leaving the end is our
-        // own doing (the anchored turn parks mid-timeline) — not a reason to
-        // offer the user a scroll-to-bottom pill.
+        // own doing (the anchored turn parks mid-timeline, the glide trails its
+        // target between corrections) — not a reason to offer the pill. Only a
+        // real gesture (free-scrolling) shows it.
         if (!isAtEnd && isLiveFollowActive()) {
             hideScrollButton();
             return;
