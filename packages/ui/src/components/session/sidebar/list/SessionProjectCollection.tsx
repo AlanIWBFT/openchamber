@@ -2,6 +2,7 @@ import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { usePrefetchSessionMessages } from '@/sync/use-sync';
+import { useUIStore } from '@/stores/useUIStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { getGitHubPrStatusKey, useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
@@ -93,7 +94,6 @@ type SessionProjectCollectionProps = {
     alwaysShowActions: boolean;
     notifyOnSubtasks: boolean;
     setActiveProjectIdOnly: (id: string) => void;
-    setActiveMainTab: (tab: import('@/stores/useUIStore').MainTab) => void;
     setSessionSwitcherOpen: (open: boolean) => void;
     openNewSessionDraft: (options?: { selectedProjectId?: string | null; directoryOverride?: string | null }) => void;
     openNewWorktreeDialog: () => void;
@@ -286,6 +286,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     hideDirectoryControls: view.hideDirectoryControls,
     mobileVariant: view.mobileVariant,
     alwaysShowActions,
+    activeProjectId: view.activeProjectId,
     notifyOnSubtasks,
     pinnedSessionIds: collection.pinnedSessionIds,
     sessionOrderIndex,
@@ -331,6 +332,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     toggleParent,
     view.hideDirectoryControls,
     view.hasSessionSearchQuery,
+    view.activeProjectId,
     view.mobileVariant,
     view.normalizedSessionSearchQuery,
     view.useGroupedSections,
@@ -340,7 +342,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     showMoreGroupSessions,
     resetGroupSessionLimit,
     setActiveProjectIdOnly: scrollerActions.setActiveProjectIdOnly,
-    setActiveMainTab: scrollerActions.setActiveMainTab,
     setSessionSwitcherOpen: scrollerActions.setSessionSwitcherOpen,
     openNewSessionDraft: scrollerActions.openNewSessionDraft,
     onToggleCollapsedGroup: toggleGroup,
@@ -349,7 +350,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     showMoreGroupSessions,
     toggleGroup,
     scrollerActions.openNewSessionDraft,
-    scrollerActions.setActiveMainTab,
     scrollerActions.setActiveProjectIdOnly,
     scrollerActions.setSessionSwitcherOpen,
   ]);
@@ -396,7 +396,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     />;
   }, [chatGroup, groupActions, groupProps, openSidebarMenuKey]);
   const handleOpenNewChat = React.useCallback(() => {
-    scrollerActions.setActiveMainTab('chat');
+    useUIStore.getState().closeMainSurfaces();
     if (view.mobileVariant) scrollerActions.setSessionSwitcherOpen(false);
     scrollerActions.openNewSessionDraft({ selectedProjectId: CHAT_DRAFT_PROJECT_ID, directoryOverride: null });
   }, [scrollerActions, view.mobileVariant]);
@@ -530,7 +530,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     group: groupActions,
     toggleProject,
     setActiveProjectIdOnly: scrollerActions.setActiveProjectIdOnly,
-    setActiveMainTab: scrollerActions.setActiveMainTab,
     setSessionSwitcherOpen: scrollerActions.setSessionSwitcherOpen,
     openNewSessionDraft: scrollerActions.openNewSessionDraft,
     openNewWorktreeDialog: scrollerActions.openNewWorktreeDialog,
@@ -549,7 +548,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     scrollerActions.openWorktreesPage,
     scrollerActions.removeProject,
     scrollerActions.reorderProjects,
-    scrollerActions.setActiveMainTab,
     scrollerActions.setActiveProjectIdOnly,
     scrollerActions.setSessionSwitcherOpen,
     setGroupOrderByProject,
@@ -565,7 +563,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       persistActiveSessionByProject={actions.persistActiveSessionByProject}
       mobileVariant={view.mobileVariant}
       openNewSessionDraft={actions.openNewSessionDraft}
-      setActiveMainTab={actions.setActiveMainTab}
       setSessionSwitcherOpen={actions.setSessionSwitcherOpen}
       sessionOwnerBySessionId={ownership.bySessionId}
       handleSessionSelect={selectSessionForProject}

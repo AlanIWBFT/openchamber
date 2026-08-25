@@ -37,6 +37,7 @@ type SessionProjectScrollerGroupProps = Pick<SessionGroupSectionProps,
   | 'hideDirectoryControls'
   | 'mobileVariant'
   | 'alwaysShowActions'
+  | 'activeProjectId'
   | 'notifyOnSubtasks'
   | 'expandedParents'
   | 'editTitle'
