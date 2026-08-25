@@ -31,6 +31,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
 import * as sessionActions from '@/sync/session-actions';
+import { buildLinkedIssue } from '@/lib/linkedIssues';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { validateWorktreeCreate, createWorktree } from '@/lib/worktrees/worktreeManager';
 import { withWorktreeUpstreamDefaults } from '@/lib/worktrees/worktreeCreate';
@@ -97,20 +98,6 @@ const normalizeBranchName = (value: string): string => {
     .replace(/^\/+|\/+$/g, '');
 };
 
-const slugifyWorktreeName = (value: string): string => {
-  return value
-    .trim()
-    .replace(/^refs\/heads\//, '')
-    .replace(/^heads\//, '')
-    .replace(/\s+/g, '-')
-    .replace(/^\/+|\/+$/g, '')
-    .split('/').join('-')
-    .replace(/[^A-Za-z0-9._-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-};
-
 const sanitizeRemoteName = (value: string): string => {
   const normalized = String(value || '')
     .trim()
@@ -164,10 +151,14 @@ const resolvePrWorktreeConfig = (pr: GitHubPullRequestSummary, localBranches: st
   const ownerFromLabel = String(pr.headLabel || '').split(':')[0]?.trim();
   const remoteSeed = pr.headRepo?.owner || ownerFromLabel || 'pr-head';
   const remoteName = `pr-${sanitizeRemoteName(remoteSeed)}`;
-  const remoteUrl = pr.headRepo?.sshUrl || pr.headRepo?.cloneUrl || '';
+  // Prefer HTTPS so anonymous public fetches do not require SSH agent setup.
+  const remoteUrl = pr.headRepo?.cloneUrl || pr.headRepo?.sshUrl || '';
 
   if (!remoteUrl) {
-    throw new Error('PR head repository URL is unavailable');
+    throw new Error(
+      'PR head repository URL is unavailable. The fork may have been deleted; '
+      + 'push the branch to a reachable repository and try again.'
+    );
   }
 
   return {
@@ -179,6 +170,20 @@ const resolvePrWorktreeConfig = (pr: GitHubPullRequestSummary, localBranches: st
     ensureRemoteUrl: remoteUrl,
     sourceLabel: `${remoteName}/${headBranch}`,
   };
+};
+
+const slugifyWorktreeName = (value: string): string => {
+  return value
+    .trim()
+    .replace(/^refs\/heads\//, '')
+    .replace(/^heads\//, '')
+    .replace(/\s+/g, '-')
+    .replace(/^\/+|\/+$/g, '')
+    .split('/').join('-')
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
 };
 
 interface NewWorktreeDialogProps {
@@ -536,6 +541,22 @@ export function NewWorktreeDialog({
         { sessionId: args.sessionId },
       );
 
+      // Record the thread this worktree session was created for, so it stays
+      // visible as a context source after the opening message scrolls away.
+      void sessionActions.setLinkedIssue(
+        args.sessionId,
+        args.directory,
+        buildLinkedIssue({
+          url: issueRes.issue.url,
+          number: issueRes.issue.number,
+          title: issueRes.issue.title,
+          kind: 'issue',
+          author: issueRes.issue.author,
+          linkedAt: Date.now(),
+        }),
+        true,
+      ).catch(() => undefined);
+
       toast.success(t('session.newWorktree.toast.sessionFromIssue'));
       return;
     }
@@ -575,6 +596,20 @@ export function NewWorktreeDialog({
         undefined,
         { sessionId: args.sessionId },
       );
+
+      void sessionActions.setLinkedIssue(
+        args.sessionId,
+        args.directory,
+        buildLinkedIssue({
+          url: prContext.pr.url,
+          number: prContext.pr.number,
+          title: prContext.pr.title,
+          kind: 'pull',
+          author: prContext.pr.author,
+          linkedAt: Date.now(),
+        }),
+        true,
+      ).catch(() => undefined);
 
       toast.success(t('session.newWorktree.toast.sessionFromPr'));
     }
@@ -867,7 +902,7 @@ export function NewWorktreeDialog({
           ...(sourceBranch && mode === 'new-branch' ? { startRef: sourceBranch } : {}),
         };
       })();
-      
+
       const resolvedArgs = await withWorktreeUpstreamDefaults(projectDirectory, args);
 
       const metadata = await createWorktree(projectRef, resolvedArgs);
