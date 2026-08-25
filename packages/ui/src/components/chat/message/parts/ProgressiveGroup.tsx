@@ -378,7 +378,6 @@ interface ExpandableToolRowProps {
     onShowPopup: (content: ToolPopupContent) => void;
     onContentChange?: (reason?: ContentChangeReason) => void;
     animateTailText: boolean;
-    animateRows: boolean;
 }
 
 const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
@@ -389,7 +388,6 @@ const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
     onShowPopup,
     onContentChange,
     animateTailText,
-    animateRows,
 }) => {
     const handleToggle = React.useCallback(() => {
         onToggleTool(activity.id);
@@ -407,17 +405,17 @@ const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
         />
     );
 
-    const maybeWrapped = animateTailText ? (
-        <ToolRevealOnMount animate={true} wipe>
-            {content}
-        </ToolRevealOnMount>
-    ) : content;
-
-    if (!animateRows) {
-        return maybeWrapped;
-    }
-
-    return <FadeInOnReveal>{maybeWrapped}</FadeInOnReveal>;
+    // Wrappers are unconditional: a conditional wrapper changes the element
+    // type at this position when animateTailText/animateRows flip (message
+    // completion), remounting the tool subtree and replaying the reveal wipe.
+    // Both wrappers are inert with animation off.
+    return (
+        <FadeInOnReveal>
+            <ToolRevealOnMount animate={animateTailText} wipe>
+                {content}
+            </ToolRevealOnMount>
+        </FadeInOnReveal>
+    );
 };
 
 const MemoExpandableToolRow = React.memo(ExpandableToolRow, (prev, next) => {
@@ -427,7 +425,6 @@ const MemoExpandableToolRow = React.memo(ExpandableToolRow, (prev, next) => {
         && prev.onShowPopup === next.onShowPopup
         && prev.onContentChange === next.onContentChange
         && prev.animateTailText === next.animateTailText
-        && prev.animateRows === next.animateRows
         && prev.activity.id === next.activity.id
         && prev.activity.kind === next.activity.kind
         && prev.activity.endedAt === next.activity.endedAt
@@ -438,14 +435,12 @@ interface StaticGroupedToolRowProps {
     toolName: string;
     activities: TurnActivityPart[];
     animateTailText: boolean;
-    animateRows: boolean;
 }
 
 const StaticGroupedToolRow: React.FC<StaticGroupedToolRowProps> = ({
     toolName,
     activities,
     animateTailText,
-    animateRows,
 }) => {
     const content = (
         <StaticToolRow
@@ -455,23 +450,22 @@ const StaticGroupedToolRow: React.FC<StaticGroupedToolRowProps> = ({
         />
     );
 
-    const maybeWrapped = animateTailText ? (
-        <ToolRevealOnMount animate={true} wipe>
-            {content}
-        </ToolRevealOnMount>
-    ) : content;
-
-    if (!animateRows) {
-        return maybeWrapped;
-    }
-
-    return <FadeInOnReveal>{maybeWrapped}</FadeInOnReveal>;
+    // Wrappers are unconditional: a conditional wrapper changes the element
+    // type at this position when animateTailText/animateRows flip (message
+    // completion), remounting the tool subtree and replaying the reveal wipe.
+    // Both wrappers are inert with animation off.
+    return (
+        <FadeInOnReveal>
+            <ToolRevealOnMount animate={animateTailText} wipe>
+                {content}
+            </ToolRevealOnMount>
+        </FadeInOnReveal>
+    );
 };
 
 const MemoStaticGroupedToolRow = React.memo(StaticGroupedToolRow, (prev, next) => {
     return prev.toolName === next.toolName
         && prev.animateTailText === next.animateTailText
-        && prev.animateRows === next.animateRows
         && areActivityListsEqual(prev.activities, next.activities);
 });
 
@@ -926,7 +920,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         onShowPopup={onShowPopup}
                         onContentChange={onContentChange}
                         animateTailText={Boolean(animatedToolIds?.has(row.activity.id))}
-                        animateRows={animateRows}
                     />
                 );
 
@@ -937,7 +930,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         toolName={row.toolName}
                         activities={row.activities}
                         animateTailText={row.activities.some((activity) => animatedToolIds?.has(activity.id))}
-                        animateRows={animateRows}
                     />
                 );
 
@@ -952,7 +944,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         onShowPopup={onShowPopup}
                         onContentChange={onContentChange}
                         animateTailText={Boolean(animatedToolIds?.has(row.activity.id))}
-                        animateRows={animateRows}
                     />
                 );
 

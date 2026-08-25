@@ -19,7 +19,7 @@ import { hasPendingUserSendAnimation, consumePendingUserSendAnimation } from '@/
 import { streamPerfCount, streamPerfMark, streamPerfMeasure } from '@/stores/utils/streamDebug';
 import type { StreamPhase } from './message/types';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
-import { useSessionParts } from '@/sync/sync-context';
+import { useSessionPartsForMessages } from '@/sync/sync-context';
 import type { ReviewTransferDirection } from '@/lib/reviewFlow';
 import { resolveChatListAnchoredEndSpace, resolveTimelineIsAtEnd } from './lib/scroll/timelineScrollAnchoring';
 import {
@@ -479,6 +479,7 @@ const TurnBlock = React.memo(({
     activeStreamingPhase,
     reviewTransferDirection,
 }: TurnBlockProps) => {
+
     const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
     const userMessageHidden = React.useMemo(
         () => isHiddenUserMessage(turn.userMessage, { planModeEnabled }),
@@ -1121,15 +1122,22 @@ const StreamingTailContent: React.FC<{
     activeStreamingPhase,
     reviewTransferDirection,
 }) => {
-    const liveParts = useSessionParts(activeStreamingMessageId ?? '', directory);
+    // Overlay live parts on every message of the tail, not only the one
+    // currently streaming: a finished step message's base record can lag the
+    // part store, and rendering it from that stale snapshot briefly unmounts
+    // its completed tool parts when the stream hands off to the next message.
+    const tailMessageIds = React.useMemo(() => {
+        if (entry.kind === 'turn') return entry.turn.assistantMessageIds;
+        return [entry.message.info.id];
+    }, [entry]);
+    const livePartsByMessageId = useSessionPartsForMessages(tailMessageIds, directory);
     const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
     const liveEntry = React.useMemo(() => buildLiveStreamingEntry(entry, {
-        activeStreamingMessageId,
-        liveParts,
+        livePartsByMessageId,
         showTextJustificationActivity: chatRenderMode === 'sorted',
         showTurnChangedFiles,
         mergeHiddenUserTurns: { planModeEnabled },
-    }), [activeStreamingMessageId, chatRenderMode, entry, liveParts, showTurnChangedFiles, planModeEnabled]);
+    }), [chatRenderMode, entry, livePartsByMessageId, showTurnChangedFiles, planModeEnabled]);
 
     return (
         <MessageListEntry
