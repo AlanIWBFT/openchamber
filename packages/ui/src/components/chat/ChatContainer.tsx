@@ -19,7 +19,7 @@ import { SessionRecapNote } from '@/components/chat/SessionRecapSpacer';
 import ScrollToBottomButton from './components/ScrollToBottomButton';
 import { PromptNavigatorRail } from './components/PromptNavigatorRail';
 import { useScrollShadow } from '@/components/ui/useScrollShadow';
-import { useChatTimelineScroll, type AnimationHandlers, type ContentChangeReason, type TimelineListHandle } from '@/hooks/useChatTimelineScroll';
+import { useChatTimelineScroll, type TimelineListHandle } from '@/hooks/useChatTimelineScroll';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
 import { TimelineDialog } from './TimelineDialog';
 import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
@@ -172,8 +172,6 @@ type ChatViewportProps = {
         confirmedAt?: number;
         fallbackTimestamp?: number;
     } | null;
-    handleMessageContentChange: (reason?: ContentChangeReason) => void;
-    getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom: () => void;
     sessionQuestions: QuestionRequest[];
     sessionPermissions: PermissionRequest[];
@@ -210,8 +208,6 @@ const ChatViewport = React.memo(({
     streamingMessageId,
     activeStreamingPhase,
     retryOverlay,
-    handleMessageContentChange,
-    getAnimationHandlers,
     scrollToBottom,
     sessionQuestions,
     sessionPermissions,
@@ -394,8 +390,6 @@ const ChatViewport = React.memo(({
                     activeStreamingMessageId={streamingMessageId}
                     activeStreamingPhase={activeStreamingPhase}
                     retryOverlay={retryOverlay}
-                    onMessageContentChange={handleMessageContentChange}
-                    getAnimationHandlers={getAnimationHandlers}
                     isLoadingOlder={isLoadingOlder}
                     scrollToBottom={scrollToBottom}
                     directory={directory}
@@ -443,8 +437,6 @@ const ChatViewport = React.memo(({
         && prev.streamingMessageId === next.streamingMessageId
         && prev.activeStreamingPhase === next.activeStreamingPhase
         && prev.retryOverlay === next.retryOverlay
-        && prev.handleMessageContentChange === next.handleMessageContentChange
-        && prev.getAnimationHandlers === next.getAnimationHandlers
         && prev.scrollToBottom === next.scrollToBottom
         && prev.sessionQuestions === next.sessionQuestions
         && prev.sessionPermissions === next.sessionPermissions
@@ -959,8 +951,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         onIsAtEndChange,
         onManualNavigation,
         onTimelineDataChange,
-        notifyContentChange: handleMessageContentChange,
-        getAnimationHandlers,
         goToBottom,
         scrollToBottomOnSend,
         restoreSnapshot,
@@ -1025,13 +1015,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     React.useEffect(() => {
         activeTurnChangeRef.current = timelineController.handleActiveTurnChange;
     }, [timelineController.handleActiveTurnChange]);
-
-    React.useEffect(() => {
-        if (sessionPermissions.length === 0 && sessionQuestions.length === 0) {
-            return;
-        }
-        handleMessageContentChange('permission');
-    }, [handleMessageContentChange, sessionPermissions, sessionQuestions]);
 
     const navigation = useChatTurnNavigation({
         sessionId: currentSessionId,
@@ -1365,8 +1348,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 streamingMessageId={streamingMessageId}
                 activeStreamingPhase={activeStreamingPhase}
                 retryOverlay={retryOverlay}
-                handleMessageContentChange={handleMessageContentChange}
-                getAnimationHandlers={getAnimationHandlers}
                 scrollToBottom={resumeToLatestInstant}
                 sessionQuestions={sessionQuestions}
                 sessionPermissions={sessionPermissions}

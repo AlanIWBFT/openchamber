@@ -2,7 +2,6 @@ import React from 'react';
 import { animate, type AnimationPlaybackControls } from 'motion';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { cn } from '@/lib/utils';
-import type { ContentChangeReason } from '@/hooks/useChatTimelineScroll';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from '@/components/icon/Icon';
 import { BusyDots } from './BusyDots';
@@ -81,7 +80,6 @@ const getReasoningSummary = (text: string): string => {
 type ReasoningTimelineBlockProps = {
     text: string;
     variant: ReasoningVariant;
-    onContentChange?: (reason?: ContentChangeReason) => void;
     blockId: string;
     time?: { start?: number; end?: number };
     showDuration?: boolean;
@@ -99,7 +97,6 @@ type ExpansionState = {
 export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     text,
     variant,
-    onContentChange,
     blockId,
     time,
     isStreaming = false,
@@ -123,11 +120,6 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     const contentRef = React.useRef<HTMLDivElement>(null);
     const contentAnimationRef = React.useRef<AnimationPlaybackControls | null>(null);
     const contentMountedRef = React.useRef(false);
-    // Stable handle to onContentChange so the height-animation layout effect can
-    // signal auto-follow without taking onContentChange as a dependency (which
-    // would risk re-running — and thus restarting — the animation on re-render).
-    const onContentChangeRef = React.useRef(onContentChange);
-    onContentChangeRef.current = onContentChange;
 
     const summary = React.useMemo(() => getReasoningSummary(text), [text]);
     const toggleAriaLabel = isExpanded
@@ -137,8 +129,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     const handleToggle = React.useCallback(() => {
         setShouldRenderExpandedContent(true);
         setExpansion({ expanded: !isExpanded, source: 'user' });
-        onContentChange?.('structural');
-    }, [isExpanded, onContentChange]);
+    }, [isExpanded]);
 
     const handleKeyDown = React.useCallback((event: React.KeyboardEvent) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -158,13 +149,6 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
             return { expanded: canAutoExpand, source: 'auto' };
         });
     }, [canAutoExpand]);
-
-    React.useEffect(() => {
-        if (text.trim().length === 0) {
-            return;
-        }
-        onContentChange?.('structural');
-    }, [onContentChange, text]);
 
     React.useEffect(() => {
         if (isExpanded || isStreaming) {
@@ -239,11 +223,6 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
             element.style.height = '0px';
         } else {
             element.style.height = `${element.scrollHeight}px`;
-            // Only the COLLAPSE animation needs the guard: it shrinks the
-            // timeline and the trailing async scroll events can be misread as a
-            // user scroll-away. Expansion grows the timeline and re-pins cleanly,
-            // and guarding it caused a faint scroll fight while thinking streams.
-            onContentChangeRef.current?.('animation');
         }
 
         const animation = animate(
@@ -436,14 +415,12 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
 
 type ReasoningPartProps = {
     part: Part;
-    onContentChange?: (reason?: ContentChangeReason) => void;
     messageId: string;
     streamPhase?: StreamPhase;
 };
 
 const ReasoningPart = React.memo(({
     part,
-    onContentChange,
     messageId,
     streamPhase,
 }: ReasoningPartProps) => {
@@ -470,7 +447,6 @@ const ReasoningPart = React.memo(({
         <ReasoningTimelineBlock
             text={throttledText}
             variant="thinking"
-            onContentChange={onContentChange}
             blockId={part.id || `${messageId}-reasoning`}
             time={time}
             isStreaming={isStreaming}

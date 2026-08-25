@@ -37,22 +37,6 @@ import {
 // guard/settle/entry-stick timers here.
 // ──────────────────────────────────────────────────────────────────────────
 
-// Kept for source compatibility with message parts that report content growth.
-// Growth no longer drives scrolling — the list handles it — so these are inert,
-// but the prop threads through many part components and removing the contract
-// is a separate change.
-export type ContentChangeReason = 'text' | 'structural' | 'permission' | 'animation';
-
-export interface AnimationHandlers {
-    onChunk: () => void;
-    onComplete: () => void;
-    onStreamingCandidate?: () => void;
-    onAnimationStart?: () => void;
-    onReservationCancelled?: () => void;
-    onReasoningBlock?: () => void;
-    onAnimatedHeightChange?: (height: number) => void;
-}
-
 // The subset of the list ref this hook drives. Declared structurally so the
 // hook stays testable without a renderer and does not hard-depend on the list
 // implementation.
@@ -105,8 +89,6 @@ export interface UseChatTimelineScrollResult {
     isFollowingProgrammatically: boolean;
     goToBottom: (mode?: 'instant' | 'smooth') => void;
     scrollToBottomOnSend: () => void;
-    notifyContentChange: (reason?: ContentChangeReason) => void;
-    getAnimationHandlers: (messageId: string) => AnimationHandlers;
     saveSnapshotNow: () => void;
     restoreSnapshot: () => Promise<boolean>;
 }
@@ -124,8 +106,6 @@ const ANCHOR_POSITION_ATTEMPTS = 12;
 // Anchor restores only correct sub-pixel drift; anything larger is the user or
 // a genuine relayout and must not be undone.
 const ANCHOR_RESTORE_TOLERANCE_PX = 2;
-
-const NOOP = (): void => {};
 
 export const useChatTimelineScroll = ({
     currentSessionId,
@@ -790,18 +770,6 @@ export const useChatTimelineScroll = ({
         };
     }, [onActiveTurnChange, scrollNode]);
 
-    // ── inert compatibility surface ─────────────────────────────────────────
-    const stableAnimationHandlers = React.useMemo<AnimationHandlers>(() => ({
-        onChunk: NOOP,
-        onComplete: NOOP,
-        onStreamingCandidate: NOOP,
-        onAnimationStart: NOOP,
-        onReservationCancelled: NOOP,
-        onReasoningBlock: NOOP,
-        onAnimatedHeightChange: NOOP,
-    }), []);
-    const getAnimationHandlers = React.useCallback(() => stableAnimationHandlers, [stableAnimationHandlers]);
-
     return {
         scrollRef,
         scrollNode,
@@ -818,8 +786,6 @@ export const useChatTimelineScroll = ({
         isFollowingProgrammatically,
         goToBottom,
         scrollToBottomOnSend,
-        notifyContentChange: NOOP,
-        getAnimationHandlers,
         saveSnapshotNow,
         restoreSnapshot,
     };

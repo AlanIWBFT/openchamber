@@ -5,7 +5,6 @@ import { LegendList, type LegendListRef } from '@legendapp/list/react';
 import ChatMessage from './ChatMessage';
 import { areOptionalRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual, areRenderRelevantMessagesEqual } from './message/renderCompare';
 import TurnItem from './components/TurnItem';
-import type { AnimationHandlers, ContentChangeReason } from '@/hooks/useChatTimelineScroll';
 import type { ChatMessageEntry, TurnRecord, TurnGroupingContext } from './lib/turns/types';
 import { useTurnRecords } from './hooks/useTurnRecords';
 import { applyRetryOverlay } from './lib/turns/applyRetryOverlay';
@@ -317,8 +316,6 @@ interface MessageListProps {
         confirmedAt?: number;
         fallbackTimestamp?: number;
     } | null;
-    onMessageContentChange: (reason?: ContentChangeReason) => void;
-    getAnimationHandlers: (messageId: string) => AnimationHandlers;
     isLoadingOlder: boolean;
     scrollToBottom?: () => void;
     directory?: string;
@@ -375,8 +372,6 @@ interface MessageRowProps {
     activeStreamingPhase?: StreamPhase | null;
     animateUserOnMount?: boolean;
     onUserAnimationConsumed?: (messageId: string) => void;
-    onContentChange: (reason?: ContentChangeReason) => void;
-    animationHandlers: AnimationHandlers;
     scrollToBottom?: () => void;
     reviewTransferDirection?: ReviewTransferDirection | null;
 }
@@ -391,8 +386,6 @@ const MessageRow = React.memo<MessageRowProps>(({
     activeStreamingPhase,
     animateUserOnMount,
     onUserAnimationConsumed,
-    onContentChange,
-    animationHandlers,
     scrollToBottom,
     reviewTransferDirection,
 }) => {
@@ -403,8 +396,6 @@ const MessageRow = React.memo<MessageRowProps>(({
             nextMessage={nextMessage}
             animateUserOnMount={animateUserOnMount}
             onUserAnimationConsumed={onUserAnimationConsumed}
-            onContentChange={onContentChange}
-            animationHandlers={animationHandlers}
             scrollToBottom={scrollToBottom}
             turnGroupingContext={turnGroupingContext}
             assistantHeaderMessageId={assistantHeaderMessageId}
@@ -422,20 +413,12 @@ const MessageRow = React.memo<MessageRowProps>(({
         && areOptionalRenderRelevantMessagesEqual(prev.nextMessage, next.nextMessage)
         && prev.animateUserOnMount === next.animateUserOnMount
         && prev.onUserAnimationConsumed === next.onUserAnimationConsumed
-        && prev.onContentChange === next.onContentChange
         && prev.scrollToBottom === next.scrollToBottom
         && areRelevantTurnGroupingContextsEqual(prevTurn, nextTurn, prev.message.info.id, resolveMessageRole(prev.message) === 'user')
         && prev.assistantHeaderMessageId === next.assistantHeaderMessageId
         && prev.isInActiveTurn === next.isInActiveTurn
         && prev.activeStreamingPhase === next.activeStreamingPhase
-        && prev.reviewTransferDirection === next.reviewTransferDirection
-        && prev.animationHandlers?.onChunk === next.animationHandlers?.onChunk
-        && prev.animationHandlers?.onComplete === next.animationHandlers?.onComplete
-        && prev.animationHandlers?.onStreamingCandidate === next.animationHandlers?.onStreamingCandidate
-        && prev.animationHandlers?.onAnimationStart === next.animationHandlers?.onAnimationStart
-        && prev.animationHandlers?.onReservationCancelled === next.animationHandlers?.onReservationCancelled
-        && prev.animationHandlers?.onReasoningBlock === next.animationHandlers?.onReasoningBlock
-        && prev.animationHandlers?.onAnimatedHeightChange === next.animationHandlers?.onAnimatedHeightChange;
+        && prev.reviewTransferDirection === next.reviewTransferDirection;
 });
 
 MessageRow.displayName = 'MessageRow';
@@ -449,8 +432,6 @@ interface TurnBlockProps {
     turnUiStates: Map<string, TurnUiState>;
     onToggleTurnGroup: (turnId: string) => void;
     chatRenderMode: 'sorted' | 'live';
-    onMessageContentChange: (reason?: ContentChangeReason) => void;
-    getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom?: () => void;
     stickyUserHeader?: boolean;
     shouldAnimateUserMessage: (message: ChatMessageEntry) => boolean;
@@ -469,8 +450,6 @@ const TurnBlock = React.memo(({
     turnUiStates,
     onToggleTurnGroup,
     chatRenderMode,
-    onMessageContentChange,
-    getAnimationHandlers,
     scrollToBottom,
     stickyUserHeader = true,
     shouldAnimateUserMessage,
@@ -708,19 +687,15 @@ const TurnBlock = React.memo(({
                     reviewTransferDirection={reviewTransferDirection}
                     animateUserOnMount={shouldAnimateUserMessage(message)}
                     onUserAnimationConsumed={onUserAnimationConsumed}
-                    onContentChange={onMessageContentChange}
-                    animationHandlers={getAnimationHandlers(message.info.id)}
                     scrollToBottom={scrollToBottom}
                 />
             );
         },
         [
-            getAnimationHandlers,
             isLastTurn,
             nextEntryFirstMessage,
             messageOrder.lookup,
             messageOrder.ordered,
-            onMessageContentChange,
             scrollToBottom,
             sessionIsWorking,
             chatRenderMode,
@@ -769,8 +744,6 @@ interface UngroupedMessageRowProps {
     message: ChatMessageEntry;
     previousMessage?: ChatMessageEntry;
     nextMessage?: ChatMessageEntry;
-    onMessageContentChange: (reason?: ContentChangeReason) => void;
-    getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom?: () => void;
     shouldAnimateUserMessage: (message: ChatMessageEntry) => boolean;
     onUserAnimationConsumed: (messageId: string) => void;
@@ -783,8 +756,6 @@ const UngroupedMessageRow = React.memo(({
     message,
     previousMessage,
     nextMessage,
-    onMessageContentChange,
-    getAnimationHandlers,
     scrollToBottom,
     shouldAnimateUserMessage,
     onUserAnimationConsumed,
@@ -799,8 +770,6 @@ const UngroupedMessageRow = React.memo(({
             nextMessage={nextMessage}
             animateUserOnMount={shouldAnimateUserMessage(message)}
             onUserAnimationConsumed={onUserAnimationConsumed}
-            onContentChange={onMessageContentChange}
-            animationHandlers={getAnimationHandlers(message.info.id)}
             scrollToBottom={scrollToBottom}
             isInActiveTurn={Boolean(activeStreamingMessageId) && message.info.id === activeStreamingMessageId}
             activeStreamingPhase={message.info.id === activeStreamingMessageId ? activeStreamingPhase : null}
@@ -813,8 +782,6 @@ UngroupedMessageRow.displayName = 'UngroupedMessageRow';
 
 interface MessageListEntryProps {
     entry: RenderEntry;
-    onMessageContentChange: (reason?: ContentChangeReason) => void;
-    getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom?: () => void;
     stickyUserHeader?: boolean;
     sessionIsWorking: boolean;
@@ -843,8 +810,6 @@ const turnContainsMessageId = (turn: TurnRecord, messageId: string | null | unde
 
 const MessageListEntry = React.memo(({
     entry,
-    onMessageContentChange,
-    getAnimationHandlers,
     scrollToBottom,
     stickyUserHeader,
     sessionIsWorking,
@@ -865,8 +830,6 @@ const MessageListEntry = React.memo(({
                 message={entry.message}
                 previousMessage={entry.previousMessage}
                 nextMessage={entry.nextMessage}
-                onMessageContentChange={onMessageContentChange}
-                getAnimationHandlers={getAnimationHandlers}
                 scrollToBottom={scrollToBottom}
                 shouldAnimateUserMessage={shouldAnimateUserMessage}
                 onUserAnimationConsumed={onUserAnimationConsumed}
@@ -892,8 +855,6 @@ const MessageListEntry = React.memo(({
             activeStreamingMessageId={activeStreamingMessageId}
             activeStreamingPhase={activeStreamingPhase}
             reviewTransferDirection={reviewTransferDirection}
-            onMessageContentChange={onMessageContentChange}
-            getAnimationHandlers={getAnimationHandlers}
             scrollToBottom={scrollToBottom}
             stickyUserHeader={stickyUserHeader}
         />
@@ -906,8 +867,6 @@ MessageListEntry.displayName = 'MessageListEntry';
 // `renderItem` so the render callback keeps a stable identity — a changing
 // `renderItem` makes the list re-render every mounted row on every commit.
 type TimelineRowContextValue = {
-    onMessageContentChange: (reason?: ContentChangeReason) => void;
-    getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom?: () => void;
     stickyUserHeader: boolean;
     defaultActivityExpanded: boolean;
@@ -938,8 +897,6 @@ const TimelineRow = React.memo(({ entry }: { entry: RenderEntry }) => {
             <StreamingTailContent
                 entry={entry}
                 directory={context.directory}
-                onMessageContentChange={context.onMessageContentChange}
-                getAnimationHandlers={context.getAnimationHandlers}
                 scrollToBottom={context.scrollToBottom}
                 stickyUserHeader={context.stickyUserHeader}
                 sessionIsWorking={context.sessionIsWorking}
@@ -960,8 +917,6 @@ const TimelineRow = React.memo(({ entry }: { entry: RenderEntry }) => {
     return (
         <MessageListEntry
             entry={entry}
-            onMessageContentChange={context.onMessageContentChange}
-            getAnimationHandlers={context.getAnimationHandlers}
             scrollToBottom={context.scrollToBottom}
             stickyUserHeader={context.stickyUserHeader}
             sessionIsWorking={false}
@@ -1092,8 +1047,6 @@ TimelineList.displayName = 'TimelineList';
 const StreamingTailContent: React.FC<{
     entry: RenderEntry;
     directory?: string;
-    onMessageContentChange: (reason?: ContentChangeReason) => void;
-    getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom?: () => void;
     stickyUserHeader: boolean;
     sessionIsWorking: boolean;
@@ -1110,8 +1063,6 @@ const StreamingTailContent: React.FC<{
 }> = ({
     entry,
     directory,
-    onMessageContentChange,
-    getAnimationHandlers,
     scrollToBottom,
     stickyUserHeader,
     sessionIsWorking,
@@ -1146,8 +1097,6 @@ const StreamingTailContent: React.FC<{
     return (
         <MessageListEntry
             entry={liveEntry}
-            onMessageContentChange={onMessageContentChange}
-            getAnimationHandlers={getAnimationHandlers}
             scrollToBottom={scrollToBottom}
             stickyUserHeader={stickyUserHeader}
             sessionIsWorking={sessionIsWorking}
@@ -1173,8 +1122,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     activeStreamingMessageId = null,
     activeStreamingPhase = null,
     retryOverlay = null,
-    onMessageContentChange,
-    getAnimationHandlers,
     scrollToBottom,
     directory,
     registerList,
@@ -1204,7 +1151,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         previousOrder: string[];
         animatedIds: Set<string>;
     }>({ sessionKey: undefined, previousOrder: [], animatedIds: new Set() });
-    const stableGetAnimationHandlers = useStableEvent(getAnimationHandlers);
     const stableScrollToBottom = useStableEvent(() => {
         scrollToBottom?.();
     });
@@ -1420,10 +1366,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const allEntries = React.useMemo(() => {
         return trailingStreamingEntry ? [...historyEntries, trailingStreamingEntry] : historyEntries;
     }, [historyEntries, trailingStreamingEntry]);
-
-    const stableHistoryContentChange = useStableEvent((reason?: ContentChangeReason) => {
-        onMessageContentChange(reason);
-    });
 
     // Stable identities: these reach the list, where a changing callback would
     // re-render every mounted row.
@@ -1763,8 +1705,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     }, [allEntries, anchorMessageId, onAnchorReady, onAnchorSizeChanged]);
 
     const rowContext = React.useMemo(() => ({
-        onMessageContentChange: stableHistoryContentChange,
-        getAnimationHandlers: stableGetAnimationHandlers,
         scrollToBottom: stableScrollToBottom,
         stickyUserHeader,
         defaultActivityExpanded,
@@ -1791,8 +1731,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         sessionIsWorking,
         shouldAnimateUserMessage,
         showTurnChangedFiles,
-        stableGetAnimationHandlers,
-        stableHistoryContentChange,
         stableScrollToBottom,
         stickyUserHeader,
         toggleTurnGroup,

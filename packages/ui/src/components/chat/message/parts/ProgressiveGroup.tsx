@@ -4,7 +4,6 @@ import { cn } from '@/lib/utils';
 import type { TurnActivityRecord as TurnActivityPart } from '../../lib/turns/types';
 import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
 import type { StreamPhase } from '../types';
-import type { ContentChangeReason } from '@/hooks/useChatTimelineScroll';
 import type { ToolPopupContent } from '../types';
 import ToolPart from './ToolPart';
 import { MinDurationShineText } from './MinDurationShineText';
@@ -40,7 +39,6 @@ interface ProgressiveGroupProps {
     expandedTools: Set<string>;
     onToggleTool: (toolId: string) => void;
     onShowPopup: (content: ToolPopupContent) => void;
-    onContentChange?: (reason?: ContentChangeReason) => void;
     streamPhase: StreamPhase;
     showHeader: boolean;
     animateRows?: boolean;
@@ -376,7 +374,6 @@ interface ExpandableToolRowProps {
     isMobile: boolean;
     onToggleTool: (toolId: string) => void;
     onShowPopup: (content: ToolPopupContent) => void;
-    onContentChange?: (reason?: ContentChangeReason) => void;
     animateTailText: boolean;
 }
 
@@ -386,7 +383,6 @@ const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
     isMobile,
     onToggleTool,
     onShowPopup,
-    onContentChange,
     animateTailText,
 }) => {
     const handleToggle = React.useCallback(() => {
@@ -399,7 +395,6 @@ const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
             isExpanded={isExpanded}
             onToggle={handleToggle}
             isMobile={isMobile}
-            onContentChange={onContentChange}
             onShowPopup={onShowPopup}
             animateTailText={animateTailText}
         />
@@ -423,7 +418,6 @@ const MemoExpandableToolRow = React.memo(ExpandableToolRow, (prev, next) => {
         && prev.isMobile === next.isMobile
         && prev.onToggleTool === next.onToggleTool
         && prev.onShowPopup === next.onShowPopup
-        && prev.onContentChange === next.onContentChange
         && prev.animateTailText === next.animateTailText
         && prev.activity.id === next.activity.id
         && prev.activity.kind === next.activity.kind
@@ -789,9 +783,8 @@ export const StaticToolRow = React.memo(StaticToolRowInner, (prev, next) => {
 /**
  * Inline reasoning text block — rendered as dimmed italic markdown.
  */
-const InlineReasoningBlock = React.memo(({ activity, onContentChange, streamPhase }: {
+const InlineReasoningBlock = React.memo(({ activity, streamPhase }: {
     activity: TurnActivityPart;
-    onContentChange?: (reason?: ContentChangeReason) => void;
     streamPhase: StreamPhase;
 }) => {
     return (
@@ -799,7 +792,6 @@ const InlineReasoningBlock = React.memo(({ activity, onContentChange, streamPhas
             part={activity.part}
             messageId={activity.messageId}
             streamPhase={streamPhase}
-            onContentChange={onContentChange}
         />
     );
 });
@@ -807,16 +799,14 @@ const InlineReasoningBlock = React.memo(({ activity, onContentChange, streamPhas
 /**
  * Inline justification text block — rendered as normal assistant text between tools.
  */
-const InlineJustificationBlock = React.memo(({ activity, onContentChange, actions }: {
+const InlineJustificationBlock = React.memo(({ activity, actions }: {
     activity: TurnActivityPart;
-    onContentChange?: (reason?: ContentChangeReason) => void;
     actions?: React.ReactNode;
 }) => {
     return (
         <JustificationBlock
             part={activity.part}
             messageId={activity.messageId}
-            onContentChange={onContentChange}
             actions={actions}
         />
     );
@@ -831,7 +821,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     expandedTools,
     onToggleTool,
     onShowPopup,
-    onContentChange,
     streamPhase,
     showHeader,
     animateRows = true,
@@ -892,7 +881,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         <InlineReasoningBlock
                             activity={row.activity}
                             streamPhase={streamPhase}
-                            onContentChange={onContentChange}
                         />
                     </>
                 );
@@ -903,7 +891,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                     <>
                         <InlineJustificationBlock
                             activity={row.activity}
-                            onContentChange={onContentChange}
                             actions={renderJustificationActions?.(row.activity)}
                         />
                     </>
@@ -918,7 +905,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         isMobile={isMobile}
                         onToggleTool={onToggleTool}
                         onShowPopup={onShowPopup}
-                        onContentChange={onContentChange}
                         animateTailText={Boolean(animatedToolIds?.has(row.activity.id))}
                     />
                 );
@@ -942,7 +928,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         isMobile={isMobile}
                         onToggleTool={onToggleTool}
                         onShowPopup={onShowPopup}
-                        onContentChange={onContentChange}
                         animateTailText={Boolean(animatedToolIds?.has(row.activity.id))}
                     />
                 );
