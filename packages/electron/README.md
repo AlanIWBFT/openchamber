@@ -8,6 +8,8 @@ This package owns the native shell: windows, menus, deep links, native notificat
 
 Desktop starts the OpenChamber web server in the same Electron main process. There is no separate sidecar subprocess for the OpenChamber server.
 
+`bundle:main` runs the server dependency preload audit against the current Web server sources. The audit must not rely on a previous `build/server` directory: the coordinator builds Web assets in parallel with the Electron main process. The packaged startup smoke checks the emitted dependency graph.
+
 On Windows, latency-sensitive Git status, PR-context, and per-file diff reads use four persistent Node Worker Threads in the in-process server. They share one NativeAOT `OpenCode.ProcessBroker.exe`, which starts Git without a console and owns its process tree in a per-command Job Object. In desktop HMR, choosing a standalone `OPENCODE_BINARY` does not change the desktop's Git broker: it uses the helper in the prepared desktop service. If the helper is absent, Git uses normal spawning.
 
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
