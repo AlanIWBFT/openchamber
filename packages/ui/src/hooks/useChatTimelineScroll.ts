@@ -510,9 +510,11 @@ export const useChatTimelineScroll = ({
 
     // While the list width is resizing, every pinning write fights the
     // per-frame row re-measure and the pinned viewport shakes. Corrections
-    // stand down for the whole resize (visible content is held by the list's
-    // size compensation instead), and the live edge is re-asserted once with
-    // a single instant write after the resize settles.
+    // stand down for the whole resize and the visible content is held by the
+    // list's size compensation instead. Deliberately NO snap back to the end
+    // afterwards: a slow drag settles repeatedly, and each snap reads as the
+    // very jump this suspension removes — geometry changed, staying where the
+    // reader is beats re-asserting the edge.
     const widthResizingRef = React.useRef(false);
     React.useEffect(() => {
         if (!scrollNode || typeof ResizeObserver === 'undefined') return;
@@ -532,10 +534,6 @@ export const useChatTimelineScroll = ({
             quietTimer = setTimeout(() => {
                 quietTimer = null;
                 widthResizingRef.current = false;
-                if (modeRef.current !== 'following-end' || !isLiveFollowActive()) return;
-                const node = listRef.current?.getScrollableNode();
-                if (!node) return;
-                node.scrollTop = node.scrollHeight + 4096;
             }, 350);
         });
         observer.observe(scrollNode);
@@ -543,7 +541,7 @@ export const useChatTimelineScroll = ({
             observer.disconnect();
             if (quietTimer !== null) clearTimeout(quietTimer);
         };
-    }, [isLiveFollowActive, scrollNode]);
+    }, [scrollNode]);
 
     const onTimelineDataChange = React.useCallback(() => {
         if (widthResizingRef.current) return;
