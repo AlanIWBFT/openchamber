@@ -55,6 +55,7 @@ import {
   wasEarlyWindowClosed,
 } from './early-startup.mjs';
 import { createStartupSingleFlight } from './startup-single-flight.mjs';
+import { createServerDependencyPreload } from './server-dependency-preload.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { isSplashColor, redactHostsConfigForRemote } from './remote-page-policy.mjs';
 import { connectDefaultSshInstanceAtStartup, resolveDefaultSshInstanceId } from './startup-ssh.mjs';
@@ -156,7 +157,12 @@ const ELECTRON_STARTUP_PERF_PHASES = new Set([
   'electron.window.created',
   'electron.main.loaded',
   'electron.shell-env.ready',
+  'electron.startup-surface.ready',
+  'electron.server-preload.start',
+  'electron.server-preload.ready',
   'electron.server.start',
+  'electron.server-import.start',
+  'electron.server-import.ready',
   'electron.server.ready',
   'electron.navigation.start',
   'electron.navigation.ready',
@@ -187,6 +193,23 @@ const recordElectronStartupPerformance = (phase, details = {}) => {
 installStartupMarkSink(logElectronStartupEvent);
 recordElectronStartupPerformance('electron.main.loaded');
 const classifyStartupDocument = (url) => String(url || '').startsWith('data:') ? 'splash' : 'application';
+
+let userShellEnvironmentApplied = false;
+let resolveUserShellEnvironmentApplied;
+const userShellEnvironmentAppliedPromise = new Promise((resolve) => {
+  resolveUserShellEnvironmentApplied = resolve;
+});
+const markUserShellEnvironmentApplied = () => {
+  if (userShellEnvironmentApplied) return;
+  userShellEnvironmentApplied = true;
+  resolveUserShellEnvironmentApplied();
+};
+const serverDependencyPreload = createServerDependencyPreload({
+  isEnvironmentReady: () => userShellEnvironmentApplied,
+  waitForEnvironmentReady: () => userShellEnvironmentAppliedPromise,
+  logger: log,
+  recordPerformance: recordElectronStartupPerformance,
+});
 
 const LOG_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 try {
@@ -1451,12 +1474,15 @@ import { provideLoginShellEnvSnapshot } from '@openchamber/web/server/lib/openco
 // CLI, git, etc.) inherit process.env directly now — there is no sidecar
 // subprocess to hand a custom env to.
 const inheritUserShellEnv = async () => {
+  if (userShellEnvironmentApplied) return;
   const shellEnv = await startShellEnvironmentProbe();
-  // The server would otherwise snapshot the same shell again, synchronously,
-  // on this thread. Windows keeps the server's own registry-based snapshot:
-  // the desktop loader only knows PATH there.
+  if (userShellEnvironmentApplied) return;
+  // Reuse the host's snapshot instead of probing again in the server.
   provideLoginShellEnvSnapshot(shellEnv);
-  if (!shellEnv) return;
+  if (!shellEnv) {
+    markUserShellEnvironmentApplied();
+    return;
+  }
 
   const homeDir = os.homedir();
   const currentPath = process.env.PATH || '';
@@ -1474,6 +1500,7 @@ const inheritUserShellEnv = async () => {
   if ((process.platform === 'win32' || !currentPathLooksUserConfigured) && shellPath) {
     process.env.PATH = mergePathValues(shellPath, currentPath, delimiter);
   }
+  markUserShellEnvironmentApplied();
 };
 
 const isLocalServerSkipped = () => process.env.OPENCHAMBER_SKIP_LOCAL_SERVER === '1';
@@ -1567,7 +1594,13 @@ const startLocalServer = async () => {
   process.env.NO_PROXY = process.env.NO_PROXY || 'localhost,127.0.0.1';
   process.env.no_proxy = process.env.no_proxy || 'localhost,127.0.0.1';
 
+  await serverDependencyPreload.wait();
+  const serverImportStartedAt = performance.now();
+  recordElectronStartupPerformance('electron.server-import.start');
   const serverModule = await import('@openchamber/web/server/index.js');
+  recordElectronStartupPerformance('electron.server-import.ready', {
+    durationMs: performance.now() - serverImportStartedAt,
+  });
   state.serverModule = serverModule;
   if (state.quitInProgress) throw new Error('OpenChamber server startup cancelled during shutdown');
 
@@ -6047,6 +6080,10 @@ app.on('activate', async () => {
 
 app.whenReady().then(async () => {
   if (wasEarlyWindowClosed()) return;
+  // entry.mjs already waited for the initial surface (or selected background
+  // startup) before importing this module. Preload while shell discovery runs.
+  recordElectronStartupPerformance('electron.startup-surface.ready');
+  if (!isLocalServerSkipped()) void serverDependencyPreload.begin();
   const loginItemSettings = readLoginItemSettings();
   const isBackgroundStart = shouldStartInBackground(loginItemSettings);
   // The window goes up before anything else so the splash renders while the
