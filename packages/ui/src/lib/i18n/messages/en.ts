@@ -2334,6 +2334,7 @@ export const dict = {
   'chat.toolPart.showRawJson': 'Show raw JSON',
    'chat.toolPart.showFormattedJson': 'Show formatted JSON',
    'chat.toolPart.showNavigableJson': 'Show navigable JSON',
+   'chat.toolPart.openFile': 'Open file',
    'chat.toolPart.openFileAtFirstChange': 'Open file at first change',
    'chat.toolPart.openFileDiff': 'Open file diff',
   'chat.toolPart.copyOutput': 'Copy output',

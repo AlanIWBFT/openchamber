@@ -2300,6 +2300,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.toolPart.showRawJson": "Mostrar JSON bruto",
   "chat.toolPart.showFormattedJson": "Mostrar JSON formatado",
   "chat.toolPart.showNavigableJson": "Mostrar JSON navegável",
+  "chat.toolPart.openFile": "Abrir arquivo",
   "chat.toolPart.openFileAtFirstChange": "Abrir arquivo na primeira alteração",
   "chat.toolPart.openFileDiff": "Abrir diferenças do arquivo",
   "chat.toolPart.copyOutput": "Copiar saída",

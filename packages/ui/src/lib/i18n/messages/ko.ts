@@ -2334,6 +2334,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.toolPart.showRawJson': '원시 JSON 표시',
   'chat.toolPart.showFormattedJson': '형식화된 JSON 표시',
   'chat.toolPart.showNavigableJson': '탐색 가능한 JSON 표시',
+  'chat.toolPart.openFile': '파일 열기',
   'chat.toolPart.openFileAtFirstChange': '첫 번째 변경 위치에서 파일 열기',
   'chat.toolPart.openFileDiff': '파일 diff 열기',
   'chat.toolPart.copyOutput': '출력 복사',

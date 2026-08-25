@@ -2157,6 +2157,7 @@ export const dict = {
   'chat.toolPart.showRawJson': 'Rohe JSON anzeigen',
   'chat.toolPart.showFormattedJson': 'Formatierte JSON anzeigen',
   'chat.toolPart.showNavigableJson': 'Navigierbare JSON anzeigen',
+  'chat.toolPart.openFile': 'Datei öffnen',
   'chat.toolPart.openFileAtFirstChange': 'Datei bei erster Änderung öffnen',
   'chat.toolPart.openFileDiff': 'Datei-Unterschied öffnen',
   'chat.toolPart.copyOutput': 'Ausgabe kopieren',
