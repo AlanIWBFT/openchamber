@@ -8,7 +8,7 @@ This package owns the native shell: windows, menus, deep links, native notificat
 
 Desktop starts the OpenChamber web server in the same Electron main process. There is no separate sidecar subprocess for the OpenChamber server.
 
-`server-preload-env.test.mjs` exercises the isolated `process.env` access guard used to audit dependency graphs considered for import while login-shell discovery is still running. `bundle:main` runs this audit suite before every Electron main-process bundle.
+After `entry.mjs` completes its initial-window visibility wait (or selects background startup), Desktop preloads environment-independent server dependencies while shell discovery continues. `server-preload-env.test.mjs` audits that exact graph, including the local `@opencode/client`, and `bundle:main` runs the audit before bundling. The runtime guard tracks the preload's asynchronous context until the shell snapshot is applied. An early environment access is logged by variable name and source frame and fails local startup; values are never logged. Environment-sensitive modules and `server/index.js` load only after the snapshot is applied.
 
 On Windows, latency-sensitive Git status, PR-context, and per-file diff reads are dispatched to a fixed pool of four persistent Node Worker Threads owned by that in-process server. The workers share one persistent `OpenCode.ProcessBroker.exe`, staged with the local OpenCode CLI. The self-contained .NET 10 NativeAOT broker creates each Git process detached from a console and atomically assigns its complete process tree to a per-command Job Object. Worker Threads remain in-process; the broker owns only process creation, pipes, cancellation, and cleanup.
 
@@ -96,6 +96,7 @@ IPC results if its endpoint changes while the read is pending.
 | `electron-host-probe.mjs` | Chromium direct-host probes, identity checks, attempt deadlines, and response cleanup |
 | `host-probe-policy.mjs` | Selector fast attempt and unreachable-only retry policy |
 | `startup-single-flight.mjs` | One-shot startup promise coordinator that retains the first success or failure to prevent duplicate local server initialization |
+| `server-dependency-preload.mjs` | Guarded one-shot preload of environment-independent server dependencies |
 | `server-preload-env.test.mjs` | Isolated import-graph environment audit run by tests and before `bundle:main` |
 | `startup-url-selection.mjs` | Pure bundled/HMR startup probe and loopback connection-limit policy |
 | `remote-page-policy.mjs` | What remote-safe IPC accepts from and returns to another server's page: splash colour parsing, host list without credentials |
