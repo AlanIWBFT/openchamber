@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- **Chat scrolling rebuilt around your message.** Sending a message now parks it near the top of the view and the reply streams into the space below it, so you read from where you asked instead of chasing the bottom. While a reply streams, text arrives a paragraph at a time (code blocks line by line) with a soft fade, and the view glides after it in one continuous motion instead of snapping per line. Scrolling up during a stream immediately hands you the wheel — nothing yanks the view back — and the scroll-to-bottom pill appears on the left, carrying the model's working status while you're away from the live edge. Sending from anywhere mid-conversation jumps you straight to your new message.
+- Chat: a new "Follow new content while streaming" checkbox (Settings → Chat → Streaming, on by default) turns the automatic following off entirely — your message still parks at the top on send, but the view never moves on its own afterwards.
+- Chat: streamed code blocks are now syntax-highlighted while they stream, and finished messages no longer jump when a code block's line numbers fill in at the end of a reply.
+- Chat: finished replies no longer flicker — tool cards stopped re-rendering (and replaying their reveal animation) when they completed, and resizing the window no longer throws the conversation up and down while you're at the bottom.
+- Chat: clicking the last item in the prompt rail now always lands on it, and rail jumps teleport instead of a long smooth scroll that could stop halfway.
+- Chat: opening a session goes straight to the newest message with no scroll animation, and the first uncached open fades the conversation in instead of popping.
+- Mobile: scrolling during a streaming reply works again — a drag immediately takes over, the scroll-to-bottom pill shows up, and the load-older button no longer throws you to the bottom of the chat.
+- UI: the chat's top and bottom scroll fades are back.
+- Fixed file links in messages being checked twice against the filesystem, and against the wrong project directory on the first pass.
 - **Chat context attachments:** everything you attach to a message — diff/file/plan comments, terminal selections, browser annotations, PR comments and failed checks, linked issues and PRs — now shows up in the conversation as a compact context card: a header naming the source, the captured content behind an expander, and your comment below it. Previously most of these arrived as a wall of raw text inside your message.
 - **Chat: comment on a reply.** Select text in a chat message and choose Comment to attach that quote with your note to the next message. The selection stays highlighted while you type, and the selection menu itself was restyled — Add to chat is now Add to input.
 - **Diff: comment like a review.** Hovering a line shows a + button in the gutter; clicking it, clicking a line, or dragging across lines opens the comment editor for that line or range. The comment editor and saved-comment cards now match the chat's comment style.
