@@ -27,10 +27,10 @@ type DetachedMarkdownDomCacheLimits = {
 type SessionCache = Map<string, DetachedMarkdownDom>;
 
 const DEFAULT_LIMITS: DetachedMarkdownDomCacheLimits = {
-  // Three buckets cover the common A/B/C recent-session rotation without
+  // Eight buckets cover a broader recent-session working set without
   // coupling eviction to React commit or microtask timing.
-  maxSessions: 3,
-  maxEntriesPerSession: 12,
+  maxSessions: 8,
+  maxEntriesPerSession: 4,
 };
 
 export class DetachedMarkdownDomCache {
