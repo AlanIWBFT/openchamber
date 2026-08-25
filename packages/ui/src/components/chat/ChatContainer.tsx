@@ -159,7 +159,6 @@ type ChatViewportProps = {
     anchorMessageId: string | null;
     onAnchorReady: (messageId: string, anchorIndex: number) => void;
     onAnchorSizeChanged: (messageId: string) => void;
-    composerOverlayHeight: number;
     onIsAtEndChange: (isAtEnd: boolean) => void;
     onTimelineDataChange: () => void;
     pendingRevealWork: boolean;
@@ -204,7 +203,6 @@ const ChatViewport = React.memo(({
     anchorMessageId,
     onAnchorReady,
     onAnchorSizeChanged,
-    composerOverlayHeight,
     onIsAtEndChange,
     onTimelineDataChange,
     pendingRevealWork,
@@ -407,7 +405,10 @@ const ChatViewport = React.memo(({
                     anchorMessageId={anchorMessageId}
                     onAnchorReady={onAnchorReady}
                     onAnchorSizeChanged={onAnchorSizeChanged}
-                    composerOverlayHeight={composerOverlayHeight}
+                    // Zero end inset: the footer spacer already reserves the
+                    // zone the floating status row covers; adding its height
+                    // again produced a double-tall blank band at rest.
+                    composerOverlayHeight={0}
                     onIsAtEndChange={onIsAtEndChange}
                     onTimelineDataChange={onTimelineDataChange}
                     listHeader={listHeader}
@@ -423,7 +424,7 @@ const ChatViewport = React.memo(({
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10">
                     <div
                         ref={onStatusOverlayNode}
-                        className="pointer-events-auto bg-background pb-2 [&:not(:has(*))]:hidden"
+                        className="pointer-events-auto pb-2 [&:not(:has(*))]:hidden"
                     >
                         <StatusRowContainer />
                     </div>
@@ -932,9 +933,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     const [statusOverlayHeight, setStatusOverlayHeight] = React.useState(0);
     const composerOverlayHeight = statusOverlayHeight;
     const statusOverlayObserverRef = React.useRef<ResizeObserver | null>(null);
-    React.useEffect(() => {
-        setStatusOverlayHeight(0);
-    }, [currentSessionKey]);
     const onStatusOverlayNode = React.useCallback((node: HTMLDivElement | null) => {
         statusOverlayObserverRef.current?.disconnect();
         statusOverlayObserverRef.current = null;
@@ -944,10 +942,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         }
         const update = () => {
             const height = node.getBoundingClientRect().height;
-            // Hold the reserved height when the status row empties: collapsing
-            // it at end-of-stream shifts the settled content. It resets only
-            // on session change.
-            setStatusOverlayHeight((prev) => (height > prev + 1 ? height : prev));
+            setStatusOverlayHeight((prev) => (Math.abs(prev - height) < 1 ? prev : height));
         };
         const observer = new ResizeObserver(update);
         observer.observe(node);
@@ -1374,7 +1369,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 anchorMessageId={anchorMessageId}
                 onAnchorReady={onAnchorReady}
                 onAnchorSizeChanged={onAnchorSizeChanged}
-                composerOverlayHeight={composerOverlayHeight}
                 onIsAtEndChange={onIsAtEndChange}
                 onTimelineDataChange={onTimelineDataChange}
                 messageListRef={messageListRef}
