@@ -843,6 +843,8 @@ const useMorphdomMarkdown = ({
       if (target.childNodes.length === 0 || shouldRefreshMermaidViewers(target)) return;
       if (Array.from(target.children).some((block) => !block.hasAttribute('data-md-id'))) return;
       if (target.querySelector('[data-md-copy-pending]')) return;
+      const selection = window.getSelection();
+      if (selection?.rangeCount && !selection.isCollapsed && selection.getRangeAt(0).intersectsNode(target)) return;
       const openMenu = target.querySelector<HTMLElement>('[data-md-menu]:not(.hidden)');
       const copiedButton = Array.from(target.querySelectorAll<HTMLButtonElement>('[data-md-action]'))
         .some((button) => button.getAttribute('title') === mountedDom.copiedLabel);

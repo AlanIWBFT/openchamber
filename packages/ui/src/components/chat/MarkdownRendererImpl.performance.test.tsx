@@ -445,6 +445,52 @@ describe('MarkdownRenderer DOM mount performance contract', () => {
     clearDetachedMarkdownDomCache();
   });
 
+  test('does not detach Markdown DOM that intersects the active selection', async () => {
+    clearDetachedMarkdownDomCache();
+    const content = 'selected content';
+    const host = document.createElement('div');
+    document.body.replaceChildren(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <MarkdownRenderer
+          content={content}
+          messageId="message-selected"
+          part={{
+            id: 'part-selected',
+            sessionID: 'session-selected',
+            messageID: 'message-selected',
+            type: 'text',
+            text: content,
+            time: { start: 0, end: 1 },
+          }}
+          isAnimated={false}
+          enableFileReferences={false}
+        />,
+      );
+      await waitForSettledEffects();
+    });
+    const markdown = host.querySelector<HTMLElement>('[data-markdown-content]');
+    if (!markdown) throw new Error('Expected mounted Markdown content');
+    const originalGetSelection = window.getSelection;
+    Object.defineProperty(window, 'getSelection', {
+      configurable: true,
+      value: () => ({
+        rangeCount: 1,
+        isCollapsed: false,
+        getRangeAt: () => ({ intersectsNode: (node: Node) => node === markdown }),
+      }),
+    });
+
+    try {
+      await act(async () => root.unmount());
+      expect(detachedMarkdownDomCacheStats().entries).toBe(0);
+    } finally {
+      Object.defineProperty(window, 'getSelection', { configurable: true, value: originalGetSelection });
+      clearDetachedMarkdownDomCache();
+    }
+  });
+
   test('defers and batches Mermaid controller initialization after Markdown mount', async () => {
     const mounted = await mountFixture(fixtureWorkload.rendererCount);
     const critical = mounted.counts;

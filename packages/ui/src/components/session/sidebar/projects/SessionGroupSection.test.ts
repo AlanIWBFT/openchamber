@@ -55,4 +55,14 @@ describe('selectFolderIdsForProjection', () => {
     expect([...selectFolderIdsForProjection(folders, { archivedBucket: true, searchQuery: 'matching' })])
       .toEqual(['root', 'child']);
   });
+
+  test('keeps a fuzzy folder match and its ancestor', () => {
+    const folders = [
+      { id: 'root', name: 'Root', parentId: null, nodeCount: 0 },
+      { id: 'child', name: 'Release Notes', parentId: 'root', nodeCount: 0 },
+    ];
+
+    expect([...selectFolderIdsForProjection(folders, { archivedBucket: false, searchQuery: 'release-notes' })])
+      .toEqual(['root', 'child']);
+  });
 });

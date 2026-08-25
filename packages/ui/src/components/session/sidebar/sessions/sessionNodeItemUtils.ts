@@ -1,4 +1,5 @@
 import { getRuntimeKey } from '@/lib/runtime-switch';
+import { matchesRankQuery } from '@/lib/search/fuzzySearch';
 import { normalizePath } from '@/lib/pathNormalization';
 import { resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';
 import { getPinnedSessionKey } from '@/stores/useSessionPinnedStore';
@@ -227,7 +228,7 @@ export const selectFolderIdsForProjection = (
       keep = (childIdsByParentId.get(folderId) ?? []).some(shouldKeep);
     } else {
       if (!keep && !options.searchQuery) keep = true;
-      if (!keep && (entry.nodeCount > 0 || entry.name.toLowerCase().includes(options.searchQuery))) keep = true;
+      if (!keep && (entry.nodeCount > 0 || matchesRankQuery([entry.name], options.searchQuery))) keep = true;
       if (!keep) keep = (childIdsByParentId.get(folderId) ?? []).some(shouldKeep);
     }
 
