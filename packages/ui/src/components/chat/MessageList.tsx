@@ -1071,7 +1071,10 @@ const TimelineList = React.memo(({
                 // resize settles.
                 maintainScrollAtEnd={anchoredEndSpace || !streamingAutoFollowEnabled || isWidthResizing || endPinningReleased
                     ? false
-                    : { animated: false, on: { dataChange: true, itemLayout: true, layout: true, footerLayout: true } }}
+                    // Animated: with block-level reveal the content grows in
+                    // paragraph/line steps, and the animated follow turns each
+                    // step into a glide — reveal and scroll read as one motion.
+                    : { animated: true, on: { dataChange: true, itemLayout: true, layout: true, footerLayout: true } }}
                 // Prepending older history must not move what the user is
                 // reading. Size restoration applies only during a width
                 // resize — see the observer above.

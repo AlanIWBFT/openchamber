@@ -9,6 +9,7 @@ import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
+import { commitStreamedText } from '../../lib/streamTextCommit';
 import type { StreamPhase } from '../types';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
@@ -431,11 +432,14 @@ const ReasoningPart = React.memo(({
     const time = partWithText.time;
     const canBeStreaming = streamPhase === undefined || streamPhase !== 'completed';
     const isStreaming = chatRenderMode === 'live' && canBeStreaming && typeof time?.end !== 'number';
-    const throttledText = useStreamingTextThrottle({
+    const throttledTextRaw = useStreamingTextThrottle({
         text: textContent,
         isStreaming,
         identityKey: `${messageId}:${part.id ?? 'reasoning'}`,
     });
+    // Same block-level reveal as assistant text: a shown reasoning paragraph
+    // never mutates in place.
+    const throttledText = isStreaming ? commitStreamedText(throttledTextRaw) : throttledTextRaw;
 
     // Show reasoning even if time.end isn't set yet (during streaming)
     // Only hide if there's no text content

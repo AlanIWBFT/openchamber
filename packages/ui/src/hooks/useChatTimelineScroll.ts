@@ -7,6 +7,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import {
     CHAT_LIST_ANCHOR_OFFSET,
     getAnchoredTurnMetrics,
+    resolveTimelineIsAtEnd,
     type TimelineListMeasurementState,
     type TimelineScrollMode,
 } from '@/components/chat/lib/scroll/timelineScrollAnchoring';
@@ -204,9 +205,14 @@ export const useChatTimelineScroll = ({
         liveFollowGenerationRef.current = null;
         setUserOwnsScroll(true);
         // The end may already have been left by our own movement, in which
-        // case no further at-end transition will fire. This is an explicit
-        // gesture — show the pill immediately, no debounce.
-        if (!isAtEndRef.current) {
+        // case no further at-end transition will fire — and while an animated
+        // follow glide trails the live edge, isAtEndRef is deliberately not
+        // updated, so measure the real distance instead of trusting it. This
+        // is an explicit gesture — show the pill immediately, no debounce.
+        const listState = listRef.current?.getState();
+        const atEndNow = (listState ? resolveTimelineIsAtEnd(listState) : undefined) ?? isAtEndRef.current;
+        isAtEndRef.current = atEndNow;
+        if (!atEndNow) {
             cancelShowButtonTimer();
             setShowScrollButton(true);
         }
