@@ -1884,12 +1884,22 @@ export const syncDesktopSettings = async (): Promise<void> => {
   // Each step is wrapped in try/catch so a failure in one side-effect (e.g.
   // a TypeError from writing to a contextBridge-protected global) doesn't
   // prevent server settings from reaching the Zustand store.
+  // Local changes sitting in the debounce buffer are not yet tracked as
+  // mutations (record() only stores while a request is in flight), so a GET
+  // racing the debounce window would briefly revert them. Reapply the
+  // pending buffer over every reconciled result.
+  const overlayPendingChanges = (settings: DesktopSettings): DesktopSettings => {
+    if (!_pendingSettingsChanges || !_pendingSettingsContext) return settings;
+    if (!isSettingsRuntimeContextCurrent(_pendingSettingsContext)) return settings;
+    return { ...settings, ..._pendingSettingsChanges };
+  };
+
   const applySettings = async (loadedSettings: DesktopSettings) => {
     if (!isSettingsRuntimeContextCurrent(context)) return;
-    let settings = _settingsMutationTracker.reconcile(loadedSettings, operation);
+    let settings = overlayPendingChanges(_settingsMutationTracker.reconcile(loadedSettings, operation));
     await waitForHydration();
     if (!isSettingsRuntimeContextCurrent(context)) return;
-    settings = _settingsMutationTracker.reconcile(loadedSettings, operation);
+    settings = overlayPendingChanges(_settingsMutationTracker.reconcile(loadedSettings, operation));
     const shouldPersistCraftGoalMigration = settings.draftStartersCraftGoalAdded !== true
       || settings.draftStartersScheduleTaskAdded !== true;
     // `autoSaveEnabled` is new to the settings backend. Until the server has a

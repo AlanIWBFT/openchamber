@@ -1122,17 +1122,25 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     ? part
     : null;
   const runtimeKey = getRuntimeKey();
+  // Memoized on scalar identities, not the part object: sync-store reducers
+  // recreate part objects on unrelated updates, and an object-identity dep
+  // re-ran the async render pipeline for identical content.
+  const settledSessionID = settledPart?.sessionID;
+  const settledMessageID = settledPart?.messageID;
+  const settledPartID = settledPart?.id;
   const domCacheKey = React.useMemo<DetachedMarkdownDomKey | null>(() => {
     // Streaming, unfinished, oversized, and identity-less Markdown continues
     // through the normal rendering pipeline and never retains detached DOM.
-    if (isStreaming || !settledPart || content.length === 0 || content.length > MARKDOWN_DOM_CACHE_MAX_SOURCE_CHARS) return null;
+    if (isStreaming || !settledSessionID || !settledMessageID || !settledPartID || content.length === 0 || content.length > MARKDOWN_DOM_CACHE_MAX_SOURCE_CHARS) return null;
+    // content.length is a cheap fingerprint: an edited or reverted part that
+    // re-materializes under the same id must not restore the old DOM.
     return {
-      scope: `${runtimeKey}\0${settledPart.sessionID}`,
-      id: `${settledPart.messageID}\0${settledPart.id}\0${imageMode}`,
+      scope: `${runtimeKey}\0${settledSessionID}`,
+      id: `${settledMessageID}\0${settledPartID}\0${imageMode}\0${content.length}`,
       locale,
       directory: effectiveDirectory,
     };
-  }, [content.length, effectiveDirectory, imageMode, isStreaming, locale, runtimeKey, settledPart]);
+  }, [content.length, effectiveDirectory, imageMode, isStreaming, locale, runtimeKey, settledSessionID, settledMessageID, settledPartID]);
   // Identity for the fade-in wrapper: a new part/message restarts the animation.
   const fadeKey = `markdown-${part?.id ? `part-${part.id}` : `message-${messageId}`}`;
 

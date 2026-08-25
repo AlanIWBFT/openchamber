@@ -77,10 +77,14 @@ export class DetachedMarkdownDomCache {
     const entry = session.get(entryKey);
     if (entry === undefined) return null;
 
+    // A mismatched probe (different locale or directory for the same part)
+    // must not destroy the entry — the matching renderer may still come for
+    // it. Only a real hit transfers ownership out of the cache.
+    if (entry.locale !== key.locale || entry.directory !== key.directory) return null;
+
     // A fragment is a move-only resource; taking it removes cache ownership.
     session.delete(entryKey);
     if (session.size === 0) this.sessions.delete(sessionKey);
-    if (entry.locale !== key.locale || entry.directory !== key.directory) return null;
     return entry.fragment;
   }
 

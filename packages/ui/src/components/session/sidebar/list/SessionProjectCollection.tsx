@@ -10,6 +10,8 @@ import { useArchivedAutoFolders } from '../folders/useArchivedAutoFolders';
 import { ProjectSessionSelectionEffect } from '../projects/useProjectSessionSelection';
 import type { WorktreeMetadata } from '@/types/worktree';
 import { useRecentSessionCollection, useSessionProjectCollection } from './sessionCollection';
+import { buildSessionBootstrapDemands } from './sessionBootstrapDemands';
+import { useChildStoreManager } from '@/sync/sync-context';
 import { createSessionOwnershipIndex } from '../sessions/sessionOwnership';
 import { useProjectSessionLists } from '../projects/useProjectSessionLists';
 import { useSessionSidebarSections } from '../projects/useSessionSidebarSections';
@@ -192,6 +194,26 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     buildGroupSearchText,
     foldersMap,
   });
+
+  // Second bootstrap-demand owner: the layout-level useSessionListSync keeps
+  // every known directory alive at background priority even when the sidebar
+  // is hidden, but only the visible collection knows which projects and
+  // groups are EXPANDED. Without this owner, expanded projects bootstrapped
+  // serialized at background priority (one directory at a time) instead of
+  // concurrently at expanded priority.
+  const childStores = useChildStoreManager();
+  const expansionDemandOwner = `session-collection-expansion:${React.useId()}`;
+  React.useEffect(() => {
+    childStores.setBootstrapDemand(expansionDemandOwner, buildSessionBootstrapDemands({
+      projectSections,
+      activeProjectId: view.activeProjectId,
+      collapsedProjects: projectView.collapsedProjects,
+      collapsedGroups: projectView.collapsedGroups,
+      currentDirectory: null,
+      currentSessionDirectory: null,
+    }));
+    return () => childStores.clearBootstrapDemand(expansionDemandOwner);
+  }, [childStores, expansionDemandOwner, projectSections, projectView.collapsedProjects, projectView.collapsedGroups, view.activeProjectId]);
   const source = view.useGroupedSections ? sectionsForRender : flatSectionsForRender;
   const sectionsForSidebarRender = React.useMemo(() => view.showInlineArchived ? source : source.map((section) => (
     section.groups.some((group) => group.isArchivedBucket)
