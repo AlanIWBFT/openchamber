@@ -447,7 +447,7 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
         </header>
       ) : null}
 
-      <ScrollShadow viewportClassName="flex-1 min-h-0" className="flex-1 min-h-0 overflow-auto" size={64} hideTopShadow>
+      <ScrollShadow className="flex-1 min-h-0 overflow-auto" size={64} hideTopShadow>
         <div className="mx-auto w-full max-w-2xl px-4 sm:px-6 py-5">
           <div className="flex flex-col gap-5">
 

@@ -133,6 +133,9 @@ const layoutCodeLines = (pre: HTMLPreElement): void => {
   const code = pre.querySelector<HTMLElement>(':scope > code');
   if (!code || code.hasAttribute('data-md-code-lines')) return;
 
+  // The real gutter takes over the reserved footprint.
+  pre.removeAttribute('data-md-gutter-reserved');
+
   const text = code.textContent ?? '';
   const hasTrailingNewline = text.endsWith('\n');
   const lines = hasTrailingNewline ? text.slice(0, -1).split('\n') : text.split('\n');
@@ -265,7 +268,15 @@ const decorateCodeBlocks = (root: HTMLElement, ctx: DecorateContext): void => {
     pre.style.margin = '0';
     pre.style.background = 'transparent';
     pre.classList.add('min-w-0', 'w-full', 'flex-1');
-    if (!ctx.deferCodeLineNumberSync) layoutCodeLines(pre);
+    if (!ctx.deferCodeLineNumberSync) {
+      layoutCodeLines(pre);
+    } else {
+      // Streaming defers the per-line gutter markup, but the gutter's
+      // horizontal footprint is reserved immediately — otherwise the
+      // end-of-stream decorate pass shifts every code line right by the
+      // gutter column and the finished message visibly jumps.
+      pre.setAttribute('data-md-gutter-reserved', '');
+    }
     body.appendChild(pre);
     wrapper.appendChild(header);
     wrapper.appendChild(body);

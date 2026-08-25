@@ -349,7 +349,8 @@ export const OverlayScrollbar: React.FC<OverlayScrollbarProps> = ({
   const verticalThumbRef = React.useRef<HTMLDivElement>(null);
   const horizontalThumbRef = React.useRef<HTMLDivElement>(null);
   const bindingRef = React.useRef<ReturnType<typeof bindScrollbar> | null>(null);
-  const initialOptionsRef = React.useRef<ScrollbarOptions>({
+  const boundContainerRef = React.useRef<HTMLElement | null>(null);
+  const optionsRef = React.useRef<ScrollbarOptions>({
     minThumbSize,
     hideDelayMs,
     disableHorizontal,
@@ -357,21 +358,42 @@ export const OverlayScrollbar: React.FC<OverlayScrollbarProps> = ({
     suppressVisibility,
     userIntentOnly,
   });
+  optionsRef.current = {
+    minThumbSize,
+    hideDelayMs,
+    disableHorizontal,
+    observeMutations,
+    suppressVisibility,
+    userIntentOnly,
+  };
 
+  // Follow the LIVE container node, not the ref object: the chat timeline's
+  // scroll element is owned by the virtualized list and remounts on every
+  // session switch (key={sessionKey}), so a bind-once contract would leave
+  // the scrollbar attached to a dead element after the first switch. This
+  // effect runs on every commit and rebinds only when the node identity
+  // actually changed — steady renders are a single pointer comparison.
   React.useLayoutEffect(() => {
     const container = containerRef.current;
+    if (container === boundContainerRef.current) return;
+
+    bindingRef.current?.disconnect();
+    bindingRef.current = null;
+    boundContainerRef.current = container;
+
     const root = rootRef.current;
     const verticalThumb = verticalThumbRef.current;
     const horizontalThumb = horizontalThumbRef.current;
     if (!container || !root || !verticalThumb || !horizontalThumb) return;
 
-    const binding = bindScrollbar(container, root, verticalThumb, horizontalThumb, initialOptionsRef.current);
-    bindingRef.current = binding;
-    return () => {
-      bindingRef.current = null;
-      binding.disconnect();
-    };
-  }, [containerRef]);
+    bindingRef.current = bindScrollbar(container, root, verticalThumb, horizontalThumb, optionsRef.current);
+  });
+
+  React.useLayoutEffect(() => () => {
+    bindingRef.current?.disconnect();
+    bindingRef.current = null;
+    boundContainerRef.current = null;
+  }, []);
 
   React.useLayoutEffect(() => {
     bindingRef.current?.update({

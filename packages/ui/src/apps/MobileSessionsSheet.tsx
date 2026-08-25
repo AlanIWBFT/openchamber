@@ -1455,7 +1455,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   // clipped overflow swallowed the footer.
   const surfaceContent = (
       <div ref={contentRootRef} className="flex min-h-0 flex-1 flex-col">
-        <ScrollShadow viewportClassName="min-h-0 flex-1" className="min-h-0 flex-1 overflow-y-auto pb-4">
+        <ScrollShadow className="min-h-0 flex-1 overflow-y-auto pb-4">
           {/* The search bar scrolls WITH the list (iOS-style): the open-time
               auto-scroll to the current session naturally tucks it away, and
               scrolling to the very top brings it back. */}

@@ -131,6 +131,7 @@ export type DesktopSettings = {
   defaultVariant?: string;
   defaultAgent?: string;
   smallModelUseDefault?: boolean;
+  streamingAutoFollowEnabled?: boolean;
   sessionRecapEnabled?: boolean;
   sessionSuggestionEnabled?: boolean;
   sessionGoalEnabled?: boolean;

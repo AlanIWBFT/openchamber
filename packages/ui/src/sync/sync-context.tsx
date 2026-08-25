@@ -2702,6 +2702,48 @@ export function useSessionParts(messageID: string, directory?: string) {
   )
 }
 
+const EMPTY_PARTS_BY_MESSAGE: Record<string, Part[]> = {}
+
+/**
+ * Get parts for several messages at once, keyed by message id. The snapshot
+ * keeps its identity until one of the requested part arrays changes, so a
+ * streaming turn can overlay every one of its step messages — not only the
+ * currently streaming one — without tearing between them when the stream
+ * moves to the next message.
+ */
+export function useSessionPartsForMessages(messageIDs: readonly string[], directory?: string): Record<string, Part[]> {
+  const store = useDirectoryStore(directory)
+  const cacheRef = React.useRef<{ ids: readonly string[]; parts: Record<string, Part[]> } | null>(null)
+  const getSnapshot = useCallback(() => {
+    if (messageIDs.length === 0) return EMPTY_PARTS_BY_MESSAGE
+    const state = store.getState()
+    const cached = cacheRef.current
+    if (
+      cached
+      && cached.ids === messageIDs
+      && messageIDs.every((id) => (state.part[id] ?? EMPTY_PARTS) === (cached.parts[id] ?? EMPTY_PARTS))
+    ) {
+      return cached.parts
+    }
+    const parts: Record<string, Part[]> = {}
+    for (const id of messageIDs) parts[id] = state.part[id] ?? EMPTY_PARTS
+    cacheRef.current = { ids: messageIDs, parts }
+    return parts
+  }, [messageIDs, store])
+  const subscribe = useCallback((notify: () => void) => {
+    if (messageIDs.length === 0) return () => undefined
+    return store.subscribe((state, previous) => {
+      for (const id of messageIDs) {
+        if (state.part[id] !== previous.part[id]) {
+          notify()
+          return
+        }
+      }
+    })
+  }, [messageIDs, store])
+  return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
 /** Get status for a specific session */
 export function useSessionStatus(sessionID: string, directory?: string) {
   const store = useDirectoryStore(directory)

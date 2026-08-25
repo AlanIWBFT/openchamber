@@ -352,6 +352,13 @@ const useFileReferenceInteractions = ({
     if (!container) {
       return;
     }
+    // Wait for the real directory: annotating against an empty/fallback
+    // directory issues stat probes under the wrong cache key (and the wrong
+    // server directory), and the pass reruns anyway once the directory
+    // resolves — every link ended up verified twice.
+    if (enabled && !effectiveDirectory) {
+      return;
+    }
     let cancelled = false;
     const fileReferenceLinkLimit = getFileReferenceLinkLimit();
     // On mobile surfaces, file-reference highlighting is disabled entirely — not
@@ -405,6 +412,19 @@ const useFileReferenceInteractions = ({
     };
 
     const annotateFileLinks = () => {
+      annotationWriteDepth += 1;
+      try {
+        annotateFileLinksInner();
+      } finally {
+        // Let the mutation events from our own writes flush before the
+        // observer starts listening for real content changes again.
+        queueMicrotask(() => {
+          annotationWriteDepth -= 1;
+        });
+      }
+    };
+
+    const annotateFileLinksInner = () => {
       if (fileReferencesEnabled) {
         wrapBlockCodePathTokens(container);
       }
@@ -533,7 +553,12 @@ const useFileReferenceInteractions = ({
 
     scheduleAnnotation(FILE_REFERENCE_ANNOTATION_DELAY_MS);
 
+    // Our own annotation writes (path-token wrapping, attribute updates) fire
+    // childList mutations too; observing them re-ran the whole pass — every
+    // link was scanned and verified twice per render.
+    let annotationWriteDepth = 0;
     const observer = new MutationObserver(() => {
+      if (annotationWriteDepth > 0) return;
       scheduleAnnotation(FILE_REFERENCE_ANNOTATION_DELAY_MS);
     });
     observer.observe(container, {
@@ -918,13 +943,19 @@ const useMorphdomMarkdown = ({
       if (!active || renderRevisionRef.current !== renderRevision) return;
       const existing = Array.from(target.children) as HTMLElement[];
 
+      // Reconcile per block: only re-morph blocks whose content changed, leaving
+      // stable leading blocks untouched. Keeps per-stream-step DOM work bounded
+      // to the trailing (growing) block instead of the whole message.
+      let enteredThisPass = 0;
       blocks.forEach((block, index) => {
         let el = existing[index];
+        let isNewBlock = false;
         if (!el) {
           el = document.createElement('div');
           el.setAttribute('data-md-block', '');
           el.style.display = 'contents';
           target.appendChild(el);
+          isNewBlock = true;
         }
         if (el.getAttribute('data-md-id') === block.id) {
           if (el.getAttribute(MARKDOWN_DECORATION_ID_ATTR) !== decorationId) {
@@ -952,6 +983,23 @@ const useMorphdomMarkdown = ({
         const temp = document.createElement('div');
         temp.innerHTML = block.html;
         decorateMarkdown(temp, ctx);
+        if (isNewBlock && streaming && index > 0) {
+          // A freshly committed block enters with a short reveal. The class
+          // goes on the block's children — the wrapper is display:contents
+          // and cannot animate — and the transform never changes layout, so
+          // row measurement stays exact. Skipped for the first block so a
+          // full initial render does not shimmer. Several blocks committed
+          // in one tick cascade with a small stagger instead of popping in
+          // together.
+          const delayMs = Math.min(enteredThisPass, 4) * 55;
+          enteredThisPass += 1;
+          for (const child of Array.from(temp.children)) {
+            child.classList.add('oc-md-block-enter');
+            if (delayMs > 0 && child instanceof HTMLElement) {
+              child.style.setProperty('--oc-md-enter-delay', `${delayMs}ms`);
+            }
+          }
+        }
         const hadMermaidBlock = shouldRefreshMermaidViewers(el);
         const tempHasMermaidBlock = shouldRefreshMermaidViewers(temp);
         morphdom(el, temp, {
