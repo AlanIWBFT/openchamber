@@ -225,6 +225,10 @@ const MemoStatusRow = React.memo(StatusRow);
 interface ChatInputProps {
     onOpenSettings?: () => void;
     scrollToBottom?: () => void;
+    // Queued sends do not create a user row (the queue delivers later), so
+    // the anchor-arming scrollToBottom is wrong for them; this returns the
+    // viewport to the live edge instead.
+    scrollToLatest?: () => void;
     active?: boolean;
     draftPresentationExiting?: boolean;
 }
@@ -243,6 +247,7 @@ const resolveChatDraftIdentity = (sessionId: string | null): ChatDraftIdentity |
 const ChatInputComponent: React.FC<ChatInputProps> = ({
     onOpenSettings,
     scrollToBottom,
+    scrollToLatest,
     active = true,
     draftPresentationExiting = false,
 }) => {
@@ -898,6 +903,12 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             } : undefined,
         });
 
+        // Sending while the agent works must still take the reader to the
+        // live edge — a queued message produces no user row yet, so the
+        // anchor path has nothing to claim and would leave the viewport
+        // parked mid-history.
+        scrollToLatest?.();
+
         // Clear input and attachments
         // Note: confirmedMentionsRef is NOT cleared here because queued messages
         // are processed later in handleSubmit which reads the ref via extractInlineFileMentions.
@@ -910,7 +921,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         if (!isMobile) {
             composerRef.current?.focus();
         }
-    }, [getCurrentInputSnapshot, currentSessionId, messageQueueTarget, attachedFiles, sanitizeAttachmentsForSend, addToQueue, clearAttachedFiles, isMobile, currentProviderId, currentModelId, currentAgentName, currentVariant]);
+    }, [getCurrentInputSnapshot, currentSessionId, messageQueueTarget, attachedFiles, sanitizeAttachmentsForSend, addToQueue, clearAttachedFiles, isMobile, currentProviderId, currentModelId, currentAgentName, currentVariant, scrollToLatest]);
 
     const handleQueuedMessageEdit = React.useCallback((content: string) => {
         setMessage(content);

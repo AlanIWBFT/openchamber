@@ -1007,6 +1007,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     const resumeToLatestInstant = React.useCallback(() => {
         goToBottom('instant');
     }, [goToBottom]);
+
     // Mobile loads older history via an explicit top button instead of a
     // scroll-position trigger (see handleHistoryScroll in the controller).
     const showLoadOlderButton = isMobileSurfaceRuntime()
@@ -1033,7 +1034,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         resumeToBottom: timelineController.resumeToBottomInstant,
     });
     const handlePromptNavigatorSelect = React.useCallback((turnId: string) => {
-        void navigation.scrollToTurnId(turnId, { behavior: 'smooth' });
+        // Instant on purpose: a long smooth scroll through a virtualized
+        // timeline gets cancelled by row remounts and lands mid-way or on the
+        // wrong message; a teleport always arrives.
+        void navigation.scrollToTurnId(turnId, { behavior: 'auto' });
     }, [navigation]);
     const canLoadEarlierPrompts = timelineController.historySignals.canLoadEarlier;
     const showPromptNavigator = !isMobile
@@ -1430,6 +1434,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                     <ChatInput
                         active={active}
                         scrollToBottom={scrollToBottomOnSend}
+                        scrollToLatest={resumeToLatestInstant}
                         draftPresentationExiting={draftPresentationExiting}
                     />
                 )}
