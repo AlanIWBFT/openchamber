@@ -629,10 +629,26 @@ export const useChatTimelineScroll = ({
             // Scrolling toward the end is not opting out of follow.
             if (event.deltaY < 0 && canScrollUp()) gesture();
         };
-        const handleTouchMove = () => {
-            // Touch is continuous: the first move may still read as at-end,
-            // but the next one lands after the viewport left it.
-            if (!isAtEndRef.current && canScrollUp()) gesture();
+        // Touch mirrors wheel by finger direction, not by having already left
+        // the end: while a stream keeps re-pinning the viewport, waiting for
+        // an at-end transition means the drag never registers — the user
+        // cannot scroll, the pill never appears, and live-follow stays armed
+        // under a viewport they are fighting for.
+        let touchLastY: number | null = null;
+        const handleTouchStart = (event: TouchEvent) => {
+            touchLastY = event.touches[0]?.clientY ?? null;
+        };
+        const handleTouchMove = (event: TouchEvent) => {
+            const y = event.touches[0]?.clientY ?? null;
+            const lastY = touchLastY;
+            touchLastY = y;
+            if (y === null) return;
+            // A downward finger drags the content up — the touch wheel-up.
+            const draggedUp = lastY !== null && y > lastY;
+            if ((draggedUp || !isAtEndRef.current) && canScrollUp()) gesture();
+        };
+        const handleTouchEnd = () => {
+            touchLastY = null;
         };
         const handlePointerDown = (event: PointerEvent) => {
             // The scrollbar track is the scroll node itself; a tap on a row
@@ -649,14 +665,20 @@ export const useChatTimelineScroll = ({
         };
 
         scrollNode.addEventListener('wheel', handleWheel, { passive: true });
+        scrollNode.addEventListener('touchstart', handleTouchStart, { passive: true });
         scrollNode.addEventListener('touchmove', handleTouchMove, { passive: true });
+        scrollNode.addEventListener('touchend', handleTouchEnd, { passive: true });
+        scrollNode.addEventListener('touchcancel', handleTouchEnd, { passive: true });
         scrollNode.addEventListener('pointerdown', handlePointerDown, { passive: true });
         scrollNode.addEventListener('keydown', handleKeyDown);
         scrollNode.addEventListener('scroll', handleScroll, { passive: true });
 
         return () => {
             scrollNode.removeEventListener('wheel', handleWheel);
+            scrollNode.removeEventListener('touchstart', handleTouchStart);
             scrollNode.removeEventListener('touchmove', handleTouchMove);
+            scrollNode.removeEventListener('touchend', handleTouchEnd);
+            scrollNode.removeEventListener('touchcancel', handleTouchEnd);
             scrollNode.removeEventListener('pointerdown', handlePointerDown);
             scrollNode.removeEventListener('keydown', handleKeyDown);
             scrollNode.removeEventListener('scroll', handleScroll);

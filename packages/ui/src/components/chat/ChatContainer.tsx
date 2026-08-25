@@ -1009,8 +1009,12 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         && timelineController.historySignals.canLoadEarlier;
     const timelineLoadEarlier = timelineController.loadEarlier;
     const handleLoadOlderClick = React.useCallback(() => {
+        // Loading older history is an explicit move INTO the past: release
+        // live follow first, or the prepend's content growth would trigger an
+        // end correction and throw the viewport to the bottom.
+        onManualNavigation();
         void timelineLoadEarlier({ userInitiated: true });
-    }, [timelineLoadEarlier]);
+    }, [onManualNavigation, timelineLoadEarlier]);
 
     React.useEffect(() => {
         activeTurnChangeRef.current = timelineController.handleActiveTurnChange;
