@@ -5,6 +5,9 @@
 - **Chat: comment on a reply.** Select text in a chat message and choose Comment to attach that quote with your note to the next message; the selection stays highlighted while you type. Add to chat is now Add to input.
 - Diff: hovering a line shows a + button that opens a comment for the line; clicking a line or dragging across lines opens the editor for that range. The comment editor and saved-comment cards match the chat's comment style.
 - Composer: hovering a context chip above the input opens a stacked preview of everything attached, where comments can be edited in place or items removed before sending.
+- Chat: @ file mentions now rank files and directories together by how well they match, so the file you typed is at the top instead of below unrelated directories. Multi-word queries match in any order, and long paths keep the folder next to the file name visible.
+- Search: Ctrl/Cmd+P now matches the whole file path, not just the file name — searching a folder name finds the files inside it.
+- Search in dropdowns: searchable pickers (agents, models, providers, branches) now put the best matches first, match multi-word queries in any order, and ignore punctuation (so "gpt4o" finds "gpt-4o").
 - Chat: OpenCode notices now share one style.
 - The timeline dialog now fits small windows instead of squeezing the message list to a couple of rows (thanks to @gaojunran).
 

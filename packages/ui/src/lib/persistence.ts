@@ -531,6 +531,7 @@ const materializeAuthoritativeUiSettings = (settings: DesktopSettings): DesktopS
     darkThemeId: DEFAULT_DARK_THEME_ID,
     openInAppId: DEFAULT_OPEN_IN_APP_ID,
     showReasoningTraces: defaults.showReasoningTraces,
+    streamingAutoFollowEnabled: defaults.streamingAutoFollowEnabled,
     workStatusPanelEnabled: defaults.workStatusPanelEnabled,
     workStatusHiddenSections: defaults.workStatusHiddenSections,
     sessionRecapEnabled: defaults.sessionRecapEnabled,
@@ -578,7 +579,6 @@ const materializeAuthoritativeUiSettings = (settings: DesktopSettings): DesktopS
     messageStreamTransport: 'auto',
     stickyUserHeader: defaults.stickyUserHeader,
     promptNavigatorEnabled: defaults.promptNavigatorEnabled,
-    expandedEditorToolbar: defaults.expandedEditorToolbar,
     wideChatLayoutEnabled: defaults.wideChatLayoutEnabled,
     showSplitAssistantMessageActions: defaults.showSplitAssistantMessageActions,
     draftStartersVisible: defaults.draftStartersVisible,
@@ -637,6 +637,9 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   }
   if (typeof settings.showReasoningTraces === 'boolean' && settings.showReasoningTraces !== store.showReasoningTraces) {
     store.setShowReasoningTraces(settings.showReasoningTraces);
+  }
+  if (typeof settings.streamingAutoFollowEnabled === 'boolean' && settings.streamingAutoFollowEnabled !== store.streamingAutoFollowEnabled) {
+    store.setStreamingAutoFollowEnabled(settings.streamingAutoFollowEnabled);
   }
   if (typeof settings.sessionRecapEnabled === 'boolean' && settings.sessionRecapEnabled !== store.sessionRecapEnabled) {
     store.setSessionRecapEnabled(settings.sessionRecapEnabled);
@@ -841,9 +844,6 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   }
   if (typeof settings.promptNavigatorEnabled === 'boolean' && settings.promptNavigatorEnabled !== store.promptNavigatorEnabled) {
     store.setPromptNavigatorEnabled(settings.promptNavigatorEnabled);
-  }
-  if (typeof settings.expandedEditorToolbar === 'boolean' && settings.expandedEditorToolbar !== store.expandedEditorToolbar) {
-    store.setExpandedEditorToolbar(settings.expandedEditorToolbar);
   }
   if (typeof settings.wideChatLayoutEnabled === 'boolean' && settings.wideChatLayoutEnabled !== store.wideChatLayoutEnabled) {
     store.setWideChatLayoutEnabled(settings.wideChatLayoutEnabled);
@@ -1161,6 +1161,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (typeof candidate.showReasoningTraces === 'boolean') {
     result.showReasoningTraces = candidate.showReasoningTraces;
+  }
+  if (typeof candidate.streamingAutoFollowEnabled === 'boolean') {
+    result.streamingAutoFollowEnabled = candidate.streamingAutoFollowEnabled;
   }
   if (typeof candidate.sessionRecapEnabled === 'boolean') {
     result.sessionRecapEnabled = candidate.sessionRecapEnabled;
@@ -1510,9 +1513,6 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (typeof candidate.promptNavigatorEnabled === 'boolean') {
     result.promptNavigatorEnabled = candidate.promptNavigatorEnabled;
-  }
-  if (typeof candidate.expandedEditorToolbar === 'boolean') {
-    result.expandedEditorToolbar = candidate.expandedEditorToolbar;
   }
   if (typeof candidate.wideChatLayoutEnabled === 'boolean') {
     result.wideChatLayoutEnabled = candidate.wideChatLayoutEnabled;

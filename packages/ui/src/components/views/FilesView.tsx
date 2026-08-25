@@ -750,8 +750,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   const [wrapLines, setWrapLines] = React.useState(true);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [isSearchOpen, setIsSearchOpen] = React.useState(false);
-  const [isFloatingToolbarOpen, setIsFloatingToolbarOpen] = React.useState(false);
-  const floatingToolbarRef = React.useRef<HTMLDivElement | null>(null);
   const toolbarDropdownOpenCountRef = React.useRef(0);
 
   const handleToolbarDropdownOpenChange = React.useCallback((open: boolean) => {
@@ -761,23 +759,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     );
   }, []);
 
-  const isClickInsidePortalledMenu = React.useCallback((target: EventTarget | null) => {
-    if (!(target instanceof Element)) return false;
-    return target.closest('[data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-item"]') !== null;
-  }, []);
-
-  React.useEffect(() => {
-    if (!isFloatingToolbarOpen) return;
-    const handler = (event: MouseEvent) => {
-      if (toolbarDropdownOpenCountRef.current > 0) return;
-      if (isClickInsidePortalledMenu(event.target)) return;
-      if (floatingToolbarRef.current && !floatingToolbarRef.current.contains(event.target as Node)) {
-        setIsFloatingToolbarOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [isClickInsidePortalledMenu, isFloatingToolbarOpen]);
   type TextViewMode = 'view' | 'edit';
   type PreviewViewMode = 'preview' | 'edit';
 
@@ -939,7 +920,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
 
   const [confirmDiscardOpen, setConfirmDiscardOpen] = React.useState(false);
   const pendingSelectFileRef = React.useRef<FileNode | null>(null);
-  const pendingTabRef = React.useRef<import('@/stores/useUIStore').MainTab | null>(null);
   const pendingClosePathRef = React.useRef<string | null>(null);
   const skipDirtyOnceRef = React.useRef(false);
   const copiedContentTimeoutRef = React.useRef<number | null>(null);
@@ -1029,7 +1009,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   const [isDragging, setIsDragging] = React.useState(false);
 
   // Session/config for sending comments
-  const setMainTabGuard = useUIStore((state) => state.setMainTabGuard);
   const pendingFileNavigation = useUIStore((state) => state.pendingFileNavigation);
   const setPendingFileNavigation = useUIStore((state) => state.setPendingFileNavigation);
   const pendingFileFocusPath = useUIStore((state) => state.pendingFileFocusPath);
@@ -1038,7 +1017,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   const fileEditorKeymap = useUIStore((state) => state.fileEditorKeymap);
   const settingsDefaultFileViewerPreview = useConfigStore((state) => state.settingsDefaultFileViewerPreview);
   const showMessageTTSButtons = useConfigStore((state) => state.showMessageTTSButtons);
-  const settingsExpandedEditorToolbar = useUIStore((state) => state.expandedEditorToolbar);
 
   // Global mouseup to end drag selection
   React.useEffect(() => {
@@ -1098,10 +1076,9 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   React.useEffect(() => {
     setLineSelection(null);
     reset();
-    setMainTabGuard(null);
     setDraftContent('');
     setIsSaving(false);
-  }, [selectedFile?.path, reset, setMainTabGuard]);
+  }, [selectedFile?.path, reset]);
 
   React.useEffect(() => {
     setCommentSelection(lineSelection);
@@ -1712,32 +1689,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   }, [contentDetectedBinary, draftContent, fileContent, fileLoading, files, isDirty, loadedFileLineEnding, loadedFilePath, readFileStat, root, selectedFile, t]);
 
   React.useEffect(() => {
-    if (!isDirty) {
-      setMainTabGuard(null);
-      return;
-    }
-
-    const guard = (_nextTab: import('@/stores/useUIStore').MainTab) => {
-      if (skipDirtyOnceRef.current) {
-        skipDirtyOnceRef.current = false;
-        return true;
-      }
-      setConfirmDiscardOpen(true);
-      pendingTabRef.current = _nextTab;
-      return false;
-    };
-
-    setMainTabGuard(guard);
-
-    return () => {
-      const currentGuard = useUIStore.getState().mainTabGuard;
-      if (currentGuard === guard) {
-        setMainTabGuard(null);
-      }
-    };
-  }, [isDirty, setMainTabGuard]);
-
-  React.useEffect(() => {
     if (autoSaveEnabled) {
       return;
     }
@@ -2136,11 +2087,9 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
 
   const discardAndContinue = React.useCallback(() => {
     const nextFile = pendingSelectFileRef.current;
-    const nextTab = pendingTabRef.current;
     const closePath = pendingClosePathRef.current;
 
     pendingSelectFileRef.current = null;
-    pendingTabRef.current = null;
     pendingClosePathRef.current = null;
 
     // Allow one guarded navigation (tab/file) without re-opening dialog.
@@ -2179,15 +2128,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
       return;
     }
 
-    if (nextTab) {
-      setMainTabGuard(null);
-      useUIStore.getState().setActiveMainTab(nextTab);
-    }
-  }, [displayedContent, handleSelectFile, isMobile, removeOpenPath, root, selectedFile?.path, setMainTabGuard, setSelectedPath]);
+  }, [displayedContent, handleSelectFile, isMobile, removeOpenPath, root, selectedFile?.path, setSelectedPath]);
 
   const saveAndContinue = React.useCallback(async () => {
     const nextFile = pendingSelectFileRef.current;
-    const nextTab = pendingTabRef.current;
     const closePath = pendingClosePathRef.current;
 
     const saved = await saveDraft();
@@ -2197,7 +2141,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     }
 
     pendingSelectFileRef.current = null;
-    pendingTabRef.current = null;
     pendingClosePathRef.current = null;
 
     // We'll proceed after saving; suppress guard reopening.
@@ -2233,11 +2176,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
       return;
     }
 
-    if (nextTab) {
-      setMainTabGuard(null);
-      useUIStore.getState().setActiveMainTab(nextTab);
-    }
-  }, [handleSelectFile, isMobile, removeOpenPath, root, saveDraft, selectedFile?.path, setMainTabGuard, setSelectedPath]);
+  }, [handleSelectFile, isMobile, removeOpenPath, root, saveDraft, selectedFile?.path, setSelectedPath]);
 
   const handleCloseFile = React.useCallback((path: string) => {
     const isActive = selectedFile?.path === path;
@@ -3782,9 +3721,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
         </div>
         ) : null}
 
-        {/* Row 2: Docked editor toolbar (expanded). Desktop opt-in; ALWAYS on
-            for mobile — floating hover controls don't work with touch. */}
-        {(settingsExpandedEditorToolbar || isMobile) && selectedFile ? (
+        {/* Row 2: Docked editor toolbar. */}
+        {selectedFile ? (
           <div className="flex min-w-0 items-center gap-3 border-t border-border/40 bg-[var(--surface-subtle)] px-3 py-1">
             {/* Mobile hosts already show the file name in their own header;
                 a truncated duplicate here just eats toolbar width. */}
@@ -3805,69 +3743,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
       </div>
 
       <div className="flex-1 min-h-0 min-w-0 relative">
-        {selectedFile && !isSearchOpen && !(settingsExpandedEditorToolbar || isMobile) && (
-          <div
-            ref={floatingToolbarRef}
-            className="absolute right-3 top-3 z-30"
-            onMouseLeave={() => {
-              if (toolbarDropdownOpenCountRef.current > 0) return;
-              setIsFloatingToolbarOpen(false);
-            }}
-          >
-            {isFloatingToolbarOpen ? (
-              renderFloatingFileControls()
-            ) : (
-              <div className="flex items-center gap-1">
-                {isMarkdown ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => saveMdViewMode(getMdViewMode() === 'preview' ? 'edit' : 'preview')}
-                          className={cn(
-                            'size-8 rounded-lg border border-[var(--interactive-border)] bg-[var(--surface-elevated)] p-0 shadow-sm transition-colors',
-                            getMdViewMode() === 'preview'
-                              ? 'bg-[var(--interactive-selection)] text-[var(--interactive-selection-foreground)] hover:bg-[var(--interactive-selection)]'
-                              : 'text-muted-foreground hover:text-foreground'
-                          )}
-                          aria-label={t(getMdViewMode() === 'preview' ? 'filesView.editor.switchToEditMode' : 'filesView.editor.switchToPreviewMode')}
-                          title={t(getMdViewMode() === 'preview' ? 'filesView.editor.switchToEditMode' : 'filesView.editor.switchToPreviewMode')}
-                        >
-                          <Icon name={getMdViewMode() === 'preview' ? 'eye' : 'eye-off'} className="size-4" />
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" sideOffset={6}>
-                      {t(getMdViewMode() === 'preview' ? 'filesView.editor.switchToEditMode' : 'filesView.editor.switchToPreviewMode')}
-                    </TooltipContent>
-                  </Tooltip>
-                ) : null}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      className="inline-flex"
-                      onMouseEnter={() => setIsFloatingToolbarOpen(true)}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setIsFloatingToolbarOpen(true)}
-                        className="size-8 rounded-lg border border-[var(--interactive-border)] bg-[var(--surface-elevated)] p-0 text-muted-foreground shadow-sm hover:text-foreground"
-                        aria-label={t('filesView.editor.showControlsAria')}
-                        title={t('filesView.editor.controlsTitle')}
-                      >
-                        <Icon name="more-2-fill" className="size-4" />
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" sideOffset={6}>{t('filesView.editor.controlsTitle')}</TooltipContent>
-                </Tooltip>
-              </div>
-            )}
-          </div>
-        )}
         <ScrollableOverlay outerClassName="h-full min-w-0" className="h-full min-w-0">
           {!selectedFile ? (
             <div className="p-3 typography-ui text-muted-foreground">{t('filesView.editor.pickFileFromTree')}</div>

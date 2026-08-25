@@ -56,10 +56,10 @@ const formatTime = (timestamp: number | null, timeFormatPreference: TimeFormatPr
 
 // Width threshold for mobile vs desktop layout in settings
 const MOBILE_WIDTH_THRESHOLD = 550;
-// Width threshold for expanded layout (sidebar + chat side by side)
-const EXPANDED_LAYOUT_THRESHOLD = 1400;
 // Sessions sidebar width in expanded layout
 const SESSIONS_SIDEBAR_WIDTH = 280;
+// Keep enough room for the chat after adding the persistent sessions sidebar.
+const EXPANDED_LAYOUT_THRESHOLD = SESSIONS_SIDEBAR_WIDTH + 520;
 const SESSIONS_SIDEBAR_MIN_WIDTH = Math.round(SESSIONS_SIDEBAR_WIDTH * 0.7);
 const SESSIONS_SIDEBAR_MAX_WIDTH = 520;
 

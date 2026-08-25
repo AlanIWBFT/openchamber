@@ -16,7 +16,6 @@ import type { SortableDragHandleProps } from './sortableItems';
 import { ProjectHeaderIdentity, SortableGroupItem, SortableProjectItem } from './sortableItems';
 import { formatProjectLabel } from './utils';
 import { useI18n } from '@/lib/i18n';
-import type { MainTab } from '@/stores/useUIStore';
 import type { ProjectSortOrder } from '@/stores/useSessionDisplayStore';
 import { streamPerfCount } from '@/stores/utils/streamDebug';
 import { Icon } from '@/components/icon/Icon';
@@ -91,7 +90,6 @@ type Props = {
   alwaysShowActions: boolean;
   toggleProject: (id: string) => void;
   setActiveProjectIdOnly: (id: string) => void;
-  setActiveMainTab: (tab: MainTab) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
   openNewSessionDraft: (options?: { selectedProjectId?: string | null; directoryOverride?: string | null }) => void;
   openNewWorktreeDialog: () => void;
@@ -362,7 +360,6 @@ function SidebarProjectsListComponent(props: Props): React.ReactNode {
                   }}
                   onNewSession={() => {
                     if (projectKey !== props.activeProjectId) props.setActiveProjectIdOnly(projectKey);
-                    props.setActiveMainTab('chat');
                     if (props.mobileVariant) props.setSessionSwitcherOpen(false);
                     props.openNewSessionDraft({
                       selectedProjectId: projectKey,
@@ -371,7 +368,6 @@ function SidebarProjectsListComponent(props: Props): React.ReactNode {
                   }}
                   onNewWorktreeSession={() => {
                     if (projectKey !== props.activeProjectId) props.setActiveProjectIdOnly(projectKey);
-                    props.setActiveMainTab('chat');
                     props.openNewWorktreeDialog();
                   }}
                   onManageWorktrees={() => props.openWorktreesPage(projectKey)}
