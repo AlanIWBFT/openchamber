@@ -3,6 +3,7 @@ import React from 'react';
 import { MessageFreshnessDetector } from '@/lib/messageFreshness';
 import { createScrollSpy } from '@/components/chat/lib/scroll/scrollSpy';
 import { useViewportStore } from '@/sync/viewport-store';
+import { useUIStore } from '@/stores/useUIStore';
 import {
     CHAT_LIST_ANCHOR_OFFSET,
     getAnchoredTurnMetrics,
@@ -520,7 +521,15 @@ export const useChatTimelineScroll = ({
         first: null,
         second: null,
     });
+    // User preference: with auto-follow off, streaming growth never moves the
+    // viewport — the anchored user message still parks at the top on send, but
+    // no glide or end-follow correction runs afterwards.
+    const streamingAutoFollowEnabled = useUIStore((state) => state.streamingAutoFollowEnabled);
+    const streamingAutoFollowEnabledRef = React.useRef(streamingAutoFollowEnabled);
+    streamingAutoFollowEnabledRef.current = streamingAutoFollowEnabled;
+
     const onTimelineDataChange = React.useCallback(() => {
+        if (!streamingAutoFollowEnabledRef.current) return;
         if (!isLiveFollowActive()) return;
 
         // Following the end needs no animation frames: the totalSize listener

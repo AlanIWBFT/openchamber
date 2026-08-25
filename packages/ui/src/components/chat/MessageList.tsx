@@ -1021,6 +1021,10 @@ const TimelineList = React.memo(({
     rowContext,
 }: TimelineListProps) => {
     const listRef = React.useRef<LegendListRef | null>(null);
+    // With streaming auto-follow off, content growth must never move the
+    // viewport; explicit commands (the scroll-to-bottom pill, session open)
+    // still scroll through the imperative handle.
+    const streamingAutoFollowEnabled = useUIStore((state) => state.streamingAutoFollowEnabled);
     const isAtEndRef = React.useRef(true);
 
     const setListRef = React.useCallback((list: LegendListRef | null) => {
@@ -1067,7 +1071,7 @@ const TimelineList = React.memo(({
                 contentInsetEndAdjustment={composerOverlayHeight}
                 // While a turn is anchored, the reserved end space — not the
                 // live edge — defines where the viewport rests.
-                maintainScrollAtEnd={anchoredEndSpace
+                maintainScrollAtEnd={anchoredEndSpace || !streamingAutoFollowEnabled
                     ? false
                     : { animated: false, on: { dataChange: true, itemLayout: true, layout: true } }}
                 // Prepending older history must not move what the user is
