@@ -289,7 +289,15 @@ export const useChatTimelineScroll = ({
 
     // Sending arms the anchor. The message id is not known here (the optimistic
     // row is created by the store), so the next new user message id claims it.
+    // Whether the send-time anchor positioning may animate. Sending from the
+    // live edge parks the new message with a short smooth scroll; sending
+    // from mid-history teleports — a long smooth scroll through the
+    // virtualized timeline gets cancelled by rows mounting and measuring
+    // along the way and dies partway there.
+    const anchorPositionInstantRef = React.useRef(false);
+
     const scrollToBottomOnSend = React.useCallback(() => {
+        anchorPositionInstantRef.current = !isAtEndRef.current;
         isAtEndRef.current = true;
         setUserOwnsScroll(false);
         modeRef.current = 'anchoring-new-turn';
@@ -418,7 +426,7 @@ export const useChatTimelineScroll = ({
 
                 void list.scrollToIndex({
                     index: anchorIndex,
-                    animated: true,
+                    animated: !anchorPositionInstantRef.current,
                     viewPosition: 0,
                     viewOffset: CHAT_LIST_ANCHOR_OFFSET,
                 });
