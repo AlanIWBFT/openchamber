@@ -240,10 +240,34 @@ export const createRuntimeOpencodeClient = (config: RuntimeOpencodeClientConfig)
       const callerSignal = init?.signal;
       const supportsAny = typeof AbortSignal !== 'undefined'
         && typeof (AbortSignal as { any?: unknown }).any === 'function';
-      const signal: AbortSignal = callerSignal && supportsAny
-        ? (AbortSignal as typeof AbortSignal & { any: (signals: AbortSignal[]) => AbortSignal })
-            .any([callerSignal, timeout.signal])
-        : (callerSignal ?? timeout.signal);
+      let signal: AbortSignal;
+      let detachFallback: (() => void) | null = null;
+      if (callerSignal && supportsAny) {
+        signal = (AbortSignal as typeof AbortSignal & { any: (signals: AbortSignal[]) => AbortSignal })
+          .any([callerSignal, timeout.signal]);
+      } else if (callerSignal) {
+        // No AbortSignal.any: compose manually. Silently dropping the timeout
+        // here would disable the fix on exactly the bootstrap reads it
+        // targets, since those carry a cancellation signal.
+        const controller = new AbortController();
+        const abortFromCaller = () => controller.abort(callerSignal.reason);
+        const abortFromTimeout = () => controller.abort(timeout.signal.reason);
+        if (callerSignal.aborted) {
+          abortFromCaller();
+        } else if (timeout.signal.aborted) {
+          abortFromTimeout();
+        } else {
+          callerSignal.addEventListener('abort', abortFromCaller, { once: true });
+          timeout.signal.addEventListener('abort', abortFromTimeout, { once: true });
+          detachFallback = () => {
+            callerSignal.removeEventListener('abort', abortFromCaller);
+            timeout.signal.removeEventListener('abort', abortFromTimeout);
+          };
+        }
+        signal = controller.signal;
+      } else {
+        signal = timeout.signal;
+      }
       try {
         return await runtimeFetch(input, { ...init, signal });
       } catch (error) {
@@ -252,6 +276,7 @@ export const createRuntimeOpencodeClient = (config: RuntimeOpencodeClientConfig)
         }
         throw error;
       } finally {
+        detachFallback?.();
         timeout.cleanup();
       }
     },
