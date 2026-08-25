@@ -17,6 +17,7 @@ import { createTrayController } from './tray.mjs';
 import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { resolveStartupUrlProbePlan, shouldIgnoreLoopbackConnectionLimit } from './startup-url-selection.mjs';
 import { createStartupSingleFlight } from './startup-single-flight.mjs';
+import { createServerDependencyPreload } from './server-dependency-preload.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { assertUpdaterCapability } from './updater-capability.mjs';
 import { checkForDesktopUpdate } from './updater-check.mjs';
@@ -186,7 +187,12 @@ const STARTUP_PERF_ENABLED_VALUES = new Set(['1', 'true']);
 const ELECTRON_STARTUP_PERF_PHASES = new Set([
   'electron.app.ready',
   'electron.shell-env.ready',
+  'electron.startup-surface.ready',
+  'electron.server-preload.start',
+  'electron.server-preload.ready',
   'electron.server.start',
+  'electron.server-import.start',
+  'electron.server-import.ready',
   'electron.server.ready',
   'electron.navigation.start',
   'electron.navigation.ready',
@@ -208,6 +214,34 @@ const recordElectronStartupPerformance = (phase, details = {}) => {
   log.info('[startup-performance]', event);
 };
 const classifyStartupDocument = (url) => String(url || '').startsWith('data:') ? 'splash' : 'application';
+
+let userShellEnvironmentApplied = false;
+let resolveUserShellEnvironmentApplied;
+const userShellEnvironmentAppliedPromise = new Promise((resolve) => {
+  resolveUserShellEnvironmentApplied = resolve;
+});
+const markUserShellEnvironmentApplied = () => {
+  if (userShellEnvironmentApplied) return;
+  userShellEnvironmentApplied = true;
+  resolveUserShellEnvironmentApplied();
+};
+let startupSurfaceReady = false;
+let resolveStartupSurfaceReady;
+const startupSurfaceReadyPromise = new Promise((resolve) => {
+  resolveStartupSurfaceReady = resolve;
+});
+const markStartupSurfaceReady = () => {
+  if (startupSurfaceReady) return;
+  startupSurfaceReady = true;
+  resolveStartupSurfaceReady();
+  recordElectronStartupPerformance('electron.startup-surface.ready');
+};
+const serverDependencyPreload = createServerDependencyPreload({
+  isEnvironmentReady: () => userShellEnvironmentApplied,
+  waitForEnvironmentReady: () => userShellEnvironmentAppliedPromise,
+  logger: log,
+  recordPerformance: recordElectronStartupPerformance,
+});
 
 const LOG_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 try {
@@ -1534,12 +1568,17 @@ const loadShellEnv = () => {
 // CLI, git, etc.) inherit process.env directly now — there is no sidecar
 // subprocess to hand a custom env to.
 const inheritUserShellEnv = async () => {
+  if (userShellEnvironmentApplied) return;
   // Clear before probing/merging so login-shell snapshots and children never
   // inherit the AppImage path as argv[0] via zsh's ARGV0 parameter (#2588).
   clearAppImageArgv0FromProcessEnv();
 
   const shellEnv = await loadShellEnv();
-  if (!shellEnv) return;
+  if (userShellEnvironmentApplied) return;
+  if (!shellEnv) {
+    markUserShellEnvironmentApplied();
+    return;
+  }
 
   const homeDir = os.homedir();
   const currentPath = process.env.PATH || '';
@@ -1557,6 +1596,7 @@ const inheritUserShellEnv = async () => {
   if ((process.platform === 'win32' || !currentPathLooksUserConfigured) && shellPath) {
     process.env.PATH = mergePathValues(shellPath, currentPath, delimiter);
   }
+  markUserShellEnvironmentApplied();
 };
 
 const isLocalServerSkipped = () => process.env.OPENCHAMBER_SKIP_LOCAL_SERVER === '1';
@@ -1643,7 +1683,14 @@ const startLocalServer = async () => {
   process.env.NO_PROXY = process.env.NO_PROXY || 'localhost,127.0.0.1';
   process.env.no_proxy = process.env.no_proxy || 'localhost,127.0.0.1';
 
+  await startupSurfaceReadyPromise;
+  await serverDependencyPreload.wait();
+  const serverImportStartedAt = performance.now();
+  recordElectronStartupPerformance('electron.server-import.start');
   const serverModule = await import('@openchamber/web/server/index.js');
+  recordElectronStartupPerformance('electron.server-import.ready', {
+    durationMs: performance.now() - serverImportStartedAt,
+  });
   state.serverModule = serverModule;
   if (state.quitInProgress) throw new Error('OpenChamber server startup cancelled during shutdown');
 
@@ -1806,6 +1853,35 @@ const buildStartupSplashHtml = () => {
       foregroundDark: settings.splashFgDark,
     },
   });
+};
+
+const scheduleServerDependencyPreloadAfterStartupPaint = (browserWindow) => {
+  if (!browserWindow || browserWindow.isDestroyed() || browserWindow.__ocServerPreloadScheduled) return;
+  browserWindow.__ocServerPreloadScheduled = true;
+  void (async () => {
+    let fallbackTimer;
+    try {
+      await Promise.race([
+        browserWindow.webContents.executeJavaScript(
+          'new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))',
+          true,
+        ),
+        new Promise((resolve) => {
+          fallbackTimer = setTimeout(resolve, 100);
+        }),
+      ]);
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } finally {
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+    }
+    if (!browserWindow.isDestroyed() && !browserWindow.isVisible() && !state.quitInProgress) {
+      browserWindow.show();
+      browserWindow.focus();
+    }
+    markStartupSurfaceReady();
+    if (!isLocalServerSkipped()) void serverDependencyPreload.begin();
+  })();
 };
 
 const updateStartupPageDocument = (browserWindow, phase) => {
@@ -2685,6 +2761,12 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
         browserWindow.show();
         browserWindow.focus();
       }
+      if (
+        !state.startupResolved &&
+        classifyStartupDocument(browserWindow.webContents.getURL()) === 'splash'
+      ) {
+        scheduleServerDependencyPreloadAfterStartupPaint(browserWindow);
+      }
     }
   });
 
@@ -2709,6 +2791,13 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     }
     browserWindow.show();
     browserWindow.focus();
+    if (
+      browserWindow.__ocLabel === 'main' &&
+      !state.startupResolved &&
+      classifyStartupDocument(browserWindow.webContents.getURL()) === 'splash'
+    ) {
+      scheduleServerDependencyPreloadAfterStartupPaint(browserWindow);
+    }
   });
 
   if (url) {
@@ -5555,6 +5644,8 @@ app.whenReady().then(async () => {
   }
 
   if (isBackgroundStart) {
+    markStartupSurfaceReady();
+    if (!isLocalServerSkipped()) void serverDependencyPreload.begin();
     const { localOrigin, bootOutcome, apiBaseUrl, clientToken, requestHeaders } = await resolveInitialUrl();
     state.localOrigin = localOrigin;
     state.apiBaseUrl = apiBaseUrl;

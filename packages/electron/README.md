@@ -10,7 +10,7 @@ Desktop starts the OpenChamber web server in the same Electron main process. The
 
 On Windows, Desktop starts login-shell environment discovery in a one-shot Node Worker Thread immediately after acquiring the single-instance lock. PowerShell profile evaluation and any registry fallback therefore overlap Electron initialization without blocking the main thread; the completed snapshot is still applied before startup reads environment-controlled server settings.
 
-`server-preload-env.test.mjs` exercises the isolated `process.env` access guard used to audit dependency graphs considered for import while login-shell discovery is still running. `bundle:main` runs this audit suite before every Electron main-process bundle.
+After the startup window is visible and has produced two renderer frames, Desktop preloads the environment-independent part of the server dependency graph while the login-shell probe continues. `server-preload-env.test.mjs` evaluates the exact preload graph in an isolated process behind a `process.env` access guard. `bundle:main` runs this audit before every bundle, so a direct or transitive import-time environment read fails Candidate and release builds instead of silently caching the pre-probe environment. The packaged runtime keeps the guard active for the preload's asynchronous context until the login-shell snapshot is applied. It records the variable and source frame in `main.log` before failing local startup if build-time and packaged resolution differ or a delayed preload callback reads the environment before that point.
 
 On Windows, latency-sensitive Git status, PR-context, and per-file diff reads are dispatched to a fixed pool of four persistent Node Worker Threads owned by that in-process server. The workers share one persistent `OpenCode.ProcessBroker.exe`, staged with the local OpenCode CLI. The self-contained .NET 10 NativeAOT broker creates each Git process detached from a console and atomically assigns its complete process tree to a per-command Job Object. Worker Threads remain in-process; the broker owns only process creation, pipes, cancellation, and cleanup.
 
@@ -33,6 +33,7 @@ The preload bridge exposes desktop-only APIs to the web UI through `window.__OPE
 |------|---------|
 | `main.mjs` | Electron main process, app lifecycle, windows, menus, deep links, native IPC handlers, updates, local server startup |
 | `startup-single-flight.mjs` | One-shot startup promise coordinator that retains the first success or failure to prevent duplicate local server initialization |
+| `server-dependency-preload.mjs` | Guarded one-shot preload of environment-independent server dependencies |
 | `server-preload-env.test.mjs` | Isolated import-graph environment audit run by tests and before `bundle:main` |
 | `startup-url-selection.mjs` | Pure bundled/HMR startup probe and loopback connection-limit policy |
 | `preload.mjs` | Safe bridge from the rendered UI to Electron IPC |

@@ -68,3 +68,14 @@ test('keeps the guard active through an explicit environment readiness signal', 
     entry.frame.includes('server-preload-env.test.mjs')
   )));
 });
+
+test('the production server dependency preload graph does not access process.env', async () => {
+  const originalEnv = process.env;
+  const { value, accesses } = await capturePreloadEnvironmentAccesses(
+    () => import('@openchamber/web/server/preload-server-dependencies.js'),
+  );
+
+  assert.strictEqual(process.env, originalEnv);
+  assert.equal(value.serverDependenciesPreloaded, true);
+  assert.deepEqual(accesses, [], `Unexpected preload environment accesses:\n${JSON.stringify(accesses, null, 2)}`);
+});
