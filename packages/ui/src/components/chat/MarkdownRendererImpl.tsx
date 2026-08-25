@@ -843,6 +843,7 @@ const useMorphdomMarkdown = ({
       // Reconcile per block: only re-morph blocks whose content changed, leaving
       // stable leading blocks untouched. Keeps per-stream-step DOM work bounded
       // to the trailing (growing) block instead of the whole message.
+      let enteredThisPass = 0;
       blocks.forEach((block, index) => {
         let el = existing[index];
         let isNewBlock = false;
@@ -863,9 +864,16 @@ const useMorphdomMarkdown = ({
           // goes on the block's children — the wrapper is display:contents
           // and cannot animate — and the transform never changes layout, so
           // row measurement stays exact. Skipped for the first block so a
-          // full initial render does not shimmer.
+          // full initial render does not shimmer. Several blocks committed
+          // in one tick cascade with a small stagger instead of popping in
+          // together.
+          const delayMs = Math.min(enteredThisPass, 4) * 55;
+          enteredThisPass += 1;
           for (const child of Array.from(temp.children)) {
             child.classList.add('oc-md-block-enter');
+            if (delayMs > 0 && child instanceof HTMLElement) {
+              child.style.setProperty('--oc-md-enter-delay', `${delayMs}ms`);
+            }
           }
         }
         const hadMermaidBlock = shouldRefreshMermaidViewers(el);
