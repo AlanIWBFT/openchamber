@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- **Faster session switching in large workspaces** (thanks @c-w-xiaohei): switching sessions no longer rebuilds the whole sidebar, returning to a recently viewed session restores its rendered messages instead of re-rendering them (file links included), and scrolling long conversations costs less. In a workspace with thousands of loaded sessions, end-to-end switch time dropped by roughly half.
+- Fixed the selected project or session briefly jumping back to a previous choice when settings responses arrived out of order.
 - **Chat scrolling rebuilt around your message.** Sending a message now parks it near the top of the view and the reply streams into the space below it, so you read from where you asked instead of chasing the bottom. While a reply streams, text arrives a paragraph at a time (code blocks line by line) with a soft fade, and the view glides after it in one continuous motion instead of snapping per line. Scrolling up during a stream immediately hands you the wheel — nothing yanks the view back — and the scroll-to-bottom pill appears on the left, carrying the model's working status while you're away from the live edge. Sending from anywhere mid-conversation jumps you straight to your new message.
 - Chat: a new "Follow new content while streaming" checkbox (Settings → Chat → Streaming, on by default) turns the automatic following off entirely — your message still parks at the top on send, but the view never moves on its own afterwards.
 - Chat: streamed code blocks are now syntax-highlighted while they stream, and finished messages no longer jump when a code block's line numbers fill in at the end of a reply.
