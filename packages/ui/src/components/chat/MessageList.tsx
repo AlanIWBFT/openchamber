@@ -987,6 +987,41 @@ const TimelineList = React.memo(({
         registerList(list);
     }, [registerList]);
 
+    // A width change re-wraps every row, so all content above the viewport
+    // changes height at once; without size compensation the accumulated delta
+    // throws the read position around. Size restoration stays off otherwise —
+    // rows growing in place (a tool result expanding) must grow downward —
+    // so compensation is enabled only while the list width is actively
+    // resizing, and released shortly after it settles.
+    const [isWidthResizing, setIsWidthResizing] = React.useState(false);
+    React.useEffect(() => {
+        const node = listRef.current?.getScrollableNode();
+        if (!node) return;
+        let lastWidth: number | null = null;
+        let quietTimer: ReturnType<typeof setTimeout> | null = null;
+        const observer = new ResizeObserver((observerEntries) => {
+            const width = observerEntries[observerEntries.length - 1]?.contentRect.width;
+            if (typeof width !== 'number') return;
+            if (lastWidth === null) {
+                lastWidth = width;
+                return;
+            }
+            if (Math.abs(width - lastWidth) < 1) return;
+            lastWidth = width;
+            setIsWidthResizing(true);
+            if (quietTimer !== null) clearTimeout(quietTimer);
+            quietTimer = setTimeout(() => {
+                quietTimer = null;
+                setIsWidthResizing(false);
+            }, 300);
+        });
+        observer.observe(node);
+        return () => {
+            observer.disconnect();
+            if (quietTimer !== null) clearTimeout(quietTimer);
+        };
+    }, []);
+
     // The list reports scroll continuously; only end-crossings are interesting,
     // so the edge is debounced to a state transition here rather than pushing a
     // callback on every frame.
@@ -1030,9 +1065,9 @@ const TimelineList = React.memo(({
                     ? false
                     : { animated: false, on: { dataChange: true, itemLayout: true, layout: true } }}
                 // Prepending older history must not move what the user is
-                // reading. Size restoration stays off: rows growing in place
-                // (a tool result expanding) must grow downward.
-                maintainVisibleContentPosition={{ data: true, size: false }}
+                // reading. Size restoration applies only during a width
+                // resize — see the observer above.
+                maintainVisibleContentPosition={{ data: true, size: isWidthResizing }}
                 onScroll={handleScroll}
                 ListHeaderComponent={header}
                 ListFooterComponent={footer}
