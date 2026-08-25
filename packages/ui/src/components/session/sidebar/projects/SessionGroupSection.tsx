@@ -232,7 +232,6 @@ const areGroupPropsEqual = (prev: SessionGroupSectionProps, next: SessionGroupSe
     && prev.resetGroupSessionLimit === next.resetGroupSessionLimit
     && prev.mobileVariant === next.mobileVariant
     && prev.alwaysShowActions === next.alwaysShowActions
-    && prev.activeProjectId === next.activeProjectId
     && prev.setActiveProjectIdOnly === next.setActiveProjectIdOnly
     && prev.setSessionSwitcherOpen === next.setSessionSwitcherOpen
     && prev.openNewSessionDraft === next.openNewSessionDraft

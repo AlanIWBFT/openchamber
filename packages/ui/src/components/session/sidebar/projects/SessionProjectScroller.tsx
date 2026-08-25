@@ -58,7 +58,6 @@ type SessionProjectScrollerGroupProps = Pick<SessionGroupSectionProps,
   | 'startFolderRename'
   | 'setCopiedSessionId'
 > & {
-  activeProjectId: string | null;
   pinnedSessionIds: Set<string>;
   sessionOrderIndex: Map<string, number>;
 };

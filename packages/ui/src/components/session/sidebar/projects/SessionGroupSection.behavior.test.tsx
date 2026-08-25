@@ -113,7 +113,6 @@ const createProps = (): SessionGroupSectionProps => ({
   resetGroupSessionLimit: () => undefined,
   mobileVariant: false,
   alwaysShowActions: false,
-  activeProjectId: 'project',
   setActiveProjectIdOnly: () => undefined,
   setActiveMainTab: () => undefined,
   setSessionSwitcherOpen: () => undefined,

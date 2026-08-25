@@ -14,6 +14,7 @@ import {
   useSyncSDK,
   useSyncRuntime,
   resyncBlockingRequestsForDirectory,
+  buildSessionMessageRecordsSnapshot,
 } from "./sync-context"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { isVSCodeRuntime } from "@/lib/desktop"
@@ -411,4 +412,18 @@ export function usePrefetchSessionMessages() {
     if (messageLoader.getSnapshot({ directory, sessionID }).status !== "ready") return
     touch(sessionID, directory)
   }, [messageLoader, runtimeKey, touch])
+}
+
+export function useSessionMessageRecordsForExport() {
+  const { childStores, messageLoader, runtimeKey } = useSyncRuntime()
+  const touch = useSessionCacheTouch()
+
+  return useCallback(async ({ directory, sessionID }: { directory: string; sessionID: string }) => {
+    if (getRuntimeKey() !== runtimeKey) return null
+    const store = childStores.ensureChild(directory, { bootstrap: false })
+    touch(sessionID, directory)
+    await messageLoader.loadComplete({ directory, sessionID })
+    if (getRuntimeKey() !== runtimeKey) return null
+    return buildSessionMessageRecordsSnapshot(store.getState(), sessionID).list
+  }, [childStores, messageLoader, runtimeKey, touch])
 }

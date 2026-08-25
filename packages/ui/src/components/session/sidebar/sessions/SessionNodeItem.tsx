@@ -22,8 +22,8 @@ import { isSessionPinned, useSessionPinnedStore } from '@/stores/useSessionPinne
 import { Icon } from "@/components/icon/Icon";
 import { buildExportFilename, downloadAsMarkdown, formatSessionAsMarkdown, getExportRevealLabelKey, revealExportedMarkdown, saveAsMarkdownDesktop } from '@/lib/exportSession';
 import type { ChildSessionExport } from '@/lib/exportSession';
-import { buildSessionMessageRecordsSnapshot, useDirectoryStore, useGlobalSessionStatus, useSessionPermissions, useSessionQuestionCount } from '@/sync/sync-context';
-import { useSync } from '@/sync/use-sync';
+import { useGlobalSessionStatus, useSessionPermissions, useSessionQuestionCount } from '@/sync/sync-context';
+import { useSessionMessageRecordsForExport } from '@/sync/use-sync';
 import { useViewportStore, viewportSessionKey } from '@/sync/viewport-store';
 import { DraggableSessionRow } from '../folders/sessionFolderDnd';
 import { nodeContainsSessionId, nodeHasPinnedMembershipChange, selectQuestionBadgeSessionScopes } from './sessionNodeItemUtils';
@@ -383,10 +383,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
   // project (falling back to the directory when no project is known) — a
   // selection must survive mixing sessions from different worktrees.
   const selectionScopeKey = projectId ?? sessionDirectory ?? null;
-  // Directory bootstrap is scheduled once at sidebar level. A row only needs
-  // the lightweight store reference for scoped state and export actions.
-  const directoryStore = useDirectoryStore(sessionDirectory ?? undefined, { bootstrap: false });
-  const sync = useSync();
+  const loadExportRecords = useSessionMessageRecordsForExport();
 
   const selectionModeEnabled = useSessionMultiSelectStore((state) => state.enabled);
   const isRowSelected = useSessionMultiSelectStore(
@@ -478,8 +475,8 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
     for (const child of children) {
       try {
         if (!sessionDirectory) throw new Error('Session directory is required for export');
-        await sync.loadCompleteHistory(child.session.id, sessionDirectory);
-        const childRecords = buildSessionMessageRecordsSnapshot(directoryStore.getState(), child.session.id).list;
+        const childRecords = await loadExportRecords({ directory: sessionDirectory, sessionID: child.session.id });
+        if (!childRecords) throw new Error('Session runtime changed during export');
         const childTitle = child.session.title || t('sessions.sidebar.session.export.untitledSubagent');
         // SAFETY: OpenCode session payloads may carry the optional agent label used by exports.
         const childAgent = (child.session as Session & { agent?: string }).agent;
@@ -496,7 +493,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
       }
     }
     return { children: results, skipped };
-  }, [collectNodeDescendantIds, directoryStore, sessionDirectory, sync, t]);
+  }, [collectNodeDescendantIds, loadExportRecords, sessionDirectory, t]);
 
   const showSkippedSubtasksWarning = React.useCallback((count: number) => {
     if (count <= 0) return;
@@ -511,14 +508,11 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
       return;
     }
 
-    try {
-      await sync.loadCompleteHistory(session.id, sessionDirectory);
-    } catch {
+    const records = await loadExportRecords({ directory: sessionDirectory, sessionID: session.id }).catch(() => null);
+    if (!records) {
       toast.error(t('sessions.sidebar.session.export.failedLoadHistory'));
       return;
     }
-
-    const records = buildSessionMessageRecordsSnapshot(directoryStore.getState(), session.id).list;
     if (records.length === 0) {
       toast.error(t('sessions.sidebar.session.export.nothingToExport'));
       return;
@@ -556,7 +550,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
     downloadAsMarkdown(markdown, filename);
     toast.success(t('sessions.sidebar.session.export.success'));
     showSkippedSubtasksWarning(skippedSubtaskCount);
-  }, [collectChildExports, directoryStore, node.children, resolvedSession.title, session.id, sessionDirectory, showSkippedSubtasksWarning, sync, t]);
+  }, [collectChildExports, loadExportRecords, node.children, resolvedSession.title, session.id, sessionDirectory, showSkippedSubtasksWarning, t]);
   const handleExportSession = React.useCallback(async () => {
     if (node.children.length > 0) {
       setExportIncludeSubtasks(true);

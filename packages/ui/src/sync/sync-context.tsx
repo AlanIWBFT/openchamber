@@ -2845,13 +2845,25 @@ export function useScopedBlockingQuestions(sessionID: string | null, directory?:
   return useScopedBlockingRequests(sessionID, directory, selectQuestionRequestsBySession, EMPTY_QUESTION_REQUESTS)
 }
 
+const sessionsByIdCache = new WeakMap<State["session"], Map<string, Session>>()
+
+const getSessionById = (sessions: State["session"], sessionID?: string | null): Session | undefined => {
+  if (!sessionID) return undefined
+  let sessionsById = sessionsByIdCache.get(sessions)
+  if (!sessionsById) {
+    sessionsById = new Map(sessions.map((session) => [session.id, session]))
+    sessionsByIdCache.set(sessions, sessionsById)
+  }
+  return sessionsById.get(sessionID)
+}
+
 export function useParentSession(sessionID: string | null, directory?: string): Session | null {
   return useDirectorySync(
     useCallback((state: State) => {
       if (!sessionID) return null
-      const current = state.session.find((s) => s.id === sessionID)
+      const current = getSessionById(state.session, sessionID)
       if (!current?.parentID) return null
-      return state.session.find((s) => s.id === current.parentID)
+      return getSessionById(state.session, current.parentID)
         ?? getAllSyncSessions().find((s) => s.id === current.parentID)
         ?? null
     }, [sessionID]),
@@ -2864,7 +2876,8 @@ export function useSession(sessionID?: string | null, directory?: string) {
   const { childStores } = useSyncSystem()
   const getSnapshot = useCallback(() => {
     if (directory) {
-      return childStores.getChild(directory)?.getState().session.find((session) => session.id === sessionID)
+      const sessions = childStores.getChild(directory)?.getState().session
+      return sessions ? getSessionById(sessions, sessionID) : undefined
     }
     return findLiveSession(getLiveStates(childStores), sessionID)
   }, [childStores, directory, sessionID])
