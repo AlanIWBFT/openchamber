@@ -16,8 +16,10 @@ kept at this root in `types.ts` and `utils.tsx`.
   target disabled and a separate `New worktree...` action. Opening the submenu
   refreshes the worktree topology. Moving transfers the full idle subtree. Clean
   and non-Git sources move session-only; a dirty Git source prompts to move only
-  the session, move all source changes, or cancel. Only the root session carries
-  source changes during a subtree move.
+  the session, move all source changes, or cancel. Descendants move first without
+  changes and roll back session-only if a later descendant fails. The root moves
+  last and carries source changes once, which prevents rollback from replaying the
+  transferred patch into the source.
 
 `MainLayout` and `VSCodeLayout` call `useSessionListSync({ isVSCode })`
 unconditionally. The hook publishes complete directory bootstrap demand,

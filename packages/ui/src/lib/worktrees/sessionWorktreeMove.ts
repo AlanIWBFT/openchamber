@@ -150,11 +150,9 @@ const isSessionBusyOrRetrying = (session: Session, directory: string): boolean =
 
 const rollbackMovedSessions = async (
   sessions: Session[],
-  rootSessionId: string,
   sourceDirectory: string,
   worktreeDirectory: string,
   previousMetadata: ReadonlyMap<string, WorktreeMetadata | undefined>,
-  moveChanges: boolean,
 ): Promise<RollbackFailure[]> => {
   const failures: RollbackFailure[] = [];
   for (const session of [...sessions].reverse()) {
@@ -163,12 +161,12 @@ const rollbackMovedSessions = async (
       continue;
     }
     try {
-        await moveSessionToDirectory(
-          session,
-          worktreeDirectory,
-          sourceDirectory,
-          session.id === rootSessionId && moveChanges,
-        );
+      await moveSessionToDirectory(
+        session,
+        worktreeDirectory,
+        sourceDirectory,
+        false,
+      );
       useSessionUIStore.getState().setWorktreeMetadata(session.id, previousMetadata.get(session.id) ?? null);
     } catch (error) {
       failures.push({
@@ -212,7 +210,7 @@ const moveSessionTreeTransaction = async (
   setSessionMovePending(input.root.id, true);
 
   try {
-    const sessions = [input.root, ...input.descendants];
+    const sessions = [...input.descendants, input.root];
     const previousMetadata = new Map(
       sessions.map((session) => [
         session.id,
@@ -227,27 +225,27 @@ const moveSessionTreeTransaction = async (
       destination = await prepareDestination();
       for (const [index, session] of sessions.entries()) {
         // Setup and earlier moves can take long enough for a not-yet-moved
-        // descendant to start running, so re-check the remaining source tree
-        // immediately before each move.
+        // session to start running, so re-check the remaining source tree
+        // immediately before each move. The root moves last so no later
+        // descendant failure can require replaying a transferred patch.
         assertSessionsIdle(sessions.slice(index), input.sourceDirectory);
         await moveSessionToDirectory(
           session,
           input.sourceDirectory,
           destination.directory,
-          index === 0 && input.moveChanges,
+          session.id === input.root.id && input.moveChanges,
         );
         moved.push(session);
+        if (session.id === input.root.id) continue;
         useSessionUIStore.getState().setWorktreeMetadata(session.id, getLatestWorktreeMetadata(destination.metadata));
       }
     } catch (error) {
       const moveError = error instanceof Error ? error : new Error(String(error));
       const rollbackFailures = await rollbackMovedSessions(
         moved,
-        input.root.id,
         input.sourceDirectory,
         destination?.directory ?? input.sourceDirectory,
         previousMetadata,
-        input.moveChanges,
       );
       if (rollbackFailures.length > 0) {
         throw createIncompleteRollbackError(moveError, rollbackFailures);
@@ -257,6 +255,7 @@ const moveSessionTreeTransaction = async (
       }
       throw moveError;
     }
+    useSessionUIStore.getState().setWorktreeMetadata(input.root.id, getLatestWorktreeMetadata(destination.metadata));
 
     try {
       await refreshGlobalSessionsForDirectories([input.sourceDirectory, destination.directory]);
