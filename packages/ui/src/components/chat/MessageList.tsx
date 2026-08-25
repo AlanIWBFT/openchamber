@@ -1494,8 +1494,11 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         return container.querySelector(`[data-message-id="${messageId}"]`);
     }, [resolveScrollContainer]);
 
+    // Accepts any index the list renders, the trailing streaming entry
+    // included — it lives at historyEntries.length and is a legitimate
+    // navigation target (the timeline rail's last item).
     const scrollHistoryIndexIntoView = React.useCallback((index: number) => {
-        if (index < 0 || index >= historyEntries.length) {
+        if (index < 0 || index >= allEntries.length) {
             return false;
         }
 
@@ -1510,7 +1513,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         // path in scrollMessageElementIntoView.
         void list.scrollToIndex({ index, animated: false, viewPosition: 0 });
         return true;
-    }, [historyEntries.length]);
+    }, [allEntries.length]);
 
     const scrollMessageElementIntoView = React.useCallback((messageId: string, behavior: ScrollBehavior = 'auto') => {
         const container = resolveScrollContainer();
@@ -1553,10 +1556,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                     return true;
                 }
 
-                const targetIsTail = trailingStreamingEntry !== undefined && index >= historyEntries.length;
-                if (targetIsTail) {
-                    return false;
-                }
 
                 return scrollHistoryIndexIntoView(index);
             },
@@ -1569,11 +1568,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 }
 
                 return scrollMessageElementIntoView(messageId, behavior)
-                    || (
-                        trailingStreamingEntry !== undefined && index >= historyEntries.length
-                            ? false
-                            : scrollHistoryIndexIntoView(index)
-                    );
+                    || scrollHistoryIndexIntoView(index);
             },
 
             holdViewportAnchor: (anchor) => {
@@ -1716,7 +1711,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         return () => {
             objectRef.current = null;
         };
-    }, [findMessageElement, historyEntries.length, messageIndexMap, resolveScrollContainer, scrollHistoryIndexIntoView, scrollMessageElementIntoView, trailingStreamingEntry, turnIndexMap, ref]);
+    }, [findMessageElement, historyEntries.length, messageIndexMap, resolveScrollContainer, scrollHistoryIndexIntoView, scrollMessageElementIntoView, turnIndexMap, ref]);
 
     const anchoredEndSpace = React.useMemo<TimelineAnchoredEndSpace | undefined>(() => {
         const resolved = resolveChatListAnchoredEndSpace(
