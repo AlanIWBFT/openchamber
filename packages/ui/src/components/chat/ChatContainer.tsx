@@ -148,6 +148,7 @@ type HydratingToolSkeletonRow = {
 
 type ChatViewportProps = {
     onStatusOverlayNode: (node: HTMLDivElement | null) => void;
+    statusOverlayHidden: boolean;
     currentSessionId: string;
     currentSessionKey: string;
     isDesktopExpandedInput: boolean;
@@ -192,6 +193,7 @@ type ChatViewportProps = {
 
 const ChatViewport = React.memo(({
     onStatusOverlayNode,
+    statusOverlayHidden,
     currentSessionId,
     currentSessionKey,
     isDesktopExpandedInput,
@@ -421,10 +423,15 @@ const ChatViewport = React.memo(({
                     background — text streams beneath it; the measured height
                     feeds composerOverlayHeight so the live line never hides
                     under it. */}
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10">
+                <div
+                    className={cn(
+                        'pointer-events-none absolute inset-x-0 bottom-0 z-10 transition-opacity duration-150',
+                        statusOverlayHidden && 'opacity-0',
+                    )}
+                >
                     <div
                         ref={onStatusOverlayNode}
-                        className="pointer-events-auto pb-2 [&:not(:has(*))]:hidden"
+                        className={cn('pb-2 [&:not(:has(*))]:hidden', statusOverlayHidden ? 'pointer-events-none' : 'pointer-events-auto')}
                     >
                         <StatusRowContainer />
                     </div>
@@ -445,6 +452,7 @@ const ChatViewport = React.memo(({
     );
 }, (prev, next) => {
     return prev.onStatusOverlayNode === next.onStatusOverlayNode
+        && prev.statusOverlayHidden === next.statusOverlayHidden
         && prev.currentSessionId === next.currentSessionId
         && prev.currentSessionKey === next.currentSessionKey
         && prev.isDesktopExpandedInput === next.isDesktopExpandedInput
@@ -1359,6 +1367,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         return (
             <ChatViewport
                 onStatusOverlayNode={onStatusOverlayNode}
+                statusOverlayHidden={timelineController.showScrollToBottom}
                 currentSessionId={currentSessionId ?? ''}
                 currentSessionKey={currentSessionKey ?? currentSessionId ?? ''}
                 isDesktopExpandedInput={isDesktopExpandedInput}
@@ -1418,6 +1427,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 {!draftLayoutVisible && !isDesktopExpandedInput && sessionMessages.length > 0 && (
                     <ScrollToBottomButton
                         visible={timelineController.showScrollToBottom}
+                        working={sessionIsWorking}
                         onClick={navigation.resumeToLatest}
                     />
                 )}
