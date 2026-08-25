@@ -523,6 +523,28 @@ export const useChatTimelineScroll = ({
     const onTimelineDataChange = React.useCallback(() => {
         if (!isLiveFollowActive()) return;
 
+        // Following the end needs no animation frames: the totalSize listener
+        // already fires after measurement, so correct synchronously the way
+        // the previous scroll engine wrote scrollTop directly. Scheduling a
+        // two-frame chain per streamed chunk kept a continuous rAF load (and
+        // its per-frame style recalcs) running for the whole stream.
+        if (modeRef.current === 'following-end') {
+            const list = listRef.current;
+            if (!list) return;
+            if (!realContentOverflowsViewport(list)) return;
+            // Write scrollTop directly instead of going through scrollToEnd:
+            // the list's programmatic-scroll machinery schedules follow-up
+            // animation frames per call, which doubles frame production for
+            // the whole stream. A direct write is what a user gesture does,
+            // and the list reconciles it through its normal onScroll path.
+            const node = list.getScrollableNode();
+            if (!node) return;
+            // Overshoot so the browser clamps to the exact fractional maximum
+            // (scrollHeight is integer-rounded).
+            node.scrollTop = node.scrollHeight + 4096;
+            return;
+        }
+
         const frames = dataChangeFramesRef.current;
         if (frames.first !== null) cancelAnimationFrame(frames.first);
         if (frames.second !== null) cancelAnimationFrame(frames.second);
