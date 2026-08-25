@@ -18,10 +18,9 @@ import {
   useIsGitRepo,
   useGitLoadingStatus,
   useGitLoadingLog,
-  useEffectiveGitDirectory,
-  useNestedRepos,
-  useNestedRepoSelection,
 } from '@/stores/useGitStore';
+import { useNestedGitDirectory } from '@/hooks/useNestedGitDirectory';
+import { NestedRepoResolutionStates } from './git/NestedRepoResolutionStates';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { toast } from '@/components/ui';
@@ -256,13 +255,14 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
   // The root the view is anchored to (session/worktree context stays keyed on
   // it). When the root is not itself a repository and the user picked a nested
   // one, `gitDirectory` is the effective repository all git data and actions
-  // operate on.
-  const rootIsGitRepo = useIsGitRepo(currentDirectory ?? null);
-  const gitDirectory = useEffectiveGitDirectory(currentDirectory ?? null);
+  // operate on. The hook owns probing, discovery, auto-select, and
+  // stale-selection recovery; data fetching below keys off its result.
+  const { rootIsGitRepo, gitDirectory, nestedRepos, nestedRepoSelection } = useNestedGitDirectory(
+    currentDirectory ?? null,
+    { enabled: isActive },
+  );
   const isGitRepo = useIsGitRepo(gitDirectory ?? null);
   const status = useGitStatus(gitDirectory ?? null);
-  const nestedRepos = useNestedRepos(currentDirectory ?? null);
-  const nestedRepoSelection = useNestedRepoSelection(currentDirectory ?? null);
 
   // Authoritative session↔worktree attachment for repair action display
   const worktreeAttachment = useSessionWorktreeStore((s) =>
@@ -298,7 +298,6 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     bumpIndexRevision,
     ensureNestedRepos,
     selectNestedRepo,
-    clearNestedRepoSelection,
   } = useGitStore(useShallow((state) => ({
     setActiveDirectory: state.setActiveDirectory,
     fetchAll: state.fetchAll,
@@ -315,7 +314,6 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     bumpIndexRevision: state.bumpIndexRevision,
     ensureNestedRepos: state.ensureNestedRepos,
     selectNestedRepo: state.selectNestedRepo,
-    clearNestedRepoSelection: state.clearNestedRepoSelection,
   })));
   const isMobile = useUIStore((state) => state.isMobile);
   const openContextDiff = useUIStore((state) => state.openContextDiff);
@@ -897,37 +895,6 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
       void fetchStatus(gitDirectory, git, { silent: true });
     });
   }, [isActive, clearDiffCache, gitDirectory, fetchStatus, git]);
-
-  // Discover nested repositories once the root probe confirms it is not one.
-  React.useEffect(() => {
-    if (!isActive) return;
-    if (!currentDirectory) return;
-    if (rootIsGitRepo !== false) return;
-    void ensureNestedRepos(currentDirectory);
-  }, [currentDirectory, ensureNestedRepos, isActive, rootIsGitRepo]);
-
-  // Auto-select the first nested repository so the tab opens straight into
-  // repository data; the header picker switches between repositories.
-  React.useEffect(() => {
-    if (!isActive) return;
-    if (!currentDirectory) return;
-    if (rootIsGitRepo !== false) return;
-    if (!nestedRepos || nestedRepos.length === 0) return;
-    if (nestedRepoSelection) return;
-    selectNestedRepo(currentDirectory, nestedRepos[0]);
-  }, [currentDirectory, isActive, nestedRepos, nestedRepoSelection, rootIsGitRepo, selectNestedRepo]);
-
-  // A selected repository that is no longer a git repository is stale: drop
-  // the selection and re-scan so the picker reflects the current tree.
-  React.useEffect(() => {
-    if (!isActive) return;
-    if (!currentDirectory) return;
-    if (!nestedRepoSelection) return;
-    if (gitDirectory === currentDirectory) return;
-    if (isGitRepo !== false) return;
-    clearNestedRepoSelection(currentDirectory);
-    void ensureNestedRepos(currentDirectory, { force: true });
-  }, [clearNestedRepoSelection, currentDirectory, ensureNestedRepos, gitDirectory, isActive, isGitRepo, nestedRepoSelection]);
 
   const refreshStatusAndBranches = React.useCallback(
     async (showErrors = true) => {
@@ -2371,66 +2338,25 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
       );
     }
 
-    // Nested repository discovery: while unknown or failed keep a loading
-    // state with the failure signal; the picker appears once repositories are
-    // found (a single repository is auto-selected by an effect above).
-    if (nestedRepos === undefined || nestedRepos === null) {
-      return (
-        <div className="flex h-full flex-col items-center justify-center px-4 text-center">
-          <Icon name="loader-4" className="mb-3 size-6 animate-spin text-muted-foreground" />
-          <p className="typography-ui-label font-semibold text-foreground">
-            {nestedRepos === null
-              ? t('gitView.empty.discoverFailed')
-              : t('gitView.empty.discoveringRepositories')}
-          </p>
-          {nestedRepos === null ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-3 gap-1.5"
-              onClick={() => {
-                if (currentDirectory) {
-                  void ensureNestedRepos(currentDirectory, { force: true });
-                }
-              }}
-            >
-              <Icon name="refresh" className="size-4" />
-              {t('gitView.empty.retryDiscovery')}
-            </Button>
-          ) : null}
-        </div>
-      );
-    }
-
-    if (nestedRepos.length === 0) {
-      return (
-        <div className="flex h-full flex-col items-center justify-center px-4 text-center">
-          <Icon name="git-branch" className="mb-3 size-6 text-muted-foreground" />
-          <p className="typography-ui-label font-semibold text-foreground">
-            {t('gitView.empty.notGitRepository')}
-          </p>
-          <p className="typography-meta mt-1 text-muted-foreground">
-            {t('gitView.empty.notGitRepositoryDescription')}
-          </p>
-          {repairActions.includes('open-without-worktree-features') ? (
+    // Nested repository discovery states (discovering, failed, unsupported,
+    // none found, or settling on the auto-selected repository).
+    return (
+      <NestedRepoResolutionStates
+        rootIsGitRepo={rootIsGitRepo}
+        nestedRepos={nestedRepos}
+        onRetryDiscovery={() => {
+          if (currentDirectory) {
+            void ensureNestedRepos(currentDirectory, { force: true });
+          }
+        }}
+        emptyStateFooter={
+          repairActions.includes('open-without-worktree-features') ? (
             <p className="typography-meta mt-2 text-muted-foreground">
               {t('gitView.empty.worktreeFeaturesUnavailable')}
             </p>
-          ) : null}
-        </div>
-      );
-    }
-
-    // Repositories were found and are about to be auto-selected (or the
-    // selected repository is still probing) — hold a brief loading state.
-    return (
-      <div className="flex h-full flex-col items-center justify-center px-4 text-center">
-        <Icon name="loader-4" className="mb-3 size-6 animate-spin text-muted-foreground" />
-        <p className="typography-ui-label font-semibold text-foreground">
-          {t('gitView.loading.checkingRepository')}
-        </p>
-      </div>
+          ) : undefined
+        }
+      />
     );
   }
 
@@ -2465,7 +2391,9 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
             onOpenPullRequest={
               gitDirectory ? () => openContextSurface(gitDirectory, 'pr') : undefined
             }
-            repositoryOptions={gitDirectory !== currentDirectory ? (nestedRepos ?? undefined) : undefined}
+            repositoryOptions={
+              gitDirectory !== currentDirectory && Array.isArray(nestedRepos) ? nestedRepos : undefined
+            }
             selectedRepository={gitDirectory !== currentDirectory ? gitDirectory : null}
             onSelectRepository={
               gitDirectory !== currentDirectory && currentDirectory
