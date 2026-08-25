@@ -548,27 +548,12 @@ export const useChatTimelineScroll = ({
         if (!streamingAutoFollowEnabledRef.current) return;
         if (!isLiveFollowActive()) return;
 
-        // Following the end needs no animation frames: the totalSize listener
-        // already fires after measurement, so correct synchronously the way
-        // the previous scroll engine wrote scrollTop directly. Scheduling a
-        // two-frame chain per streamed chunk kept a continuous rAF load (and
-        // its per-frame style recalcs) running for the whole stream.
-        if (modeRef.current === 'following-end') {
-            const list = listRef.current;
-            if (!list) return;
-            if (!realContentOverflowsViewport(list)) return;
-            // Write scrollTop directly instead of going through scrollToEnd:
-            // the list's programmatic-scroll machinery schedules follow-up
-            // animation frames per call, which doubles frame production for
-            // the whole stream. A direct write is what a user gesture does,
-            // and the list reconciles it through its normal onScroll path.
-            const node = list.getScrollableNode();
-            if (!node) return;
-            // Overshoot so the browser clamps to the exact fractional maximum
-            // (scrollHeight is integer-rounded).
-            node.scrollTop = node.scrollHeight + 4096;
-            return;
-        }
+        // Since @legendapp/list 3.3.x, maintainScrollAtEnd follows content
+        // growth on its own — including a tail row growing in place — and
+        // releases when the user scrolls away. Following the end therefore
+        // needs no correction here; this handler only serves the
+        // anchored-turn glide below.
+        if (modeRef.current === 'following-end') return;
 
         const frames = dataChangeFramesRef.current;
         if (frames.first !== null) cancelAnimationFrame(frames.first);
@@ -615,12 +600,9 @@ export const useChatTimelineScroll = ({
                     return;
                 }
 
-                if (modeRef.current !== 'following-end') return;
-                if (!realContentOverflowsViewport(list)) return;
-                void list.scrollToEnd({ animated: false });
             });
         });
-    }, [isLiveFollowActive, realContentOverflowsViewport]);
+    }, [isLiveFollowActive]);
 
     // The streaming tail grows inside one row without changing the entries
     // array, so data-change callbacks are silent for the entire stream. The

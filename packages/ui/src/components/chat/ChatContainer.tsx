@@ -173,6 +173,7 @@ type ChatViewportProps = {
         fallbackTimestamp?: number;
     } | null;
     scrollToBottom: () => void;
+    endPinningReleased: boolean;
     sessionQuestions: QuestionRequest[];
     sessionPermissions: PermissionRequest[];
     isProgrammaticFollowActive: boolean;
@@ -209,6 +210,7 @@ const ChatViewport = React.memo(({
     activeStreamingPhase,
     retryOverlay,
     scrollToBottom,
+    endPinningReleased,
     sessionQuestions,
     sessionPermissions,
     isProgrammaticFollowActive,
@@ -392,6 +394,7 @@ const ChatViewport = React.memo(({
                     retryOverlay={retryOverlay}
                     isLoadingOlder={isLoadingOlder}
                     scrollToBottom={scrollToBottom}
+                    endPinningReleased={endPinningReleased}
                     directory={directory}
                     registerList={registerList}
                     anchorMessageId={anchorMessageId}
@@ -438,6 +441,7 @@ const ChatViewport = React.memo(({
         && prev.activeStreamingPhase === next.activeStreamingPhase
         && prev.retryOverlay === next.retryOverlay
         && prev.scrollToBottom === next.scrollToBottom
+        && prev.endPinningReleased === next.endPinningReleased
         && prev.sessionQuestions === next.sessionQuestions
         && prev.sessionPermissions === next.sessionPermissions
         && prev.isProgrammaticFollowActive === next.isProgrammaticFollowActive
@@ -1353,6 +1357,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 activeStreamingPhase={activeStreamingPhase}
                 retryOverlay={retryOverlay}
                 scrollToBottom={resumeToLatestInstant}
+                endPinningReleased={userOwnsScroll}
                 sessionQuestions={sessionQuestions}
                 sessionPermissions={sessionPermissions}
                 isProgrammaticFollowActive={isFollowingProgrammatically}

@@ -322,6 +322,9 @@ interface MessageListProps {
     // The list owns its scroll container; the timeline scroll hook drives it
     // through this ref and observes it through the callbacks below.
     registerList?: (list: LegendListRef | null) => void;
+    // True while a real gesture owns the scroll; releases the list's own
+    // end pinning so the state machine, not the library heuristic, decides.
+    endPinningReleased?: boolean;
     // The anchored row is identified by message id; the index it maps to is a
     // property of the row model, which only this component knows.
     anchorMessageId?: string | null;
@@ -948,6 +951,7 @@ type TimelineListProps = {
     entries: RenderEntry[];
     streamingTailKey: string | null;
     registerList: (list: LegendListRef | null) => void;
+    endPinningReleased: boolean;
     anchoredEndSpace?: {
         anchorIndex: number;
         anchorOffset?: number;
@@ -966,6 +970,7 @@ type TimelineListProps = {
 const TimelineList = React.memo(({
     entries,
     registerList,
+    endPinningReleased,
     anchoredEndSpace,
     composerOverlayHeight,
     onIsAtEndChange,
@@ -1065,9 +1070,9 @@ const TimelineList = React.memo(({
                 // rows that are still re-measuring shakes the pinned
                 // viewport; the owning hook re-asserts the end once the
                 // resize settles.
-                maintainScrollAtEnd={anchoredEndSpace || !streamingAutoFollowEnabled || isWidthResizing
+                maintainScrollAtEnd={anchoredEndSpace || !streamingAutoFollowEnabled || isWidthResizing || endPinningReleased
                     ? false
-                    : { animated: false, on: { dataChange: true, itemLayout: true, layout: true } }}
+                    : { animated: false, on: { dataChange: true, itemLayout: true, layout: true, footerLayout: true } }}
                 // Prepending older history must not move what the user is
                 // reading. Size restoration applies only during a width
                 // resize — see the observer above.
@@ -1164,6 +1169,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     scrollToBottom,
     directory,
     registerList,
+    endPinningReleased = false,
     anchorMessageId = null,
     onAnchorReady,
     onAnchorSizeChanged,
@@ -1791,6 +1797,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 listFooter={listFooter}
                 scrollContainerProps={scrollContainerProps}
                 rowContext={rowContext}
+                endPinningReleased={endPinningReleased}
             />
         </FadeInDisabledProvider>
     );
