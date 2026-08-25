@@ -1,6 +1,7 @@
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { matchesRankQuery } from '@/lib/search/fuzzySearch';
 import { normalizePath } from '@/lib/pathNormalization';
+import { isChatDirectoryPath } from '@/lib/chatDirectories';
 import { resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';
 import { getPinnedSessionKey } from '@/stores/useSessionPinnedStore';
 import type { SessionNode } from '../types';
@@ -77,6 +78,21 @@ export type QuestionBadgeSessionScope = {
   directory: string;
   sessionIDs: string[];
 };
+
+export const canShowSessionWorktreeMenu = ({
+  isSubtaskSession,
+  archivedBucket,
+  isVSCode,
+  sessionDirectory,
+}: {
+  isSubtaskSession: boolean;
+  archivedBucket: boolean;
+  isVSCode: boolean;
+  sessionDirectory: string | null;
+}): boolean => !isSubtaskSession
+  && !archivedBucket
+  && !isVSCode
+  && !isChatDirectoryPath(sessionDirectory);
 
 export const getSessionWorktreeMenuDisabled = ({
   sessionDirectory,

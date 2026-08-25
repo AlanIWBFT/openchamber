@@ -4,6 +4,7 @@ import { getRuntimeKey } from '@/lib/runtime-switch';
 import { getPinnedSessionKey } from '@/stores/useSessionPinnedStore';
 import {
   computeNodeStructureKey,
+  canShowSessionWorktreeMenu,
   getSessionWorktreeMenuDisabled,
   nodeHasPinnedMembershipChange,
   selectFolderRootNodes,
@@ -189,6 +190,24 @@ describe('getSessionWorktreeMenuDisabled', () => {
       sessionDirectory: '/repo-feature',
       isStreaming: false,
       isMovingToWorktree: true,
+    })).toBe(true);
+  });
+});
+
+describe('canShowSessionWorktreeMenu', () => {
+  test('hides worktree moves for managed Chat directories', () => {
+    expect(canShowSessionWorktreeMenu({
+      isSubtaskSession: false,
+      archivedBucket: false,
+      isVSCode: false,
+      sessionDirectory: '/home/test/.config/openchamber/chats/2026-08-25/session-1',
+    })).toBe(false);
+
+    expect(canShowSessionWorktreeMenu({
+      isSubtaskSession: false,
+      archivedBucket: false,
+      isVSCode: false,
+      sessionDirectory: '/repo',
     })).toBe(true);
   });
 });
