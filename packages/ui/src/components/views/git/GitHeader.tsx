@@ -12,12 +12,7 @@ import type { IconName } from "@/components/icon/icons";
 import { BranchSelector } from './BranchSelector';
 import { WorktreeBranchDisplay } from './WorktreeBranchDisplay';
 import { SyncActions } from './SyncActions';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from '@/components/ui/select';
+import { NestedRepoPicker } from './NestedRepoPicker';
 import type {
   GitStatus,
   GitIdentityProfile,
@@ -282,11 +277,6 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
   }
 
   const repositoryOptionsForPicker = (repositoryOptions ?? []).filter(Boolean);
-  const repositoryRelativePath = (repository: string): string => {
-    const rootPrefix = `${repositoryRoot ?? ''}/`;
-    return repository.startsWith(rootPrefix) ? repository.slice(rootPrefix.length) : repository;
-  };
-  const repositoryLabel = selectedRepository ? repositoryRelativePath(selectedRepository) : '';
 
   const managementButtons = (
     <div className="flex items-center gap-1 shrink-0">
@@ -451,33 +441,13 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
               remotes={remotes}
             />
           )}
-          {repositoryOptionsForPicker.length > 0 ? (
-            <Select
-              value={selectedRepository ?? undefined}
-              onValueChange={(value) => {
-                if (value && onSelectRepository) {
-                  onSelectRepository(value);
-                }
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="max-w-[13rem] gap-1.5 px-2 py-1"
-                aria-label={t('gitView.empty.selectRepositoryPlaceholder')}
-              >
-                <Icon name="folder-3" className="size-4 text-muted-foreground" />
-                <span className="min-w-0 truncate font-medium text-left">
-                  {repositoryLabel}
-                </span>
-              </SelectTrigger>
-              <SelectContent align="start">
-                {repositoryOptionsForPicker.map((repository) => (
-                  <SelectItem key={repository} value={repository}>
-                    <span className="truncate">{repositoryRelativePath(repository)}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {repositoryOptionsForPicker.length > 0 && onSelectRepository ? (
+            <NestedRepoPicker
+              repositories={repositoryOptionsForPicker}
+              selectedRepository={selectedRepository ?? null}
+              onSelectRepository={onSelectRepository}
+              repositoryRoot={repositoryRoot}
+            />
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">

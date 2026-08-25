@@ -16,6 +16,7 @@ import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { PullRequestSection } from './git/PullRequestSection';
 import { NestedRepoResolutionStates } from './git/NestedRepoResolutionStates';
+import { NestedRepoPicker } from './git/NestedRepoPicker';
 import { deriveBaseBranch } from './git/baseBranch';
 
 const normalizePath = (value?: string | null): string =>
@@ -44,9 +45,10 @@ export const PullRequestView: React.FC = () => {
   const status = useGitStatus(gitDirectory ?? null);
   const branches = useGitBranches(gitDirectory ?? null);
   const isGitRepo = useIsGitRepo(gitDirectory ?? null);
-  const { ensureAll, ensureNestedRepos } = useGitStore(useShallow((state) => ({
+  const { ensureAll, ensureNestedRepos, selectNestedRepo } = useGitStore(useShallow((state) => ({
     ensureAll: state.ensureAll,
     ensureNestedRepos: state.ensureNestedRepos,
+    selectNestedRepo: state.selectNestedRepo,
   })));
 
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
@@ -259,9 +261,10 @@ export const PullRequestView: React.FC = () => {
     );
   }
 
-  // Non-repo root: surface nested-repository resolution (discovering, failed,
-  // unsupported, none found, or settling on the auto-selected repository).
-  if (rootIsGitRepo === false || isGitRepo === false) {
+  // Non-repo root: surface nested-repository resolution while the operating
+  // directory has not proven to be a repository (discovering, failed,
+  // unsupported, none found, or settling on the auto-selected one).
+  if (rootIsGitRepo === false && isGitRepo !== true) {
     return (
       <NestedRepoResolutionStates
         rootIsGitRepo={rootIsGitRepo}
@@ -284,22 +287,41 @@ export const PullRequestView: React.FC = () => {
     );
   }
 
+  // Repository switcher for non-repo roots with discovered nested
+  // repositories; the pick is shared per root across git surfaces.
+  const showRepositoryPicker =
+    rootIsGitRepo === false && Array.isArray(nestedRepos) && nestedRepos.length > 0;
+
   return (
-    <ScrollableOverlay
-      as={ScrollShadow}
-      outerClassName="h-full min-h-0"
-      className="px-4 py-3"
-      disableHorizontal
-      preventOverscroll
-    >
-      <PullRequestSection
-        directory={gitDirectory ?? currentDirectory}
-        branch={currentBranch}
-        baseBranch={baseBranch}
-        trackingBranch={status?.tracking ?? undefined}
-        remotes={remotes}
-        remoteBranches={remoteBranches}
-      />
-    </ScrollableOverlay>
+    <div className="flex h-full min-h-0 flex-col">
+      {showRepositoryPicker ? (
+        <div className="flex shrink-0 items-center border-b border-border/60 px-4 py-2">
+          <NestedRepoPicker
+            repositories={nestedRepos}
+            selectedRepository={gitDirectory ?? null}
+            onSelectRepository={(repository) => {
+              if (currentDirectory) selectNestedRepo(currentDirectory, repository);
+            }}
+            repositoryRoot={currentDirectory ?? undefined}
+          />
+        </div>
+      ) : null}
+      <ScrollableOverlay
+        as={ScrollShadow}
+        outerClassName="h-full min-h-0 flex-1"
+        className="px-4 py-3"
+        disableHorizontal
+        preventOverscroll
+      >
+        <PullRequestSection
+          directory={gitDirectory ?? currentDirectory}
+          branch={currentBranch}
+          baseBranch={baseBranch}
+          trackingBranch={status?.tracking ?? undefined}
+          remotes={remotes}
+          remoteBranches={remoteBranches}
+        />
+      </ScrollableOverlay>
+    </div>
   );
 };

@@ -3,6 +3,7 @@ import React from 'react';
 import { useUIStore } from '@/stores/useUIStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useNestedGitDirectory } from '@/hooks/useNestedGitDirectory';
+import { NestedRepoPicker } from '@/components/views/git/NestedRepoPicker';
 import { useGitStore, useGitStatus, useIsGitRepo, useGitLoadingStatus } from '@/stores/useGitStore';
 import { useGitBaseBranchStore, gitBaseBranchEntryKey } from '@/stores/useGitBaseBranchStore';
 import { coerceDiffScope, branchRangeKey, isBranchScopeAvailable, isBranchScopeDefinitelyUnavailable, useRangeKeyedCache, useBoundedDirectoryRetry } from './branchDiffScope';
@@ -1001,7 +1002,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const rootDirectory = useEffectiveDirectory();
     // Diffs belong to the repository being diffed: when the root is not
     // itself a repository, operate on the resolved nested repository instead.
-    const { gitDirectory: nestedGitDirectory } = useNestedGitDirectory(rootDirectory ?? null);
+    const { rootIsGitRepo, gitDirectory: nestedGitDirectory, nestedRepos: nestedRepoOptions } = useNestedGitDirectory(rootDirectory ?? null);
     const effectiveDirectory = nestedGitDirectory ?? rootDirectory;
     const openContextSurface = useUIStore((state) => state.openContextSurface);
     const requestWalkthroughSource = useWalkthroughStore((state) => state.requestSource);
@@ -1012,6 +1013,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const isLoadingStatus = useGitLoadingStatus(effectiveDirectory ?? null);
     const setActiveDirectory = useGitStore((state) => state.setActiveDirectory);
     const ensureStatus = useGitStore((state) => state.ensureStatus);
+    const selectNestedRepo = useGitStore((state) => state.selectNestedRepo);
     const fetchStatus = useGitStore((state) => state.fetchStatus);
     const fetchBranches = useGitStore((state) => state.fetchBranches);
     const clearDiffCache = useGitStore((state) => state.clearDiffCache);
@@ -2044,6 +2046,16 @@ export const DiffView: React.FC<DiffViewProps> = ({
     return (
         <div className="flex h-full flex-col overflow-hidden bg-background">
             <div className="@container/diff-toolbar flex min-w-0 items-center gap-2 px-3 py-2 bg-background">
+                {rootIsGitRepo === false && Array.isArray(nestedRepoOptions) && nestedRepoOptions.length > 0 ? (
+                    <NestedRepoPicker
+                        repositories={nestedRepoOptions}
+                        selectedRepository={nestedGitDirectory ?? null}
+                        onSelectRepository={(repository) => {
+                            if (rootDirectory) selectNestedRepo(rootDirectory, repository);
+                        }}
+                        repositoryRoot={rootDirectory ?? undefined}
+                    />
+                ) : null}
                 {!isMobile && (
                     activeDiffScope === 'working' || activeDiffScope === 'staged' || activeDiffScope === 'turn' || activeDiffScope === 'branch' ? (
                         <ChangeScopeSelector

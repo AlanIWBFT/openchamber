@@ -23,6 +23,7 @@ import {
   useGitLoadingStatus,
 } from '@/stores/useGitStore';
 import { NestedRepoResolutionStates } from '@/components/views/git/NestedRepoResolutionStates';
+import { NestedRepoPicker } from '@/components/views/git/NestedRepoPicker';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 
 type SyncAction = 'fetch' | 'pull' | 'push' | 'sync' | null;
@@ -69,6 +70,7 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
   const setActiveDirectory = useGitStore((state) => state.setActiveDirectory);
   const ensureAll = useGitStore((state) => state.ensureAll);
   const ensureNestedRepos = useGitStore((state) => state.ensureNestedRepos);
+  const selectNestedRepo = useGitStore((state) => state.selectNestedRepo);
   const fetchStatus = useGitStore((state) => state.fetchStatus);
   const fetchBranches = useGitStore((state) => state.fetchBranches);
   const prefetchDiffs = useGitStore((state) => state.prefetchDiffs);
@@ -472,6 +474,16 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
             {status?.current || currentDirectory || ''}
           </p>
         </div>
+        {rootIsGitRepo === false && Array.isArray(nestedRepos) && nestedRepos.length > 0 ? (
+          <NestedRepoPicker
+            repositories={nestedRepos}
+            selectedRepository={gitDirectory ?? null}
+            onSelectRepository={(repository) => {
+              if (rootDirectory) selectNestedRepo(rootDirectory, repository);
+            }}
+            repositoryRoot={rootDirectory ?? undefined}
+          />
+        ) : null}
       </header>
       <div className="min-h-0 flex-1">{state}</div>
     </div>
@@ -481,9 +493,10 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
     return renderListState(<MobileChangesState message={t('gitView.empty.selectSessionOrDirectory')} />);
   }
 
-  // Non-repo root: surface nested-repository resolution (discovering, failed,
-  // unsupported, none found, or settling on the auto-selected repository).
-  if (rootIsGitRepo === false || isGitRepo === false) {
+  // Non-repo root: surface nested-repository resolution while the operating
+  // directory has not proven to be a repository (discovering, failed,
+  // unsupported, none found, or settling on the auto-selected one).
+  if (rootIsGitRepo === false && isGitRepo !== true) {
     return renderListState(
       <NestedRepoResolutionStates
         rootIsGitRepo={rootIsGitRepo}
