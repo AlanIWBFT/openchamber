@@ -1071,10 +1071,17 @@ const TimelineList = React.memo(({
                 // resize settles.
                 maintainScrollAtEnd={anchoredEndSpace || !streamingAutoFollowEnabled || isWidthResizing || endPinningReleased
                     ? false
-                    // Animated: with block-level reveal the content grows in
-                    // paragraph/line steps, and the animated follow turns each
-                    // step into a glide — reveal and scroll read as one motion.
-                    : { animated: true, on: { dataChange: true, itemLayout: true, layout: true, footerLayout: true } }}
+                    // Animated only while the session actively streams: there
+                    // the block-step growth turns each correction into a glide
+                    // and reveal + scroll read as one motion. Outside of a live
+                    // stream — opening a historical session, late measurements —
+                    // corrections must be instant: an animated catch-up scrolls
+                    // visibly through the whole conversation on open, and an
+                    // in-flight glide can supersede explicit navigation.
+                    : {
+                        animated: rowContext.sessionIsWorking,
+                        on: { dataChange: true, itemLayout: true, layout: true, footerLayout: true },
+                    }}
                 // Prepending older history must not move what the user is
                 // reading. Size restoration applies only during a width
                 // resize — see the observer above.

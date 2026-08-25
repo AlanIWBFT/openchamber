@@ -281,6 +281,12 @@ export const useChatTimelineScroll = ({
     }, [flushSave]);
 
     // ── scroll commands ─────────────────────────────────────────────────────
+    const goToBottomReassertTimersRef = React.useRef<Array<ReturnType<typeof setTimeout>>>([]);
+    const clearGoToBottomReasserts = React.useCallback(() => {
+        for (const timer of goToBottomReassertTimersRef.current) clearTimeout(timer);
+        goToBottomReassertTimersRef.current = [];
+    }, []);
+
     const goToBottom = React.useCallback((mode: 'instant' | 'smooth' = 'instant') => {
         isAtEndRef.current = true;
         setIsPinned(true);
@@ -291,7 +297,22 @@ export const useChatTimelineScroll = ({
         clearAnchor();
         hideScrollButton();
         void listRef.current?.scrollToEnd({ animated: mode === 'smooth' });
-    }, [clearAnchor, hideScrollButton]);
+        // While a stream is growing the content, a single jump lands on the
+        // end as of that moment and the list's own follow may not have
+        // re-armed yet — re-assert a few times until the edge holds, then the
+        // library follows onward. A new user gesture invalidates the window.
+        clearGoToBottomReasserts();
+        const generation = userGenerationRef.current;
+        for (const delay of [150, 400, 800]) {
+            goToBottomReassertTimersRef.current.push(setTimeout(() => {
+                if (userGenerationRef.current !== generation) return;
+                if (modeRef.current !== 'following-end') return;
+                const state = listRef.current?.getState();
+                if (state && resolveTimelineIsAtEnd(state) === true) return;
+                void listRef.current?.scrollToEnd({ animated: false });
+            }, delay));
+        }
+    }, [clearAnchor, clearGoToBottomReasserts, hideScrollButton]);
 
     // Sending arms the anchor. The message id is not known here (the optimistic
     // row is created by the store), so the next new user message id claims it.
