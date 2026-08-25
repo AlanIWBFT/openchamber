@@ -182,7 +182,7 @@ Managed health failures are classified as `timeout`, `connection_refused`, `conn
 - `probeWindowsShellEnvSnapshot(options?)`: probes profile environment through PowerShell, falling back to machine and user registry PATH values only when all PowerShell candidates fail.
 - `probeWindowsShellEnvSnapshotInWorker(options?)`: runs the synchronous Windows probe in a Worker Thread so Electron can overlap it with app initialization without performing process creation on the main thread.
 - `preloadLoginShellEnvSnapshot(snapshot)` / `consumePreloadedLoginShellEnvSnapshot()`: one-time in-memory handoff from Electron to its in-process server so Desktop owns the Windows probe while standalone server startup continues probing for itself.
-- `server/preload-env-guard.js` provides an isolated asynchronous `process.env` access audit for dependency graphs considered for import before the login-shell snapshot is applied.
+- Desktop may import `server/preload-server-dependencies.js` while that probe runs. Its complete dependency graph is enforced by `server/preload-env-guard.js`: the isolated Electron build audit fails on any import-time `process.env` read, check, enumeration, or mutation. The runtime guard remains active for the preload's asynchronous context until the login-shell snapshot is applied, then logs and rejects any earlier access, including one from a delayed preload callback. Environment-sensitive dependencies and `server/index.js` remain behind the applied login-shell snapshot.
 - OpenCode CLI resolution order is persisted settings, environment overrides, bundled Desktop CLI when available, PATH, known install locations, then platform shell discovery.
 - Returned API:
   - `applyLoginShellEnvSnapshot()`
