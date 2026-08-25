@@ -99,6 +99,8 @@ export interface UseChatTimelineScrollResult {
     onManualNavigation: () => void;
     onTimelineDataChange: () => void;
     showScrollButton: boolean;
+    /** A real gesture took the scroll; flips back on any explicit opt-in. */
+    userOwnsScroll: boolean;
     isFollowingProgrammatically: boolean;
     goToBottom: (mode?: 'instant' | 'smooth') => void;
     scrollToBottomOnSend: () => void;
@@ -221,8 +223,12 @@ export const useChatTimelineScroll = ({
         liveFollowGenerationRef.current = null;
         setUserOwnsScroll(true);
         // The end may already have been left by our own movement, in which
-        // case no further at-end transition will fire — offer the way back now.
-        if (!isAtEndRef.current) scheduleShowScrollButton();
+        // case no further at-end transition will fire. This is an explicit
+        // gesture — show the pill immediately, no debounce.
+        if (!isAtEndRef.current) {
+            cancelShowButtonTimer();
+            setShowScrollButton(true);
+        }
         armedForNextUserMessageRef.current = false;
         pendingAnchorRef.current = null;
         positionedAnchorRef.current = null;
@@ -233,7 +239,7 @@ export const useChatTimelineScroll = ({
             cancelAnimationFrame(anchorRestoreFrameRef.current);
             anchorRestoreFrameRef.current = null;
         }
-    }, [scheduleShowScrollButton]);
+    }, [cancelShowButtonTimer]);
 
     const isLiveFollowActive = React.useCallback(() => (
         liveFollowGenerationRef.current === userGenerationRef.current
@@ -592,27 +598,38 @@ export const useChatTimelineScroll = ({
     React.useEffect(() => {
         if (!scrollNode) return;
 
-        const contentScrollsUp = () => {
+        // A gesture is meaningful when the viewport can move up AT ALL:
+        // either the real rows overflow the viewport, or there is scrolled
+        // history above (an anchored turn parks mid-conversation with
+        // reserved space below — the real rows may not overflow yet, but
+        // wheel-up is still a genuine opt-out; swallowing it left live-follow
+        // armed, which suppressed the pill and kept corrections armed under a
+        // viewport the user had taken).
+        const canScrollUp = () => {
             const list = listRef.current;
-            return list ? realContentOverflowsViewport(list) : false;
+            if (!list) return false;
+            if (list.getState().scroll > 1) return true;
+            return realContentOverflowsViewport(list);
         };
         const gesture = () => {
             onManualNavigationRef.current();
         };
         const handleWheel = (event: WheelEvent) => {
             // Scrolling toward the end is not opting out of follow.
-            if (event.deltaY < 0 && contentScrollsUp()) gesture();
+            if (event.deltaY < 0 && canScrollUp()) gesture();
         };
         const handleTouchMove = () => {
-            if (!isAtEndRef.current && contentScrollsUp()) gesture();
+            // Touch is continuous: the first move may still read as at-end,
+            // but the next one lands after the viewport left it.
+            if (!isAtEndRef.current && canScrollUp()) gesture();
         };
         const handlePointerDown = (event: PointerEvent) => {
             // The scrollbar track is the scroll node itself; a tap on a row
             // only breaks follow when the viewport already left the end.
-            if ((event.target === scrollNode || !isAtEndRef.current) && contentScrollsUp()) gesture();
+            if ((event.target === scrollNode || !isAtEndRef.current) && canScrollUp()) gesture();
         };
         const handleKeyDown = (event: KeyboardEvent) => {
-            if ((event.key === 'PageUp' || event.key === 'Home' || event.key === 'ArrowUp') && contentScrollsUp()) {
+            if ((event.key === 'PageUp' || event.key === 'Home' || event.key === 'ArrowUp') && canScrollUp()) {
                 gesture();
             }
         };
@@ -766,6 +783,7 @@ export const useChatTimelineScroll = ({
         onManualNavigation,
         onTimelineDataChange,
         showScrollButton,
+        userOwnsScroll,
         isFollowingProgrammatically,
         goToBottom,
         scrollToBottomOnSend,

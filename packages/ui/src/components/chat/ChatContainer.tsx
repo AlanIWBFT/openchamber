@@ -147,8 +147,6 @@ type HydratingToolSkeletonRow = {
 };
 
 type ChatViewportProps = {
-    onStatusOverlayNode: (node: HTMLDivElement | null) => void;
-    statusOverlayHidden: boolean;
     currentSessionId: string;
     currentSessionKey: string;
     isDesktopExpandedInput: boolean;
@@ -192,8 +190,6 @@ type ChatViewportProps = {
 };
 
 const ChatViewport = React.memo(({
-    onStatusOverlayNode,
-    statusOverlayHidden,
     currentSessionId,
     currentSessionKey,
     isDesktopExpandedInput,
@@ -418,24 +414,6 @@ const ChatViewport = React.memo(({
                     scrollContainerProps={scrollContainerProps}
                 />
                 <OverlayScrollbar containerRef={scrollRef} suppressVisibility={isProgrammaticFollowActive} userIntentOnly observeMutations={false} />
-                {/* Static above the composer: inside the list it walked down
-                    with every streamed line while a turn was anchored. Solid
-                    background — text streams beneath it; the measured height
-                    feeds composerOverlayHeight so the live line never hides
-                    under it. */}
-                <div
-                    className={cn(
-                        'pointer-events-none absolute inset-x-0 bottom-0 z-10 transition-opacity duration-150',
-                        statusOverlayHidden && 'opacity-0',
-                    )}
-                >
-                    <div
-                        ref={onStatusOverlayNode}
-                        className={cn('pb-2 [&:not(:has(*))]:hidden', statusOverlayHidden ? 'pointer-events-none' : 'pointer-events-auto')}
-                    >
-                        <StatusRowContainer />
-                    </div>
-                </div>
                 {showPromptNavigator && promptTurnIds.length >= 2 ? (
                     <PromptNavigatorRail
                         turnIds={promptTurnIds}
@@ -451,9 +429,7 @@ const ChatViewport = React.memo(({
         </div>
     );
 }, (prev, next) => {
-    return prev.onStatusOverlayNode === next.onStatusOverlayNode
-        && prev.statusOverlayHidden === next.statusOverlayHidden
-        && prev.currentSessionId === next.currentSessionId
+    return prev.currentSessionId === next.currentSessionId
         && prev.currentSessionKey === next.currentSessionKey
         && prev.isDesktopExpandedInput === next.isDesktopExpandedInput
         && prev.isMobile === next.isMobile
@@ -949,7 +925,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             return;
         }
         const update = () => {
-            const height = node.getBoundingClientRect().height;
+            // +8 for the mb-2 gap between the row and the composer, which the
+            // node's own box does not include.
+            const height = node.getBoundingClientRect().height + 8;
             setStatusOverlayHeight((prev) => (Math.abs(prev - height) < 1 ? prev : height));
         };
         const observer = new ResizeObserver(update);
@@ -989,6 +967,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         isPinned,
         isFollowingProgrammatically,
         showScrollButton,
+        userOwnsScroll,
     } = useChatTimelineScroll({
         currentSessionId,
         currentSessionKey,
@@ -1366,8 +1345,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
         return (
             <ChatViewport
-                onStatusOverlayNode={onStatusOverlayNode}
-                statusOverlayHidden={timelineController.showScrollToBottom}
                 currentSessionId={currentSessionId ?? ''}
                 currentSessionKey={currentSessionKey ?? currentSessionId ?? ''}
                 isDesktopExpandedInput={isDesktopExpandedInput}
@@ -1425,11 +1402,37 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 )}
             >
                 {!draftLayoutVisible && !isDesktopExpandedInput && sessionMessages.length > 0 && (
-                    <ScrollToBottomButton
-                        visible={timelineController.showScrollToBottom}
-                        working={sessionIsWorking}
-                        onClick={navigation.resumeToLatest}
-                    />
+                    <>
+                        <ScrollToBottomButton
+                            visible={timelineController.showScrollToBottom}
+                            working={sessionIsWorking}
+                            onClick={navigation.resumeToLatest}
+                        />
+                        {/* Same anchor and column as the pill, so the status
+                            row and the pill it hands off to share the exact
+                            distance from the input and the same left edge. */}
+                        <div
+                            className={cn(
+                                'pointer-events-none absolute bottom-full inset-x-0 mb-2 transition-opacity duration-100',
+                                userOwnsScroll && 'opacity-0',
+                            )}
+                        >
+                            <div className="chat-input-column">
+                                {/* The glass chip itself is rendered inside
+                                    StatusRow (its root is a size container
+                                    that cannot shrink-wrap). */}
+                                <div
+                                    ref={onStatusOverlayNode}
+                                    className={cn(
+                                        '[&:not(:has(*))]:hidden',
+                                        userOwnsScroll ? 'pointer-events-none' : 'pointer-events-auto',
+                                    )}
+                                >
+                                    <StatusRowContainer />
+                                </div>
+                            </div>
+                        </div>
+                    </>
                 )}
                 {promptReadOnly ? (
                     <ReadOnlyPromptBanner />

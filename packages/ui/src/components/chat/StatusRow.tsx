@@ -306,24 +306,23 @@ export const StatusRow: React.FC<StatusRowProps> = ({
 
   return (
     <div
-      // This row must land exactly where the assistant turn footer (mt-2
-      // inside the message) appears when the turn completes. Measured against
-      // the live DOM: the gap ABOVE already matches (message pb-2 = footer
-      // mt-2 = 8px), but the chat is bottom-anchored and the finished message
-      // carries ~12px more structure BELOW its footer than this row has — so
-      // the swap used to lift the line up. mb-6 (24px) reserves that space
-      // under this row instead (verified: row top 636 == footer top 636).
-      // The reservation belongs to the assistant-status swap only: a row that
-      // renders just an accessory (the pending-changes bar) takes the normal
-      // 8px, or it floats a stray gap above the composer.
-      className={cn(showAssistantStatus ? "mb-6" : "mb-2", !hasLeftAccessory && "chat-column")}
+      // The row renders inside the composer-anchored overlay, which owns the
+      // distance to the input and the horizontal column (the same ones the
+      // scroll-to-bottom pill uses). The in-list morph offsets (mb-6 and the
+      // message column) belonged to the old footer placement and pushed the
+      // row up and right relative to the pill.
       style={STATUS_ROW_CONTAINER_STYLE}
     >
       {/* h-8 matches the turn footer's real row height: its h-8 action
           buttons define the footer line, with the meta text centered in it. */}
-      <div className={cn("flex items-center justify-between gap-2 h-8", hasLeftAccessory && "px-0.5")}>
-        {/* Left: Abort status | Working placeholder | leftAccessory */}
-        <div className={cn("flex-1 flex items-center min-w-0 gap-2", hasLeftAccessory ? "pl-1.5" : "overflow-x-hidden")}>
+      {/* The glass chip lives here, not on the container: the root above is
+          an inline-size query container, whose width ignores its children —
+          a shrink-to-fit wrapper around it always collapsed to zero. */}
+      <div className={cn("oc-glass-popover inline-flex w-max max-w-full items-center gap-2 h-8 whitespace-nowrap rounded-full [corner-shape:round] px-3", hasLeftAccessory && "px-0.5")}>
+        {/* Left: Abort status | Working placeholder | leftAccessory. Sized by
+            its content: the row now lives in a shrink-to-fit glass chip, and
+            a flex-1 (basis 0) here collapsed the chip to zero width. */}
+        <div className={cn("flex items-center min-w-0 gap-2", hasLeftAccessory ? "pl-1.5" : "overflow-x-hidden")}>
           {showAssistantStatus && showAbortStatus ? (
             <div className="flex h-full items-center text-[var(--status-error)] pl-0.5">
               <span className="flex items-center gap-1.5 typography-ui-label">
