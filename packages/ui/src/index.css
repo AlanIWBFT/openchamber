@@ -258,7 +258,12 @@ div[data-chat-input-footer="true"] {
 
 /* Scroll shadow (HeroUI) fallback styling to ensure visible gradients without the Tailwind plugin */
 [data-scroll-shadow="true"] {
-  --scroll-shadow-size: var(--scroll-shadow-size, 48px);
+  /* A concrete default, not var(--scroll-shadow-size, 48px): a custom
+     property referencing itself is a cycle and computes to invalid, which
+     silently killed every mask below for consumers that don't set the
+     variable inline (the hook-based chat scroller). Inline styles from the
+     ScrollShadow component still override this. */
+  --scroll-shadow-size: 48px;
 }
 
 [data-scroll-shadow="true"][data-orientation="vertical"] {
