@@ -932,6 +932,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     const [statusOverlayHeight, setStatusOverlayHeight] = React.useState(0);
     const composerOverlayHeight = statusOverlayHeight;
     const statusOverlayObserverRef = React.useRef<ResizeObserver | null>(null);
+    React.useEffect(() => {
+        setStatusOverlayHeight(0);
+    }, [currentSessionKey]);
     const onStatusOverlayNode = React.useCallback((node: HTMLDivElement | null) => {
         statusOverlayObserverRef.current?.disconnect();
         statusOverlayObserverRef.current = null;
@@ -941,7 +944,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         }
         const update = () => {
             const height = node.getBoundingClientRect().height;
-            setStatusOverlayHeight((prev) => (Math.abs(prev - height) < 1 ? prev : height));
+            // Hold the reserved height when the status row empties: collapsing
+            // it at end-of-stream shifts the settled content. It resets only
+            // on session change.
+            setStatusOverlayHeight((prev) => (height > prev + 1 ? height : prev));
         };
         const observer = new ResizeObserver(update);
         observer.observe(node);
