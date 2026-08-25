@@ -147,6 +147,7 @@ type HydratingToolSkeletonRow = {
 };
 
 type ChatViewportProps = {
+    onStatusOverlayNode: (node: HTMLDivElement | null) => void;
     currentSessionId: string;
     currentSessionKey: string;
     isDesktopExpandedInput: boolean;
@@ -191,6 +192,7 @@ type ChatViewportProps = {
 };
 
 const ChatViewport = React.memo(({
+    onStatusOverlayNode,
     currentSessionId,
     currentSessionKey,
     isDesktopExpandedInput,
@@ -414,9 +416,15 @@ const ChatViewport = React.memo(({
                 />
                 <OverlayScrollbar containerRef={scrollRef} suppressVisibility={isProgrammaticFollowActive} userIntentOnly observeMutations={false} />
                 {/* Static above the composer: inside the list it walked down
-                    with every streamed line while a turn was anchored. */}
-                <div className="pointer-events-none absolute inset-x-0 bottom-2 z-10">
-                    <div className="pointer-events-auto [&:not(:has(*))]:hidden">
+                    with every streamed line while a turn was anchored. Solid
+                    background — text streams beneath it; the measured height
+                    feeds composerOverlayHeight so the live line never hides
+                    under it. */}
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10">
+                    <div
+                        ref={onStatusOverlayNode}
+                        className="pointer-events-auto bg-background pb-2 [&:not(:has(*))]:hidden"
+                    >
                         <StatusRowContainer />
                     </div>
                 </div>
@@ -435,7 +443,8 @@ const ChatViewport = React.memo(({
         </div>
     );
 }, (prev, next) => {
-    return prev.currentSessionId === next.currentSessionId
+    return prev.onStatusOverlayNode === next.onStatusOverlayNode
+        && prev.currentSessionId === next.currentSessionId
         && prev.currentSessionKey === next.currentSessionKey
         && prev.isDesktopExpandedInput === next.isDesktopExpandedInput
         && prev.isMobile === next.isMobile
@@ -917,10 +926,32 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         activeTurnChangeRef.current(turnId);
     }, []);
 
-    // The composer sits below the timeline rather than over it, so no part of
-    // the scroll container is occluded. Mobile surfaces that float the composer
-    // pass their measured height here instead.
-    const composerOverlayHeight = 0;
+    // The composer sits below the timeline, but the status/working row floats
+    // OVER the timeline's bottom edge; its measured height keeps the live
+    // streaming line above it and reserves matching end inset in the list.
+    const [statusOverlayHeight, setStatusOverlayHeight] = React.useState(0);
+    const composerOverlayHeight = statusOverlayHeight;
+    const statusOverlayObserverRef = React.useRef<ResizeObserver | null>(null);
+    const onStatusOverlayNode = React.useCallback((node: HTMLDivElement | null) => {
+        statusOverlayObserverRef.current?.disconnect();
+        statusOverlayObserverRef.current = null;
+        if (!node || !globalThis.ResizeObserver) {
+            setStatusOverlayHeight(0);
+            return;
+        }
+        const update = () => {
+            const height = node.getBoundingClientRect().height;
+            setStatusOverlayHeight((prev) => (Math.abs(prev - height) < 1 ? prev : height));
+        };
+        const observer = new ResizeObserver(update);
+        observer.observe(node);
+        statusOverlayObserverRef.current = observer;
+        update();
+    }, []);
+    React.useEffect(() => () => {
+        statusOverlayObserverRef.current?.disconnect();
+        statusOverlayObserverRef.current = null;
+    }, []);
     const lastUserMessageId = React.useMemo(() => {
         for (let index = sessionMessages.length - 1; index >= 0; index -= 1) {
             const message = sessionMessages[index];
@@ -1326,6 +1357,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
         return (
             <ChatViewport
+                onStatusOverlayNode={onStatusOverlayNode}
                 currentSessionId={currentSessionId ?? ''}
                 currentSessionKey={currentSessionKey ?? currentSessionId ?? ''}
                 isDesktopExpandedInput={isDesktopExpandedInput}
