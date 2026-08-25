@@ -10,6 +10,8 @@ Desktop starts the OpenChamber web server in the same Electron main process. The
 
 On Windows, Desktop starts login-shell environment discovery in a one-shot Node Worker Thread immediately after acquiring the single-instance lock. PowerShell profile evaluation and any registry fallback therefore overlap Electron initialization without blocking the main thread; the completed snapshot is still applied before startup reads environment-controlled server settings.
 
+`server-preload-env.test.mjs` exercises the isolated `process.env` access guard used to audit dependency graphs considered for import while login-shell discovery is still running. `bundle:main` runs this audit suite before every Electron main-process bundle.
+
 On Windows, latency-sensitive Git status, PR-context, and per-file diff reads are dispatched to a fixed pool of four persistent Node Worker Threads owned by that in-process server. The workers share one persistent `OpenCode.ProcessBroker.exe`, staged with the local OpenCode CLI. The self-contained .NET 10 NativeAOT broker creates each Git process detached from a console and atomically assigns its complete process tree to a per-command Job Object. Worker Threads remain in-process; the broker owns only process creation, pipes, cancellation, and cleanup.
 
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
@@ -31,6 +33,7 @@ The preload bridge exposes desktop-only APIs to the web UI through `window.__OPE
 |------|---------|
 | `main.mjs` | Electron main process, app lifecycle, windows, menus, deep links, native IPC handlers, updates, local server startup |
 | `startup-single-flight.mjs` | One-shot startup promise coordinator that retains the first success or failure to prevent duplicate local server initialization |
+| `server-preload-env.test.mjs` | Isolated import-graph environment audit run by tests and before `bundle:main` |
 | `startup-url-selection.mjs` | Pure bundled/HMR startup probe and loopback connection-limit policy |
 | `preload.mjs` | Safe bridge from the rendered UI to Electron IPC |
 | `ssh-manager.mjs` | SSH host import, connection lifecycle, tunnel/port forwarding helpers |
@@ -38,7 +41,7 @@ The preload bridge exposes desktop-only APIs to the web UI through `window.__OPE
 | `scripts/ensure-electron.mjs` | Verifies the installed Electron binary is complete and repairs it via the postinstall under Bun |
 | `scripts/build-web-assets.mjs` | Builds `packages/web` and stages UI assets into `resources/web-dist` |
 | `scripts/prepare-opencode-cli.mjs` | Stages the pinned OpenCode CLI into `resources/opencode-cli` |
-| `scripts/bundle-main.mjs` | Bundles Electron main code into `dist-bundle/main.mjs` for packaging |
+| `scripts/bundle-main.mjs` | Bundles Electron main code into `dist-bundle/main.mjs` for packaging after the preload environment audit passes |
 | `scripts/rebuild-native.mjs` | Rebuilds native modules against the Electron runtime |
 | `scripts/package.mjs` | Runs `electron-builder`, with unsigned Windows builds when signing env is missing |
 | `resources/` | Packaged web assets, icons, and macOS entitlements |
