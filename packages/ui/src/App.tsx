@@ -1,6 +1,7 @@
 import React from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ChatView } from '@/components/views/ChatView';
+import { AppLinkConfirmDialog } from '@/components/chat/AppLinkConfirmDialog';
 import { FireworksProvider } from '@/contexts/FireworksContext';
 import { Toaster } from '@/components/ui/sonner';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useMenuActions } from '@/hooks/useMenuActions';
 import { useSessionStatusBootstrap } from '@/hooks/useSessionStatusBootstrap';
 import { useTraySync } from '@/hooks/useTraySync';
+import { useGlobalSessionsPolling } from '@/hooks/useGlobalSessionsPolling';
 import { useRouter } from '@/hooks/useRouter';
 import { usePushVisibilityBeacon } from '@/hooks/usePushVisibilityBeacon';
 import { useWebNotificationStream } from '@/hooks/useWebNotificationStream';
@@ -624,7 +626,6 @@ function App({ apis }: AppProps) {
       const directory = typeof detail?.directory === 'string' && detail.directory.trim().length > 0
         ? detail.directory.trim()
         : null;
-      useUIStore.getState().setActiveMainTab('chat');
       void useSessionUIStore.getState().setCurrentSession(sessionId, directory);
     };
 
@@ -673,7 +674,6 @@ function App({ apis }: AppProps) {
         ? detail.projectId.trim()
         : null;
       const hasProjectTarget = Boolean(directory || projectId);
-      useUIStore.getState().setActiveMainTab('chat');
       useUIStore.getState().setSessionSwitcherOpen(false);
       useSessionUIStore.getState().openNewSessionDraft({
         target: hasProjectTarget ? 'project' : 'chat',
@@ -719,6 +719,7 @@ function App({ apis }: AppProps) {
   useMenuActions(handleToggleMemoryDebug);
 
   useTraySync();
+  useGlobalSessionsPolling(!embeddedSessionChat);
 
   useSessionStatusBootstrap({ enabled: embeddedBackgroundWorkEnabled });
 
@@ -906,6 +907,7 @@ function App({ apis }: AppProps) {
                   isVSCodeRuntime={isVSCodeRuntime}
                   embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled}
                 />
+                <AppLinkConfirmDialog />
               </div>
             </TooltipProvider>
           </RuntimeAPIProvider>
@@ -949,6 +951,7 @@ function App({ apis }: AppProps) {
                   <OpenCodeUpdateToast />
                   <MainLayout />
                   <Toaster />
+                  <AppLinkConfirmDialog />
                   {!isBootShell && (
                     <>
                       <ConfigUpdateOverlay />
