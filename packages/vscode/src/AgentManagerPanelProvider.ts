@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { scheduleCachedStateRetries } from './webviewCachedStateRetry';
 import { handleBridgeMessage, type BridgeRequest, type BridgeResponse } from './bridge';
 import { getThemeKindName } from './theme';
 import type { OpenCodeManager, ConnectionStatus } from './opencode';
@@ -24,30 +25,16 @@ export class AgentManagerPanelProvider {
   private readonly _webviewDevServerUrl: string | null;
 
   /**
-   * The webview only leaves its initial loading screen once it receives a
-   * `connectionStatus: connected` message. VS Code drops postMessage calls
-   * made before the webview's acquireVsCodeApi bridge is ready (common in
-   * code-server / slow or flaky networks), so a single send can be lost
-   * forever. Re-send at staggered delays until the target panel is replaced.
+   * See webviewCachedStateRetry.ts — a single postMessage can be dropped
+   * before the webview bridge is ready, leaving the loading screen stuck.
    */
   private _scheduleCachedStateRetries(targetPanel: vscode.WebviewPanel | undefined): void {
-    if (this._cachedStatus !== 'connected') {
-      return;
-    }
-    const panel = targetPanel ?? this._panel;
-    if (!panel) {
-      return;
-    }
-    const delaysMs = [500, 1500, 3500, 7000, 12000, 20000];
-    for (const delayMs of delaysMs) {
-      setTimeout(() => {
-        // Only re-send if this exact panel is still the active one.
-        if (this._panel !== panel) {
-          return;
-        }
-        this._sendCachedState();
-      }, delayMs);
-    }
+    scheduleCachedStateRetries({
+      target: targetPanel ?? this._panel,
+      getCurrent: () => this._panel,
+      isConnected: () => this._cachedStatus === 'connected',
+      send: () => this._sendCachedState(),
+    });
   }
 
   constructor(
