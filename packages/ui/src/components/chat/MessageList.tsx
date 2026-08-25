@@ -305,7 +305,6 @@ const withShellBridgeDetails = (message: ChatMessageEntry, details: ShellBridgeD
 
 interface MessageListProps {
     sessionKey: string;
-    disableStaging?: boolean;
     messages: ChatMessageEntry[];
     sessionIsWorking?: boolean;
     activeStreamingMessageId?: string | null;

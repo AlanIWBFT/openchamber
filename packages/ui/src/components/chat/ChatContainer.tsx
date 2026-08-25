@@ -160,7 +160,6 @@ type ChatViewportProps = {
     onAnchorSizeChanged: (messageId: string) => void;
     onIsAtEndChange: (isAtEnd: boolean) => void;
     onTimelineDataChange: () => void;
-    pendingRevealWork: boolean;
     renderedMessages: SessionMessageRecord[];
     isLoadingOlder: boolean;
     sessionIsWorking: boolean;
@@ -174,6 +173,9 @@ type ChatViewportProps = {
     } | null;
     scrollToBottom: () => void;
     endPinningReleased: boolean;
+    // One-shot fade for content that replaced the hydration skeleton;
+    // cached sessions render instantly without it.
+    revealContent: boolean;
     sessionQuestions: QuestionRequest[];
     sessionPermissions: PermissionRequest[];
     isProgrammaticFollowActive: boolean;
@@ -202,7 +204,6 @@ const ChatViewport = React.memo(({
     onAnchorSizeChanged,
     onIsAtEndChange,
     onTimelineDataChange,
-    pendingRevealWork,
     renderedMessages,
     isLoadingOlder,
     sessionIsWorking,
@@ -211,6 +212,7 @@ const ChatViewport = React.memo(({
     retryOverlay,
     scrollToBottom,
     endPinningReleased,
+    revealContent,
     sessionQuestions,
     sessionPermissions,
     isProgrammaticFollowActive,
@@ -377,7 +379,8 @@ const ChatViewport = React.memo(({
                 'relative min-h-0',
                 isDesktopExpandedInput
                     ? 'absolute inset-0 opacity-0 pointer-events-none'
-                    : 'flex-1'
+                    : 'flex-1',
+                revealContent && !isDesktopExpandedInput && 'oc-chat-hydration-reveal',
             )}
             aria-hidden={isDesktopExpandedInput}
         >
@@ -386,7 +389,6 @@ const ChatViewport = React.memo(({
                     key={currentSessionKey}
                     ref={messageListRef}
                     sessionKey={currentSessionId}
-                    disableStaging={pendingRevealWork}
                     messages={renderedMessages}
                     sessionIsWorking={sessionIsWorking}
                     activeStreamingMessageId={streamingMessageId}
@@ -433,7 +435,6 @@ const ChatViewport = React.memo(({
         && prev.directory === next.directory
         && prev.scrollRef === next.scrollRef
         && prev.messageListRef === next.messageListRef
-        && prev.pendingRevealWork === next.pendingRevealWork
         && prev.renderedMessages === next.renderedMessages
         && prev.isLoadingOlder === next.isLoadingOlder
         && prev.sessionIsWorking === next.sessionIsWorking
@@ -442,6 +443,7 @@ const ChatViewport = React.memo(({
         && prev.retryOverlay === next.retryOverlay
         && prev.scrollToBottom === next.scrollToBottom
         && prev.endPinningReleased === next.endPinningReleased
+        && prev.revealContent === next.revealContent
         && prev.sessionQuestions === next.sessionQuestions
         && prev.sessionPermissions === next.sessionPermissions
         && prev.isProgrammaticFollowActive === next.isProgrammaticFollowActive
@@ -815,6 +817,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         return () => setWorkStatusPanelVisible(false);
     }, [setWorkStatusPanelVisible, showWorkStatusPanel]);
     const messageListRef = React.useRef<MessageListHandle | null>(null);
+    // Session keys that showed the hydration skeleton this app run; their
+    // content gets a one-shot reveal fade once it replaces the skeleton.
+    const hydrationRevealKeyRef = React.useRef<string | null>(null);
+
     const currentSession = useSession(currentSessionId, effectiveSessionDirectory);
     const parentSession = useParentSession(currentSessionId, effectiveSessionDirectory);
 
@@ -1150,6 +1156,15 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     const isSessionHydrating =
         Boolean(currentSessionId)
         && !hasRenderableSessionSnapshot;
+    React.useEffect(() => {
+        if (isSessionHydrating || hydrationRevealKeyRef.current === null) return;
+        // One-shot: forget the key after the reveal animation has played so a
+        // later (now cached) visit to the same session opens instantly.
+        const timer = setTimeout(() => {
+            hydrationRevealKeyRef.current = null;
+        }, 400);
+        return () => clearTimeout(timer);
+    }, [isSessionHydrating, currentSessionKey]);
     const retrySessionLoad = React.useCallback(() => {
         if (!messagesEnabled || !currentSessionId) return;
         void sync.ensureSessionRenderable(currentSessionId, true, effectiveSessionDirectory);
@@ -1270,7 +1285,11 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             return <DraftWelcome exiting={draftPresentationExiting} />;
         }
 
-        if (isSessionHydrating && sessionMessages.length === 0 && !sessionIsWorking) {
+        const showHydrationSkeleton = isSessionHydrating && sessionMessages.length === 0 && !sessionIsWorking;
+        if (showHydrationSkeleton) {
+            hydrationRevealKeyRef.current = currentSessionKey ?? currentSessionId ?? null;
+        }
+        if (showHydrationSkeleton) {
             if (sessionMessageLoadState.status === 'error') {
                 return (
                     <div className="flex min-h-0 flex-1 items-center justify-center px-6">
@@ -1290,6 +1309,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
             return (
                 <div
+                    data-chat-hydration-skeleton=""
                     className={cn(
                         'relative min-h-0',
                         isDesktopExpandedInput ? 'pointer-events-none absolute inset-0 opacity-0' : 'flex-1',
@@ -1353,7 +1373,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 onIsAtEndChange={onIsAtEndChange}
                 onTimelineDataChange={onTimelineDataChange}
                 messageListRef={messageListRef}
-                pendingRevealWork={timelineController.pendingRevealWork}
                 renderedMessages={timelineController.renderedMessages}
                 isLoadingOlder={timelineController.isLoadingOlder}
                 sessionIsWorking={sessionIsWorking}
@@ -1362,6 +1381,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 retryOverlay={retryOverlay}
                 scrollToBottom={resumeToLatestInstant}
                 endPinningReleased={userOwnsScroll}
+                revealContent={hydrationRevealKeyRef.current !== null && hydrationRevealKeyRef.current === (currentSessionKey ?? currentSessionId ?? null)}
                 sessionQuestions={sessionQuestions}
                 sessionPermissions={sessionPermissions}
                 isProgrammaticFollowActive={isFollowingProgrammatically}

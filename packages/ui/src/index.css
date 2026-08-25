@@ -1356,6 +1356,36 @@ html:not(.dark) .chat-scroll {
   min-width: 100%;
 }
 
+/* First uncached open of a session shows a hydration skeleton; the real
+   timeline replacing it fades in once instead of popping. Cached session
+   switches never carry this class and stay instant. */
+@keyframes oc-chat-hydration-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.oc-chat-hydration-reveal {
+  animation: oc-chat-hydration-reveal 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-chat-hydration-reveal {
+    animation: none;
+  }
+}
+
+/* While streaming defers the per-line gutter markup, hold its horizontal
+   footprint (2rem column + 0.75rem gap) so the finished pass only fills in
+   the numbers instead of shifting every code line. */
+.markdown-content pre[data-md-gutter-reserved] > code {
+  display: block;
+  padding-left: 2.75rem;
+}
+
 .markdown-content [data-md-code-line-number] {
   align-self: stretch;
   padding-right: 0.75rem;

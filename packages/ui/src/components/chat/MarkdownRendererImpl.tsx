@@ -345,6 +345,13 @@ const useFileReferenceInteractions = ({
     if (!container) {
       return;
     }
+    // Wait for the real directory: annotating against an empty/fallback
+    // directory issues stat probes under the wrong cache key (and the wrong
+    // server directory), and the pass reruns anyway once the directory
+    // resolves — every link ended up verified twice.
+    if (enabled && !effectiveDirectory) {
+      return;
+    }
     let cancelled = false;
     const fileReferenceLinkLimit = getFileReferenceLinkLimit();
     // On mobile surfaces, file-reference highlighting is disabled entirely — not
@@ -398,6 +405,19 @@ const useFileReferenceInteractions = ({
     };
 
     const annotateFileLinks = () => {
+      annotationWriteDepth += 1;
+      try {
+        annotateFileLinksInner();
+      } finally {
+        // Let the mutation events from our own writes flush before the
+        // observer starts listening for real content changes again.
+        queueMicrotask(() => {
+          annotationWriteDepth -= 1;
+        });
+      }
+    };
+
+    const annotateFileLinksInner = () => {
       if (fileReferencesEnabled) {
         wrapBlockCodePathTokens(container);
       }
@@ -526,7 +546,12 @@ const useFileReferenceInteractions = ({
 
     scheduleAnnotation(FILE_REFERENCE_ANNOTATION_DELAY_MS);
 
+    // Our own annotation writes (path-token wrapping, attribute updates) fire
+    // childList mutations too; observing them re-ran the whole pass — every
+    // link was scanned and verified twice per render.
+    let annotationWriteDepth = 0;
     const observer = new MutationObserver(() => {
+      if (annotationWriteDepth > 0) return;
       scheduleAnnotation(FILE_REFERENCE_ANNOTATION_DELAY_MS);
     });
     observer.observe(container, {
