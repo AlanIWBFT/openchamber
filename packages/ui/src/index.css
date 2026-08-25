@@ -1378,6 +1378,29 @@ html:not(.dark) .chat-scroll {
   }
 }
 
+/* A block committed mid-stream enters with a short fade-and-rise; the
+   transform is paint-only, so virtualized row measurement is unaffected. */
+@keyframes oc-md-block-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.oc-md-block-enter {
+  animation: oc-md-block-enter 140ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-md-block-enter {
+    animation: none;
+  }
+}
+
 /* While streaming defers the per-line gutter markup, hold its horizontal
    footprint (2rem column + 0.75rem gap) so the finished pass only fills in
    the numbers instead of shifting every code line. */

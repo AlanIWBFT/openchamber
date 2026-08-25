@@ -845,17 +845,29 @@ const useMorphdomMarkdown = ({
       // to the trailing (growing) block instead of the whole message.
       blocks.forEach((block, index) => {
         let el = existing[index];
+        let isNewBlock = false;
         if (!el) {
           el = document.createElement('div');
           el.setAttribute('data-md-block', '');
           el.style.display = 'contents';
           target.appendChild(el);
+          isNewBlock = true;
         }
         if (el.getAttribute('data-md-id') === block.id) return;
 
         const temp = document.createElement('div');
         temp.innerHTML = block.html;
         decorateMarkdown(temp, ctx);
+        if (isNewBlock && streaming && index > 0) {
+          // A freshly committed block enters with a short reveal. The class
+          // goes on the block's children — the wrapper is display:contents
+          // and cannot animate — and the transform never changes layout, so
+          // row measurement stays exact. Skipped for the first block so a
+          // full initial render does not shimmer.
+          for (const child of Array.from(temp.children)) {
+            child.classList.add('oc-md-block-enter');
+          }
+        }
         const hadMermaidBlock = shouldRefreshMermaidViewers(el);
         const tempHasMermaidBlock = shouldRefreshMermaidViewers(temp);
         morphdom(el, temp, {
