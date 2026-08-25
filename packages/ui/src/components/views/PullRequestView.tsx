@@ -265,6 +265,7 @@ export const PullRequestView: React.FC = () => {
     return (
       <NestedRepoResolutionStates
         rootIsGitRepo={rootIsGitRepo}
+        resolvedIsGitRepo={isGitRepo}
         nestedRepos={nestedRepos}
         onRetryDiscovery={() => {
           void ensureNestedRepos(currentDirectory, { force: true });

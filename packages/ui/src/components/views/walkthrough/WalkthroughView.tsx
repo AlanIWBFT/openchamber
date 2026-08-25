@@ -498,6 +498,7 @@ export const WalkthroughView = ({ directory: rootDirectory }: WalkthroughViewPro
     return (
       <NestedRepoResolutionStates
         rootIsGitRepo={rootIsGitRepo}
+        resolvedIsGitRepo={isGitRepo}
         nestedRepos={nestedRepos}
         onRetryDiscovery={() => {
           if (rootDirectory) void ensureNestedRepos(rootDirectory, { force: true });

@@ -487,6 +487,7 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
     return renderListState(
       <NestedRepoResolutionStates
         rootIsGitRepo={rootIsGitRepo}
+        resolvedIsGitRepo={isGitRepo}
         nestedRepos={nestedRepos}
         onRetryDiscovery={() => {
           if (rootDirectory) void ensureNestedRepos(rootDirectory, { force: true });

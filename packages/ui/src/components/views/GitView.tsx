@@ -2343,6 +2343,7 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     return (
       <NestedRepoResolutionStates
         rootIsGitRepo={rootIsGitRepo}
+        resolvedIsGitRepo={isGitRepo}
         nestedRepos={nestedRepos}
         onRetryDiscovery={() => {
           if (currentDirectory) {

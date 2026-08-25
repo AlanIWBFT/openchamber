@@ -8,6 +8,12 @@ import type { NestedRepoDiscovery } from '@/stores/useGitStore';
 type NestedRepoResolutionStatesProps = {
   /** Probe of the project root: `false` means nested resolution applies. */
   rootIsGitRepo: boolean | null;
+  /**
+   * Probe of the directory the consumer operates on (root or selected nested
+   * repository). `true` means resolution succeeded and the consumer should
+   * render its own content.
+   */
+  resolvedIsGitRepo: boolean | null;
   /** Discovery outcome for the root (`undefined` = not run yet). */
   nestedRepos: NestedRepoDiscovery | undefined;
   onRetryDiscovery: () => void;
@@ -17,8 +23,9 @@ type NestedRepoResolutionStatesProps = {
 
 /**
  * Shared empty/loading states for git surfaces while nested-repository
- * resolution is pending, failed, or impossible. Renders null once
- * repositories are resolved so the consumer can proceed into its own content.
+ * resolution is pending, failed, or impossible. Renders null once resolution
+ * has finished — either the root is a repository or the operating directory
+ * probed as one — so the consumer can proceed into its own content.
  *
  * A runtime without the discovery route (VS Code) reports "unsupported": the
  * honest state there is the plain not-a-repository empty state, without a
@@ -26,6 +33,7 @@ type NestedRepoResolutionStatesProps = {
  */
 export const NestedRepoResolutionStates: React.FC<NestedRepoResolutionStatesProps> = ({
   rootIsGitRepo,
+  resolvedIsGitRepo,
   nestedRepos,
   onRetryDiscovery,
   emptyStateFooter,
@@ -33,6 +41,7 @@ export const NestedRepoResolutionStates: React.FC<NestedRepoResolutionStatesProp
   const { t } = useI18n();
 
   if (rootIsGitRepo !== false) return null;
+  if (resolvedIsGitRepo === true) return null;
 
   if (nestedRepos === undefined || nestedRepos === null) {
     return (
