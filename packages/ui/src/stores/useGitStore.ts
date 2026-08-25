@@ -9,7 +9,7 @@ import type {
 } from '@/lib/api/types';
 import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
 import { getRuntimeKey } from '@/lib/runtime-switch';
-import { listGitDirectories } from '@/lib/gitApiHttp';
+import { GitDirectoriesUnsupportedError, listGitDirectories } from '@/lib/gitApiHttp';
 
 const LOG_STALE_THRESHOLD = 10000;
 const REPO_CHECK_STALE_THRESHOLD = 60_000;
@@ -27,6 +27,11 @@ const DIFF_CACHE_MAX_ENTRIES = 30;
 const DIFF_CACHE_MAX_TOTAL_SIZE_BYTES = 20 * 1024 * 1024; // 20MB
 const DIFF_CACHE_MAX_GLOBAL_ENTRIES = 200;
 type GitStatusFetchMode = 'full' | 'light';
+
+// Discovery outcome for a root that is not itself a git repository. The three
+// states are mutually exclusive: a repository list (possibly empty), a failed
+// scan (`null`), or a runtime without the discovery route (`'unsupported'`).
+export type NestedRepoDiscovery = string[] | null | 'unsupported';
 
 interface DirectoryGitState {
   isGitRepo: boolean | null;
@@ -81,8 +86,9 @@ interface GitStore {
   // Nested repository discovery: when the root directory is not itself a git
   // repository, these hold the discovered repositories and the user's pick.
   // `nestedReposByRoot` values are `null` when discovery failed — never a
-  // valid empty result — and absent when discovery has not run yet.
-  nestedReposByRoot: Map<string, string[] | null>;
+  // valid empty result — `'unsupported'` when the runtime has no discovery
+  // route, and absent when discovery has not run yet.
+  nestedReposByRoot: Map<string, NestedRepoDiscovery>;
   nestedRepoSelection: Map<string, string>;
   ensureNestedRepos: (root: string, options?: { force?: boolean }) => Promise<void>;
   selectNestedRepo: (root: string, repository: string) => void;
@@ -1203,6 +1209,7 @@ export const useGitStore = create<GitStore>()(
         if (!root) return;
         const { force = false } = options;
         const runtimeKey = getRuntimeKey();
+        const runtimeGeneration = gitRuntimeGeneration;
         const key = runtimeDirectoryKey(runtimeKey, root);
         const current = get().nestedReposByRoot.get(root);
         if (!force && (current !== undefined || inFlightNestedRepoDiscovery.has(key))) {
@@ -1217,16 +1224,30 @@ export const useGitStore = create<GitStore>()(
 
         const discovery = (async () => {
           let repositories: string[] | null = null;
+          let unsupported = false;
           try {
             repositories = await listGitDirectories(root);
           } catch (error) {
-            console.error('Failed to discover nested git repositories:', error);
+            if (error instanceof GitDirectoriesUnsupportedError) {
+              unsupported = true;
+            } else {
+              console.error('Failed to discover nested git repositories:', error);
+            }
             repositories = null;
           }
 
-          // A failed retry must not clobber an earlier successful discovery.
+          // A runtime switch invalidates the discovery: resetForRuntimeSwitch
+          // already cleared the map, and committing old-runtime data here would
+          // both leak it and suppress a fresh scan for this root.
+          if (runtimeKey !== getRuntimeKey() || runtimeGeneration !== gitRuntimeGeneration) return;
+
           const previous = get().nestedReposByRoot.get(root);
-          const nextValue = repositories ?? previous ?? null;
+          // An authoritative "unsupported" answer replaces only unknown or
+          // failed state; like a failed retry, it must not clobber an earlier
+          // successful discovery.
+          const nextValue: NestedRepoDiscovery = unsupported
+            ? (previous ?? 'unsupported')
+            : (repositories ?? previous ?? null);
           const next = new Map(get().nestedReposByRoot);
           next.set(root, nextValue);
           set({ nestedReposByRoot: next });
@@ -1368,8 +1389,9 @@ export const useEffectiveGitDirectory = (root: string | null) => {
   });
 };
 
-// `undefined` = discovery not run yet, `null` = discovery failed, otherwise
-// the discovered nested repository paths (possibly empty).
+// `undefined` = discovery not run yet, `null` = discovery failed,
+// `'unsupported'` = the runtime has no discovery route, otherwise the
+// discovered nested repository paths (possibly empty).
 export const useNestedRepos = (root: string | null) => {
   return useGitStore((state) => {
     if (!root) return undefined;

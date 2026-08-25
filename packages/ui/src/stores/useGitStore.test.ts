@@ -1,7 +1,21 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { GitStatus } from '@/lib/api/types';
 import { useGitStore } from './useGitStore';
 import { getRuntimeKey } from '@/lib/runtime-switch';
+
+// The real transport has no server in tests and fails as a generic error.
+// Tests that exercise other failure modes swap this implementation; the
+// default keeps every pre-existing expectation (generic failure → null).
+const listGitDirectoriesControl: { impl: (root: string) => Promise<string[]> } = {
+  impl: async () => {
+    throw new Error('network unavailable');
+  },
+};
+class TestGitDirectoriesUnsupportedError extends Error {}
+mock.module('@/lib/gitApiHttp', () => ({
+  GitDirectoriesUnsupportedError: TestGitDirectoriesUnsupportedError,
+  listGitDirectories: (root: string) => listGitDirectoriesControl.impl(root),
+}));
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -338,6 +352,9 @@ describe('useGitStore', () => {
 
 describe('useGitStore nested repository discovery', () => {
   beforeEach(() => {
+    listGitDirectoriesControl.impl = async () => {
+      throw new Error('network unavailable');
+    };
     useGitStore.getState().resetForRuntimeSwitch(getRuntimeKey());
   });
 
@@ -379,10 +396,45 @@ describe('useGitStore nested repository discovery', () => {
     expect(useGitStore.getState().nestedReposByRoot.size).toBe(0);
   });
 
+  test('discards an in-flight discovery result when the runtime switches', async () => {
+    const stale = useGitStore.getState().ensureNestedRepos('/root-a');
+    useGitStore.getState().resetForRuntimeSwitch('runtime-b');
+    await stale;
+
+    // The old runtime's late completion must not repopulate the cleared map.
+    expect(useGitStore.getState().nestedReposByRoot.has('/root-a')).toBe(false);
+
+    // Discovery started under the new runtime still commits normally.
+    await useGitStore.getState().ensureNestedRepos('/root-a');
+    expect(useGitStore.getState().nestedReposByRoot.get('/root-a')).toBeNull();
+  });
+
   test('marks discovery failure as a failed marker, not an empty success', async () => {
     await useGitStore.getState().ensureNestedRepos('/root-a');
 
     expect(useGitStore.getState().nestedReposByRoot.get('/root-a')).toBeNull();
+  });
+
+  test('marks a 501 runtime as unsupported instead of failed', async () => {
+    listGitDirectoriesControl.impl = async () => {
+      throw new TestGitDirectoriesUnsupportedError();
+    };
+
+    await useGitStore.getState().ensureNestedRepos('/root-a');
+
+    expect(useGitStore.getState().nestedReposByRoot.get('/root-a')).toBe('unsupported');
+  });
+
+  test('unsupported does not clobber a previous successful discovery', async () => {
+    listGitDirectoriesControl.impl = async () => ['/root-a/one'];
+    await useGitStore.getState().ensureNestedRepos('/root-a');
+
+    listGitDirectoriesControl.impl = async () => {
+      throw new TestGitDirectoriesUnsupportedError();
+    };
+    await useGitStore.getState().ensureNestedRepos('/root-a', { force: true });
+
+    expect(useGitStore.getState().nestedReposByRoot.get('/root-a')).toEqual(['/root-a/one']);
   });
 
   test('dedupes concurrent discovery runs for the same root', async () => {

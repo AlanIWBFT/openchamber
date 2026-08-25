@@ -116,8 +116,18 @@ export async function checkIsGitRepository(directory: string): Promise<boolean> 
   }
 }
 
+export class GitDirectoriesUnsupportedError extends Error {
+  constructor() {
+    super('Nested git repository discovery is not supported by this runtime');
+    this.name = 'GitDirectoriesUnsupportedError';
+  }
+}
+
 export async function listGitDirectories(root: string): Promise<string[]> {
   const response = await runtimeFetch('/api/fs/git-dirs', { query: { path: root } });
+  if (response.status === 501) {
+    throw new GitDirectoriesUnsupportedError();
+  }
   if (!response.ok) {
     throw new Error(`Failed to list git directories: ${response.statusText}`);
   }
