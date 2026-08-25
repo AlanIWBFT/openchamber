@@ -69,6 +69,7 @@ import {
   wasEarlyWindowClosed,
 } from './early-startup.mjs';
 import { createStartupSingleFlight } from './startup-single-flight.mjs';
+import { createServerDependencyPreload } from './server-dependency-preload.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import {
   LOCAL_HOST_ID,
@@ -191,7 +192,12 @@ const ELECTRON_STARTUP_PERF_PHASES = new Set([
   'electron.window.created',
   'electron.main.loaded',
   'electron.shell-env.ready',
+  'electron.startup-surface.ready',
+  'electron.server-preload.start',
+  'electron.server-preload.ready',
   'electron.server.start',
+  'electron.server-import.start',
+  'electron.server-import.ready',
   'electron.server.ready',
   'electron.navigation.start',
   'electron.navigation.ready',
@@ -220,6 +226,23 @@ const recordElectronStartupPerformance = (phase, details = {}) => {
 installStartupMarkSink(logElectronStartupEvent);
 recordElectronStartupPerformance('electron.main.loaded');
 const classifyStartupDocument = (url) => String(url || '').startsWith('data:') ? 'splash' : 'application';
+
+let userShellEnvironmentApplied = false;
+let resolveUserShellEnvironmentApplied;
+const userShellEnvironmentAppliedPromise = new Promise((resolve) => {
+  resolveUserShellEnvironmentApplied = resolve;
+});
+const markUserShellEnvironmentApplied = () => {
+  if (userShellEnvironmentApplied) return;
+  userShellEnvironmentApplied = true;
+  resolveUserShellEnvironmentApplied();
+};
+const serverDependencyPreload = createServerDependencyPreload({
+  isEnvironmentReady: () => userShellEnvironmentApplied,
+  waitForEnvironmentReady: () => userShellEnvironmentAppliedPromise,
+  logger: log,
+  recordPerformance: recordElectronStartupPerformance,
+});
 
 const LOG_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 try {
@@ -1408,9 +1431,14 @@ import { pathLooksUserConfigured, mergePathValues } from '@openchamber/web/serve
 import { provideLoginShellEnvSnapshot } from '@openchamber/web/server/lib/opencode/login-shell-env.js';
 
 const inheritUserShellEnv = async () => {
+  if (userShellEnvironmentApplied) return;
   const shellEnv = await startShellEnvironmentProbe();
+  if (userShellEnvironmentApplied) return;
   provideLoginShellEnvSnapshot(shellEnv);
-  if (!shellEnv) return;
+  if (!shellEnv) {
+    markUserShellEnvironmentApplied();
+    return;
+  }
 
   const homeDir = os.homedir();
   const currentPath = process.env.PATH || '';
@@ -1428,6 +1456,7 @@ const inheritUserShellEnv = async () => {
   if ((process.platform === 'win32' || !currentPathLooksUserConfigured) && shellPath) {
     process.env.PATH = mergePathValues(shellPath, currentPath, delimiter);
   }
+  markUserShellEnvironmentApplied();
 };
 
 const isLocalServerSkipped = () => process.env.OPENCHAMBER_SKIP_LOCAL_SERVER === '1';
@@ -1508,7 +1537,13 @@ const startLocalServer = async () => {
     no_proxy: process.env.no_proxy || 'localhost,127.0.0.1',
   });
 
+  await serverDependencyPreload.wait();
+  const serverImportStartedAt = performance.now();
+  recordElectronStartupPerformance('electron.server-import.start');
   const serverModule = await import('@openchamber/web/server/index.js');
+  recordElectronStartupPerformance('electron.server-import.ready', {
+    durationMs: performance.now() - serverImportStartedAt,
+  });
   state.serverModule = serverModule;
   if (state.quitInProgress) throw new Error('OpenChamber server startup cancelled during shutdown');
 
@@ -5787,6 +5822,8 @@ const scheduleCompileCacheSettle = () => {
 
 app.whenReady().then(async () => {
   if (wasEarlyWindowClosed()) return;
+  recordElectronStartupPerformance('electron.startup-surface.ready');
+  if (!isLocalServerSkipped()) void serverDependencyPreload.begin();
   const loginItemSettings = readLoginItemSettings();
   const isBackgroundStart = shouldStartInBackground(loginItemSettings);
   const mainWindowShown = isBackgroundStart ? null : showMainWindowWithSplash();
