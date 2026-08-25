@@ -257,7 +257,7 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
   // one, `gitDirectory` is the effective repository all git data and actions
   // operate on. The hook owns probing, discovery, auto-select, and
   // stale-selection recovery; data fetching below keys off its result.
-  const { rootIsGitRepo, gitDirectory, nestedRepos, nestedRepoSelection } = useNestedGitDirectory(
+  const { rootIsGitRepo, gitDirectory, nestedRepos } = useNestedGitDirectory(
     currentDirectory ?? null,
     { enabled: isActive },
   );

@@ -1678,7 +1678,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
         } finally {
             setReviewFlowSubmitting(false);
         }
-    }, [currentSessionId, effectiveDirectory, t]);
+    }, [currentSessionId, rootDirectory, t]);
 
     const scrollToFile = React.useCallback((path: string): boolean => {
         const node = fileSectionRefs.current.get(path);
