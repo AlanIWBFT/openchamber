@@ -38,7 +38,7 @@ import { setSyncRefs, getAllSyncSessions } from "./sync-refs"
 import { useSessionUIStore } from "./session-ui-store"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { upsertSessionRecord } from "./session-records"
-import { applySessionEventToGlobalSessions } from "./session-event-router"
+import { applySessionEventToGlobalSessions, applySessionEventsToGlobalSessions } from "./session-event-router"
 import { syncDebug } from "./debug"
 import { getReconnectCandidateSessionIds, mergeBootstrapSessions } from "./reconnect-recovery"
 import { messagesBefore } from "./message-ordering"
@@ -53,7 +53,12 @@ import { useTodosPersistStore } from "@/stores/useTodosPersistStore"
 import { cleanupPersistedSessionState } from "./session-deletion-cleanup"
 import { toast } from "@/components/ui"
 import { appendNotification } from "./notification-store"
-import { applyGlobalSessionStatusEvent, applyGlobalSessionStatusSnapshot, useGlobalSessionStatusStore } from "./global-session-status"
+import {
+  applyGlobalSessionStatusEvent,
+  applyGlobalSessionStatusEvents,
+  applyGlobalSessionStatusSnapshot,
+  useGlobalSessionStatusStore,
+} from "./global-session-status"
 import type { State } from "./types"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { PermissionRequest } from "@/types/permission"
@@ -161,25 +166,42 @@ function useLiveSyncSelector<T>(
   subscribe?: (childStores: ChildStoreManager, notify: () => void) => () => void,
 ): T {
   const { childStores } = useSyncSystem()
-  const cacheRef = useRef<T | undefined>(undefined)
-  const initializedRef = useRef(false)
+  const sourceRevisionRef = useRef(0)
+  const cacheRef = useRef<{
+    childStores: ChildStoreManager
+    selector: (states: State[]) => T
+    revision: number
+    value: T
+  } | null>(null)
 
   const getSnapshot = useCallback(() => {
-    const next = selector(getLiveStates(childStores))
-    if (initializedRef.current && isEqual(cacheRef.current as T, next)) {
-      return cacheRef.current as T
+    const cached = cacheRef.current
+    if (
+      cached
+      && cached.childStores === childStores
+      && cached.selector === selector
+      && cached.revision === sourceRevisionRef.current
+    ) {
+      return cached.value
     }
-
-    cacheRef.current = next
-    initializedRef.current = true
-    return next
+    const next = selector(getLiveStates(childStores))
+    const value = cached && isEqual(cached.value, next) ? cached.value : next
+    cacheRef.current = { childStores, selector, revision: sourceRevisionRef.current, value }
+    return value
   }, [childStores, isEqual, selector])
 
+  const subscribeToSource = useCallback((notify: () => void) => {
+    const invalidate = () => {
+      sourceRevisionRef.current += 1
+      notify()
+    }
+    // Force the post-subscribe snapshot to close the read-before-subscribe gap.
+    sourceRevisionRef.current += 1
+    return subscribe ? subscribe(childStores, invalidate) : childStores.subscribeAll(invalidate)
+  }, [childStores, subscribe])
+
   return React.useSyncExternalStore(
-    useCallback(
-      (notify) => subscribe ? subscribe(childStores, notify) : childStores.subscribeAll(notify),
-      [childStores, subscribe],
-    ),
+    subscribeToSource,
     getSnapshot,
     getSnapshot,
   )
@@ -195,12 +217,16 @@ type DirectoryEventBatch = {
   states: Map<StoreApi<DirectoryStore>, DirectoryStore>
   clonedFields: Map<StoreApi<DirectoryStore>, Set<keyof State>>
   changedStores: Set<StoreApi<DirectoryStore>>
+  globalSessionEvents: Event[]
+  globalStatusEventsByDirectory: Map<string, Event[]>
 }
 
 const createDirectoryEventBatch = (): DirectoryEventBatch => ({
   states: new Map(),
   clonedFields: new Map(),
   changedStores: new Set(),
+  globalSessionEvents: [],
+  globalStatusEventsByDirectory: new Map(),
 })
 
 const getDirectoryEventState = (
@@ -209,6 +235,10 @@ const getDirectoryEventState = (
 ): DirectoryStore => batch?.states.get(store) ?? store.getState()
 
 const publishDirectoryEventBatch = (batch: DirectoryEventBatch): void => {
+  applySessionEventsToGlobalSessions(batch.globalSessionEvents)
+  for (const [directory, events] of batch.globalStatusEventsByDirectory) {
+    applyGlobalSessionStatusEvents(directory, events)
+  }
   for (const store of batch.changedStores) {
     const state = batch.states.get(store)
     if (!state) continue
@@ -241,7 +271,10 @@ export function useAllSessionStatuses(): Record<string, SessionStatus> {
 
 export function useAllLiveSessions(): Session[] {
   return useLiveSyncSelector(
-    useCallback((states) => aggregateLiveSessions(states), []),
+    useCallback((states) => {
+      countSyncPerformance("liveSessionAggregateRuns")
+      return aggregateLiveSessions(states)
+    }, []),
     areSessionListsEquivalent,
     useCallback(
       (childStores: ChildStoreManager, notify: () => void) => childStores.subscribeAllSelected(
@@ -1454,6 +1487,7 @@ export function handleEvent(
   skipVSCodeAutoAccept = false,
   streamingDirectory?: string,
   batch?: DirectoryEventBatch,
+  globalEffectsAlreadyApplied = false,
 ) {
   if ((payload as { type?: unknown }).type === "openchamber:permission-auto-accept.updated") {
     const properties = (payload as unknown as { properties?: unknown }).properties
@@ -1482,12 +1516,19 @@ export function handleEvent(
     return
   }
 
-  applySessionEventToGlobalSessions(payload)
-  // Keep the cross-project status map current for ALL directories (mirrors the
-  // global-session handling above). Child stores remain the primary source for
-  // synced directories; this map covers sessions a child store doesn't list
-  // (unopened directories, or list/status races for just-created sessions).
-  applyGlobalSessionStatusEvent(directory, payload)
+  if (!globalEffectsAlreadyApplied) {
+    if (batch) {
+      batch.globalSessionEvents.push(payload)
+      const statusEvents = batch.globalStatusEventsByDirectory.get(directory)
+      if (statusEvents) statusEvents.push(payload)
+      else batch.globalStatusEventsByDirectory.set(directory, [payload])
+    } else {
+      applySessionEventToGlobalSessions(payload)
+      // Child stores remain the primary source for synced directories; this
+      // index covers unopened directories and list/status races.
+      applyGlobalSessionStatusEvent(directory, payload)
+    }
+  }
 
   // Global events
   if (directory === "global" || !directory) {
@@ -1570,7 +1611,17 @@ export function handleEvent(
         if (eventKey && pendingVSCodePermissionEvents.get(eventKey) !== eventToken) return
         if (eventKey) pendingVSCodePermissionEvents.delete(eventKey)
         if (expectedRuntimeKey !== getRuntimeKey()) return
-        if (!accepted) handleEvent(rawDirectory, payload, childStores, routingIndex, expectedRuntimeKey, true, streamingDirectory)
+        if (!accepted) handleEvent(
+          rawDirectory,
+          payload,
+          childStores,
+          routingIndex,
+          expectedRuntimeKey,
+          true,
+          streamingDirectory,
+          undefined,
+          true,
+        )
       }
       void processVSCodePermissionAutoAccept(permission, resolvedDirectory).then(
         completePermissionCheck,

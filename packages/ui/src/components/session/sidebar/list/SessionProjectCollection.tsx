@@ -142,7 +142,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     isVSCode: topology.isVSCode,
     pinnedSessionIds: collection.pinnedSessionIds,
     sessionOrderRanks: collection.sessionOrderRanks,
-    sessions: collection.sessions,
+    sessions: collection.rootSessions,
   });
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editTitle, setEditTitle] = React.useState('');
@@ -268,6 +268,16 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     }),
     [getOrderedGroups, sectionsForSidebarRender],
   );
+  let selectedSingleProjectId: string | null = null;
+  if (singleProjectMode) {
+    if (projectSections.some((section) => section.project.id === singleProjectId)) {
+      selectedSingleProjectId = singleProjectId;
+    } else if (projectSections.some((section) => section.project.id === view.activeProjectId)) {
+      selectedSingleProjectId = view.activeProjectId;
+    } else {
+      selectedSingleProjectId = projectSections[0]?.project.id ?? null;
+    }
+  }
   const groupProps = React.useMemo(() => ({
     hasSessionSearchQuery: view.hasSessionSearchQuery,
     normalizedSessionSearchQuery: view.normalizedSessionSearchQuery,
@@ -401,7 +411,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       hasSessionSearchQuery={view.hasSessionSearchQuery}
       normalizedSessionSearchQuery={view.normalizedSessionSearchQuery}
       isDesktopShellRuntime={view.isDesktopShellRuntime}
-      sessions={collection.sessions}
+      sessions={recentSessions}
       childrenMap={collection.childrenMap}
       pinnedSessionIds={collection.pinnedSessionIds}
       recentSessions={recentSessions}
@@ -436,7 +446,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     alwaysShowActions,
     collection.childrenMap,
     collection.pinnedSessionIds,
-    collection.sessions,
     copiedSessionId,
     deleteSessionConfirm,
     editTitle,
@@ -470,13 +479,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     projectSections,
     activeProjectId: view.activeProjectId,
     singleProjectMode,
-    singleProjectId: singleProjectMode
-      ? (projectSections.some((section) => section.project.id === singleProjectId)
-        ? singleProjectId
-        : (projectSections.some((section) => section.project.id === view.activeProjectId)
-          ? view.activeProjectId
-          : projectSections[0]?.project.id ?? null))
-      : null,
+    singleProjectId: selectedSingleProjectId,
     emptyState: view.emptyState,
     searchEmptyState: view.searchEmptyState,
     projectRepoStatus: topology.projectRepoStatus,
@@ -497,8 +500,8 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     view.searchEmptyState,
     visibleSessionCountByGroup,
     recentSection,
-    singleProjectId,
     singleProjectMode,
+    selectedSingleProjectId,
   ]);
   const scrollerView = React.useMemo(() => ({
     homeDirectory: view.homeDirectory,

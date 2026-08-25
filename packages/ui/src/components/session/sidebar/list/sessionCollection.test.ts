@@ -238,6 +238,7 @@ describe('projectSidebarCollection', () => {
     expect(projection.orderedSessions.map((entry) => entry.id)).toEqual(['managed-root', 'managed-child', 'project-root']);
     expect(projection.childrenMap.get('managed-root')?.map((entry) => entry.id)).toEqual(['managed-child']);
   });
+
 });
 
 describe('useRecentSessionCollection', () => {
@@ -299,6 +300,7 @@ describe('useRecentSessionCollection', () => {
       dom.restore();
     }
   });
+
 });
 
 describe('getDescendantIds', () => {

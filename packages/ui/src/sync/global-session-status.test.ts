@@ -2,14 +2,17 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import type { Event } from "@opencode-ai/sdk/v2/client"
 import {
   applyGlobalSessionStatusEvent,
+  applyGlobalSessionStatusEvents,
   applyGlobalSessionStatusSnapshot,
   useGlobalSessionStatusStore,
 } from "./global-session-status"
 import { resetSessionOrdering, useSessionOrderingStore } from "./session-ordering"
+import { resetSessionActivityTiming, useSessionActivityTimingStore } from "./session-activity-timing"
 
 beforeEach(() => {
   useGlobalSessionStatusStore.setState({ statusById: new Map() })
   resetSessionOrdering()
+  resetSessionActivityTiming()
 })
 
 describe("global session status index", () => {
@@ -170,5 +173,45 @@ describe("global session status index", () => {
     applyGlobalSessionStatusSnapshot("/alias/repo", { "session-a": { type: "idle" } }, ["session-a"])
 
     expect(useGlobalSessionStatusStore.getState().statusById.has("session-a")).toBe(false)
+  })
+
+  test("publishes status, ordering, and timing once for a large event batch", () => {
+    let statusPublications = 0
+    let orderingPublications = 0
+    let timingPublications = 0
+    const unsubscribeStatus = useGlobalSessionStatusStore.subscribe(() => { statusPublications += 1 })
+    const unsubscribeOrdering = useSessionOrderingStore.subscribe(() => { orderingPublications += 1 })
+    const unsubscribeTiming = useSessionActivityTimingStore.subscribe(() => { timingPublications += 1 })
+    const events = Array.from({ length: 1_000 }, (_, index) => ({
+      type: "session.status",
+      properties: { sessionID: `session-${index}`, status: { type: "busy" } },
+    } as Event))
+
+    applyGlobalSessionStatusEvents("/repo", events)
+
+    unsubscribeStatus()
+    unsubscribeOrdering()
+    unsubscribeTiming()
+    expect(useGlobalSessionStatusStore.getState().activeSessionIds.size).toBe(1_000)
+    expect(statusPublications).toBe(1)
+    expect(orderingPublications).toBe(1)
+    expect(timingPublications).toBe(1)
+  })
+
+  test("keeps lifecycle event order inside a batch", () => {
+    applyGlobalSessionStatusEvents("/repo", [
+      {
+        type: "session.status",
+        properties: { sessionID: "session-a", status: { type: "busy" } },
+      } as Event,
+      {
+        type: "session.deleted",
+        properties: { sessionID: "session-a" },
+      } as Event,
+    ])
+
+    expect(useGlobalSessionStatusStore.getState().statusById.has("session-a")).toBe(false)
+    expect(useSessionOrderingStore.getState().rankById.has("session-a")).toBe(false)
+    expect(useSessionActivityTimingStore.getState().startedAt.has("session-a")).toBe(false)
   })
 })
