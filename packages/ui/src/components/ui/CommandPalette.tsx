@@ -18,6 +18,7 @@ import {
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useGlobalSessionsStore, resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';
+import { isBtwSession } from '@/lib/sessionBtwMetadata';
 import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
 import {
   EMPTY_SESSION_ORDER_RANKS,
@@ -41,7 +42,7 @@ import { canUseElectronDesktopIPC, invokeDesktop, isDesktopShell, isVSCodeRuntim
 import { SETTINGS_PAGE_METADATA, type SettingsRuntimeContext } from '@/lib/settings/metadata';
 
 const EMPTY_PINNED_SESSION_IDS = new Set<string>();
-import { getSettingsNavIcon } from '@/components/views/SettingsView';
+import { getSettingsNavIcon } from '@/lib/settings/metadata';
 import { Icon } from "@/components/icon/Icon";
 import { McpIcon } from '@/components/icons/McpIcon';
 import { scoreByFuzzyQuery } from '@/lib/search/fuzzySearch';
@@ -80,7 +81,6 @@ export const CommandPalette: React.FC = () => {
 
   const isCommandPaletteOpen = useUIStore((s) => s.isCommandPaletteOpen);
   const setCommandPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen);
-  const setActiveMainTab = useUIStore((s) => s.setActiveMainTab);
   const setSettingsDialogOpen = useUIStore((s) => s.setSettingsDialogOpen);
   const setSettingsPage = useUIStore((s) => s.setSettingsPage);
   const setSessionSwitcherOpen = useUIStore((s) => s.setSessionSwitcherOpen);
@@ -169,7 +169,6 @@ export const CommandPalette: React.FC = () => {
         shortcutId: 'new_chat',
         searchText: t('commandPalette.item.newSession'),
         onSelect: run(() => {
-          setActiveMainTab('chat');
           setSessionSwitcherOpen(false);
           openNewSessionDraft();
         }),
@@ -262,8 +261,7 @@ export const CommandPalette: React.FC = () => {
     t,
     run,
     isMobile,
-    setActiveMainTab,
-    setSessionSwitcherOpen,
+        setSessionSwitcherOpen,
     openNewSessionDraft,
     toggleSidebar,
     openContextSurface,
@@ -308,7 +306,9 @@ export const CommandPalette: React.FC = () => {
   // Sessions
   // ---------------------------------------------------------------------------
   const orderedActiveSessions = React.useMemo(() => {
-    return orderSessionsByLifecycleScopes(activeSessions, pinnedSessionIds, sessionOrderRanks);
+    // btw forks stay hidden until promoted to a full session
+    const visibleSessions = activeSessions.filter((session) => !isBtwSession(session));
+    return orderSessionsByLifecycleScopes(visibleSessions, pinnedSessionIds, sessionOrderRanks);
   }, [activeSessions, pinnedSessionIds, sessionOrderRanks]);
 
   const allBranches = useGitAllBranches();
@@ -349,7 +349,7 @@ export const CommandPalette: React.FC = () => {
       return;
     }
     let cancelled = false;
-    void searchFiles(currentRoot, trimmedQuery, 10, { type: 'file' })
+    void searchFiles(currentRoot, trimmedQuery, 40, { type: 'file' })
       .then((results) => {
         if (cancelled) return;
         setFileResults(

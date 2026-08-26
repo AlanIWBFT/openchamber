@@ -6,6 +6,9 @@ type ShortcutConfig = {
   id: string;
   defaultBinding: ShortcutCombo;
   allowsSequenceFallback?: true;
+  /** The binding is a bare-modifier chord prefix (completed by another key);
+      conflict resolution compares its prefix rather than a full combo. */
+  prefixStyle?: true;
 } & (
   | { customizable: false }
   | {
@@ -42,6 +45,12 @@ const SHORTCUT_GROUPS = {
       defaultBinding: 'mod+n',
       customizable: true,
       settingsLabelKey: 'settings.openchamber.keyboardShortcuts.action.new_chat.label',
+    },
+    {
+      id: 'close_session_tab',
+      defaultBinding: 'alt+w',
+      customizable: true,
+      settingsLabelKey: 'settings.openchamber.keyboardShortcuts.action.close_session_tab.label',
     },
     {
       id: 'open_draft_project_picker',
@@ -172,6 +181,9 @@ const SHORTCUT_GROUPS = {
     {
       id: 'switch_context_surface',
       defaultBinding: 'mod',
+      // The binding is a bare modifier acting as a chord prefix (completed by
+      // a digit); conflict resolution must compare its PREFIX, not a combo.
+      prefixStyle: true,
       customizable: true,
       settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.switch_context_surface.label',
@@ -207,16 +219,6 @@ const SHORTCUT_GROUPS = {
       settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.cycle_services_tab.label',
     },
-    { id: 'switch_tab_1', defaultBinding: 'mod+1', customizable: false },
-    // Mobile tab shortcuts may share numeric bindings with desktop-only panel commands.
-    { id: 'switch_tab_2', defaultBinding: 'mod+2', customizable: false },
-    { id: 'switch_tab_3', defaultBinding: 'mod+3', customizable: false },
-    { id: 'switch_tab_4', defaultBinding: 'mod+4', customizable: false },
-    { id: 'switch_tab_5', defaultBinding: 'mod+5', customizable: false },
-    { id: 'switch_tab_6', defaultBinding: 'mod+6', customizable: false },
-    { id: 'switch_tab_7', defaultBinding: 'mod+7', customizable: false },
-    { id: 'switch_tab_8', defaultBinding: 'mod+8', customizable: false },
-    { id: 'switch_tab_9', defaultBinding: 'mod+9', customizable: false },
   ],
   application: [
     {

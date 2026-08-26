@@ -29,6 +29,11 @@ export class ShortcutDispatcher {
   private readonly now: () => number;
   private readonly timeoutMs: number;
   private prefix: string | undefined;
+  // The target the leader chord was pressed on. DOM-agnostic (opaque
+  // EventTarget): callers use it to decide whether an unmodified completion
+  // key arriving from an EDITABLE target is a deliberate sequence (same
+  // target as the arming press) or typing that must not be swallowed.
+  private prefixTarget: EventTarget | null = null;
   private expiresAt = 0;
   private prefixSuspensionVersion = 0;
   private readonly capturedPrefixEvents = new WeakSet<KeyboardEvent>();
@@ -69,6 +74,7 @@ export class ShortcutDispatcher {
     ));
     if (leader) {
       this.prefix = leader.chords[0];
+      this.prefixTarget = event.target;
       this.expiresAt = this.now() + this.timeoutMs;
       this.prefixSuspensionVersion = this.options.registry.getSuspensionVersion();
       return true;
@@ -78,8 +84,13 @@ export class ShortcutDispatcher {
 
   clear(): void {
     this.prefix = undefined;
+    this.prefixTarget = null;
     this.expiresAt = 0;
     this.prefixSuspensionVersion = 0;
+  }
+
+  getActivePrefixTarget(): EventTarget | null {
+    return this.hasActivePrefix() ? this.prefixTarget : null;
   }
 
   handleBlur(): void {

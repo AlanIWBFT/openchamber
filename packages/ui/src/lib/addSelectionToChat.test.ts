@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 const focusChatInputCalls: number[] = [];
 const pendingInputCalls: Array<{ text: string | null; mode?: string }> = [];
-const activeMainTabCalls: string[] = [];
+const activeSurfaceCalls: string[] = [];
 const sessionSwitcherCalls: boolean[] = [];
 const codeMirrorDispatches: Array<{ selection: { anchor: number } }> = [];
 
@@ -41,8 +41,8 @@ mock.module('@/sync/input-store', () => ({
 mock.module('@/stores/useUIStore', () => ({
   useUIStore: {
     getState: () => ({
-      setActiveMainTab: (tab: string) => {
-        activeMainTabCalls.push(tab);
+      setActiveSurface: (tab: string) => {
+        activeSurfaceCalls.push(tab);
       },
       setSessionSwitcherOpen: (open: boolean) => {
         sessionSwitcherCalls.push(open);
@@ -51,16 +51,7 @@ mock.module('@/stores/useUIStore', () => ({
   },
 }));
 
-const {
-  addSelectionToChat,
-  captureSelectionMarkdownForChat,
-  dismissActiveSelectionToolbar,
-  getActiveSelectionToolbarVersion,
-  hasActiveSelectionToolbar,
-  invokeActiveSelectionAddToChat,
-  registerActiveSelectionToolbar,
-} = await import('./addSelectionToChat');
-const { shortcutRegistry } = await import('./shortcuts');
+const { addSelectionToChat, captureSelectionMarkdownForChat } = await import('./addSelectionToChat');
 
 const originalDocument = globalThis.document;
 const originalWindow = globalThis.window;
@@ -95,7 +86,7 @@ const installSelectionEnvironment = (options: {
 const clearCalls = () => {
   focusChatInputCalls.length = 0;
   pendingInputCalls.length = 0;
-  activeMainTabCalls.length = 0;
+  activeSurfaceCalls.length = 0;
   sessionSwitcherCalls.length = 0;
   codeMirrorDispatches.length = 0;
   codeMirrorView = null;
@@ -271,7 +262,7 @@ describe('addSelectionToChat', () => {
     installSelectionEnvironment({ activeElement: textarea });
 
     expect(addSelectionToChat()).toBe(true);
-    expect(activeMainTabCalls).toEqual(['chat']);
+    expect(activeSurfaceCalls).toEqual([]);
     expect(sessionSwitcherCalls).toEqual([false]);
     expect(pendingInputCalls).toEqual([{ text: '```md\nselected\n```', mode: 'append' }]);
 
@@ -299,115 +290,9 @@ describe('addSelectionToChat', () => {
 
     expect(addSelectionToChat()).toBe(false);
     expect(pendingInputCalls).toEqual([]);
-    expect(activeMainTabCalls).toEqual(['chat']);
+    expect(activeSurfaceCalls).toEqual([]);
 
     await Promise.resolve();
     expect(focusChatInputCalls.length).toBe(1);
-  });
-});
-
-describe('active selection toolbar shortcut', () => {
-  beforeEach(() => {
-    clearCalls();
-  });
-
-  test('does not use the generic selection fallback without a visible toolbar', () => {
-    const textarea = {
-      tagName: 'TEXTAREA',
-      value: 'selected',
-      selectionStart: 0,
-      selectionEnd: 8,
-      closest: () => null,
-    } as unknown as HTMLTextAreaElement;
-    installSelectionEnvironment({ activeElement: textarea });
-
-    expect(invokeActiveSelectionAddToChat()).toBe(false);
-    expect(textarea.selectionStart).toBe(0);
-    expect(textarea.selectionEnd).toBe(8);
-    expect(pendingInputCalls).toEqual([]);
-    expect(activeMainTabCalls).toEqual([]);
-  });
-
-  test('becomes inactive when the selection toolbar hides', () => {
-    const calls: number[] = [];
-    const cleanup = registerActiveSelectionToolbar({
-      addToChat: () => calls.push(1),
-      dismiss: () => undefined,
-    });
-
-    expect(hasActiveSelectionToolbar()).toBe(true);
-    expect(shortcutRegistry.isSuspended()).toBe(true);
-    cleanup();
-    expect(hasActiveSelectionToolbar()).toBe(false);
-    expect(shortcutRegistry.isSuspended()).toBe(false);
-    expect(invokeActiveSelectionAddToChat()).toBe(false);
-    expect(calls).toEqual([]);
-  });
-
-  test('invokes the active toolbar action once', () => {
-    const calls: number[] = [];
-    const cleanup = registerActiveSelectionToolbar({
-      addToChat: () => calls.push(1),
-      dismiss: () => undefined,
-    });
-
-    expect(invokeActiveSelectionAddToChat()).toBe(true);
-    expect(shortcutRegistry.isSuspended()).toBe(false);
-    expect(invokeActiveSelectionAddToChat()).toBe(false);
-    expect(calls).toEqual([1]);
-    cleanup();
-  });
-
-  test('keeps the newest visible toolbar active', () => {
-    const calls: string[] = [];
-    const cleanupFirst = registerActiveSelectionToolbar({
-      addToChat: () => calls.push('first'),
-      dismiss: () => undefined,
-    });
-    const cleanupSecond = registerActiveSelectionToolbar({
-      addToChat: () => calls.push('second'),
-      dismiss: () => undefined,
-    });
-
-    cleanupFirst();
-    expect(shortcutRegistry.isSuspended()).toBe(true);
-    expect(invokeActiveSelectionAddToChat()).toBe(true);
-    expect(shortcutRegistry.isSuspended()).toBe(false);
-    expect(calls).toEqual(['second']);
-    cleanupSecond();
-  });
-
-  test('restores the previous visible toolbar when the newest one unmounts', () => {
-    const calls: string[] = [];
-    const cleanupFirst = registerActiveSelectionToolbar({
-      addToChat: () => calls.push('first'),
-      dismiss: () => undefined,
-    });
-    const cleanupSecond = registerActiveSelectionToolbar({
-      addToChat: () => calls.push('second'),
-      dismiss: () => undefined,
-    });
-
-    cleanupSecond();
-    expect(shortcutRegistry.isSuspended()).toBe(true);
-    expect(invokeActiveSelectionAddToChat()).toBe(true);
-    expect(shortcutRegistry.isSuspended()).toBe(false);
-    expect(calls).toEqual(['first']);
-    cleanupFirst();
-  });
-
-  test('dismisses the active toolbar and advances its ownership version', () => {
-    const calls: string[] = [];
-    const before = getActiveSelectionToolbarVersion();
-    const cleanup = registerActiveSelectionToolbar({
-      addToChat: () => calls.push('add'),
-      dismiss: () => calls.push('dismiss'),
-    });
-
-    expect(getActiveSelectionToolbarVersion()).toBeGreaterThan(before);
-    expect(dismissActiveSelectionToolbar()).toBe(true);
-    expect(calls).toEqual(['dismiss']);
-    expect(hasActiveSelectionToolbar()).toBe(false);
-    cleanup();
   });
 });

@@ -66,7 +66,7 @@ const KEY_LABEL_MAP: Record<string, string> = {
 };
 
 const MODIFIER_PRIORITY: ShortcutModifier[] = ['mod', 'ctrl', 'shift', 'alt'];
-const RISKY_BROWSER_SHORTCUT_KEYS = new Set(['w', 't', 'r', 'p', 's', 'f', 'l', 'n']);
+const RISKY_BROWSER_SHORTCUT_KEYS = new Set(['w', 't', 'r', 'p', 's', 'f', 'l', 'n', 'q', 'd', 'h', 'j', 'o', 'u']);
 const MODIFIER_KEY_ALIASES: Record<ShortcutModifier, readonly string[]> = {
   mod: isMacOS() && isDesktopShell() ? ['meta'] : isMacOS() ? ['meta', 'control'] : ['control'],
   shift: ['shift'],
@@ -235,12 +235,16 @@ export function isRiskyBrowserShortcut(combo: ShortcutCombo): boolean {
   if (isUnassignedShortcut(combo)) return false;
   const parsed = parseShortcut(combo);
   if (!parsed) return false;
-  const chord = parsed.chords[0];
-  if (!chord.modifiers.has('mod')) return false;
-
-  return RISKY_BROWSER_SHORTCUT_KEYS.has(chord.key.toLowerCase())
-    && !chord.modifiers.has('shift')
-    && !chord.modifiers.has('alt');
+  // Every chord counts: a second chord like "mod+w" is just as capable of
+  // closing the tab as a first one, and mod+shift+w closes a window.
+  return parsed.chords.some((chord) => {
+    if (!chord.modifiers.has('mod')) return false;
+    if (chord.modifiers.has('alt')) return false;
+    if (chord.modifiers.has('shift')) {
+      return chord.key.toLowerCase() === 'w' || chord.key.toLowerCase() === 'q';
+    }
+    return RISKY_BROWSER_SHORTCUT_KEYS.has(chord.key.toLowerCase());
+  });
 }
 
 export function eventMatchesShortcut(

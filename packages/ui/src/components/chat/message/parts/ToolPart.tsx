@@ -2,7 +2,6 @@
 import React from 'react';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
-import { PatchDiff } from '@pierre/diffs/react';
 import { cn } from '@/lib/utils';
 import { SimpleMarkdownRenderer } from '../../MarkdownRenderer';
 import { MessageFilesDisplay } from '../../FileAttachment';
@@ -10,7 +9,6 @@ import { getToolMetadata } from '@/lib/toolHelpers';
 import type { ToolPart as ToolPartType, ToolState as ToolStateUnion, FilePart } from '@opencode-ai/sdk/v2';
 import { toolDisplayStyles } from '@/lib/typography';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
-import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionMessageRecords, useEnsureSessionMessages } from '@/sync/sync-context';
@@ -22,10 +20,9 @@ import { toast } from '@/components/ui';
 import { Text } from '@/components/ui/text';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { copyTextToClipboard } from '@/lib/clipboard';
-import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import type { ToolPopupContent } from '../types';
-import { ensurePierreThemeRegistered } from '@/lib/shiki/appThemeRegistry';
-import { getDefaultTheme } from '@/lib/theme/themes';
+import { PlainDiffFallback } from './PlainDiffFallback';
+import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 
 import {
     formatEditOutput,
@@ -84,7 +81,6 @@ interface ToolPartProps {
     onToggle: (toolId: string) => void;
     isMobile: boolean;
     alwaysShowActions?: boolean;
-    onContentChange?: (reason?: ContentChangeReason) => void;
     onShowPopup?: (content: ToolPopupContent) => void;
     animateTailText?: boolean;
 }
@@ -382,40 +378,6 @@ const getToolDiagnosticSection = (
         displayPath: normalizedPath.startsWith('/') ? getRelativePath(normalizedPath, currentDirectory) : normalizedPath,
         diagnostics: visible,
         remaining: Math.max(0, diagnostics.length - visible.length),
-    };
-};
-
-const usePierreThemeConfig = () => {
-    const themeSystem = useOptionalThemeSystem();
-    const fallbackLightTheme = React.useMemo(() => getDefaultTheme(false), []);
-    const fallbackDarkTheme = React.useMemo(() => getDefaultTheme(true), []);
-
-    const availableThemes = React.useMemo(
-        () => themeSystem?.availableThemes ?? [fallbackLightTheme, fallbackDarkTheme],
-        [fallbackDarkTheme, fallbackLightTheme, themeSystem?.availableThemes],
-    );
-    const lightThemeId = themeSystem?.lightThemeId ?? fallbackLightTheme.metadata.id;
-    const darkThemeId = themeSystem?.darkThemeId ?? fallbackDarkTheme.metadata.id;
-
-    const lightTheme = React.useMemo(
-        () => availableThemes.find((theme) => theme.metadata.id === lightThemeId) ?? fallbackLightTheme,
-        [availableThemes, fallbackLightTheme, lightThemeId],
-    );
-    const darkTheme = React.useMemo(
-        () => availableThemes.find((theme) => theme.metadata.id === darkThemeId) ?? fallbackDarkTheme,
-        [availableThemes, darkThemeId, fallbackDarkTheme],
-    );
-
-    React.useEffect(() => {
-        ensurePierreThemeRegistered(lightTheme);
-        ensurePierreThemeRegistered(darkTheme);
-    }, [darkTheme, lightTheme]);
-
-    const currentVariant = themeSystem?.currentTheme.metadata.variant ?? 'light';
-
-    return {
-        pierreTheme: { light: lightTheme.metadata.id, dark: darkTheme.metadata.id },
-        pierreThemeType: currentVariant === 'dark' ? ('dark' as const) : ('light' as const),
     };
 };
 
@@ -1138,30 +1100,6 @@ const TaskToolSummary: React.FC<{
     );
 };
 
-interface DiffPreviewProps {
-    diff: string;
-    pierreTheme: { light: string; dark: string };
-    pierreThemeType: 'light' | 'dark';
-    diffViewMode: DiffViewMode;
-}
-
-const TOOL_DIFF_UNSAFE_CSS = `
-  [data-diff-header],
-  [data-diff] {
-    [data-separator] {
-      height: 24px !important;
-    }
-  }
-`;
-
-const TOOL_DIFF_METRICS = {
-    hunkLineCount: 50,
-    lineHeight: 24,
-    diffHeaderHeight: 44,
-    hunkSeparatorHeight: 24,
-    spacing: 0,
-};
-
 const TOOL_COLLAPSED_CUSTOM_STYLE: React.CSSProperties = {
     ...toolDisplayStyles.getCollapsedStyles(),
     padding: 0,
@@ -1260,84 +1198,17 @@ const renderAnimatedPathWithIcon = (path: string, animate = true, grow = true, s
     );
 };
 
-const PlainDiffFallback: React.FC<{ diff: string }> = ({ diff }) => (
-    <pre
-        className="m-0 overflow-auto whitespace-pre-wrap break-words rounded-lg p-2 typography-code"
-        style={{
-            backgroundColor: 'var(--syntax-base-background)',
-            color: 'var(--syntax-base-foreground)',
-        }}
-    >
-        {diff}
-    </pre>
+// The rich diff preview is the only tool-card piece that needs the
+// @pierre/diffs + Shiki stack; lazy-loading it keeps that stack out of the
+// eager chat graph. While the chunk loads, the plain-text patch renders as the
+// Suspense fallback, mirroring the preview's own error fallback.
+const LazyToolPartDiffPreview = lazyWithChunkRecovery(() => import('./ToolPartDiffPreview'));
+
+const DiffPreview: React.FC<{ diff: string; diffViewMode: DiffViewMode }> = ({ diff, diffViewMode }) => (
+    <React.Suspense fallback={<PlainDiffFallback diff={diff} />}>
+        <LazyToolPartDiffPreview diff={diff} diffViewMode={diffViewMode} />
+    </React.Suspense>
 );
-
-class DiffPreviewErrorBoundary extends React.Component<{
-    resetKey: string;
-    fallback: React.ReactNode;
-    children: React.ReactNode;
-}, { hasError: boolean }> {
-    state = { hasError: false };
-
-    static getDerivedStateFromError(): { hasError: boolean } {
-        return { hasError: true };
-    }
-
-    componentDidUpdate(prevProps: { resetKey: string }) {
-        if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
-            this.setState({ hasError: false });
-        }
-    }
-
-    componentDidCatch(error: Error) {
-        if (process.env.NODE_ENV === 'development') {
-            console.warn('Tool diff preview failed; rendering raw patch instead.', error);
-        }
-    }
-
-    render() {
-        if (this.state.hasError) {
-            return this.props.fallback;
-        }
-        return this.props.children;
-    }
-}
-
-const DiffPreview: React.FC<DiffPreviewProps> = React.memo(({ diff, pierreTheme, pierreThemeType, diffViewMode }) => {
-    const options = React.useMemo(
-        () => ({
-            diffStyle: diffViewMode === 'side-by-side' ? 'split' as const : 'unified' as const,
-            diffIndicators: 'none' as const,
-            hunkSeparators: 'line-info-basic' as const,
-            lineDiffType: 'none' as const,
-            disableFileHeader: true,
-            maxLineDiffLength: 1000,
-            expansionLineCount: 20,
-            overflow: 'wrap' as const,
-            theme: pierreTheme,
-            themeType: pierreThemeType,
-            unsafeCSS: TOOL_DIFF_UNSAFE_CSS,
-        }),
-        [diffViewMode, pierreTheme, pierreThemeType]
-    );
-
-    const fallback = <PlainDiffFallback diff={diff} />;
-
-    return (
-        <div className="typography-code px-1 pb-1 pt-0">
-            <DiffPreviewErrorBoundary resetKey={diff} fallback={fallback}>
-                <PatchDiff
-                    patch={diff}
-                    metrics={TOOL_DIFF_METRICS}
-                    options={options}
-                    className="block w-full"
-                />
-            </DiffPreviewErrorBoundary>
-        </div>
-    );
-});
-
-DiffPreview.displayName = 'DiffPreview';
 
 interface ToolExpandedContentProps {
     part: ToolPartType;
@@ -1357,7 +1228,6 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     const { t } = useI18n();
     const runtime = React.useContext(RuntimeAPIContext);
     const mobileActions = useMobileAppActions();
-    const { pierreTheme, pierreThemeType } = usePierreThemeConfig();
     const [diffViewMode, setDiffViewMode] = React.useState<DiffViewMode>('unified');
     const stateWithData = state as ToolStateWithMetadata;
     const metadata = stateWithData.metadata;
@@ -1386,6 +1256,8 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     );
     const hasVisualDiffEntry = diffEntries.some((entry) => entry.renderMode === 'diff');
     const hideToolInputPreview = part.tool === 'openchamber'
+        || part.tool === 'openchamber_web'
+        || part.tool === 'openchamber_memory'
         || part.tool === 'apply_patch'
         || part.tool === 'edit'
         || part.tool === 'multiedit';
@@ -1633,8 +1505,6 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                             {entry.renderMode === 'diff' ? (
                                 <DiffPreview
                                     diff={entry.patch}
-                                    pierreTheme={pierreTheme}
-                                    pierreThemeType={pierreThemeType}
                                     diffViewMode={diffViewMode}
                                 />
                             ) : (
@@ -1676,7 +1546,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                 output,
                 {
                     className: part.tool === 'bash' ? 'p-1 rounded-none' : 'p-1',
-                    maxHeightClass: isStreamingBash ? 'h-[46vh]' : part.tool === 'bash' ? 'max-h-[46vh]' : undefined,
+                    maxHeightClass: part.tool === 'bash' ? 'max-h-[46vh]' : undefined,
                     followKey: isStreamingBash ? outputString : undefined,
                 }
             );
@@ -1753,8 +1623,6 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                                 ) : isWriteLikeTool && writeLikeInputPatch ? (
                                     <DiffPreview
                                         diff={writeLikeInputPatch}
-                                        pierreTheme={pierreTheme}
-                                        pierreThemeType={pierreThemeType}
                                         diffViewMode={diffViewMode}
                                     />
                                 ) : (
@@ -1814,7 +1682,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     isExpanded,
     onToggle,
     isMobile,
-    onContentChange,
     onShowPopup,
     animateTailText = true,
 }) => {
@@ -1884,10 +1751,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         });
     }, [currentDirectory, input, isFinalized, isSuccessfullyFinalized, metadata, normalizedPartTool]);
 
-    const shouldNotifyStructuralChange = isFinalized || isTaskTool;
-
-    const onContentChangeRef = React.useRef(onContentChange);
-    onContentChangeRef.current = onContentChange;
     const expandedContentRef = React.useRef<HTMLDivElement>(null);
 
     React.useLayoutEffect(() => {
@@ -1902,11 +1765,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
         element.style.height = isExpanded ? 'auto' : '0px';
         element.style.overflow = isExpanded ? 'visible' : 'hidden';
-
-        if (shouldNotifyStructuralChange) {
-            onContentChangeRef.current?.('structural');
-        }
-    }, [isExpanded, isTaskTool, shouldNotifyStructuralChange]);
+    }, [isExpanded, isTaskTool]);
 
     const partMetadata = (part as unknown as { metadata?: unknown }).metadata;
     const time = stateWithData.time;
@@ -2064,26 +1923,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         }
         return metadataTaskSummaryEntries;
     }, [childSessionTaskSummaryEntries, metadataTaskSummaryEntries]);
-    const taskSummaryRenderSignature = React.useMemo(() => {
-        return taskSummaryEntries.map(getTaskSummaryEntryRenderSignature).join('\u0000');
-    }, [taskSummaryEntries]);
-    const lastTaskSummaryRenderSignatureRef = React.useRef<string | null>(null);
-
-    React.useEffect(() => {
-        if (!isTaskTool) {
-            lastTaskSummaryRenderSignatureRef.current = null;
-            return;
-        }
-
-        const previous = lastTaskSummaryRenderSignatureRef.current;
-        lastTaskSummaryRenderSignatureRef.current = taskSummaryRenderSignature;
-        if (previous === null || previous === taskSummaryRenderSignature || taskSummaryEntries.length === 0) {
-            return;
-        }
-
-        onContentChangeRef.current?.('structural');
-    }, [isTaskTool, taskSummaryEntries.length, taskSummaryRenderSignature]);
-
     const diffStats = React.useMemo(() => {
         return (normalizedPartTool === 'edit' || normalizedPartTool === 'multiedit' || normalizedPartTool === 'apply_patch')
             ? parseDiffStats(metadata)
@@ -2481,7 +2320,6 @@ export default React.memo(ToolPart, (prev, next) => {
         && prev.isExpanded === next.isExpanded
         && prev.isMobile === next.isMobile
         && prev.alwaysShowActions === next.alwaysShowActions
-        && prev.onContentChange === next.onContentChange
         && prev.onShowPopup === next.onShowPopup
         && prev.animateTailText === next.animateTailText;
 });

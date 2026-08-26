@@ -15,7 +15,7 @@ import {
   findSwitcherItemAncestorIds,
   useSwitcherItems,
   type SwitcherItem,
-} from '@/components/session/sidebar/hooks/useSwitcherItems';
+} from '@/components/session/sidebar/shell/useSwitcherItems';
 import { useUIStore } from '@/stores/useUIStore';
 import { resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';
 import { formatSessionCompactDateLabel } from './sidebar/utils';
@@ -78,14 +78,12 @@ function SwitcherContent({ onSelect, variant, scopeProjectId }: SwitcherContentP
   const isNewSessionDraftOpen = useSessionUIStore((state) => state.newSessionDraft.open === true);
   const items = useSwitcherItems(true, { scopeProjectId, currentSessionId });
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
-  const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const { t } = useI18n();
 
   const handleNewSession = React.useCallback(() => {
-    setActiveMainTab('chat');
     onSelect();
     openNewSessionDraft();
-  }, [onSelect, openNewSessionDraft, setActiveMainTab]);
+  }, [onSelect, openNewSessionDraft]);
 
   const [expandedParents, setExpandedParents] = React.useState<Set<string>>(new Set());
   const contentRef = React.useRef<HTMLDivElement>(null);

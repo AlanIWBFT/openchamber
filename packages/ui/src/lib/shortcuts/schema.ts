@@ -95,7 +95,7 @@ export function getShortcutBindingConflicts(
   if (!action) return conflicts;
   for (const candidate of SHORTCUT_SCHEMA) {
     if (candidate.id === actionId) continue;
-    const candidateCombo = candidate.id === 'switch_context_surface'
+    const candidateCombo = ('prefixStyle' in candidate && candidate.prefixStyle)
       ? getEffectiveShortcutPrefix(candidate.id, overrides)
       : getEffectiveShortcutCombo(candidate.id, overrides);
     const kind = getShortcutConflict(combo, candidateCombo);

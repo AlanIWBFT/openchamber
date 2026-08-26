@@ -1,6 +1,7 @@
 import React from 'react';
 import { isTerminalEventTarget } from '@/lib/terminalFocus';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { closeSessionTabAndActivateNeighbour } from '@/lib/sessionTabs';
 import { useSelectionStore } from '@/sync/selection-store';
 import * as sessionActions from '@/sync/session-actions';
 import { normalizeContextPanelDirectoryKey, useUIStore } from '@/stores/useUIStore';
@@ -37,7 +38,7 @@ import {
   invokeActiveSelectionAddToChat,
 } from '@/lib/addSelectionToChat';
 import { isIMECompositionEvent } from '@/lib/ime';
-import { hasOpenDropdown, shouldStopDropdownImeEscape } from './keyboard-shortcut-dom';
+import { hasOpenDropdown, isEditableEventTarget, shouldStopDropdownImeEscape } from './keyboard-shortcut-dom';
 
 const dropdownTargetSelector = [
   '[data-slot="dropdown-menu-content"]', '[data-slot="select-content"]', '[role="combobox"]',
@@ -139,7 +140,6 @@ export const useKeyboardShortcuts = () => {
         !state.promptNavigatorEnabled
         || state.isMobile
         || isVSCodeRuntime()
-        || state.activeMainTab !== 'chat'
         || hasOverlay
       ) {
         return false;
@@ -161,16 +161,20 @@ export const useKeyboardShortcuts = () => {
         console.warn('[keyboard-shortcuts] failed to open draft mini chat window', error);
       });
     },
+    close_session_tab: () => {
+      if (isVSCodeRuntime() || !useUIStore.getState().sessionTabsEnabled) return false;
+      if (currentSessionId) {
+        closeSessionTabAndActivateNeighbour(currentSessionId);
+      }
+    },
     new_chat: () => {
-      const state = useUIStore.getState();
-      state.setActiveMainTab('chat');
-      state.setSessionSwitcherOpen(false);
-      openNewSessionDraft();
+      useUIStore.getState().setSessionSwitcherOpen(false);
+      openNewSessionDraft(currentSessionId && currentDirectory
+        ? { directoryOverride: currentDirectory }
+        : undefined);
     },
     new_chat_worktree: () => {
-      const state = useUIStore.getState();
-      state.setActiveMainTab('chat');
-      state.setSessionSwitcherOpen(false);
+      useUIStore.getState().setSessionSwitcherOpen(false);
       if (!isVSCodeRuntime()) {
         createWorktreeSession();
         return;
@@ -212,7 +216,7 @@ export const useKeyboardShortcuts = () => {
         || state.isAboutDialogOpen;
       const isChatInputTarget = event.target instanceof Element
         && Boolean(event.target.closest('[data-chat-input="true"]'));
-      if (hasOverlay || state.activeMainTab !== 'chat' || !isChatInputTarget) return false;
+      if (hasOverlay || !isChatInputTarget) return false;
       const combo = getEffectiveShortcutCombo('cycle_agent', state.shortcutOverrides);
       const backward = combo && !combo.includes('shift') ? normalizeCombo(`shift+${combo}`) : '';
       const direction = backward && eventMatchesShortcut(event, backward) ? -1 : 1;
@@ -259,7 +263,7 @@ export const useKeyboardShortcuts = () => {
         || state.isHelpDialogOpen
         || state.isSessionSwitcherOpen
         || state.isAboutDialogOpen;
-      if (state.isSettingsDialogOpen || hasOverlay || state.activeMainTab !== 'chat') return false;
+      if (state.isSettingsDialogOpen || hasOverlay) return false;
       state.setModelSelectorOpen(!state.isModelSelectorOpen);
     },
     cycle_thinking_variant: () => {
@@ -268,7 +272,7 @@ export const useKeyboardShortcuts = () => {
         || state.isHelpDialogOpen
         || state.isSessionSwitcherOpen
         || state.isAboutDialogOpen;
-      if (state.isSettingsDialogOpen || hasOverlay || state.activeMainTab !== 'chat') return false;
+      if (state.isSettingsDialogOpen || hasOverlay) return false;
       const config = useConfigStore.getState();
       if (config.getCurrentModelVariants().length === 0) return false;
       config.cycleCurrentVariant();
@@ -293,8 +297,7 @@ export const useKeyboardShortcuts = () => {
     toggle_dictation: () => {
       const state = useUIStore.getState();
       if (
-        state.activeMainTab !== 'chat'
-        || state.isCommandPaletteOpen
+        state.isCommandPaletteOpen
         || state.isHelpDialogOpen
         || state.isSessionSwitcherOpen
         || state.isSettingsDialogOpen
@@ -318,7 +321,6 @@ export const useKeyboardShortcuts = () => {
     if (
       state.isSettingsDialogOpen
       || hasOverlay
-      || state.activeMainTab !== 'chat'
       || state.favoriteModels.length === 0
     ) {
       return false;
@@ -428,7 +430,6 @@ export const useKeyboardShortcuts = () => {
         || state.isImagePreviewOpen;
       if (
         hasOverlay
-        || state.activeMainTab !== 'chat'
         || sessionPhase === 'idle'
         || !currentSessionId
       ) {
@@ -454,6 +455,17 @@ export const useKeyboardShortcuts = () => {
     const handleActivePrefixKeyDownCapture = (event: KeyboardEvent) => {
       if (isTerminalEventTarget(event.target)) return;
       if (!dispatcher.hasActivePrefix()) return;
+      // An unmodified completion key typed into an editable target is only a
+      // deliberate sequence when the prefix was armed from that same target;
+      // otherwise it is regular typing and must not be swallowed.
+      if (
+        !event.ctrlKey && !event.metaKey && !event.altKey
+        && isEditableEventTarget(event.target)
+        && dispatcher.getActivePrefixTarget() !== event.target
+      ) {
+        dispatcher.clear();
+        return;
+      }
       if (dispatcher.dispatchActivePrefix(event)) {
         event.preventDefault();
         event.stopPropagation();

@@ -3,16 +3,13 @@ import { focusChatInput } from '@/components/chat/composer/editor/dom';
 import { canUseElectronDesktopIPC, invokeDesktop } from '@/lib/desktop';
 import { ShortcutDispatcher, getEffectiveShortcutCombo, shortcutRegistry } from '@/lib/shortcuts';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { useDirectoryStore } from '@/stores/useDirectoryStore';
-import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useKeybinds } from './useKeybind';
+import { isEditableEventTarget } from './keyboard-shortcut-dom';
 
 export const useMiniChatKeyboardShortcuts = () => {
-  const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
-  const activeProject = useProjectsStore((state) => state.getActiveProject());
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
   const dispatcherRef = React.useRef<ShortcutDispatcher | null>(null);
 
@@ -53,18 +50,17 @@ export const useMiniChatKeyboardShortcuts = () => {
     new_mini_chat: () => {
       if (!canUseElectronDesktopIPC()) return false;
       void invokeDesktop('desktop_open_draft_mini_chat_window', {
-        directory: currentDirectory || activeProject?.path || '',
-        projectId: activeProject?.id ?? null,
+        directory: '',
+        projectId: null,
       })?.catch((error) => {
         console.warn('[mini-chat-shortcuts] failed to open draft mini chat window', error);
       });
     },
     new_chat: () => {
-      openNewSessionDraft({
-        selectedProjectId: activeProject?.id ?? null,
-        directoryOverride: currentDirectory || activeProject?.path || null,
-        preserveDirectoryOverride: Boolean(currentDirectory || activeProject?.path),
-      });
+      const sessionState = useSessionUIStore.getState();
+      openNewSessionDraft(sessionState.currentSessionId && sessionState.currentSessionDirectory
+        ? { directoryOverride: sessionState.currentSessionDirectory }
+        : undefined);
       focusChatInput();
     },
     open_model_selector: () => {
@@ -100,6 +96,17 @@ export const useMiniChatKeyboardShortcuts = () => {
   React.useEffect(() => {
     const handleActivePrefixKeyDownCapture = (event: KeyboardEvent) => {
       if (!dispatcher.hasActivePrefix()) return;
+      // An unmodified completion key typed into an editable target is only a
+      // deliberate sequence when the prefix was armed from that same target;
+      // otherwise it is regular typing and must not be swallowed.
+      if (
+        !event.ctrlKey && !event.metaKey && !event.altKey
+        && isEditableEventTarget(event.target)
+        && dispatcher.getActivePrefixTarget() !== event.target
+      ) {
+        dispatcher.clear();
+        return;
+      }
       if (dispatcher.dispatchActivePrefix(event)) {
         event.preventDefault();
         event.stopPropagation();

@@ -125,6 +125,7 @@ mock.module("@/lib/opencode/client", () => ({
       return mockScopedClient
     },
     getDirectory: () => "/test/project",
+    getFilesystemHome: mock(async () => "/home/test"),
     getSdkClient: () => mockSdk,
     replyToPermission: mock((requestId: string, reply: string, options?: { directory?: string | null }) => {
       replyCalls.push({ method: "permission.reply", params: { requestID: requestId, reply, directory: options?.directory } })
@@ -944,12 +945,12 @@ describe("optimisticSend target directory", () => {
   })
 
   test("commits the new branch locally and discards its optimistic shadow when sending after a revert", async () => {
-    const retainedMessage = { id: "msg_1", role: "user", sessionID: "session-reverted" } as Message
-    const revertedMessage = { id: "msg_2", role: "user", sessionID: "session-reverted" } as Message
+    const retainedMessage = { id: "msg_ffffffffffffRetained", role: "user", sessionID: "session-reverted", time: { created: 1 } } as Message
+    const revertedMessage = { id: "msg_000000000000Reverted", role: "user", sessionID: "session-reverted", time: { created: 2 } } as Message
     const targetStore = createStore({}, {
-      session: [{ id: "session-reverted", revert: { messageID: "msg_2" } } as Session],
+      session: [{ id: "session-reverted", revert: { messageID: revertedMessage.id } } as Session],
       message: { "session-reverted": [retainedMessage, revertedMessage] },
-      part: { msg_2: [{ id: "part_2", type: "text", text: "old branch" } as Part] },
+      part: { [revertedMessage.id]: [{ id: "part_2", type: "text", text: "old branch" } as Part] },
     })
     const childStores = createChildStores([["/target/project", targetStore]])
     let optimisticMessage: Message | null = null
@@ -981,22 +982,22 @@ describe("optimisticSend target directory", () => {
 
     expect(targetStore.getState().session[0].revert).toBe(undefined)
     expect(targetStore.getState().message["session-reverted"].map((message) => message.id)).toEqual([
-      "msg_1",
+      retainedMessage.id,
       (optimisticMessage as unknown as Message).id,
     ])
-    expect(targetStore.getState().part.msg_2).toBe(undefined)
+    expect(targetStore.getState().part[revertedMessage.id]).toBe(undefined)
     expect(optimisticShadow.has(revertedMessage.id)).toBe(false)
     expect(optimisticShadow.has((optimisticMessage as unknown as Message).id)).toBe(true)
   })
 
   test("restores the reverted branch when sending fails", async () => {
-    const retainedMessage = { id: "msg_1", role: "user", sessionID: "session-reverted" } as Message
-    const revertedMessage = { id: "msg_2", role: "user", sessionID: "session-reverted" } as Message
+    const retainedMessage = { id: "msg_ffffffffffffRetained", role: "user", sessionID: "session-reverted", time: { created: 1 } } as Message
+    const revertedMessage = { id: "msg_000000000000Reverted", role: "user", sessionID: "session-reverted", time: { created: 2 } } as Message
     const revertedPart = { id: "part_2", type: "text", text: "old branch" } as Part
     const targetStore = createStore({}, {
-      session: [{ id: "session-reverted", revert: { messageID: "msg_2" } } as Session],
+      session: [{ id: "session-reverted", revert: { messageID: revertedMessage.id } } as Session],
       message: { "session-reverted": [retainedMessage, revertedMessage] },
-      part: { msg_2: [revertedPart] },
+      part: { [revertedMessage.id]: [revertedPart] },
     })
     const childStores = createChildStores([["/target/project", targetStore]])
 
@@ -1022,12 +1023,12 @@ describe("optimisticSend target directory", () => {
       send: async () => { throw new Error("rejected") },
     })).rejects.toThrow("rejected")
 
-    expect(targetStore.getState().session[0].revert?.messageID).toBe("msg_2")
+    expect(targetStore.getState().session[0].revert?.messageID).toBe(revertedMessage.id)
     expect(targetStore.getState().message["session-reverted"]).toEqual([retainedMessage, revertedMessage])
-    expect(targetStore.getState().part.msg_2).toEqual([revertedPart])
+    expect(targetStore.getState().part[revertedMessage.id]).toEqual([revertedPart])
   })
 
-  test("allows callers to block final send when runtime changes after optimistic insert", async () => {
+  test("rolls back a captured send when the runtime changes after optimistic insert", async () => {
     const targetStore = createStore({})
     const childStores = createChildStores([["/target/project", targetStore]])
     let optimisticAdd: OptimisticAddCall | null = null
@@ -1052,15 +1053,15 @@ describe("optimisticSend target directory", () => {
       await optimisticSend({
         sessionId: "session-race",
         directory: "/target/project",
+        runtimeKey: "runtime-a",
         content: "hello",
         providerID: "provider",
         modelID: "model",
-        beforeOptimisticInsert: () => {
+        onOptimisticInsert: () => {
           expect(getRuntimeKey()).toBe("runtime-a")
+          switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-b.test", runtimeKey: "runtime-b" })
         },
         send: async () => {
-          switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-b.test", runtimeKey: "runtime-b" })
-          if (getRuntimeKey() !== "runtime-a") throw new Error("Auto-review stopped because the runtime changed.")
           finalSendCalled = true
         },
       })
@@ -1458,6 +1459,165 @@ describe("rejectQuestion passes directory", () => {
     expect(replyCalls.length).toBe(1)
     expect(replyCalls[0].params.requestID).toBe("q-2")
     expect(replyCalls[0].params.directory).toBe("/test/project")
+  })
+})
+
+describe("blocking request reply routing and stale recovery (issue OPE-236)", () => {
+  const materializationCalls: Array<{ directory: string; sessionID: string; messageID: string }> = []
+  const enqueueMaterialization = (directory: string, sessionID: string, messageID: string) => {
+    materializationCalls.push({ directory, sessionID, messageID })
+  }
+
+  beforeEach(() => {
+    replyCalls.length = 0
+    scopedClientDirectories.length = 0
+    questionReplyError = null
+    questionRejectError = null
+    materializationCalls.length = 0
+  })
+
+  test("routes the question reply by the request's own session directory, not the containing store key", async () => {
+    // The question was asked by a worktree session whose record lives in the
+    // parent store (containment). The reply must be addressed to the session's
+    // own server-confirmed directory — otherwise the server resolves the
+    // parent instance, does not find the pending question, and answers
+    // QuestionNotFoundError, leaving the session stuck on "asking question".
+    const question = buildQuestion("q-wt", "session-wt")
+    const store = createStore({}, {
+      session: [{ id: "session-wt", directory: "/test/project/wt" } as Session],
+      question: { "session-wt": [question] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, respondToQuestion } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project", enqueueMaterialization)
+
+    await respondToQuestion("session-wt", "q-wt", [["Yes"]])
+
+    expect(scopedClientDirectories).toEqual(["/test/project/wt"])
+    expect(replyCalls[0]?.params.directory).toBe("/test/project/wt")
+    expect(replyCalls[0]?.params.requestID).toBe("q-wt")
+  })
+
+  test("routes permission replies by the request's own session directory", async () => {
+    const permission = buildPermission("perm-wt", "session-wt")
+    const store = createStore(
+      { "session-wt": [permission] },
+      {
+        session: [{ id: "session-wt", directory: "/test/project/wt" } as Session],
+      },
+    )
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, respondToPermission } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project", enqueueMaterialization)
+
+    await respondToPermission("session-wt", "perm-wt", "once")
+
+    expect(scopedClientDirectories).toEqual(["/test/project/wt"])
+    expect(replyCalls[0]?.params.directory).toBe("/test/project/wt")
+    expect(replyCalls[0]?.params.requestID).toBe("perm-wt")
+  })
+
+  test("falls back to the containing store key when the session record carries no directory", async () => {
+    const question = buildQuestion("q-1", "session-a")
+    const store = createStore({}, {
+      session: [{ id: "session-a" } as Session],
+      question: { "session-a": [question] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, respondToQuestion } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project", enqueueMaterialization)
+
+    await respondToQuestion("session-a", "q-1", [["Yes"]])
+
+    expect(scopedClientDirectories).toEqual(["/test/project"])
+    expect(replyCalls[0]?.params.directory).toBe("/test/project")
+  })
+
+  test("enqueues settled-running-tool tail recovery when the question reply is not found", async () => {
+    const question = buildQuestion("q-stale", "session-a")
+    const store = createStore({}, {
+      session: [{ id: "session-a" } as Session],
+      question: { "session-a": [question] },
+      message: {
+        "session-a": [{ id: "msg-1", sessionID: "session-a", role: "assistant", time: { created: 1 } } as Message],
+      },
+      part: {
+        "msg-1": [{
+          id: "prt-1",
+          messageID: "msg-1",
+          sessionID: "session-a",
+          type: "tool",
+          tool: "question",
+          state: { status: "running" },
+        } as Part],
+      },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    questionReplyError = Object.assign(new Error("question.reply failed (404): QuestionNotFoundError"), { status: 404 })
+
+    const { setActionRefs, respondToQuestion } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project", enqueueMaterialization)
+
+    let thrown: unknown
+    try {
+      await respondToQuestion("session-a", "q-stale", [["Yes"]])
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(Error)
+    // The stale request is gone from the store and the trailing running tool
+    // part is reconciled instead of leaving the UI stuck on "asking question".
+    expect(store.getState().question["session-a"]).toBe(undefined)
+    expect(materializationCalls).toEqual([{ directory: "/test/project", sessionID: "session-a", messageID: "msg-1" }])
+  })
+
+  test("enqueues tail recovery on reject not-found but not on success", async () => {
+    const question = buildQuestion("q-1", "session-a")
+    const store = createStore({}, {
+      session: [{ id: "session-a" } as Session],
+      question: { "session-a": [question] },
+      message: {
+        "session-a": [{ id: "msg-1", sessionID: "session-a", role: "assistant", time: { created: 1 } } as Message],
+      },
+      part: {
+        "msg-1": [{
+          id: "prt-1",
+          messageID: "msg-1",
+          sessionID: "session-a",
+          type: "tool",
+          tool: "question",
+          state: { status: "running" },
+        } as Part],
+      },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, rejectQuestion } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project", enqueueMaterialization)
+
+    // Success: no recovery enqueued — the normal question.rejected event flow clears state.
+    await rejectQuestion("session-a", "q-1")
+    expect(materializationCalls).toEqual([])
+
+    // Not-found: the request is stale server-side; the tail must be reconciled.
+    questionRejectError = Object.assign(new Error("question.reject failed (404): QuestionNotFoundError"), { status: 404 })
+    const stale = buildQuestion("q-stale", "session-a")
+    store.setState({ question: { "session-a": [stale] } })
+
+    let thrown: unknown
+    try {
+      await rejectQuestion("session-a", "q-stale")
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(Error)
+    expect(store.getState().question["session-a"]).toBe(undefined)
+    expect(materializationCalls).toEqual([{ directory: "/test/project", sessionID: "session-a", messageID: "msg-1" }])
   })
 })
 

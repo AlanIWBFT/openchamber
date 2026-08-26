@@ -15,7 +15,9 @@ type AsChildRenderProps = {
 
 type DropdownPortalContextValue = {
   portalContainer: HTMLElement | null;
+  collisionBoundary: Element | null;
   setPortalContainer: (container: HTMLElement | null) => void;
+  setCollisionBoundary: (boundary: Element | null) => void;
 };
 
 const DropdownPortalContext = React.createContext<DropdownPortalContextValue | null>(null);
@@ -46,12 +48,15 @@ function DropdownMenu({
   ...props
 }: DropdownMenuProps) {
   const [portalContainer, setPortalContainer] = React.useState<HTMLElement | null>(null);
+  const [collisionBoundary, setCollisionBoundary] = React.useState<Element | null>(null);
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen ?? false);
   const isOpen = open ?? uncontrolledOpen;
   const portalContextValue = React.useMemo<DropdownPortalContextValue>(() => ({
     portalContainer,
+    collisionBoundary,
     setPortalContainer,
-  }), [portalContainer]);
+    setCollisionBoundary,
+  }), [collisionBoundary, portalContainer]);
 
   React.useLayoutEffect(() => {
     if (!disableGlobalShortcuts || !isOpen) return;
@@ -89,6 +94,7 @@ function DropdownMenuTrigger({
     }
     const element = target instanceof HTMLElement ? target : null;
     portalContext.setPortalContainer(resolveDialogContainer(element));
+    portalContext.setCollisionBoundary(element?.closest('main') ?? null);
   }, [portalContext]);
 
   const r = renderFromAsChild(asChild, children);
@@ -116,6 +122,8 @@ type ContentProps = {
   alignOffset?: number;
   portalToBody?: boolean;
   positionerClassName?: string;
+  constrainToMain?: boolean;
+  collisionAvoidance?: React.ComponentProps<typeof BaseMenu.Positioner>["collisionAvoidance"];
   style?: React.CSSProperties;
   className?: string;
   children?: React.ReactNode;
@@ -130,6 +138,8 @@ function DropdownMenuContent({
   alignOffset,
   portalToBody = false,
   positionerClassName,
+  constrainToMain = false,
+  collisionAvoidance,
   style,
   children,
   onCloseAutoFocus,
@@ -157,12 +167,13 @@ function DropdownMenuContent({
         align={align}
         side={side}
         alignOffset={alignOffset}
+        collisionBoundary={constrainToMain ? portalContext?.collisionBoundary ?? undefined : undefined}
+        collisionAvoidance={collisionAvoidance}
         className={cn("app-region-no-drag z-50", positionerClassName)}
       >
         <BaseMenu.Popup
           data-slot="dropdown-menu-content"
           style={{
-            backgroundColor: 'var(--surface-elevated)',
             color: 'var(--surface-elevated-foreground)',
             ...style,
           }}
@@ -320,7 +331,6 @@ function DropdownMenuSubContent({
         <BaseMenu.Popup
           data-slot="dropdown-menu-sub-content"
           style={{
-            backgroundColor: 'var(--surface-elevated)',
             color: 'var(--surface-elevated-foreground)',
           }}
           className={cn(
