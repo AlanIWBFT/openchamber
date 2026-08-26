@@ -258,7 +258,12 @@ div[data-chat-input-footer="true"] {
 
 /* Scroll shadow (HeroUI) fallback styling to ensure visible gradients without the Tailwind plugin */
 [data-scroll-shadow="true"] {
-  --scroll-shadow-size: var(--scroll-shadow-size, 48px);
+  /* A concrete default, not var(--scroll-shadow-size, 48px): a custom
+     property referencing itself is a cycle and computes to invalid, which
+     silently killed every mask below for consumers that don't set the
+     variable inline (the hook-based chat scroller). Inline styles from the
+     ScrollShadow component still override this. */
+  --scroll-shadow-size: 48px;
 }
 
 [data-scroll-shadow="true"][data-orientation="vertical"] {
@@ -652,28 +657,30 @@ html:not(.dark) .chat-scroll {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  opacity: 0;
   transition: opacity 0.2s ease;
   /* Above sticky zone headers (z-20) — the thumb must never dive under
      a stuck sidebar header while scrolling. */
   z-index: 30;
 }
 
-.overlay-scrollbar--dense,
-.overlay-scrollbar--bottom-right,
-.overlay-scrollbar--zero,
-.overlay-scrollbar--flush {
-  /* no-op: positioning handled inline */
+.overlay-scrollbar[data-visible="true"] {
+  opacity: 1;
 }
 
 .overlay-scrollbar__thumb {
-  pointer-events: auto;
+  pointer-events: none;
   position: absolute;
   width: 6px;
   background: var(--oc-scrollbar-thumb);
   border-radius: 9999px;
   opacity: 0.8;
   transition: background-color 0.15s ease, opacity 0.15s ease;
-  will-change: transform, height;
+  will-change: transform;
+}
+
+.overlay-scrollbar[data-visible="true"] .overlay-scrollbar__thumb {
+  pointer-events: auto;
 }
 
 .overlay-scrollbar__thumb:hover,
@@ -888,15 +895,15 @@ html:not(.dark) .chat-scroll {
 }
 
 /* Hide the long active todo before it can collide with the changed-files summary. */
-@container status-row (max-width: 38rem) {
-  .status-row__active-todo {
+@container composer-status-bar (max-width: 38rem) {
+  .composer-status-bar__active-todo {
     display: none;
   }
 }
 
 /* Hide the secondary changed-files label on narrow mobile layouts. */
-@container status-row (max-width: 30rem) {
-  .status-row__changed-label {
+@container composer-status-bar (max-width: 30rem) {
+  .composer-status-bar__changed-label {
     display: none;
   }
 }
@@ -1354,6 +1361,64 @@ html:not(.dark) .chat-scroll {
   grid-template-columns: 2rem minmax(0, 1fr);
   column-gap: 0.75rem;
   min-width: 100%;
+}
+
+/* First uncached open of a session shows a hydration skeleton; the real
+   timeline replacing it fades in once instead of popping. Cached session
+   switches never carry this class and stay instant. */
+@keyframes oc-chat-hydration-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.oc-chat-hydration-reveal {
+  animation: oc-chat-hydration-reveal 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-chat-hydration-reveal {
+    animation: none;
+  }
+}
+
+/* A block committed mid-stream enters with a fade and a gentle rise —
+   compositor-only properties, deliberately nothing heavier: during a long
+   stream the follow scroll masks the entrance anyway, so the effect only
+   really shows on short replies, and those must not pay for a GPU filter.
+   Blocks committed in the same tick cascade via --oc-md-enter-delay set
+   inline by the renderer. */
+@keyframes oc-md-block-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.oc-md-block-enter {
+  animation: oc-md-block-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--oc-md-enter-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-md-block-enter {
+    animation: none;
+  }
+}
+
+/* While streaming defers the per-line gutter markup, hold its horizontal
+   footprint (2rem column + 0.75rem gap) so the finished pass only fills in
+   the numbers instead of shifting every code line. */
+.markdown-content pre[data-md-gutter-reserved] > code {
+  display: block;
+  padding-left: 2.75rem;
 }
 
 .markdown-content [data-md-code-line-number] {
