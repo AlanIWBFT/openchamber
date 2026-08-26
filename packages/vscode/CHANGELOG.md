@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 - The context usage readout now reports the session cost including everything its subagents spent, matching the work status panel instead of showing a lower figure.
+- The chat view no longer stays stuck on its loading screen on slow or remote connections (for example code-server behind a reverse proxy) — the connection status is re-sent until the webview is ready to hear it (thanks @VinciYan).
 - **Chat context attachments:** diff and file comments, terminal selections, and linked issues/PRs now show in the conversation as compact context cards — source header, captured content behind an expander, your comment below — instead of raw text inside the message.
 - **Chat: comment on a reply.** Select text in a chat message and choose Comment to attach that quote with your note to the next message; the selection stays highlighted while you type. Add to chat is now Add to input.
 - Diff: hovering a line shows a + button that opens a comment for the line; clicking a line or dragging across lines opens the editor for that range. The comment editor and saved-comment cards match the chat's comment style.
