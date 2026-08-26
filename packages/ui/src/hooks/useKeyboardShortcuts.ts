@@ -1,7 +1,8 @@
 import React from 'react';
 import { isTerminalEventTarget } from '@/lib/terminalFocus';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { activateSessionTabByIndex, closeSessionTabAndActivateNeighbour } from '@/lib/sessionTabs';
+import { activateAdjacentSessionTab, activateSessionTabByIndex, closeSessionTabAndActivateNeighbour } from '@/lib/sessionTabs';
+import { navigateSessionHistory } from '@/lib/sessionNavigationHistory';
 import { useSelectionStore } from '@/sync/selection-store';
 import * as sessionActions from '@/sync/session-actions';
 import { normalizeContextPanelDirectoryKey, useUIStore } from '@/stores/useUIStore';
@@ -168,6 +169,14 @@ export const useKeyboardShortcuts = () => {
       }).catch((error) => {
         console.warn('[keyboard-shortcuts] failed to open draft mini chat window', error);
       });
+    },
+    switch_session_previous: () => {
+      if (!isVSCodeRuntime() && useUIStore.getState().sessionTabsEnabled && activateAdjacentSessionTab(-1)) return;
+      return navigateSessionHistory(-1) ? undefined : false;
+    },
+    switch_session_next: () => {
+      if (!isVSCodeRuntime() && useUIStore.getState().sessionTabsEnabled && activateAdjacentSessionTab(1)) return;
+      return navigateSessionHistory(1) ? undefined : false;
     },
     close_session_tab: () => {
       if (isVSCodeRuntime() || !useUIStore.getState().sessionTabsEnabled) return false;

@@ -50,6 +50,7 @@ import { scoreByFuzzyQuery } from '@/lib/search/fuzzySearch';
 import { truncatePathMiddle } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { sessionEvents } from '@/lib/sessionEvents';
+import { copyTextToClipboard } from '@/lib/clipboard';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { buildCommandPaletteFileSearchKey, scoreCommandPaletteFiles } from './commandPaletteFilesState';
 
@@ -59,6 +60,9 @@ type CommandEntry = {
   icon: React.ReactNode;
   shortcutId?: string;
   searchText: string;
+  /** Search-only command: reachable by typing, hidden from the initial list
+      so the first screen stays scroll-free. */
+  secondary?: boolean;
   onSelect: () => void;
 };
 
@@ -90,9 +94,14 @@ export const CommandPalette: React.FC = () => {
   const openContextSurface = useUIStore((s) => s.openContextSurface);
   const openContextFile = useUIStore((s) => s.openContextFile);
   const shortcutOverrides = useUIStore((s) => s.shortcutOverrides);
+  const openMultiRunLauncher = useUIStore((s) => s.openMultiRunLauncher);
+  const setArchivePageOpen = useUIStore((s) => s.setArchivePageOpen);
+  const setProjectContextTab = useUIStore((s) => s.setProjectContextTab);
 
   const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
   const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
+  const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
+  const togglePinnedSession = useSessionPinnedStore((s) => s.toggle);
 
   const activeSessions = useGlobalSessionsStore(React.useCallback(
     (state) => isCommandPaletteOpen ? state.activeSessions : EMPTY_SESSIONS,
@@ -233,6 +242,7 @@ export const CommandPalette: React.FC = () => {
       },
       {
         id: 'cycle-theme',
+        secondary: true,
         title: t('commandPalette.item.cycleTheme'),
         icon: <Icon name="palette" className="mr-2 h-4 w-4" />,
         shortcutId: 'cycle_theme',
@@ -243,6 +253,7 @@ export const CommandPalette: React.FC = () => {
       },
       {
         id: 'open-status',
+        secondary: true,
         title: t('commandPalette.item.showOpenCodeStatus'),
         icon: <Icon name="pulse" className="mr-2 h-4 w-4" />,
         searchText: t('commandPalette.item.showOpenCodeStatus'),
@@ -259,8 +270,90 @@ export const CommandPalette: React.FC = () => {
         onSelect: run(() => setSettingsDialogOpen(true)),
       },
     ];
+    list.push(
+      {
+        id: 'pin-session',
+        secondary: true,
+        title: t('commandPalette.item.pinSession'),
+        icon: <Icon name="pushpin" className="mr-2 h-4 w-4" />,
+        searchText: t('commandPalette.item.pinSession'),
+        onSelect: run(() => {
+          if (currentSessionId && currentDirectory) {
+            togglePinnedSession({ directory: currentDirectory, sessionId: currentSessionId });
+          }
+        }),
+      },
+      {
+        id: 'copy-session-id',
+        secondary: true,
+        title: t('commandPalette.item.copySessionId'),
+        icon: <Icon name="file-copy" className="mr-2 h-4 w-4" />,
+        searchText: t('commandPalette.item.copySessionId'),
+        onSelect: run(() => {
+          if (!currentSessionId) return;
+          void copyTextToClipboard(currentSessionId)
+            .then((result) => {
+              if (result.ok) {
+                toast.success(t('sessions.sidebar.session.copyId.success'));
+                return;
+              }
+              toast.error(t('sessions.sidebar.session.copyId.error'));
+            })
+            .catch(() => toast.error(t('sessions.sidebar.session.copyId.error')));
+        }),
+      },
+      {
+        id: 'open-multi-run',
+        secondary: true,
+        title: t('commandPalette.item.openMultiRun'),
+        icon: <Icon name="checkbox-multiple" className="mr-2 h-4 w-4" />,
+        searchText: t('commandPalette.item.openMultiRun'),
+        onSelect: run(() => {
+          setSessionSwitcherOpen(false);
+          openMultiRunLauncher();
+        }),
+      },
+      {
+        id: 'open-archive',
+        secondary: true,
+        title: t('commandPalette.item.openArchive'),
+        icon: <Icon name="archive" className="mr-2 h-4 w-4" />,
+        searchText: t('commandPalette.item.openArchive'),
+        onSelect: run(() => {
+          setSessionSwitcherOpen(false);
+          setArchivePageOpen(true);
+        }),
+      },
+      {
+        id: 'open-notes',
+        secondary: true,
+        title: t('commandPalette.item.openNotes'),
+        icon: <Icon name="sticky-note" className="mr-2 h-4 w-4" />,
+        searchText: t('commandPalette.item.openNotes'),
+        onSelect: run(() => {
+          if (currentDirectory) {
+            setProjectContextTab('notes');
+            openContextSurface(currentDirectory, 'notes');
+          }
+        }),
+      },
+      {
+        id: 'open-todos',
+        secondary: true,
+        title: t('commandPalette.item.openTodos'),
+        icon: <Icon name="checkbox-circle" className="mr-2 h-4 w-4" />,
+        searchText: t('commandPalette.item.openTodos'),
+        onSelect: run(() => {
+          if (currentDirectory) {
+            setProjectContextTab('todos');
+            openContextSurface(currentDirectory, 'notes');
+          }
+        }),
+      },
+    );
     list.push({
       id: 'toggle-memory-debug',
+      secondary: true,
       title: t('commandPalette.item.toggleMemoryDebug'),
       icon: <Icon name="bug" className="mr-2 h-4 w-4" />,
       searchText: t('commandPalette.item.toggleMemoryDebug'),
@@ -299,6 +392,11 @@ export const CommandPalette: React.FC = () => {
     setSettingsDialogOpen,
     activeProject?.id,
     activeProject?.path,
+    currentSessionId,
+    togglePinnedSession,
+    openMultiRunLauncher,
+    setArchivePageOpen,
+    setProjectContextTab,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -407,7 +505,9 @@ export const CommandPalette: React.FC = () => {
   const hasQuery = liveTrimmed.length > 0;
 
   const scoredCommands = React.useMemo(() => {
-    if (!hasQuery) return commands.map((item) => ({ item, score: 0 }));
+    if (!hasQuery) {
+      return commands.filter((item) => !item.secondary).map((item) => ({ item, score: 0 }));
+    }
     return scoreByFuzzyQuery(commands, liveTrimmed, (c) => c.searchText, {
       limit: 7,
       noFuzzy: true,

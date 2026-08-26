@@ -1463,6 +1463,10 @@ export const Header: React.FC = () => {
 
 
   useKeybinds({
+    rename_current_session: () => {
+      if (!currentSessionId || isMobile) return false;
+      beginHeaderSessionRename();
+    },
     toggle_services_menu: () => {
       if (isDesktopServicesOpen) {
         setIsDesktopServicesOpen(false);
