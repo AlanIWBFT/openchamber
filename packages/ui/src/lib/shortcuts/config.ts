@@ -219,16 +219,6 @@ const SHORTCUT_GROUPS = {
       settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.cycle_services_tab.label',
     },
-    { id: 'switch_tab_1', defaultBinding: 'mod+1', customizable: false },
-    // Mobile tab shortcuts may share numeric bindings with desktop-only panel commands.
-    { id: 'switch_tab_2', defaultBinding: 'mod+2', customizable: false },
-    { id: 'switch_tab_3', defaultBinding: 'mod+3', customizable: false },
-    { id: 'switch_tab_4', defaultBinding: 'mod+4', customizable: false },
-    { id: 'switch_tab_5', defaultBinding: 'mod+5', customizable: false },
-    { id: 'switch_tab_6', defaultBinding: 'mod+6', customizable: false },
-    { id: 'switch_tab_7', defaultBinding: 'mod+7', customizable: false },
-    { id: 'switch_tab_8', defaultBinding: 'mod+8', customizable: false },
-    { id: 'switch_tab_9', defaultBinding: 'mod+9', customizable: false },
   ],
   application: [
     {
