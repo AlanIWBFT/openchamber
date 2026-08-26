@@ -5,7 +5,6 @@ type ShortcutCategory = 'session' | 'models' | 'panels' | 'navigation' | 'applic
 type ShortcutConfig = {
   id: string;
   defaultBinding: ShortcutCombo;
-  allowsSequenceFallback?: true;
   /** The binding is a bare-modifier chord prefix (completed by another key);
       conflict resolution compares its prefix rather than a full combo. */
   prefixStyle?: true;
@@ -17,12 +16,18 @@ type ShortcutConfig = {
     }
 );
 
+// Default layout, unified around three modes:
+// - Single chords for everyday actions.
+// - The mod+k leader for "open/go" actions, second key mnemonic.
+// - Held mod + digit switches header session tabs; held mod+alt + digit
+//   switches context panel surfaces (mod+shift+digit is reserved by macOS
+//   screenshots).
+// Everything else lives only in the command palette, outside this schema.
 const SHORTCUT_GROUPS = {
   session: [
     {
       id: 'add_selection_to_chat',
       defaultBinding: 'mod+l',
-      allowsSequenceFallback: true,
       customizable: true,
       settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.add_selection_to_chat.label',
@@ -35,7 +40,7 @@ const SHORTCUT_GROUPS = {
     },
     {
       id: 'open_timeline_dialog',
-      defaultBinding: 'mod+t',
+      defaultBinding: 'mod+k t',
       customizable: true,
       settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.open_timeline_dialog.label',
@@ -54,21 +59,21 @@ const SHORTCUT_GROUPS = {
     },
     {
       id: 'open_draft_project_picker',
-      defaultBinding: 'mod+s p',
+      defaultBinding: 'mod+k p',
       customizable: true,
       settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.open_draft_project_picker.label',
     },
     {
       id: 'open_draft_worktree_picker',
-      defaultBinding: 'mod+s g',
+      defaultBinding: 'mod+k g',
       customizable: true,
       settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.open_draft_worktree_picker.label',
     },
     {
       id: 'open_session_list',
-      defaultBinding: 'mod+s l',
+      defaultBinding: 'mod+k l',
       customizable: true,
       settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.open_session_list.label',
@@ -146,78 +151,51 @@ const SHORTCUT_GROUPS = {
     },
     {
       id: 'toggle_sidebar',
-      defaultBinding: 'mod+alt+l',
+      defaultBinding: 'mod+b',
       customizable: true,
       settingsLabelKey: 'settings.openchamber.keyboardShortcuts.action.toggle_sidebar.label',
     },
     {
       id: 'toggle_prompt_navigator',
-      defaultBinding: 'mod+alt+p',
+      defaultBinding: 'mod+k n',
       customizable: true,
       settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.toggle_prompt_navigator.label',
     },
     {
-      id: 'toggle_right_sidebar',
-      defaultBinding: 'mod+b',
-      customizable: true,
-      settingsLabelKey:
-        'settings.openchamber.keyboardShortcuts.action.toggle_right_sidebar.label',
-    },
-    {
-      id: 'open_right_sidebar_git',
-      defaultBinding: 'mod+shift+g',
-      customizable: true,
-      settingsLabelKey:
-        'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_git.label',
-    },
-    {
-      id: 'open_right_sidebar_files',
-      defaultBinding: 'mod+shift+f',
-      customizable: true,
-      settingsLabelKey:
-        'settings.openchamber.keyboardShortcuts.action.open_right_sidebar_files.label',
-    },
-    {
-      id: 'switch_context_surface',
+      id: 'switch_session_tab',
       defaultBinding: 'mod',
       // The binding is a bare modifier acting as a chord prefix (completed by
       // a digit); conflict resolution must compare its PREFIX, not a combo.
       prefixStyle: true,
       customizable: true,
       settingsLabelKey:
+        'settings.openchamber.keyboardShortcuts.action.switch_session_tab.label',
+    },
+    {
+      id: 'switch_context_surface',
+      defaultBinding: 'mod+alt',
+      prefixStyle: true,
+      customizable: true,
+      settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.switch_context_surface.label',
     },
     {
-      id: 'toggle_context_plan',
-      defaultBinding: 'mod+shift+p',
-      customizable: true,
-      settingsLabelKey:
-        'settings.openchamber.keyboardShortcuts.action.toggle_context_plan.label',
-    },
-    {
       id: 'toggle_services_menu',
-      defaultBinding: 'mod+shift+s',
+      defaultBinding: 'mod+k i',
       customizable: true,
       settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.toggle_services_menu.label',
     },
   ],
   navigation: [
-    { id: 'save_file', defaultBinding: 'mod+s', customizable: false, allowsSequenceFallback: true },
+    { id: 'save_file', defaultBinding: 'mod+s', customizable: false },
     { id: 'find_in_file', defaultBinding: 'mod+f', customizable: false },
     {
       id: 'open_go_to_line',
       defaultBinding: 'alt+g',
       customizable: true,
       settingsLabelKey: 'settings.openchamber.keyboardShortcuts.action.open_go_to_line.label',
-    },
-    {
-      id: 'cycle_services_tab',
-      defaultBinding: 'mod+shift+[',
-      customizable: true,
-      settingsLabelKey:
-        'settings.openchamber.keyboardShortcuts.action.cycle_services_tab.label',
     },
   ],
   application: [
@@ -228,7 +206,6 @@ const SHORTCUT_GROUPS = {
       settingsLabelKey:
         'settings.openchamber.keyboardShortcuts.action.open_command_palette.label',
     },
-    { id: 'open_status', defaultBinding: 'mod+shift+o', customizable: false },
     {
       id: 'open_settings',
       defaultBinding: 'mod+comma',
@@ -237,17 +214,16 @@ const SHORTCUT_GROUPS = {
     },
     {
       id: 'open_help',
-      defaultBinding: 'mod+.',
+      defaultBinding: 'mod+k h',
       customizable: true,
       settingsLabelKey: 'settings.openchamber.keyboardShortcuts.action.open_help.label',
     },
     {
       id: 'cycle_theme',
-      defaultBinding: 'mod+/',
+      defaultBinding: 'mod+k c',
       customizable: true,
       settingsLabelKey: 'settings.openchamber.keyboardShortcuts.action.cycle_theme.label',
     },
-    { id: 'toggle_memory_debug', defaultBinding: 'mod+shift+d', customizable: false },
   ],
 } as const satisfies Record<ShortcutCategory, readonly ShortcutConfig[]>;
 

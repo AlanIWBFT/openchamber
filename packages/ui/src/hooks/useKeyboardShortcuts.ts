@@ -1,7 +1,7 @@
 import React from 'react';
 import { isTerminalEventTarget } from '@/lib/terminalFocus';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { closeSessionTabAndActivateNeighbour } from '@/lib/sessionTabs';
+import { activateSessionTabByIndex, closeSessionTabAndActivateNeighbour } from '@/lib/sessionTabs';
 import { useSelectionStore } from '@/sync/selection-store';
 import * as sessionActions from '@/sync/session-actions';
 import { normalizeContextPanelDirectoryKey, useUIStore } from '@/stores/useUIStore';
@@ -11,13 +11,14 @@ import { useKeybinds } from '@/hooks/useKeybind';
 import { createWorktreeSession } from '@/lib/worktreeSessionCreator';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { canUseElectronDesktopIPC, invokeDesktop, isVSCodeRuntime } from '@/lib/desktop';
-import { showOpenCodeStatus } from '@/lib/openCodeStatus';
 import {
   eventMatchesShortcut,
   eventMatchesShortcutPrefix,
   getEffectiveShortcutCombo,
   getEffectiveShortcutPrefix,
   normalizeCombo,
+  resolveShortcutEventDigit,
+  resolveShortcutEventKey,
   ShortcutDispatcher,
   shortcutRegistry,
   type ShortcutActionId,
@@ -123,8 +124,18 @@ export const useKeyboardShortcuts = () => {
     },
     open_session_list: () => {
       const state = useUIStore.getState();
-      if (state.isMobile) state.setSessionSwitcherOpen(true);
-      else state.setSessionDropdownOpen(true);
+      if (state.isMobile) {
+        state.setSessionSwitcherOpen(true);
+        return;
+      }
+      // The switcher dropdown only mounts while the sidebar is collapsed;
+      // with the sidebar visible the list is already on screen, so the
+      // shortcut opens the sidebar's session search instead.
+      if (state.isSidebarOpen) {
+        window.dispatchEvent(new CustomEvent('openchamber:sidebar-session-search'));
+        return;
+      }
+      state.setSessionDropdownOpen(true);
     },
     toggle_prompt_navigator: () => {
       const state = useUIStore.getState();
@@ -145,9 +156,6 @@ export const useKeyboardShortcuts = () => {
         return false;
       }
       state.togglePromptNavigatorPanel();
-    },
-    open_status: () => {
-      void showOpenCodeStatus();
     },
     open_help: () => {
       useUIStore.getState().toggleHelpDialog();
@@ -229,25 +237,6 @@ export const useKeyboardShortcuts = () => {
       if (sessionId) {
         useSelectionStore.getState().saveSessionAgentSelection(sessionId, next);
       }
-    },
-    toggle_right_sidebar: () => {
-      const state = useUIStore.getState();
-      if (state.isMobile || !currentDirectory) return false;
-      const directory = normalizeContextPanelDirectoryKey(currentDirectory);
-      const panel = state.contextPanelByDirectory[directory];
-      if (panel?.isOpen) state.closeContextPanel(directory);
-      else if (panel?.activeTabId) state.setActiveContextPanelTab(directory, panel.activeTabId);
-      else state.openContextSurface(directory, 'git');
-    },
-    open_right_sidebar_git: () => {
-      const state = useUIStore.getState();
-      if (state.isMobile || !currentDirectory) return false;
-      state.openContextSurface(normalizeContextPanelDirectoryKey(currentDirectory), 'git');
-    },
-    open_right_sidebar_files: () => {
-      const state = useUIStore.getState();
-      if (state.isMobile || !currentDirectory) return false;
-      state.openContextSurface(normalizeContextPanelDirectoryKey(currentDirectory), 'file');
     },
     toggle_terminal: () => {
       if (useUIStore.getState().isMobile) return false;
@@ -482,8 +471,9 @@ export const useKeyboardShortcuts = () => {
         return;
       }
 
-      const switchSurfaceDigit = event.key.length === 1 && event.key >= '0' && event.key <= '9'
-        ? (event.key === '0' ? 10 : Number(event.key))
+      const rawDigit = resolveShortcutEventDigit(event);
+      const switchSurfaceDigit = rawDigit !== null
+        ? (rawDigit === '0' ? 10 : Number(rawDigit))
         : null;
       const switchSurfacePrefix = getEffectiveShortcutPrefix(
         'switch_context_surface',
@@ -514,13 +504,32 @@ export const useKeyboardShortcuts = () => {
         }
       }
 
+      const sessionTabDigit = rawDigit !== null && rawDigit !== '0' ? Number(rawDigit) : null;
+      if (
+        sessionTabDigit !== null
+        && !event.repeat
+        && !isVSCodeRuntime()
+        && useUIStore.getState().sessionTabsEnabled
+        && eventMatchesShortcutPrefix(
+          event,
+          getEffectiveShortcutPrefix('switch_session_tab', useUIStore.getState().shortcutOverrides),
+          heldKeysRef.current,
+        )
+        && activateSessionTabByIndex(sessionTabDigit - 1)
+      ) {
+        event.preventDefault();
+        return;
+      }
+
       if (dispatcher.dispatch(event)) event.preventDefault();
     };
     const handleKeyHoldDown = (event: KeyboardEvent) => {
       heldKeysRef.current.add(event.key.toLowerCase());
+      heldKeysRef.current.add(resolveShortcutEventKey(event).toLowerCase());
     };
     const handleKeyUp = (event: KeyboardEvent) => {
       heldKeysRef.current.delete(event.key.toLowerCase());
+      heldKeysRef.current.delete(resolveShortcutEventKey(event).toLowerCase());
     };
     const handleBlur = () => {
       heldKeysRef.current.clear();

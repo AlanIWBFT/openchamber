@@ -10,6 +10,7 @@ import { Icon } from "@/components/icon/Icon";
 import { useUIStore } from "@/stores/useUIStore";
 import {
   getEffectiveShortcutCombo,
+  getEffectiveShortcutPrefix,
   getShortcutAction,
   formatShortcutForDisplay,
   type ShortcutActionId,
@@ -157,24 +158,6 @@ export const HelpDialog: React.FC = () => {
       categoryKey: "helpDialog.section.panels",
       items: [
         {
-          id: 'toggle_right_sidebar',
-          descriptionKey: 'helpDialog.item.toggleRightSidebar',
-          icon: "layout-right",
-          keys: '',
-        },
-        {
-          id: 'open_right_sidebar_git',
-          descriptionKey: 'helpDialog.item.openRightSidebarGitTab',
-          icon: "git-branch",
-          keys: '',
-        },
-        {
-          id: 'open_right_sidebar_files',
-          descriptionKey: 'helpDialog.item.openRightSidebarFilesTab',
-          icon: "layout-right",
-          keys: '',
-        },
-        {
           id: 'toggle_terminal',
           descriptionKey: 'helpDialog.item.toggleTerminalDock',
           icon: "window",
@@ -187,14 +170,13 @@ export const HelpDialog: React.FC = () => {
           keys: '',
         },
         {
-          id: 'toggle_context_plan',
-          descriptionKey: 'helpDialog.item.togglePlanContextPanel',
-          icon: "time",
-          keys: '',
+          keys: [`${formatShortcutForDisplay(getEffectiveShortcutPrefix('switch_context_surface', shortcutOverrides))} + 1...0`],
+          descriptionKey: "helpDialog.item.switchContextSurface",
+          icon: "layout-right",
         },
         {
-          keys: [`${formatShortcutForDisplay('mod')} + 1...0`],
-          descriptionKey: "helpDialog.item.switchContextSurface",
+          keys: [`${formatShortcutForDisplay(getEffectiveShortcutPrefix('switch_session_tab', shortcutOverrides))} + 1...9`],
+          descriptionKey: "helpDialog.item.switchSessionTab",
           icon: "layout-right",
         },
       ],
@@ -211,12 +193,6 @@ export const HelpDialog: React.FC = () => {
         {
           id: 'toggle_services_menu',
           descriptionKey: 'helpDialog.item.toggleServicesMenu',
-          icon: "stack",
-          keys: '',
-        },
-        {
-          id: 'cycle_services_tab',
-          descriptionKey: 'helpDialog.item.cycleServicesTab',
           icon: "stack",
           keys: '',
         },
@@ -258,6 +234,12 @@ export const HelpDialog: React.FC = () => {
                       const descriptionKey = shortcut.descriptionKey
                         ?? (action?.customizable ? action.settingsLabelKey : undefined);
                       if (!descriptionKey) return null;
+                      // This dialog lists what the keyboard can do right now;
+                      // an action without a binding belongs to the command
+                      // palette and Settings, not here.
+                      if (shortcut.id && !getEffectiveShortcutCombo(shortcut.id, shortcutOverrides)) {
+                        return null;
+                      }
                       const displayKeys = shortcut.id
                         ? renderShortcut(
                             shortcut.id,
@@ -320,7 +302,7 @@ export const HelpDialog: React.FC = () => {
                     • {t('helpDialog.proTips.recentSessions')}
                   </li>
                   <li>
-                    • {t('helpDialog.proTips.themeCycling')}
+                    • {t('helpDialog.proTips.leaderSequences')}
                   </li>
                 </ul>
               </div>

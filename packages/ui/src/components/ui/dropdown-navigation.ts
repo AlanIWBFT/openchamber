@@ -2,16 +2,18 @@ import type React from 'react';
 
 import { isIMECompositionEvent } from '@/lib/ime';
 
-function getDropdownNavigationKey(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>): 'ArrowDown' | 'ArrowUp' | null {
+function getDropdownNavigationKey(event: Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>): 'ArrowDown' | 'ArrowUp' | null {
   if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return null;
-  if (event.key.toLowerCase() === 'n') return 'ArrowDown';
-  if (event.key.toLowerCase() === 'p') return 'ArrowUp';
+  // `code` covers non-Latin layouts, where `key` is the layout's own letter.
+  if (event.key.toLowerCase() === 'n' || event.code === 'KeyN') return 'ArrowDown';
+  if (event.key.toLowerCase() === 'p' || event.code === 'KeyP') return 'ArrowUp';
   return null;
 }
 
 type DropdownNavigationEvent = Pick<
   React.KeyboardEvent<HTMLElement>,
   | 'altKey'
+  | 'code'
   | 'ctrlKey'
   | 'defaultPrevented'
   | 'isPropagationStopped'

@@ -37,7 +37,8 @@ import { toast } from '@/components/ui';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { createWorktreeSession } from '@/lib/worktreeSessionCreator';
-import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
+import { formatShortcutForDisplay, getEffectiveShortcutCombo, shortcutRegistry } from '@/lib/shortcuts';
+import { showOpenCodeStatus } from '@/lib/openCodeStatus';
 import { canUseElectronDesktopIPC, invokeDesktop, isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { SETTINGS_PAGE_METADATA, type SettingsRuntimeContext } from '@/lib/settings/metadata';
 
@@ -231,6 +232,25 @@ export const CommandPalette: React.FC = () => {
         }),
       },
       {
+        id: 'cycle-theme',
+        title: t('commandPalette.item.cycleTheme'),
+        icon: <Icon name="palette" className="mr-2 h-4 w-4" />,
+        shortcutId: 'cycle_theme',
+        searchText: t('commandPalette.item.cycleTheme'),
+        onSelect: run(() => {
+          shortcutRegistry.invoke('cycle_theme');
+        }),
+      },
+      {
+        id: 'open-status',
+        title: t('commandPalette.item.showOpenCodeStatus'),
+        icon: <Icon name="pulse" className="mr-2 h-4 w-4" />,
+        searchText: t('commandPalette.item.showOpenCodeStatus'),
+        onSelect: run(() => {
+          void showOpenCodeStatus();
+        }),
+      },
+      {
         id: 'open-settings',
         title: t('commandPalette.item.openSettings'),
         icon: <Icon name="settings-3" className="mr-2 h-4 w-4" />,
@@ -239,6 +259,15 @@ export const CommandPalette: React.FC = () => {
         onSelect: run(() => setSettingsDialogOpen(true)),
       },
     ];
+    list.push({
+      id: 'toggle-memory-debug',
+      title: t('commandPalette.item.toggleMemoryDebug'),
+      icon: <Icon name="bug" className="mr-2 h-4 w-4" />,
+      searchText: t('commandPalette.item.toggleMemoryDebug'),
+      onSelect: run(() => {
+        window.dispatchEvent(new CustomEvent('openchamber:memory-debug-toggle'));
+      }),
+    });
     if (canUseElectronDesktopIPC()) {
       list.splice(1, 0, {
         id: 'new-mini-chat',

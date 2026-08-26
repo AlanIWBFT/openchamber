@@ -49,11 +49,29 @@ describe('shortcut schema', () => {
     ))).toBe(true);
   });
 
-  test('includes session prefix bindings and metadata', () => {
-    expect(getShortcutAction('open_draft_project_picker')?.defaultBinding).toBe('mod+s p');
-    expect(getShortcutAction('open_draft_worktree_picker')?.defaultBinding).toBe('mod+s g');
-    expect(getShortcutAction('open_session_list')?.defaultBinding).toBe('mod+s l');
+  test('keeps the mod+k leader for open/go actions', () => {
+    expect(getShortcutAction('open_draft_project_picker')?.defaultBinding).toBe('mod+k p');
+    expect(getShortcutAction('open_draft_worktree_picker')?.defaultBinding).toBe('mod+k g');
+    expect(getShortcutAction('open_session_list')?.defaultBinding).toBe('mod+k l');
+    expect(getShortcutAction('open_timeline_dialog')?.defaultBinding).toBe('mod+k t');
+    expect(getShortcutAction('toggle_prompt_navigator')?.defaultBinding).toBe('mod+k n');
+    expect(getShortcutAction('toggle_services_menu')?.defaultBinding).toBe('mod+k i');
+    expect(getShortcutAction('open_help')?.defaultBinding).toBe('mod+k h');
+    expect(getShortcutAction('cycle_theme')?.defaultBinding).toBe('mod+k c');
     expect(getShortcutAction('focus_input')?.category).toBe('session');
+  });
+
+  test('splits the held digit prefixes between session tabs and surfaces', () => {
+    expect(getShortcutAction('switch_session_tab')?.defaultBinding).toBe('mod');
+    expect(getShortcutAction('switch_context_surface')?.defaultBinding).toBe('mod+alt');
+  });
+
+  test('every action ships with a default binding', () => {
+    // Palette-only commands live outside this schema entirely; an action in
+    // the schema without a binding would be dead weight in Settings.
+    for (const action of SHORTCUT_SCHEMA) {
+      expect(getEffectiveShortcutCombo(action.id)).not.toBe('');
+    }
   });
 
   test('preserves valid overrides and falls back from malformed bindings', () => {
@@ -73,10 +91,8 @@ describe('shortcut schema', () => {
       .find((conflict) => conflict.action.id === 'find_in_file');
     const internalPrefixConflict = getShortcutBindingConflicts('new_chat', 'mod+s x')
       .find((conflict) => conflict.action.id === 'save_file');
-    const contextualPrefixConflict = getShortcutBindingConflicts('focus_input', 'mod+l l')
-      .find((conflict) => conflict.action.id === 'add_selection_to_chat');
-    const contextualLeaderConflict = getShortcutBindingConflicts('add_selection_to_chat', 'mod+s')
-      .find((conflict) => conflict.action.id === 'open_draft_project_picker');
+    const leaderPrefixConflict = getShortcutBindingConflicts('new_chat', 'mod+k')
+      .find((conflict) => conflict.action.id === 'open_session_list');
     const blockingPrefixConflict = getShortcutBindingConflicts('new_chat', 'mod+p x')
       .find((conflict) => conflict.action.id === 'open_command_palette');
 
@@ -84,10 +100,9 @@ describe('shortcut schema', () => {
     expect(customizableConflict?.action.customizable).toBe(true);
     expect(internalConflict?.kind).toBe('exact');
     expect(internalConflict?.action.customizable).toBe(false);
-    expect(internalPrefixConflict?.kind).toBe('contextual-prefix');
+    expect(internalPrefixConflict?.kind).toBe('prefix');
     expect(internalPrefixConflict?.action.customizable).toBe(false);
-    expect(contextualPrefixConflict?.kind).toBe('contextual-prefix');
-    expect(contextualLeaderConflict?.kind).toBe('contextual-prefix');
+    expect(leaderPrefixConflict?.kind).toBe('prefix');
     expect(blockingPrefixConflict?.kind).toBe('prefix');
   });
 });

@@ -39,6 +39,14 @@ export class ShortcutRegistry {
     return this.handlers.get(actionId)?.[0]?.handler;
   }
 
+  /** Runs an action outside keyboard dispatch (command palette). Bypasses
+      suspension: the invoking surface, not the keyboard, owns the gesture. */
+  invoke(actionId: ShortcutActionId): boolean {
+    const handler = this.handlers.get(actionId)?.[0]?.handler;
+    if (!handler) return false;
+    return handler(new KeyboardEvent('keydown')) !== false;
+  }
+
   /** Temporarily disables every registered application shortcut. */
   suspend(): () => void {
     this.suspensionCount += 1;

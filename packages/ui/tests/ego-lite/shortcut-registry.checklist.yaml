@@ -172,12 +172,12 @@ checks:
     preconditions:
       - Open a draft session with project and worktree selectors mounted.
     steps:
-      - Trigger Mod + S, P and verify the project picker opens.
+      - Trigger Mod + K, P and verify the project picker opens.
       - Press Escape once and verify it closes.
-      - Trigger Mod + S, G and verify the worktree picker opens.
+      - Trigger Mod + K, G and verify the worktree picker opens.
       - Press Escape once and verify it closes.
     assertions:
-      - A contextual Mod + S owner yields when its context is inactive.
+      - The Mod + K leader arms without a visible menu and completes on the second key.
       - Each sequence opens only its target picker.
       - One non-IME Escape closes either controlled picker.
     evidence:

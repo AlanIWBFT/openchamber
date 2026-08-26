@@ -8,6 +8,8 @@ export {
   keyToShortcutToken,
   normalizeCombo,
   parseShortcut,
+  resolveShortcutEventDigit,
+  resolveShortcutEventKey,
   UNASSIGNED_SHORTCUT,
 } from './bindings';
 export type { ShortcutCombo } from './bindings';

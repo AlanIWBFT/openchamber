@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  eventMatchesShortcut,
   eventMatchesShortcutPrefix,
   formatShortcutForDisplay,
   getEffectiveShortcutPrefix,
@@ -9,12 +10,13 @@ import {
   isShortcutPrefixHeld,
   normalizeCombo,
   parseShortcut,
+  resolveShortcutEventDigit,
   UNASSIGNED_SHORTCUT,
 } from './index';
 
 describe('getEffectiveShortcutPrefix', () => {
-  test('falls back to the action default (bare mod) when unset', () => {
-    expect(getEffectiveShortcutPrefix('switch_context_surface', {})).toBe('mod');
+  test('falls back to the action default (bare mod+alt) when unset', () => {
+    expect(getEffectiveShortcutPrefix('switch_context_surface', {})).toBe('mod+alt');
   });
 
   test('honors modifier + key overrides', () => {
@@ -124,5 +126,33 @@ describe('platform shortcut labels', () => {
       'Ctrl + Shift + Alt + N',
     );
     expect(formatShortcutForDisplay('alt', 'Unassigned', 'other')).toBe('Alt');
+  });
+});
+
+describe('layout-independent key matching', () => {
+  const event = (overrides: Partial<KeyboardEvent>): KeyboardEvent =>
+    // SAFETY: the matcher only reads the modifier flags, key, and code
+    // provided here; a full KeyboardEvent is not constructible in bun tests.
+    ({ altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, key: '', code: '', ...overrides }) as KeyboardEvent;
+
+  test('a non-Latin layout letter matches through the physical key code', () => {
+    expect(eventMatchesShortcut(event({ ctrlKey: true, key: 'л', code: 'KeyK' }), 'mod+k')).toBe(true);
+    expect(eventMatchesShortcut(event({ key: 'з', code: 'KeyP' }), 'p')).toBe(true);
+  });
+
+  test('macOS Option symbol substitution matches through the digit code', () => {
+    expect(eventMatchesShortcut(event({ ctrlKey: true, altKey: true, key: '¡', code: 'Digit1' }), 'mod+alt+1')).toBe(true);
+  });
+
+  test('Latin layouts that move keys keep their key-based meaning', () => {
+    // Dvorak: physical KeyT produces "y"; the binding follows the character.
+    expect(eventMatchesShortcut(event({ ctrlKey: true, key: 'y', code: 'KeyT' }), 'mod+y')).toBe(true);
+    expect(eventMatchesShortcut(event({ ctrlKey: true, key: 'y', code: 'KeyT' }), 'mod+t')).toBe(false);
+  });
+
+  test('resolveShortcutEventDigit reads the digit from the code under Option', () => {
+    expect(resolveShortcutEventDigit({ key: '¡', code: 'Digit1' })).toBe('1');
+    expect(resolveShortcutEventDigit({ key: '5', code: 'Digit5' })).toBe('5');
+    expect(resolveShortcutEventDigit({ key: 'a', code: 'KeyA' })).toBe(null);
   });
 });

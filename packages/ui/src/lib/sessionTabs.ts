@@ -9,6 +9,23 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
  * count as neighbours — the same rule the strip uses for rendering. The
  * session itself is never touched.
  */
+/**
+ * Activate the nth (0-based) header session tab, counting only tabs whose
+ * session is present in the loaded session list — the same rule the strip
+ * uses for rendering, so the digit matches what the user sees.
+ */
+export const activateSessionTabByIndex = (index: number): boolean => {
+  const { tabIds } = useSessionTabsStore.getState();
+  const sessionsById = new Map(
+    useGlobalSessionsStore.getState().activeSessions.map((session) => [session.id, session] as const),
+  );
+  const renderable = tabIds.filter((id) => sessionsById.has(id));
+  const session = renderable[index] ? sessionsById.get(renderable[index]) : null;
+  if (!session) return false;
+  useSessionUIStore.getState().setCurrentSession(session.id, resolveGlobalSessionDirectory(session));
+  return true;
+};
+
 export const closeSessionTabAndActivateNeighbour = (sessionId: string): void => {
   const { tabIds, closeTab } = useSessionTabsStore.getState();
   if (!tabIds.includes(sessionId)) return;

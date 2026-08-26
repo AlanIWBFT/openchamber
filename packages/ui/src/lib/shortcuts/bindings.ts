@@ -247,6 +247,50 @@ export function isRiskyBrowserShortcut(combo: ShortcutCombo): boolean {
   });
 }
 
+const CODE_KEY_MAP = new Map<string, string>([
+  ['Comma', ','],
+  ['Period', '.'],
+  ['Slash', '/'],
+  ['Backquote', '`'],
+  ['BracketLeft', '['],
+  ['BracketRight', ']'],
+  ['Semicolon', ';'],
+  ['Quote', "'"],
+  ['Minus', '-'],
+  ['Equal', '='],
+]);
+
+function keyFromEventCode(code: string): string | null {
+  if (code.startsWith('Key') && code.length === 4) return code.slice(3).toLowerCase();
+  if (code.startsWith('Digit') && code.length === 6) return code.slice(5);
+  return CODE_KEY_MAP.get(code) ?? null;
+}
+
+/**
+ * The character a physical key press should match against bindings. `key`
+ * carries the layout-produced character: Option on macOS substitutes symbols
+ * ("¡" for ⌥1) and non-Latin layouts substitute their own alphabet ("л" for
+ * K). Both keep the physical key in `code`, so those two cases fall back to
+ * it; Latin layouts that MOVE keys (Dvorak, AZERTY) keep their `key`-based
+ * meaning untouched.
+ */
+export function resolveShortcutEventKey(
+  event: Pick<KeyboardEvent, 'key' | 'code' | 'altKey'>,
+): string {
+  const raw = event.key;
+  if (event.altKey) return keyFromEventCode(event.code) ?? raw;
+  if (raw.length === 1 && raw.charCodeAt(0) > 127) return keyFromEventCode(event.code) ?? raw;
+  return raw;
+}
+
+/** The digit a press addresses, layout- and Option-proof via `code`. */
+export function resolveShortcutEventDigit(
+  event: Pick<KeyboardEvent, 'key' | 'code'>,
+): string | null {
+  if (event.code.startsWith('Digit') && event.code.length === 6) return event.code.slice(5);
+  return event.key.length === 1 && event.key >= '0' && event.key <= '9' ? event.key : null;
+}
+
 export function eventMatchesShortcut(
   event: KeyboardEvent | React.KeyboardEvent,
   combo: ShortcutCombo,
@@ -280,16 +324,7 @@ export function eventMatchesShortcut(
     if (event.ctrlKey && !ctrlUsedAsMod) return false;
   }
 
-  let eventKeyRaw = event.key;
-  if (event.altKey) {
-    if (event.code.startsWith('Key') && event.code.length === 4) {
-      eventKeyRaw = event.code.slice(3).toLowerCase();
-    } else if (event.code.startsWith('Digit') && event.code.length === 6) {
-      eventKeyRaw = event.code.slice(5);
-    }
-  }
-
-  return keyToShortcutToken(eventKeyRaw) === keyToShortcutToken(chord.key);
+  return keyToShortcutToken(resolveShortcutEventKey(event)) === keyToShortcutToken(chord.key);
 }
 
 export function isShortcutPrefixHeld(prefixCombo: ShortcutCombo, heldKeys: ReadonlySet<string>): boolean {

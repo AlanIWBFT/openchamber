@@ -4,7 +4,8 @@ import { settleShortcutRecordingState, updateShortcutRecordingState } from './Sh
 const emptyState = { chords: [], livePreview: null, settled: false };
 
 function keyEvent(key: string, modifiers: Partial<Record<'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey', boolean>> = {}) {
-  return { key, repeat: false, isComposing: false, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, ...modifiers };
+  const code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : /^[0-9]$/.test(key) ? `Digit${key}` : key;
+  return { key, code, repeat: false, isComposing: false, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, ...modifiers };
 }
 
 describe('ShortcutRecordingDialog recording state', () => {

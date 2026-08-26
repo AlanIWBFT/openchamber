@@ -13,6 +13,7 @@ import {
   getShortcutBindingConflicts,
   isRiskyBrowserShortcut,
   keyToShortcutToken,
+  resolveShortcutEventKey,
   normalizeCombo,
   type ShortcutActionId,
   type ShortcutBindingConflict,
@@ -27,6 +28,7 @@ const SECOND_CHORD_TIMEOUT_MS = 3000;
 
 interface RecordingKeyboardEvent {
   altKey: boolean;
+  code: string;
   ctrlKey: boolean;
   isComposing: boolean;
   key: string;
@@ -84,7 +86,7 @@ function keyboardEventToCombo(event: RecordingKeyboardEvent): ShortcutCombo | nu
   if (MODIFIER_KEYS.has(event.key.toLowerCase())) return null;
   if (getPhysicalKeyCount(event, true) > MAX_SHORTCUT_KEY_COUNT) return null;
 
-  const key = keyToShortcutToken(event.key);
+  const key = keyToShortcutToken(resolveShortcutEventKey(event));
   if (!key) return null;
 
   const parts: string[] = [];
@@ -200,7 +202,8 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
     event.preventDefault();
     event.stopPropagation();
 
-    if (phase === 'keyup' && action?.id === 'switch_context_surface' && recording.chords.length === 0) {
+    const isPrefixStyleAction = Boolean(action && 'prefixStyle' in action && action.prefixStyle);
+    if (phase === 'keyup' && isPrefixStyleAction && recording.chords.length === 0) {
       const modifierCombo = modifierKeyUpToCombo(event);
       if (modifierCombo) {
         setRecording({ chords: [modifierCombo], livePreview: null, settled: true });
@@ -209,6 +212,7 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
     }
     const nextRecording = updateShortcutRecordingState(recording, {
       altKey: event.altKey,
+      code: event.nativeEvent.code,
       ctrlKey: event.ctrlKey,
       isComposing: event.nativeEvent.isComposing,
       key: event.key,
@@ -216,7 +220,7 @@ export const ShortcutRecordingDialog: React.FC<ShortcutRecordingDialogProps> = (
       repeat: event.repeat,
       shiftKey: event.shiftKey,
     }, phase);
-    setRecording(action?.id === 'switch_context_surface' && nextRecording.chords.length > 1
+    setRecording(isPrefixStyleAction && nextRecording.chords.length > 1
       ? recording
       : nextRecording);
   };

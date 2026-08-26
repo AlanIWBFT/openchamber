@@ -53,17 +53,19 @@ export const KeyboardShortcutsSettings: React.FC = () => {
     persist(nextOverrides);
   };
   const shortcutDisplay = (action: CustomizableShortcutAction): string => {
-    const isSurfaceSwitch = action.id === 'switch_context_surface';
-    const combo = isSurfaceSwitch
+    const isPrefixStyle = 'prefixStyle' in action && action.prefixStyle;
+    const combo = isPrefixStyle
       ? getEffectiveShortcutPrefix(action.id, shortcutOverrides)
       : getEffectiveShortcutCombo(action.id, shortcutOverrides);
     const formatted = formatShortcutForDisplay(
       combo,
       t('settings.openchamber.keyboardShortcuts.unassigned'),
     );
-    return isSurfaceSwitch && combo && combo !== UNASSIGNED_SHORTCUT
-      ? `${formatted}${t('settings.openchamber.keyboardShortcuts.action.switch_context_surface.suffix')}`
-      : formatted;
+    if (!isPrefixStyle || !combo || combo === UNASSIGNED_SHORTCUT) return formatted;
+    const suffix = action.id === 'switch_session_tab'
+      ? t('settings.openchamber.keyboardShortcuts.action.switch_session_tab.suffix')
+      : t('settings.openchamber.keyboardShortcuts.action.switch_context_surface.suffix');
+    return `${formatted}${suffix}`;
   };
 
   return (
@@ -104,15 +106,17 @@ export const KeyboardShortcutsSettings: React.FC = () => {
                   >
                     {t('settings.openchamber.keyboardShortcuts.actions.edit')}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    className="!font-normal"
-                    onClick={() => resetOne(action.id)}
-                  >
-                    {t('settings.common.actions.reset')}
-                  </Button>
+                  {action.id in shortcutOverrides ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="!font-normal"
+                      onClick={() => resetOne(action.id)}
+                    >
+                      {t('settings.common.actions.reset')}
+                    </Button>
+                  ) : null}
                 </SettingsFieldRow>
               ))}
             </div>

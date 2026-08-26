@@ -20,7 +20,6 @@ import { useAgentMemorySync } from '@/hooks/useAgentMemorySync';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
 import { useWindowTitle } from '@/hooks/useWindowTitle';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { useKeybind } from '@/hooks/useKeybind';
 import { isDesktopLocalOriginActive, isDesktopShell, restartDesktopApp, invokeDesktop } from '@/lib/desktop';
 import {
   getInjectedBootOutcome,
@@ -723,10 +722,13 @@ function App({ apis }: AppProps) {
 
   useSessionStatusBootstrap({ enabled: embeddedBackgroundWorkEnabled });
 
-  useKeybind('toggle_memory_debug', () => {
-    if (embeddedSessionChat) return false;
-    setShowMemoryDebug((previous) => !previous);
-  });
+  // Palette-only action: the memory debug panel has no keyboard shortcut.
+  React.useEffect(() => {
+    if (embeddedSessionChat) return;
+    const handleToggle = () => setShowMemoryDebug((previous) => !previous);
+    window.addEventListener('openchamber:memory-debug-toggle', handleToggle);
+    return () => window.removeEventListener('openchamber:memory-debug-toggle', handleToggle);
+  }, [embeddedSessionChat]);
 
   React.useEffect(() => {
     if (embeddedSessionChat) {

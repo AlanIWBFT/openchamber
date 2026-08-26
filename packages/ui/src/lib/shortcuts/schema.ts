@@ -15,28 +15,13 @@ export type ShortcutAction = (typeof SHORTCUT_SCHEMA)[number];
 export type ShortcutActionId = ShortcutAction['id'];
 export type ShortcutCategory = ShortcutAction['category'];
 export type CustomizableShortcutAction = Extract<ShortcutAction, { customizable: true }>;
+/** 'contextual-prefix' is kept in the union for the recording dialog's
+    messaging even though no default layout produces it any more. */
 export type ShortcutBindingConflictKind = ShortcutConflict | 'contextual-prefix';
 export type ShortcutBindingConflict = {
   action: ShortcutAction;
   kind: ShortcutBindingConflictKind;
 };
-
-function allowsContextualPrefix(
-  action: ShortcutAction,
-  combo: ShortcutCombo,
-  candidate: ShortcutAction,
-  candidateCombo: ShortcutCombo,
-): boolean {
-  const chordCount = parseShortcut(combo)?.chords.length;
-  const candidateChordCount = parseShortcut(candidateCombo)?.chords.length;
-  if (chordCount === 1 && candidateChordCount === 2) {
-    return 'allowsSequenceFallback' in action && action.allowsSequenceFallback;
-  }
-  if (chordCount === 2 && candidateChordCount === 1) {
-    return 'allowsSequenceFallback' in candidate && candidate.allowsSequenceFallback;
-  }
-  return false;
-}
 
 export function getShortcutAction(id: string): ShortcutAction | undefined {
   return SHORTCUT_SCHEMA.find((action) => action.id === id);
@@ -54,7 +39,8 @@ export function getEffectiveShortcutCombo(
 ): ShortcutCombo {
   const action = getShortcutAction(actionId);
   if (!action) return '';
-  if (!action.customizable) return action.defaultBinding;
+  const defaultBinding = action.defaultBinding === UNASSIGNED_SHORTCUT ? '' : action.defaultBinding;
+  if (!action.customizable) return defaultBinding;
 
   const override = overrides?.[actionId];
   if (typeof override === 'string') {
@@ -63,7 +49,7 @@ export function getEffectiveShortcutCombo(
     if (isValidShortcutCombo(normalized)) return normalized;
   }
 
-  return action.defaultBinding;
+  return defaultBinding;
 }
 
 export function getEffectiveShortcutPrefix(
@@ -100,12 +86,7 @@ export function getShortcutBindingConflicts(
       : getEffectiveShortcutCombo(candidate.id, overrides);
     const kind = getShortcutConflict(combo, candidateCombo);
     if (!kind) continue;
-    conflicts.push({
-      action: candidate,
-      kind: kind === 'prefix' && allowsContextualPrefix(action, combo, candidate, candidateCombo)
-        ? 'contextual-prefix'
-        : kind,
-    });
+    conflicts.push({ action: candidate, kind });
   }
   return conflicts;
 }

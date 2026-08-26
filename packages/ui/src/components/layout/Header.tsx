@@ -1471,17 +1471,6 @@ export const Header: React.FC = () => {
       setIsDesktopServicesOpen(true);
       void refreshCurrentInstanceLabel();
     },
-    // The desktop menu holds one destination now, so this shortcut opens it
-    // rather than cycling. The binding is kept: it is user-configurable and
-    // silently dropping it would break existing setups.
-    cycle_services_tab: () => {
-      if (servicesTabs.length === 0) return false;
-      setIsDesktopServicesOpen(true);
-      void refreshCurrentInstanceLabel();
-    },
-    toggle_context_plan: () => {
-      handleOpenContextPlan();
-    },
   });
 
   const desktopSidebarActions = (
