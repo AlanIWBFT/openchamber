@@ -1369,7 +1369,7 @@ const maybeShowNativeNotification = (rawInput) => {
   notification.on('click', () => {
     focusForegroundWindow();
     if (sessionId) {
-      emitToAllWindows('openchamber:open-session', { sessionId, directory });
+      emitToPrimaryWindow('openchamber:open-session', { sessionId, directory });
     }
     release();
   });
@@ -1997,6 +1997,18 @@ const emitToAllWindows = (event, detail) => {
   }
 };
 
+// Session navigation must land in ONE window. Broadcasting it makes every
+// open window adopt the same session, hijacking whatever the other windows
+// were doing.
+const emitToPrimaryWindow = (event, detail) => {
+  const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+  if (windows.length === 0) return;
+  const target = (state.mainWindow && !state.mainWindow.isDestroyed())
+    ? state.mainWindow
+    : windows.find((window) => window.isFocused()) || windows.find((window) => window.isVisible()) || windows[0];
+  emitToWindow(target, event, detail);
+};
+
 const setTaskbarProgress = (value) => {
   if (process.platform !== 'win32') return;
   for (const browserWindow of BrowserWindow.getAllWindows()) {
@@ -2278,7 +2290,7 @@ const dispatchDeepLink = (link) => {
   }
 
   if (link.type === 'session' && link.value) {
-    emitToAllWindows('openchamber:open-session', { sessionId: link.value });
+    emitToPrimaryWindow('openchamber:open-session', { sessionId: link.value });
     return;
   }
   if (link.type === 'host' && link.value) {

@@ -353,6 +353,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({
   const [activePasskeyAction, setActivePasskeyAction] = React.useState<'auth' | 'register' | null>(null);
   const passwordInputRef = React.useRef<HTMLInputElement | null>(null);
   const hasResyncedRef = React.useRef(skipAuth);
+  const hasBootstrapResyncedRef = React.useRef(skipAuth);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') {
@@ -593,10 +594,18 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({
     }
     if (state === 'authenticated' && !hasResyncedRef.current) {
       hasResyncedRef.current = true;
+      // First authentication of this page load is bootstrap: adopt the
+      // persisted workspace pointers. A re-login after mid-session expiry is
+      // not — this window already has its own workspace, and the shared
+      // settings document may carry another window's pointers.
+      const isBootstrapResync = !hasBootstrapResyncedRef.current;
+      hasBootstrapResyncedRef.current = true;
       void (async () => {
         await initializeAppearancePreferences();
-        await syncDesktopSettings();
-        await applyPersistedDirectoryPreferences();
+        await syncDesktopSettings({ adoptWorkspace: isBootstrapResync });
+        if (isBootstrapResync) {
+          await applyPersistedDirectoryPreferences();
+        }
       })();
     }
   }, [skipAuth, state]);
