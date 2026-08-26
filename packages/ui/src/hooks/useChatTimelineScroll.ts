@@ -9,6 +9,7 @@ import {
     getAnchoredTurnMetrics,
     getRowBottom,
     resolveTimelineIsAtEnd,
+    TIMELINE_FOLLOW_REARM_THRESHOLD_PX,
     type TimelineListMeasurementState,
     type TimelineScrollMode,
 } from '@/components/chat/lib/scroll/timelineScrollAnchoring';
@@ -617,7 +618,29 @@ export const useChatTimelineScroll = ({
             }
         }
 
-        if (!streamingAutoFollowEnabledRef.current) return;
+        if (!streamingAutoFollowEnabledRef.current) {
+            // With auto-follow off nothing moves the viewport, so a growing
+            // reply slides below the visible area without a single scroll
+            // event — and the at-end transition that offers the pill never
+            // fires. Content growth is the signal here: once the real last
+            // row extends past what the composer leaves visible, the reader
+            // is factually behind and the pill must say so.
+            const list = listRef.current;
+            if (list && isAtEndRef.current) {
+                const state = list.getState();
+                const lastIndex = state.data.length - 1;
+                const lastBottom = lastIndex >= 0 ? getRowBottom(state, lastIndex) : null;
+                if (lastBottom !== null) {
+                    const visibleBottom = state.scroll + state.scrollLength - composerOverlayHeightRef.current;
+                    if (lastBottom - visibleBottom > TIMELINE_FOLLOW_REARM_THRESHOLD_PX) {
+                        isAtEndRef.current = false;
+                        setIsPinned(false);
+                        scheduleShowScrollButton();
+                    }
+                }
+            }
+            return;
+        }
         if (!isLiveFollowActive()) return;
 
         // Since @legendapp/list 3.3.x, maintainScrollAtEnd follows content
@@ -674,7 +697,7 @@ export const useChatTimelineScroll = ({
 
             });
         });
-    }, [isLiveFollowActive]);
+    }, [isLiveFollowActive, scheduleShowScrollButton]);
 
     // The streaming tail grows inside one row without changing the entries
     // array, so data-change callbacks are silent for the entire stream. The
