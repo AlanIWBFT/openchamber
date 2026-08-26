@@ -52,6 +52,34 @@ const SHORTCUT_GROUPS = {
       settingsLabelKey: 'settings.openchamber.keyboardShortcuts.action.new_chat.label',
     },
     {
+      id: 'switch_session_previous',
+      defaultBinding: 'mod+alt+arrowleft',
+      customizable: true,
+      settingsLabelKey:
+        'settings.openchamber.keyboardShortcuts.action.switch_session_previous.label',
+    },
+    {
+      id: 'switch_session_next',
+      defaultBinding: 'mod+alt+arrowright',
+      customizable: true,
+      settingsLabelKey:
+        'settings.openchamber.keyboardShortcuts.action.switch_session_next.label',
+    },
+    {
+      id: 'rename_current_session',
+      defaultBinding: 'mod+k r',
+      customizable: true,
+      settingsLabelKey:
+        'settings.openchamber.keyboardShortcuts.action.rename_current_session.label',
+    },
+    {
+      id: 'toggle_permission_auto_accept',
+      defaultBinding: 'mod+k a',
+      customizable: true,
+      settingsLabelKey:
+        'settings.openchamber.keyboardShortcuts.action.toggle_permission_auto_accept.label',
+    },
+    {
       id: 'close_session_tab',
       defaultBinding: 'alt+w',
       customizable: true,

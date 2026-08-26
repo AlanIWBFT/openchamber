@@ -607,6 +607,9 @@ interface UIStore {
   hasManuallyResizedLeftSidebar: boolean;
   contextPanelByDirectory: Record<string, ContextPanelDirectoryState>;
   contextRailOrder: string[];
+  /** Surface ids the user hid from the context rail; stored as the hidden set
+      so surfaces added later appear for everyone. */
+  contextRailHiddenSurfaces: string[];
   contextEditorTreeVisible: boolean;
   contextEditorTreeWidth: number;
   notesPanelHeight: number;
@@ -828,6 +831,8 @@ interface UIStore {
   setWorkStatusOverlayOpen: (open: boolean) => void;
   setWorkStatusSectionVisible: (sectionId: string, visible: boolean) => void;
   setWorkStatusHiddenSections: (sectionIds: string[]) => void;
+  setContextRailSurfaceVisible: (surfaceId: string, visible: boolean) => void;
+  setContextRailHiddenSurfaces: (surfaceIds: string[]) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
   setSessionDropdownOpen: (open: boolean) => void;
   setPendingDiffFile: (filePath: string | null, staged?: boolean, scope?: PendingDiffScope | null) => void;
@@ -990,6 +995,7 @@ export const useUIStore = create<UIStore>()(
         hasManuallyResizedLeftSidebar: false,
         contextPanelByDirectory: {},
         contextRailOrder: [],
+        contextRailHiddenSurfaces: [],
         contextEditorTreeVisible: true,
         contextEditorTreeWidth: 240,
         notesPanelHeight: 112,
@@ -1597,6 +1603,23 @@ export const useUIStore = create<UIStore>()(
 
         setWorkStatusHiddenSections: (sectionIds) => {
           set({ workStatusHiddenSections: [...new Set(sectionIds)] });
+        },
+
+        setContextRailSurfaceVisible: (surfaceId, visible) => {
+          set((state) => {
+            const hidden = state.contextRailHiddenSurfaces;
+            const isHidden = hidden.includes(surfaceId);
+            if (visible === !isHidden) return state;
+            return {
+              contextRailHiddenSurfaces: visible
+                ? hidden.filter((entry) => entry !== surfaceId)
+                : [...hidden, surfaceId],
+            };
+          });
+        },
+
+        setContextRailHiddenSurfaces: (surfaceIds) => {
+          set({ contextRailHiddenSurfaces: [...new Set(surfaceIds)] });
         },
 
 
@@ -2627,6 +2650,9 @@ export const useUIStore = create<UIStore>()(
             state.autoSaveEnabled = true;
           }
 
+          state.contextRailHiddenSurfaces = Array.isArray(state.contextRailHiddenSurfaces)
+            ? (state.contextRailHiddenSurfaces as unknown[]).filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+            : [];
           state.contextRailOrder = Array.isArray(state.contextRailOrder)
             ? (state.contextRailOrder as unknown[]).filter((id): id is string => typeof id === 'string' && id.trim() !== '')
             : [];
@@ -2639,6 +2665,7 @@ export const useUIStore = create<UIStore>()(
           sidebarWidth: state.sidebarWidth,
           contextPanelByDirectory: state.contextPanelByDirectory,
           contextRailOrder: state.contextRailOrder,
+          contextRailHiddenSurfaces: state.contextRailHiddenSurfaces,
           contextEditorTreeVisible: state.contextEditorTreeVisible,
           contextEditorTreeWidth: state.contextEditorTreeWidth,
           notesPanelHeight: state.notesPanelHeight,
