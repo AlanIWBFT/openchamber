@@ -108,13 +108,13 @@ describe('shortcut defaults', () => {
             list.push(action.id);
             byBinding.set(combo, list);
         }
-        for (const [combo, ids] of byBinding) {
-            if (ids.length <= 1) continue;
-            const whitelisted = RUNTIME_EXCLUSIVE_BINDING_PAIRS.some(
+        const conflicts = [...byBinding.entries()]
+            .filter(([, ids]) => ids.length > 1)
+            .filter(([, ids]) => !RUNTIME_EXCLUSIVE_BINDING_PAIRS.some(
                 (pair) => ids.every((id) => pair.has(id)),
-            );
-            expect(whitelisted, `default binding "${combo}" shared by ${ids.join(', ')}`).toBe(true);
-        }
+            ))
+            .map(([combo, ids]) => `"${combo}" shared by ${ids.join(', ')}`);
+        expect(conflicts).toEqual([]);
     });
 
     test('overrides recorded under the flat-file era still resolve', () => {

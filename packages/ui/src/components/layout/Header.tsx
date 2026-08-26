@@ -38,7 +38,8 @@ import { WindowsWindowControls } from '@/components/desktop/WindowsWindowControl
 import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { useDeviceInfo, useTabletStandalonePwaRuntime } from '@/lib/device';
 import { cn } from '@/lib/utils';
-import { eventMatchesShortcut, formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
+import { formatShortcutForDisplay, getEffectiveShortcutCombo, type ShortcutActionId } from '@/lib/shortcuts';
+import { useKeybinds } from '@/hooks/useKeybind';
 import {
 } from '@/lib/quota/model-families';
 
@@ -256,7 +257,7 @@ type DesktopServicesMenuProps = {
   isDesktopServicesOpen: boolean;
   setIsDesktopServicesOpen: React.Dispatch<React.SetStateAction<boolean>>;
   refreshCurrentInstanceLabel: () => Promise<void>;
-  shortcutLabel: (actionId: string) => string;
+  shortcutLabel: (actionId: ShortcutActionId) => string;
   remoteUpdateInfo: UpdateInfo | null;
   remoteUpdateChecking: boolean;
   remoteUpdateError: string | null;
@@ -1445,7 +1446,7 @@ export const Header: React.FC = () => {
     }
   }, [isDesktopApp]);
 
-  const shortcutLabel = React.useCallback((actionId: string) => {
+  const shortcutLabel = React.useCallback((actionId: ShortcutActionId) => {
     return formatShortcutForDisplay(getEffectiveShortcutCombo(actionId, shortcutOverrides));
   }, [shortcutOverrides]);
 
@@ -1461,51 +1462,27 @@ export const Header: React.FC = () => {
   }, [isDesktopApp, t]);
 
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const toggleServicesCombo = getEffectiveShortcutCombo('toggle_services_menu', shortcutOverrides);
-      if (eventMatchesShortcut(e, toggleServicesCombo)) {
-        e.preventDefault();
-
-        if (isDesktopServicesOpen) {
-          setIsDesktopServicesOpen(false);
-        } else {
-          setIsDesktopServicesOpen(true);
-          void refreshCurrentInstanceLabel();
-        }
+  useKeybinds({
+    toggle_services_menu: () => {
+      if (isDesktopServicesOpen) {
+        setIsDesktopServicesOpen(false);
         return;
       }
-
-      // The desktop menu holds one destination now, so this shortcut opens it
-      // rather than cycling. The binding is kept: it is user-configurable and
-      // silently dropping it would break existing setups.
-      const cycleServicesCombo = getEffectiveShortcutCombo('cycle_services_tab', shortcutOverrides);
-      if (eventMatchesShortcut(e, cycleServicesCombo)) {
-        e.preventDefault();
-        if (servicesTabs.length === 0) return;
-        setIsDesktopServicesOpen(true);
-        void refreshCurrentInstanceLabel();
-        return;
-      }
-
-      const toggleContextPlanCombo = getEffectiveShortcutCombo('toggle_context_plan', shortcutOverrides);
-      if (eventMatchesShortcut(e, toggleContextPlanCombo)) {
-        e.preventDefault();
-        handleOpenContextPlan();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    shortcutOverrides,
-    isDesktopServicesOpen,
-    servicesTabs,
-    quotaResults.length,
-    fetchAllQuotas,
-    refreshCurrentInstanceLabel,
-    handleOpenContextPlan,
-  ]);
+      setIsDesktopServicesOpen(true);
+      void refreshCurrentInstanceLabel();
+    },
+    // The desktop menu holds one destination now, so this shortcut opens it
+    // rather than cycling. The binding is kept: it is user-configurable and
+    // silently dropping it would break existing setups.
+    cycle_services_tab: () => {
+      if (servicesTabs.length === 0) return false;
+      setIsDesktopServicesOpen(true);
+      void refreshCurrentInstanceLabel();
+    },
+    toggle_context_plan: () => {
+      handleOpenContextPlan();
+    },
+  });
 
   const desktopSidebarActions = (
     <>
