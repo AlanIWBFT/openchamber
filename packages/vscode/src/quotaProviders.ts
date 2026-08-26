@@ -1469,14 +1469,35 @@ const buildCopilotWindows = (payload: Record<string, unknown>) => {
   const resetAt = toTimestamp(payload.quota_reset_date);
   const windows: Record<string, UsageWindow> = {};
 
+  // Mirrors the quota semantics of microsoft/vscode-copilot-chat
+  // (CopilotUserQuotaInfo): each snapshot carries entitlement, remaining,
+  // unlimited, and percent_remaining. Unlimited plans report no usable
+  // entitlement; percent_remaining is a server-computed fallback.
   const addWindow = (label: string, snapshot?: Record<string, unknown>) => {
     if (!snapshot) return;
+
+    if (snapshot.unlimited === true) {
+      windows[label] = toUsageWindow({
+        usedPercent: null,
+        windowSeconds: null,
+        resetAt,
+        valueLabel: 'Unlimited',
+      });
+      return;
+    }
+
     const entitlement = toNumber(snapshot.entitlement);
     const remaining = toNumber(snapshot.remaining);
-    const usedPercent = entitlement && remaining !== null
-      ? Math.max(0, Math.min(100, 100 - (remaining / entitlement) * 100))
+    let usedPercent = entitlement !== null && entitlement > 0 && remaining !== null
+      ? Math.min(100, Math.max(0, 100 - (remaining / entitlement) * 100))
       : null;
-    const valueLabel = entitlement !== null && remaining !== null
+    if (usedPercent === null) {
+      const percentRemaining = toNumber(snapshot.percent_remaining);
+      if (percentRemaining !== null) {
+        usedPercent = Math.min(100, Math.max(0, 100 - percentRemaining));
+      }
+    }
+    const valueLabel = entitlement !== null && entitlement > 0 && remaining !== null
       ? `${remaining.toFixed(0)} / ${entitlement.toFixed(0)} left`
       : null;
     windows[label] = toUsageWindow({
@@ -1584,17 +1605,12 @@ const fetchCopilotAddonQuota = async (): Promise<ProviderResult> => {
     }
 
     const payload = await response.json() as Record<string, unknown>;
-    const windows = buildCopilotWindows(payload);
-    const premium = windows.premium_interactions
-      ? { premium_interactions: windows.premium_interactions }
-      : windows;
-
     return buildResult({
       providerId: 'github-copilot-addon',
       providerName: 'GitHub Copilot Add-on',
       ok: true,
       configured: true,
-      usage: { windows: premium },
+      usage: { windows: buildCopilotWindows(payload) },
     });
   } catch (error) {
     return buildResult({
