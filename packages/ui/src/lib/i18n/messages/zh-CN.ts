@@ -2050,7 +2050,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.statusRow.tasksTitle': '任务',
   'chat.statusRow.modelStatus': '{model} · {status}',
   'chat.statusRow.summary.activeLeft': '{active} 个活跃 · 剩余 {left} 个',
-  'chat.statusRow.aborted': '已中止',
   'chat.revertIndicator.redo': '重做',
   'chat.revertIndicator.redoAria': '重做 — 恢复已撤回的消息',
   'chat.revertPopover.title': '已撤回',

@@ -776,7 +776,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.statusRow.tasksTitle': 'Zadania',
   'chat.statusRow.modelStatus': '{model} · {status}',
   'chat.statusRow.summary.activeLeft': '{active} aktywne · {left} pozostało',
-  'chat.statusRow.aborted': 'Przerwane',
   'chat.revertIndicator.redo': 'Ponów',
   'chat.revertIndicator.redoAria': 'Ponów — przywróć cofnięte wiadomości',
   'chat.revertPopover.title': 'Cofnięte',

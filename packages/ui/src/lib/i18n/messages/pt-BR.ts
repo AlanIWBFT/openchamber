@@ -2062,7 +2062,6 @@ export const dict: Record<I18nKey, string> = {
   "chat.statusRow.tasksTitle": "Tarefas",
   "chat.statusRow.modelStatus": "{model} · {status}",
   "chat.statusRow.summary.activeLeft": "{active} ativas · {left} restantes",
-  "chat.statusRow.aborted": "Interrompido",
   "chat.revertIndicator.redo": "Refazer",
   "chat.revertIndicator.redoAria": "Refazer — restaurar mensagens revertidas",
   "chat.revertPopover.title": "Revertidas",
