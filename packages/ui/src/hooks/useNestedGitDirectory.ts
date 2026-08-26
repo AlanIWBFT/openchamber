@@ -8,6 +8,7 @@ import {
   useIsGitRepo,
   useNestedRepoSelection,
   useNestedRepos,
+  useStaleClearedSelections,
 } from '@/stores/useGitStore';
 
 type UseNestedGitDirectoryOptions = {
@@ -35,6 +36,7 @@ export const useNestedGitDirectory = (
   const gitDirectory = useEffectiveGitDirectory(root);
   const nestedRepos = useNestedRepos(root);
   const nestedRepoSelection = useNestedRepoSelection(root);
+  const staleClearedSelections = useStaleClearedSelections(root);
 
   // Probe of the resolved repository, used to detect a stale selection. Null
   // when there is nothing selected to probe.
@@ -68,13 +70,32 @@ export const useNestedGitDirectory = (
 
   // Auto-select the first nested repository so the surface opens straight
   // into repository data; a picker (where rendered) switches between them.
+  // Repositories whose selection already failed a probe are skipped: without
+  // this, a corrupt repository (discovered via its .git entry but failing
+  // git status) would be re-picked right after every stale-clear and loop
+  // discovery + probe while the surface is visible. When every candidate has
+  // failed, no selection is made — surfaces settle into their unresolved
+  // state instead of churning requests. A manual picker pick is still free
+  // to select anything; it gets probed like any other.
   React.useEffect(() => {
     if (!enabled || !root) return;
     if (rootIsGitRepo !== false) return;
-    if (!nestedRepos || nestedRepos.length === 0) return;
+    if (!Array.isArray(nestedRepos) || nestedRepos.length === 0) return;
     if (nestedRepoSelection) return;
-    selectNestedRepo(root, nestedRepos[0]);
-  }, [enabled, nestedRepos, nestedRepoSelection, root, rootIsGitRepo, selectNestedRepo]);
+    const candidates = staleClearedSelections
+      ? nestedRepos.filter((repository) => !staleClearedSelections.has(repository))
+      : nestedRepos;
+    if (candidates.length === 0) return;
+    selectNestedRepo(root, candidates[0]);
+  }, [
+    enabled,
+    nestedRepos,
+    nestedRepoSelection,
+    root,
+    rootIsGitRepo,
+    selectNestedRepo,
+    staleClearedSelections,
+  ]);
 
   // A selected repository that is no longer a git repository is stale: drop
   // the selection and re-scan so resolution reflects the current tree.

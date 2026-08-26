@@ -90,6 +90,13 @@ interface GitStore {
   // route, and absent when discovery has not run yet.
   nestedReposByRoot: Map<string, NestedRepoDiscovery>;
   nestedRepoSelection: Map<string, string>;
+  /**
+   * Repositories whose selection was dropped because their probe reported
+   * them as no longer a repository (corrupt or missing gitdir). Session-only
+   * memory so auto-select does not immediately re-pick the same broken path
+   * and loop walk+probe. Not persisted: the next launch re-probes honestly.
+   */
+  staleClearedSelections: Map<string, Set<string>>;
   ensureNestedRepos: (root: string, options?: { force?: boolean }) => Promise<void>;
   selectNestedRepo: (root: string, repository: string) => void;
   clearNestedRepoSelection: (root: string) => void;
@@ -622,6 +629,7 @@ export const useGitStore = create<GitStore>()(
       activeDirectory: null,
       nestedReposByRoot: new Map(),
       nestedRepoSelection: seedNestedRepoSelection(initialGitRuntimeKey),
+      staleClearedSelections: new Map(),
 
       resetForRuntimeSwitch: (runtimeKey) => {
         gitRuntimeGeneration += 1;
@@ -639,6 +647,7 @@ export const useGitStore = create<GitStore>()(
           activeDirectory: null,
           nestedReposByRoot: new Map(),
           nestedRepoSelection: seedNestedRepoSelection(runtimeKey),
+          staleClearedSelections: new Map(),
         });
       },
 
@@ -1273,10 +1282,19 @@ export const useGitStore = create<GitStore>()(
 
       clearNestedRepoSelection: (root) => {
         if (!root) return;
-        if (!get().nestedRepoSelection.has(root)) return;
+        const cleared = get().nestedRepoSelection.get(root);
+        if (cleared === undefined) return;
         const next = new Map(get().nestedRepoSelection);
         next.delete(root);
         set({ nestedRepoSelection: next });
+        // Remember the drop so auto-select does not re-pick the same path
+        // before its probe can tell the difference. Only stale-probe
+        // recovery clears, so every clear here is a failed selection.
+        const nextStale = new Map(get().staleClearedSelections);
+        const forRoot = new Set(nextStale.get(root));
+        forRoot.add(cleared);
+        nextStale.set(root, forRoot);
+        set({ staleClearedSelections: nextStale });
         writeCachedNestedRepoSelection(getRuntimeKey(), Object.fromEntries(next));
       },
 
@@ -1403,6 +1421,16 @@ export const useNestedRepoSelection = (root: string | null) => {
   return useGitStore((state) => {
     if (!root) return null;
     return state.nestedRepoSelection.get(root) ?? null;
+  });
+};
+
+// Repositories of this root whose selection already failed its probe. Auto-
+// select skips them; the picker does not (a manual re-pick is a user decision
+// and gets probed like any other).
+export const useStaleClearedSelections = (root: string | null) => {
+  return useGitStore((state) => {
+    if (!root) return null;
+    return state.staleClearedSelections.get(root) ?? null;
   });
 };
 

@@ -386,6 +386,30 @@ describe('useGitStore nested repository discovery', () => {
     expect(useGitStore.getState().nestedRepoSelection.get('/root-b')).toBe('/root-b/two');
   });
 
+  test('remembers a stale-cleared repository so auto-select can skip it', () => {
+    useGitStore.getState().selectNestedRepo('/root-a', '/root-a/one');
+    useGitStore.getState().selectNestedRepo('/root-b', '/root-b/two');
+
+    useGitStore.getState().clearNestedRepoSelection('/root-a');
+    useGitStore.getState().clearNestedRepoSelection('/root-b');
+    useGitStore.getState().clearNestedRepoSelection('/root-b');
+
+    const clearedA = useGitStore.getState().staleClearedSelections.get('/root-a');
+    const clearedB = useGitStore.getState().staleClearedSelections.get('/root-b');
+    expect(clearedA).toEqual(new Set(['/root-a/one']));
+    // Repeated clears of the same path stay a set, not an ever-growing list.
+    expect(clearedB).toEqual(new Set(['/root-b/two']));
+  });
+
+  test('runtime switch clears stale-cleared memory with the rest', () => {
+    useGitStore.getState().selectNestedRepo('/root-a', '/root-a/one');
+    useGitStore.getState().clearNestedRepoSelection('/root-a');
+
+    useGitStore.getState().resetForRuntimeSwitch('runtime-b');
+
+    expect(useGitStore.getState().staleClearedSelections.size).toBe(0);
+  });
+
   test('runtime switch does not leak selections or discovery across runtimes', () => {
     useGitStore.getState().selectNestedRepo('/root-a', '/root-a/one');
     useGitStore.setState({ nestedReposByRoot: new Map([['/root-a', ['/root-a/one']]]) });
