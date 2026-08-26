@@ -499,6 +499,7 @@ export const useKeyboardShortcuts = () => {
           const panel = state.contextPanelByDirectory[directory];
           const visibleSurfaces = getVisibleContextRailSurfaces({
             railOrder: state.contextRailOrder,
+            hiddenSurfaces: state.contextRailHiddenSurfaces,
             planModeEnabled: useFeatureFlagsStore.getState().planModeEnabled,
             isVSCode: isVSCodeRuntime(),
             screenWidth: window.innerWidth,
