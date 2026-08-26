@@ -584,4 +584,29 @@ describe('ChildStoreManager bootstrap context liveness', () => {
     expect(captured?.isCurrent()).toBe(false);
     manager.disposeAll();
   });
+
+  test('a newer same-directory run invalidates the previous context', async () => {
+    const manager = new ChildStoreManager();
+    const contexts: DirectoryBootstrapContext[] = [];
+    const cleanup = manager.configure({
+      onBootstrap: (context) => {
+        contexts.push(context);
+      },
+    });
+    manager.requestBootstrap({ directory: '/workspace', priority: 'selected', reason: 'current-directory' });
+    await settle();
+    expect(contexts[0]?.isCurrent()).toBe(true);
+
+    // A forced rerun for the same directory must retire the previous
+    // context: its in-flight deferred responses may no longer commit over
+    // whatever the newer run synchronizes.
+    manager.requestBootstrap({ directory: '/workspace', priority: 'selected', reason: 'server-connected', force: true });
+    await settle();
+    expect(contexts).toHaveLength(2);
+    expect(contexts[0]?.isCurrent()).toBe(false);
+    expect(contexts[1]?.isCurrent()).toBe(true);
+
+    cleanup();
+    manager.disposeAll();
+  });
 });
