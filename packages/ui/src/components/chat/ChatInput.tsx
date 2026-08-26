@@ -1383,10 +1383,25 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             console.error('Message send failed:', rawMessage || error);
             restoreConsumedDrafts();
 
-            const currentInput = composerRef.current?.getValue() ?? messageRef.current;
-            if (newSessionDraftOpen && inputSnapshot.message && (!currentInput || currentInput === inputSnapshot.message)) {
-                setMessage(inputSnapshot.message);
-                writeChatDraft(chatDraftIdentity, inputSnapshot.message, confirmedMentionsRef.current);
+            // A failed send returns the typed prompt no matter WHY it failed —
+            // auth, network, server, anything. Losing a long prompt to a toast
+            // is the one outcome this handler must never produce.
+            if (inputSnapshot.message) {
+                if (currentChatDraftIdentityRef.current !== chatDraftIdentity) {
+                    // The user switched sessions mid-send: restore into that
+                    // session's persisted draft, not the visible composer.
+                    writeChatDraft(chatDraftIdentity, inputSnapshot.message, confirmedMentionsRef.current);
+                } else {
+                    const currentInput = composerRef.current?.getValue() ?? messageRef.current;
+                    if (!currentInput || currentInput === inputSnapshot.message) {
+                        setMessage(inputSnapshot.message);
+                        writeChatDraft(chatDraftIdentity, inputSnapshot.message, confirmedMentionsRef.current);
+                    } else {
+                        // New typing already lives in the composer; the failed
+                        // prompt joins it instead of clobbering either text.
+                        useInputStore.getState().setPendingInputText(inputSnapshot.message, 'append');
+                    }
+                }
             }
 
             const isSoftNetworkError =
