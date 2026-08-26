@@ -596,11 +596,19 @@ export class ChildStoreManager {
         queuedMs: Math.max(0, Date.now() - next.enqueuedAt),
       })
 
+      // Store liveness, not run-token ownership. The pump deletes the run
+      // token in `.finally()` as soon as onBootstrap settles, while
+      // bootstrapDirectory schedules deferred recovery pulls (permission.list
+      // and friends) from a `setTimeout(0)` that always runs after that
+      // cleanup — gating those on the token made them dead code. The pump
+      // never replaces a running entry for the same directory (queueBootstrap
+      // defers via rerunRequested), so during the run itself this is
+      // equivalent. Mirrors the isCurrent contract in session-message-loader.
+      const store = this.children.get(next.directory)
       const isCurrent = () => (
         !this.disposed
         && this.bootstrapGeneration === running.generation
-        && this.runningBootstraps.get(next.directory)?.token === token
-        && this.children.has(next.directory)
+        && this.children.get(next.directory) === store
       )
       let bootstrapPromise: Promise<void>
       try {

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   ChildStoreManager,
+  type DirectoryBootstrapContext,
   markDirectorySessionPartChanged,
   subscribeDirectoryPermission,
   subscribeDirectoryQuestion,
@@ -555,6 +556,32 @@ describe('ChildStoreManager directory bootstrap scheduler', () => {
     expect(started).toEqual(['stale', 'current']);
     expect(manager.getBootstrapState('/workspace')).toBe('complete');
     cleanupCurrent();
+    manager.disposeAll();
+  });
+});
+
+describe('ChildStoreManager bootstrap context liveness', () => {
+  test('isCurrent stays true after the run settles so deferred recovery work can commit', async () => {
+    const manager = new ChildStoreManager();
+    let captured: DirectoryBootstrapContext | undefined;
+    const cleanup = manager.configure({
+      onBootstrap: (context) => {
+        captured = context;
+      },
+    });
+    manager.requestBootstrap({ directory: '/workspace', priority: 'selected', reason: 'current-directory' });
+    await settle();
+    expect(manager.getBootstrapState('/workspace')).toBe('complete');
+
+    // bootstrapDirectory schedules deferred recovery pulls (permission.list
+    // and friends) from a setTimeout(0), which always runs after the pump's
+    // .finally() has cleaned up the run entry. isCurrent must remain true
+    // there, or those pulls and every commit they make get skipped.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(captured?.isCurrent()).toBe(true);
+
+    cleanup();
+    expect(captured?.isCurrent()).toBe(false);
     manager.disposeAll();
   });
 });
