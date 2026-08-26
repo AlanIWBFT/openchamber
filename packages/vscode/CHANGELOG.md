@@ -8,6 +8,7 @@
 - Chat: @ file mentions now rank files and directories together by how well they match, so the file you typed is at the top instead of below unrelated directories. Multi-word queries match in any order, and long paths keep the folder next to the file name visible.
 - Search: Ctrl/Cmd+P now matches the whole file path, not just the file name — searching a folder name finds the files inside it.
 - Search in dropdowns: searchable pickers (agents, models, providers, branches) now put the best matches first, match multi-word queries in any order, and ignore punctuation (so "gpt4o" finds "gpt-4o").
+- Keyboard: dropdown menus and pickers answer Ctrl+N/Ctrl+P for down/up, the session switcher opens focused on your current session, and shortcut labels in tooltips and menus show the binding you actually have set (thanks @ChangeHow).
 - Chat: OpenCode notices now share one style.
 - The timeline dialog now fits small windows instead of squeezing the message list to a couple of rows (thanks to @gaojunran).
 
