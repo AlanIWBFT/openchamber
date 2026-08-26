@@ -7,6 +7,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import {
     CHAT_LIST_ANCHOR_OFFSET,
     getAnchoredTurnMetrics,
+    getRowBottom,
     resolveTimelineIsAtEnd,
     type TimelineListMeasurementState,
     type TimelineScrollMode,
@@ -129,6 +130,8 @@ export const useChatTimelineScroll = ({
     // True after a real gesture until an explicit opt back in; drives the
     // overlay scrollbar suppression instead of the anchor's mere existence.
     const [userOwnsScroll, setUserOwnsScroll] = React.useState(false);
+    const userOwnsScrollRef = React.useRef(userOwnsScroll);
+    userOwnsScrollRef.current = userOwnsScroll;
 
     const modeRef = React.useRef<TimelineScrollMode>('following-end');
     const isAtEndRef = React.useRef(true);
@@ -547,9 +550,12 @@ export const useChatTimelineScroll = ({
     // per-frame row re-measure and the pinned viewport shakes. Corrections
     // stand down for the whole resize and the visible content is held by the
     // list's size compensation instead. Deliberately NO snap back to the end
-    // afterwards: a slow drag settles repeatedly, and each snap reads as the
-    // very jump this suspension removes — geometry changed, staying where the
-    // reader is beats re-asserting the edge.
+    // afterwards for a mid-conversation reader: a slow drag settles
+    // repeatedly, and each snap reads as the very jump this suspension
+    // removes. A reader who WAS at the end is the exception — after rows
+    // re-wrap, stale cached sizes can leave a large phantom gap below the
+    // last row, so re-asserting the end once on settle is what "staying
+    // where the reader is" means for them.
     const widthResizingRef = React.useRef(false);
     React.useEffect(() => {
         if (!scrollNode || typeof ResizeObserver === 'undefined') return;
@@ -569,6 +575,9 @@ export const useChatTimelineScroll = ({
             quietTimer = setTimeout(() => {
                 quietTimer = null;
                 widthResizingRef.current = false;
+                if (isAtEndRef.current && pendingAnchorRef.current === null) {
+                    void listRef.current?.scrollToEnd({ animated: false });
+                }
             }, 350);
         });
         observer.observe(scrollNode);
@@ -580,6 +589,34 @@ export const useChatTimelineScroll = ({
 
     const onTimelineDataChange = React.useCallback(() => {
         if (widthResizingRef.current) return;
+
+        // Stranded-viewport rescue, independent of any follow mode or
+        // preference: when off-screen size estimates settle smaller than
+        // estimated, the measured content can end ABOVE the viewport while
+        // the scroll offset stays at the stale end — the reader faces a blank
+        // phantom tail with every row out of reach above. That state is never
+        // intentional, so it is corrected even when auto-follow is off. Only
+        // a fully blank viewport qualifies; partial visibility is left alone.
+        if (!userOwnsScrollRef.current) {
+            const list = listRef.current;
+            if (list) {
+                const state = list.getState();
+                const lastIndex = state.data.length - 1;
+                const lastBottom = lastIndex >= 0 ? getRowBottom(state, lastIndex) : null;
+                if (lastBottom !== null && state.scroll > lastBottom) {
+                    const visibleLength = Math.max(
+                        0,
+                        state.scrollLength - composerOverlayHeightRef.current - CHAT_LIST_ANCHOR_OFFSET,
+                    );
+                    void list.scrollToOffset({
+                        offset: Math.max(0, lastBottom - visibleLength),
+                        animated: false,
+                    });
+                    return;
+                }
+            }
+        }
+
         if (!streamingAutoFollowEnabledRef.current) return;
         if (!isLiveFollowActive()) return;
 
