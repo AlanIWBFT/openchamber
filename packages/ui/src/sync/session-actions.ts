@@ -26,6 +26,7 @@ import {
   type SessionMetadataRecord,
 } from "@/lib/sessionReviewMetadata"
 import { withContextObligatoryMessage, type ContextObligatoryMessage } from "@/lib/contextObligatoryMessages"
+import { getBtwOriginalSessionID, getBtwSessionID, isBtwSession, withoutBtwSessionLink } from "@/lib/sessionBtwMetadata"
 import { withLinkedIssue, type LinkedIssue } from "@/lib/linkedIssues"
 import { getImperativeSessionMessageLoader } from "./session-message-loader"
 import { cleanupPersistedSessionState } from "./session-deletion-cleanup"
@@ -35,6 +36,7 @@ import { getStaleRunningToolMessageID } from "./materialization"
 import { normalizePath } from "@/lib/pathNormalization"
 import { mergeMessages } from "./optimistic"
 import { messagesBefore, messagesFrom } from "./message-ordering"
+import { deleteChatDirectory } from "@/lib/chatDirectories"
 
 const MESSAGE_REFETCH_LIMIT = 100
 const SEND_CONFIRMATION_REFETCH_LIMIT = 30
@@ -436,6 +438,76 @@ type SessionListSnapshot = {
 
 type DirectoryStoreApi = ReturnType<ChildStoreManager["ensureChild"]>
 
+type DescendantSession = {
+  session: Session
+  directory: string
+}
+
+function getDescendantSessions(rootId: string): DescendantSession[] {
+  const stores = _childStores
+  if (!stores) return []
+
+  const sessionsById = new Map<string, DescendantSession>()
+  for (const [storeDirectory, store] of stores.children) {
+    for (const session of store.getState().session) {
+      const directory = session.directory || storeDirectory
+      const current = sessionsById.get(session.id)
+      if (!current || session.directory) sessionsById.set(session.id, { session, directory })
+    }
+  }
+
+  const subtreeIds = computeSubtreeIds(
+    [...sessionsById.values()].map(({ session }) => session),
+    rootId,
+  )
+  subtreeIds.delete(rootId)
+  return [...subtreeIds]
+    .map((id) => sessionsById.get(id))
+    .filter((entry): entry is DescendantSession => !!entry)
+}
+
+function firstUserMessageAtOrAfter(messages: Message[], cutoff: number): Message | null {
+  let target: Message | null = null
+  for (const message of messages) {
+    if (message.role !== "user" || message.time.created < cutoff) continue
+    if (!target || message.time.created < target.time.created) target = message
+  }
+  return target
+}
+
+async function fetchSessionMessages(sessionId: string, directory?: string | null): Promise<Message[]> {
+  const records = await opencodeClient.getSessionMessages(sessionId, undefined, directory)
+  return records.map(({ info }) => info)
+}
+
+async function cascadeRevertToDescendants(rootId: string, cutoff: number): Promise<void> {
+  for (const { session, directory } of getDescendantSessions(rootId)) {
+    try {
+      const messages = await fetchSessionMessages(session.id, directory)
+      // Equal timestamps belong to the reverted side of the boundary. Keeping
+      // them would rely on unrelated message IDs to decide chronology.
+      const target = firstUserMessageAtOrAfter(messages, cutoff)
+      if (!target) continue
+      const reverted = await opencodeClient.revertSession(session.id, target.id, undefined, directory)
+      mirrorSessionIntoLiveStores(reverted, directory)
+    } catch (error) {
+      console.error(`[session-actions] Failed to cascade revert to descendant ${session.id}:`, error)
+    }
+  }
+}
+
+async function cascadeUnrevertToDescendants(rootId: string): Promise<void> {
+  for (const { session, directory } of getDescendantSessions(rootId)) {
+    if (!session.revert) continue
+    try {
+      const result = await sdk().session.unrevert({ sessionID: session.id, directory })
+      mirrorSessionIntoLiveStores(assertSdkData(result, "session.unrevert"), directory)
+    } catch (error) {
+      console.error(`[session-actions] Failed to cascade unrevert to descendant ${session.id}:`, error)
+    }
+  }
+}
+
 function getGlobalSessionSnapshot(sessionId: string): Session | null {
   const global = useGlobalSessionsStore.getState()
   return [...global.activeSessions, ...global.archivedSessions].find((session) => session.id === sessionId) ?? null
@@ -726,6 +798,7 @@ export async function createSession(
   directoryOverride?: string | null,
   parentID?: string | null,
   metadata?: Record<string, unknown>,
+  selectionTransition?: "submitted-draft",
 ): Promise<Session | null> {
   try {
     // Capture the effective directory used for session creation so we can fall
@@ -746,7 +819,7 @@ export async function createSession(
     if (sessionDirectory) {
       registerSessionDirectory(session.id, sessionDirectory)
     }
-    useSessionUIStore.getState().setCurrentSession(session.id, sessionDirectory)
+    useSessionUIStore.getState().setCurrentSession(session.id, sessionDirectory, selectionTransition)
     useSessionUIStore.getState().markSessionAsOpenChamberCreated(session.id)
     useGlobalSessionsStore.getState().upsertSession(session)
     return session
@@ -792,6 +865,7 @@ export async function patchSessionMetadata(
   useGlobalSessionsStore.getState().upsertSession(updated)
   const sessionDirectory = (updated as { directory?: string | null }).directory ?? targetDirectory
   if (sessionDirectory) registerSessionDirectory(updated.id, sessionDirectory)
+  mirrorSessionIntoLiveStores(updated, sessionDirectory ?? undefined)
   return updated
 }
 
@@ -801,11 +875,8 @@ export async function setLinkedIssue(
   issue: LinkedIssue,
   linked: boolean,
 ): Promise<Session> {
-  const updated = await patchSessionMetadata(sessionId, directory, (metadata) =>
+  return patchSessionMetadata(sessionId, directory, (metadata) =>
     withLinkedIssue(metadata, issue, linked))
-  const sessionDirectory = (updated as Session & { directory?: string | null }).directory ?? directory ?? undefined
-  mirrorSessionIntoLiveStores(updated, sessionDirectory ?? undefined)
-  return updated
 }
 
 export async function setContextObligatoryMessage(
@@ -814,11 +885,8 @@ export async function setContextObligatoryMessage(
   message: ContextObligatoryMessage,
   pinned: boolean,
 ): Promise<Session> {
-  const updated = await patchSessionMetadata(sessionId, directory, (metadata) =>
+  return patchSessionMetadata(sessionId, directory, (metadata) =>
     withContextObligatoryMessage(metadata, message, pinned))
-  const sessionDirectory = (updated as Session & { directory?: string | null }).directory ?? directory ?? undefined
-  mirrorSessionIntoLiveStores(updated, sessionDirectory ?? undefined)
-  return updated
 }
 
 async function cleanupReviewMetadataBeforeDelete(
@@ -834,18 +902,41 @@ async function cleanupReviewMetadataBeforeDelete(
     return
   }
   if (isStaleRuntime(expectedRuntimeKey)) return
-  if (!isReviewSession(session)) return
-  const originalSessionID = getOriginalSessionID(session)
-  if (!originalSessionID) return
-  try {
-    await patchSessionMetadata(originalSessionID, directory ?? getSessionDirectory(originalSessionID), (metadata) =>
-      withoutReviewSessionLink(metadata, sessionId),
-      expectedRuntimeKey,
-    )
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    if (/not found/i.test(message)) return
-    console.warn("[session-actions] review metadata cleanup failed before delete", error)
+
+  const unlinkParent = async (originalSessionID: string, unlink: (metadata: SessionMetadataRecord) => SessionMetadataRecord) => {
+    try {
+      await patchSessionMetadata(originalSessionID, directory ?? getSessionDirectory(originalSessionID), unlink, expectedRuntimeKey)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (/not found/i.test(message)) return
+      console.warn("[session-actions] linked-session metadata cleanup failed before delete", error)
+    }
+  }
+
+  if (isReviewSession(session)) {
+    const originalSessionID = getOriginalSessionID(session)
+    if (originalSessionID) await unlinkParent(originalSessionID, (metadata) => withoutReviewSessionLink(metadata, sessionId))
+    return
+  }
+
+  if (isBtwSession(session)) {
+    const originalSessionID = getBtwOriginalSessionID(session)
+    if (originalSessionID) await unlinkParent(originalSessionID, (metadata) => withoutBtwSessionLink(metadata, sessionId))
+    return
+  }
+
+  // Deleting or archiving a session that has an active btw fork also removes
+  // the fork: it is a temporary session that only exists for its parent's
+  // panel. Best-effort — a failed fork delete must not block the parent's
+  // operation; the orphaned fork stays visible in the sidebar.
+  const btwSessionID = getBtwSessionID(session)
+  if (btwSessionID) {
+    try {
+      if (isStaleRuntime(expectedRuntimeKey)) return
+      await deleteSession(btwSessionID, { expectedRuntimeKey })
+    } catch (error) {
+      console.warn("[session-actions] failed to delete btw fork before parent delete", error)
+    }
   }
 }
 
@@ -919,6 +1010,15 @@ function finalizeConfirmedSessionDeletion(
   }
 }
 
+async function cleanupDeletedChatDirectory(directory: string | undefined, deleteDirectory: boolean): Promise<void> {
+  if (!directory || !deleteDirectory) return
+  try {
+    await deleteChatDirectory(directory)
+  } catch (error) {
+    console.warn("[session-actions] deleted chat directory cleanup failed", error)
+  }
+}
+
 export type DeleteSessionOptions = {
   /**
    * Runtime key the deletion is scoped to. Defaults to the active runtime when
@@ -947,6 +1047,8 @@ export async function deleteSession(sessionId: string, options?: DeleteSessionOp
   const expectedRuntimeKey = options?.expectedRuntimeKey ?? getRuntimeKey()
   if (isStaleRuntime(expectedRuntimeKey)) return false
   const sessionDirectory = getSessionDirectory(sessionId)
+  const sessionSnapshot = getGlobalSessionSnapshot(sessionId)
+  const deleteManagedDirectory = Boolean(sessionSnapshot && sessionSnapshot.parentID == null)
   try {
     await cleanupReviewMetadataBeforeDelete(sessionId, sessionDirectory, expectedRuntimeKey)
     if (isStaleRuntime(expectedRuntimeKey)) return false
@@ -956,6 +1058,7 @@ export async function deleteSession(sessionId: string, options?: DeleteSessionOp
       throw new Error("session.delete failed: server did not confirm deletion")
     }
     finalizeConfirmedSessionDeletion(sessionId, sessionDirectory, expectedRuntimeKey)
+    await cleanupDeletedChatDirectory(sessionDirectory, deleteManagedDirectory)
     return true
   } catch (error) {
     console.error("[session-actions] deleteSession failed", error)
@@ -965,6 +1068,7 @@ export async function deleteSession(sessionId: string, options?: DeleteSessionOp
     if ((error as { status?: number })?.status === 404) {
       if (isStaleRuntime(expectedRuntimeKey)) return false
       finalizeConfirmedSessionDeletion(sessionId, sessionDirectory, expectedRuntimeKey)
+      await cleanupDeletedChatDirectory(sessionDirectory, deleteManagedDirectory)
       return true
     }
     return false
@@ -978,6 +1082,8 @@ export async function deleteSessionInDirectory(
   expectedRuntimeKey = getRuntimeKey(),
 ): Promise<boolean> {
   if (isStaleRuntime(expectedRuntimeKey)) return false
+  const sessionSnapshot = getGlobalSessionSnapshot(sessionId)
+  const deleteManagedDirectory = Boolean(sessionSnapshot && sessionSnapshot.parentID == null)
   try {
     await cleanupReviewMetadataBeforeDelete(sessionId, directory, expectedRuntimeKey)
     if (isStaleRuntime(expectedRuntimeKey)) return false
@@ -987,12 +1093,14 @@ export async function deleteSessionInDirectory(
       throw new Error("session.delete failed: server did not confirm deletion")
     }
     finalizeConfirmedSessionDeletion(sessionId, directory, expectedRuntimeKey)
+    await cleanupDeletedChatDirectory(directory, deleteManagedDirectory)
     return true
   } catch (error) {
     console.error("[session-actions] deleteSessionInDirectory failed", error)
     if ((error as { status?: number })?.status === 404) {
       if (isStaleRuntime(expectedRuntimeKey)) return false
       finalizeConfirmedSessionDeletion(sessionId, directory, expectedRuntimeKey)
+      await cleanupDeletedChatDirectory(directory, deleteManagedDirectory)
       return true
     }
     return false
@@ -1804,6 +1912,11 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   const { store, directory } = dirStoreForSession(sessionId)
   const state = store.getState()
 
+  const localTarget = state.message[sessionId]?.find((message) => message.id === messageId)
+  const targetMessage = localTarget
+    ?? (await fetchSessionMessages(sessionId, directory)).find((message) => message.id === messageId)
+  if (!targetMessage) throw new Error(`Cannot revert session: message ${messageId} was not found`)
+
   // Abort if busy before mutating session state
   const status = state.session_status[sessionId]
   if (status && status.type !== "idle") {
@@ -1874,6 +1987,9 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
 
   // Call SDK and merge authoritative result into store
   try {
+    // Descendants go first because OpenCode also restores file snapshots during
+    // revert. All sessions share a directory, so the parent's snapshot must win.
+    await cascadeRevertToDescendants(sessionId, targetMessage.time.created)
     const revertedSession = await opencodeClient.revertSession(sessionId, messageId, undefined, directory)
     const current = store.getState()
     const updated = [...current.session]
@@ -1956,6 +2072,9 @@ export async function unrevertSession(sessionId: string): Promise<void> {
     }
   }
 
+  // Descendants go first because unrevert can also restore shared file state.
+  // Applying the parent last leaves the working tree at the parent's snapshot.
+  await cascadeUnrevertToDescendants(sessionId)
   const result = await sdk().session.unrevert({ sessionID: sessionId, directory })
   const unrevertedSession = assertSdkData(result, "session.unrevert")
   const current = store.getState()
