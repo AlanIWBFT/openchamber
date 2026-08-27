@@ -78,6 +78,7 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { togglePermissionAutoAccept } from './permissionAutoAccept';
 import { useKeybind } from '@/hooks/useKeybind';
+import { useAuthSessionStore } from '@/lib/runtime-auth-expiry';
 import { extractGitChangedFiles } from './changedFiles';
 import { useI18n } from '@/lib/i18n';
 import { sessionEvents } from '@/lib/sessionEvents';
@@ -418,7 +419,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const ensureGitStatus = useGitStore((state) => state.ensureStatus);
     const fetchGitStatus = useGitStore((state) => state.fetchStatus);
     const clearGitDiffCache = useGitStore((state) => state.clearDiffCache);
-    const [showAbortStatus, setShowAbortStatus] = React.useState(false);
     const setSessionAutoAccept = usePermissionStore((state) => state.setSessionAutoAccept);
     const [isNarrowComposer, setIsNarrowComposer] = React.useState(false);
     const [attachmentPreview, setAttachmentPreview] = React.useState<ToolPopupContent>({
@@ -696,7 +696,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             attachments,
         };
     }, [resolveInlineFileMention]);
-    const abortTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const prevWasAbortedRef = React.useRef(false);
 
     // Issue linking state
@@ -965,6 +964,14 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         const queuedMessageId = options?.queuedMessageId;
         const delivery = options?.delivery === 'steer' && sessionPhase !== 'idle' ? 'steer' : undefined;
         const capturedTarget = messageQueueTarget;
+        // An expired session cannot deliver anything: keep the prompt in the
+        // composer and point at the login banner instead of burning the send
+        // on a guaranteed 401.
+        if (useAuthSessionStore.getState().state !== 'ok') {
+            toast.error(t('sessionAuth.expired.sendBlocked'));
+            return;
+        }
+
         // Snapshot the draft and current-session identity before the first
         // async gap so a later sidebar selection cannot reroute the send.
         const capturedDraftSnapshot = newSessionDraftOpen ? { ...newSessionDraft } : null;
@@ -1383,10 +1390,25 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             console.error('Message send failed:', rawMessage || error);
             restoreConsumedDrafts();
 
-            const currentInput = composerRef.current?.getValue() ?? messageRef.current;
-            if (newSessionDraftOpen && inputSnapshot.message && (!currentInput || currentInput === inputSnapshot.message)) {
-                setMessage(inputSnapshot.message);
-                writeChatDraft(chatDraftIdentity, inputSnapshot.message, confirmedMentionsRef.current);
+            // A failed send returns the typed prompt no matter WHY it failed —
+            // auth, network, server, anything. Losing a long prompt to a toast
+            // is the one outcome this handler must never produce.
+            if (inputSnapshot.message) {
+                if (currentChatDraftIdentityRef.current !== chatDraftIdentity) {
+                    // The user switched sessions mid-send: restore into that
+                    // session's persisted draft, not the visible composer.
+                    writeChatDraft(chatDraftIdentity, inputSnapshot.message, confirmedMentionsRef.current);
+                } else {
+                    const currentInput = composerRef.current?.getValue() ?? messageRef.current;
+                    if (!currentInput || currentInput === inputSnapshot.message) {
+                        setMessage(inputSnapshot.message);
+                        writeChatDraft(chatDraftIdentity, inputSnapshot.message, confirmedMentionsRef.current);
+                    } else {
+                        // New typing already lives in the composer; the failed
+                        // prompt joins it instead of clobbering either text.
+                        useInputStore.getState().setPendingInputText(inputSnapshot.message, 'append');
+                    }
+                }
             }
 
             const isSoftNetworkError =
@@ -1697,29 +1719,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         containerRef: dropZoneRef,
     });
 
-    const startAbortIndicator = React.useCallback(() => {
-        if (abortTimeoutRef.current) {
-            clearTimeout(abortTimeoutRef.current);
-            abortTimeoutRef.current = null;
-        }
-
-        setShowAbortStatus(true);
-
-        abortTimeoutRef.current = setTimeout(() => {
-            setShowAbortStatus(false);
-            abortTimeoutRef.current = null;
-        }, 1800);
-    }, []);
 
     const handleAbort = React.useCallback(() => {
         clearAbortPrompt();
-        startAbortIndicator();
 
         // btw mode: the stop button stops the fork's turn, not the main
         // session's.
         const abortTarget = isBtwActive && btwSessionId ? btwSessionId : currentSessionId;
         void abortCurrentOperation(abortTarget || undefined);
-    }, [abortCurrentOperation, btwSessionId, clearAbortPrompt, currentSessionId, isBtwActive, startAbortIndicator]);
+    }, [abortCurrentOperation, btwSessionId, clearAbortPrompt, currentSessionId, isBtwActive]);
 
     const handleCycleAgent = React.useCallback((direction: 1 | -1 = 1) => {
         const nextAgentName = getCycledPrimaryAgentName(agents, currentAgentName, direction);
@@ -2568,31 +2576,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         handlePermissionAutoAcceptToggle();
     });
 
+    // Acknowledging the abort record is what lets the working chip resume for
+    // the next run; the old "Aborted" banner that used to accompany it is gone.
     React.useEffect(() => {
-        const pendingAbortBanner = Boolean(abortPromptSessionId) && abortPromptSessionId === currentSessionId;
-        if (!prevWasAbortedRef.current && pendingAbortBanner && !showAbortStatus) {
-            startAbortIndicator();
-            if (currentSessionId) {
-                acknowledgeSessionAbort(currentSessionId);
-            }
+        const pendingAbort = Boolean(abortPromptSessionId) && abortPromptSessionId === currentSessionId;
+        if (!prevWasAbortedRef.current && pendingAbort && currentSessionId) {
+            acknowledgeSessionAbort(currentSessionId);
         }
-        prevWasAbortedRef.current = pendingAbortBanner;
-    }, [
-        abortPromptSessionId,
-        acknowledgeSessionAbort,
-        currentSessionId,
-        showAbortStatus,
-        startAbortIndicator,
-    ]);
-
-    React.useEffect(() => {
-        return () => {
-            if (abortTimeoutRef.current) {
-                clearTimeout(abortTimeoutRef.current);
-                abortTimeoutRef.current = null;
-            }
-        };
-    }, []);
+        prevWasAbortedRef.current = pendingAbort;
+    }, [abortPromptSessionId, acknowledgeSessionAbort, currentSessionId]);
 
     return (
         <>
@@ -2663,7 +2655,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     directory={currentSessionDirectoryForSync ?? currentDirectory}
                 />
                 <MemoComposerStatusBar
-                    showAbortStatus={showAbortStatus}
                     showTodos={composerStatusExtrasEnabled}
                     leftAccessory={!composerStatusExtrasEnabled || newSessionDraftOpen || !hasPendingChanges
                         ? null
