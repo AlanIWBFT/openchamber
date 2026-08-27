@@ -1954,8 +1954,6 @@ export const dict: Record<I18nKey, string> = {
   'session.newWorktree.noMatchingBranches': '一致するブランチがありません',
   'session.newWorktree.localBranches': 'ローカルブランチ',
   'session.newWorktree.remoteBranches': 'リモートブランチ',
-  'session.newWorktree.otherLocalBranches': 'その他のローカルブランチ',
-  'session.newWorktree.otherRemoteBranches': 'その他のリモートブランチ',
   'session.newWorktree.branchName': 'ブランチ名',
   'session.newWorktree.branchNamePlaceholder': 'feature/my-awesome-feature',
   'session.newWorktree.actions.change': '変更',

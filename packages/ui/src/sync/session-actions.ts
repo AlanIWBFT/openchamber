@@ -443,13 +443,40 @@ type DescendantSession = {
   directory: string
 }
 
+/**
+ * A session's live status can live in a different child store than the one that
+ * wins the directory dedup, so any store reporting a non-idle status counts.
+ * Read at the moment of use: a descendant can start working after the subtree
+ * snapshot was taken.
+ */
+function isSessionBusyNow(sessionId: string): boolean {
+  const stores = _childStores
+  if (!stores) return false
+
+  for (const [, store] of stores.children) {
+    const status = store.getState().session_status?.[sessionId]
+    if (status && status.type !== "idle") return true
+  }
+  return false
+}
+
+async function abortDescendantIfBusy(sessionId: string, directory: string): Promise<void> {
+  if (!isSessionBusyNow(sessionId)) return
+  try {
+    await sdk().session.abort({ sessionID: sessionId, directory })
+  } catch {
+    // ignore abort errors
+  }
+}
+
 function getDescendantSessions(rootId: string): DescendantSession[] {
   const stores = _childStores
   if (!stores) return []
 
   const sessionsById = new Map<string, DescendantSession>()
   for (const [storeDirectory, store] of stores.children) {
-    for (const session of store.getState().session) {
+    const state = store.getState()
+    for (const session of state.session) {
       const directory = session.directory || storeDirectory
       const current = sessionsById.get(session.id)
       if (!current || session.directory) sessionsById.set(session.id, { session, directory })
@@ -483,6 +510,9 @@ async function fetchSessionMessages(sessionId: string, directory?: string | null
 async function cascadeRevertToDescendants(rootId: string, cutoff: number): Promise<void> {
   for (const { session, directory } of getDescendantSessions(rootId)) {
     try {
+      // A running descendant would keep writing messages past the revert
+      // boundary, so stop it first for the same reason the parent is aborted.
+      await abortDescendantIfBusy(session.id, directory)
       const messages = await fetchSessionMessages(session.id, directory)
       // Equal timestamps belong to the reverted side of the boundary. Keeping
       // them would rely on unrelated message IDs to decide chronology.
@@ -500,6 +530,9 @@ async function cascadeUnrevertToDescendants(rootId: string): Promise<void> {
   for (const { session, directory } of getDescendantSessions(rootId)) {
     if (!session.revert) continue
     try {
+      // Same reason as the revert cascade: a running descendant keeps writing
+      // messages that the unrevert would race against.
+      await abortDescendantIfBusy(session.id, directory)
       const result = await sdk().session.unrevert({ sessionID: session.id, directory })
       mirrorSessionIntoLiveStores(assertSdkData(result, "session.unrevert"), directory)
     } catch (error) {

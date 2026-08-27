@@ -16,6 +16,7 @@ let sessionMessagesResult: { data?: unknown; error?: unknown; response?: { statu
 const sessionMessageRecords = new Map<string, Array<{ info: Message; parts: Part[] }>>()
 const failingRevertSessionIds = new Set<string>()
 const failingUnrevertSessionIds = new Set<string>()
+let afterUnrevertCall: ((sessionId: string) => void) | null = null
 let sessionDeleteError: unknown | null = null
 let beforeSessionUpdateResolve: ((sessionId: string) => void) | null = null
 let beforeSessionDeleteResolve: ((sessionId: string) => void) | null = null
@@ -73,6 +74,7 @@ const mockSdk = {
     }),
     unrevert: mock((params: Record<string, unknown>) => {
       replyCalls.push({ method: "session.unrevert", params })
+      afterUnrevertCall?.(String(params.sessionID))
       if (failingUnrevertSessionIds.has(String(params.sessionID))) {
         return Promise.resolve({ error: { message: "rejected" }, response: { status: 500 } })
       }
@@ -1435,6 +1437,44 @@ describe("revertToMessage passes session directory", () => {
       "root",
     ])
   })
+
+  test("aborts a busy descendant before reverting it", async () => {
+    const rootMessage = { id: "root-cutoff", sessionID: "root", role: "user", time: { created: 20 } } as Message
+    const sessions = [
+      { id: "root", directory: "/tree", time: { created: 1 } },
+      { id: "busy-child", parentID: "root", directory: "/tree", time: { created: 2 } },
+      { id: "idle-child", parentID: "root", directory: "/tree", time: { created: 3 } },
+    ] as Session[]
+    const store = createStore({}, {
+      session: sessions,
+      message: { root: [rootMessage] },
+      session_status: { "busy-child": { type: "busy" }, "idle-child": { type: "idle" } },
+    })
+    for (const id of ["busy-child", "idle-child"]) {
+      sessionMessageRecords.set(id, [{
+        info: { id: `${id}-target`, sessionID: id, role: "user", time: { created: 20 } } as Message,
+        parts: [],
+      }])
+    }
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/tree", store]]), () => "/tree")
+
+    await revertToMessage("root", "root-cutoff")
+
+    expect(replyCalls.filter((call) => call.method === "session.abort").map((call) => call.params.sessionID))
+      .toEqual(["busy-child"])
+    const busyAbortIndex = replyCalls.findIndex((call) => call.method === "session.abort")
+    const busyRevertIndex = replyCalls.findIndex(
+      (call) => call.method === "session.revert" && call.params.sessionID === "busy-child",
+    )
+    expect(busyAbortIndex).toBeLessThan(busyRevertIndex)
+    expect(replyCalls.filter((call) => call.method === "session.revert").map((call) => call.params.sessionID)).toEqual([
+      "busy-child",
+      "idle-child",
+      "root",
+    ])
+  })
 })
 
 describe("unrevertSession descendant cascade", () => {
@@ -1442,6 +1482,7 @@ describe("unrevertSession descendant cascade", () => {
     replyCalls.length = 0
     sessionMessagesResult = { data: [] }
     failingUnrevertSessionIds.clear()
+    afterUnrevertCall = null
   })
 
   test("unreverts only marked descendants before the parent", async () => {
@@ -1484,6 +1525,75 @@ describe("unrevertSession descendant cascade", () => {
       "healthy-child",
       "root",
     ])
+  })
+
+  test("aborts a busy descendant before unreverting it", async () => {
+    const sessions = [
+      { id: "root", directory: "/tree", time: { created: 1 }, revert: { messageID: "root-target" } },
+      { id: "busy-child", parentID: "root", directory: "/tree", time: { created: 2 }, revert: { messageID: "busy-target" } },
+      { id: "idle-child", parentID: "root", directory: "/tree", time: { created: 3 }, revert: { messageID: "idle-target" } },
+    ] as Session[]
+    const store = createStore({}, {
+      session: sessions,
+      session_status: { "busy-child": { type: "busy" }, "idle-child": { type: "idle" } },
+    })
+
+    const { setActionRefs, unrevertSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/tree", store]]), () => "/tree")
+
+    await unrevertSession("root")
+
+    expect(replyCalls.filter((call) => call.method === "session.abort").map((call) => call.params.sessionID))
+      .toEqual(["busy-child"])
+    const abortIndex = replyCalls.findIndex((call) => call.method === "session.abort")
+    const unrevertIndex = replyCalls.findIndex(
+      (call) => call.method === "session.unrevert" && call.params.sessionID === "busy-child",
+    )
+    expect(abortIndex).toBeLessThan(unrevertIndex)
+  })
+
+  test("treats a descendant as busy when any child store reports a non-idle status", async () => {
+    const sessions = [
+      { id: "root", directory: "/tree", time: { created: 1 }, revert: { messageID: "root-target" } },
+      { id: "busy-child", parentID: "root", directory: "/tree", time: { created: 2 }, revert: { messageID: "busy-target" } },
+    ] as Session[]
+    // The session list is deduped onto /tree, but the live status arrived in the
+    // store for another directory.
+    const treeStore = createStore({}, { session: sessions })
+    const statusStore = createStore({}, { session_status: { "busy-child": { type: "busy" } } })
+
+    const { setActionRefs, unrevertSession } = await import("./session-actions")
+    setActionRefs(
+      mockSdk as unknown as OpencodeClient,
+      createChildStores([["/tree", treeStore], ["/other", statusStore]]),
+      () => "/tree",
+    )
+
+    await unrevertSession("root")
+
+    expect(replyCalls.filter((call) => call.method === "session.abort").map((call) => call.params.sessionID))
+      .toEqual(["busy-child"])
+  })
+
+  test("aborts a descendant that turns busy after the subtree snapshot", async () => {
+    const sessions = [
+      { id: "root", directory: "/tree", time: { created: 1 }, revert: { messageID: "root-target" } },
+      { id: "first-child", parentID: "root", directory: "/tree", time: { created: 2 }, revert: { messageID: "first-target" } },
+      { id: "second-child", parentID: "root", directory: "/tree", time: { created: 3 }, revert: { messageID: "second-target" } },
+    ] as Session[]
+    const store = createStore({}, { session: sessions, session_status: {} })
+    afterUnrevertCall = (sessionId) => {
+      if (sessionId !== "first-child") return
+      store.getState().patch({ session_status: { "second-child": { type: "busy" } } })
+    }
+
+    const { setActionRefs, unrevertSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/tree", store]]), () => "/tree")
+
+    await unrevertSession("root")
+
+    expect(replyCalls.filter((call) => call.method === "session.abort").map((call) => call.params.sessionID))
+      .toEqual(["second-child"])
   })
 })
 

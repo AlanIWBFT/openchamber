@@ -1,5 +1,6 @@
 ## [Unreleased]
 
+- GitHub Copilot usage now shows a single AI Credits window, matching Copilot's token-based quota, in place of the old Chat Requests and Completions windows (thanks to @jakoss).
 - The context usage readout now reports the session cost including everything its subagents spent, matching the work status panel instead of showing a lower figure.
 
 ## [1.21.0] - 2026-08-26

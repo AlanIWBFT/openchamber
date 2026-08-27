@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import simpleGit from 'simple-git';
 
 import {
@@ -478,6 +478,10 @@ describe('getWorktrees', () => {
 
   afterEach(() => {
     warnSpy.mockClear();
+  });
+
+  afterAll(() => {
+    warnSpy.mockRestore();
   });
 
   it('returns an empty list for a non-git directory without warning', async () => {

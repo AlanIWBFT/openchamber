@@ -3022,7 +3022,7 @@ export const dict: Record<I18nKey, string> = {
   "memoryDebugPanel.requests.now": "зараз",
   "memoryDebugPanel.requests.noSamples": "Запитів ще немає. Тримайте цю панель відкритою, щоб фіксувати активність fetch.",
   "memoryDebugPanel.requests.chartLabel": "Запити fetch у виконанні з часом, пік {peak}",
-  "memoryDebugPanel.requests.windowHint": "останні {seconds}s",
+  "memoryDebugPanel.requests.windowHint": "останні {seconds} с",
   "memoryDebugPanel.requests.percentileChartLabel": "Перцентилі віку запитів у виконанні (p50, p90, p99, max) з часом",
   "memoryDebugPanel.common.idle": "очікування",
   "memoryDebugPanel.common.live": "live",

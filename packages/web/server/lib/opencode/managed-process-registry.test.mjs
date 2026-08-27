@@ -1,18 +1,9 @@
-import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mocks must be in place before the module under test is imported, because the
-// module calls `promisify(execFile)` at module-load time and binds `fsp.*` at
-// call time.
-//
-// NOTE on `promisify.custom`: the real `child_process.execFile` carries a
-// `[util.promisify.custom]` symbol so that `promisify(execFile)` resolves to
-// `{ stdout, stderr }` (not the generic multi-arg array). A plain `vi.fn()`
-// mock lacks that symbol, so `const { stdout } = await execFileAsync(...)`
-// would destructure `undefined`. We attach the symbol to the mock so the
-// promisified helper used by the module resolves to the same `{ stdout,
-// stderr }` shape.
+import { createManagedProcessRegistry } from './managed-process-registry.js';
 
+// The registry takes its filesystem and child-process helpers as dependencies,
+// so these tests inject fakes instead of mocking node builtins.
 const readdirMock = vi.fn();
 const readFileMock = vi.fn();
 const rmMock = vi.fn();
@@ -20,8 +11,13 @@ const mkdirMock = vi.fn();
 const writeFileMock = vi.fn();
 const renameMock = vi.fn();
 
-vi.mock('node:fs/promises', () => ({
-  default: {
+// `execFileImpl` is the swappable per-test implementation, called with the same
+// (cmd, args, opts, cb) shape the callback-style `execFile` uses; the injected
+// `execFileAsync` adapts it to the `{ stdout, stderr }` promise the module awaits.
+const execFileImpl = vi.fn();
+
+const { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses } = createManagedProcessRegistry({
+  fs: {
     readdir: readdirMock,
     readFile: readFileMock,
     rm: rmMock,
@@ -29,29 +25,12 @@ vi.mock('node:fs/promises', () => ({
     writeFile: writeFileMock,
     rename: renameMock,
   },
-}));
-
-// `execFileImpl` is the swappable per-test implementation; `execFileMock` is
-// what the mocked module sees. `promisify(execFileMock)` returns the custom
-// function, which delegates to `execFileImpl` with a (err, stdout, stderr)
-// callback and resolves to `{ stdout, stderr }`.
-const execFileImpl = vi.fn();
-const execFileMock = vi.fn();
-execFileMock[promisify.custom] = (cmd, args, opts) =>
-  new Promise((resolve, reject) => {
-    execFileImpl(cmd, args, opts, (err, stdout, stderr) =>
-      err ? reject(err) : resolve({ stdout: stdout ?? '', stderr: stderr ?? '' }));
-  });
-
-vi.mock('node:child_process', () => ({
-  execFile: execFileMock,
-}));
-
-const {
-  registerManagedProcess,
-  unregisterManagedProcess,
-  reapOrphanedProcesses,
-} = await import('./managed-process-registry.js');
+  execFileAsync: (cmd, args, opts) =>
+    new Promise((resolve, reject) => {
+      execFileImpl(cmd, args, opts, (err, stdout, stderr) =>
+        err ? reject(err) : resolve({ stdout: stdout ?? '', stderr: stderr ?? '' }));
+    }),
+});
 
 const ORIGINAL_PLATFORM = Object.getOwnPropertyDescriptor(process, 'platform');
 const ORIGINAL_KILL = process.kill;

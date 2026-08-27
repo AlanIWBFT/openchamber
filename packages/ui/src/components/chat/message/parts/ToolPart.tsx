@@ -46,9 +46,9 @@ import {
     buildTaskSummaryEntriesFromSession,
     normalizeTaskSummaryEntries,
     parseTaskMetadataBlock,
+    prepareTaskToolOutput,
     readTaskSessionIdFromOutput,
     readTaskSessionIdFromRecord,
-    stripTaskMetadataFromOutput,
     type TaskToolSummaryEntry,
 } from './taskToolModel';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
@@ -1004,9 +1004,7 @@ const TaskToolSummary: React.FC<{
     const showToolFileIcons = useUIStore((state) => state.showToolFileIcons);
     const runtime = React.useContext(RuntimeAPIContext);
 
-    const trimmedOutput = typeof output === 'string'
-        ? stripTaskMetadataFromOutput(output)
-        : '';
+    const trimmedOutput = prepareTaskToolOutput(output);
     const hasOutput = trimmedOutput.length > 0;
     const [isOutputExpanded, setIsOutputExpanded] = React.useState(false);
 
@@ -2037,6 +2035,9 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     };
 
     const handleMainKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        // Nested buttons (quick-open, copy) handle their own Enter/Space; the row
+        // must not swallow the key and toggle instead.
+        if (event.target !== event.currentTarget) return;
         if (event.key !== 'Enter' && event.key !== ' ') {
             return;
         }
@@ -2088,13 +2089,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     };
 
     const handleQuickOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
-        event.stopPropagation();
-        openQuickTarget();
-    };
-
-    const handleQuickOpenKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
         event.stopPropagation();
         openQuickTarget();
     };
@@ -2192,7 +2186,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                     {isExpanded ? <Icon name="arrow-down-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-right-s" className="h-3.5 w-3.5" />}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-1 min-w-0 flex-1">
+                            <div className={cn('flex items-center min-w-0 flex-1', quickOpenTarget ? 'gap-1' : 'gap-2')}>
                                 <MinDurationShineText
                                     active={Boolean(isActive && !isError)}
                                     minDurationMs={300}
@@ -2206,10 +2200,11 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                     <button
                                         type="button"
                                         onClick={handleQuickOpen}
-                                        onKeyDown={handleQuickOpenKeyDown}
                                         className={cn(
                                             'flex-shrink-0 inline-flex h-4 w-4 items-center justify-center rounded transition-opacity hover:bg-[var(--surface-hover)]',
-                                            'opacity-0 group-hover/tool:opacity-60 hover:opacity-100 focus-visible:opacity-100',
+                                            // Coarse pointers never hover, so the icon has to rest visible
+                                            // there or it stays invisible while remaining tappable.
+                                            'opacity-0 group-hover/tool:opacity-60 hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-60',
                                         )}
                                         style={{ color: 'var(--tools-icon)' }}
                                         title={t('chat.toolPart.openFile')}

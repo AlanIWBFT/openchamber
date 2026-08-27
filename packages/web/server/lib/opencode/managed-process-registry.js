@@ -51,7 +51,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-const execFileAsync = promisify(execFile);
+const defaultExecFileAsync = promisify(execFile);
 
 const resolveRegistryDir = () => {
   const override = process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY;
@@ -60,72 +60,6 @@ const resolveRegistryDir = () => {
 };
 
 const entryFilePath = (pid) => path.join(resolveRegistryDir(), `${pid}.json`);
-
-const writeEntryFile = async (entry) => {
-  const dir = resolveRegistryDir();
-  try {
-    await fsp.mkdir(dir, { recursive: true });
-    const filePath = path.join(dir, `${entry.pid}.json`);
-    const tmp = `${filePath}.tmp-${process.pid}`;
-    await fsp.writeFile(tmp, JSON.stringify(entry, null, 2));
-    await fsp.rename(tmp, filePath);
-  } catch {
-    // Best-effort: a failed registry write must never break spawn/shutdown.
-  }
-};
-
-const readAllEntries = async () => {
-  const dir = resolveRegistryDir();
-  let names = [];
-  try {
-    names = await fsp.readdir(dir);
-  } catch {
-    return [];
-  }
-  const out = [];
-  for (const name of names.filter((value) => value.endsWith('.json'))) {
-    const filePath = path.join(dir, name);
-    try {
-      const entry = JSON.parse(await fsp.readFile(filePath, 'utf8'));
-      if (entry && Number.isInteger(entry.pid)) {
-        out.push({ entry, filePath });
-      } else {
-        await fsp.rm(filePath, { force: true });
-      }
-    } catch {
-      // Corrupt/partial file — drop it.
-      try {
-        await fsp.rm(filePath, { force: true });
-      } catch {
-        // ignore
-      }
-    }
-  }
-  return out;
-};
-
-/** Record an OpenCode process WE spawned so a future run can reap it if orphaned. */
-export const registerManagedProcess = async ({ pid, ownerPid, port, binary, runtime } = {}) => {
-  if (!Number.isInteger(pid)) return;
-  await writeEntryFile({
-    pid,
-    ownerPid: Number.isInteger(ownerPid) ? ownerPid : process.pid,
-    port: Number.isInteger(port) ? port : null,
-    binary: typeof binary === 'string' ? binary : null,
-    runtime: typeof runtime === 'string' ? runtime : 'web',
-    startedAt: new Date().toISOString(),
-  });
-};
-
-/** Drop a pid from the registry (after we have killed/closed it ourselves). */
-export const unregisterManagedProcess = async (pid) => {
-  if (!Number.isInteger(pid)) return;
-  try {
-    await fsp.rm(entryFilePath(pid), { force: true });
-  } catch {
-    // Best-effort: dropping a missing file is not an error.
-  }
-};
 
 const isPidAlive = (pid) => {
   if (!Number.isInteger(pid)) return false;
@@ -140,38 +74,6 @@ const isPidAlive = (pid) => {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Returns { ppid, command } for a live pid on Unix, or null if it can't be read.
-const readUnixProcInfo = async (pid) => {
-  try {
-    const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'ppid=,command='], {
-      encoding: 'utf8',
-      timeout: 3000,
-      windowsHide: true,
-    });
-    const line = (stdout || '').trim();
-    if (!line) return null;
-    const match = line.match(/^\s*(\d+)\s+(.*)$/);
-    if (!match) return null;
-    return { ppid: Number.parseInt(match[1], 10), command: match[2] };
-  } catch {
-    return null;
-  }
-};
-
-// Windows image name for a pid (e.g. "opencode.exe"), or null.
-const readWindowsImageName = async (pid) => {
-  try {
-    const { stdout } = await execFileAsync('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], {
-      encoding: 'utf8',
-      timeout: 3000,
-      windowsHide: true,
-    });
-    return (stdout || '').trim() || null;
-  } catch {
-    return null;
-  }
-};
-
 const commandIdentifiesOurServer = (command, entry) => {
   if (typeof command !== 'string') return false;
   const lower = command.toLowerCase();
@@ -182,105 +84,218 @@ const commandIdentifiesOurServer = (command, entry) => {
   return true;
 };
 
-const killOrphan = async (pid) => {
-  if (process.platform === 'win32') {
+/**
+ * Build the registry API over injectable filesystem and child-process
+ * dependencies. Production callers use the default instance exported below;
+ * tests pass their own `fs`/`execFileAsync` instead of mocking node builtins.
+ */
+export const createManagedProcessRegistry = ({ fs = fsp, execFileAsync = defaultExecFileAsync } = {}) => {
+  const writeEntryFile = async (entry) => {
+    const dir = resolveRegistryDir();
     try {
-      await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F'], {
-        stdio: 'ignore',
-        timeout: 5000,
-        windowsHide: true,
-      });
+      await fs.mkdir(dir, { recursive: true });
+      const filePath = path.join(dir, `${entry.pid}.json`);
+      const tmp = `${filePath}.tmp-${process.pid}`;
+      await fs.writeFile(tmp, JSON.stringify(entry, null, 2));
+      await fs.rename(tmp, filePath);
     } catch {
-      // Best-effort: a failed kill is not fatal (startup reaper is a backstop).
-    }
-    return;
-  }
-
-  const signalTree = (signal) => {
-    try {
-      process.kill(-pid, signal);
-    } catch {
-      // process group may already be gone
-    }
-    try {
-      process.kill(pid, signal);
-    } catch {
-      // pid may already be gone
+      // Best-effort: a failed registry write must never break spawn/shutdown.
     }
   };
 
-  signalTree('SIGTERM');
-  for (let waited = 0; waited < 1500 && isPidAlive(pid); waited += 150) {
-    await sleep(150);
-  }
-  if (isPidAlive(pid)) {
-    signalTree('SIGKILL');
-    await sleep(300);
-  }
-};
-
-// Decide+act on a single registry entry. Returns true if it was reaped.
-const processEntry = async (entry, { log }) => {
-  // Dead pid → nothing to do (caller drops the file).
-  if (!isPidAlive(entry.pid)) return false;
-
-  const ownerGone = Number.isInteger(entry.ownerPid) && !isPidAlive(entry.ownerPid);
-
-  if (process.platform === 'win32') {
-    const image = await readWindowsImageName(entry.pid);
-    const looksLikeOpencode = typeof image === 'string' && image.toLowerCase().includes('opencode');
-    // Windows lacks reliable reparent-to-1 semantics (job objects usually kill
-    // children with the parent), so we reap only when the owner is provably dead
-    // AND the image still looks like opencode.
-    if (looksLikeOpencode && ownerGone) {
-      await killOrphan(entry.pid);
-      log?.(`[lifecycle] reaped orphaned OpenCode pid ${entry.pid} (owner ${entry.ownerPid} gone)`);
-      return true;
-    }
-    return false;
-  }
-
-  const info = await readUnixProcInfo(entry.pid);
-  // Can't verify identity (or it's not our server) → leave it alone.
-  if (!info || !commandIdentifiesOurServer(info.command, entry)) return false;
-
-  const orphaned = info.ppid === 1 || ownerGone;
-  if (!orphaned) return false; // still owned by a live instance
-
-  await killOrphan(entry.pid);
-  log?.(`[lifecycle] reaped orphaned OpenCode pid ${entry.pid} (reparented/owner gone)`);
-  return true;
-};
-
-/**
- * Kill any genuinely-orphaned OpenCode processes WE previously spawned, and
- * prune their registry files. Safe to call at startup before spawning a new
- * server. Returns { inspected, reaped }.
- */
-export const reapOrphanedProcesses = async ({ log } = {}) => {
-  const records = await readAllEntries();
-  if (records.length === 0) return { inspected: 0, reaped: 0 };
-
-  let reaped = 0;
-  for (const { entry, filePath } of records) {
-    let drop = false;
+  const readAllEntries = async () => {
+    const dir = resolveRegistryDir();
+    let names = [];
     try {
-      const wasReaped = await processEntry(entry, { log });
-      if (wasReaped) reaped += 1;
-      // Drop the file when the process is gone (reaped now, or already dead);
-      // keep it only while the process is still alive and owned by a live owner.
-      drop = wasReaped || !isPidAlive(entry.pid);
-    } catch (error) {
-      log?.(`[lifecycle] reap check failed for pid ${entry.pid}: ${error?.message ?? error}`);
+      names = await fs.readdir(dir);
+    } catch {
+      return [];
     }
-    if (drop) {
+    const out = [];
+    for (const name of names.filter((value) => value.endsWith('.json'))) {
+      const filePath = path.join(dir, name);
       try {
-        await fsp.rm(filePath, { force: true });
+        const entry = JSON.parse(await fs.readFile(filePath, 'utf8'));
+        if (entry && Number.isInteger(entry.pid)) {
+          out.push({ entry, filePath });
+        } else {
+          await fs.rm(filePath, { force: true });
+        }
       } catch {
-        // best-effort
+        // Corrupt/partial file — drop it.
+        try {
+          await fs.rm(filePath, { force: true });
+        } catch {
+          // ignore
+        }
       }
     }
-  }
+    return out;
+  };
 
-  return { inspected: records.length, reaped };
+  /** Record an OpenCode process WE spawned so a future run can reap it if orphaned. */
+  const registerManagedProcess = async ({ pid, ownerPid, port, binary, runtime } = {}) => {
+    if (!Number.isInteger(pid)) return;
+    await writeEntryFile({
+      pid,
+      ownerPid: Number.isInteger(ownerPid) ? ownerPid : process.pid,
+      port: Number.isInteger(port) ? port : null,
+      binary: typeof binary === 'string' ? binary : null,
+      runtime: typeof runtime === 'string' ? runtime : 'web',
+      startedAt: new Date().toISOString(),
+    });
+  };
+
+  /** Drop a pid from the registry (after we have killed/closed it ourselves). */
+  const unregisterManagedProcess = async (pid) => {
+    if (!Number.isInteger(pid)) return;
+    try {
+      await fs.rm(entryFilePath(pid), { force: true });
+    } catch {
+      // Best-effort: dropping a missing file is not an error.
+    }
+  };
+
+  // Returns { ppid, command } for a live pid on Unix, or null if it can't be read.
+  const readUnixProcInfo = async (pid) => {
+    try {
+      const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'ppid=,command='], {
+        encoding: 'utf8',
+        timeout: 3000,
+        windowsHide: true,
+      });
+      const line = (stdout || '').trim();
+      if (!line) return null;
+      const match = line.match(/^\s*(\d+)\s+(.*)$/);
+      if (!match) return null;
+      return { ppid: Number.parseInt(match[1], 10), command: match[2] };
+    } catch {
+      return null;
+    }
+  };
+
+  // Windows image name for a pid (e.g. "opencode.exe"), or null.
+  const readWindowsImageName = async (pid) => {
+    try {
+      const { stdout } = await execFileAsync('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], {
+        encoding: 'utf8',
+        timeout: 3000,
+        windowsHide: true,
+      });
+      return (stdout || '').trim() || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const killOrphan = async (pid) => {
+    if (process.platform === 'win32') {
+      try {
+        await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+          stdio: 'ignore',
+          timeout: 5000,
+          windowsHide: true,
+        });
+      } catch {
+        // Best-effort: a failed kill is not fatal (startup reaper is a backstop).
+      }
+      return;
+    }
+
+    const signalTree = (signal) => {
+      try {
+        process.kill(-pid, signal);
+      } catch {
+        // process group may already be gone
+      }
+      try {
+        process.kill(pid, signal);
+      } catch {
+        // pid may already be gone
+      }
+    };
+
+    signalTree('SIGTERM');
+    for (let waited = 0; waited < 1500 && isPidAlive(pid); waited += 150) {
+      await sleep(150);
+    }
+    if (isPidAlive(pid)) {
+      signalTree('SIGKILL');
+      await sleep(300);
+    }
+  };
+
+  // Decide+act on a single registry entry. Returns true if it was reaped.
+  const processEntry = async (entry, { log }) => {
+    // Dead pid → nothing to do (caller drops the file).
+    if (!isPidAlive(entry.pid)) return false;
+
+    const ownerGone = Number.isInteger(entry.ownerPid) && !isPidAlive(entry.ownerPid);
+
+    if (process.platform === 'win32') {
+      const image = await readWindowsImageName(entry.pid);
+      const looksLikeOpencode = typeof image === 'string' && image.toLowerCase().includes('opencode');
+      // Windows lacks reliable reparent-to-1 semantics (job objects usually kill
+      // children with the parent), so we reap only when the owner is provably dead
+      // AND the image still looks like opencode.
+      if (looksLikeOpencode && ownerGone) {
+        await killOrphan(entry.pid);
+        log?.(`[lifecycle] reaped orphaned OpenCode pid ${entry.pid} (owner ${entry.ownerPid} gone)`);
+        return true;
+      }
+      return false;
+    }
+
+    const info = await readUnixProcInfo(entry.pid);
+    // Can't verify identity (or it's not our server) → leave it alone.
+    if (!info || !commandIdentifiesOurServer(info.command, entry)) return false;
+
+    const orphaned = info.ppid === 1 || ownerGone;
+    if (!orphaned) return false; // still owned by a live instance
+
+    await killOrphan(entry.pid);
+    log?.(`[lifecycle] reaped orphaned OpenCode pid ${entry.pid} (reparented/owner gone)`);
+    return true;
+  };
+
+  /**
+   * Kill any genuinely-orphaned OpenCode processes WE previously spawned, and
+   * prune their registry files. Safe to call at startup before spawning a new
+   * server. Returns { inspected, reaped }.
+   */
+  const reapOrphanedProcesses = async ({ log } = {}) => {
+    const records = await readAllEntries();
+    if (records.length === 0) return { inspected: 0, reaped: 0 };
+
+    let reaped = 0;
+    for (const { entry, filePath } of records) {
+      let drop = false;
+      try {
+        const wasReaped = await processEntry(entry, { log });
+        if (wasReaped) reaped += 1;
+        // Drop the file when the process is gone (reaped now, or already dead);
+        // keep it only while the process is still alive and owned by a live owner.
+        drop = wasReaped || !isPidAlive(entry.pid);
+      } catch (error) {
+        log?.(`[lifecycle] reap check failed for pid ${entry.pid}: ${error?.message ?? error}`);
+      }
+      if (drop) {
+        try {
+          await fs.rm(filePath, { force: true });
+        } catch {
+          // best-effort
+        }
+      }
+    }
+
+    return { inspected: records.length, reaped };
+  };
+
+  return { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses };
 };
+
+const defaultRegistry = createManagedProcessRegistry();
+
+export const registerManagedProcess = defaultRegistry.registerManagedProcess;
+export const unregisterManagedProcess = defaultRegistry.unregisterManagedProcess;
+export const reapOrphanedProcesses = defaultRegistry.reapOrphanedProcesses;

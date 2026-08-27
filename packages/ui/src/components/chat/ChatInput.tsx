@@ -36,7 +36,7 @@ import { ReviewFlowDialog, type ReviewFlowExecution } from '@/components/session
 import { BtwPanel } from './btw/BtwPanel';
 import { useBtwPanelState } from './btw/useBtwPanelState';
 import { wasPromotedBtwSession } from '@/lib/sessionBtwMetadata';
-import { BTW_BOUNDARY_INSTRUCTION, BTW_PROMOTION_NOTICE, destroyBtwSession, startBtwSession, type BtwSessionRef } from '@/lib/btw';
+import { buildBtwSyntheticTexts, destroyBtwSession, startBtwSession, type BtwSessionRef } from '@/lib/btw';
 import { AttachedFilesList, AttachedVSCodeFileChips, ActiveEditorFileSuggestion } from './FileAttachment';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { ToolPopupContent } from './message/types';
@@ -1134,12 +1134,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             composerText: !queuedOnly && inputSnapshot.hasContent ? inputSnapshot.message : null,
             composerAttachments: attachedFiles,
             inlineComments: drafts,
-            // btw mode: the boundary rides with every send, not just the
-            // first one, so the inherited transcript stays reference material
-            // for the whole side conversation.
             syntheticTexts: [
-                ...(isBtwActive ? [BTW_BOUNDARY_INSTRUCTION] : []),
-                ...(isPromotedBtwSession ? [BTW_PROMOTION_NOTICE] : []),
+                ...buildBtwSyntheticTexts({ isBtwActive, isPromotedBtwSession }),
                 ...(syntheticParts?.map((part) => part.text) ?? []),
             ],
             linkedIssue: linkedIssue

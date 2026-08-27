@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 - Work status: the session cost now counts what its subagents spent, with a line under the context meter splitting the session's own cost from the subagents' share, and each subagent's cost shown next to it in the Subagents list. Previously a session that delegated most of its work looked far cheaper than it was.
 - Files: opening a file over 5,000 lines is no longer blocked — the line-count guard now allows up to 20,000 lines, letting large files reach the virtualized full-file preview instead of being rejected at the open step (thanks @gaojunran).
+- Usage: GitHub Copilot now shows a single AI Credits window, matching Copilot's token-based quota, in place of the old Chat Requests and Completions windows (thanks to @jakoss).
 - Settings: fixed the Cloudflare Tunnel download link shown when cloudflared is not installed (thanks to @AyoubAchour).
 
 ## [1.21.0] - 2026-08-26
