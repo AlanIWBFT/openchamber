@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Files: opening a file over 5,000 lines is no longer blocked — the line-count guard now allows up to 20,000 lines, letting large files reach the virtualized full-file preview instead of being rejected at the open step (thanks @gaojunran).
+
 ## [1.21.0] - 2026-08-26
 
 - **Chat scrolling rebuilt around your message.** Sending parks your message near the top and the reply streams in below it, gliding smoothly a paragraph at a time. Scrolling up immediately hands you the wheel; the scroll-to-bottom pill carries the model's working status while you're away.
