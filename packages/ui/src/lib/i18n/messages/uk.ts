@@ -2316,6 +2316,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.toolPart.showRawJson": "Показати сирий JSON",
   "chat.toolPart.showFormattedJson": "Показати форматований JSON",
   "chat.toolPart.showNavigableJson": "Показати навігаційний JSON",
+  "chat.toolPart.openFile": "Відкрити файл",
   "chat.toolPart.openFileAtFirstChange": "Відкрити файл на першій зміні",
   "chat.toolPart.openFileDiff": "Відкрити diff файлу",
   "chat.toolPart.copyOutput": "Скопіювати вивід",

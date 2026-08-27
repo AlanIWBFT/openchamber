@@ -1966,6 +1966,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         return null;
     }, [descriptionPath, normalizedPartTool, stateWithData, input]);
     const runtime = React.useContext(RuntimeAPIContext);
+    const mobileActions = useMobileAppActions();
 
     const openApplyPatchFile = (file: Record<string, unknown>, event: React.MouseEvent<HTMLButtonElement>) => {
         if (!runtime?.editor) {
@@ -2036,6 +2037,61 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         }
         event.preventDefault();
         handleMainClick(event);
+    };
+
+    // Quick-open target for the file-link icon in the tool header. Resolves the
+    // primary file path (and, for diff tools, the first changed line + diff) so
+    // the user can open the file in the side panel (web/desktop) or editor
+    // (VS Code) without expanding the tool card. Reuses the same path helpers as
+    // handleMainClick above; the difference is the web fallback — handleMainClick
+    // only opens when runtime.editor is available, this icon also falls back to
+    // useUIStore.openContextFile{AtLine} so the file opens in the right pane.
+    const quickOpenTarget = React.useMemo<{ absolutePath: string; line?: number; toolDiff?: string; toolName: string } | null>(() => {
+        if (isTaskTool) return null;
+        const toolName = normalizedPartTool || part.tool;
+        const filePath = getPrimaryToolPath(toolName, input, metadata);
+        if (typeof filePath !== 'string') return null;
+        const absolutePath = toAbsoluteFilePath(currentDirectory, filePath);
+        let line: number | undefined;
+        let toolDiff: string | undefined;
+        if (toolName === 'edit' || toolName === 'multiedit' || toolName === 'apply_patch') {
+            line = getFirstChangedLineFromMetadata(toolName, metadata, filePath);
+            toolDiff = getPrimaryDiffFromMetadata(toolName, metadata, filePath);
+        }
+        return { absolutePath, line, toolDiff, toolName };
+    }, [isTaskTool, normalizedPartTool, part.tool, input, metadata, currentDirectory]);
+
+    const openQuickTarget = () => {
+        if (!quickOpenTarget) return;
+        const { absolutePath, line, toolDiff, toolName } = quickOpenTarget;
+        if (runtime?.editor) {
+            if (runtime.runtime.isVSCode && toolDiff && (toolName === 'edit' || toolName === 'multiedit' || toolName === 'apply_patch')) {
+                const label = `${getRelativePath(absolutePath, currentDirectory)} (changes)`;
+                void runtime.editor.openDiff('', absolutePath, label, { line, patch: toolDiff });
+                return;
+            }
+            runtime.editor.openFile(absolutePath, line);
+            return;
+        }
+        const uiStore = useUIStore.getState();
+        if (typeof line === 'number' && Number.isFinite(line)) {
+            uiStore.openContextFileAtLine(currentDirectory, absolutePath, Math.max(1, Math.trunc(line)), 1);
+        } else {
+            uiStore.openContextFile(currentDirectory, absolutePath);
+        }
+        mobileActions?.openFiles();
+    };
+
+    const handleQuickOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        openQuickTarget();
+    };
+
+    const handleQuickOpenKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        event.stopPropagation();
+        openQuickTarget();
     };
 
     const iconStyle = !isTaskTool && isError ? TOOL_ERROR_ICON_STYLE : TOOL_NORMAL_ICON_STYLE;
@@ -2131,7 +2187,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                     {isExpanded ? <Icon name="arrow-down-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-right-s" className="h-3.5 w-3.5" />}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <div className="flex items-center gap-1 min-w-0 flex-1">
                                 <MinDurationShineText
                                     active={Boolean(isActive && !isError)}
                                     minDurationMs={300}
@@ -2141,6 +2197,22 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                 >
                                     {displayName}
                                 </MinDurationShineText>
+                                {quickOpenTarget ? (
+                                    <button
+                                        type="button"
+                                        onClick={handleQuickOpen}
+                                        onKeyDown={handleQuickOpenKeyDown}
+                                        className={cn(
+                                            'flex-shrink-0 inline-flex h-4 w-4 items-center justify-center rounded transition-opacity hover:bg-[var(--surface-hover)]',
+                                            'opacity-0 group-hover/tool:opacity-60 hover:opacity-100 focus-visible:opacity-100',
+                                        )}
+                                        style={{ color: 'var(--tools-icon)' }}
+                                        title={t('chat.toolPart.openFile')}
+                                        aria-label={t('chat.toolPart.openFile')}
+                                    >
+                                        <Icon name="external-link" className="h-3 w-3" />
+                                    </button>
+                                ) : null}
                             </div>
                             {normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number' ? (
                                 <span className={cn('flex-shrink-0 tabular-nums text-muted-foreground/80', TOOL_ROW_DESCRIPTION_CLASS)}>

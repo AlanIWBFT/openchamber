@@ -2316,6 +2316,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.toolPart.showRawJson": "Mostrar JSON sin formato",
   "chat.toolPart.showFormattedJson": "Mostrar JSON formateado",
   "chat.toolPart.showNavigableJson": "Mostrar JSON navegable",
+  "chat.toolPart.openFile": "Abrir archivo",
   "chat.toolPart.openFileAtFirstChange": "Abrir archivo en el primer cambio",
   "chat.toolPart.openFileDiff": "Abrir diferencias del archivo",
   "chat.toolPart.copyOutput": "Copiar salida",

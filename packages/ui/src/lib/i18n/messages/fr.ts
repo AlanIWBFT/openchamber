@@ -3102,6 +3102,7 @@ export const dict = {
   'chat.toolPart.showRawJson': 'Afficher le JSON brut',
   'chat.toolPart.showFormattedJson': 'Afficher le JSON formaté',
   'chat.toolPart.showNavigableJson': 'Afficher le JSON navigable',
+  'chat.toolPart.openFile': 'Ouvrir le fichier',
   'chat.toolPart.openFileAtFirstChange': 'Ouvrir le fichier à la première modification',
   'chat.toolPart.openFileDiff': 'Ouvrir les différences du fichier',
   'chat.toolPart.copyOutput': 'Copier la sortie',
