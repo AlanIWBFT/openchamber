@@ -14,6 +14,46 @@ import {
     type TimelineScrollMode,
 } from '@/components/chat/lib/scroll/timelineScrollAnchoring';
 
+export const isAutoFollowReleaseKey = (
+    event: Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'>,
+): boolean => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return false;
+    if (event.key === ' ' && event.shiftKey) return true;
+    return event.key === 'ArrowUp'
+        || event.key === 'PageUp'
+        || event.key === 'Home'
+        || event.key === 'Pause'
+        || event.key === 'Break';
+};
+
+const nestedScrollableTarget = (root: HTMLElement, target: EventTarget | null): HTMLElement | null => {
+    if (!(target instanceof Element)) return null;
+    const nested = target.closest('[data-scrollable]');
+    if (!(nested instanceof HTMLElement) || nested === root) return null;
+    return nested;
+};
+
+export const isMiddleButtonAutoScrollIntent = (
+    root: HTMLElement,
+    event: Pick<MouseEvent, 'button' | 'target'>,
+): boolean => event.button === 1 && !nestedScrollableTarget(root, event.target);
+
+export const shouldRepinReleasedAutoFollow = (
+    scrollingDown: boolean,
+    atTrueBottom: boolean,
+): boolean => scrollingDown || atTrueBottom;
+
+const nestedScrollableCanConsumeUp = (root: HTMLElement, target: EventTarget | null): boolean => {
+    const nested = nestedScrollableTarget(root, target);
+    return nested !== null && nested.scrollTop > 0;
+};
+
+export const shouldDelayAutoFollowRepin = (
+    releasedAt: number | null,
+    currentTime: number,
+    graceMs: number,
+): boolean => releasedAt !== null && currentTime - releasedAt < graceMs;
+
 // ──────────────────────────────────────────────────────────────────────────
 // Chat timeline scroll ownership.
 //
@@ -36,8 +76,8 @@ import {
 // gesture bumps a generation counter; any in-flight automatic movement compares
 // its captured generation against the current one and aborts if they differ.
 // That comparison replaces the timer windows the previous implementation needed
-// to tell its own writes apart from the user's, which is why there are no
-// guard/settle/entry-stick timers here.
+// to tell its own writes apart from the user's; the only timer here is the short
+// grace period for an explicit release near the live edge.
 // ──────────────────────────────────────────────────────────────────────────
 
 // The subset of the list ref this hook drives. Declared structurally so the
@@ -101,6 +141,9 @@ export interface UseChatTimelineScrollResult {
 // Hiding is always immediate.
 const SHOW_SCROLL_BUTTON_DELAY_MS = 150;
 const SAVE_DEBOUNCE_MS = 150;
+const TOUCH_FINGER_DOWN_THRESHOLD_PX = 2;
+const AUTO_MATCH_TOLERANCE_PX = 2;
+const REPIN_GRACE_AFTER_RELEASE_MS = 1200;
 // The anchor scroll is animated; `scrollend` is the authoritative completion
 // signal, and this bounds the wait for browsers that drop it.
 const ANCHOR_SETTLE_FALLBACK_MS = 750;
@@ -163,6 +206,10 @@ export const useChatTimelineScroll = ({
     currentSessionIdRef.current = currentSessionId;
     const currentSessionKeyRef = React.useRef(currentSessionKey);
     currentSessionKeyRef.current = currentSessionKey;
+    const lastScrollOffsetRef = React.useRef(0);
+    const lastScrollDirectionDownRef = React.useRef(false);
+    const delayedRepinTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastExplicitReleaseAtRef = React.useRef<number | null>(null);
 
     const updateViewportAnchor = useViewportStore((state) => state.updateViewportAnchor);
 
@@ -171,6 +218,20 @@ export const useChatTimelineScroll = ({
             clearTimeout(showButtonTimerRef.current);
             showButtonTimerRef.current = null;
         }
+    }, []);
+
+    const clearDelayedRepin = React.useCallback(() => {
+        if (delayedRepinTimerRef.current !== null) {
+            clearTimeout(delayedRepinTimerRef.current);
+            delayedRepinTimerRef.current = null;
+        }
+    }, []);
+
+    const recordScrollDirection = React.useCallback((scrollOffset: number) => {
+        if (scrollOffset === lastScrollOffsetRef.current) return;
+        const previousOffset = lastScrollOffsetRef.current;
+        lastScrollOffsetRef.current = scrollOffset;
+        lastScrollDirectionDownRef.current = scrollOffset > previousOffset + 0.5;
     }, []);
 
     const hideScrollButton = React.useCallback(() => {
@@ -204,9 +265,12 @@ export const useChatTimelineScroll = ({
     // in. The anchored END SPACE stays — collapsing it mid-gesture clamps the
     // viewport back to the end — only the anchor machinery is disarmed.
     const onManualNavigation = React.useCallback(() => {
+        clearDelayedRepin();
+        lastExplicitReleaseAtRef.current = null;
         userGenerationRef.current += 1;
         modeRef.current = 'free-scrolling';
         liveFollowGenerationRef.current = null;
+        userOwnsScrollRef.current = true;
         setUserOwnsScroll(true);
         // The end may already have been left by our own movement, in which
         // case no further at-end transition will fire — and while an animated
@@ -217,6 +281,7 @@ export const useChatTimelineScroll = ({
         const atEndNow = (listState ? resolveTimelineIsAtEnd(listState) : undefined) ?? isAtEndRef.current;
         isAtEndRef.current = atEndNow;
         if (!atEndNow) {
+            setIsPinned(false);
             cancelShowButtonTimer();
             setShowScrollButton(true);
         }
@@ -230,7 +295,12 @@ export const useChatTimelineScroll = ({
             cancelAnimationFrame(anchorRestoreFrameRef.current);
             anchorRestoreFrameRef.current = null;
         }
-    }, [cancelShowButtonTimer]);
+    }, [cancelShowButtonTimer, clearDelayedRepin]);
+
+    const releaseFromUserIntent = React.useCallback(() => {
+        onManualNavigation();
+        lastExplicitReleaseAtRef.current = performance.now();
+    }, [onManualNavigation]);
 
     const isLiveFollowActive = React.useCallback(() => (
         liveFollowGenerationRef.current === userGenerationRef.current
@@ -292,8 +362,11 @@ export const useChatTimelineScroll = ({
     }, []);
 
     const goToBottom = React.useCallback((mode: 'instant' | 'smooth' = 'instant') => {
+        clearDelayedRepin();
+        lastExplicitReleaseAtRef.current = null;
         isAtEndRef.current = true;
         setIsPinned(true);
+        userOwnsScrollRef.current = false;
         setUserOwnsScroll(false);
         modeRef.current = 'following-end';
         // Returning to the end is an explicit opt back IN to live follow.
@@ -316,7 +389,19 @@ export const useChatTimelineScroll = ({
                 void listRef.current?.scrollToEnd({ animated: false });
             }, delay));
         }
-    }, [clearAnchor, clearGoToBottomReasserts, hideScrollButton]);
+    }, [clearAnchor, clearDelayedRepin, clearGoToBottomReasserts, hideScrollButton]);
+
+    const scheduleRepinAfterGrace = React.useCallback((delayMs: number) => {
+        if (delayedRepinTimerRef.current !== null) return;
+        const generation = userGenerationRef.current;
+        delayedRepinTimerRef.current = setTimeout(() => {
+            delayedRepinTimerRef.current = null;
+            if (userGenerationRef.current !== generation || modeRef.current !== 'free-scrolling') return;
+            const state = listRef.current?.getState();
+            if (!state || resolveTimelineIsAtEnd(state) !== true) return;
+            goToBottom('instant');
+        }, Math.max(0, delayMs));
+    }, [goToBottom]);
 
     // Sending arms the anchor. The message id is not known here (the optimistic
     // row is created by the store), so the next new user message id claims it.
@@ -328,8 +413,11 @@ export const useChatTimelineScroll = ({
     const anchorPositionInstantRef = React.useRef(false);
 
     const scrollToBottomOnSend = React.useCallback(() => {
+        clearDelayedRepin();
+        lastExplicitReleaseAtRef.current = null;
         anchorPositionInstantRef.current = !isAtEndRef.current;
         isAtEndRef.current = true;
+        userOwnsScrollRef.current = false;
         setUserOwnsScroll(false);
         modeRef.current = 'anchoring-new-turn';
         liveFollowGenerationRef.current = userGenerationRef.current;
@@ -343,7 +431,7 @@ export const useChatTimelineScroll = ({
         settledAnchorRef.current = null;
         activeAnchorIndexRef.current = null;
         hideScrollButton();
-    }, [hideScrollButton]);
+    }, [clearDelayedRepin, hideScrollButton]);
 
     // Claim the anchor as soon as the sent row exists in the timeline. The
     // comparison is against the baseline captured when the send armed the
@@ -366,7 +454,10 @@ export const useChatTimelineScroll = ({
 
         // Entering a session always returns to the live edge. Late async growth
         // is handled by the list staying at the end, not by a timed hold.
+        clearDelayedRepin();
+        lastExplicitReleaseAtRef.current = null;
         isAtEndRef.current = true;
+        userOwnsScrollRef.current = false;
         setUserOwnsScroll(false);
         modeRef.current = 'following-end';
         liveFollowGenerationRef.current = userGenerationRef.current;
@@ -374,7 +465,7 @@ export const useChatTimelineScroll = ({
         hideScrollButton();
         void listRef.current?.scrollToEnd({ animated: false });
         return false;
-    }, [clearAnchor, hideScrollButton]);
+    }, [clearAnchor, clearDelayedRepin, hideScrollButton]);
 
     // ── list callbacks ──────────────────────────────────────────────────────
     const registerList = React.useCallback((list: TimelineListHandle | null) => {
@@ -385,6 +476,9 @@ export const useChatTimelineScroll = ({
     }, []);
 
     const onIsAtEndChange = React.useCallback((isAtEnd: boolean) => {
+        const listState = listRef.current?.getState();
+        if (listState) recordScrollDirection(listState.scroll);
+
         // While an automatic movement owns the viewport, leaving the end is our
         // own doing (the anchored turn parks mid-timeline, the glide trails its
         // target between corrections) — not a reason to offer the pill. Only a
@@ -393,6 +487,35 @@ export const useChatTimelineScroll = ({
             hideScrollButton();
             return;
         }
+
+        if (isAtEnd && modeRef.current === 'free-scrolling') {
+            const releasedAt = lastExplicitReleaseAtRef.current;
+            const scrollNode = listRef.current?.getScrollableNode() ?? scrollRef.current;
+            const atTrueBottom = scrollNode !== null
+                && scrollNode.scrollHeight - scrollNode.scrollTop - scrollNode.clientHeight <= AUTO_MATCH_TOLERANCE_PX;
+
+            isAtEndRef.current = true;
+            setIsPinned(true);
+            if (releasedAt !== null) {
+                if (!shouldRepinReleasedAutoFollow(lastScrollDirectionDownRef.current, atTrueBottom)) {
+                    clearDelayedRepin();
+                    hideScrollButton();
+                    queueSave();
+                    return;
+                }
+                const currentTime = performance.now();
+                if (shouldDelayAutoFollowRepin(releasedAt, currentTime, REPIN_GRACE_AFTER_RELEASE_MS)) {
+                    scheduleRepinAfterGrace(REPIN_GRACE_AFTER_RELEASE_MS - (currentTime - releasedAt));
+                    hideScrollButton();
+                    queueSave();
+                    return;
+                }
+                lastExplicitReleaseAtRef.current = null;
+            }
+            clearDelayedRepin();
+        }
+
+        if (!isAtEnd) clearDelayedRepin();
         if (isAtEndRef.current === isAtEnd) return;
         isAtEndRef.current = isAtEnd;
         setIsPinned(isAtEnd);
@@ -401,6 +524,7 @@ export const useChatTimelineScroll = ({
                 modeRef.current = 'following-end';
             }
             liveFollowGenerationRef.current = userGenerationRef.current;
+            userOwnsScrollRef.current = false;
             setUserOwnsScroll(false);
             hideScrollButton();
         } else {
@@ -409,7 +533,7 @@ export const useChatTimelineScroll = ({
             scheduleShowScrollButton();
         }
         queueSave();
-    }, [hideScrollButton, isLiveFollowActive, queueSave, scheduleShowScrollButton]);
+    }, [clearDelayedRepin, hideScrollButton, isLiveFollowActive, queueSave, recordScrollDirection, scheduleRepinAfterGrace, scheduleShowScrollButton]);
 
     // Park the anchored row near the top once the list has measured it.
     const onAnchorReady = React.useCallback((messageId: string, anchorIndex: number) => {
@@ -716,11 +840,14 @@ export const useChatTimelineScroll = ({
     }, [scrollNode]);
 
     // ── gesture opt-out ─────────────────────────────────────────────────────
-    const onManualNavigationRef = React.useRef(onManualNavigation);
-    onManualNavigationRef.current = onManualNavigation;
+    const releaseFromUserIntentRef = React.useRef(releaseFromUserIntent);
+    releaseFromUserIntentRef.current = releaseFromUserIntent;
 
     React.useEffect(() => {
         if (!scrollNode) return;
+        const initialScroll = listRef.current?.getState().scroll ?? scrollNode.scrollTop;
+        lastScrollOffsetRef.current = initialScroll;
+        lastScrollDirectionDownRef.current = false;
 
         // A gesture is meaningful when the viewport can move up AT ALL:
         // either the real rows overflow the viewport, or there is scrolled
@@ -736,11 +863,11 @@ export const useChatTimelineScroll = ({
             return realContentOverflowsViewport(list);
         };
         const gesture = () => {
-            onManualNavigationRef.current();
+            releaseFromUserIntentRef.current();
         };
         const handleWheel = (event: WheelEvent) => {
             // Scrolling toward the end is not opting out of follow.
-            if (event.deltaY < 0 && canScrollUp()) gesture();
+            if (event.deltaY < 0 && !nestedScrollableCanConsumeUp(scrollNode, event.target) && canScrollUp()) gesture();
         };
         // Touch mirrors wheel by finger direction, not by having already left
         // the end: while a stream keeps re-pinning the viewport, waiting for
@@ -757,24 +884,43 @@ export const useChatTimelineScroll = ({
             touchLastY = y;
             if (y === null) return;
             // A downward finger drags the content up — the touch wheel-up.
-            const draggedUp = lastY !== null && y > lastY;
-            if ((draggedUp || !isAtEndRef.current) && canScrollUp()) gesture();
+            const draggedUp = lastY !== null && y - lastY > TOUCH_FINGER_DOWN_THRESHOLD_PX;
+            if ((draggedUp || !isAtEndRef.current)
+                && !nestedScrollableCanConsumeUp(scrollNode, event.target)
+                && canScrollUp()) gesture();
         };
         const handleTouchEnd = () => {
             touchLastY = null;
         };
         const handlePointerDown = (event: PointerEvent) => {
+            if (event.button === 1) {
+                if (isMiddleButtonAutoScrollIntent(scrollNode, event) && canScrollUp()) gesture();
+                return;
+            }
             // The scrollbar track is the scroll node itself; a tap on a row
             // only breaks follow when the viewport already left the end.
             if ((event.target === scrollNode || !isAtEndRef.current) && canScrollUp()) gesture();
         };
         const handleKeyDown = (event: KeyboardEvent) => {
-            if ((event.key === 'PageUp' || event.key === 'Home' || event.key === 'ArrowUp') && canScrollUp()) {
-                gesture();
-            }
+            if (isAutoFollowReleaseKey(event) && canScrollUp()) gesture();
         };
         const handleScroll = () => {
+            const scrollOffset = listRef.current?.getState().scroll ?? scrollNode.scrollTop;
+            const previousOffset = lastScrollOffsetRef.current;
+            recordScrollDirection(scrollOffset);
+            if (scrollOffset !== previousOffset && scrollOffset <= previousOffset + 0.5) {
+                clearDelayedRepin();
+            }
             queueSave();
+        };
+        const handleMouseDown = (event: MouseEvent) => {
+            if ('PointerEvent' in globalThis) return;
+            if (isMiddleButtonAutoScrollIntent(scrollNode, event) && canScrollUp()) gesture();
+        };
+        const handleOverlayScrollbarPointerDown = (event: PointerEvent) => {
+            const target = event.target;
+            if (!(target instanceof Element) || !target.closest('[data-overlay-scrollbar-thumb]')) return;
+            if (canScrollUp()) gesture();
         };
 
         scrollNode.addEventListener('wheel', handleWheel, { passive: true });
@@ -783,8 +929,10 @@ export const useChatTimelineScroll = ({
         scrollNode.addEventListener('touchend', handleTouchEnd, { passive: true });
         scrollNode.addEventListener('touchcancel', handleTouchEnd, { passive: true });
         scrollNode.addEventListener('pointerdown', handlePointerDown, { passive: true });
+        scrollNode.addEventListener('mousedown', handleMouseDown, { passive: true });
         scrollNode.addEventListener('keydown', handleKeyDown);
         scrollNode.addEventListener('scroll', handleScroll, { passive: true });
+        window.addEventListener('pointerdown', handleOverlayScrollbarPointerDown, true);
 
         return () => {
             scrollNode.removeEventListener('wheel', handleWheel);
@@ -793,10 +941,12 @@ export const useChatTimelineScroll = ({
             scrollNode.removeEventListener('touchend', handleTouchEnd);
             scrollNode.removeEventListener('touchcancel', handleTouchEnd);
             scrollNode.removeEventListener('pointerdown', handlePointerDown);
+            scrollNode.removeEventListener('mousedown', handleMouseDown);
             scrollNode.removeEventListener('keydown', handleKeyDown);
             scrollNode.removeEventListener('scroll', handleScroll);
+            window.removeEventListener('pointerdown', handleOverlayScrollbarPointerDown, true);
         };
-    }, [queueSave, realContentOverflowsViewport, scrollNode]);
+    }, [clearDelayedRepin, queueSave, realContentOverflowsViewport, recordScrollDirection, scrollNode]);
 
     // ── session lifecycle ───────────────────────────────────────────────────
     const lastSessionKeyRef = React.useRef<string | null>(null);
@@ -808,13 +958,16 @@ export const useChatTimelineScroll = ({
         MessageFreshnessDetector.getInstance().recordSessionStart(currentSessionId);
         // Persist the outgoing session's position before the new one takes over.
         flushSave();
+        clearDelayedRepin();
+        lastExplicitReleaseAtRef.current = null;
         isAtEndRef.current = true;
+        userOwnsScrollRef.current = false;
         setUserOwnsScroll(false);
         modeRef.current = 'following-end';
         liveFollowGenerationRef.current = userGenerationRef.current;
         clearAnchor();
         hideScrollButton();
-    }, [clearAnchor, currentSessionId, currentSessionKey, flushSave, hideScrollButton]);
+    }, [clearAnchor, clearDelayedRepin, currentSessionId, currentSessionKey, flushSave, hideScrollButton]);
 
     // Suppress the overlay scrollbar thumb while automatic movement owns the
     // scroll position, so it does not jump on each correction.
@@ -824,12 +977,13 @@ export const useChatTimelineScroll = ({
 
     React.useEffect(() => () => {
         cancelShowButtonTimer();
+        clearDelayedRepin();
         if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
         if (anchorRestoreFrameRef.current !== null) cancelAnimationFrame(anchorRestoreFrameRef.current);
         const frames = dataChangeFramesRef.current;
         if (frames.first !== null) cancelAnimationFrame(frames.first);
         if (frames.second !== null) cancelAnimationFrame(frames.second);
-    }, [cancelShowButtonTimer]);
+    }, [cancelShowButtonTimer, clearDelayedRepin]);
 
     // ── active-turn spy ─────────────────────────────────────────────────────
     // Reads turn positions straight from the DOM, so it is unaffected by which
