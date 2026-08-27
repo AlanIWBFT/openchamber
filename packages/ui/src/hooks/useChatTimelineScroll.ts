@@ -272,6 +272,7 @@ export const useChatTimelineScroll = ({
         liveFollowGenerationRef.current = null;
         userOwnsScrollRef.current = true;
         setUserOwnsScroll(true);
+        setIsPinned(false);
         // The end may already have been left by our own movement, in which
         // case no further at-end transition will fire — and while an animated
         // follow glide trails the live edge, isAtEndRef is deliberately not
@@ -399,6 +400,10 @@ export const useChatTimelineScroll = ({
             if (userGenerationRef.current !== generation || modeRef.current !== 'free-scrolling') return;
             const state = listRef.current?.getState();
             if (!state || resolveTimelineIsAtEnd(state) !== true) return;
+            const scrollNode = listRef.current?.getScrollableNode() ?? scrollRef.current;
+            const atTrueBottom = scrollNode !== null
+                && scrollNode.scrollHeight - scrollNode.scrollTop - scrollNode.clientHeight <= AUTO_MATCH_TOLERANCE_PX;
+            if (!shouldRepinReleasedAutoFollow(lastScrollDirectionDownRef.current, atTrueBottom)) return;
             goToBottom('instant');
         }, Math.max(0, delayMs));
     }, [goToBottom]);
@@ -495,14 +500,15 @@ export const useChatTimelineScroll = ({
                 && scrollNode.scrollHeight - scrollNode.scrollTop - scrollNode.clientHeight <= AUTO_MATCH_TOLERANCE_PX;
 
             isAtEndRef.current = true;
-            setIsPinned(true);
+            if (!shouldRepinReleasedAutoFollow(lastScrollDirectionDownRef.current, atTrueBottom)) {
+                clearDelayedRepin();
+                setIsPinned(false);
+                hideScrollButton();
+                queueSave();
+                return;
+            }
+            setIsPinned(false);
             if (releasedAt !== null) {
-                if (!shouldRepinReleasedAutoFollow(lastScrollDirectionDownRef.current, atTrueBottom)) {
-                    clearDelayedRepin();
-                    hideScrollButton();
-                    queueSave();
-                    return;
-                }
                 const currentTime = performance.now();
                 if (shouldDelayAutoFollowRepin(releasedAt, currentTime, REPIN_GRACE_AFTER_RELEASE_MS)) {
                     scheduleRepinAfterGrace(REPIN_GRACE_AFTER_RELEASE_MS - (currentTime - releasedAt));
@@ -513,6 +519,8 @@ export const useChatTimelineScroll = ({
                 lastExplicitReleaseAtRef.current = null;
             }
             clearDelayedRepin();
+            goToBottom('instant');
+            return;
         }
 
         if (!isAtEnd) clearDelayedRepin();
@@ -533,7 +541,7 @@ export const useChatTimelineScroll = ({
             scheduleShowScrollButton();
         }
         queueSave();
-    }, [clearDelayedRepin, hideScrollButton, isLiveFollowActive, queueSave, recordScrollDirection, scheduleRepinAfterGrace, scheduleShowScrollButton]);
+    }, [clearDelayedRepin, goToBottom, hideScrollButton, isLiveFollowActive, queueSave, recordScrollDirection, scheduleRepinAfterGrace, scheduleShowScrollButton]);
 
     // Park the anchored row near the top once the list has measured it.
     const onAnchorReady = React.useCallback((messageId: string, anchorIndex: number) => {
@@ -911,6 +919,10 @@ export const useChatTimelineScroll = ({
             if (scrollOffset !== previousOffset && scrollOffset <= previousOffset + 0.5) {
                 clearDelayedRepin();
             }
+            const state = listRef.current?.getState();
+            if (modeRef.current === 'free-scrolling' && resolveTimelineIsAtEnd(state) === true) {
+                onIsAtEndChange(true);
+            }
             queueSave();
         };
         const handleMouseDown = (event: MouseEvent) => {
@@ -946,7 +958,7 @@ export const useChatTimelineScroll = ({
             scrollNode.removeEventListener('scroll', handleScroll);
             window.removeEventListener('pointerdown', handleOverlayScrollbarPointerDown, true);
         };
-    }, [clearDelayedRepin, queueSave, realContentOverflowsViewport, recordScrollDirection, scrollNode]);
+    }, [clearDelayedRepin, onIsAtEndChange, queueSave, realContentOverflowsViewport, recordScrollDirection, scrollNode]);
 
     // ── session lifecycle ───────────────────────────────────────────────────
     const lastSessionKeyRef = React.useRef<string | null>(null);
