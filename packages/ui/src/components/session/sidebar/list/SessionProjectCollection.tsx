@@ -6,6 +6,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { getGitHubPrStatusKey, useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import type { SessionTreeItemProps } from '../sessions/SessionTreeItem';
 import { useArchivedAutoFolders } from '../folders/useArchivedAutoFolders';
 import { ProjectSessionSelectionEffect } from '../projects/useProjectSessionSelection';
 import type { WorktreeMetadata } from '@/types/worktree';
@@ -467,6 +468,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       showRecentSection={showRecentSection && !singleProjectMode}
     /> : null
   ), [
+    actions.startSessionWorktreeMenuLoad,
     alwaysShowActions,
     collection.childrenMap,
     collection.pinnedSessionIds,
