@@ -1,3 +1,4 @@
+import { rankByQuery } from '@/lib/search/fuzzySearch';
 import React from 'react';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 
@@ -265,14 +266,12 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
   const isSearching = search.trim().length > 0;
 
   const filtered = React.useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const matches = (item: SkillsCatalogItem) =>
-      item.skillName.toLowerCase().includes(q)
-      || (item.description || '').toLowerCase().includes(q)
-      || (item.frontmatterName || '').toLowerCase().includes(q);
-
     if (isSearching) {
-      return sources.flatMap((src) => (itemsBySource[src.id] || []).filter(matches));
+      return rankByQuery(
+        sources.flatMap((src) => itemsBySource[src.id] || []),
+        search,
+        (item) => [item.skillName, item.frontmatterName, item.description],
+      );
     }
     if (!selectedSourceId) {
       return [];
@@ -391,7 +390,7 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
               type="button"
               data-settings-item="skills.catalog.add-catalog"
               onClick={() => setAddCatalogOpen(true)}
-              className="min-h-24 text-left rounded-lg border border-dashed border-[var(--surface-subtle)] hover:border-[var(--interactive-border-hover)] hover:bg-[var(--surface-muted)] p-3.5 flex gap-3 items-start transition-colors"
+              className="min-h-24 text-left rounded-lg border border-dashed border-[var(--interactive-border)] hover:border-[var(--interactive-border-hover)] hover:bg-[var(--surface-muted)] p-3.5 flex gap-3 items-start transition-colors"
             >
               <span className="flex items-center justify-center rounded-md bg-transparent text-muted-foreground w-8 h-8 shrink-0">
                 <Icon name="add" className="h-4 w-4" />

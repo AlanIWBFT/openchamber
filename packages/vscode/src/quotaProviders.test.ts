@@ -17,7 +17,6 @@ const AUTH = JSON.stringify({
   crof: { key: 'test-token' },
   neuralwatt: { key: 'test-token' },
   'opencode-go': { key: 'test-token' },
-  'command-code': { type: 'oauth', access: 'test-token' },
   'zai-coding-plan': { key: 'test-token' },
   deepseek: { key: 'test-token' },
   anthropic: { access: 'test-token', refresh: 'test-refresh' },
@@ -104,57 +103,6 @@ describe('OpenCode Go quota provider (VS Code parity)', () => {
   });
 });
 
-describe('Command Code quota provider (VS Code parity)', () => {
-  test('uses the OAuth access token and resolves server-backed limits', async () => {
-    const requests: Array<{ url: string; init?: RequestInit }> = [];
-    globalThis.fetch = (async (url: string, init?: RequestInit) => {
-      requests.push({ url, init });
-      return mockResponse(url.endsWith('/alpha/whoami')
-        ? { org: { id: 'org/a' } }
-        : { credits: { monthlyCredits: 120 }, windowLimits: { fiveHour: { used: 25, cap: 100, resetAt: 1_776_000_000 } } });
-    }) as typeof fetch;
-
-    const result = await fetchQuotaForProvider('command-code');
-
-    assert.equal(result.ok, true);
-    assert.deepEqual(requests.map(({ url }) => url), [
-      'https://api.commandcode.ai/alpha/whoami',
-      'https://api.commandcode.ai/alpha/billing/credits?orgId=org%2Fa',
-    ]);
-    assert.equal((requests[0].init?.headers as Record<string, string>).Authorization, 'Bearer test-token');
-    assert.equal(result.usage!.windows['5h']!.usedPercent, 25);
-    assert.equal(result.usage!.windows.monthly_credits!.valueLabel, '120');
-  });
-
-  test('omits orgId for personal accounts', async () => {
-    const urls: string[] = [];
-    globalThis.fetch = (async (url: string) => {
-      urls.push(url);
-      return mockResponse(url.endsWith('/alpha/whoami')
-        ? { user: { id: 'user-1' }, org: null }
-        : { credits: { monthlyCredits: 120 } });
-    }) as typeof fetch;
-
-    const result = await fetchQuotaForProvider('command-code');
-
-    assert.equal(result.ok, true);
-    assert.deepEqual(urls, [
-      'https://api.commandcode.ai/alpha/whoami',
-      'https://api.commandcode.ai/alpha/billing/credits',
-    ]);
-  });
-
-  test('formats fractional credit values for display', async () => {
-    globalThis.fetch = (async (url: string) => mockResponse(url.endsWith('/alpha/whoami')
-      ? { org: null }
-      : { credits: { monthlyCredits: 69.7947070034 }, windowLimits: { fiveHour: { used: 0.2052929966, cap: 14 } } })) as typeof fetch;
-
-    const result = await fetchQuotaForProvider('command-code');
-
-    assert.equal(result.usage!.windows.monthly_credits!.valueLabel, '69.79');
-    assert.equal(result.usage!.windows['5h']!.valueLabel, '0.21 / 14');
-  });
-});
 
 describe('Crof quota provider (VS Code parity)', () => {
   test('reports credits balance as valueLabel with null percent', async () => {
@@ -326,6 +274,33 @@ describe('Z.ai quota provider (VS Code parity)', () => {
     assert.equal(windows['MCP Tools']!.usedPercent, 0);
     assert.equal(windows['MCP Tools']!.windowSeconds, 30 * 24 * 60 * 60);
     assert.equal(windows['MCP Tools']!.resetAt, 1787128459979);
+  });
+
+  test('maps CREDIT_LIMIT entries to windows with credit value labels and plan level', async () => {
+    stubFetchReturning(() => Promise.resolve(mockResponse({
+      code: 200,
+      data: {
+        limits: [
+          { type: 'CREDIT_LIMIT', unit: 3, number: 5, usage: 12000, currentValue: 65, remaining: 11934, percentage: 1, nextResetTime: 1787257978907 },
+          { type: 'CREDIT_LIMIT', unit: 6, number: 1, usage: 60000, currentValue: 65, remaining: 59934, percentage: 1, nextResetTime: 1787844668997 },
+        ],
+        level: 'pro',
+      },
+    })));
+
+    const result = await fetchQuotaForProvider('zai-coding-plan');
+    const windows = result.usage!.windows;
+
+    assert.equal(result.ok, true);
+    assert.equal(result.planLabel, 'pro');
+    assert.equal(windows['5h']!.usedPercent, 1);
+    assert.equal(windows['5h']!.windowSeconds, 5 * 60 * 60);
+    assert.equal(windows['5h']!.resetAt, 1787257978907);
+    assert.equal(windows['5h']!.valueLabel, '65 / 12k credits');
+    assert.equal(windows.weekly!.usedPercent, 1);
+    assert.equal(windows.weekly!.windowSeconds, 7 * 24 * 60 * 60);
+    assert.equal(windows.weekly!.resetAt, 1787844668997);
+    assert.equal(windows.weekly!.valueLabel, '65 / 60k credits');
   });
 });
 
