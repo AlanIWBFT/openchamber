@@ -106,10 +106,16 @@ its own tool. It feeds this panel only — what a session is told about memory i
 decided server-side by `packages/web/server/lib/session-knowledge`, so it
 reaches sessions that have no UI at all and survives compaction.
 
-Both sides resolve a worktree to its project before touching the store — the
-client through `resolveProjectForSessionDirectory`, the server through
-`agent-memory/project-resolution`. Keying by the session directory instead filed
-a worktree's memories under a project nothing reads.
+`useProjectContextOwner` is the client authority shared by this panel and the
+memory sync. It resolves managed chat directories to the Chats root and a
+worktree to its project before either consumer touches a store. The server uses
+`agent-memory/project-resolution` for the same worktree rule. Keying by a
+worktree session directory would file memories under a project nothing reads.
+
+Project memory is rendered only when the store's `projectPath` matches the
+panel owner. An owner switch hides the previous project's entries before the
+new request starts. A failed request marks the new owner unavailable instead of
+presenting that hidden list as authoritative empty memory.
 
 Turning the switch back on re-reads the store only after the setting has
 finished being written. The switch flips the client immediately, which makes the
