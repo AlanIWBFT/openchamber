@@ -3122,6 +3122,7 @@ export const dict = {
   'vscodeLayout.actions.cancel': 'Annuler',
   'chat.workStatus.ariaLabel': 'État du travail',
   'chat.workStatus.context.label': 'Contexte',
+  'chat.workStatus.cost.breakdown': 'Session {session} · Sous-agents {subagents}',
   'chat.workStatus.git.changedFileSingle': '{count} fichier modifié',
   'chat.workStatus.git.changedFilePlural': '{count} fichiers modifiés',
   'chat.workStatus.pr.untitled': 'Pull request sans titre',

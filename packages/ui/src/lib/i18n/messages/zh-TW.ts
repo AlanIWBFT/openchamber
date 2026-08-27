@@ -3124,6 +3124,7 @@ export const dict: Record<I18nKey, string> = {
   'quota.window.premiumInteractions': 'AI 點數',
   'chat.workStatus.ariaLabel': '工作狀態',
   'chat.workStatus.context.label': '上下文',
+  'chat.workStatus.cost.breakdown': '工作階段 {session} · 子 Agent {subagents}',
   'chat.workStatus.git.changedFileSingle': '已變更 {count} 個檔案',
   'chat.workStatus.git.changedFilePlural': '已變更 {count} 個檔案',
   'chat.workStatus.pr.untitled': '未命名的提取請求',

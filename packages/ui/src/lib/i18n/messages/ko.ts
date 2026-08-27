@@ -3124,6 +3124,7 @@ export const dict: Record<I18nKey, string> = {
   'quota.window.premiumInteractions': 'AI 크레딧',
   'chat.workStatus.ariaLabel': '작업 상태',
   'chat.workStatus.context.label': '컨텍스트',
+  'chat.workStatus.cost.breakdown': '세션 {session} · 서브 에이전트 {subagents}',
   'chat.workStatus.git.changedFileSingle': '파일 {count}개 변경됨',
   'chat.workStatus.git.changedFilePlural': '파일 {count}개 변경됨',
   'chat.workStatus.pr.untitled': '제목 없는 풀 리퀘스트',

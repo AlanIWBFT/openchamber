@@ -1,3 +1,7 @@
+## [Unreleased]
+
+- The context usage readout now reports the session cost including everything its subagents spent, matching the work status panel instead of showing a lower figure.
+
 ## [1.21.0] - 2026-08-26
 
 - **Chat context attachments:** diff and file comments, terminal selections, and linked issues/PRs now show in the conversation as compact context cards — source header, captured content behind an expander, your comment below — instead of raw text inside the message.

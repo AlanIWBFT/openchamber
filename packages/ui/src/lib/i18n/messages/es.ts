@@ -3125,6 +3125,7 @@ export const dict: Record<I18nKey, string> = {
   "quota.window.premiumInteractions": "Créditos de IA",
   'chat.workStatus.ariaLabel': 'Estado del trabajo',
   'chat.workStatus.context.label': 'Contexto',
+  'chat.workStatus.cost.breakdown': "Sesión {session} · Subagentes {subagents}",
   'chat.workStatus.git.changedFileSingle': '{count} archivo modificado',
   'chat.workStatus.git.changedFilePlural': '{count} archivos modificados',
   'chat.workStatus.pr.untitled': 'Pull request sin título',
