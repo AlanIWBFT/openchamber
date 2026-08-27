@@ -119,6 +119,7 @@ All notable changes to this project will be documented in this file.
 - Desktop: browser pages served from a self-signed loopback HTTPS address now load instead of being blocked by the certificate warning.
 - Browser: typing a comment on a page no longer triggers app shortcuts.
 - Skills Catalog: the source is now named ClawHub instead of "ClawdHub" (thanks to @makeittech).
+- Chat: dismissing an agent's clarifying questions no longer leaves the session stuck on the question screen — the next task shows its thinking and final response again.
 - VSCode: Add Project now adds the chosen folder to the workspace instead of showing a "Failed to add project" toast.
 - UI: the model selection menu no longer shows white text on a white highlight when a high-contrast theme is active, so the hovered or selected model stays legible (thanks to @bashrusakh).
 - Settings: an explicitly set `OPENCODE_BINARY` environment variable is no longer discarded when settings contain an empty opencodeBinary value; the environment variable keeps pointing the managed OpenCode server at the binary you chose.
