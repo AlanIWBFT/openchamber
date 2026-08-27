@@ -2,7 +2,6 @@ import React from 'react';
 import { animate, type AnimationPlaybackControls } from 'motion';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { cn } from '@/lib/utils';
-import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from '@/components/icon/Icon';
 import { BusyDots } from './BusyDots';
@@ -10,6 +9,7 @@ import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
+import { commitStreamedText } from '../../lib/streamTextCommit';
 import type { StreamPhase } from '../types';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
@@ -40,6 +40,8 @@ const EXPANDED_CONTENT_TRANSITION = { duration: 0.2, ease: 'easeOut' as const };
 /** Strip common markdown syntax so the header preview reads as plain text. */
 const stripMarkdown = (text: string): string =>
     text
+        // Empty HTML comments are frequently appended by model tool wrappers.
+        .replace(/<!--\s*-->/g, '')
         // Fenced code blocks → keep inner text on one line
         .replace(/```[\w]*\n?([\s\S]*?)```/g, (_, inner: string) => inner.trim())
         // Inline code
@@ -79,7 +81,6 @@ const getReasoningSummary = (text: string): string => {
 type ReasoningTimelineBlockProps = {
     text: string;
     variant: ReasoningVariant;
-    onContentChange?: (reason?: ContentChangeReason) => void;
     blockId: string;
     time?: { start?: number; end?: number };
     showDuration?: boolean;
@@ -97,7 +98,6 @@ type ExpansionState = {
 export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     text,
     variant,
-    onContentChange,
     blockId,
     time,
     isStreaming = false,
@@ -118,7 +118,6 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
         : expansion.expanded;
     const [shouldRenderExpandedContent, setShouldRenderExpandedContent] = React.useState(defaultExpanded === true || canAutoExpand);
     const contentId = React.useId();
-    const scrollRef = React.useRef<HTMLElement>(null);
     const contentRef = React.useRef<HTMLDivElement>(null);
     const contentAnimationRef = React.useRef<AnimationPlaybackControls | null>(null);
     const contentMountedRef = React.useRef(false);
@@ -131,8 +130,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     const handleToggle = React.useCallback(() => {
         setShouldRenderExpandedContent(true);
         setExpansion({ expanded: !isExpanded, source: 'user' });
-        onContentChange?.('structural');
-    }, [isExpanded, onContentChange]);
+    }, [isExpanded]);
 
     const handleKeyDown = React.useCallback((event: React.KeyboardEvent) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -152,19 +150,6 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
             return { expanded: canAutoExpand, source: 'auto' };
         });
     }, [canAutoExpand]);
-
-    React.useEffect(() => {
-        if (text.trim().length === 0) {
-            return;
-        }
-        onContentChange?.('structural');
-    }, [onContentChange, text]);
-
-    React.useEffect(() => {
-        if (isStreaming && isExpanded && scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-    }, [text, isStreaming, isExpanded]);
 
     React.useEffect(() => {
         if (isExpanded || isStreaming) {
@@ -280,6 +265,27 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
         return null;
     }
 
+    const reasoningBody = (
+        <>
+            <div data-message-text-export-source="true">
+                <MarkdownRenderer
+                    content={text}
+                    messageId={blockId}
+                    isAnimated={false}
+                    isStreaming={isStreaming}
+                    variant="reasoning"
+                />
+            </div>
+            {actions ? (
+                <div className="mt-2 mb-1 flex items-center justify-start gap-1.5" data-message-actions="true">
+                    <div className="flex items-center gap-1.5" data-message-action-group="true">
+                        {actions}
+                    </div>
+                </div>
+            ) : null}
+        </>
+    );
+
     return (
         <div data-reasoning-block-id={blockId} data-message-text-export-root="true">
             <div
@@ -379,32 +385,28 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                             className="pointer-events-none absolute left-0 top-0 bottom-0 w-px"
                             style={{ backgroundColor: 'var(--tools-border)' }}
                         />
-                        <ScrollableOverlay
-                            ref={scrollRef}
-                            as="div"
-                            outerClassName="max-h-80"
-                            className="p-0"
-                            useScrollShadow
-                            scrollShadowSize={36}
-                            userIntentOnly
-                        >
-                            <div data-message-text-export-source="true">
-                                <MarkdownRenderer
-                                    content={text}
-                                    messageId={blockId}
-                                    isAnimated={false}
-                                    isStreaming={isStreaming}
-                                    variant="reasoning"
-                                />
+                        {isStreaming ? (
+                            // While streaming, let the thinking grow inline — no
+                            // capped, independently-scrollable box. The chat's own
+                            // auto-follow then handles following / releasing, so the
+                            // box never captures the wheel or fights the user's
+                            // scroll. The max-height scroll box is applied only once
+                            // the thinking has finished (the branch below).
+                            <div className="p-0">
+                                {reasoningBody}
                             </div>
-                            {actions ? (
-                                <div className="mt-2 mb-1 flex items-center justify-start gap-1.5" data-message-actions="true">
-                                    <div className="flex items-center gap-1.5" data-message-action-group="true">
-                                        {actions}
-                                    </div>
-                                </div>
-                            ) : null}
-                        </ScrollableOverlay>
+                        ) : (
+                            <ScrollableOverlay
+                                as="div"
+                                outerClassName="max-h-80"
+                                className="p-0"
+                                useScrollShadow
+                                scrollShadowSize={36}
+                                userIntentOnly
+                            >
+                                {reasoningBody}
+                            </ScrollableOverlay>
+                        )}
                     </div>
                 </div>
             ) : null}
@@ -414,14 +416,12 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
 
 type ReasoningPartProps = {
     part: Part;
-    onContentChange?: (reason?: ContentChangeReason) => void;
     messageId: string;
     streamPhase?: StreamPhase;
 };
 
 const ReasoningPart = React.memo(({
     part,
-    onContentChange,
     messageId,
     streamPhase,
 }: ReasoningPartProps) => {
@@ -432,11 +432,14 @@ const ReasoningPart = React.memo(({
     const time = partWithText.time;
     const canBeStreaming = streamPhase === undefined || streamPhase !== 'completed';
     const isStreaming = chatRenderMode === 'live' && canBeStreaming && typeof time?.end !== 'number';
-    const throttledText = useStreamingTextThrottle({
+    const throttledTextRaw = useStreamingTextThrottle({
         text: textContent,
         isStreaming,
         identityKey: `${messageId}:${part.id ?? 'reasoning'}`,
     });
+    // Same block-level reveal as assistant text: a shown reasoning paragraph
+    // never mutates in place.
+    const throttledText = isStreaming ? commitStreamedText(throttledTextRaw) : throttledTextRaw;
 
     // Show reasoning even if time.end isn't set yet (during streaming)
     // Only hide if there's no text content
@@ -448,89 +451,8 @@ const ReasoningPart = React.memo(({
         <ReasoningTimelineBlock
             text={throttledText}
             variant="thinking"
-            onContentChange={onContentChange}
             blockId={part.id || `${messageId}-reasoning`}
             time={time}
-            isStreaming={isStreaming}
-        />
-    );
-});
-
-type MergedReasoningPartProps = {
-    parts: Part[];
-    onContentChange?: (reason?: ContentChangeReason) => void;
-    messageId: string;
-    streamPhase?: StreamPhase;
-};
-
-/**
- * Renders ALL reasoning parts for a message as a single collapsible block,
- * merging their text and spanning their combined time range.
- * This matches the VSCode Copilot pattern of showing one "Thought" block per turn.
- */
-export const MergedReasoningPart = React.memo(({
-    parts,
-    onContentChange,
-    messageId,
-    streamPhase,
-}: MergedReasoningPartProps) => {
-    const chatRenderMode = useUIStore((state) => state.chatRenderMode);
-
-    const mergedText = React.useMemo(() => {
-        return parts
-            .map((part) => {
-                const p = part as PartWithText;
-                return cleanReasoningText(p.text || p.content || '');
-            })
-            .filter((t) => t.length > 0)
-            .join('\n\n');
-    }, [parts]);
-
-    const mergedTime = React.useMemo(() => {
-        let earliestStart: number | undefined;
-        let latestEnd: number | undefined;
-
-        for (const part of parts) {
-            const time = (part as PartWithText).time;
-            if (typeof time?.start === 'number' && Number.isFinite(time.start)) {
-                if (earliestStart === undefined || time.start < earliestStart) {
-                    earliestStart = time.start;
-                }
-            }
-            if (typeof time?.end === 'number' && Number.isFinite(time.end)) {
-                if (latestEnd === undefined || time.end > latestEnd) {
-                    latestEnd = time.end;
-                }
-            }
-        }
-
-        return earliestStart !== undefined ? { start: earliestStart, end: latestEnd } : undefined;
-    }, [parts]);
-
-    const canBeStreaming = streamPhase === undefined || streamPhase !== 'completed';
-    const isStreaming = chatRenderMode === 'live' && canBeStreaming && parts.some(
-        (part) => typeof (part as PartWithText).time?.end !== 'number',
-    );
-
-    const throttledMergedText = useStreamingTextThrottle({
-        text: mergedText,
-        isStreaming,
-        identityKey: `${messageId}:reasoning-merged`,
-    });
-
-    const blockId = parts[0]?.id ?? `${messageId}-reasoning-merged`;
-
-    if (!throttledMergedText.trim()) {
-        return null;
-    }
-
-    return (
-        <ReasoningTimelineBlock
-            text={throttledMergedText}
-            variant="thinking"
-            onContentChange={onContentChange}
-            blockId={blockId}
-            time={mergedTime}
             isStreaming={isStreaming}
         />
     );

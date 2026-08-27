@@ -35,6 +35,17 @@ function readDesktopLocalPortFromSettings() {
   }
 }
 
+function readDesktopLocalClientTokenFromSettings() {
+  try {
+    const raw = fs.readFileSync(getSettingsFilePath(), 'utf8');
+    const parsed = JSON.parse(raw);
+    const value = parsed?.desktopLocalClientToken;
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
 function ensureLogsDir() {
   fs.mkdirSync(getLogsDir(), { recursive: true });
 }
@@ -103,9 +114,12 @@ function getRunDir() {
 export {
   getDataDir,
   readDesktopLocalPortFromSettings,
+  readDesktopLocalClientTokenFromSettings,
   ensureLogsDir,
   getLogFilePath,
   getTunnelProfilesFilePath,
   getLegacyCloudflareManagedRemoteFilePath,
+  readLastManagedLocalConfigPath,
+  writeLastManagedLocalConfigPath,
   getRunDir,
 };

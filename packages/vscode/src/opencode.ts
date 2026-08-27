@@ -10,10 +10,22 @@ import { randomBytes } from 'crypto';
 import { normalizeWindowsDriveLetter } from './pathUtils';
 import { resolveWorkingDirectoryChange } from './workingDirectoryChange';
 import { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses } from './opencodeProcessRegistry';
+import { applyProviderEnvAliases } from './provider-env-aliases';
 
 const t = vscode.l10n.t;
 
 const READY_CHECK_TIMEOUT_MS = 30000;
+
+// Reuse a single output channel across restarts instead of creating (and
+// leaking) a new one on every waitForReady call.
+let managerOutputChannel: vscode.OutputChannel | null = null;
+
+function getManagerOutputChannel(): vscode.OutputChannel {
+  if (!managerOutputChannel) {
+    managerOutputChannel = vscode.window.createOutputChannel('OpenChamberManager');
+  }
+  return managerOutputChannel;
+}
 const WINDOWS_EXECUTABLE_EXTENSIONS = (process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM')
   .split(';')
   .map((ext) => ext.trim().toLowerCase())
@@ -123,14 +135,53 @@ function isExecutable(filePath: string): boolean {
   }
 }
 
-function shouldUseWindowsShell(binary: string): boolean {
-  if (process.platform !== 'win32') return false;
+// Windows launch spec: .cmd/.bat shims (and bare names, which resolve to .cmd
+// shims via PATHEXT) must run under cmd.exe. Spawn cmd.exe DIRECTLY with the
+// shim path as its own argv element (shell:false) — `shell: true` builds an
+// unquoted command line, so a space-containing path like
+// "C:\Program Files\nodejs\opencode.cmd" broke with
+// "'C:\Program' is not recognized as an internal or external command".
+function resolveWindowsLaunchSpec(binary: string, args: string[]): { binary: string; args: string[] } {
+  if (process.platform !== 'win32') {
+    return { binary, args };
+  }
   const trimmed = (binary || '').trim();
-  if (!trimmed) return true;
   const ext = path.extname(trimmed).toLowerCase();
-  if (ext === '.cmd' || ext === '.bat') return true;
-  // Bare command names often resolve to .cmd shims via PATHEXT.
-  return !ext && !trimmed.includes('\\') && !trimmed.includes('/');
+  const isBatchShim = ext === '.cmd' || ext === '.bat';
+  const isBareName = !ext && !trimmed.includes('\\') && !trimmed.includes('/');
+  if (!isBatchShim && !isBareName) {
+    return { binary: trimmed, args };
+  }
+  return {
+    binary: process.env.ComSpec || 'cmd.exe',
+    args: ['/d', '/s', '/c', 'call', trimmed, ...args],
+  };
+}
+
+// Strip a single wrapping quote pair (Windows "Copy as path" and quoted shell
+// snippets) — literal quotes are never part of a real path and break every
+// executable check.
+function stripWrappingQuotes(value: string): string {
+  const trimmed = (value || '').trim();
+  if (trimmed.length >= 2
+    && ((trimmed.startsWith('"') && trimmed.endsWith('"'))
+      || (trimmed.startsWith("'") && trimmed.endsWith("'")))) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function killProcessTree(pid: number | undefined): void {
+  if (!Number.isInteger(pid)) return;
+  if (process.platform === 'win32') {
+    try {
+      spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+        stdio: 'ignore', timeout: 5000, windowsHide: true,
+      });
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function appendToPath(dir: string) {
@@ -177,7 +228,7 @@ function normalizeConfiguredOpencodeBinary(raw: unknown): string | null {
   if (typeof raw !== 'string') {
     return null;
   }
-  const trimmed = raw.trim();
+  const trimmed = stripWrappingQuotes(raw);
   if (!trimmed) {
     return null;
   }
@@ -193,13 +244,33 @@ function normalizeConfiguredOpencodeBinary(raw: unknown): string | null {
 }
 
 function isMacOpenCodeAppBundlePath(candidate: string): boolean {
-  return process.platform === 'darwin' && /\/OpenCode\.app\/Contents\/MacOS\/(?:OpenCode|opencode-cli)$/i.test(candidate);
+  return process.platform === 'darwin' && /\/OpenCode(?: Dev| Beta)?\.app\/Contents\/MacOS\/(?:OpenCode(?: Dev| Beta)?|opencode-cli)$/i.test(candidate);
+}
+
+function isWindowsOpenCodeDesktopAppPath(candidate: string): boolean {
+  if (process.platform !== 'win32' || typeof candidate !== 'string') {
+    return false;
+  }
+  const localAppData = typeof process.env.LOCALAPPDATA === 'string' && process.env.LOCALAPPDATA.trim()
+    ? path.resolve(process.env.LOCALAPPDATA).toLowerCase()
+    : '';
+  if (!localAppData) {
+    return false;
+  }
+  const normalized = path.resolve(candidate).toLowerCase();
+  return normalized.startsWith(`${localAppData}${path.sep}`)
+    && normalized.endsWith(`${path.sep}programs${path.sep}opencode${path.sep}opencode.exe`);
+}
+
+function isKnownOpenCodeDesktopAppPath(candidate: string): boolean {
+  return isMacOpenCodeAppBundlePath(candidate) || isWindowsOpenCodeDesktopAppPath(candidate);
 }
 
 function createConfiguredOpencodeBinaryError(raw: string, normalized: string): Error {
   const messageSuffix = 'OpenChamber needs the standalone opencode CLI. Install it and set openchamber.opencodeBinary to the CLI path, for example ~/.opencode/bin/opencode, or leave the setting empty to use PATH lookup.';
-  if (isMacOpenCodeAppBundlePath(raw) || isMacOpenCodeAppBundlePath(normalized)) {
-    return new Error(`Configured OpenCode binary points at the macOS desktop app bundle, not the CLI: ${normalized}. ${messageSuffix}`);
+  if (isKnownOpenCodeDesktopAppPath(raw) || isKnownOpenCodeDesktopAppPath(normalized)) {
+    const platformName = process.platform === 'win32' ? 'Windows desktop app install' : 'macOS desktop app bundle';
+    return new Error(`Configured OpenCode binary points at the ${platformName}, not the CLI: ${normalized}. ${messageSuffix}`);
   }
 
   try {
@@ -254,7 +325,7 @@ function validateConfiguredOpencodeBinaryForManagedStart(): string | null {
     return null;
   }
 
-  if (isExecutable(normalized) && !isMacOpenCodeAppBundlePath(normalized)) {
+  if (isExecutable(normalized) && !isKnownOpenCodeDesktopAppPath(normalized)) {
     return normalized;
   }
 
@@ -271,7 +342,7 @@ function resolveOpencodeCliPath(): string | null {
     }
   })();
 
-  if (configured && isExecutable(configured) && !isMacOpenCodeAppBundlePath(configured)) {
+  if (configured && isExecutable(configured) && !isKnownOpenCodeDesktopAppPath(configured)) {
     return configured;
   }
 
@@ -288,7 +359,7 @@ function resolveOpencodeCliPath(): string | null {
     }
   })();
 
-  if (sharedFromOpenChamber && isExecutable(sharedFromOpenChamber) && !isMacOpenCodeAppBundlePath(sharedFromOpenChamber)) {
+  if (sharedFromOpenChamber && isExecutable(sharedFromOpenChamber) && !isKnownOpenCodeDesktopAppPath(sharedFromOpenChamber)) {
     return sharedFromOpenChamber;
   }
 
@@ -298,17 +369,17 @@ function resolveOpencodeCliPath(): string | null {
     process.env.OPENCHAMBER_OPENCODE_PATH,
     process.env.OPENCHAMBER_OPENCODE_BIN,
   ]
-    .map((v) => (typeof v === 'string' ? v.trim() : ''))
+    .map((v) => (typeof v === 'string' ? stripWrappingQuotes(v) : ''))
     .filter(Boolean);
 
   for (const candidate of explicit) {
-    if (isExecutable(candidate)) {
+    if (isExecutable(candidate) && !isKnownOpenCodeDesktopAppPath(candidate)) {
       return candidate;
     }
   }
 
   if (cachedDetectedOpencodeCliPath) {
-    if (isExecutable(cachedDetectedOpencodeCliPath)) {
+    if (isExecutable(cachedDetectedOpencodeCliPath) && !isKnownOpenCodeDesktopAppPath(cachedDetectedOpencodeCliPath)) {
       return cachedDetectedOpencodeCliPath;
     }
     cachedDetectedOpencodeCliPath = undefined;
@@ -327,7 +398,6 @@ function resolveOpencodeCliPath(): string | null {
   const winFallbacks = (() => {
     const userProfile = process.env.USERPROFILE || home;
     const appData = process.env.APPDATA || path.join(userProfile, 'AppData', 'Roaming');
-    const localAppData = process.env.LOCALAPPDATA || '';
     const programData = process.env.ProgramData || 'C:\\ProgramData';
     const npmDir = path.join(appData, 'npm');
 
@@ -338,20 +408,22 @@ function resolveOpencodeCliPath(): string | null {
       path.join(npmDir, 'opencode.exe'),
       path.join(npmDir, 'opencode.cmd'),
       path.join(npmDir, 'opencode.bat'),
+      // System-wide Node installer keeps the global npm prefix here
+      // (npm i -g opencode-ai → opencode.cmd shim).
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs', 'opencode.cmd'),
+      path.join(userProfile, 'scoop', 'shims', 'opencode.exe'),
       path.join(userProfile, 'scoop', 'shims', 'opencode.cmd'),
       path.join(programData, 'chocolatey', 'bin', 'opencode.exe'),
       path.join(programData, 'chocolatey', 'bin', 'opencode.cmd'),
       // Bun global install
       path.join(userProfile, '.bun', 'bin', 'opencode.exe'),
       path.join(userProfile, '.bun', 'bin', 'opencode.cmd'),
-      // Some installers use LocalAppData
-      localAppData ? path.join(localAppData, 'Programs', 'opencode', 'opencode.exe') : '',
     ].filter(Boolean);
   })();
 
   if (process.platform !== 'win32') {
     const fromPath = findExecutableInPath('opencode');
-    if (fromPath) {
+    if (fromPath && !isKnownOpenCodeDesktopAppPath(fromPath)) {
       cachedDetectedOpencodeCliPath = fromPath;
       return fromPath;
     }
@@ -359,7 +431,7 @@ function resolveOpencodeCliPath(): string | null {
 
   const fallbacks = process.platform === 'win32' ? winFallbacks : unixFallbacks;
   for (const candidate of fallbacks) {
-    if (isExecutable(candidate)) {
+    if (isExecutable(candidate) && !isKnownOpenCodeDesktopAppPath(candidate)) {
       cachedDetectedOpencodeCliPath = candidate;
       return candidate;
     }
@@ -367,7 +439,7 @@ function resolveOpencodeCliPath(): string | null {
 
   if (process.platform === 'win32') {
     const fromPath = findExecutableInPath('opencode');
-    if (fromPath) {
+    if (fromPath && !isKnownOpenCodeDesktopAppPath(fromPath)) {
       cachedDetectedOpencodeCliPath = fromPath;
       return fromPath;
     }
@@ -376,13 +448,14 @@ function resolveOpencodeCliPath(): string | null {
       const result = spawnSync('where', ['opencode'], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
       if (result.status === 0) {
         const lines = (result.stdout || '')
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter(Boolean);
-        const found = lines.find((line) => isExecutable(line));
+        const found = lines.find((line) => isExecutable(line) && !isKnownOpenCodeDesktopAppPath(line));
         if (found) {
           cachedDetectedOpencodeCliPath = found;
           return found;
@@ -564,7 +637,6 @@ async function waitForReady(
   timeoutMs = 15000,
   authHeaders: Record<string, string> = {}
 ): Promise<ReadyResult> {
-  const outputChannel = vscode.window.createOutputChannel('OpenChamberManager');
   const start = Date.now();
   const candidates = getCandidateBaseUrls(serverUrl);
   let attempts = 0;
@@ -592,7 +664,7 @@ async function waitForReady(
         }
 
         clearTimeout(timeout);
-        outputChannel?.appendLine(
+        getManagerOutputChannel().appendLine(
           `Health check to ${url.toString()} returned ${res.status} with body: ${JSON.stringify(body)}`
         );
 
@@ -615,14 +687,13 @@ async function spawnManagedOpenCodeServer(
   port: number,
   timeoutMs: number
 ): Promise<{ url: string; close: () => void }> {
-  const binary = (process.env.OPENCODE_BINARY || 'opencode').trim() || 'opencode';
-  const args = ['serve', '--hostname', '127.0.0.1', '--port', String(port)];
-  const child = spawn(binary, args, {
+  const binary = stripWrappingQuotes(process.env.OPENCODE_BINARY || 'opencode') || 'opencode';
+  const launch = resolveWindowsLaunchSpec(binary, ['serve', '--hostname', '127.0.0.1', '--port', String(port)]);
+  const child = spawn(launch.binary, launch.args, {
     cwd: workingDirectory,
-    env: { ...process.env },
+    env: applyProviderEnvAliases({ ...process.env }),
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
-    shell: shouldUseWindowsShell(binary),
   });
 
   const url = await new Promise<string>((resolve, reject) => {
@@ -695,6 +766,7 @@ async function spawnManagedOpenCodeServer(
   return {
     url,
     close: () => {
+      killProcessTree(child.pid);
       try {
         child.kill('SIGTERM');
       } catch {

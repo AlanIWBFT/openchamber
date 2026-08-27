@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { scheduleCachedStateRetries } from './webviewCachedStateRetry';
 import { handleBridgeMessage, type BridgeRequest, type BridgeResponse } from './bridge';
 import { getThemeKindName } from './theme';
 import type { OpenCodeManager, ConnectionStatus } from './opencode';
@@ -48,6 +49,19 @@ export class SessionEditorPanelProvider {
   private _clearActiveEditorFileTimer: ReturnType<typeof setTimeout> | undefined;
   private _lastActiveEditorFilePayload: ActiveEditorFilePayload | null = null;
   private readonly _webviewDevServerUrl: string | null;
+
+  /**
+   * See webviewCachedStateRetry.ts — a single postMessage can be dropped
+   * before the webview bridge is ready, leaving the loading screen stuck.
+   */
+  private _scheduleCachedStateRetries(panelId: string, entry: SessionPanelState): void {
+    scheduleCachedStateRetries({
+      target: entry.panel,
+      getCurrent: () => this._panels.get(panelId)?.panel,
+      isConnected: () => this._cachedStatus === 'connected',
+      send: () => this._sendCachedStateToPanel(entry),
+    });
+  }
 
   constructor(
     private readonly _context: vscode.ExtensionContext,
@@ -116,6 +130,9 @@ export class SessionEditorPanelProvider {
 
     void this.updateTheme(vscode.window.activeColorTheme.kind);
     this._sendCachedStateToPanel(state);
+    // The webview bridge may not be ready yet; keep re-sending so a dropped
+    // `connectionStatus` can never leave the webview stuck on its loading screen.
+    this._scheduleCachedStateRetries(panelId, state);
     void this._broadcastActiveEditorFile();
 
     panel.onDidDispose(() => {
@@ -187,6 +204,15 @@ export class SessionEditorPanelProvider {
     for (const entry of this._panels.values()) {
       this._sendCachedStateToPanel(entry);
     }
+
+    // When we become connected, keep re-sending at staggered delays so the
+    // webview cannot miss the transition (postMessage is dropped if the
+    // webview bridge is not ready yet).
+    if (status === 'connected') {
+      for (const [panelId, entry] of this._panels.entries()) {
+        this._scheduleCachedStateRetries(panelId, entry);
+      }
+    }
   }
 
   public notifySettingsSynced(settings: unknown): void {
@@ -195,6 +221,16 @@ export class SessionEditorPanelProvider {
         type: 'command',
         command: 'settingsSynced',
         payload: settings,
+      });
+    }
+  }
+
+  public notifyPermissionAutoAcceptSynced(snapshot: unknown): void {
+    for (const entry of this._panels.values()) {
+      entry.panel.webview.postMessage({
+        type: 'command',
+        command: 'permissionAutoAcceptSynced',
+        payload: snapshot,
       });
     }
   }
@@ -405,7 +441,7 @@ export class SessionEditorPanelProvider {
   private async _startSseProxy(message: BridgeRequest, entry: SessionPanelState): Promise<BridgeResponse> {
     const { id, type, payload } = message;
 
-    const { path, headers } = (payload || {}) as { path?: string; headers?: Record<string, string> };
+    const { path, headers, streamId: requestedStreamId } = (payload || {}) as { path?: string; headers?: Record<string, string>; streamId?: string };
     const normalizedPath = typeof path === 'string' && path.trim().length > 0 ? path.trim() : '/event';
 
     if (!this._openCodeManager) {
@@ -417,8 +453,11 @@ export class SessionEditorPanelProvider {
       };
     }
 
-    const streamId = `sse_${++this._sseCounter}_${Date.now()}`;
+    const streamId = typeof requestedStreamId === 'string' && /^sse_webview_\d+_\d+$/.test(requestedStreamId)
+      ? requestedStreamId
+      : `sse_${++this._sseCounter}_${Date.now()}`;
     const controller = new AbortController();
+    entry.sseStreams.set(streamId, controller);
 
     try {
       const start = await openSseProxy({
@@ -427,20 +466,19 @@ export class SessionEditorPanelProvider {
         headers: this._buildSseHeaders(headers),
         signal: controller.signal,
         onChunk: (chunk) => {
-          entry.panel.webview.postMessage({ type: 'api:sse:chunk', streamId, chunk });
+          // Panel may be disposed before SSE callbacks fire.
+          entry.panel?.webview?.postMessage({ type: 'api:sse:chunk', streamId, chunk });
         },
       });
 
-      entry.sseStreams.set(streamId, controller);
-
       start.run
         .then(() => {
-          entry.panel.webview.postMessage({ type: 'api:sse:end', streamId });
+          entry.panel?.webview?.postMessage({ type: 'api:sse:end', streamId });
         })
         .catch((error) => {
           if (!controller.signal.aborted) {
             const messageText = error instanceof Error ? error.message : String(error);
-            entry.panel.webview.postMessage({ type: 'api:sse:end', streamId, error: messageText });
+            entry.panel?.webview?.postMessage({ type: 'api:sse:end', streamId, error: messageText });
           }
         })
         .finally(() => {
@@ -458,6 +496,7 @@ export class SessionEditorPanelProvider {
         },
       };
     } catch (error) {
+      entry.sseStreams.delete(streamId);
       const messageText = error instanceof Error ? error.message : String(error);
       return {
         id,

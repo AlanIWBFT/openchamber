@@ -1,7 +1,10 @@
 import React from 'react';
 import { cn, fuzzyMatch } from '@/lib/utils';
 import { useSkillsStore } from '@/stores/useSkillsStore';
+import { useUIStore } from '@/stores/useUIStore';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
+import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight';
+import { AutocompleteRowTooltip } from './composer/ui/AutocompleteRowTooltip';
 
 interface SkillInfo {
   name: string;
@@ -28,6 +31,8 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
   style,
 }, ref) => {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const isMobile = useUIStore((state) => state.isMobile);
+  const mobileMaxHeight = useMobileAutocompleteMaxHeight(containerRef, true, 240);
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const selectedIndexRef = React.useRef(0);
   const keyboardNavigationRef = React.useRef(false);
@@ -122,13 +127,15 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
     const isProject = skill.scope === 'project';
     const source = skill.source || 'opencode';
     return (
+      <AutocompleteRowTooltip description={skill.description} active={!isMobile && index === selectedIndex}>
       <div
         key={`${skill.name}-${skill.scope}`}
         ref={(el) => {
           itemRefs.current[index] = el;
         }}
           className={cn(
-            'flex items-start gap-2 px-3 py-1.5 cursor-pointer rounded-lg typography-ui-label',
+            'flex gap-2 px-3 py-1.5 cursor-pointer rounded-lg typography-ui-label',
+            isMobile ? 'items-center' : 'items-start',
           index === selectedIndex && 'bg-interactive-selection'
         )}
         onClick={() => onSkillSelect(skill.name)}
@@ -152,13 +159,9 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
               {source}
             </span>
           </div>
-          {skill.description && (
-            <div className="typography-meta text-muted-foreground mt-0.5 truncate">
-              {skill.description}
-            </div>
-          )}
         </div>
       </div>
+      </AutocompleteRowTooltip>
     );
   };
 
@@ -166,9 +169,9 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
     <div
       ref={containerRef}
       className="absolute z-[100] min-w-0 w-full max-w-[450px] max-h-60 bg-background border-2 border-border/60 rounded-xl shadow-none bottom-full mb-2 left-0 flex flex-col"
-      style={style}
+      style={mobileMaxHeight !== undefined ? { ...style, maxHeight: mobileMaxHeight } : style}
     >
-      <ScrollableOverlay outerClassName="flex-1 min-h-0" className="px-0 pb-2">
+      <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="px-0 pb-2">
         {filteredSkills.length ? (
           <div>
             {filteredSkills.map((skill, index) => renderSkill(skill, index))}
@@ -179,9 +182,11 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
           </div>
         )}
       </ScrollableOverlay>
-      <div className="px-3 pt-1 pb-1.5 border-t typography-meta text-muted-foreground">
-        ↑↓ navigate • Enter select • Esc close
-      </div>
+      {!isMobile && (
+        <div className="px-3 pt-1 pb-1.5 border-t typography-meta text-muted-foreground">
+          ↑↓ navigate • Enter select • Esc close
+        </div>
+      )}
     </div>
   );
 });

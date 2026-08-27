@@ -129,7 +129,23 @@ const deferred = <T,>() => {
 };
 
 mock.module('@/stores/utils/safeStorage', () => ({
+  getDeferredSafeStorage: () => makeStorage(),
   getSafeStorage: () => makeStorage(),
+  createDeferredSafeJSONStorage: () => {
+    const testStorage = makeStorage();
+    return {
+      getItem: (name: string) => {
+        const value = testStorage.getItem(name);
+        return value === null ? null : JSON.parse(value);
+      },
+      setItem: (name: string, value: unknown) => {
+        testStorage.setItem(name, JSON.stringify(value));
+      },
+      removeItem: (name: string) => {
+        testStorage.removeItem(name);
+      },
+    };
+  },
 }));
 
 mock.module('@/stores/useProjectsStore', () => ({
@@ -252,6 +268,7 @@ describe('useConfigStore provider persistence', () => {
       currentProviderId: '',
       currentModelId: '',
       currentVariant: undefined,
+      currentVariantSelection: { override: undefined, inherited: undefined },
       selectedProviderId: '',
       currentAgentName: undefined,
       agents: [],
@@ -389,6 +406,60 @@ describe('useConfigStore provider persistence', () => {
     expect(state.currentVariant).toBe('fast');
   });
 
+  test('the settings provider selection survives a refresh that no longer lists it', async () => {
+    // Plugin-registered providers vanish from the list while OpenCode restarts.
+    // A refresh in that window used to move the user to another provider while
+    // they were reading or editing the one they picked.
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      currentProviderId: 'live',
+      currentModelId: 'live-model',
+      selectedProviderId: 'plugin-provider',
+      directoryScoped: {},
+    });
+
+    liveProviderId = 'live';
+    await useConfigStore.getState().loadProviders({ source: 'test:missing-selection' });
+
+    const state = useConfigStore.getState();
+    expect(state.providers.map((entry) => entry.id)).toEqual(['live']);
+    expect(state.selectedProviderId).toBe('plugin-provider');
+    expect(state.directoryScoped[DIRECTORY]?.selectedProviderId).toBe('plugin-provider');
+  });
+
+  test('an empty settings provider selection is filled from the refreshed list', async () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      currentProviderId: '',
+      currentModelId: '',
+      selectedProviderId: '',
+      directoryScoped: {},
+    });
+
+    liveProviderId = 'live';
+    await useConfigStore.getState().loadProviders({ source: 'test:empty-selection' });
+
+    expect(useConfigStore.getState().selectedProviderId).toBe('live');
+  });
+
+  test('changing the chat provider leaves the settings provider selection alone', async () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [provider('anthropic'), provider('openai')],
+      currentProviderId: 'anthropic',
+      currentModelId: 'anthropic-model',
+      selectedProviderId: 'openai',
+      directoryScoped: {},
+    });
+
+    useConfigStore.getState().setProvider('anthropic');
+
+    const state = useConfigStore.getState();
+    expect(state.currentProviderId).toBe('anthropic');
+    expect(state.selectedProviderId).toBe('openai');
+    expect(state.directoryScoped[DIRECTORY]?.selectedProviderId).toBe('openai');
+  });
+
   test('provider reload preserves the add-provider sentinel selection', async () => {
     // The user has opened the "Add provider" form, which sets selectedProviderId
     // to the sentinel. A background provider refresh must not navigate them away
@@ -406,6 +477,31 @@ describe('useConfigStore provider persistence', () => {
     await useConfigStore.getState().loadProviders({ source: 'test:add-provider' });
 
     expect(useConfigStore.getState().selectedProviderId).toBe('__add_provider__');
+  });
+
+  test('add-provider sentinel is not persisted as a stable provider selection', async () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      currentProviderId: 'live',
+      currentModelId: 'live-model',
+      selectedProviderId: '__add_provider__',
+      directoryScoped: {
+        [DIRECTORY]: {
+          providers: [provider('live')],
+          agents: [],
+          currentProviderId: 'live',
+          currentModelId: 'live-model',
+          currentAgentName: undefined,
+          selectedProviderId: '__add_provider__',
+          agentModelSelections: {},
+          defaultProviders: { default: 'live' },
+        },
+      },
+    });
+
+    const persisted = JSON.parse(storage.get(STORAGE_KEY) ?? '{}');
+    expect(persisted.state.selectedProviderId).toBe('');
+    expect(persisted.state.directoryScoped[DIRECTORY].selectedProviderId).toBe('');
   });
 
   test('setAgent applies settings default variant for an agent configured model', () => {
@@ -428,6 +524,60 @@ describe('useConfigStore provider persistence', () => {
     expect(state.currentModelId).toBe('gpt-5.5');
     expect(state.currentVariant).toBe('high');
     expect(state.directoryScoped[DIRECTORY]?.currentVariant).toBe('high');
+  });
+
+  test('cycleCurrentVariant reaches Default, low, and medium from inherited high', () => {
+    useConfigStore.setState({
+      providers: [provider('openai', 'gpt-5.6-sol', { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {} })],
+      currentProviderId: 'openai',
+      currentModelId: 'gpt-5.6-sol',
+      currentVariant: 'high',
+      currentVariantSelection: { override: undefined, inherited: 'high' },
+      directoryScoped: {},
+    });
+
+    const expectedVariants = ['xhigh', 'max', undefined, 'none', 'low', 'medium', 'high'];
+    for (const expectedVariant of expectedVariants) {
+      expect(useConfigStore.getState().cycleCurrentVariant()).toBe(expectedVariant);
+      expect(useConfigStore.getState().currentVariantSelection.override).toBe(expectedVariant ?? null);
+    }
+
+    useConfigStore.getState().setCurrentVariantOverride('max', 'high');
+    expect(useConfigStore.getState().cycleCurrentVariant()).toBe(undefined);
+    expect(useConfigStore.getState().currentVariant).toBe('high');
+    expect(useConfigStore.getState().currentVariantSelection).toEqual({ override: null, inherited: 'high' });
+  });
+
+  test('cycleCurrentVariant toggles a single variant with Default', () => {
+    useConfigStore.setState({
+      providers: [provider('openai', 'single', { high: {} })],
+      currentProviderId: 'openai',
+      currentModelId: 'single',
+      currentVariant: 'high',
+      currentVariantSelection: { override: null, inherited: 'high' },
+      directoryScoped: {},
+    });
+
+    expect(useConfigStore.getState().cycleCurrentVariant()).toBe('high');
+    expect(useConfigStore.getState().currentVariantSelection.override).toBe('high');
+    expect(useConfigStore.getState().cycleCurrentVariant()).toBe(undefined);
+    expect(useConfigStore.getState().currentVariantSelection.override).toBeNull();
+    expect(useConfigStore.getState().currentVariant).toBe('high');
+  });
+
+  test('an unavailable explicit variant cycles back to Default', () => {
+    useConfigStore.setState({
+      providers: [provider('openai', 'changed', { low: {}, high: {} })],
+      currentProviderId: 'openai',
+      currentModelId: 'changed',
+      currentVariant: 'removed',
+      currentVariantSelection: { override: 'removed', inherited: 'low' },
+      directoryScoped: {},
+    });
+
+    expect(useConfigStore.getState().cycleCurrentVariant()).toBe(undefined);
+    expect(useConfigStore.getState().currentVariant).toBe('low');
+    expect(useConfigStore.getState().currentVariantSelection.override).toBeNull();
   });
 
   test('setAgent prefers saved and agent variants before settings default', () => {
@@ -481,6 +631,73 @@ describe('useConfigStore provider persistence', () => {
     expect(state.currentVariant).toBe('high');
   });
 
+  test('[issue-2404] setAgent keeps session model override over agent default model', () => {
+    // Custom agent default is model-a; user manually overrode to model-b for this session.
+    // Re-applying setAgent (e.g. after delegated subtask completion rematerializes the
+    // parent) must keep model-b rather than resetting to the agent pin.
+    const sessionId = 'ses_2404_model_override';
+    const multiModelProvider = {
+      ...provider('provider', 'model-a'),
+      models: [
+        provider('provider', 'model-a').models[0],
+        provider('provider', 'model-b').models[0],
+      ],
+    };
+    useSessionUIStore.setState({ currentSessionId: sessionId });
+    useSelectionStore.getState().saveSessionModelSelection(sessionId, 'provider', 'model-b');
+    useSelectionStore.getState().saveAgentModelForSession(sessionId, 'custom-agent', 'provider', 'model-b');
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [multiModelProvider],
+      agents: [testAgent('custom-agent', { model: { providerID: 'provider', modelID: 'model-a' } })],
+      currentProviderId: 'provider',
+      currentModelId: 'model-b',
+      currentAgentName: 'custom-agent',
+      selectionSource: 'manual',
+      currentVariant: undefined,
+      directoryScoped: {},
+    });
+
+    useConfigStore.getState().setAgent('custom-agent');
+
+    const state = useConfigStore.getState();
+    expect(state.currentProviderId).toBe('provider');
+    expect(state.currentModelId).toBe('model-b');
+    expect(useSelectionStore.getState().getAgentModelForSession(sessionId, 'custom-agent')).toEqual({
+      providerId: 'provider',
+      modelId: 'model-b',
+    });
+  });
+
+  test('[issue-2404] setAgent uses agent default when no session override exists', () => {
+    const sessionId = 'ses_2404_agent_default';
+    const multiModelProvider = {
+      ...provider('provider', 'model-a'),
+      models: [
+        provider('provider', 'model-a').models[0],
+        provider('provider', 'model-b').models[0],
+      ],
+    };
+    useSessionUIStore.setState({ currentSessionId: sessionId });
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [multiModelProvider],
+      agents: [testAgent('custom-agent', { model: { providerID: 'provider', modelID: 'model-a' } })],
+      currentProviderId: 'provider',
+      currentModelId: 'model-b',
+      currentAgentName: undefined,
+      selectionSource: 'auto',
+      currentVariant: undefined,
+      directoryScoped: {},
+    });
+
+    useConfigStore.getState().setAgent('custom-agent');
+
+    const state = useConfigStore.getState();
+    expect(state.currentProviderId).toBe('provider');
+    expect(state.currentModelId).toBe('model-a');
+  });
+
   test('loadAgents does not fetch OpenCode config directly', async () => {
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
@@ -507,6 +724,80 @@ describe('useConfigStore provider persistence', () => {
 
     expect(listAgentsCalls).toBe(1);
     expect(getConfigCalls).toBe(0);
+  });
+
+  test('a project default carries its own thinking level', async () => {
+    // The project pins a model plus the level to run it at. Before, the level
+    // was dropped and only the global settings variant was ever considered —
+    // and that one belongs to the global model, not this project's.
+    const projectProvider = provider('anthropic', 'claude-opus-5', { high: {}, low: {} });
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [projectProvider],
+      agents: [testAgent('build')],
+      currentProviderId: '',
+      currentModelId: '',
+      currentVariant: undefined,
+      settingsDefaultModel: undefined,
+      settingsDefaultVariant: 'low',
+      selectionSource: 'auto',
+      directoryScoped: {},
+    });
+
+    useConfigStore.getState().applyDefaultModelAgentSelection({
+      projectDefaultModel: 'anthropic/claude-opus-5',
+      projectDefaultVariant: 'high',
+    });
+
+    const state = useConfigStore.getState();
+    expect(state.currentProviderId).toBe('anthropic');
+    expect(state.currentModelId).toBe('claude-opus-5');
+    expect(state.currentVariant).toBe('high');
+  });
+
+  test('a fresh session applies the settings thinking level instead of the previous override', () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [provider('openai', 'gpt-5.5', { low: {}, high: {} })],
+      agents: [testAgent('build')],
+      currentProviderId: 'openai',
+      currentModelId: 'gpt-5.5',
+      currentVariant: 'low',
+      currentVariantSelection: { override: 'low', inherited: 'high' },
+      settingsDefaultModel: 'openai/gpt-5.5',
+      settingsDefaultVariant: 'high',
+      selectionSource: 'manual',
+      directoryScoped: {},
+    });
+
+    useConfigStore.getState().applyDefaultModelAgentSelection();
+
+    const state = useConfigStore.getState();
+    expect(state.currentVariant).toBe('high');
+    expect(state.currentVariantSelection).toEqual({ override: 'high', inherited: 'high' });
+    expect(state.directoryScoped[DIRECTORY]?.currentVariant).toBe('high');
+  });
+
+  test('a thinking level the project model does not offer is ignored', async () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [provider('anthropic', 'claude-opus-5')],
+      agents: [testAgent('build')],
+      currentProviderId: '',
+      currentModelId: '',
+      currentVariant: undefined,
+      settingsDefaultModel: undefined,
+      settingsDefaultVariant: undefined,
+      selectionSource: 'auto',
+      directoryScoped: {},
+    });
+
+    useConfigStore.getState().applyDefaultModelAgentSelection({
+      projectDefaultModel: 'anthropic/claude-opus-5',
+      projectDefaultVariant: 'high',
+    });
+
+    expect(useConfigStore.getState().currentVariant).toBe(undefined);
   });
 
   test('manual selection survives an in-flight loadAgents refresh', async () => {
@@ -601,6 +892,47 @@ describe('useConfigStore provider persistence', () => {
     expect(state.directoryScoped[DIRECTORY]?.opencodeDefaultAgent).toBe('review');
     expect(state.directoryScoped[worktree]).toBe(undefined);
     expect(state.currentAgentName).toBe('review');
+  });
+
+  test('sync config defaults do not close the add-provider settings flow', () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [provider('openai', 'gpt-5.5'), provider('anthropic', 'claude')],
+      agents: [
+        testAgent('build', { model: { providerID: 'anthropic', modelID: 'claude' } }),
+        testAgent('review', { model: { providerID: 'openai', modelID: 'gpt-5.5' } }),
+      ],
+      currentProviderId: 'anthropic',
+      currentModelId: 'claude',
+      currentAgentName: 'build',
+      selectedProviderId: '__add_provider__',
+      selectionSource: 'auto',
+      directoryScoped: {
+        [DIRECTORY]: {
+          providers: [provider('openai', 'gpt-5.5'), provider('anthropic', 'claude')],
+          agents: [
+            testAgent('build', { model: { providerID: 'anthropic', modelID: 'claude' } }),
+            testAgent('review', { model: { providerID: 'openai', modelID: 'gpt-5.5' } }),
+          ],
+          currentProviderId: 'anthropic',
+          currentModelId: 'claude',
+          currentAgentName: 'build',
+          selectedProviderId: '__add_provider__',
+          agentModelSelections: {},
+          defaultProviders: {},
+          selectionSource: 'auto',
+        },
+      },
+    });
+
+    emitSyncConfigChanged(DIRECTORY, { default_agent: 'review', model: 'openai/gpt-5.5' });
+
+    const state = useConfigStore.getState();
+    expect(state.currentAgentName).toBe('review');
+    expect(state.currentProviderId).toBe('openai');
+    expect(state.currentModelId).toBe('gpt-5.5');
+    expect(state.selectedProviderId).toBe('__add_provider__');
+    expect(state.directoryScoped[DIRECTORY]?.selectedProviderId).toBe('__add_provider__');
   });
 
   test('duplicate sync config event is a no-op when defaults and selection are unchanged', () => {
@@ -782,6 +1114,8 @@ describe('useConfigStore provider persistence', () => {
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
       selectionSource: 'manual',
+      currentVariant: 'high',
+      currentVariantSelection: { override: 'high', inherited: 'medium' },
       opencodeDefaultAgent: 'active-default',
       opencodeDefaultModel: 'active/model',
       directoryScoped: {
@@ -803,6 +1137,7 @@ describe('useConfigStore provider persistence', () => {
           agents: [testAgent('other-agent')],
           currentProviderId: 'other',
           currentModelId: 'other-model',
+          currentVariant: 'low',
           currentAgentName: 'other-agent',
           selectedProviderId: 'other',
           agentModelSelections: {},
@@ -822,6 +1157,7 @@ describe('useConfigStore provider persistence', () => {
     expect(state.selectionSource).toBe('auto');
     expect(state.opencodeDefaultAgent).toBe('other-default');
     expect(state.opencodeDefaultModel).toBe('other/model');
+    expect(state.currentVariantSelection).toEqual({ override: undefined, inherited: 'low' });
   });
 
   test('sync config without defaults clears stored OpenCode defaults without changing manual selection', () => {

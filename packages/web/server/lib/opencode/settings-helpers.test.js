@@ -58,6 +58,62 @@ const createTestHelpersWithRealSanitizers = () => {
 };
 
 describe('settings helpers', () => {
+  it('accepts only booleans for draft starter visibility', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ draftStartersVisible: true })).toEqual({ draftStartersVisible: true });
+    expect(helpers.sanitizeSettingsUpdate({ draftStartersVisible: false })).toEqual({ draftStartersVisible: false });
+    expect(helpers.sanitizeSettingsUpdate({ draftStartersVisible: 'false' })).toEqual({});
+  });
+
+  it('sanitizes shared sidebar display preferences', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({
+      sidebarProjectDisplayMode: 'single',
+      sidebarSessionGroupingMode: 'flat',
+      sidebarProjectSortOrder: 'z-a',
+      sidebarShowRecentSection: false,
+    })).toEqual({
+      sidebarProjectDisplayMode: 'single',
+      sidebarSessionGroupingMode: 'flat',
+      sidebarProjectSortOrder: 'z-a',
+      sidebarShowRecentSection: false,
+    });
+    expect(helpers.sanitizeSettingsUpdate({
+      sidebarProjectDisplayMode: 'grid',
+      sidebarSessionGroupingMode: 'project',
+      sidebarProjectSortOrder: 'random',
+      sidebarShowRecentSection: 'false',
+    })).toEqual({});
+  });
+
+  it('accepts only booleans for wide chat layout', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ wideChatLayoutEnabled: true })).toEqual({ wideChatLayoutEnabled: true });
+    expect(helpers.sanitizeSettingsUpdate({ wideChatLayoutEnabled: false })).toEqual({ wideChatLayoutEnabled: false });
+    expect(helpers.sanitizeSettingsUpdate({ wideChatLayoutEnabled: 'true' })).toEqual({});
+  });
+
+  it('accepts only booleans for collapsible user messages', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ collapsibleUserMessages: true })).toEqual({ collapsibleUserMessages: true });
+    expect(helpers.sanitizeSettingsUpdate({ collapsibleUserMessages: false })).toEqual({ collapsibleUserMessages: false });
+    expect(helpers.sanitizeSettingsUpdate({ collapsibleUserMessages: 'true' })).toEqual({});
+  });
+
+  it('sanitizes and returns the persisted editor font size', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ editorFontSize: 20.6 })).toEqual({ editorFontSize: 21 });
+    expect(helpers.sanitizeSettingsUpdate({ editorFontSize: 8 })).toEqual({ editorFontSize: 9 });
+    expect(helpers.sanitizeSettingsUpdate({ editorFontSize: 33 })).toEqual({ editorFontSize: 32 });
+    expect(helpers.sanitizeSettingsUpdate({ editorFontSize: Number.NaN })).toEqual({});
+    expect(helpers.formatSettingsResponse({ editorFontSize: 20 })).toMatchObject({ editorFontSize: 20 });
+  });
+
   it('accepts messageStreamTransport as a persisted shared setting', () => {
     const helpers = createTestHelpers();
 
@@ -78,6 +134,19 @@ describe('settings helpers', () => {
     expect(helpers.sanitizeSettingsUpdate({ messageStreamTransport: 'websocket' })).toEqual({});
   });
 
+  it('sanitizes the persisted terminal shell', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ terminalShell: ' ZSH ' })).toEqual({ terminalShell: 'zsh' });
+    expect(helpers.sanitizeSettingsUpdate({ terminalShell: 'auto' })).toEqual({ terminalShell: 'auto' });
+    expect(helpers.sanitizeSettingsUpdate({ terminalShell: '/bin/zsh' })).toEqual({});
+    expect(helpers.sanitizeSettingsUpdate({ terminalShell: 'zsh -c whoami' })).toEqual({});
+    expect(helpers.sanitizeSettingsUpdate({ terminalLoginShells: [' ZSH ', 'bash', 'zsh', '/bin/fish', 42] })).toEqual({
+      terminalLoginShells: ['zsh', 'bash'],
+    });
+    expect(helpers.sanitizeSettingsUpdate({ terminalLoginShells: [] })).toEqual({ terminalLoginShells: [] });
+  });
+
   it('accepts desktopLanAccessEnabled as a persisted shared setting', () => {
     const helpers = createTestHelpers();
 
@@ -86,6 +155,85 @@ describe('settings helpers', () => {
     });
     expect(helpers.sanitizeSettingsUpdate({ desktopLanAccessEnabled: false })).toEqual({
       desktopLanAccessEnabled: false,
+    });
+  });
+
+  it('accepts desktopKeepAwakeEnabled as a persisted shared setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ desktopKeepAwakeEnabled: true })).toEqual({
+      desktopKeepAwakeEnabled: true,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopKeepAwakeEnabled: false })).toEqual({
+      desktopKeepAwakeEnabled: false,
+    });
+  });
+
+  it('accepts desktopMinimizeToTrayEnabled as a persisted shared setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ desktopMinimizeToTrayEnabled: true })).toEqual({
+      desktopMinimizeToTrayEnabled: true,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopMinimizeToTrayEnabled: false })).toEqual({
+      desktopMinimizeToTrayEnabled: false,
+    });
+  });
+
+  it('accepts desktopMacMenuBarEnabled as a persisted shared setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ desktopMacMenuBarEnabled: true })).toEqual({
+      desktopMacMenuBarEnabled: true,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopMacMenuBarEnabled: false })).toEqual({
+      desktopMacMenuBarEnabled: false,
+    });
+    expect(helpers.formatSettingsResponse({ desktopMacMenuBarEnabled: false })).toMatchObject({
+      desktopMacMenuBarEnabled: false,
+    });
+  });
+
+  it('normalizes desktopWindowControlsPosition and maps legacy auto to right', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsPosition: 'left' })).toEqual({
+      desktopWindowControlsPosition: 'left',
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsPosition: 'right' })).toEqual({
+      desktopWindowControlsPosition: 'right',
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsPosition: 'auto' })).toEqual({
+      desktopWindowControlsPosition: 'right',
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsPosition: 'center' })).toEqual({});
+  });
+
+  it('sanitizes desktopWindowControlsStyle and rejects unknown values', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsStyle: 'classic' })).toEqual({
+      desktopWindowControlsStyle: 'classic',
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsStyle: 'traffic-lights' })).toEqual({
+      desktopWindowControlsStyle: 'traffic-lights',
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsStyle: 'macos' })).toEqual({});
+    expect(helpers.sanitizeSettingsUpdate({ desktopWindowControlsStyle: 'auto' })).toEqual({});
+  });
+
+  it('sanitizes the persisted permission auto-accept policy', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({
+      permissionAutoAccept: {
+        sessions: { root: true, child: false, invalid: 'true' },
+      },
+    })).toEqual({
+      permissionAutoAccept: {
+        sessions: { root: true, child: false },
+        revision: 0,
+      },
     });
   });
 
@@ -314,6 +462,14 @@ describe('settings helpers', () => {
       expect(helpers.sanitizeSettingsUpdate({ recentEfforts: { 'anthropic/claude-opus-4': [123, ''] } })).toEqual({});
     });
 
+    it('persists only boolean system prompt optimization values', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      expect(helpers.sanitizeSettingsUpdate({ optimizeSystemPrompt: true })).toEqual({ optimizeSystemPrompt: true });
+      expect(helpers.sanitizeSettingsUpdate({ optimizeSystemPrompt: false })).toEqual({ optimizeSystemPrompt: false });
+      expect(helpers.sanitizeSettingsUpdate({ optimizeSystemPrompt: 'true' })).toEqual({});
+    });
+
     it('survives a full settings.json payload containing all four previously-dropped fields (regression)', () => {
       const helpers = createTestHelpersWithRealSanitizers();
       const payload = {
@@ -340,6 +496,41 @@ describe('settings helpers', () => {
       expect(sanitized.recentEfforts).toEqual(payload.recentEfforts);
       expect(sanitized.favoriteModels).toEqual(payload.favoriteModels);
       expect(sanitized.recentModels).toEqual(payload.recentModels);
+    });
+  });
+
+  describe('session retention settings persistence', () => {
+    it('round-trips sessionRetentionAction archive and delete through the sanitizer', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      expect(helpers.sanitizeSettingsUpdate({ sessionRetentionAction: 'archive' })).toEqual({
+        sessionRetentionAction: 'archive',
+      });
+      expect(helpers.sanitizeSettingsUpdate({ sessionRetentionAction: 'delete' })).toEqual({
+        sessionRetentionAction: 'delete',
+      });
+    });
+
+    it('rejects invalid sessionRetentionAction values', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      expect(helpers.sanitizeSettingsUpdate({ sessionRetentionAction: 'remove' })).toEqual({});
+      expect(helpers.sanitizeSettingsUpdate({ sessionRetentionAction: true })).toEqual({});
+    });
+
+    it('survives a full settings payload containing sessionRetentionAction (regression)', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+      const payload = {
+        autoDeleteEnabled: true,
+        autoDeleteAfterDays: 60,
+        sessionRetentionAction: 'delete',
+      };
+
+      const sanitized = helpers.sanitizeSettingsUpdate(payload);
+
+      expect(sanitized.autoDeleteEnabled).toBe(true);
+      expect(sanitized.autoDeleteAfterDays).toBe(60);
+      expect(sanitized.sessionRetentionAction).toBe('delete');
     });
   });
 });

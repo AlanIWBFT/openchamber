@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "id": "openchamber-light",
+    "id": "fields-of-the-shire-light",
     "name": "Fields of the Shire",
     "description": "Fields of the Shire theme - light variant",
     "author": "OpenChamber",
@@ -30,7 +30,7 @@
       "elevated": "#fcf9f0",
       "elevatedForeground": "#1a1612",
       "overlay": "#1a161220",
-      "subtle": "#efe8da"
+      "subtle": "#f1ece1"
     },
     "interactive": {
       "border": "#1a16121c",
@@ -136,8 +136,8 @@
       "heading4": "#1a1612",
       "link": "#3d4f5a",
       "linkHover": "#4a6030",
-      "inlineCode": "#4a6030",
-      "inlineCodeBackground": "#ece5d6",
+      "inlineCode": "#4A6030",
+      "inlineCodeBackground": "#ECE8DE",
       "blockquote": "#5a5048",
       "blockquoteBorder": "#1a161230",
       "listMarker": "#8c552099"
@@ -168,9 +168,9 @@
   },
   "config": {
     "fonts": {
-      "sans": "\"IBM Plex Mono\", monospace",
-      "mono": "\"IBM Plex Mono\", monospace",
-      "heading": "\"IBM Plex Mono\", monospace"
+      "sans": "ui-monospace, \"SFMono-Regular\", \"Menlo\", \"Cascadia Mono\", \"Segoe UI Mono\", monospace",
+      "mono": "ui-monospace, \"SFMono-Regular\", \"Menlo\", \"Cascadia Mono\", \"Segoe UI Mono\", monospace",
+      "heading": "ui-monospace, \"SFMono-Regular\", \"Menlo\", \"Cascadia Mono\", \"Segoe UI Mono\", monospace"
     },
     "transitions": {
       "fast": "150ms ease",

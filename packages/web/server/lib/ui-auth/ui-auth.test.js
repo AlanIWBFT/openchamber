@@ -213,6 +213,28 @@ describe('ui auth client credential seam', () => {
     });
     expect(mountedServeCalled).toBe(true);
 
+    const dictationWsReq = {
+      method: 'GET',
+      path: '/api/dictation/ws',
+      url: `/api/dictation/ws?oc_url_token=${encodeURIComponent(urlToken)}`,
+      headers: { upgrade: 'websocket' },
+    };
+    expect(await auth.ensureSessionToken(dictationWsReq, null)).toBe('client:device-1');
+
+    const dictationHttpReq = {
+      method: 'GET',
+      path: '/api/dictation/ws',
+      url: `/api/dictation/ws?oc_url_token=${encodeURIComponent(urlToken)}`,
+      headers: { accept: 'application/json' },
+    };
+    const dictationHttpRes = createResponse();
+    let dictationHttpCalled = false;
+    await auth.requireAuth(dictationHttpReq, dictationHttpRes, () => {
+      dictationHttpCalled = true;
+    });
+    expect(dictationHttpCalled).toBe(false);
+    expect(dictationHttpRes.statusCode).toBe(401);
+
     const arbitraryGetReq = { method: 'GET', path: '/api/config/settings', url: `/api/config/settings?oc_url_token=${encodeURIComponent(urlToken)}`, headers: { accept: 'application/json' } };
     const arbitraryGetRes = createResponse();
     let arbitraryGetCalled = false;
@@ -247,7 +269,7 @@ describe('ui auth client credential seam', () => {
             token: 'client-token',
             client: {
               id: 'device-1',
-              label: input.label,
+              label: input.label ?? input.fallbackLabel,
               createdAt: new Date().toISOString(),
               lastUsedAt: null,
               revokedAt: null,
@@ -273,7 +295,7 @@ describe('ui auth client credential seam', () => {
     await auth.handleSessionCreate(req, res);
 
     expect(res.body.clientToken).toBe('client-token');
-    expect(createClientInput.label).toBe('OpenChamber Desktop');
+    expect(createClientInput.fallbackLabel).toBe('OpenChamber Desktop');
     const expiresAt = Date.parse(createClientInput.expiresAt);
     expect(expiresAt).toBeGreaterThanOrEqual(before + 122_000);
     expect(expiresAt).toBeLessThanOrEqual(Date.now() + 124_000);

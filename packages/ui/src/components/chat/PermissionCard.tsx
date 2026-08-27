@@ -9,6 +9,11 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from "@/components/icon/Icon";
 import { DiffPreview, WritePreview } from './DiffPreview';
 import { useI18n } from '@/lib/i18n';
+import { getVisiblePermissionPatterns } from './permissionCardPatterns';
+import { formatShortcutForDisplay } from '@/lib/shortcuts';
+
+// Newest pending card owns the keyboard; older cards wait their turn.
+const activePermissionCardIds: string[] = [];
 
 const PERMISSION_BASH_CUSTOM_STYLE: React.CSSProperties = {
   margin: 0,
@@ -65,6 +70,14 @@ const getToolIcon = (toolName: string) => {
     return <Icon name="global" className={iconClass} />;
   }
 
+  if (tool === 'linear' || tool.startsWith('linear_')) {
+    return <Icon name="linear" className={iconClass} />;
+  }
+
+  if (tool === 'cloudflare' || tool.startsWith('cloudflare_') || tool === 'claudflare' || tool.startsWith('claudflare_')) {
+    return <Icon name="cloudflare" className={iconClass} />;
+  }
+
   return <Icon name="tools" className={iconClass} />;
 };
 
@@ -117,12 +130,40 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
     }
   };
 
+  const handleResponseRef = React.useRef(handleResponse);
+  handleResponseRef.current = handleResponse;
+
+  React.useEffect(() => {
+    if (hasResponded) return;
+    activePermissionCardIds.push(permission.id);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (activePermissionCardIds.at(-1) !== permission.id) return;
+      if (!event.altKey || event.metaKey || event.ctrlKey) return;
+      const response = event.key === 'Enter'
+        ? (event.shiftKey ? 'always' as const : 'once' as const)
+        : event.key === 'Backspace' && !event.shiftKey
+          ? 'reject' as const
+          : null;
+      if (!response) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void handleResponseRef.current(response);
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+      const index = activePermissionCardIds.lastIndexOf(permission.id);
+      if (index !== -1) activePermissionCardIds.splice(index, 1);
+    };
+  }, [hasResponded, permission.id]);
+
   if (hasResponded) {
     return null;
   }
 
   const toolName = permission.permission || 'unknown';
   const tool = toolName.toLowerCase();
+  const isBashTool = tool === 'bash' || tool === 'shell' || tool === 'shell_command';
 
   const getMeta = (key: string, fallback: string = ''): string => {
     const val = permission.metadata[key];
@@ -137,11 +178,14 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
     return Boolean(val);
   };
   const displayToolName = getToolDisplayName(toolName);
+  const bashCommand = isBashTool
+    ? getMeta('command') || getMeta('cmd') || getMeta('script')
+    : '';
+  const visiblePatterns = getVisiblePermissionPatterns(permission.patterns, bashCommand);
 
   const renderToolContent = () => {
 
-    if (tool === 'bash' || tool === 'shell' || tool === 'shell_command') {
-      const command = getMeta('command') || getMeta('cmd') || getMeta('script');
+    if (isBashTool) {
       const description = getMeta('description');
       const workingDir = getMeta('cwd') || getMeta('working_directory') || getMeta('directory') || getMeta('path');
       const timeout = getMetaNum('timeout');
@@ -162,11 +206,11 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
             </div>
           )}
           {}
-          {command && (
+          {bashCommand && (
             <div>
               <WorkerHighlightedCode
                 language="bash"
-                code={command}
+                code={bashCommand}
                 style={PERMISSION_BASH_CUSTOM_STYLE}
                 codeStyle={PERMISSION_BASH_CODE_TAG_PROPS.style}
                 wrap
@@ -333,11 +377,11 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
 
           {}
           <div className="px-2 py-2">
-            {permission.patterns.length > 0 && (
+            {visiblePatterns.length > 0 && (
               <div className="mb-2">
                 <div className="typography-meta text-muted-foreground mb-1">{t('chat.permissionCard.patterns')}</div>
                 <code className="typography-meta px-2 py-1 bg-muted/30 rounded block break-all">
-                  {permission.patterns.join(", ")}
+                  {visiblePatterns.join(", ")}
                 </code>
               </div>
             )}
@@ -367,6 +411,7 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
             >
               <Icon name="check" className="h-3.5 w-3.5 sm:h-3 sm:w-3 flex-shrink-0" />
               Allow Once
+              <kbd className="ml-1 hidden sm:inline typography-micro opacity-60">{formatShortcutForDisplay('alt+enter')}</kbd>
             </button>
 
             {permission.always.length > 0 ? (
@@ -423,6 +468,7 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
               >
                 <Icon name="time" className="h-3.5 w-3.5 sm:h-3 sm:w-3 flex-shrink-0" />
                 Always Allow
+                <kbd className="ml-1 hidden sm:inline typography-micro opacity-60">{formatShortcutForDisplay('alt+shift+enter')}</kbd>
               </button>
             )}
 
@@ -446,6 +492,7 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
             >
               <Icon name="close" className="h-3.5 w-3.5 sm:h-3 sm:w-3 flex-shrink-0" />
               Deny
+              <kbd className="ml-1 hidden sm:inline typography-micro opacity-60">{formatShortcutForDisplay('alt+backspace')}</kbd>
             </button>
 
             {isResponding && (

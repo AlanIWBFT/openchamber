@@ -32,7 +32,6 @@ import { startDesktopWindowDrag } from '@/lib/desktopNative';
 import { useI18n } from '@/lib/i18n';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const MAX_MODELS_PER_GROUP = 5;
 
 interface MultiRunAttachedFile {
   id: string;
@@ -674,14 +673,18 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
               <span className="truncate">{t('multirun.launcher.project.gitRequired')}</span>
             </div>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onCancel}
-          >
-            {t('multirun.launcher.actions.cancel')}
-          </Button>
+          {/* On the full-page surface (isWindowed) there is nothing to
+              "cancel" — you leave via the sidebar like any other page. */}
+          {!isWindowed && onCancel ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onCancel}
+            >
+              {t('multirun.launcher.actions.cancel')}
+            </Button>
+          ) : null}
           <Button type="submit" size="sm" disabled={!isValid || isSubmitting}>
             {isSubmitting ? (
               t('multirun.launcher.actions.creating')
@@ -723,7 +726,6 @@ const RunGroupCard: React.FC<RunGroupCardProps> = ({
   const snippetRef = React.useRef<SnippetAutocompleteHandle>(null);
 
   const handleAddModel = React.useCallback((model: ModelSelectionWithId) => {
-    if (group.models.length >= MAX_MODELS_PER_GROUP) return;
     onUpdate(group.id, { models: [...group.models, model] });
   }, [group.id, group.models, onUpdate]);
 
@@ -983,7 +985,7 @@ const RunGroupCard: React.FC<RunGroupCardProps> = ({
       <div className="flex flex-col gap-1.5">
         <FieldLabel
           required
-          info={<InfoTip>{t('multirun.launcher.models.info', { max: MAX_MODELS_PER_GROUP })}</InfoTip>}
+          info={<InfoTip>{t('multirun.launcher.models.info')}</InfoTip>}
         >
           {t('multirun.launcher.models.label')}
         </FieldLabel>
@@ -993,7 +995,6 @@ const RunGroupCard: React.FC<RunGroupCardProps> = ({
           onRemove={handleRemoveModel}
           onUpdate={handleUpdateModel}
           minModels={1}
-          maxModels={MAX_MODELS_PER_GROUP}
         />
       </div>
     </div>

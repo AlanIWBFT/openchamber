@@ -53,6 +53,21 @@ export const getToolIcon = (toolName: string) => {
     if (tool === 'task') {
         return <Icon name="ai-agent" className={iconClass} />;
     }
+    if (tool === 'openchamber') {
+        return <Icon name="openchamber" className={iconClass} />;
+    }
+    if (tool === 'linear' || tool.startsWith('linear_')) {
+        return <Icon name="linear" className={iconClass} />;
+    }
+    if (tool === 'cloudflare' || tool.startsWith('cloudflare_') || tool === 'claudflare' || tool.startsWith('claudflare_')) {
+        return <Icon name="cloudflare" className={iconClass} />;
+    }
+    if (tool === 'openchamber_web') {
+        return <Icon name="global" className={iconClass} />;
+    }
+    if (tool === 'openchamber_memory') {
+        return <Icon name="brain-4" className={iconClass} />;
+    }
     if (tool === 'question') {
         return <Icon name="survey" className={iconClass} />;
     }

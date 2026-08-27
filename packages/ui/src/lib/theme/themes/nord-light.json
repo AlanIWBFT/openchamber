@@ -27,10 +27,10 @@
       "elevated": "#e7ebf5",
       "elevatedForeground": "#2E3440",
       "overlay": "#1F253020",
-      "subtle": "#dee4f0"
+      "subtle": "#e3e7ee"
     },
     "interactive": {
-      "border": "#c5cbd6",
+      "border": "#cfd5df",
       "borderHover": "#C9D0DE",
       "borderFocus": "#9CA4BA",
       "selection": "#c6ccd881",
@@ -133,8 +133,8 @@
       "heading4": "#2E3440",
       "link": "#81A1C1",
       "linkHover": "#5E81AC",
-      "inlineCode": "#4f7034",
-      "inlineCodeBackground": "#E4E8F0",
+      "inlineCode": "#35561A",
+      "inlineCodeBackground": "#DFE2E7",
       "blockquote": "#D08770",
       "blockquoteBorder": "#D5DBE7",
       "listMarker": "#5E81AC99"
@@ -165,9 +165,9 @@
   },
   "config": {
     "fonts": {
-      "sans": "\"IBM Plex Mono\", monospace",
-      "mono": "\"IBM Plex Mono\", monospace",
-      "heading": "\"IBM Plex Mono\", monospace"
+      "sans": "ui-monospace, \"SFMono-Regular\", \"Menlo\", \"Cascadia Mono\", \"Segoe UI Mono\", monospace",
+      "mono": "ui-monospace, \"SFMono-Regular\", \"Menlo\", \"Cascadia Mono\", \"Segoe UI Mono\", monospace",
+      "heading": "ui-monospace, \"SFMono-Regular\", \"Menlo\", \"Cascadia Mono\", \"Segoe UI Mono\", monospace"
     },
     "transitions": {
       "fast": "150ms ease",
