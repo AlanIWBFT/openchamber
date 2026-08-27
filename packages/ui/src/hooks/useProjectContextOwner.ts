@@ -47,7 +47,16 @@ export const resolveProjectContextOwner = ({
     return { id: sessionProject.id, path: sessionProject.path };
   }
 
-  const activeProject = projects.find((project) => project.id === activeProjectId) ?? projects[0] ?? null;
+  // A concrete directory that resolves to nothing owns nothing. Falling back
+  // to the active project here showed one project's knowledge under another
+  // project's name (the "plans open empty" bug), so the panel stays empty
+  // instead of lying. The active-project fallback is only for states with no
+  // directory at all, such as a new-session draft that has not landed yet.
+  if (normalizedDirectory) {
+    return null;
+  }
+
+  const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   return activeProject ? { id: activeProject.id, path: activeProject.path } : null;
 };
 

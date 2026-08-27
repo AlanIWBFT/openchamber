@@ -60,6 +60,18 @@ Leaving the section or the project closes it, so its editor never sits over a
 list it no longer matches. Hosts that own a fullscreen plan surface (mobile)
 still pass `onOpenPlan` and keep theirs.
 
+The panel owns the only source of truth for which project a plan belongs to,
+and it never lets the editor guess. `PlanView` receives the owner as
+`savedProjectPlan={{ projectRef, planId }}` — load and autosave both go to that
+exact project. An earlier version let the editor re-derive the project from the
+current directory, which silently opened an empty document for plans stored
+under the managed Chats owner (`openchamber:chats`), for plans opened from a
+worktree the directory lookup missed, and for plan tabs restored after a
+reload. Persisted plan tabs carry `projectPlanRef` for the same reason; a saved-plan
+tab persisted with an id but no owner is dropped on rehydrate rather than
+reopened against a guessed project. A plain session plan tab legitimately has
+neither an id nor an owner and is kept.
+
 ## Pins belong to one session
 
 Notes and plans are project data, but attaching one writes its id to the current

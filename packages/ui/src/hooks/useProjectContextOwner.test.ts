@@ -45,4 +45,46 @@ describe('resolveProjectContextOwner', () => {
 
     expect(owner).toEqual({ id: 'openchamber', path: '/workspace/openchamber' });
   });
+
+  test('returns null for a recognized directory that owns nothing, instead of borrowing the active project', () => {
+    const owner = resolveProjectContextOwner({
+      projects,
+      worktreesByProject: new Map(),
+      directory: '/some/other/project',
+      activeProjectId: 'openchamber',
+      chatDraftOpen: false,
+      chatDraftTarget: 'project',
+      homeDirectory: '/Users/test',
+    });
+
+    expect(owner).toBeNull();
+  });
+
+  test('falls back to the active project only when there is no directory at all', () => {
+    const owner = resolveProjectContextOwner({
+      projects,
+      worktreesByProject: new Map(),
+      directory: null,
+      activeProjectId: 'openchamber',
+      chatDraftOpen: false,
+      chatDraftTarget: 'project',
+      homeDirectory: '/Users/test',
+    });
+
+    expect(owner).toEqual({ id: 'openchamber', path: '/workspace/openchamber' });
+  });
+
+  test('never falls back to the first project when the active project is unknown', () => {
+    const owner = resolveProjectContextOwner({
+      projects,
+      worktreesByProject: new Map(),
+      directory: null,
+      activeProjectId: 'missing-project',
+      chatDraftOpen: false,
+      chatDraftTarget: 'project',
+      homeDirectory: '/Users/test',
+    });
+
+    expect(owner).toBeNull();
+  });
 });
