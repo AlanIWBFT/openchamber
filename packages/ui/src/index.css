@@ -1432,6 +1432,10 @@ html:not(.dark) .chat-scroll {
   white-space: nowrap;
 }
 
+.markdown-content [data-md-code-line-number]::before {
+  content: attr(data-md-code-line-number);
+}
+
 .markdown-content [data-md-code-line-content] {
   min-width: 0;
 }
