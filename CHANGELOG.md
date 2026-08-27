@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Files: opening a file over 5,000 lines is no longer blocked — the line-count guard now allows up to 20,000 lines, letting large files reach the virtualized full-file preview instead of being rejected at the open step (thanks @gaojunran).
 - Settings: fixed the Cloudflare Tunnel download link shown when cloudflared is not installed (thanks to @AyoubAchour).
 
 ## [1.21.0] - 2026-08-26
