@@ -2,7 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { getPinnedSessionKey } from '@/stores/useSessionPinnedStore';
-import { computeNodeStructureKey, nodeHasPinnedMembershipChange, selectFolderRootNodes, selectQuestionBadgeSessionScopes } from './sessionNodeItemUtils';
+import {
+  computeNodeStructureKey,
+  canShowSessionWorktreeMenu,
+  getSessionWorktreeMenuDisabled,
+  nodeHasPinnedMembershipChange,
+  selectFolderRootNodes,
+  selectQuestionBadgeSessionScopes,
+} from './sessionNodeItemUtils';
 import type { SessionNode } from '../types';
 
 const session = (id: string, title: string): Session => ({
@@ -156,5 +163,51 @@ describe('selectFolderRootNodes', () => {
     };
 
     expect(selectFolderRootNodes(['missing-root', 'child'], new Map([['child', child]]))).toEqual([child]);
+  });
+});
+
+describe('getSessionWorktreeMenuDisabled', () => {
+  test('shares the parent trigger disabled contract with the new worktree action', () => {
+    expect(getSessionWorktreeMenuDisabled({
+      sessionDirectory: '/repo-feature',
+      isStreaming: false,
+      isMovingToWorktree: false,
+    })).toBe(false);
+
+    expect(getSessionWorktreeMenuDisabled({
+      sessionDirectory: null,
+      isStreaming: false,
+      isMovingToWorktree: false,
+    })).toBe(true);
+
+    expect(getSessionWorktreeMenuDisabled({
+      sessionDirectory: '/repo-feature',
+      isStreaming: true,
+      isMovingToWorktree: false,
+    })).toBe(true);
+
+    expect(getSessionWorktreeMenuDisabled({
+      sessionDirectory: '/repo-feature',
+      isStreaming: false,
+      isMovingToWorktree: true,
+    })).toBe(true);
+  });
+});
+
+describe('canShowSessionWorktreeMenu', () => {
+  test('hides worktree moves for managed Chat directories', () => {
+    expect(canShowSessionWorktreeMenu({
+      isSubtaskSession: false,
+      archivedBucket: false,
+      isVSCode: false,
+      sessionDirectory: '/home/test/.config/openchamber/chats/2026-08-25/session-1',
+    })).toBe(false);
+
+    expect(canShowSessionWorktreeMenu({
+      isSubtaskSession: false,
+      archivedBucket: false,
+      isVSCode: false,
+      sessionDirectory: '/repo',
+    })).toBe(true);
   });
 });

@@ -63,6 +63,7 @@ type Props = {
   | 'setDeleteSessionConfirm'
   | 'startFolderRename'
   | 'setCopiedSessionId'
+  | 'startSessionWorktreeMenuLoad'
 >;
 
 type RenderExtras = SessionNodeRenderExtras;
@@ -198,6 +199,7 @@ export function SidebarActivitySections(props: Props): React.ReactNode {
             setDeleteSessionConfirm={props.setDeleteSessionConfirm}
             startFolderRename={props.startFolderRename}
             setCopiedSessionId={props.setCopiedSessionId}
+            startSessionWorktreeMenuLoad={props.startSessionWorktreeMenuLoad}
           />
         );
 

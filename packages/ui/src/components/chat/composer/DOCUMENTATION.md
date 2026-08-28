@@ -60,6 +60,15 @@ copy.
 exactly what gets sent, so nothing downstream serializes a rich document model
 back into a prompt.
 
+The document is not, however, the string it was given: CodeMirror normalizes
+line endings, so a `\r\n` pair becomes one break and the document ends up
+shorter than the inserted string. **Never derive a caret position from the
+length of text you are inserting** — a caret past the end makes `dispatch`
+throw, the transaction never applies, and the un-normalized text stays in React
+state to crash again on the next restore. Every edit that moves the caret goes
+through `replaceWithCaret` (`editor/documentEdits.ts`), which measures the
+change instead of the string.
+
 The composer previously painted a transparent `<textarea>` over a mirror
 `<div>`. That restricted highlighting to styles which do not change glyph
 advance width — colour, background, underline — because anything else made the
@@ -111,6 +120,14 @@ The non-iOS native selection tint comes from `--primary`, not the selection
 token: themes define `--interactive-selection` with its own alpha, so mixing it
 with transparent again is nearly invisible. The iOS system overlay owns its
 visible selection fill.
+
+The content element keeps the existing correction policy: on in the mobile UI,
+off elsewhere. CodeMirror also reads the attribute and reverts Apple and
+Android's insert-period-on-double-space only when its value is exactly `off`.
+`editor/autocorrect.ts` uses the HTML standard's
+[ASCII case-insensitive `autocorrect` keywords](https://html.spec.whatwg.org/multipage/interaction.html#attr-autocorrect)
+to keep desktop word correction off while avoiding that CodeMirror-only
+revert. Its platform checks deliberately match CodeMirror's own browser flags.
 
 `composerLanguage.ts` retokenizes the whole document on every change. The
 composer holds a prompt, not a source file: it is short enough that a full pass

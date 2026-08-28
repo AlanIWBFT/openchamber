@@ -2,10 +2,11 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import simpleGit from 'simple-git';
 
 import {
+  checkoutBranch,
   checkoutCommit,
   cherryPick,
   createWorktree,
@@ -13,6 +14,7 @@ import {
   getBranches,
   getRangeDiff,
   getStatus,
+  getWorktrees,
   isGitRepository,
   populateWorktreeWithLockRecovery,
   removeWorktree,
@@ -460,6 +462,51 @@ describe('worktree root resolution', () => {
     runGit(repo, ['worktree', 'add', '-b', 'feature/test', worktree, 'HEAD']);
 
     await expect(resolvePrimaryWorktreeRoot(worktree)).resolves.toEqual({ root: fs.realpathSync(repo) });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getWorktrees
+// ---------------------------------------------------------------------------
+
+describe('getWorktrees', () => {
+  if (!canRunGit()) {
+    it.skip('git binary not available', () => {});
+    return;
+  }
+
+  const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+  afterEach(() => {
+    warnSpy.mockClear();
+  });
+
+  afterAll(() => {
+    warnSpy.mockRestore();
+  });
+
+  it('returns an empty list for a non-git directory without warning', async () => {
+    const nonGit = createTempDir();
+
+    const result = await getWorktrees(nonGit);
+
+    expect(result).toEqual([]);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns the worktrees for a real git repository', async () => {
+    const repo = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
+    runGit(repo, ['add', 'README.md']);
+    runGit(repo, ['commit', '-m', 'init']);
+
+    const result = await getWorktrees(repo);
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -1007,6 +1054,66 @@ describe('checkoutCommit', () => {
 });
 
 // ---------------------------------------------------------------------------
+// checkoutBranch
+// ---------------------------------------------------------------------------
+
+describe('checkoutBranch', () => {
+  it('checks out a local branch by name', async () => {
+    const { repository } = createRepositoryWithRemote();
+    runGit(repository, ['branch', 'feature']);
+
+    const result = await checkoutBranch(repository, 'feature');
+
+    expect(result).toEqual({ success: true, branch: 'feature' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('feature');
+  });
+
+  it('creates a tracking local branch instead of detaching HEAD on a remote branch', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+
+    const result = await checkoutBranch(repository, 'origin/react');
+
+    expect(result).toEqual({ success: true, branch: 'react' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('react');
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'react@{upstream}']).trim()).toBe('origin/react');
+  });
+
+  it('checks out the existing local branch when a remote branch is picked', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+    runGit(repository, ['branch', 'react', 'origin/react']);
+
+    const result = await checkoutBranch(repository, 'origin/react');
+
+    expect(result).toEqual({ success: true, branch: 'react' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('react');
+  });
+
+  it('accepts the remotes/ prefixed form of a remote branch', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+
+    const result = await checkoutBranch(repository, 'remotes/origin/react');
+
+    expect(result).toEqual({ success: true, branch: 'react' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('react');
+  });
+
+  it('prefers a local branch whose name looks like a remote ref', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+    runGit(repository, ['branch', 'origin/react']);
+
+    const result = await checkoutBranch(repository, 'origin/react');
+
+    expect(result).toEqual({ success: true, branch: 'origin/react' });
+    expect(runGit(repository, ['symbolic-ref', 'HEAD']).trim()).toBe('refs/heads/origin/react');
+  });
+
+  it('rejects an unknown branch', async () => {
+    const { repository } = createRepositoryWithRemote();
+    await expect(checkoutBranch(repository, 'does-not-exist')).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // cherryPick
 // ---------------------------------------------------------------------------
 
@@ -1351,6 +1458,14 @@ describe('parseBranchCreationSource', () => {
 
   it('returns null when the branch was created from a detached HEAD pointer', () => {
     const reflog = 'branch: Created from HEAD@{0}';
+    expect(parseBranchCreationSource(reflog)).toBeNull();
+  });
+
+  it('returns null when the branch was created from the current HEAD without a named source', () => {
+    // `git switch -c <branch>` / `git checkout -b <branch>` from the current
+    // branch record `branch: Created from HEAD` in the reflog (git 2.x). The
+    // source branch name is not recorded, so no base can be derived from it.
+    const reflog = 'branch: Created from HEAD';
     expect(parseBranchCreationSource(reflog)).toBeNull();
   });
 

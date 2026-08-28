@@ -39,6 +39,7 @@ export type SessionTreeItemProps = SessionTreeItemRenderProps & Pick<SessionNode
   | 'setEditTitle'
   | 'toggleParent'
   | 'setOpenSidebarMenuKey'
+  | 'startSessionWorktreeMenuLoad'
 > & {
   allowReselect: boolean;
   onSessionSelected?: (sessionId: string) => void;
@@ -88,6 +89,7 @@ export function SessionTreeItem({
   startFolderRename,
   copiedSessionId,
   setCopiedSessionId,
+  startSessionWorktreeMenuLoad,
   mobileVariant,
   alwaysShowActions,
 }: SessionTreeItemProps): React.ReactNode {
@@ -160,11 +162,12 @@ export function SessionTreeItem({
       openSidebarMenuKey={openSidebarMenuKey}
       setOpenSidebarMenuKey={setOpenSidebarMenuKey}
       createFolderAndStartRename={createFolderAndStartRename}
-       handleDeleteSession={sessionActions.handleDeleteSession}
-       handleRestoreSession={sessionActions.handleRestoreSession}
-      mobileVariant={mobileVariant}
-      alwaysShowActions={alwaysShowActions}
-       pinnedSessionIds={pinnedSessionIds}
+        handleDeleteSession={sessionActions.handleDeleteSession}
+        handleRestoreSession={sessionActions.handleRestoreSession}
+       startSessionWorktreeMenuLoad={startSessionWorktreeMenuLoad}
+       mobileVariant={mobileVariant}
+       alwaysShowActions={alwaysShowActions}
+        pinnedSessionIds={pinnedSessionIds}
       node={node}
       depth={depth}
       groupDirectory={groupDirectory}
@@ -201,11 +204,12 @@ export function SessionTreeItem({
            setIsSessionSearchOpen={setIsSessionSearchOpen}
            deleteSessionConfirm={deleteSessionConfirm}
            setDeleteSessionConfirm={setDeleteSessionConfirm}
-           startFolderRename={startFolderRename}
-           setCopiedSessionId={setCopiedSessionId}
-          mobileVariant={mobileVariant}
-          alwaysShowActions={alwaysShowActions}
-          depth={depth + 1}
+            startFolderRename={startFolderRename}
+            setCopiedSessionId={setCopiedSessionId}
+            startSessionWorktreeMenuLoad={startSessionWorktreeMenuLoad}
+           mobileVariant={mobileVariant}
+           alwaysShowActions={alwaysShowActions}
+           depth={depth + 1}
           {...childContext}
           renderExtras={childRenderExtrasFor?.(child)}
         />

@@ -7,6 +7,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { Button } from '@/components/ui/button';
 import { MemoryDebugPanel } from '@/components/ui/MemoryDebugPanel';
 import { setStreamPerfEnabled } from '@/stores/utils/streamDebug';
+import { setRequestsInFlightTrackingEnabled } from '@/stores/utils/requestsInFlight';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 // useEventStream removed — replaced by SyncProvider + SyncBridge
 import { useMenuActions } from '@/hooks/useMenuActions';
@@ -19,6 +20,7 @@ import { useWebNotificationStream } from '@/hooks/useWebNotificationStream';
 import { useAgentMemorySync } from '@/hooks/useAgentMemorySync';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
 import { useWindowTitle } from '@/hooks/useWindowTitle';
+import { useRootScrollLock } from '@/hooks/useRootScrollLock';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { isDesktopLocalOriginActive, isDesktopShell, restartDesktopApp, invokeDesktop } from '@/lib/desktop';
 import {
@@ -276,6 +278,13 @@ function App({ apis }: AppProps) {
     setStreamPerfEnabled(showMemoryDebug);
     return () => {
       setStreamPerfEnabled(false);
+    };
+  }, [showMemoryDebug]);
+
+  React.useEffect(() => {
+    setRequestsInFlightTrackingEnabled(showMemoryDebug);
+    return () => {
+      setRequestsInFlightTrackingEnabled(false);
     };
   }, [showMemoryDebug]);
 
@@ -708,6 +717,8 @@ function App({ apis }: AppProps) {
   usePwaInstallPrompt();
 
   useWindowTitle();
+
+  useRootScrollLock();
 
   useRouter();
 

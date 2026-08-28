@@ -1846,7 +1846,7 @@ export const settingsDict = {
   'settings.openchamber.visual.section.streaming': 'Streaming',
   'settings.openchamber.visual.field.streamingAutoFollow': 'Suivre le nouveau contenu pendant le streaming',
   'settings.openchamber.visual.field.streamingAutoFollowAria': 'Suivre automatiquement le nouveau contenu pendant la diffusion d’une réponse',
-  'settings.openchamber.visual.field.streamingAutoFollowInfo': 'Pendant qu’une réponse arrive, la vue glisse vers le contenu le plus récent. Désactivez pour garder la vue immobile et défiler manuellement.',
+  'settings.openchamber.visual.field.streamingAutoFollowInfo': 'Pendant qu’une réponse arrive, la vue glisse vers le contenu le plus récent. Désactivez pour garder la vue immobile et défiler manuellement ; envoyer un message depuis le milieu de la conversation laisse alors aussi la vue en place.',
   'settings.openchamber.visual.section.messageAppearance': 'Apparence des messages',
   'settings.openchamber.visual.section.toolsAndFiles': 'Outils et fichiers',
   'settings.openchamber.visual.section.composer': 'Zone de saisie',
