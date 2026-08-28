@@ -6,6 +6,7 @@ import { readDirCache, persistVcs, persistProjectMeta, persistIcon, persistSessi
 import { normalizePath } from "@/lib/pathNormalization"
 import { startSessionLoadPerformanceEvent } from "./session-load-performance"
 import { countSyncPerformance } from "./performance-diagnostics"
+import { isFilesystemError } from "@/lib/api/files-errors"
 
 export type DirectoryStore = State & {
   /** Apply a partial state update */
@@ -216,6 +217,7 @@ export type DirectoryBootstrapDemand = {
 }
 
 export type DirectoryBootstrapState = "queued" | "running" | "complete" | "failed"
+export type DirectoryBootstrapFailureReason = "os-permission" | "generic"
 
 export type DirectoryBootstrapContext = DirectoryBootstrapDemand & {
   generation: number
@@ -296,6 +298,7 @@ export class ChildStoreManager {
   private readonly bootstrapQueue = new Map<string, QueuedBootstrap>()
   private readonly runningBootstraps = new Map<string, RunningBootstrap>()
   private readonly bootstrapStates = new Map<string, DirectoryBootstrapState>()
+  private readonly bootstrapFailures = new Map<string, DirectoryBootstrapFailureReason>()
 
   private onBootstrap?: (context: DirectoryBootstrapContext) => Promise<void> | void
   private onDispose?: (directory: string) => void
@@ -304,6 +307,8 @@ export class ChildStoreManager {
   private bootstrapConcurrency = 2
   private bootstrapGeneration = 0
   private bootstrapSequence = 0
+  private bootstrapRunSequence = 0
+  private readonly directoryBootstrapRuns = new Map<string, number>()
   private manualBootstrapDemandRevision = 0
   private disposed = false
 
@@ -479,6 +484,11 @@ export class ChildStoreManager {
     return normalizedDirectory ? this.bootstrapStates.get(normalizedDirectory) : undefined
   }
 
+  getBootstrapFailure(directory: string): DirectoryBootstrapFailureReason | undefined {
+    const normalizedDirectory = normalizePath(directory)
+    return normalizedDirectory ? this.bootstrapFailures.get(normalizedDirectory) : undefined
+  }
+
   subscribeBootstrap(listener: () => void): () => void {
     this.bootstrapSubscribers.add(listener)
     return () => this.bootstrapSubscribers.delete(listener)
@@ -530,6 +540,7 @@ export class ChildStoreManager {
       if (demand.force) running.rerunRequested = true
       return false
     }
+    this.bootstrapFailures.delete(directory)
     const existing = this.bootstrapQueue.get(directory)
     const next: QueuedBootstrap = existing
       ? {
@@ -587,11 +598,23 @@ export class ChildStoreManager {
         queuedMs: Math.max(0, Date.now() - next.enqueuedAt),
       })
 
+      // Store liveness, not run-token ownership. The pump deletes the run
+      // token in `.finally()` as soon as onBootstrap settles, while
+      // bootstrapDirectory schedules deferred recovery pulls (permission.list
+      // and friends) from a `setTimeout(0)` that always runs after that
+      // cleanup — gating those on the token made them dead code. A per-
+      // directory run sequence keeps the context current across settle (so
+      // deferred pulls commit) while invalidating it as soon as a newer run
+      // starts, so a late deferred response cannot overwrite a newer run's
+      // state. Mirrors the isCurrent contract in session-message-loader.
+      const runSequence = ++this.bootstrapRunSequence
+      this.directoryBootstrapRuns.set(next.directory, runSequence)
+      const store = this.children.get(next.directory)
       const isCurrent = () => (
         !this.disposed
         && this.bootstrapGeneration === running.generation
-        && this.runningBootstraps.get(next.directory)?.token === token
-        && this.children.has(next.directory)
+        && this.directoryBootstrapRuns.get(next.directory) === runSequence
+        && this.children.get(next.directory) === store
       )
       let bootstrapPromise: Promise<void>
       try {
@@ -603,14 +626,19 @@ export class ChildStoreManager {
         .then(() => {
           if (isCurrent()) {
             this.bootstrapStates.set(next.directory, "complete")
+            this.bootstrapFailures.delete(next.directory)
             finishPerformanceEvent("complete")
           } else {
             finishPerformanceEvent("stale")
           }
         })
-        .catch(() => {
+        .catch((error) => {
           if (isCurrent()) {
             this.bootstrapStates.set(next.directory, "failed")
+            this.bootstrapFailures.set(
+              next.directory,
+              isFilesystemError(error) && error.reason === "os-permission" ? "os-permission" : "generic",
+            )
             finishPerformanceEvent("error")
           } else {
             finishPerformanceEvent("stale")
@@ -658,6 +686,8 @@ export class ChildStoreManager {
     this.bootstrapQueue.delete(directory)
     this.manualBootstrapDemands.delete(directory)
     this.bootstrapStates.delete(directory)
+    this.bootstrapFailures.delete(directory)
+    this.directoryBootstrapRuns.delete(directory)
     for (const demands of this.bootstrapDemandsByOwner.values()) demands.delete(directory)
     this.children.delete(directory)
     this.notifyRegistrySubscribers()
@@ -719,6 +749,7 @@ export class ChildStoreManager {
     this.bootstrapQueue.clear()
     this.runningBootstraps.clear()
     this.bootstrapStates.clear()
+    this.bootstrapFailures.clear()
     this.bootstrapDemandsByOwner.clear()
     this.manualBootstrapDemands.clear()
     this.notifyBootstrapSubscribers()
