@@ -5,6 +5,10 @@ import path from 'node:path';
 import { clearAppImageArgv0FromProcessEnv } from '../inherited-env.js';
 import { mergePathValues } from './path-utils.js';
 
+// Login-shell probes source the user's rc files. A slow or interactive rc
+// (nvm, pyenv, a prompt waiting for input) must not hold server startup
+// hostage: a probe that overruns is abandoned and resolution falls through
+// to the next candidate. Electron's own login-shell probe uses the same bound.
 const SHELL_PROBE_TIMEOUT_MS = 5_000;
 
 export const createOpenCodeEnvRuntime = (deps) => {
@@ -455,31 +459,6 @@ export const createOpenCodeEnvRuntime = (deps) => {
       return null;
     }
 
-    // Fast path: 'command -v' via plain sh (no login shell, no .zshrc sourcing).
-    // This is much faster than the full login shell probe below and catches
-    // brew paths when the Electron login shell env merge already augmented PATH
-    // or when /bin/sh has a broader default PATH than the process.
-    if (process.platform !== 'win32') {
-      try {
-        const fastResult = runSpawnSync('/bin/sh', ['-c', 'command -v opencode'], {
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true,
-          timeout: SHELL_PROBE_TIMEOUT_MS,
-        });
-        if (fastResult.status === 0) {
-          const found = (fastResult.stdout || '').trim().split(/\s+/).pop() || '';
-          if (found && isExecutable(found)) {
-            clearWslOpencodeResolution();
-            state.resolvedOpencodeBinarySource = 'shell';
-            return found;
-          }
-        }
-      } catch {
-        // Fall through to login shell probe
-      }
-    }
-
     const shells = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh'].filter(Boolean);
     for (const shell of shells) {
       if (!isExecutable(shell)) continue;
@@ -546,29 +525,6 @@ export const createOpenCodeEnvRuntime = (deps) => {
       } catch {
       }
       return null;
-    }
-
-    // Fast path: 'command -v' via plain sh (no login shell, no .zshrc sourcing).
-    // This is much faster than the full login shell probe below and catches
-    // brew paths when the Electron login shell env merge already augmented PATH
-    // or when /bin/sh has a broader default PATH than the process.
-    if (process.platform !== 'win32') {
-      try {
-        const fastResult = runSpawnSync('/bin/sh', ['-c', 'command -v node'], {
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true,
-          timeout: SHELL_PROBE_TIMEOUT_MS,
-        });
-        if (fastResult.status === 0) {
-          const found = (fastResult.stdout || '').trim().split(/\s+/).pop() || '';
-          if (found && isExecutable(found)) {
-            return found;
-          }
-        }
-      } catch {
-        // Fall through to login shell probe
-      }
     }
 
     const shells = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh'].filter(Boolean);
@@ -651,29 +607,6 @@ export const createOpenCodeEnvRuntime = (deps) => {
       } catch {
       }
       return null;
-    }
-
-    // Fast path: 'command -v' via plain sh (no login shell, no .zshrc sourcing).
-    // This is much faster than the full login shell probe below and catches
-    // brew paths when the Electron login shell env merge already augmented PATH
-    // or when /bin/sh has a broader default PATH than the process.
-    if (process.platform !== 'win32') {
-      try {
-        const fastResult = runSpawnSync('/bin/sh', ['-c', 'command -v bun'], {
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true,
-          timeout: SHELL_PROBE_TIMEOUT_MS,
-        });
-        if (fastResult.status === 0) {
-          const found = (fastResult.stdout || '').trim().split(/\s+/).pop() || '';
-          if (found && isExecutable(found)) {
-            return found;
-          }
-        }
-      } catch {
-        // Fall through to login shell probe
-      }
     }
 
     const shells = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh'].filter(Boolean);
@@ -1088,7 +1021,13 @@ export const createOpenCodeEnvRuntime = (deps) => {
       const normalized = normalizeOpencodeBinarySetting(settings.opencodeBinary);
 
       if (normalized === '') {
-        delete process.env.OPENCODE_BINARY;
+        // The empty-string sentinel drops a previously APPLIED settings
+        // override (source === 'settings'). An OPENCODE_BINARY provided by
+        // the user's own environment is explicit configuration and must not
+        // be destroyed by an empty setting.
+        if (state.resolvedOpencodeBinarySource === 'settings') {
+          delete process.env.OPENCODE_BINARY;
+        }
         state.resolvedOpencodeBinary = null;
         state.resolvedOpencodeBinarySource = null;
         clearWslOpencodeResolution();

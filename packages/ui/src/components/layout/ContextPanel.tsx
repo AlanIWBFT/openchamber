@@ -452,7 +452,9 @@ export const ContextPanel: React.FC = () => {
 
   // Lets an agent's browser.open create the tab it needs when none is open yet.
   // Registered from the panel because opening a tab is panel state, not
-  // something the browser view itself can do before it exists.
+  // something the browser view itself can do before it exists. Reveal the
+  // panel so Electron gives the webview a composited surface; capturePage()
+  // cannot capture the zero-width webview inside a closed panel.
   React.useEffect(() => {
     if (!effectiveDirectory) return;
     return registerBrowserOpener((url) => openContextBrowser(effectiveDirectory, url));
@@ -940,7 +942,12 @@ export const ContextPanel: React.FC = () => {
             : activeTab?.mode === 'notes'
                 ? <ProjectContextPanel />
         : activeTab?.mode === 'plan'
-            ? <React.Suspense fallback={null}><PlanView targetPath={activeTab.targetPath} projectPlanId={activeTab.projectPlanId} /></React.Suspense>
+            ? <React.Suspense fallback={null}><PlanView
+                targetPath={activeTab.targetPath}
+                savedProjectPlan={activeTab.projectPlanId && activeTab.projectPlanRef
+                  ? { projectRef: activeTab.projectPlanRef, planId: activeTab.projectPlanId }
+                  : null}
+              /></React.Suspense>
             : null;
 
   const browserTabs = React.useMemo(

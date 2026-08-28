@@ -7,6 +7,16 @@ everything between typing and sending.
 own state and wires these modules together; it should not grow logic that
 belongs to one of them.
 
+`ChatContainer.tsx` keeps one `ChatInput` mounted while a new-session draft
+becomes its first session. Draft-only UI first fades for 120ms while the editor
+stays in place. The parent then moves the editor to its final session position
+with a 180ms transform-only FLIP animation. Reduced-motion mode skips these
+transitions. `session-ui-store.ts` marks sessions materialized from a submitted
+draft, so selecting an existing session while a draft is open switches without
+animation. Do not restore separate draft and session composer branches:
+remounting the editor loses focus and interrupts the transition. Keep the
+existing mobile fixed-position rules unchanged.
+
 ## Layers
 
 | Directory | Owns |
@@ -49,6 +59,15 @@ copy.
 `editor/` wraps CodeMirror. The document is a plain string: `getValue()` is
 exactly what gets sent, so nothing downstream serializes a rich document model
 back into a prompt.
+
+The document is not, however, the string it was given: CodeMirror normalizes
+line endings, so a `\r\n` pair becomes one break and the document ends up
+shorter than the inserted string. **Never derive a caret position from the
+length of text you are inserting** — a caret past the end makes `dispatch`
+throw, the transaction never applies, and the un-normalized text stays in React
+state to crash again on the next restore. Every edit that moves the caret goes
+through `replaceWithCaret` (`editor/documentEdits.ts`), which measures the
+change instead of the string.
 
 The composer previously painted a transparent `<textarea>` over a mirror
 `<div>`. That restricted highlighting to styles which do not change glyph
@@ -102,6 +121,14 @@ token: themes define `--interactive-selection` with its own alpha, so mixing it
 with transparent again is nearly invisible. The iOS system overlay owns its
 visible selection fill.
 
+The content element keeps the existing correction policy: on in the mobile UI,
+off elsewhere. CodeMirror also reads the attribute and reverts Apple and
+Android's insert-period-on-double-space only when its value is exactly `off`.
+`editor/autocorrect.ts` uses the HTML standard's
+[ASCII case-insensitive `autocorrect` keywords](https://html.spec.whatwg.org/multipage/interaction.html#attr-autocorrect)
+to keep desktop word correction off while avoiding that CodeMirror-only
+revert. Its platform checks deliberately match CodeMirror's own browser flags.
+
 `composerLanguage.ts` retokenizes the whole document on every change. The
 composer holds a prompt, not a source file: it is short enough that a full pass
 is cheaper and far simpler than incremental mapping, and it keeps the editor
@@ -114,10 +141,14 @@ and the send path reading the same grammar.
   drawn caret through a class it only writes while applying an update, so the
   selection has to be the update that follows the focus.
 - `submit/buildOutgoingMessage.ts` flattens queued messages, the composer text,
-  inline comments and context into OpenCode's one-primary-plus-parts shape. The
-  oldest queued message becomes primary; **inline comments attach to the last
-  body the user authored** rather than becoming their own part; PR instructions
-  precede the PR diff.
+  context drafts and linked references into OpenCode's one-primary-plus-parts
+  shape. The oldest queued message becomes primary. **Every attached context
+  item (inline comments, terminal selections, browser annotations, PR context,
+  linked issue/PR) becomes its own synthetic text part carrying structured
+  metadata** built by `lib/messages/contextParts.ts`; the timeline reads that
+  metadata back to render context blocks. PR instructions precede the PR diff.
+  Queueing a message leaves context drafts in their store on purpose — the send
+  that later delivers the queue consumes them.
 - `state/useComposerDraft.ts` — a draft belongs to a (runtime, directory,
   session) identity. Writes are debounced while typing but forced at every edge
   where the page may stop running, because a pending timer is not a saved
@@ -127,6 +158,9 @@ and the send path reading the same grammar.
 - `state/useDraftTarget.ts` — the draft can target a directory that does not
   exist yet (a worktree being created). It must survive not appearing in the
   branch list, or the selector snaps back to the project root mid-creation.
+- `ui/DraftTargetSelectors.tsx` owns the controlled project/worktree picker
+  state and registers its application shortcuts locally. The selectors only
+  consume their shared prefix while the draft target UI is mounted.
 
 ## Mobile
 

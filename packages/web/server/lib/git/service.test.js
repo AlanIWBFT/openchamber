@@ -2,10 +2,11 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import simpleGit from 'simple-git';
 
 import {
+  checkoutBranch,
   checkoutCommit,
   cherryPick,
   createWorktree,
@@ -13,6 +14,7 @@ import {
   getBranches,
   getRangeDiff,
   getStatus,
+  getWorktrees,
   isGitRepository,
   populateWorktreeWithLockRecovery,
   removeWorktree,
@@ -28,6 +30,8 @@ import {
   getDiff,
   getFileDiff,
   validateWorktreeCreate,
+  parseBranchCreationSource,
+  getRangeFiles,
 } from './service.js';
 
 // ---------------------------------------------------------------------------
@@ -458,6 +462,51 @@ describe('worktree root resolution', () => {
     runGit(repo, ['worktree', 'add', '-b', 'feature/test', worktree, 'HEAD']);
 
     await expect(resolvePrimaryWorktreeRoot(worktree)).resolves.toEqual({ root: fs.realpathSync(repo) });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getWorktrees
+// ---------------------------------------------------------------------------
+
+describe('getWorktrees', () => {
+  if (!canRunGit()) {
+    it.skip('git binary not available', () => {});
+    return;
+  }
+
+  const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+  afterEach(() => {
+    warnSpy.mockClear();
+  });
+
+  afterAll(() => {
+    warnSpy.mockRestore();
+  });
+
+  it('returns an empty list for a non-git directory without warning', async () => {
+    const nonGit = createTempDir();
+
+    const result = await getWorktrees(nonGit);
+
+    expect(result).toEqual([]);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns the worktrees for a real git repository', async () => {
+    const repo = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
+    runGit(repo, ['add', 'README.md']);
+    runGit(repo, ['commit', '-m', 'init']);
+
+    const result = await getWorktrees(repo);
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -1005,6 +1054,66 @@ describe('checkoutCommit', () => {
 });
 
 // ---------------------------------------------------------------------------
+// checkoutBranch
+// ---------------------------------------------------------------------------
+
+describe('checkoutBranch', () => {
+  it('checks out a local branch by name', async () => {
+    const { repository } = createRepositoryWithRemote();
+    runGit(repository, ['branch', 'feature']);
+
+    const result = await checkoutBranch(repository, 'feature');
+
+    expect(result).toEqual({ success: true, branch: 'feature' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('feature');
+  });
+
+  it('creates a tracking local branch instead of detaching HEAD on a remote branch', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+
+    const result = await checkoutBranch(repository, 'origin/react');
+
+    expect(result).toEqual({ success: true, branch: 'react' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('react');
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'react@{upstream}']).trim()).toBe('origin/react');
+  });
+
+  it('checks out the existing local branch when a remote branch is picked', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+    runGit(repository, ['branch', 'react', 'origin/react']);
+
+    const result = await checkoutBranch(repository, 'origin/react');
+
+    expect(result).toEqual({ success: true, branch: 'react' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('react');
+  });
+
+  it('accepts the remotes/ prefixed form of a remote branch', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+
+    const result = await checkoutBranch(repository, 'remotes/origin/react');
+
+    expect(result).toEqual({ success: true, branch: 'react' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('react');
+  });
+
+  it('prefers a local branch whose name looks like a remote ref', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+    runGit(repository, ['branch', 'origin/react']);
+
+    const result = await checkoutBranch(repository, 'origin/react');
+
+    expect(result).toEqual({ success: true, branch: 'origin/react' });
+    expect(runGit(repository, ['symbolic-ref', 'HEAD']).trim()).toBe('refs/heads/origin/react');
+  });
+
+  it('rejects an unknown branch', async () => {
+    const { repository } = createRepositoryWithRemote();
+    await expect(checkoutBranch(repository, 'does-not-exist')).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // cherryPick
 // ---------------------------------------------------------------------------
 
@@ -1334,5 +1443,104 @@ describe.runIf(canRunGit())('getRangeDiff', () => {
     const diff = await getRangeDiff(repository, { base: 'react', head: 'next' });
 
     expect(diff).toContain('feature.txt');
+  });
+});
+
+describe('parseBranchCreationSource', () => {
+  it('returns the source ref from the oldest creation entry', () => {
+    // Reflog lists newest entries first; creation is the last line.
+    const reflog = [
+      'commit: abc123',
+      'branch: Created from origin/main',
+    ].join('\n');
+    expect(parseBranchCreationSource(reflog)).toBe('origin/main');
+  });
+
+  it('returns null when the branch was created from a detached HEAD pointer', () => {
+    const reflog = 'branch: Created from HEAD@{0}';
+    expect(parseBranchCreationSource(reflog)).toBeNull();
+  });
+
+  it('returns null when the branch was created from the current HEAD without a named source', () => {
+    // `git switch -c <branch>` / `git checkout -b <branch>` from the current
+    // branch record `branch: Created from HEAD` in the reflog (git 2.x). The
+    // source branch name is not recorded, so no base can be derived from it.
+    const reflog = 'branch: Created from HEAD';
+    expect(parseBranchCreationSource(reflog)).toBeNull();
+  });
+
+  it('returns null when the branch was created from a raw commit', () => {
+    const reflog = 'branch: Created from 9a3b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b';
+    expect(parseBranchCreationSource(reflog)).toBeNull();
+  });
+
+  it('returns null when there is no creation entry', () => {
+    const reflog = ['commit: abc123', 'reset: moving to HEAD'].join('\n');
+    expect(parseBranchCreationSource(reflog)).toBeNull();
+  });
+
+  it('returns null for empty input', () => {
+    expect(parseBranchCreationSource('')).toBeNull();
+    expect(parseBranchCreationSource(undefined)).toBeNull();
+  });
+});
+
+describe.runIf(canRunGit())('getRangeFiles', () => {
+  it('returns added and modified paths with their status letters', async () => {
+    const { repository } = createRepositoryWithRemote();
+    fs.writeFileSync(path.join(repository, 'added.txt'), 'new\n');
+    fs.writeFileSync(path.join(repository, 'README.md'), '# Test\nchanged\n');
+    runGit(repository, ['add', 'added.txt', 'README.md']);
+    runGit(repository, ['commit', '-m', 'changes']);
+
+    const files = await getRangeFiles(repository, { base: 'react', head: 'next' });
+
+    expect(files).toEqual(expect.arrayContaining([
+      { path: 'added.txt', status: 'A' },
+      { path: 'README.md', status: 'M' },
+    ]));
+  });
+
+  it('reports the destination path for renamed files, including spaces', async () => {
+    const { repository } = createRepositoryWithRemote();
+    // The original file must exist in the base: rename detection pairs a
+    // deletion against an addition relative to base, not within the branch.
+    fs.writeFileSync(path.join(repository, 'old name with spaces.md'), '# Test\n');
+    runGit(repository, ['add', 'old name with spaces.md']);
+    runGit(repository, ['commit', '-m', 'add file to rename']);
+    runGit(repository, ['push', 'origin', 'HEAD:react']);
+    // Spaces in filenames exercise the -z token split: a newline split would
+    // mangle these paths long before status letters matter.
+    fs.renameSync(path.join(repository, 'old name with spaces.md'), path.join(repository, 'new name with spaces.md'));
+    runGit(repository, ['add', '-A']);
+    runGit(repository, ['commit', '-m', 'rename']);
+
+    const files = await getRangeFiles(repository, { base: 'react', head: 'next' });
+
+    const renameEntry = files.find((file) => file.status === 'R');
+    expect(renameEntry).toBeDefined();
+    expect(renameEntry.path).toBe('new name with spaces.md');
+    expect(files.some((file) => file.path === 'old name with spaces.md')).toBe(false);
+  });
+
+  it('reports the destination path for copied files', async () => {
+    const { repository } = createRepositoryWithRemote();
+    // The source must exist in the base. Copy detection needs the repository's
+    // own `diff.renames=copies` setting on top of the service's -C flag; the
+    // parser must survive whatever C entries git emits.
+    runGit(repository, ['config', 'diff.renames', 'copies']);
+    fs.writeFileSync(path.join(repository, 'copied source.md'), '# Copy me\n');
+    runGit(repository, ['add', 'copied source.md']);
+    runGit(repository, ['commit', '-m', 'add source']);
+    runGit(repository, ['push', 'origin', 'HEAD:react']);
+    fs.copyFileSync(path.join(repository, 'copied source.md'), path.join(repository, 'copied destination.md'));
+    runGit(repository, ['add', '-A']);
+    runGit(repository, ['commit', '-m', 'copy']);
+
+    const files = await getRangeFiles(repository, { base: 'react', head: 'next' });
+
+    const copyEntry = files.find((file) => file.status === 'C');
+    expect(copyEntry).toBeDefined();
+    expect(copyEntry.path).toBe('copied destination.md');
   });
 });
