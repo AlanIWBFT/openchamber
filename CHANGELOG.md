@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - Usage: GitHub Copilot now shows a single AI Credits window, matching Copilot's token-based quota, in place of the old Chat Requests and Completions windows (thanks to @jakoss).
 - Multi-Run: groups can now contain more than five models, including isolated runs that create one worktree per model (thanks to @tomzx).
 - Files: the Markdown preview has an in-document search (Ctrl/Cmd+F) with highlighting and next/previous, and clicking a folder or file in the sidebar tree opens it reliably on macOS trackpads, where a tiny pointer move used to swallow the click (thanks to @makeittech); files up to 20,000 lines open in the full-file preview instead of being rejected at 5,000 (thanks to @gaojunran).
+- Panels: right-click an editor, chat, or browser tab to close it, close others, close left/right, or close all (thanks to @adavila0703).
 - Plans: saved plans open with their content again for chats, worktrees outside the project path, and tabs restored after a reload, and an edit made right before closing is no longer lost.
 - Browser: when the agent captures a page while the browser panel is hidden, the panel is revealed first instead of the capture failing.
 - Sidebar: Recent rows show a compact timestamp on web and desktop, and pending permission/question badges are no longer covered by the hover actions (thanks to @makeittech).

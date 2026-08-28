@@ -3,6 +3,7 @@ import React from 'react';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { DiffViewIcon } from '@/components/icons/DiffIcon';
 import { Button } from '@/components/ui/button';
+import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { PullRequestView } from '@/components/views/PullRequestView';
 import { TerminalView } from '@/components/views/TerminalView';
@@ -979,6 +980,47 @@ export const ContextPanel: React.FC = () => {
 
   const isFileTabActive = activeTab?.mode === 'file';
 
+  const closeContextPanelTabs = useUIStore((state) => state.closeContextPanelTabs);
+  const renderTabContextMenu = React.useCallback(
+    (args: { id: string; index: number; allIds: string[]; close: () => void }): React.ReactNode => {
+      if (!directoryKey) {
+        return null;
+      }
+      const { id, index, allIds, close } = args;
+      const closeOthers = () => closeContextPanelTabs(directoryKey, allIds.filter((tabId) => tabId !== id));
+      const closeToLeft = () => closeContextPanelTabs(directoryKey, allIds.slice(0, index));
+      const closeToRight = () => closeContextPanelTabs(directoryKey, allIds.slice(index + 1));
+      const closeAll = () => closeContextPanelTabs(directoryKey, allIds);
+      const hasOthers = allIds.length > 1;
+      const isFirst = index === 0;
+      const isLast = index === allIds.length - 1;
+      return (
+        <>
+          <ContextMenuItem onClick={close}>
+            <Icon name="close" className="mr-2 size-4" />
+            {t('contextPanel.tab.menu.close')}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={closeOthers} disabled={!hasOthers}>
+            {t('contextPanel.tab.menu.closeOthers')}
+          </ContextMenuItem>
+          <ContextMenuItem onClick={closeToLeft} disabled={isFirst}>
+            {t('contextPanel.tab.menu.closeToLeft')}
+          </ContextMenuItem>
+          <ContextMenuItem onClick={closeToRight} disabled={isLast}>
+            {t('contextPanel.tab.menu.closeToRight')}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={closeAll} disabled={!hasOthers}>
+            <Icon name="close-circle" className="mr-2 size-4" />
+            {t('contextPanel.tab.menu.closeAll')}
+          </ContextMenuItem>
+        </>
+      );
+    },
+    [closeContextPanelTabs, directoryKey, t],
+  );
+
   const header = (
     <header className="flex h-10 items-stretch border-b border-border">
       {isMultiInstanceMode ? (
@@ -1005,6 +1047,7 @@ export const ContextPanel: React.FC = () => {
           }}
           layoutMode="scrollable"
           variant="default"
+          tabContextMenu={renderTabContextMenu}
         />
       ) : (
         <div className="flex min-w-0 flex-1 items-center gap-1.5 px-3">
