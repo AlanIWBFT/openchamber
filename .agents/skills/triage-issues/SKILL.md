@@ -39,6 +39,8 @@ Many fixes land without linking the issue they resolve, so an issue can sit open
 
 CLOSE-FIXED always names its evidence (commit, PR, or repro run); a hunch that "this area was reworked" downgrades to a comment asking the reporter to retry on current main, keeping the issue open on the needs-reporter clock.
 
+Every issue/PR reference in maintainer-facing reports is a clickable link (`[#3164](https://github.com/openchamber/openchamber/issues/3164)`), never a bare number; each entry carries 2–4 sentences — enough to decide without a follow-up question — and any manual-check note lives inside the entry, never in a separate number-repeating section. An issue where the maintainer already commented or the reporter replied to a question runs in pickup mode: state the thread first, continue it, never re-ask a decided question.
+
 Weigh trusted community reviewers' comments (see the `triage-prs` skill's rule — same names, same weight) and the intake bot's "For the maintainer" lines as strong signals. Deliver the sweep as one report and stop for approval.
 
 ## Phase 2 — Approved batch actions

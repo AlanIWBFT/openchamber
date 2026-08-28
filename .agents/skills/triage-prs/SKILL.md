@@ -9,6 +9,8 @@ Companion: each substantive review inside phase 3 applies the `pr-review` skill;
 
 **The timeline outranks the snapshot.** Before any verdict or comment on a PR, read its existing comments: a prior maintainer verdict (a push-back list, a recorded product decision like a placement or scope call) is BINDING — a new sweep verifies whether it was addressed at the current HEAD and says so explicitly ("all three prior items resolved" / "item 2 still open"), never re-decides it or asks the maintainer the same product question again. And never post the generic rebase-request on a PR that already carries a substantive review comment — the author already has their instructions; a bare "please rebase" on top reads as the left hand not knowing the right.
 
+**Pickup mode.** A PR with human activity beyond the bot — a maintainer comment, an author reply, a trusted-reviewer thread — is a conversation in progress, not a fresh review target. Such PRs go into their own report bucket ("Розмова триває"), and each entry opens with the thread state: what the maintainer asked, what the author answered, which points are resolved at the current HEAD and which remain. The ready action *continues* the thread (a reply, a verdict on the author's answer, a merge if everything asked for was delivered) — it never restarts review from scratch. The maintainer may not remember their own comment from days ago; the sweep remembers for them.
+
 ## Phase 1 — Mechanical sweep (no judgment, no LLM verdicts)
 
 Fetch all open PRs with `gh` (the repo is `openchamber/openchamber`). Two measurement rules learned the hard way:
@@ -40,6 +42,14 @@ Execute the approved closes/comments with retries and ~1–2s spacing between ca
 The review bot's `review:*` labels are a pre-sort, not a verdict: `review:ready` PRs go first (the bot found no code defects — likely MERGE/MERGE-THEN-FIX), `review:blocked` ones carry a bot comment whose findings the verdict review verifies rather than rediscovers. Bot labels never replace the pr-review pass — the bot cannot judge product fit or maintainability scope.
 
 Split the clean pool smallest-first (tiny diffs are fast wins and most likely mergeable). Fan out subagents in batches of ~10 PRs each; every subagent receives the full `pr-review` skill text as its instructions plus its PR numbers, reads real diffs (`gh pr view`, `gh pr diff`) and the local checkout, and returns per-PR verdict blocks in the skill's output format.
+
+**Report format.** The consolidated report is what the maintainer decides from — calibrate each entry so no follow-up question is needed, without ballooning:
+
+- Every PR/issue reference is a clickable link: `[#3177](https://github.com/openchamber/openchamber/pull/3177)` (issues: `/issues/N`) — never a bare number.
+- One entry per PR, 2–4 sentences: what it does for the user, whether the problem is real, why this verdict, the main risk or the thing the decision turns on. "Closes #N" links included.
+- "Needs your hands" lives INSIDE the PR's own entry as a final line, never as a separate section repeating the numbers — a number appearing twice reads as a duplicate.
+- Thread-state line first for pickup-mode entries.
+- A one-line entry ("точковий фікс") is fine only for genuinely trivial diffs; a verdict the maintainer must weigh (product calls, larger features) gets the full 4 sentences.
 
 Consolidate into a single report grouped by verdict — MERGE, MERGE-THEN-FIX, PUSH-BACK (with the drafted lists), DECLINE (with the drafted close comments), plus every "needs your hands" line — and stop for approval. After approval: post/merge per verdict, and queue MERGE-THEN-FIX follow-ups as in-house work.
 
