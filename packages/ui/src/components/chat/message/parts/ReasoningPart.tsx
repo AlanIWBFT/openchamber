@@ -261,7 +261,11 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
         };
     }, []);
 
-    if (!text || text.trim().length === 0) {
+    // While genuinely streaming, the busy header must appear as soon as
+    // reasoning starts even before the block-level reveal (commitStreamedText)
+    // has committed a first complete line — otherwise "Thinking…" never shows
+    // for the first moments of a short, single-paragraph response.
+    if (!isStreaming && (!text || text.trim().length === 0)) {
         return null;
     }
 
@@ -445,9 +449,11 @@ const ReasoningPart = React.memo(({
     // never mutates in place.
     const throttledText = isStreaming ? commitStreamedText(throttledTextRaw) : throttledTextRaw;
 
-    // Show reasoning even if time.end isn't set yet (during streaming)
-    // Only hide if there's no text content
-    if (!throttledText || throttledText.trim().length === 0) {
+    // Show reasoning even if time.end isn't set yet (during streaming).
+    // While genuinely streaming, keep the block mounted even before the
+    // block-level reveal commits a first line, so the busy header appears
+    // immediately instead of waiting on committed text.
+    if (!isStreaming && (!throttledText || throttledText.trim().length === 0)) {
         return null;
     }
 
