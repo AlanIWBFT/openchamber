@@ -204,26 +204,6 @@ const registerRaw = (fsPromises) => {
   return getRoute('GET', '/api/fs/raw');
 };
 
-const registerList = (fsPromises) => {
-  const { app, getRoute } = createRouteRegistry();
-  registerFsRoutes(app, {
-    os: { homedir: () => '/home/user' },
-    path: path.posix,
-    fsPromises: {
-      realpath: async (targetPath) => targetPath,
-      ...fsPromises,
-    },
-    spawn: vi.fn(),
-    crypto: { randomUUID: () => 'job-0' },
-    normalizeDirectoryPath: (p) => p,
-    resolveProjectDirectory: async () => ({ directory: '/repo' }),
-    buildAugmentedPath: () => '/usr/bin',
-    resolveGitBinaryForSpawn: () => 'git',
-    openchamberUserConfigRoot: '/home/user/.config',
-  });
-  return getRoute('GET', '/api/fs/list');
-};
-
 const registerMkdir = (fsPromises) => {
   const { app, getRoute } = createRouteRegistry();
   registerFsRoutes(app, {
@@ -786,52 +766,6 @@ describe('fs read', () => {
     warn.mockRestore();
   });
 });
-
-describe('fs list', () => {
-  it('returns entry paths under the requested directory so workspace symlinks stay addressable', async () => {
-    const fsPromises = {
-      realpath: vi.fn(async (targetPath) => {
-        if (targetPath === '/repo/link') return '/outside/shared';
-        return targetPath;
-      }),
-      stat: vi.fn(async () => ({ isDirectory: () => true })),
-      readdir: vi.fn(async () => [
-        { name: 'file.md', isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false },
-      ]),
-    };
-    const handler = registerList(fsPromises);
-    const res = createMockResponse();
-
-    await handler({ query: { path: '/repo/link' } }, res);
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.path).toBe('/outside/shared');
-    expect(res.body.entries).toEqual([
-      expect.objectContaining({ name: 'file.md', path: '/repo/link/file.md' }),
-    ]);
-  });
-
-  it('still lists real (non-symlinked) directories with canonical entry paths', async () => {
-    const fsPromises = {
-      realpath: vi.fn(async (targetPath) => targetPath),
-      stat: vi.fn(async () => ({ isDirectory: () => true })),
-      readdir: vi.fn(async () => [
-        { name: 'file.md', isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false },
-      ]),
-    };
-    const handler = registerList(fsPromises);
-    const res = createMockResponse();
-
-    await handler({ query: { path: '/repo' } }, res);
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.path).toBe('/repo');
-    expect(res.body.entries).toEqual([
-      expect.objectContaining({ name: 'file.md', path: '/repo/file.md' }),
-    ]);
-  });
-});
-
 describe('fs reveal', () => {
   it.each([
     ['linux', 'xdg-open', ['/repo']],

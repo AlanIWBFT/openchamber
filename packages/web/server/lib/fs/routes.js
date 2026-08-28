@@ -1521,10 +1521,6 @@ export const registerFsRoutes = (app, dependencies) => {
       ? req.query.path.trim()
       : os.homedir();
     const respectGitignore = req.query.respectGitignore === 'true';
-    // Logical (requested) path stays in the caller's path space. Realpath is
-    // only used to read directory contents — returning real paths for entries
-    // breaks file-tree expansion when listing through a symlink, because the
-    // UI rejects expanded paths that fall outside the workspace root.
     let requestedPath = '';
     let resolvedPath = '';
 
@@ -1535,13 +1531,7 @@ export const registerFsRoutes = (app, dependencies) => {
     };
 
     try {
-      // Keep the listing directory canonical (realpath-resolved) so readdir
-      // and git check-ignore operate on the real directory, but expose entry
-      // paths under the requested (user-visible) directory. This keeps paths
-      // inside the workspace addressable when the requested directory is a
-      // symlink to a folder outside the project root — otherwise the file
-      // tree hands back canonical paths that the read/stat/raw routes reject.
-      const requestedPath = path.resolve(normalizeDirectoryPath(rawPath));
+      requestedPath = path.resolve(normalizeDirectoryPath(rawPath));
       resolvedPath = await realpathCache.resolve(requestedPath);
 
       const stats = await fsPromises.stat(resolvedPath);
@@ -1601,8 +1591,8 @@ export const registerFsRoutes = (app, dependencies) => {
 
       const entries = await Promise.all(
         dirents.map(async (dirent) => {
-          const entryPath = path.join(requestedPath, dirent.name);
-          if (respectGitignore && ignoredPaths.has(entryPath)) {
+          const physicalEntryPath = path.join(resolvedPath, dirent.name);
+          if (respectGitignore && ignoredPaths.has(physicalEntryPath)) {
             return null;
           }
 
