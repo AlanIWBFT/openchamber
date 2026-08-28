@@ -66,6 +66,14 @@ export interface ProviderCredentialInput {
   key?: string | null;
   /** OpenChamber auth.json provenance for this provider. */
   authSourceExists?: boolean | null;
+  /**
+   * Provider.options is shipped to the client for config-defined providers
+   * but never reaches `Provider.key` (upstream only sets `key` from a single
+   * resolved env var or an api-type auth.json entry). Treat a non-empty
+   * `options.apiKey` as a usable login, per
+   * `packages/web/server/lib/walkthrough/DOCUMENTATION.md:134`.
+   */
+  optionsApiKey?: string | null;
 }
 
 /**
@@ -74,6 +82,9 @@ export interface ProviderCredentialInput {
  */
 export const providerHasCredentials = (input: ProviderCredentialInput): boolean => {
   if (typeof input.key === 'string' && input.key.trim().length > 0) {
+    return true;
+  }
+  if (typeof input.optionsApiKey === 'string' && input.optionsApiKey.trim().length > 0) {
     return true;
   }
   return input.authSourceExists === true;

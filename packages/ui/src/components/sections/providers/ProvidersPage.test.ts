@@ -89,6 +89,15 @@ describe('provider credential state helpers', () => {
     expect(providerHasCredentials({ key: undefined, authSourceExists: true })).toBe(true);
   });
 
+  test('providerHasCredentials treats options.apiKey as a usable credential', () => {
+    // Config-defined providers ship provider.options to the client but never
+    // reach Provider.key, so the only authoritative signal is options.apiKey.
+    expect(providerHasCredentials({ key: undefined, authSourceExists: false, optionsApiKey: 'sk-config' })).toBe(true);
+    expect(providerHasCredentials({ key: undefined, authSourceExists: false, optionsApiKey: '' })).toBe(false);
+    expect(providerHasCredentials({ key: undefined, authSourceExists: false, optionsApiKey: '   ' })).toBe(false);
+    expect(providerHasCredentials({ key: undefined, authSourceExists: false, optionsApiKey: null })).toBe(false);
+  });
+
   test('env-less OAuth-only provider without credentials opens panel and hides models', () => {
     const hasCredentials = providerHasCredentials({
       key: undefined,

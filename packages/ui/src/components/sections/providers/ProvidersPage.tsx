@@ -860,6 +860,7 @@ export const ProvidersPage: React.FC = () => {
   const hasCredentials = providerHasCredentials({
     key: selectedProvider.key,
     authSourceExists: selectedSources?.auth.exists,
+    optionsApiKey: (selectedProvider as { options?: { apiKey?: string | null } }).options?.apiKey ?? null,
   });
   const authStatusIncomplete = sourcesLoaded && !hasCredentials;
   const showModelsSection = shouldShowModelsSection({
