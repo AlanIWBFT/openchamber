@@ -40,7 +40,7 @@ The following functions are exported and used by the web server:
 ### Branch Operations
 - `getBranches(directory)`: Get list of local and remote branches (filtered to active remote branches).
 - `createBranch(directory, branchName, options)`: Create and checkout a new branch.
-- `checkoutBranch(directory, branchName)`: Checkout an existing branch.
+- `checkoutBranch(directory, branchName)`: Checkout an existing branch. A remote-tracking name (`origin/main`, or the `remotes/`-prefixed form) resolves to the local branch of that name, created with `--track` when it does not exist yet, because the branch selector offers remote branches as places to work rather than commits to inspect — a literal checkout of the remote ref would detach HEAD. A local branch whose own name looks like a remote ref wins over that resolution, and anything unresolvable is checked out as requested. The returned `branch` is the branch that was actually checked out, which callers should report instead of the requested name.
 - `deleteBranch(directory, branch, options)`: Delete a branch (supports force flag).
 - `renameBranch(directory, oldName, newName)`: Rename a branch and preserve upstream tracking.
 - `getRemotes(directory)`: Get list of configured remotes.
@@ -48,9 +48,17 @@ The following functions are exported and used by the web server:
 ### Worktree Operations
 - `getWorktrees(directory)`: List all git worktrees for a repository.
 - `validateWorktreeCreate(directory, input)`: Validate worktree creation parameters (mode, branchName, startRef, upstream config).
-- `createWorktree(directory, input)`: Create a new worktree (supports 'new' and 'existing' modes, upstream setup).
+- `createWorktree(directory, input)`: Create a new worktree (supports 'new' and 'existing' modes, upstream setup). After populating the worktree, the repository's `post-checkout` hook runs once with git's standard arguments (null ref as previous HEAD, the checked-out HEAD, and flag `1`) from the worktree directory, mirroring `git worktree add` without `--no-checkout`; a missing or non-executable hook is skipped and a failing hook is logged as a warning, never failing worktree creation or the session bootstrap.
 - `removeWorktree(directory, input)`: Remove a worktree (optionally delete local branch).
 - `isLinkedWorktree(directory)`: Check if directory is a linked worktree (not primary).
+
+### Worktree creation from a GitHub pull request
+The UI provisions `pr-<owner>` via `ensureRemoteName`/`ensureRemoteUrl`
+(HTTPS clone URL preferred over SSH) and checks out
+`remotes/pr-<owner>/<head>`. A missing head URL or unreachable fork fails with
+a clear error before a worktree is kept. If upstream fetch fails during
+bootstrap, tracking is left unset rather than writing `branch.*.remote` /
+`branch.*.merge` for a ref that was never fetched.
 
 ### Commit and Remote Operations
 - `commit(directory, message, options)`: Create a commit from the current index. `options.stageFiles` may be provided with `options.files` by older callers to stage only selected unstaged rows before committing, but the shared Git panel now stages/unstages explicitly before commit.
@@ -95,6 +103,7 @@ The following functions are internal helpers used by exported functions:
 - `resolveCandidateDirectory(...)`: Generate unique worktree directory candidates.
 - `resolveBranchForExistingMode(...)`: Resolve branch for existing-mode worktree creation.
 - `applyUpstreamConfiguration(...)`: Set upstream tracking for new branches.
+- `runPostCheckoutHook(directory)`: Invoke the worktree's `post-checkout` hook after population, because `git worktree add --no-checkout` and the bootstrap's `git reset --hard` never run git hooks. Runs with git's standard arguments and the worktree as cwd; skips missing/non-executable hooks and never throws on hook failure.
 - And various other internal helpers for Git command execution and parsing.
 
 ## Response Contracts
@@ -112,7 +121,7 @@ The following functions are internal helpers used by exported functions:
 - `rebaseInProgress`: Object with `{ headName, onto }` if rebase in progress.
 
 ### Branches Response
-- `all`: Local branches plus remote-tracking branches that still exist on their remote. A remote that fails to answer keeps its branches in the list: "we could not ask" must not be reported as "these branches are gone", because callers use this list to decide whether a base branch exists at all.
+- `all`: Local branches plus every branch each reachable remote reports via `ls-remote --heads`, formatted as `remotes/<remote>/<branch>`. This is a union: local remote-tracking refs deleted on the remote are pruned, and branches that exist on the remote without a local tracking ref (never fetched) are still included, so a freshly pushed branch appears without requiring a fetch. A remote that fails to answer keeps its locally known branches in the list: "we could not ask" must not be reported as "these branches are gone", because callers use this list to decide whether a base branch exists at all.
 - `current`: Current branch name.
 - `branches`: Per-branch detail keyed by branch name, as reported by `git branch`.
 - `defaultBranches`: Each remote's default branch, keyed by remote name. Read from the local `remotes/<name>/HEAD` symbolic ref; for a remote that has none — clone writes it, a hand-added remote may not — the remote itself is asked once with `ls-remote --symref`. A remote that answers neither is absent rather than guessed, and consumers fall back to conventional branch names. Omitted entirely by runtimes that do not provide this Git metadata.
@@ -135,6 +144,7 @@ The following functions are internal helpers used by exported functions:
 - Fast-create background failures remove OpenCode sandbox metadata for directories that never became Git worktrees, and remove the pre-created directory only if it is still empty. User-created files are never recursively deleted by this cleanup.
 - Worktree removal waits for any active create/bootstrap task for that directory before deleting it, preventing a background Git or setup task from restoring removed state or racing filesystem cleanup.
 - Worktree bootstrap retries transient `index.lock` conflicts. If the lock remains byte-for-byte and metadata-identical across the retry window, it is treated as stale, removed, and population continues automatically; changing locks are left untouched and reported as failures.
+- Worktree population enables Git `core.longpaths` (local repo config plus `-c core.longpaths=true` on `git reset --hard`) so deeply nested checkouts under the managed data-dir worktree root do not fail on Windows MAX_PATH with "Filename too long". Path-component limits that the filesystem itself rejects still fail bootstrap, with a clearer path-length guidance message.
 
 ### Log Response
 - `all`: Array of commit objects with hash, date, message, author info, stats.
