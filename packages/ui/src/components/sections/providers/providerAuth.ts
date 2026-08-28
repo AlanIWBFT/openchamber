@@ -94,7 +94,17 @@ export const shouldShowModelsSection = (input: {
   modelCount: number;
   sourcesLoaded: boolean;
   hasCredentials: boolean;
-}): boolean => input.modelCount > 0 && (!input.sourcesLoaded || input.hasCredentials);
+  /**
+   * Config-defined custom providers (providerSources.custom present and parsed
+   * via `isConfigDefinedCustomProvider`) are user-editable in place, so a
+   * stale `Credentials missing` signal must not hide their models section.
+   * Optional for back-compat; defaults to `false`, restoring the pre-rewrite
+   * exemption that `requiresProviderAuth` carried via `providerAvailability.ts`.
+   */
+  isEditableCustomProvider?: boolean;
+}): boolean =>
+  input.modelCount > 0 &&
+  (!input.sourcesLoaded || input.hasCredentials || Boolean(input.isEditableCustomProvider));
 
 export const shouldAutoOpenAuthPanel = (input: {
   sourcesLoaded: boolean;

@@ -133,6 +133,31 @@ describe('provider credential state helpers', () => {
     })).toBe(true);
   });
 
+  test('editable custom provider keeps models visible even with no credentials signal', () => {
+    // Config-defined custom providers (e.g. local LM Studio/Ollama style)
+    // are user-editable in place; a stale 'Credentials missing' must not
+    // hide their models section. Without the exemption, a keyless local
+    // custom provider regresses to 'Credentials missing' with models hidden.
+    const hasCredentials = providerHasCredentials({
+      key: undefined,
+      authSourceExists: false,
+      optionsApiKey: null,
+    });
+    expect(hasCredentials).toBe(false);
+    expect(shouldShowModelsSection({
+      modelCount: 1,
+      sourcesLoaded: true,
+      hasCredentials: false,
+      isEditableCustomProvider: true,
+    })).toBe(true);
+    expect(shouldShowModelsSection({
+      modelCount: 1,
+      sourcesLoaded: true,
+      hasCredentials: false,
+      isEditableCustomProvider: false,
+    })).toBe(false);
+  });
+
   test('auth save followed by providers refresh recognizes credentials without stale missing state', () => {
     // Pre-save: sources say no auth, provider has no key yet.
     const before = providerHasCredentials({

@@ -27,7 +27,7 @@ import type { ModelMetadata } from '@/types';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { opencodeClient } from '@/lib/opencode/client';
-import { shouldLoadAvailableProviders } from './providerAvailability';
+import { requiresProviderAuth, shouldLoadAvailableProviders } from './providerAvailability';
 import {
   getOAuthAuthMethods,
   parseAuthPayload,
@@ -339,6 +339,7 @@ export const ProvidersPage: React.FC = () => {
     const hasCreds = providerHasCredentials({
       key: provider?.key,
       authSourceExists: sources.auth.exists,
+      optionsApiKey: (provider as { options?: { apiKey?: string | null } } | undefined)?.options?.apiKey ?? null,
     });
     const isEditableCustomProvider = Boolean(
       provider && isConfigDefinedCustomProvider(provider, sources)
@@ -862,11 +863,12 @@ export const ProvidersPage: React.FC = () => {
     authSourceExists: selectedSources?.auth.exists,
     optionsApiKey: (selectedProvider as { options?: { apiKey?: string | null } }).options?.apiKey ?? null,
   });
-  const authStatusIncomplete = sourcesLoaded && !hasCredentials;
+  const authStatusIncomplete = requiresProviderAuth(sourcesLoaded, hasCredentials, isEditableCustomProvider);
   const showModelsSection = shouldShowModelsSection({
     modelCount: providerModels.length,
     sourcesLoaded,
     hasCredentials,
+    isEditableCustomProvider,
   });
   const incompleteAuthHint = !showApiKeyAuth && oauthAuthMethods.length > 0
     ? t('settings.providers.page.auth.useReconnectHint')
