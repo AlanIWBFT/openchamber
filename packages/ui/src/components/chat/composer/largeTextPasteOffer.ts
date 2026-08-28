@@ -6,11 +6,9 @@
  * invalidation pure so ChatInput only wires toast UI to attach/inline actions.
  */
 
-export type LargeTextPasteOfferAction = 'attach' | 'inline';
-
 /** Allocate a new offer id, superseding any unanswered previous offer. */
 export const beginLargeTextPasteOffer = (activeOfferId: number): number => (
-  activeOfferId + 1
+    activeOfferId + 1
 );
 
 /**
@@ -19,15 +17,15 @@ export const beginLargeTextPasteOffer = (activeOfferId: number): number => (
  * dismiss/action cannot double-apply.
  */
 export const resolveLargeTextPasteOffer = (
-  activeOfferId: number,
-  offerId: number,
-): { accepted: boolean; nextOfferId: number } => {
-  if (offerId !== activeOfferId) {
-    return { accepted: false, nextOfferId: activeOfferId };
-  }
-  return { accepted: true, nextOfferId: activeOfferId + 1 };
+    activeOfferId: number,
+    offerId: number,
+) => {
+    if (offerId !== activeOfferId) {
+        return { accepted: false, nextOfferId: activeOfferId };
+    }
+    return { accepted: true, nextOfferId: activeOfferId + 1 };
 };
 
 /** Toast chrome: widen on desktop only; leave mobile full-width to Sonner. */
 export const LARGE_TEXT_PASTE_TOAST_CLASSNAME =
-  '[&_[data-icon]]:!hidden sm:!min-w-[22rem] sm:!w-auto';
+    '[&_[data-icon]]:!hidden sm:!min-w-[22rem] sm:!w-auto';

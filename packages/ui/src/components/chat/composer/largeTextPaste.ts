@@ -10,13 +10,13 @@ export const LARGE_TEXT_PASTE_CHAR_THRESHOLD = 2000;
 export const LARGE_TEXT_PASTE_LINE_THRESHOLD = 25;
 
 const countLines = (text: string): number => {
-  let lines = 1;
-  for (let index = 0; index < text.length; index += 1) {
-    if (text.charCodeAt(index) === 10) {
-      lines += 1;
+    let lines = 1;
+    for (let index = 0; index < text.length; index += 1) {
+        if (text.charCodeAt(index) === 10) {
+            lines += 1;
+        }
     }
-  }
-  return lines;
+    return lines;
 };
 
 /**
@@ -27,29 +27,29 @@ const countLines = (text: string): number => {
  * character count or line count is enough.
  */
 export const isLargePlainTextPaste = (
-  text: string,
-  options?: {
-    charThreshold?: number;
-    lineThreshold?: number;
-  },
+    text: string,
+    options?: {
+        charThreshold?: number;
+        lineThreshold?: number;
+    },
 ): boolean => {
-  if (!text || !text.trim()) {
-    return false;
-  }
+    if (!text || !text.trim()) {
+        return false;
+    }
 
-  const charThreshold = options?.charThreshold ?? LARGE_TEXT_PASTE_CHAR_THRESHOLD;
-  const lineThreshold = options?.lineThreshold ?? LARGE_TEXT_PASTE_LINE_THRESHOLD;
+    const charThreshold = options?.charThreshold ?? LARGE_TEXT_PASTE_CHAR_THRESHOLD;
+    const lineThreshold = options?.lineThreshold ?? LARGE_TEXT_PASTE_LINE_THRESHOLD;
 
-  if (text.length >= charThreshold) {
-    return true;
-  }
+    if (text.length >= charThreshold) {
+        return true;
+    }
 
-  return countLines(text) >= lineThreshold;
+    return countLines(text) >= lineThreshold;
 };
 
 export const createPastedContextFile = (text: string, filename: string): File => (
-  new File([text], filename, {
-    type: 'text/plain',
-    lastModified: Date.now(),
-  })
+    new File([text], filename, {
+        type: 'text/plain',
+        lastModified: Date.now(),
+    })
 );
