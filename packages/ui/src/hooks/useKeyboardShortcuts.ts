@@ -520,6 +520,10 @@ export const useKeyboardShortcuts = () => {
         sessionTabDigit !== null
         && !event.repeat
         && !isVSCodeRuntime()
+        // Typing a digit in a textarea/input must stay text, never a tab
+        // switch: the default prefix here is a bare modifier, so this fires
+        // on plain ctrl/cmd+1 while the composer has focus (#2689).
+        && !isEditableEventTarget(event.target)
         && useUIStore.getState().sessionTabsEnabled
         && eventMatchesShortcutPrefix(
           event,

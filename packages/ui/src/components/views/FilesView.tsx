@@ -1783,7 +1783,24 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
       }
     },
     find_in_file: (event) => {
-      if (!(event.target instanceof Node) || !editorWrapperRef.current?.contains(event.target)) return false;
+      if (!(event.target instanceof Node)) return false;
+
+      // Rendered Markdown preview: open the in-preview find bar instead of the
+      // editor search. Registered through the keybind schema rather than a raw
+      // window listener so it cannot swallow Cmd/Ctrl+F app-wide while a
+      // Markdown file happens to be selected behind another panel tab.
+      if (isMarkdown && getMdViewMode() === 'preview') {
+        if (isMobile) return false;
+        const previewContainer = isFullscreen
+          ? mdFullscreenPreviewContainerRef.current
+          : mdPreviewContainerRef.current;
+        if (!previewContainer?.contains(event.target)) return false;
+        setMdPreviewFindOpen(true);
+        setMdPreviewFindFocusNonce((value) => value + 1);
+        return;
+      }
+
+      if (!editorWrapperRef.current?.contains(event.target)) return false;
       setIsSearchOpen(true);
     },
   });
@@ -2920,34 +2937,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
 
     setIsGoToLineOpen(true);
   });
-
-  // Ctrl/Cmd+F opens the in-preview find bar for the rendered Markdown
-  // preview. In edit mode CodeMirror owns the shortcut, so this handler is
-  // active only while the preview is shown.
-  React.useEffect(() => {
-    if (!isMarkdown || getMdViewMode() !== 'preview') {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) {
-        return;
-      }
-      if (event.key.toLowerCase() !== 'f') {
-        return;
-      }
-      const target = event.target;
-      if (target instanceof Element && target.closest('[role="dialog"]')) {
-        return;
-      }
-      event.preventDefault();
-      setMdPreviewFindOpen(true);
-      setMdPreviewFindFocusNonce((value) => value + 1);
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [getMdViewMode, isMarkdown]);
 
   const editorFontSize = useUIStore((state) => state.editorFontSize);
 
@@ -4280,6 +4269,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
               ) : null}
             </div>
           ) : isMarkdown && getMdViewMode() === 'preview' ? (
+            // The find bar is a sibling of the scroll container, never a child:
+            // inside it, its own "1/3" and "No matches" text would be walked and
+            // highlighted by the search it drives.
+            <div className="relative h-full min-h-0">
             <div
               className="oc-file-preview h-full overflow-auto p-4"
               ref={(node) => {
@@ -4287,13 +4280,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
                 mdFullscreenPreviewContainerRef.current = node;
               }}
             >
-              <MarkdownPreviewSearch
-                containerRef={mdFullscreenPreviewContainerRef}
-                open={mdPreviewFindOpen}
-                onOpenChange={setMdPreviewFindOpen}
-                focusNonce={mdPreviewFindFocusNonce}
-                className="right-4 top-16"
-              />
               {selectedFile ? (
                 <FilePreviewCommentMenu
                   containerRef={markdownPreviewRef}
@@ -4323,6 +4309,14 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
                   enableFileReferences={false}
                 />
               </ErrorBoundary>
+            </div>
+              <MarkdownPreviewSearch
+                containerRef={mdFullscreenPreviewContainerRef}
+                open={mdPreviewFindOpen}
+                onOpenChange={setMdPreviewFindOpen}
+                focusNonce={mdPreviewFindFocusNonce}
+                className="right-4 top-16"
+              />
             </div>
           ) : canUseShikiFileView && textViewMode === 'view' ? (
             renderShikiFileView(selectedFile, isLargeFile ? fileContent : draftContent, fullscreenViewVirtualizer)

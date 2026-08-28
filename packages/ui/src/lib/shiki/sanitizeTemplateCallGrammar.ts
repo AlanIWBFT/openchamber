@@ -35,11 +35,3 @@ export const sanitizeTemplateCallGrammar = <T extends TemplateCallGrammar>(gramm
   repository[TEMPLATE_CALL_KEY] = { patterns: [] };
   return { ...grammar, repository };
 };
-
-/** Language ids whose bundled grammars ship the catastrophic `template-call` rule. */
-export const TEMPLATE_CALL_LANGUAGE_IDS = ['javascript', 'typescript', 'jsx', 'tsx'] as const;
-
-export type TemplateCallLanguageId = (typeof TEMPLATE_CALL_LANGUAGE_IDS)[number];
-
-export const isTemplateCallLanguageId = (lang: string): lang is TemplateCallLanguageId =>
-  TEMPLATE_CALL_LANGUAGE_IDS.some((id) => id === lang);

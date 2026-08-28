@@ -202,11 +202,15 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
   }, []);
 
   const getClampedX = React.useCallback((anchorX: number) => (
-    getDesktopClampedX(anchorX, window.innerWidth, menuWidthRef.current)
+    typeof window === 'undefined'
+      ? anchorX
+      : getDesktopClampedX(anchorX, window.innerWidth, menuWidthRef.current)
   ), []);
 
   const getClampedY = React.useCallback((anchorY: number) => (
-    getDesktopClampedY(anchorY, window.innerHeight, menuHeightRef.current)
+    typeof window === 'undefined'
+      ? anchorY
+      : getDesktopClampedY(anchorY, window.innerHeight, menuHeightRef.current)
   ), []);
 
   const addMarkdownToChat = React.useCallback((markdownText: string) => {
@@ -287,7 +291,10 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
       x: getClampedX(prev.x),
       y: getClampedY(prev.y),
     }));
-  }, [getClampedX, getClampedY, isMobile, position.show]);
+    // Entering comment mode and typing into the comment box both grow the
+    // popup, so remeasuring on those keeps the cached height (and the Y clamp
+    // built from it) honest.
+  }, [commentMode, commentText, getClampedX, getClampedY, isMobile, position.show]);
 
   // The desktop popup hangs above its anchor, so a tall comment box near the
   // top of the chat can climb over the app header. On the desktop shell the

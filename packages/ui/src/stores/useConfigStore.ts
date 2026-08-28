@@ -2590,7 +2590,20 @@ export const useConfigStore = create<ConfigStore>()(
                         // agent configures no model of its own. Switching modes or
                         // agents must not reset the selection to the settings default
                         // (issue #2531) — mode switches are not model changes.
-                        if (hadManualSelection && currentProviderId && currentModelId) {
+                        if (
+                            hadManualSelection
+                            && currentProviderId
+                            && currentModelId
+                            && hasProviderModel(providers, currentProviderId, currentModelId)
+                        ) {
+                            // Keeping the pair in memory is not enough: without a write
+                            // the settings default wins again after a reload. The removed
+                            // ModelControls path persisted here, so this must too.
+                            if (currentSessionId) {
+                                const selection = useSelectionStore.getState();
+                                selection.saveSessionModelSelection(currentSessionId, currentProviderId, currentModelId);
+                                selection.saveAgentModelForSession(currentSessionId, agentName, currentProviderId, currentModelId);
+                            }
                             return;
                         }
 

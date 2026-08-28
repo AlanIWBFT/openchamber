@@ -170,7 +170,7 @@ describe('selectFolderRootNodes', () => {
 describe('selectRowBadgeVisibilityClass', () => {
   const hideOnHoverClass = 'group-hover:opacity-0 group-focus-within:opacity-0';
 
-  test('hides the badge while hover-revealed actions are shown, like the date label (#2284)', () => {
+  test('defers to the caller hover rule so the badge fades with the date label (#2284)', () => {
     const className = selectRowBadgeVisibilityClass({
       actionsAlwaysVisible: false,
       menuOpen: false,
@@ -178,18 +178,17 @@ describe('selectRowBadgeVisibilityClass', () => {
     });
 
     expect(className).toContain(hideOnHoverClass);
-    expect(className).toContain('transition-opacity');
   });
 
-  test('hides the badge while the row menu keeps the actions visible without hover', () => {
+  test('hides the badge unconditionally while the row menu keeps the actions visible without hover', () => {
     const className = selectRowBadgeVisibilityClass({
       actionsAlwaysVisible: false,
       menuOpen: true,
       hideOnHoverClass,
     });
 
-    expect(className).toContain('opacity-0');
-    expect(className).not.toContain('group-hover');
+    expect(className).not.toBe('');
+    expect(className).not.toContain(hideOnHoverClass);
   });
 
   test('keeps the badge always visible when actions have reserved permanent padding', () => {

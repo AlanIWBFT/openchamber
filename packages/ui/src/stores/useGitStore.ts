@@ -107,7 +107,10 @@ const statusMutationRevisionByDirectory = new Map<string, number>();
 let gitRuntimeGeneration = 0;
 let activeGitRuntimeKey = getRuntimeKey();
 
-const runtimeDirectoryKey = (runtimeKey: string, directory: string) => JSON.stringify([runtimeKey, directory]);
+// Trimmed to match `gitApiHttp`'s cache keys, so an invalidation notified for a
+// directory keys the same entry the store's own lookups do.
+const runtimeDirectoryKey = (runtimeKey: string, directory: string) =>
+  JSON.stringify([runtimeKey, directory.trim()]);
 const getStatusFetchKey = (runtimeKey: string, directory: string, mode: GitStatusFetchMode): string =>
   JSON.stringify([runtimeKey, directory, mode]);
 const channelKey = (runtimeKey: string, directory: string, channel: string) =>

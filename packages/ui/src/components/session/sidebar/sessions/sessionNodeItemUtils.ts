@@ -19,6 +19,12 @@ export type SessionNodeChildRenderExtras = {
   subtreeContainsEditing: Set<string>;
   menuOpenSessionId: string | null;
   nodeStructureKey: string;
+  /**
+   * Bumped once a minute by the owning list so rows that render a relative
+   * timestamp ("5m") re-render and recompute it. Only the Recent list
+   * supplies it; elsewhere the rows carry no time-dependent label.
+   */
+  relativeTimeTick?: number;
 };
 
 export type SessionNodeRenderExtras<TNode = SessionNode> = SessionNodeChildRenderExtras & {

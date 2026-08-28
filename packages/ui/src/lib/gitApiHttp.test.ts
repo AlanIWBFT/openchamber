@@ -28,6 +28,7 @@ import {
   unstageGitFile,
   unstageGitFiles,
 } from './gitApiHttp';
+import type { GitStatus } from './api/types';
 
 type FetchCall = {
   input: RequestInfo | URL;
@@ -189,7 +190,7 @@ describe('gitApiHttp status cache', () => {
   });
 });
 
-const statusPayload = (overrides: Record<string, unknown> = {}) => ({
+const statusPayload = (overrides: Partial<GitStatus> = {}): GitStatus => ({
   current: 'main',
   tracking: null,
   ahead: 0,
@@ -199,16 +200,21 @@ const statusPayload = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const jsonResponse = (payload: unknown) => new Response(JSON.stringify(payload), {
+const jsonResponse = <T>(payload: T) => new Response(JSON.stringify(payload), {
   status: 200,
   headers: { 'Content-Type': 'application/json' },
 });
 
 const installStatusMutationFetchMock = () => {
+  // SAFETY: `statusUrls` starts empty and only ever receives request URLs, which
+  // are strings; the annotation names that element type up front.
   const mock = {
     statusUrls: [] as string[],
     behind: 0,
   };
+  // SAFETY: the mock receives only the (input, init) pair production code passes
+  // and always resolves to a Response, so it honours the fetch contract; the
+  // assertion supplies the overload signatures a plain arrow function cannot.
   globalThis.fetch = (async (input) => {
     const url = String(input);
     if (url.startsWith('/api/git/status')) {
@@ -225,9 +231,9 @@ const installStatusMutationFetchMock = () => {
  * read issues a fresh request that observes the post-mutation state instead of
  * serving the pre-mutation cache entry.
  */
-const expectStatusInvalidatedBy = async (
+const expectStatusInvalidatedBy = async <T>(
   directory: string,
-  mutate: () => Promise<unknown>
+  mutate: () => Promise<T>
 ): Promise<void> => {
   const mock = installStatusMutationFetchMock();
 
@@ -310,6 +316,8 @@ describe('gitApiHttp post-mutation status invalidation (#2281)', () => {
   test('a failed mutation does not invalidate cached status', async () => {
     installWindowMock();
     const statusUrls: string[] = [];
+    // SAFETY: see installStatusMutationFetchMock - the mock honours the fetch
+    // contract; the assertion supplies its overload signatures.
     globalThis.fetch = (async (input) => {
       const url = String(input);
       if (url.startsWith('/api/git/status')) {
@@ -330,6 +338,7 @@ describe('gitApiHttp post-mutation status invalidation (#2281)', () => {
         await checkoutBranch(directory, 'feature');
       });
       expect(error).toBeInstanceOf(Error);
+      // SAFETY: the assertion above established that `error` is an Error.
       expect((error as Error).message).toBe('checkout failed');
 
       await getGitStatus(directory);
@@ -343,6 +352,8 @@ describe('gitApiHttp post-mutation status invalidation (#2281)', () => {
     installWindowMock();
     const statusResolvers: Array<(response: Response) => void> = [];
     const statusUrls: string[] = [];
+    // SAFETY: see installStatusMutationFetchMock - the mock honours the fetch
+    // contract; the assertion supplies its overload signatures.
     globalThis.fetch = (async (input) => {
       const url = String(input);
       if (url.startsWith('/api/git/status')) {

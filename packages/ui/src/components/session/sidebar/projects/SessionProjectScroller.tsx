@@ -248,7 +248,7 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
         hideTopScrollShadow={!enableStickyFade}
         scrollShadowSize={96}
         outerClassName="flex-1 min-h-0"
-        className="oc-sidebar-scroller space-y-1.5 pb-1 pl-2.5 pr-2 [overflow-anchor:none]"
+        className="oc-sidebar-scroller oc-sticky-fade-scroller space-y-1.5 pb-1 pl-2.5 pr-2 [overflow-anchor:none]"
         onScroll={enableStickyFade ? (event) => syncTopFade(event.currentTarget) : undefined}
       >
       {model.topContent}

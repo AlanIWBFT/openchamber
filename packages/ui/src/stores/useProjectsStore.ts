@@ -13,7 +13,8 @@ import { PROJECT_COLORS } from '@/lib/projectMeta';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
-import { getVSCodeBootstrapConfig, isVSCodeRuntime } from './utils/vscodeRuntime';
+import { getVSCodeBootstrapConfig } from '@/lib/vscodeBootstrap';
+import { isVSCodeRuntime } from './utils/vscodeRuntime';
 
 /** Pick a color key that's least used among existing projects */
 const pickAutoColor = (projects: ProjectEntry[]): string => {

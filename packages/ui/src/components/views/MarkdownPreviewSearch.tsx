@@ -33,15 +33,29 @@ const isMarkElement = (node: Node): boolean => {
   return node instanceof Element && node.hasAttribute(MARK_ATTR);
 };
 
+/** True when this widget's own highlight surgery produced the record. */
+const isSelfProducedMutation = (record: MutationRecord): boolean => {
+  if (record.target instanceof Element && record.target.hasAttribute(MARK_ATTR)) {
+    return true;
+  }
+  return [...record.addedNodes].some((node) => isMarkElement(node));
+};
+
 const clearHighlights = (container: HTMLElement): void => {
+  const touchedParents = new Set<Node>();
   container.querySelectorAll(`mark[${MARK_ATTR}]`).forEach((mark) => {
     const parent = mark.parentNode;
     if (!parent) {
       return;
     }
     parent.replaceChild(document.createTextNode(mark.textContent ?? ''), mark);
-    parent.normalize();
+    touchedParents.add(parent);
   });
+  // Once per affected parent instead of once per mark. Merging the split text
+  // nodes back together is safe under the renderer's morphdom path: it diffs
+  // against a tree freshly parsed from HTML, where the merged single text node
+  // is exactly the shape it expects.
+  touchedParents.forEach((parent) => parent.normalize());
 };
 
 const applySearch = (container: HTMLElement, query: string): HTMLElement[] => {
@@ -143,7 +157,12 @@ export const MarkdownPreviewSearch: React.FC<MarkdownPreviewSearchProps> = ({
   // Focus returns here when the bar closes, so Escape does not strand focus.
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
 
-  const runSearch = React.useCallback((nextQuery: string) => {
+  /**
+   * `keepIndex` distinguishes a new query (start at match 1) from a re-search
+   * of the same query after the renderer re-morphed the container: a theme
+   * toggle or content refresh must not yank the reader back to match 1.
+   */
+  const runSearch = React.useCallback((nextQuery: string, keepIndex = false) => {
     const container = containerRef.current;
     if (!container) {
       marksRef.current = [];
@@ -152,17 +171,23 @@ export const MarkdownPreviewSearch: React.FC<MarkdownPreviewSearchProps> = ({
       return;
     }
     marksRef.current = applySearch(container, nextQuery);
-    setTotal(marksRef.current.length);
-    setIndex(0);
+    const nextTotal = marksRef.current.length;
+    setTotal(nextTotal);
+    setIndex((current) => {
+      if (!keepIndex || nextTotal === 0) {
+        return 0;
+      }
+      return Math.min(current, nextTotal - 1);
+    });
   }, [containerRef]);
 
-  const scheduleSearch = React.useCallback((nextQuery: string) => {
+  const scheduleSearch = React.useCallback((nextQuery: string, keepIndex = false) => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
     debounceRef.current = setTimeout(() => {
       debounceRef.current = null;
-      runSearch(nextQuery);
+      runSearch(nextQuery, keepIndex);
     }, SEARCH_DEBOUNCE_MS);
   }, [runSearch]);
 
@@ -190,23 +215,25 @@ export const MarkdownPreviewSearch: React.FC<MarkdownPreviewSearchProps> = ({
       return;
     }
     const observer = new MutationObserver((records) => {
-      const fromUs = records.some((record) => {
-        if (record.target instanceof Element && record.target.hasAttribute(MARK_ATTR)) {
-          return true;
-        }
-        return [...record.addedNodes].some((node) => isMarkElement(node));
-      });
-      if (fromUs) {
+      if (!queryRef.current.trim()) {
         return;
       }
-      runSearch(queryRef.current);
+      // Per record, not per batch: the renderer can deliver a genuine mutation
+      // in the same batch as one of ours, and `.some` would swallow it.
+      const rendererTouched = records.some((record) => !isSelfProducedMutation(record));
+      if (!rendererTouched) {
+        return;
+      }
+      // Debounced like typing — a morph batch would otherwise pay a full
+      // TreeWalker plus DOM surgery per mutation batch.
+      scheduleSearch(queryRef.current, true);
     });
     observer.observe(container, { childList: true, subtree: true, characterData: true });
     return () => {
       observer.disconnect();
       clearHighlights(container);
     };
-  }, [containerRef, open, runSearch]);
+  }, [containerRef, open, scheduleSearch]);
 
   // Focus the input when the bar opens, remembering what to restore on close.
   React.useEffect(() => {
@@ -296,7 +323,7 @@ export const MarkdownPreviewSearch: React.FC<MarkdownPreviewSearchProps> = ({
         aria-live="polite"
         aria-label={total > 0
           ? t('filesView.preview.find.countAria', { current: index + 1, total })
-          : undefined}
+          : t('filesView.preview.find.noMatches')}
       >
         {query.trim() && total === 0
           ? t('filesView.preview.find.noMatches')

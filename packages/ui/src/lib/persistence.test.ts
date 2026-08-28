@@ -914,6 +914,41 @@ describe('unload lifecycle flush (#2197)', () => {
     }
   });
 
+  test('sends the unload flush with keepalive so the browser cannot cancel it', async () => {
+    // No runtime settings API: the write has to take the HTTP branch, which is
+    // the one the browser cancels on unload without `keepalive`.
+    registerRuntimeAPIs(null);
+    const inits: RequestInit[] = [];
+    const previousFetch = globalThis.fetch;
+    // SAFETY: the mock receives only the (input, init) pair production code
+    // passes and always resolves to a Response; the assertion supplies the
+    // overload signatures a plain arrow function cannot declare.
+    globalThis.fetch = (async (_input, init) => {
+      inits.push(init ?? {});
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+
+    try {
+      const update = updateDesktopSettings({ gitChangesViewMode: 'flat' });
+      getWindow().dispatchEvent(new Event('pagehide'));
+      await update;
+      await delay(50);
+
+      expect(inits).toHaveLength(1);
+      expect(inits[0].method).toBe('PUT');
+      expect(inits[0].keepalive).toBe(true);
+
+      // The ordinary debounced write stays a plain fetch.
+      inits.length = 0;
+      await updateDesktopSettings({ gitChangesViewMode: 'tree' });
+      await delay(300);
+      expect(inits).toHaveLength(1);
+      expect(inits[0].keepalive).toBe(false);
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  });
+
   test('ignores lifecycle events when no settings write is pending', async () => {
     const saveCalls: Array<Partial<SettingsPayload>> = [];
     registerSettingsSave(async (changes) => {

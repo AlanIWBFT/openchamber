@@ -118,6 +118,12 @@ export type SessionNodeItemProps = {
    */
   menuOpenSessionId: string | null;
   /**
+   * Bumped once a minute by the Recent list so the compact relative
+   * timestamp rendered below recomputes instead of freezing at the value it
+   * had when the row first mounted.
+   */
+  relativeTimeTick?: number;
+  /**
    * Precomputed structural key for this node. Encodes the IDs and child
    * counts of all descendants so a reference-only change to `node` (e.g.
    * a fresh tree rebuild) can be detected with a single string compare
@@ -1381,7 +1387,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                       {alwaysShowActions ? (
                         // Touch runtimes have no hover tooltip, so the compact
                         // date stays inline there.
-                        <span className="ml-2 inline-flex flex-shrink-0 items-center gap-1 text-[0.72rem] text-muted-foreground/75">
+                        <span className="ml-2 inline-flex flex-shrink-0 items-center gap-1 typography-micro text-muted-foreground/75">
                           {showActivityDuration ? (
                             <SessionActivityDuration sessionId={session.id} running={isStreaming} />
                           ) : (
@@ -1410,7 +1416,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                               <SessionActivityDuration
                                 sessionId={session.id}
                                 running={isStreaming}
-                                className="text-[0.72rem]"
+                                className="typography-micro"
                               />
                             ) : (
                               <>
@@ -1430,7 +1436,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                                     them, so the revealed row actions never
                                     overlap it. */}
                                 {renderContext === 'recent' ? (
-                                  <span className="flex-shrink-0 text-[0.72rem] leading-none text-muted-foreground/75 tabular-nums">
+                                  <span className="flex-shrink-0 typography-micro leading-none text-muted-foreground/75 tabular-nums">
                                     {sessionCompactUpdatedLabel}
                                   </span>
                                 ) : null}
@@ -1716,6 +1722,7 @@ const areSessionNodeItemPropsEqual = (prev: SessionNodeItemProps, next: SessionN
   if (prev.normalizedSessionSearchQuery !== next.normalizedSessionSearchQuery) return false;
   if (prev.notifyOnSubtasks !== next.notifyOnSubtasks) return false;
   if (prev.nodeStructureKey !== next.nodeStructureKey) return false;
+  if (prev.relativeTimeTick !== next.relativeTimeTick) return false;
   if (getNodeSessionDirectory(prev.node) !== getNodeSessionDirectory(next.node)) return false;
   if (!isSecondaryMetaEqual(prev.secondaryMeta, next.secondaryMeta)) return false;
 

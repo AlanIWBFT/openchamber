@@ -1,17 +1,18 @@
 /**
  * Minimal notification channel for git status invalidation.
  *
- * A runtime adapter that caches git status (currently only the HTTP adapter in
- * `gitApiHttp.ts`) must call `notifyGitStatusInvalidated` whenever a successful
- * status-affecting mutation invalidates its cache. `useGitStore` subscribes and
- * bumps its per-directory status mutation revision so an immediate refresh
- * cannot join an in-flight status request admitted before the mutation, and a
- * stale response cannot commit over newer authoritative state.
+ * Every successful status-affecting git mutation must call
+ * `notifyGitStatusInvalidated`. `useGitStore` subscribes and bumps its
+ * per-directory status mutation revision so an immediate refresh cannot join an
+ * in-flight status request admitted before the mutation, and a stale response
+ * cannot commit over newer authoritative state.
  *
- * Runtime parity: the VS Code bridge adapter performs no client-side status
- * caching (every `getGitStatus` is a fresh bridge request), so it has no cache
- * to invalidate and does not emit this signal today. Any adapter that adds
- * caching must emit on invalidation.
+ * Runtime parity: this is about the store's in-flight status request, not about
+ * adapter caching, so it applies to every runtime. The HTTP adapter in
+ * `gitApiHttp.ts` emits it where it clears its own cache; runtime adapters (the
+ * VS Code bridge) have no cache of their own, so the dispatch layer in
+ * `gitApi.ts` emits it for them after a successful runtime mutation. Either
+ * path announces a mutation exactly once.
  */
 
 type GitStatusInvalidationListener = (directory: string) => void;

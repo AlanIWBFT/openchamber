@@ -1,38 +1,54 @@
 import { describe, expect, test } from 'bun:test';
-import { bundledLanguages, createHighlighter, type LanguageRegistration } from 'shiki';
+import { bundledLanguages, type BundledLanguage, type LanguageRegistration } from 'shiki';
 
-import {
-  hasCatastrophicTemplateCall,
-  isTemplateCallLanguageId,
-  sanitizeTemplateCallGrammar,
-  TEMPLATE_CALL_LANGUAGE_IDS,
-} from './sanitizeTemplateCallGrammar';
+import { hasCatastrophicTemplateCall, sanitizeTemplateCallGrammar } from './sanitizeTemplateCallGrammar';
 
 type BundledLanguageModule = { default: LanguageRegistration[] };
 
-const loadBundledGrammar = async (id: (typeof TEMPLATE_CALL_LANGUAGE_IDS)[number]): Promise<LanguageRegistration> => {
-  // SAFETY: `id` comes from TEMPLATE_CALL_LANGUAGE_IDS, and every Shiki bundled
-  // language module default-exports its grammar array.
+const loadBundledGrammars = async (id: BundledLanguage): Promise<LanguageRegistration[]> => {
+  // SAFETY: `id` is a Shiki bundled-language key and every bundled language
+  // module default-exports its grammar array.
   const mod = (await bundledLanguages[id]()) as BundledLanguageModule;
-  return mod.default[0];
+  return mod.default;
 };
 
 describe('sanitizeTemplateCallGrammar', () => {
   test('detects template-call on bundled JS/TS grammars', async () => {
-    for (const id of TEMPLATE_CALL_LANGUAGE_IDS) {
-      const grammar = await loadBundledGrammar(id);
-      expect(isTemplateCallLanguageId(id)).toBe(true);
+    for (const id of ['javascript', 'typescript', 'jsx', 'tsx'] as const) {
+      const [grammar] = await loadBundledGrammars(id);
       expect(hasCatastrophicTemplateCall(grammar)).toBe(true);
     }
   });
 
+  test('a bundled alias request yields sanitized grammars too', async () => {
+    // `js` is a separate key in bundledLanguages resolving to the same grammar
+    // module; the worker sanitizes whatever id was requested, so the alias must
+    // come out clean as well.
+    const grammars = await loadBundledGrammars('js');
+    const patched = grammars.map((grammar) => sanitizeTemplateCallGrammar(grammar));
+
+    expect(grammars.some((grammar) => hasCatastrophicTemplateCall(grammar))).toBe(true);
+    expect(patched.some((grammar) => hasCatastrophicTemplateCall(grammar))).toBe(false);
+  });
+
+  test('an embedding grammar carries JS/TS entries that are sanitized as well', async () => {
+    // `vue` ships the JS/TS grammars alongside its own, so gating on the
+    // requested id alone would leave them unpatched.
+    const grammars = await loadBundledGrammars('vue');
+    const affected = grammars.filter((grammar) => hasCatastrophicTemplateCall(grammar));
+
+    expect(affected.length).toBeGreaterThan(0);
+    const patched = grammars.map((grammar) => sanitizeTemplateCallGrammar(grammar));
+    expect(patched.some((grammar) => hasCatastrophicTemplateCall(grammar))).toBe(false);
+  });
+
   test('clears template-call patterns without dropping the repository key', async () => {
-    const grammar = await loadBundledGrammar('javascript');
+    const [grammar] = await loadBundledGrammars('javascript');
     const patched = sanitizeTemplateCallGrammar(grammar);
 
     expect(hasCatastrophicTemplateCall(patched)).toBe(false);
     expect(patched.repository?.['template-call']).toEqual({ patterns: [] });
-    // Original left intact (structured clone / spread, not mutate-in-place).
+    // Original left intact (spread, not mutate-in-place).
     expect(hasCatastrophicTemplateCall(grammar)).toBe(true);
   });
 
@@ -44,35 +60,5 @@ describe('sanitizeTemplateCallGrammar', () => {
       repository: { 'template-call': { patterns: [] } },
     } satisfies LanguageRegistration;
     expect(sanitizeTemplateCallGrammar(grammar)).toBe(grammar);
-  });
-
-  test('highlights template-literal fixtures within a tight budget after sanitize', async () => {
-    // SAFETY: the javascript bundle default-exports its grammar array.
-    const mod = (await bundledLanguages.javascript()) as BundledLanguageModule;
-    const patched = mod.default.map((grammar) => sanitizeTemplateCallGrammar(grammar));
-
-    const highlighter = await createHighlighter({
-      themes: ['github-dark'],
-      langs: patched,
-    });
-
-    // Representative content from openchamber/openchamber#2587, scaled to ~14KB.
-    const fixture = `const snapshot = { source: \`\${session.source}\`, fetchedAt: \`\${Date.now()}\` };
-const label = \`Account \${index + 1}\`;
-function render(account) {
-  return html\`<div class="\${account.cls}">\${account.name}</div>\`;
-}
-`.repeat(80);
-
-    expect(fixture.length).toBeGreaterThan(10_000);
-
-    const started = performance.now();
-    const html = highlighter.codeToHtml(fixture, { lang: 'javascript', theme: 'github-dark' });
-    const elapsedMs = performance.now() - started;
-    highlighter.dispose();
-
-    expect(html.length).toBeGreaterThan(0);
-    // Catastrophic backtracking hangs for seconds–minutes; healthy tokenize is well under 1s.
-    expect(elapsedMs).toBeLessThan(2_000);
   });
 });

@@ -1111,6 +1111,32 @@ describe('checkoutBranch', () => {
     const { repository } = createRepositoryWithRemote();
     await expect(checkoutBranch(repository, 'does-not-exist')).rejects.toThrow();
   });
+
+  it('fetches a remote-only branch that was never fetched locally (#2735)', async () => {
+    const { repository, remote } = createRepositoryWithRemote({ defaultBranch: 'react' });
+    // A collaborator pushes straight to the remote; this repository never
+    // fetches, so `remotes/origin/collab` is listed (#2098) with no local ref.
+    const collaborator = createTempDir();
+    runGit(collaborator, ['clone', remote, '.']);
+    runGit(collaborator, ['config', 'user.email', 'test@example.com']);
+    runGit(collaborator, ['config', 'user.name', 'Test']);
+    runGit(collaborator, ['checkout', '-b', 'collab']);
+    runGit(collaborator, ['push', 'origin', 'collab']);
+
+    const result = await checkoutBranch(repository, 'remotes/origin/collab');
+
+    expect(result).toEqual({ success: true, branch: 'collab' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('collab');
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'collab@{upstream}']).trim()).toBe('origin/collab');
+  });
+
+  it('reports a clear failure when the remote branch no longer exists', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+
+    await expect(checkoutBranch(repository, 'remotes/origin/never-pushed')).rejects.toThrow(
+      /Failed to fetch never-pushed from origin/
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1484,6 +1510,14 @@ describe.runIf(canRunGit())('getRangeDiff', () => {
     const diff = await getRangeDiff(repository, { base: 'react', head: 'next' });
 
     expect(diff).toContain('feature.txt');
+  });
+
+  it('names an unfetched remote-only ref instead of failing with git\'s ambiguous argument (#2735)', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+
+    await expect(
+      getRangeDiff(repository, { base: 'remotes/origin/never-fetched', head: 'next' })
+    ).rejects.toThrow(/is not available locally/);
   });
 });
 

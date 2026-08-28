@@ -3,7 +3,8 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 /**
  * Integration-style coverage for #2359: store modules evaluate before
  * RuntimeAPIs registration, with only extension-host __VSCODE_CONFIG__ present
- * and a stale lastDirectory in storage.
+ * and a stale lastDirectory in storage. The directory store must settle on the
+ * VS Code workspace folder rather than the stale persisted directory.
  */
 
 const WORKSPACE = '/tmp/oc-ws-project-a';
@@ -14,25 +15,62 @@ const storage = new Map<string, string>([
   ['homeDirectory', STALE],
 ]);
 
+interface TestWindow {
+  __VSCODE_CONFIG__?: { workspaceFolder: string; workspaceFolders: { name: string; path: string }[] };
+  __OPENCHAMBER_HOME__?: string;
+  localStorage: Storage;
+  matchMedia: () => { matches: boolean };
+  addEventListener: () => void;
+  removeEventListener: () => void;
+}
+
+const testLocalStorage = {
+  getItem: (key: string) => storage.get(key) ?? null,
+  setItem: (key: string, value: string) => {
+    storage.set(key, String(value));
+  },
+  removeItem: (key: string) => {
+    storage.delete(key);
+  },
+  clear: () => {
+    storage.clear();
+  },
+  key: () => null,
+  length: 0,
+} satisfies Storage;
+
+/**
+ * bun test runs without a DOM, so `globalThis` has neither `window` nor
+ * `localStorage` to assign through, and these store modules read both at module
+ * evaluation time. Defining the properties directly installs a stub carrying
+ * exactly the members they touch, without asserting it is a real `Window`.
+ */
+const setTestWindow = (value: TestWindow | undefined): void => {
+  if (value === undefined) {
+    Reflect.deleteProperty(globalThis, 'window');
+    Reflect.deleteProperty(globalThis, 'localStorage');
+    return;
+  }
+  Object.defineProperty(globalThis, 'window', { value, configurable: true, writable: true });
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: value.localStorage,
+    configurable: true,
+    writable: true,
+  });
+};
+
 const installWindow = () => {
-  (globalThis as { window: unknown }).window = {
+  setTestWindow({
     __VSCODE_CONFIG__: {
       workspaceFolder: WORKSPACE,
       workspaceFolders: [{ name: 'oc-ws-project-a', path: WORKSPACE }],
     },
     __OPENCHAMBER_HOME__: WORKSPACE,
-    localStorage: {
-      getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => {
-        storage.set(key, String(value));
-      },
-      removeItem: (key: string) => {
-        storage.delete(key);
-      },
-    },
-    matchMedia: () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }),
-  };
-  (globalThis as { localStorage: unknown }).localStorage = (globalThis as { window: { localStorage: unknown } }).window.localStorage;
+    localStorage: testLocalStorage,
+    matchMedia: () => ({ matches: false }),
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  });
 };
 
 mock.module('@/contexts/runtimeAPIRegistry', () => ({
@@ -60,27 +98,23 @@ mock.module('@/lib/runtime-switch', () => ({
 
 mock.module('@/stores/useFileSearchStore', () => ({
   useFileSearchStore: {
-    getState: () => ({ clearCache: () => undefined }),
+    getState: () => ({ clearCache: () => undefined, invalidateDirectory: () => undefined }),
   },
 }));
 
 describe('VS Code store init before RuntimeAPIs (#2359)', () => {
   afterEach(() => {
-    delete (globalThis as { window?: unknown }).window;
-    delete (globalThis as { localStorage?: unknown }).localStorage;
+    setTestWindow(undefined);
   });
 
-  test('desktop isVSCodeRuntime prefers bootstrap config', async () => {
+  test('directory store starts on the workspace folder, not the stale persisted directory', async () => {
     installWindow();
-    const { isVSCodeRuntime } = await import('@/lib/desktop');
-    expect(isVSCodeRuntime()).toBe(true);
-  });
+    const { useDirectoryStore } = await import('@/stores/useDirectoryStore');
+    const state = useDirectoryStore.getState();
 
-  test('projects helper derives workspace projects without RuntimeAPIs', async () => {
-    installWindow();
-    const { getVSCodeBootstrapConfig, isVSCodeRuntime } = await import('@/stores/utils/vscodeRuntime');
-    const config = getVSCodeBootstrapConfig();
-    expect(isVSCodeRuntime(null, config)).toBe(true);
-    expect(config?.workspaceFolder).toBe(WORKSPACE);
+    expect(state.currentDirectory).toBe(WORKSPACE);
+    expect(state.homeDirectory).toBe(WORKSPACE);
+    expect(state.directoryHistory).toEqual([WORKSPACE]);
+    expect(state.currentDirectory).not.toBe(STALE);
   });
 });

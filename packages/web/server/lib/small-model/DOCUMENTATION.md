@@ -147,7 +147,10 @@ other runtime API.
   resolution stays authoritative. Wired into `getManagedOpenCodeEnv` in
   `server/index.js`; the pure helper is unit-tested in
   `config-injection.test.js`. External OpenCode servers are unaffected (they
-  are not launched with this env).
+  are not launched with this env). The injected `small_model` is baked into
+  `OPENCODE_CONFIG_CONTENT` when the managed process spawns, so changing the
+  override in Settings applies on the next managed OpenCode restart, not to
+  the process already running.
 
 ## Which providers the pickers may offer
 

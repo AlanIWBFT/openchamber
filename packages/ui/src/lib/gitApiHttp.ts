@@ -74,6 +74,10 @@ const invalidateGitStatusCache = (directory: string): void => {
 // before invalidating so a failed mutation (non-ok response handled by the
 // caller, or a malformed body) cannot publish a false state change.
 const completeStatusMutation = async <T>(directory: string, response: Response): Promise<T> => {
+  // SAFETY: every caller rejects non-ok responses before reaching here, and on
+  // success each git route returns the body declared by that route's return
+  // type in `./api/types`. The assertion names that per-route contract; there is
+  // no narrower type available at this shared success path.
   const result = await response.json() as T;
   invalidateGitStatusCache(directory);
   return result;

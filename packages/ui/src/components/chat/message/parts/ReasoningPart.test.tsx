@@ -1,11 +1,66 @@
-import React from 'react';
+import React, { act } from 'react';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { createRoot } from 'react-dom/client';
+import { Window } from 'happy-dom';
 import type { Part } from '@opencode-ai/sdk/v2';
 
 import { I18nProvider } from '@/lib/i18n';
 import ReasoningPart, { ReasoningTimelineBlock } from './ReasoningPart';
 import type { StreamPhase } from '../types';
+
+type ReasoningPartFixture = Extract<Part, { type: 'reasoning' }>;
+
+/**
+ * Mounts a real client root against a happy-dom document so mount/unmount
+ * lifecycle is observable. bun test shares globalThis across a file, so the
+ * globals React DOM reads are defined here and restored afterwards; defining
+ * them directly avoids asserting that happy-dom's objects are the platform
+ * `Window`/`Document`.
+ */
+const DOM_GLOBAL_NAMES = [
+  'window',
+  'document',
+  'navigator',
+  'Node',
+  'Element',
+  'HTMLElement',
+  'IS_REACT_ACT_ENVIRONMENT',
+] as const;
+
+const installDomStub = () => {
+  const happyWindow = new Window({ url: 'http://localhost' });
+  const previous = DOM_GLOBAL_NAMES.map(
+    (name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const,
+  );
+  const values = {
+    window: happyWindow,
+    document: happyWindow.document,
+    navigator: happyWindow.navigator,
+    Node: happyWindow.Node,
+    Element: happyWindow.Element,
+    HTMLElement: happyWindow.HTMLElement,
+    IS_REACT_ACT_ENVIRONMENT: true,
+  };
+  for (const name of DOM_GLOBAL_NAMES) {
+    Object.defineProperty(globalThis, name, { value: values[name], configurable: true, writable: true });
+  }
+
+  // Read back through the global bindings just installed, so the container is
+  // typed as the DOM element React expects rather than happy-dom's own class.
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+
+  return {
+    container,
+    restore: () => {
+      for (const [name, descriptor] of previous) {
+        if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+        else Reflect.deleteProperty(globalThis, name);
+      }
+    },
+  };
+};
 
 // A reasoning text whose summary (first 120 chars) fits in the header but
 // whose expanded body content should only appear when the disclosure is open.
@@ -126,20 +181,22 @@ describe('ReasoningPart streaming gating (issue #2020)', () => {
 
   const BUSY_INDICATOR = 'animate-busy-pulse';
 
-  const makeReasoningPart = (time?: { start?: number; end?: number }): Part =>
-    ({
-      id: 'prt_reasoning_2020',
-      sessionID: 'ses_2020',
-      messageID: 'msg_2020',
-      type: 'reasoning',
-      text: SHORT_REASONING,
-      time,
-    }) as unknown as Part;
+  const makeReasoningPart = (
+    time: ReasoningPartFixture['time'],
+    text: string = SHORT_REASONING,
+  ): ReasoningPartFixture => ({
+    id: 'prt_reasoning_2020',
+    sessionID: 'ses_2020',
+    messageID: 'msg_2020',
+    type: 'reasoning',
+    text,
+    time,
+  });
 
   // Server rendering reads the UI store's initial state, which is
   // chatRenderMode 'live' — the mode in which the streaming presentation is
   // reachable and the issue reproduces.
-  const renderPart = (part: Part, streamPhase?: StreamPhase): string =>
+  const renderPart = (part: ReasoningPartFixture, streamPhase?: StreamPhase): string =>
     renderToStaticMarkup(
       <I18nProvider>
         <ReasoningPart part={part} messageId="msg_2020" streamPhase={streamPhase} />
@@ -182,13 +239,60 @@ describe('ReasoningPart streaming gating (issue #2020)', () => {
     expect(markup).toContain('aria-expanded="true"');
   });
 
-  test('remounting a completed reasoning part does not re-trigger the streaming presentation', () => {
-    const part = makeReasoningPart({ start: 1_000 });
-    const first = renderPart(part, undefined);
-    const second = renderPart(part, undefined);
+  test('a live part with no committed text yet shows the busy header and no empty summary', () => {
+    // The streaming early-return keeps the block mounted before the block-level
+    // reveal commits a first line. The header must read as busy and must not
+    // paint an empty summary row.
+    const markup = renderPart(makeReasoningPart({ start: 1_000 }, ''), 'streaming');
+    const withText = renderPart(makeReasoningPart({ start: 1_000 }), undefined);
 
-    expect(second).toBe(first);
-    expect(second).not.toContain(BUSY_INDICATOR);
-    expect(second).toContain(SHORT_REASONING);
+    expect(markup).toContain(BUSY_INDICATOR);
+    expect(markup).toContain('role="button"');
+    // The summary span carries `title="<summary>"`; with no text there must be
+    // no summary span at all rather than an empty one.
+    expect(withText).toContain('title="');
+    expect(markup).not.toContain('title="');
+  });
+
+  test('remounting a completed reasoning part does not re-trigger the streaming presentation', async () => {
+    // renderToStaticMarkup cannot observe this: it has no mount lifecycle, so
+    // comparing two server renders is true by construction. Mount, unmount and
+    // remount a real client root instead, watching the busy indicator across
+    // every commit.
+    const dom = installDomStub();
+    const part = makeReasoningPart({ start: 1_000 });
+    const busySeen: boolean[] = [];
+    const root = createRoot(dom.container);
+
+    const renderTree = () =>
+      React.createElement(
+        I18nProvider,
+        null,
+        React.createElement(ReasoningPart, { part, messageId: 'msg_2020', streamPhase: undefined }),
+      );
+
+    try {
+      await act(async () => {
+        root.render(renderTree());
+      });
+      busySeen.push(dom.container.innerHTML.includes(BUSY_INDICATOR));
+      expect(dom.container.textContent).toContain(SHORT_REASONING);
+
+      await act(async () => {
+        root.render(null);
+      });
+      await act(async () => {
+        root.render(renderTree());
+      });
+      busySeen.push(dom.container.innerHTML.includes(BUSY_INDICATOR));
+
+      expect(busySeen).toEqual([false, false]);
+      expect(dom.container.textContent).toContain(SHORT_REASONING);
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      dom.restore();
+    }
   });
 });

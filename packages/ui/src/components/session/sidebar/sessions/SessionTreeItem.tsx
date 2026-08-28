@@ -178,6 +178,7 @@ export function SessionTreeItem({
       subtreeContainsEditing={renderExtras?.subtreeContainsEditing ?? EMPTY_SUBTREE_CONTAINS_EDITING}
       menuOpenSessionId={renderExtras?.menuOpenSessionId ?? null}
       nodeStructureKey={renderExtras?.nodeStructureKey ?? ''}
+      relativeTimeTick={renderExtras?.relativeTimeTick}
     >
       {node.children.map((child) => (
         <SessionTreeItem

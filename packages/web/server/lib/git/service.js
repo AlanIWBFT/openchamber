@@ -2599,6 +2599,25 @@ export async function getUntrackedDiffs(directory, filePaths = [], { concurrency
   return results;
 }
 
+const refResolvesToCommit = async (git, ref) => git
+  .raw(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])
+  .then((value) => Boolean(String(value || '').trim()))
+  .catch(() => false);
+
+/**
+ * The branch list includes remote-only branches that `ls-remote` reported but
+ * the repository never fetched (#2098), so a comparison can name a ref that does
+ * not exist locally. Say that plainly instead of letting git's "ambiguous
+ * argument" surface as an opaque failure.
+ */
+async function assertRangeRefsResolve(git, refs) {
+  for (const ref of refs) {
+    if (!(await refResolvesToCommit(git, ref))) {
+      throw new Error(`Ref "${ref}" is not available locally. Fetch it before comparing.`);
+    }
+  }
+}
+
 export async function getRangeDiff(directory, { base, head, path: filePath, contextLines = 3 } = {}) {
   const { directoryPath, directoryGit, repoRoot, git } = await createRepositoryGitContext(directory);
   const baseRef = typeof base === 'string' ? base.trim() : '';
@@ -2640,6 +2659,8 @@ export async function getRangeDiff(directory, { base, head, path: filePath, cont
       }
     }
   }
+
+  await assertRangeRefsResolve(git, [resolvedBase, headRef]);
 
   const args = ['diff', '--no-color'];
   if (typeof contextLines === 'number' && !Number.isNaN(contextLines)) {
@@ -2740,6 +2761,8 @@ export async function getRangeFiles(directory, { base, head } = {}) {
   } catch {
     // ignore
   }
+
+  await assertRangeRefsResolve(git, [resolvedBase, headRef]);
 
   // `-C` (copy detection among changed files only, so cheap) makes copies
   // surface as C entries instead of plain additions; rename detection is on
@@ -3824,10 +3847,6 @@ const resolveBranchCheckoutTarget = async (git, branchName) => {
   }
 
   const remoteRef = requested.replace(/^remotes\//, '');
-  if (!(await gitRefExists(git, `refs/remotes/${remoteRef}`))) {
-    return asRequested;
-  }
-
   const remotes = await git.getRemotes();
   const remote = remotes.find((entry) => entry?.name && remoteRef.startsWith(`${entry.name}/`));
   if (!remote) {
@@ -3838,6 +3857,22 @@ const resolveBranchCheckoutTarget = async (git, branchName) => {
   // `origin/HEAD` names no branch of its own; it is a pointer to one.
   if (!localBranch || localBranch === 'HEAD') {
     return asRequested;
+  }
+
+  // The branch list also carries branches that only `ls-remote` knows about
+  // (#2098): they exist on the remote but were never fetched, so there is no
+  // remote-tracking ref and a literal checkout fails with a pathspec error.
+  // Fetch the single branch first so the tracking ref exists, then fall through
+  // to the normal create-with-tracking path.
+  if (!(await gitRefExists(git, `refs/remotes/${remoteRef}`))) {
+    try {
+      await git.fetch(remote.name, localBranch);
+    } catch (error) {
+      throw new Error(`Failed to fetch ${localBranch} from ${remote.name}: ${error?.message || error}`);
+    }
+    if (!(await gitRefExists(git, `refs/remotes/${remoteRef}`))) {
+      throw new Error(`Branch ${localBranch} no longer exists on remote ${remote.name}`);
+    }
   }
 
   const localExists = await gitRefExists(git, `refs/heads/${localBranch}`);

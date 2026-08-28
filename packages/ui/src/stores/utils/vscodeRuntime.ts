@@ -5,9 +5,6 @@ import {
   type VSCodeBootstrapConfig,
 } from '@/lib/vscodeBootstrap';
 
-export type { VSCodeBootstrapConfig };
-export { getVSCodeBootstrapConfig };
-
 export const isVSCodeRuntime = (
   runtimeApis: RuntimeAPIs | null,
   bootstrapConfig: VSCodeBootstrapConfig | null = getVSCodeBootstrapConfig(),
