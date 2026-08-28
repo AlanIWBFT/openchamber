@@ -4,15 +4,55 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Work status: the session cost now counts what its subagents spent, with a line under the context meter splitting the session's own cost from the subagents' share, and each subagent's cost shown next to it in the Subagents list. Previously a session that delegated most of its work looked far cheaper than it was.
-- Git/Worktrees: session menus can now move an idle session and its sub-sessions into an existing worktree, and opening the target list discovers worktrees created outside OpenChamber without a restart (thanks to @mattv8).
-- Files: opening a file over 5,000 lines is no longer blocked — the line-count guard now allows up to 20,000 lines, letting large files reach the virtualized full-file preview instead of being rejected at the open step (thanks @gaojunran).
+- **Turkish interface:** OpenChamber can now be used in Turkish (thanks to @fitzgpt).
+- **Git/Worktrees:** session menus can now move an idle session and its sub-sessions into an existing worktree. OpenChamber discovers worktrees created elsewhere when the target list opens, asks before transferring uncommitted changes, and keeps those changes safe if a move fails partway (thanks to @mattv8).
+- **`/btw` side questions:** a btw session now answers the side question instead of carrying on with the parent's plan, and forks at the last completed turn so a reply that is still streaming is never inherited (thanks to @pocharlies).
+- Mobile: Chats — sessions that belong to no project — now appear in the sessions sheet above the project list, with the same swipe actions and search as project sessions. Previously they could be created on mobile but never found again.
+- Chat: with "Follow new content while streaming" turned off, sending a message while scrolled up in the conversation now leaves the view where it is instead of jumping to the new message. Sending from the bottom still parks the message as before.
+- Chat: pressing PageUp/PageDown in the prompt box, or moving the caret through a long prompt, no longer shifts the whole window up and hides the title bar.
+- Work status: the session cost now counts what its subagents spent, with a line under the context meter splitting the session's own cost from the subagents' share, and each subagent's cost shown next to it in the Subagents list. Previously a session that delegated most of its work looked far cheaper than it was (thanks to @igorvelho).
+- Chat: undoing or redoing a parent session now keeps its subagent sessions at the same point in history instead of leaving their later work behind (thanks to @alexandrereyes).
+- Chat: pending permission and question cards come back after a page reload or when a second client opens the session late, instead of the session hanging on a tool that is waiting for an answer nobody can see (thanks to @yangyaofei).
+- Chat: dismissing the agent's questions without answering and sending a new task no longer leaves the session looking frozen on the dismissed question (thanks to @bashrusakh).
 - Usage: GitHub Copilot now shows a single AI Credits window, matching Copilot's token-based quota, in place of the old Chat Requests and Completions windows (thanks to @jakoss).
-- Updates: "Update OpenCode" no longer fails with a bare "Bad Request". OpenChamber now names the release to install, which recent OpenCode versions require, and when an update is refused the reason from OpenCode is shown instead of the HTTP status. This affects setups where OpenChamber runs an OpenCode you installed yourself; the desktop app bundles OpenCode and never offered the button.
-- Chat: a saved draft or recalled message containing Windows line endings no longer replaces the chat with a "Selection points outside of document" error — text like this reached the input from reverted messages, message history and plugin output, and once it was saved as a draft the error came back on every visit to that session.
+- Updates: "Update OpenCode" no longer fails with a bare "Bad Request". OpenChamber now names the release to install, which recent OpenCode versions require, and when an update is refused the reason from OpenCode is shown instead of the HTTP status. This affects setups where OpenChamber runs an OpenCode you installed yourself; the desktop app bundles OpenCode and never offered the button (thanks to @yulia-ivashko).
+- Chat: a saved draft or recalled message containing Windows line endings no longer replaces the chat with a "Selection points outside of document" error — text like this reached the input from reverted messages, message history and plugin output, and once it was saved as a draft the error came back on every visit to that session (thanks to @yulia-ivashko).
+- Desktop: a crashed renderer window now recovers automatically, while repeated crashes stop with a visible failure page instead of entering a reload loop (thanks to @wqpan).
+- Desktop: "Restart to Update" no longer looks dead when the update cannot be installed. The update window now shows the reason, including when the running copy was not installed from an official signed release, and the button stays available to retry (thanks to @yulia-ivashko).
+- Chat: very large tool results are capped before rendering instead of exhausting the renderer's memory and crashing the app (thanks to @JSap0914).
+- Multi-Run: groups can now contain more than five models, including isolated runs that create one worktree per model (thanks to @tomzx).
+- Files: opening a file over 5,000 lines is no longer blocked. The line-count guard now allows up to 20,000 lines, so large files reach the virtualized full-file preview instead of being rejected at the open step (thanks to @gaojunran).
+- Chat: copying a message now preserves the spacing between Markdown paragraphs, lists, and fenced code blocks in plain text, Markdown, and rich clipboard content (thanks to @ChangeHow).
+- Chat: question prompts now render Markdown, including links, code, and lists (thanks to @pascalandr).
+- Chat: tool cards with a file path now show a quick-open button in the header (thanks to @robertoberto).
+- Chat: sending without a selected provider or model now explains what is missing instead of silently doing nothing (thanks to @rvaldemar).
+- Chat: `/init` remains available in slash-command autocomplete after a conversation has started (thanks to @Dawnfz-Lenfeng).
+- Chat: a diff that arrives with a truncated header no longer crashes the tool card (thanks to @pascalandr).
+- Composer: typing three backticks now leaves the caret inside the completed code fence, empty inputs keep a visible caret, and platform autocorrect behavior is preserved (thanks to @franzudev, @TTTPOB, and @IbrahimKhan12).
+- Chat: bare links next to Chinese, Japanese, or full-width punctuation no longer absorb that punctuation into the URL (thanks to @gaojunran).
+- Chat: inline code and chips have readable contrast across light, dark, and high-contrast themes (thanks to @difagume).
+- Plans: saved plans open with their content again for chats, worktrees outside the project path, and plan tabs restored after a reload, instead of an empty editor; closing or switching right after an edit no longer loses it.
+- Browser: when the agent captures a page while the browser panel is hidden, the panel is revealed first instead of the capture failing.
+- Settings: the editor font-size setting now survives a restart (thanks to @pascalandr).
+- Settings/Skills: Windows paths are now classified correctly, so disabled external skills are hidden and duplicate `.agents` and `.claude` skills are removed as intended (thanks to @Ttungx).
+- Settings/GitHub: refreshing account state no longer briefly unmounts the settings page and interrupts disconnect actions (thanks to @floze-the-genius).
 - Settings: fixed the Cloudflare Tunnel download link shown when cloudflared is not installed (thanks to @AyoubAchour).
-- Git: picking a remote branch such as `origin/main` in the branch selector now switches you to that branch instead of leaving the repository on a detached `HEAD` with no branch name.
-- Desktop: "Restart to Update" no longer looks dead when the update cannot be installed — the update window now shows the reason, including when the running copy was not installed from an official signed release, and the button stays available to retry.
+- Providers: small-model tasks now use a configured Anthropic endpoint correctly, without duplicating `/v1`, and Google models without reasoning support no longer receive an unsupported thinking option (thanks to @mpeter and @IngTian).
+- Projects: the folder picker can enter a directory that is already a project, so it can be selected as the starting point for browsing elsewhere (thanks to @weixiang1862).
+- Projects: sending, forking, and image attachments now work in projects whose path contains non-ASCII characters, such as `Masaüstü` (thanks to @fitzgpt).
+- Git: the Branch diff scope no longer shows an empty or wrong comparison for branches created with `git switch -c` or `git checkout -b` from the current branch (thanks to @gaojunran).
+- Git: picking a remote branch such as `origin/main` in the branch selector now switches you to that branch instead of leaving the repository on a detached `HEAD` with no branch name (thanks to @yulia-ivashko).
+- Git: branch search now hides non-matching branches instead of leaving unrelated results visible (thanks to @bashrusakh).
+- Themes: custom themes loaded through symlinks now work (thanks to @divyam234).
+- Mobile/Android: connections can now trust user-installed certificate authorities, for example certificates from a local proxy or private network (thanks to @Silvenga).
+- Mobile: opening an agent that is already open now switches to its editor instead of creating a duplicate editor (thanks to @bashrusakh).
+- Web/PWA: notification clicks focus an existing OpenChamber window, and the installed app uses the shorter "OpenChamber" name (thanks to @bketelsen and @greghaynes).
+- Windows: managed OpenCode restarts now clean up orphaned listeners and process trees, closing the app no longer leaves OpenCode running, and scheduled startup no longer fails when its command exceeds Windows Task Scheduler's length limit (thanks to @sergiofspedro, @a0000001, and @HAHH9527).
+- Server: an `OPENCODE_BINARY` set in the environment is no longer discarded when `settings.json` clears its own override, which made the managed OpenCode fail to start (thanks to @bashrusakh).
+- Server: when OpenCode is reached through `OPENCODE_HOST`, recovery after a lost connection keeps the configured host and port instead of falling back to the defaults (thanks to @colinmollenhour).
+- CLI: `openchamber connect-url` no longer risks tearing `settings.json` while the desktop app is running, which could regenerate the relay identity and unpair every device (thanks to @shijie152).
+- Debug: the debug panel (Ctrl/Cmd+Shift+D) has a Requests tab showing in-flight requests and their age over the last five minutes (thanks to @tomzx).
+- Reliability: switching sessions quickly no longer saves the wrong scroll position for the session you left (thanks to @herjarsa); the log no longer fills with worktree warnings for folders that are not Git repositories (thanks to @herjarsa); and the startup cleanup of leftover processes no longer blocks the server on Windows (thanks to @bashrusakh).
 
 ## [1.21.0] - 2026-08-26
 
@@ -34,7 +74,6 @@ All notable changes to this project will be documented in this file.
 - Search: every searchable picker uses one matcher now — best matches first, multi-word queries in any order, punctuation ignored ("gpt4o" finds "gpt-4o"). Ctrl/Cmd+P matches whole file paths.
 - Chat: @ file mentions rank files and directories together by match quality, and long paths keep the folder next to the file name visible.
 - Chat: a "Follow new content while streaming" checkbox (Settings → Chat → Streaming, on by default) turns automatic following off entirely; with it off, the scroll-to-bottom pill now appears as soon as the reply grows past the visible area.
-- Chat: undoing or redoing a parent session now keeps its subagent sessions at the same point in history instead of leaving their later work behind (thanks to @alexandrereyes).
 - Command palette: rarely used commands (pin session, copy session ID, multi-run launcher, archived sessions, notes, todos, status, theme) are found by typing but stay off the first screen.
 - Mobile: narrowing a browser window past phone size switches into the mobile layout (and back when widened); the old/new mobile layout setting is gone.
 - Browser: an agent opening a page with the browser tool no longer pops the browser panel open (or switches the surface you're on) — the page loads in the background and the rail is where you peek at it.

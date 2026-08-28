@@ -1,9 +1,32 @@
 ## [Unreleased]
 
+- **Turkish interface:** OpenChamber can now be used in Turkish (thanks to @fitzgpt).
+- **`/btw` side questions:** a btw session now answers the side question instead of carrying on with the parent's plan, and forks at the last completed turn so a reply that is still streaming is never inherited (thanks to @pocharlies).
+- The context usage readout now reports the session cost including everything its subagents spent, matching the work status panel instead of showing a lower figure (thanks to @igorvelho).
+- Chat: undoing or redoing a parent session now keeps its subagent sessions at the same point in history instead of leaving their later work behind (thanks to @alexandrereyes).
+- Chat: pending permission and question cards come back after the webview reloads or when the session is opened late, instead of the session hanging on a tool that is waiting for an answer nobody can see (thanks to @yangyaofei).
+- Chat: dismissing the agent's questions without answering and sending a new task no longer leaves the session looking frozen on the dismissed question (thanks to @bashrusakh).
+- Chat: with "Follow new content while streaming" turned off, sending a message while scrolled up now leaves the view where it is instead of jumping to the new message.
+- Chat: pressing PageUp/PageDown in the prompt box, or moving the caret through a long prompt, no longer shifts the whole panel up and hides its top edge.
 - GitHub Copilot usage now shows a single AI Credits window, matching Copilot's token-based quota, in place of the old Chat Requests and Completions windows (thanks to @jakoss).
-- The context usage readout now reports the session cost including everything its subagents spent, matching the work status panel instead of showing a lower figure.
-- Updating OpenCode no longer fails with a bare "Bad Request": the extension names the release to install, which recent OpenCode versions require, and shows OpenCode's own reason when an update is refused.
-- A saved draft or recalled message containing Windows line endings no longer replaces the chat with a "Selection points outside of document" error, and no longer brings the error back every time you reopen that session.
+- Updating OpenCode no longer fails with a bare "Bad Request": the extension names the release to install, which recent OpenCode versions require, and shows OpenCode's own reason when an update is refused (thanks to @yulia-ivashko).
+- A saved draft or recalled message containing Windows line endings no longer replaces the chat with a "Selection points outside of document" error, and no longer brings the error back every time you reopen that session (thanks to @yulia-ivashko).
+- "Add Project" now adds the chosen folder to the workspace instead of failing with "Failed to add project" (thanks to @bashrusakh).
+- Multi-Run groups can now contain more than five models (thanks to @tomzx).
+- Chat: very large tool results are capped before rendering instead of exhausting the webview's memory and crashing it (thanks to @JSap0914).
+- Chat: copying a message now preserves the spacing between Markdown paragraphs, lists, and fenced code blocks in plain text, Markdown, and rich clipboard content (thanks to @ChangeHow).
+- Chat: question prompts now render Markdown, including links, code, and lists (thanks to @pascalandr).
+- Chat: tool cards with a file path now show a quick-open button in the header that opens the file in the editor (thanks to @robertoberto).
+- Chat: sending without a selected provider or model now explains what is missing instead of silently doing nothing (thanks to @rvaldemar).
+- Chat: `/init` remains available in slash-command autocomplete after a conversation has started (thanks to @Dawnfz-Lenfeng).
+- Chat: a diff that arrives with a truncated header no longer crashes the tool card (thanks to @pascalandr).
+- Composer: typing three backticks now leaves the caret inside the completed code fence, empty inputs keep a visible caret, and platform autocorrect behavior is preserved (thanks to @franzudev, @TTTPOB, and @IbrahimKhan12).
+- Chat: bare links next to Chinese, Japanese, or full-width punctuation no longer absorb that punctuation into the URL (thanks to @gaojunran).
+- Chat: inline code, chips, and model-picker highlights remain readable in high-contrast themes (thanks to @difagume and @bashrusakh).
+- Settings/Skills: Windows paths are now classified correctly, so disabled external skills are hidden and duplicate `.agents` and `.claude` skills are removed as intended (thanks to @Ttungx).
+- Worktrees: branch search now hides non-matching branches instead of leaving unrelated results visible (thanks to @bashrusakh).
+- Windows: closing VS Code now stops the managed OpenCode process instead of leaving it running (thanks to @a0000001).
+- The extension now reuses its OpenCode output channel across managed-server restarts instead of creating duplicate channels (thanks to @TTTPOB).
 
 ## [1.21.0] - 2026-08-26
 
