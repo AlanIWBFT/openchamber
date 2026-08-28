@@ -60,6 +60,15 @@ copy.
 exactly what gets sent, so nothing downstream serializes a rich document model
 back into a prompt.
 
+The document is not, however, the string it was given: CodeMirror normalizes
+line endings, so a `\r\n` pair becomes one break and the document ends up
+shorter than the inserted string. **Never derive a caret position from the
+length of text you are inserting** — a caret past the end makes `dispatch`
+throw, the transaction never applies, and the un-normalized text stays in React
+state to crash again on the next restore. Every edit that moves the caret goes
+through `replaceWithCaret` (`editor/documentEdits.ts`), which measures the
+change instead of the string.
+
 The composer previously painted a transparent `<textarea>` over a mirror
 `<div>`. That restricted highlighting to styles which do not change glyph
 advance width — colour, background, underline — because anything else made the

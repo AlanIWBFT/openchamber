@@ -4,6 +4,7 @@
 - GitHub Copilot usage now shows a single AI Credits window, matching Copilot's token-based quota, in place of the old Chat Requests and Completions windows (thanks to @jakoss).
 - The context usage readout now reports the session cost including everything its subagents spent, matching the work status panel instead of showing a lower figure.
 - Updating OpenCode no longer fails with a bare "Bad Request": the extension names the release to install, which recent OpenCode versions require, and shows OpenCode's own reason when an update is refused.
+- A saved draft or recalled message containing Windows line endings no longer replaces the chat with a "Selection points outside of document" error, and no longer brings the error back every time you reopen that session.
 
 ## [1.21.0] - 2026-08-26
 
