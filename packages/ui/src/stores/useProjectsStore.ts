@@ -49,12 +49,8 @@ interface ProjectsStore {
   activeProjectId: string | null;
   manualProjectOrder: string[];
 
-<<<<<<< HEAD
   addProject: (path: string, options?: { label?: string; id?: string }) => Promise<ProjectEntry | null>;
-=======
-  addProject: (path: string, options?: { label?: string; id?: string }) => ProjectEntry | null;
   addProjects: (paths: string[]) => ProjectEntry[];
->>>>>>> e7506d349 (feat(projects): support adding multiple projects at once in the directory picker)
   removeProject: (id: string) => void;
   setActiveProject: (id: string) => void;
   setActiveProjectIdOnly: (id: string) => void;
