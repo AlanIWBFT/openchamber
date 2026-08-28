@@ -1,11 +1,13 @@
 ---
 name: changelog-authoring
-description: Use when drafting or updating user-facing CHANGELOG.md entries for the OpenChamber `[Unreleased]` section, including the VS Code extension changelog, summarizing changes since the latest git tag.
+description: Use only when the maintainer explicitly asks to update the changelog — then draft the OpenChamber `[Unreleased]` entries (main app and VS Code extension) summarizing changes since the latest git tag.
 license: MIT
 compatibility: opencode
 ---
 
 ## Overview
+
+**Gate: an explicit maintainer request.** The changelog is written once per release, by the maintainer, as a single story. Both `CHANGELOG.md` files stay untouched by fixes, features, PR merges, de-slop follow-ups, and every other task — a change lands without a changelog line, and the maintainer folds it in later. Proceed past this point only when the current message asks to update the changelog; otherwise stop and leave both files as they are.
 
 Draft user-facing bullet points for the `## [Unreleased]` section that summarize changes since the latest git tag up to `HEAD`.
 
