@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Files: opening a file over 5,000 lines is no longer blocked — the line-count guard now allows up to 20,000 lines, letting large files reach the virtualized full-file preview instead of being rejected at the open step (thanks @gaojunran).
 - Usage: GitHub Copilot now shows a single AI Credits window, matching Copilot's token-based quota, in place of the old Chat Requests and Completions windows (thanks to @jakoss).
 - Settings: fixed the Cloudflare Tunnel download link shown when cloudflared is not installed (thanks to @AyoubAchour).
+- Git: picking a remote branch such as `origin/main` in the branch selector now switches you to that branch instead of leaving the repository on a detached `HEAD` with no branch name.
 - Desktop: "Restart to Update" no longer looks dead when the update cannot be installed — the update window now shows the reason, including when the running copy was not installed from an official signed release, and the button stays available to retry.
 
 ## [1.21.0] - 2026-08-26

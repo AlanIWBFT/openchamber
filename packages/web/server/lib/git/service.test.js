@@ -6,6 +6,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import simpleGit from 'simple-git';
 
 import {
+  checkoutBranch,
   checkoutCommit,
   cherryPick,
   createWorktree,
@@ -1049,6 +1050,66 @@ describe('checkoutCommit', () => {
   it('throws an error for an invalid/nonexistent hash', async () => {
     const { tmpDir } = await createTempRepo();
     await expect(checkoutCommit(tmpDir, 'invalidhash123')).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkoutBranch
+// ---------------------------------------------------------------------------
+
+describe('checkoutBranch', () => {
+  it('checks out a local branch by name', async () => {
+    const { repository } = createRepositoryWithRemote();
+    runGit(repository, ['branch', 'feature']);
+
+    const result = await checkoutBranch(repository, 'feature');
+
+    expect(result).toEqual({ success: true, branch: 'feature' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('feature');
+  });
+
+  it('creates a tracking local branch instead of detaching HEAD on a remote branch', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+
+    const result = await checkoutBranch(repository, 'origin/react');
+
+    expect(result).toEqual({ success: true, branch: 'react' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('react');
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'react@{upstream}']).trim()).toBe('origin/react');
+  });
+
+  it('checks out the existing local branch when a remote branch is picked', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+    runGit(repository, ['branch', 'react', 'origin/react']);
+
+    const result = await checkoutBranch(repository, 'origin/react');
+
+    expect(result).toEqual({ success: true, branch: 'react' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('react');
+  });
+
+  it('accepts the remotes/ prefixed form of a remote branch', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+
+    const result = await checkoutBranch(repository, 'remotes/origin/react');
+
+    expect(result).toEqual({ success: true, branch: 'react' });
+    expect(runGit(repository, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('react');
+  });
+
+  it('prefers a local branch whose name looks like a remote ref', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+    runGit(repository, ['branch', 'origin/react']);
+
+    const result = await checkoutBranch(repository, 'origin/react');
+
+    expect(result).toEqual({ success: true, branch: 'origin/react' });
+    expect(runGit(repository, ['symbolic-ref', 'HEAD']).trim()).toBe('refs/heads/origin/react');
+  });
+
+  it('rejects an unknown branch', async () => {
+    const { repository } = createRepositoryWithRemote();
+    await expect(checkoutBranch(repository, 'does-not-exist')).rejects.toThrow();
   });
 });
 
