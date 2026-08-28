@@ -59,7 +59,7 @@ export const SETTINGS_SECTION_TITLE_CLASS =
 /** Split-pane sidebar panel title — same level as section titles. */
 export const SETTINGS_PANEL_TITLE_CLASS = SETTINGS_SECTION_TITLE_CLASS;
 /** L3 — control-group heading inside a section. */
-export const SETTINGS_GROUP_TITLE_CLASS =
+const SETTINGS_GROUP_TITLE_CLASS =
   'typography-settings-group-title text-foreground';
 /** L4 — field / control labels. */
 export const SETTINGS_FIELD_LABEL_CLASS =
@@ -310,8 +310,8 @@ export const SettingsFieldRow: React.FC<SettingsFieldRowProps> = ({
       )}
     >
       <div className="min-w-0 @xl:w-56 @xl:shrink-0">
-        <div className="flex items-center gap-1.5">
-          <div className={SETTINGS_FIELD_LABEL_CLASS}>{label}</div>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <div className={cn('min-w-0 truncate', SETTINGS_FIELD_LABEL_CLASS)}>{label}</div>
           {info != null ? <SettingsInfoHint>{info}</SettingsInfoHint> : null}
         </div>
         {description != null ? (

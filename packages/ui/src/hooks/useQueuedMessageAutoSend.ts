@@ -103,8 +103,7 @@ type ResolvedQueuedSendConfig = {
 };
 
 export const sendQueuedAutoSendPayload = (
-  sessionId: string,
-  directory: string,
+  target: MessageQueueTarget,
   payload: QueuedAutoSendPayload,
   resolved: ResolvedQueuedSendConfig,
 ) => {
@@ -118,7 +117,7 @@ export const sendQueuedAutoSendPayload = (
     undefined,
     resolved.variant,
     'normal',
-    { sessionId, directory },
+    { target },
   );
 };
 
@@ -295,7 +294,7 @@ export function useQueuedMessageAutoSend(enabledOrOptions?: boolean | { enabled?
       useMessageQueueStore.getState().markSending(target, payload.queuedMessageId);
 
       try {
-        await sendQueuedAutoSendPayload(sessionId, target.directory, payload, {
+        await sendQueuedAutoSendPayload(target, payload, {
           providerID: resolved.providerID,
           modelID: resolved.modelID,
           agent: resolved.agent,
