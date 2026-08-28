@@ -105,7 +105,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
         const messageHasQuestion = message.parts.some((part) => (
             part.type === 'tool'
             && typeof part.tool === 'string'
-            && part.tool.toLowerCase() === 'question'
+            && part.tool === 'question'
         ));
         const messageIsCompactionSummary = isCompactionSummaryMessage(message);
 
