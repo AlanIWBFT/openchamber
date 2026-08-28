@@ -658,9 +658,13 @@ export const useProjectsStore = create<ProjectsStore>()(
       if (isVSCodeProjectsRuntime) {
         // VS Code paths are added via runtimeApis.vscode.addWorkspaceFolder,
         // which is reached only by addProject. Iterate so valid selections
-        // succeed instead of silently returning [].
+        // succeed instead of silently returning []. Dedupe by path so the
+        // returned array mirrors the non-VS Code contract.
         const added: ProjectEntry[] = [];
+        const seen = new Set<string>();
         for (const path of paths) {
+          if (seen.has(path)) continue;
+          seen.add(path);
           const project = await get().addProject(path);
           if (project) {
             added.push(project);

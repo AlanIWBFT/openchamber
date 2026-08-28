@@ -555,6 +555,9 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         return;
       }
 
+      // Clear pending selections so the Finder-sourced target is honored
+      // instead of silently being absorbed by the batch branch.
+      setSelectedPaths([]);
       await finalizeSelection(result.path);
     } catch (error) {
       toast.error(t('directoryExplorerDialog.toast.failedToSelectDirectory'), {

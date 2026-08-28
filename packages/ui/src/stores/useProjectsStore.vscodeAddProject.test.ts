@@ -157,4 +157,20 @@ describe('issue #2582: addProject in the VS Code runtime', () => {
     // final projects state (covered by the dedicated addProject tests).
     expect(added.length).toBeGreaterThanOrEqual(1);
   });
+
+  test('addProjects dedupes paths within a single batch in the VS Code runtime', async () => {
+    // A path repeated within one batch must hit the extension host once,
+    // not twice — mirrors the non-VS Code contract (seenPaths Set).
+    addWorkspaceFolderCalls.length = 0;
+    await useProjectsStore.getState().addProjects([
+      '/home/user/project-a',
+      '/home/user/project-a',
+      '/home/user/project-b',
+    ]);
+
+    expect(addWorkspaceFolderCalls).toEqual([
+      '/home/user/project-a',
+      '/home/user/project-b',
+    ]);
+  });
 });
