@@ -16,13 +16,15 @@ import {
 const message = (id: string, role: "user" | "assistant"): Message => ({
   id,
   role,
+  time: { created: 1 },
 } as unknown as Message)
 
-const completedAssistantMessage = (id: string): Message => ({
-  id,
-  role: "assistant",
-  time: { created: 1, completed: 100 },
-} as unknown as Message)
+const completedAssistantMessage = (id: string): Message => {
+  const base = message(id, "assistant")
+  // SAFETY: test fixture — the streaming reducers read only `id`, `role`, and
+  // `time.completed`, which this literal provides.
+  return { ...base, time: { created: 1, completed: 100 } } as Message
+}
 
 const stateWithMessages = (messages: Message[], status: SessionStatus = { type: "busy" } as SessionStatus): State => ({
   ...INITIAL_STATE,

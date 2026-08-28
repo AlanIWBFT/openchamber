@@ -67,7 +67,7 @@ const findTrailingAssistantMessage = (messages: Message[] | undefined): Message 
  * finished content until the session settles.
  */
 const isTrailingMessageComplete = (message: Message): boolean => {
-  return typeof (message as { time?: { completed?: unknown } }).time?.completed === "number"
+  return message.role === "assistant" && message.time.completed !== undefined
 }
 
 export function updateStreamingState(state: State, now = Date.now()) {

@@ -1,8 +1,9 @@
 /**
- * Tests for the immediate status poll fired when an assistant message
- * completes (issue OPE-193, B1): the busy spinner must not linger for up to a
- * full watchdog poll interval after a turn completed when the session.idle
- * event was delayed or lost.
+ * Tests for the deferred status poll fired when an assistant message completes
+ * (issue OPE-193): the busy spinner must not linger for up to a full watchdog
+ * poll interval after a turn completed when the session.idle event was delayed
+ * or lost — and a normal turn, whose session.idle arrives promptly, must not
+ * cost a single extra request.
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 import { create, type StoreApi } from "zustand"
@@ -12,19 +13,14 @@ import type { DirectoryStore } from "../child-store"
 
 type StatusSnapshot = Record<string, SessionStatus | undefined>
 
-let statusSnapshotResult: StatusSnapshot | null = { ses_1: { type: "idle" } }
-let statusSnapshotErrors = 0
+let respondWithSnapshot: () => Promise<StatusSnapshot | null> = () => Promise.resolve({ ses_1: { type: "idle" } })
 const statusSnapshotCalls: string[] = []
 
 mock.module("@/lib/opencode/client", () => ({
   opencodeClient: {
     getSessionStatusForDirectory: mock((directory: string) => {
       statusSnapshotCalls.push(directory)
-      if (statusSnapshotErrors > 0) {
-        statusSnapshotErrors -= 1
-        return Promise.resolve(null)
-      }
-      return Promise.resolve(statusSnapshotResult)
+      return respondWithSnapshot()
     }),
   },
 }))
@@ -33,28 +29,28 @@ mock.module("@/lib/runtime-switch", () => ({
   getRuntimeKey: () => "test-runtime",
 }))
 
-import { maybePollStatusAfterMessageCompletion } from "../sync-context"
+import { maybePollStatusAfterMessageCompletion, MESSAGE_COMPLETION_STATUS_POLL_DELAY_MS } from "../sync-context"
 
-const createStore = (status: SessionStatus | undefined): StoreApi<DirectoryStore> => {
+const createStore = (status: SessionStatus): StoreApi<DirectoryStore> => {
   return create<DirectoryStore>()((set) => ({
     ...INITIAL_STATE,
-    ...(status ? { session_status: { ses_1: status } } : {}),
+    session_status: { ses_1: status },
     patch: (partial) => set(partial),
     replace: (next) => set(next),
   }))
 }
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** Past the deferral, plus room for the background-network task chain. */
 const waitForPollSettled = async (): Promise<void> => {
-  // The helper runs under the background-network concurrency gate; give the
-  // task chain (and any promise-based snapshot) real time to finish.
-  await new Promise((resolve) => setTimeout(resolve, 25))
-  await new Promise((resolve) => setTimeout(resolve, 25))
+  await sleep(MESSAGE_COMPLETION_STATUS_POLL_DELAY_MS + 50)
+  await sleep(50)
 }
 
 describe("maybePollStatusAfterMessageCompletion (issue OPE-193)", () => {
   beforeEach(() => {
-    statusSnapshotResult = { ses_1: { type: "idle" } }
-    statusSnapshotErrors = 0
+    respondWithSnapshot = () => Promise.resolve({ ses_1: { type: "idle" } })
     statusSnapshotCalls.length = 0
   })
 
@@ -79,10 +75,25 @@ describe("maybePollStatusAfterMessageCompletion (issue OPE-193)", () => {
     expect(statusSnapshotCalls).toEqual([])
   })
 
-  test("settles a busy session to idle immediately when the snapshot omits it", async () => {
+  test("issues no request when session.idle arrives inside the deferral window", async () => {
     const store = createStore({ type: "busy" })
 
     maybePollStatusAfterMessageCompletion("/test/project", store, "ses_1")
+    // The turn's own session.idle event lands well before the timer fires.
+    await sleep(50)
+    store.getState().patch({ session_status: { ses_1: { type: "idle" } } })
+    await waitForPollSettled()
+
+    expect(statusSnapshotCalls).toEqual([])
+  })
+
+  test("settles a busy session to idle when the idle event never arrives", async () => {
+    const store = createStore({ type: "busy" })
+
+    maybePollStatusAfterMessageCompletion("/test/project", store, "ses_1")
+    // Nothing settles the session inside the window; the poll must run.
+    expect(statusSnapshotCalls).toEqual([])
+
     await waitForPollSettled()
 
     expect(statusSnapshotCalls).toEqual(["/test/project", "/test/project"])
@@ -91,7 +102,7 @@ describe("maybePollStatusAfterMessageCompletion (issue OPE-193)", () => {
 
   test("keeps the session busy when the snapshot confirms it is still active", async () => {
     const store = createStore({ type: "busy" })
-    statusSnapshotResult = { ses_1: { type: "busy" } }
+    respondWithSnapshot = () => Promise.resolve({ ses_1: { type: "busy" } })
 
     maybePollStatusAfterMessageCompletion("/test/project", store, "ses_1")
     await waitForPollSettled()
@@ -104,7 +115,7 @@ describe("maybePollStatusAfterMessageCompletion (issue OPE-193)", () => {
 
   test("preserves the busy status when the status fetch fails", async () => {
     const store = createStore({ type: "busy" })
-    statusSnapshotErrors = 1
+    respondWithSnapshot = () => Promise.resolve(null)
 
     maybePollStatusAfterMessageCompletion("/test/project", store, "ses_1")
     await waitForPollSettled()
@@ -115,34 +126,15 @@ describe("maybePollStatusAfterMessageCompletion (issue OPE-193)", () => {
     expect(store.getState().session_status?.ses_1?.type).toBe("busy")
   })
 
-  test("deduplicates concurrent polls for the same directory", async () => {
+  test("schedules one check for a burst of completions on the same session", async () => {
     const store = createStore({ type: "busy" })
-    statusSnapshotResult = new Promise((resolve) => {
-      setTimeout(() => resolve({ ses_1: { type: "idle" } }), 10)
-    }) as unknown as StatusSnapshot
 
     maybePollStatusAfterMessageCompletion("/test/project", store, "ses_1")
     maybePollStatusAfterMessageCompletion("/test/project", store, "ses_1")
     maybePollStatusAfterMessageCompletion("/test/project", store, "ses_1")
     await waitForPollSettled()
 
-    expect(statusSnapshotCalls).toEqual(["/test/project", "/test/project"])
-  })
-
-  test("does not poll again while a previous poll for the directory is in flight", async () => {
-    const store = createStore({ type: "busy" })
-    let release: () => void = () => {}
-    statusSnapshotResult = new Promise((resolve) => {
-      release = () => resolve({ ses_1: { type: "idle" } })
-    }) as unknown as StatusSnapshot
-
-    maybePollStatusAfterMessageCompletion("/test/project", store, "ses_1")
-    maybePollStatusAfterMessageCompletion("/test/project", store, "ses_1")
-    release()
-    await waitForPollSettled()
-
-    // First call ran the poll; the second call was deduped by the in-flight
-    // guard. The escalation (second fetch) is the authoritative resync.
+    // One monotonic poll plus its authoritative escalation, not three.
     expect(statusSnapshotCalls).toEqual(["/test/project", "/test/project"])
     expect(store.getState().session_status?.ses_1?.type).toBe("idle")
   })

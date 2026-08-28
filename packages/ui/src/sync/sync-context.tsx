@@ -341,10 +341,17 @@ type PendingSessionMaterialization = {
 const SESSION_MATERIALIZATION_COOLDOWN_MS = 5_000
 const pendingSessionMaterializations = new Map<string, PendingSessionMaterialization>()
 
-// In-flight guard for the immediate status poll fired when an assistant
-// message completes (see maybePollStatusAfterMessageCompletion). Keyed by
-// directory so a burst of completing messages shares one status fetch.
-const messageCompletionStatusPolls = new Set<string>()
+// One in-flight directory status fetch at a time, shared by the active-session
+// watchdog poll and the deferred completion poll so the two cannot overlap on
+// the same directory.
+const statusPollingDirectories = new Set<string>()
+
+// Deferred completion polls awaiting their delay, keyed by directory+session so
+// a burst of completing messages schedules one check.
+const pendingMessageCompletionPolls = new Map<string, ReturnType<typeof setTimeout>>()
+
+// How long to wait for the turn's own `session.idle` before spending a request.
+export const MESSAGE_COMPLETION_STATUS_POLL_DELAY_MS = 750
 
 function enqueueSessionMaterialization(
   directory: string,
@@ -737,19 +744,22 @@ async function resyncDirectorySessionStatuses(
 }
 
 /**
- * Immediately re-check the session status after an assistant message
- * completes. The turn-ending `session.idle` event can be delayed or lost; left
- * alone, the busy spinner keeps showing until the next watchdog poll tick
- * (up to ~5s) and its escalation (up to ~10s). One cheap status fetch right
- * after the completion confirms the turn really ended, mirroring the watchdog
- * escalation: the monotonic pass confirms/raises busy but never lowers it, and
- * when the snapshot reports the session idle while the store still believes it
- * busy, an authoritative resync settles the status immediately.
+ * Re-check the session status shortly after an assistant message completes.
+ * The turn-ending `session.idle` event can be delayed or lost; left alone, the
+ * busy spinner keeps showing until the next watchdog poll tick (up to ~5s) and
+ * its escalation (up to ~10s).
  *
- * Bounded: one in-flight fetch per directory, only for sessions the store
- * currently believes active, best-effort (the watchdog poll remains the
- * backstop). This narrows recovery latency without restructuring the polling
- * design.
+ * The check is deferred by `MESSAGE_COMPLETION_STATUS_POLL_DELAY_MS`, and the
+ * status is read again when the timer fires: a normal turn whose `session.idle`
+ * arrives inside that window settles on its own and issues no request at all.
+ * Only a session the store still believes busy costs one status fetch, which
+ * mirrors the watchdog escalation — the monotonic pass confirms/raises busy but
+ * never lowers it, and when the snapshot reports the session idle while the
+ * store still believes it busy, an authoritative resync settles the status.
+ *
+ * Bounded: one scheduled check per session, one in-flight status fetch per
+ * directory (shared with the watchdog poll), best-effort — the watchdog poll
+ * remains the backstop.
  */
 export function maybePollStatusAfterMessageCompletion(
   directory: string,
@@ -759,24 +769,35 @@ export function maybePollStatusAfterMessageCompletion(
   if (!directory || directory === "global" || !sessionID) return
   const current = store.getState().session_status?.[sessionID]
   if (!current || current.type === "idle") return
-  if (messageCompletionStatusPolls.has(directory)) return
 
-  messageCompletionStatusPolls.add(directory)
-  void (async () => {
-    try {
-      const statuses = await runBackgroundNetworkTask(() =>
-        resyncDirectorySessionStatuses(directory, store, [sessionID], "monotonic"))
-      if (!statuses) return
-      if (needsSnapshotAfterStatusPoll(store.getState(), sessionID, statuses[sessionID])) {
-        await runBackgroundNetworkTask(() =>
-          resyncDirectorySessionStatuses(directory, store, [sessionID], "authoritative"))
+  const pendingKey = `${directory}\u0000${sessionID}`
+  if (pendingMessageCompletionPolls.has(pendingKey)) return
+
+  const timer = setTimeout(() => {
+    pendingMessageCompletionPolls.delete(pendingKey)
+    const latest = store.getState().session_status?.[sessionID]
+    if (!latest || latest.type === "idle") return
+    if (statusPollingDirectories.has(directory)) return
+
+    statusPollingDirectories.add(directory)
+    void (async () => {
+      try {
+        const statuses = await runBackgroundNetworkTask(() =>
+          resyncDirectorySessionStatuses(directory, store, [sessionID], "monotonic"))
+        if (!statuses) return
+        if (needsSnapshotAfterStatusPoll(store.getState(), sessionID, statuses[sessionID])) {
+          await runBackgroundNetworkTask(() =>
+            resyncDirectorySessionStatuses(directory, store, [sessionID], "authoritative"))
+        }
+      } catch {
+        // Best-effort — the watchdog poll retries on its own cadence.
+      } finally {
+        statusPollingDirectories.delete(directory)
       }
-    } catch {
-      // Best-effort — the watchdog poll retries on its own cadence.
-    } finally {
-      messageCompletionStatusPolls.delete(directory)
-    }
-  })()
+    })()
+  }, MESSAGE_COMPLETION_STATUS_POLL_DELAY_MS)
+
+  pendingMessageCompletionPolls.set(pendingKey, timer)
 }
 
 // After a monotonic poll, decide whether to escalate to a full authoritative
@@ -2123,7 +2144,6 @@ export function SyncProvider(props: {
   const lastChildDiscoveryAtByDirectoryRef = useRef(new Map<string, number>())
   const resyncingDirectoriesRef = useRef(new Set<string>())
   const blockingRequestResyncingDirectoriesRef = useRef(new Set<string>())
-  const statusPollingDirectoriesRef = useRef(new Set<string>())
   const pipelineReconnectRef = useRef<((reason?: string) => void) | null>(null)
   const pipelineHasConnectedRef = useRef(false)
   const pipelineDisconnectedBeforeFirstConnectRef = useRef(false)
@@ -2486,7 +2506,7 @@ export function SyncProvider(props: {
       store: StoreApi<DirectoryStore>,
       candidateSessionIds: string[],
     ) => {
-      const polling = statusPollingDirectoriesRef.current
+      const polling = statusPollingDirectories
       if (polling.has(directory)) return
       polling.add(directory)
       try {
@@ -2544,7 +2564,7 @@ export function SyncProvider(props: {
         .finally(() => {
           running = false
           if (stopped) {
-            statusPollingDirectoriesRef.current.clear()
+            statusPollingDirectories.clear()
           }
         })
     }
