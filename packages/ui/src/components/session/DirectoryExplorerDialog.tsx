@@ -482,9 +482,10 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
           gitIdentityId: selectedGitIdentity?.id ?? null,
         });
         selectedTarget = result.path;
-      } else if (shouldCreateSelection) {
-        await opencodeClient.createDirectory(target, { asProject: true });
       } else if (selectionToAdd.length > 0) {
+        // Batch path wins over single-target create: with checkboxes ticked,
+        // the user wants the selections added, not a fresh directory created
+        // for whatever happens to be typed in the filter.
         const added = addProjects(selectionToAdd);
         if (added.length === 0) {
           toast.error(t('directoryExplorerDialog.toast.failedToAddProject'), {
@@ -495,8 +496,8 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         setSelectedPaths([]);
         handleClose();
         return;
-      } else if (shouldCreateTarget && normalizeDirectoryPath(target) === normalizeDirectoryPath(targetPath)) {
-        await opencodeClient.createDirectory(target);
+      } else if (shouldCreateSelection) {
+        await opencodeClient.createDirectory(target, { asProject: true });
       }
       const project = await addProject(selectedTarget);
       if (!project) {
@@ -576,9 +577,16 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
       return;
     }
     if (event.key === ' ') {
-      event.preventDefault();
-      if (highlightedRow && highlightedRow.type === 'directory' && !highlightedRow.disabled) {
-        togglePathSelection(highlightedRow.path);
+      // Only treat Space as a selection toggle when the user is actively
+      // browsing a directory (trailing slash or no filter typing). When
+      // the input is in path-entry mode, Space is a literal character
+      // and must reach the input value.
+      if (hasTrailingPathSeparator(query)) {
+        event.preventDefault();
+        if (highlightedRow && highlightedRow.type === 'directory' && !highlightedRow.disabled) {
+          togglePathSelection(highlightedRow.path);
+        }
+        return;
       }
       return;
     }
