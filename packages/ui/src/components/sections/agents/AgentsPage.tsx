@@ -4,7 +4,8 @@ import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui';
-import { useAgentsStore, type AgentConfig, type AgentMutationResult, type AgentScope } from '@/stores/useAgentsStore';
+import { useSettingsDirectory } from '@/hooks/useSettingsDirectory';
+import { selectAgentsForDirectory, useAgentsStore, type AgentConfig, type AgentMutationResult, type AgentScope } from '@/stores/useAgentsStore';
 import { useShallow } from 'zustand/react/shallow';
 import { ModelSelector } from './ModelSelector';
 import { useI18n } from '@/lib/i18n';
@@ -60,7 +61,6 @@ export const AgentsPage: React.FC = () => {
     getAgentByName,
     createAgent,
     updateAgent,
-    agents,
     agentDraft,
     setAgentDraft,
   } = useAgentsStore(useShallow((s) => ({
@@ -68,12 +68,15 @@ export const AgentsPage: React.FC = () => {
     getAgentByName: s.getAgentByName,
     createAgent: s.createAgent,
     updateAgent: s.updateAgent,
-    agents: s.agents,
     agentDraft: s.agentDraft,
     setAgentDraft: s.setAgentDraft,
   })));
 
-  const selectedAgent = selectedAgentName ? getAgentByName(selectedAgentName) : null;
+  // Settings browses whichever project its own selector points at; the app
+  // stays where it is.
+  const settingsDirectory = useSettingsDirectory();
+  const agents = useAgentsStore((state) => selectAgentsForDirectory(state, settingsDirectory));
+  const selectedAgent = selectedAgentName ? getAgentByName(selectedAgentName, settingsDirectory) : null;
   const isNewAgent = Boolean(agentDraft && agentDraft.name === selectedAgentName && !selectedAgent);
 
   const [draftName, setDraftName] = React.useState('');
@@ -232,12 +235,12 @@ export const AgentsPage: React.FC = () => {
 
       let result: AgentMutationResult;
       if (isNewAgent) {
-        result = await createAgent(config);
+        result = await createAgent(config, settingsDirectory);
         if (result.ok) {
           setAgentDraft(null); // Clear draft after successful creation
         }
       } else {
-        result = await updateAgent(agentName, config);
+        result = await updateAgent(agentName, config, settingsDirectory);
       }
 
       if (result.ok) {
@@ -447,7 +450,7 @@ export const AgentsPage: React.FC = () => {
             inputMode="decimal"
             placeholder="—"
             emptyLabel="—"
-            className="w-16"
+            className="w-20"
           />
           {temperature !== undefined && (
             <Button
@@ -485,7 +488,7 @@ export const AgentsPage: React.FC = () => {
             inputMode="decimal"
             placeholder="—"
             emptyLabel="—"
-            className="w-16"
+            className="w-20"
           />
           {topP !== undefined && (
             <Button

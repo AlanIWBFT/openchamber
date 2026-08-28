@@ -1,4 +1,5 @@
 import MarkdownShikiWorkerUrl from './markdown-shiki.worker.ts?worker&url';
+import { isVSCodeRuntime } from '@/stores/utils/vscodeRuntime';
 import {
   contentFingerprint,
   estimateTokenRunsBytes,
@@ -6,12 +7,20 @@ import {
   utf16Bytes,
 } from './highlightResultCache';
 import type { MarkdownTokenRun, MarkdownWorkerRequest, MarkdownWorkerResponse } from './markdown-worker-protocol';
+import { HIGHLIGHT_REQUEST_TIMEOUT_MS } from './markdown-worker-timeout';
 
-// Main-thread client for the markdown Shiki worker. Moves syntax tokenization
+// Main-thread client for the markdown Shiki Web Worker. Moves syntax tokenization
 // off the UI thread: a closed code block is shipped to the worker, which returns
 // ready-to-splice Shiki HTML. On any failure (no worker support, worker crash,
-// tokenization error) the promise resolves to `null` and the caller keeps the
-// escaped plain-text code — highlighting never falls back onto the main thread.
+// tokenization error, or hang timeout) the promise resolves to `null` and the
+// caller keeps the escaped plain-text code — highlighting never falls back onto
+// the main thread.
+//
+// The per-request timeout exists because TextMate grammars can enter catastrophic
+// backtracking on the Oniguruma WASM engine (openchamber/openchamber#2587).
+// Matching is synchronous inside the worker, so the only way to reclaim its heap
+// is to terminate it from this thread once a request exceeds the budget. A timed
+// out request resolves `null` like any other failure, so nothing is memoized.
 //
 // Results are memoized by content fingerprint (+ lang / theme). Unchanged
 // content must not re-enter the worker — that was the sustained ~40 msg/s
@@ -30,6 +39,11 @@ import type { MarkdownTokenRun, MarkdownWorkerRequest, MarkdownWorkerResponse } 
 
 type PendingResolver = (response: MarkdownWorkerResponse | null) => void;
 
+type PendingEntry = {
+  resolve: PendingResolver;
+  timer: ReturnType<typeof setTimeout>;
+};
+
 type CachedHighlight =
   | { type: 'highlight'; html: string }
   | { type: 'highlightLines'; lines: string[] }
@@ -46,11 +60,17 @@ const resultCache = new HighlightResultCache<CachedHighlight>({
 const inflight = new Map<string, Promise<CachedHighlight | null>>();
 
 let worker: Worker | undefined;
+let workerCreation: Promise<Worker | undefined> | undefined;
+let workerObjectUrl: string | undefined;
 let nextId = 0;
-const pending = new Map<number, PendingResolver>();
+const pending = new Map<number, PendingEntry>();
 // Theme names whose full definition we've already shipped to the live worker, so
 // repeat tokenization sends only the name (not the whole theme object) again.
 const sentThemes = new Set<string>();
+
+const clearPendingTimers = (): void => {
+  pending.forEach((entry) => clearTimeout(entry.timer));
+};
 
 const entryBytes = (key: string, value: CachedHighlight): number => {
   const keyBytes = utf16Bytes(key);
@@ -64,42 +84,76 @@ const entryBytes = (key: string, value: CachedHighlight): number => {
 };
 
 const failAll = (): void => {
-  pending.forEach((resolve) => resolve(null));
+  clearPendingTimers();
+  pending.forEach((entry) => entry.resolve(null));
   pending.clear();
   sentThemes.clear();
   // Drop in-flight waiters; cached results remain valid (pure fn of inputs).
   inflight.clear();
   worker?.terminate();
   worker = undefined;
+  workerCreation = undefined;
+  if (workerObjectUrl) {
+    URL.revokeObjectURL(workerObjectUrl);
+    workerObjectUrl = undefined;
+  }
 };
 
-const getWorker = (): Worker | undefined => {
-  if (worker) return worker;
+const createWorker = async (): Promise<Worker | undefined> => {
   if (typeof window === 'undefined' || typeof Worker === 'undefined') return undefined;
   try {
-    worker = new Worker(MarkdownShikiWorkerUrl, { type: 'module' });
+    let workerUrl = MarkdownShikiWorkerUrl;
+    if (isVSCodeRuntime(null)) {
+      const response = await fetch(workerUrl);
+      if (!response.ok) throw new Error(`Shiki worker request failed with ${response.status}`);
+      workerObjectUrl = URL.createObjectURL(await response.blob());
+      workerUrl = workerObjectUrl;
+    }
+
+    const instance = new Worker(workerUrl, { type: 'module' });
+    worker = instance;
+    instance.onmessage = (event: MessageEvent<MarkdownWorkerResponse>) => {
+      const entry = pending.get(event.data.id);
+      if (!entry) return;
+      clearTimeout(entry.timer);
+      pending.delete(event.data.id);
+      entry.resolve(event.data);
+    };
+    instance.onerror = failAll;
+    instance.onmessageerror = failAll;
+    instance.postMessage({ type: 'init' } satisfies MarkdownWorkerRequest);
+    return instance;
   } catch (err) {
+    if (workerObjectUrl) {
+      URL.revokeObjectURL(workerObjectUrl);
+      workerObjectUrl = undefined;
+    }
     console.error('Failed to create Shiki worker:', err);
     return undefined;
   }
-  worker.onmessage = (event: MessageEvent<MarkdownWorkerResponse>) => {
-    const resolve = pending.get(event.data.id);
-    if (!resolve) return;
-    pending.delete(event.data.id);
-    resolve(event.data);
-  };
-  worker.onerror = failAll;
-  worker.onmessageerror = failAll;
-  worker.postMessage({ type: 'init' } satisfies MarkdownWorkerRequest);
-  return worker;
 };
 
-const request = (payload: (id: number) => MarkdownWorkerRequest): Promise<MarkdownWorkerResponse | null> => {
-  const instance = getWorker();
+const getWorker = async (): Promise<Worker | undefined> => {
+  if (worker) return worker;
+  workerCreation ??= createWorker().finally(() => {
+    workerCreation = undefined;
+  });
+  return workerCreation;
+};
+
+const request = async (payload: (id: number) => MarkdownWorkerRequest): Promise<MarkdownWorkerResponse | null> => {
+  const instance = await getWorker();
   if (!instance) return Promise.resolve(null);
   const id = ++nextId;
   return new Promise<MarkdownWorkerResponse | null>((resolve) => {
-    pending.set(id, resolve);
+    const timer = setTimeout(() => {
+      if (!pending.has(id)) return;
+      // Hung tokenize (e.g. catastrophic backtracking): kill the worker so the
+      // WASM heap is freed instead of growing until the renderer OOMs.
+      console.warn(`Shiki worker highlight timed out after ${HIGHLIGHT_REQUEST_TIMEOUT_MS}ms; terminating worker`);
+      failAll();
+    }, HIGHLIGHT_REQUEST_TIMEOUT_MS);
+    pending.set(id, { resolve, timer });
     instance.postMessage(payload(id));
   });
 };
@@ -165,6 +219,12 @@ export const highlightLinesInWorker = async (code: string, lang: string): Promis
     return entry;
   });
   return result?.type === 'highlightLines' ? result.lines : null;
+};
+
+/** Return an already-tokenized line result without scheduling a worker request. */
+export const getCachedHighlightedLines = (code: string, lang: string): string[] | null => {
+  const cached = resultCache.get(cacheKeyFor('highlightLines', lang, code));
+  return cached?.type === 'highlightLines' ? cached.lines : null;
 };
 
 /**
