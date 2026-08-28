@@ -16,7 +16,6 @@
 - Updating OpenCode no longer fails with a bare "Bad Request": the extension names the release to install and shows OpenCode's own reason when an update is refused (thanks to @mdatsev and @yulia-ivashko).
 - "Add Project" now adds the chosen folder to the workspace instead of failing (thanks to @bashrusakh), and the extension starts in the current workspace folder instead of one restored from storage (thanks to @makeittech).
 - Multi-Run groups can now contain more than five models (thanks to @tomzx).
-- Right-click an editor, chat, or browser tab in the context panel to close it, close others, close left/right, or close all (thanks to @adavila0703).
 - Sidebar: pending permission and question badges are no longer covered by the hover actions (thanks to @makeittech); worktree branch search hides non-matching branches (thanks to @bashrusakh).
 - Settings: number fields and selects no longer clip at large font sizes (thanks to @makeittech), and Windows skill paths are classified correctly, so disabled and duplicate skills are hidden as intended (thanks to @Ttungx).
 - Windows: closing VS Code now stops the managed OpenCode process instead of leaving it running (thanks to @a0000001).

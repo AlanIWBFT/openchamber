@@ -1002,12 +1002,15 @@ export const ContextPanel: React.FC = () => {
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem onClick={closeOthers} disabled={!hasOthers}>
+            <Icon name="expand-horizontal" className="mr-2 size-4" />
             {t('contextPanel.tab.menu.closeOthers')}
           </ContextMenuItem>
           <ContextMenuItem onClick={closeToLeft} disabled={isFirst}>
+            <Icon name="expand-left" className="mr-2 size-4" />
             {t('contextPanel.tab.menu.closeToLeft')}
           </ContextMenuItem>
           <ContextMenuItem onClick={closeToRight} disabled={isLast}>
+            <Icon name="expand-right" className="mr-2 size-4" />
             {t('contextPanel.tab.menu.closeToRight')}
           </ContextMenuItem>
           <ContextMenuSeparator />
