@@ -58,6 +58,7 @@ type SessionProjectScrollerGroupProps = Pick<SessionGroupSectionProps,
   | 'setDeleteSessionConfirm'
   | 'startFolderRename'
   | 'setCopiedSessionId'
+  | 'startSessionWorktreeMenuLoad'
 > & {
   pinnedSessionIds: Set<string>;
   sessionOrderIndex: Map<string, number>;

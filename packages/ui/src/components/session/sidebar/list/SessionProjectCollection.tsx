@@ -6,6 +6,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { getGitHubPrStatusKey, useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import type { SessionTreeItemProps } from '../sessions/SessionTreeItem';
 import { useArchivedAutoFolders } from '../folders/useArchivedAutoFolders';
 import { ProjectSessionSelectionEffect } from '../projects/useProjectSessionSelection';
 import type { WorktreeMetadata } from '@/types/worktree';
@@ -103,6 +104,7 @@ type SessionProjectCollectionProps = {
     openProjectEditDialog: (id: string) => void;
     removeProject: (id: string) => void;
     reorderProjects: (fromIndex: number, toIndex: number) => void;
+    startSessionWorktreeMenuLoad: SessionTreeItemProps['startSessionWorktreeMenuLoad'];
     renderProjectStatusIndicator?: (projectId: string, groups: SessionGroup[]) => React.ReactNode;
     initialActiveSessionByProject: Map<string, string>;
     persistActiveSessionByProject: (value: Map<string, string>) => void;
@@ -330,6 +332,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     setDeleteSessionConfirm,
     startFolderRename,
     setCopiedSessionId,
+    startSessionWorktreeMenuLoad: actions.startSessionWorktreeMenuLoad,
     folderRename,
     setFolderRenameDraft,
     clearFolderRename,
@@ -350,6 +353,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     deleteSessionConfirm,
     copiedSessionId,
     setCopiedSessionId,
+    actions.startSessionWorktreeMenuLoad,
     rowActions,
     toggleParent,
     view.hideDirectoryControls,
@@ -457,12 +461,14 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       setDeleteSessionConfirm={setDeleteSessionConfirm}
       startFolderRename={startFolderRename}
       setCopiedSessionId={setCopiedSessionId}
+      startSessionWorktreeMenuLoad={actions.startSessionWorktreeMenuLoad}
       chatSessions={collection.chatSessions}
       renderChatsSection={renderChatsSection}
       onNewChat={handleOpenNewChat}
       showRecentSection={showRecentSection && !singleProjectMode}
     /> : null
   ), [
+    actions.startSessionWorktreeMenuLoad,
     alwaysShowActions,
     collection.childrenMap,
     collection.pinnedSessionIds,
