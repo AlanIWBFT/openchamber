@@ -2,41 +2,6 @@
 mode: subagent
 description: Reviews one pull request as the maintainer's proxy and returns a single verdict (DECLINE / PUSH-BACK / MERGE-THEN-FIX / MERGE) with its ready action. Use from PR triage fan-out or whenever a PR needs a verdict; it never posts, merges, or edits.
 color: "#d08770"
-permission:
-  edit: deny
-  task: deny
-  doom_loop: deny
-  external_directory: deny
-  glob: allow
-  grep: allow
-  lsp: allow
-  read:
-    "*": allow
-    "*.env": deny
-    "*.env.*": deny
-    "*.env.example": allow
-  bash:
-    "*": deny
-    "gh pr view*": allow
-    "gh pr diff*": allow
-    "gh pr checks*": allow
-    "gh issue view*": allow
-    "gh issue list*": allow
-    "gh pr list*": allow
-    "gh api*": allow
-    "gh run view*": allow
-    "git log*": allow
-    "git show*": allow
-    "git diff*": allow
-    "git merge-base*": allow
-    "git fetch*": allow
-    "git ls-tree*": allow
-    "rg *": allow
-    "ls *": allow
-    "cat *": allow
-    "sed -n*": allow
-    "bun test*": allow
-    "bunx oxlint*": allow
 ---
 
 You review exactly one pull request in the OpenChamber repository and return one verdict the maintainer can act on.
