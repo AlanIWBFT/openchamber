@@ -2,40 +2,21 @@
 
 - **Turkish interface:** OpenChamber can now be used in Turkish (thanks to @fitzgpt).
 - **`/btw` side questions:** a btw session now answers the side question instead of carrying on with the parent's plan, and forks at the last completed turn so a reply that is still streaming is never inherited (thanks to @pocharlies).
-- The context usage readout now reports the session cost including everything its subagents spent, matching the work status panel instead of showing a lower figure (thanks to @igorvelho).
-- Chat: undoing or redoing a parent session now keeps its subagent sessions at the same point in history instead of leaving their later work behind (thanks to @alexandrereyes).
-- Chat: pending permission and question cards come back after the webview reloads or when the session is opened late, instead of the session hanging on a tool that is waiting for an answer nobody can see (thanks to @yangyaofei).
-- Chat: dismissing the agent's questions without answering and sending a new task no longer leaves the session looking frozen on the dismissed question (thanks to @bashrusakh).
-- Chat: with "Follow new content while streaming" turned off, sending a message while scrolled up now leaves the view where it is instead of jumping to the new message.
-- Chat: scrolling away from a streaming reply with a middle-button pan or Shift+Space now stops auto-follow, the same as the wheel does. An upward wheel inside a tool output box scrolls that box instead of releasing the whole chat (thanks to @pascalandr).
-- Chat: pressing PageUp/PageDown in the prompt box, or moving the caret through a long prompt, no longer shifts the whole panel up and hides its top edge.
-- GitHub Copilot usage now shows a single AI Credits window, matching Copilot's token-based quota, in place of the old Chat Requests and Completions windows (thanks to @jakoss).
-- Updating OpenCode no longer fails with a bare "Bad Request": the extension names the release to install, which recent OpenCode versions require, and shows OpenCode's own reason when an update is refused (thanks to @mdatsev and @yulia-ivashko).
-- A saved draft or recalled message containing Windows line endings no longer replaces the chat with a "Selection points outside of document" error, and no longer brings the error back every time you reopen that session (thanks to @mattv8 and @yulia-ivashko).
-- "Add Project" now adds the chosen folder to the workspace instead of failing with "Failed to add project" (thanks to @bashrusakh).
+- Chat scrolling: with "Follow new content while streaming" off, sending while scrolled up leaves the view where it is; a middle-button pan or Shift+Space stops auto-follow like the wheel does (thanks to @pascalandr); PageUp/PageDown in the prompt box no longer shifts the whole panel up.
+- Chat no longer crashes or freezes on: very large tool results, which are capped before rendering (thanks to @JSap0914); a code block with JavaScript template strings that sent the highlighter into endless backtracking (thanks to @makeittech); a diff with a truncated header (thanks to @pascalandr); and a draft or recalled message with Windows line endings, which threw "Selection points outside of document" on every visit (thanks to @yulia-ivashko).
+- Chat: a session no longer looks frozen after the webview reloads or is opened late — pending permission and question cards come back (thanks to @yangyaofei) — nor after dismissing the agent's questions and sending a new task (thanks to @bashrusakh).
+- Context usage now reports the session cost including everything its subagents spent (thanks to @igorvelho), and undoing or redoing a parent session keeps its subagents at the same point in history (thanks to @alexandrereyes).
+- Chat rendering: question prompts render Markdown (thanks to @pascalandr); bare links next to CJK or full-width punctuation no longer absorb it (thanks to @gaojunran); inline code, chips, and model-picker highlights stay readable in high-contrast themes (thanks to @difagume and @bashrusakh); a completed reasoning block shows in full instead of replaying, the text-selection menu stays inside the viewport, and the sticky user-message header no longer fades over the reply (thanks to @makeittech).
+- Chat actions: tool cards with a file path get a quick-open button that opens the file in the editor (thanks to @robertoberto); sending without a selected model explains what is missing (thanks to @rvaldemar); `/init` stays in slash-command autocomplete after the conversation starts (thanks to @Dawnfz-Lenfeng); copying a message keeps Markdown spacing (thanks to @ChangeHow); a manually chosen model survives switching between Build and Plan (thanks to @makeittech).
+- Composer: typing three backticks leaves the caret inside the completed code fence, empty inputs keep a visible caret, and platform autocorrect behavior is preserved (thanks to @franzudev, @TTTPOB, and @IbrahimKhan12).
+- GitHub Copilot usage now shows a single AI Credits window, matching Copilot's token-based quota (thanks to @jakoss).
+- Updating OpenCode no longer fails with a bare "Bad Request": the extension names the release to install and shows OpenCode's own reason when an update is refused (thanks to @mdatsev and @yulia-ivashko).
+- "Add Project" now adds the chosen folder to the workspace instead of failing (thanks to @bashrusakh), and the extension starts in the current workspace folder instead of one restored from storage (thanks to @makeittech).
 - Multi-Run groups can now contain more than five models (thanks to @tomzx).
-- Chat: very large tool results are capped before rendering instead of exhausting the webview's memory and crashing it (thanks to @JSap0914).
-- Chat: copying a message now preserves the spacing between Markdown paragraphs, lists, and fenced code blocks in plain text, Markdown, and rich clipboard content (thanks to @ChangeHow).
-- Chat: question prompts now render Markdown, including links, code, and lists (thanks to @pascalandr).
-- Chat: tool cards with a file path now show a quick-open button in the header that opens the file in the editor (thanks to @robertoberto).
-- Chat: sending without a selected provider or model now explains what is missing instead of silently doing nothing (thanks to @rvaldemar).
-- Chat: `/init` remains available in slash-command autocomplete after a conversation has started (thanks to @Dawnfz-Lenfeng).
-- Chat: a diff that arrives with a truncated header no longer crashes the tool card (thanks to @pascalandr).
-- Chat: a code block with JavaScript template strings no longer freezes the webview. The highlighter skips a grammar rule that could backtrack forever, and a highlight that still hangs is abandoned after five seconds and shown as plain text (thanks to @makeittech).
-- Chat: a completed reasoning block now shows in full when a session is reopened, instead of replaying as if the model were still thinking (thanks to @makeittech).
-- Chat: the text-selection menu no longer disappears above the viewport when a selection runs past the top of the scroll area (thanks to @makeittech).
-- Chat: a manually chosen model now stays selected when switching between Build and Plan modes (thanks to @makeittech).
-- Chat: the sticky user-message header no longer paints its fade over the first lines of the reply (thanks to @makeittech).
-- Sidebar: the pending permission and question badges no longer get covered by the hover actions on a session row (thanks to @makeittech).
-- Settings: number fields and selects no longer clip their values at large interface font sizes or tight spacing (thanks to @makeittech).
-- The extension now starts in the current workspace folder instead of a previously used one restored from storage (thanks to @makeittech).
-- Composer: typing three backticks now leaves the caret inside the completed code fence, empty inputs keep a visible caret, and platform autocorrect behavior is preserved (thanks to @franzudev, @TTTPOB, and @IbrahimKhan12).
-- Chat: bare links next to Chinese, Japanese, or full-width punctuation no longer absorb that punctuation into the URL (thanks to @gaojunran).
-- Chat: inline code, chips, and model-picker highlights remain readable in high-contrast themes (thanks to @difagume and @bashrusakh).
-- Settings/Skills: Windows paths are now classified correctly, so disabled external skills are hidden and duplicate `.agents` and `.claude` skills are removed as intended (thanks to @Ttungx).
-- Worktrees: branch search now hides non-matching branches instead of leaving unrelated results visible (thanks to @bashrusakh).
+- Sidebar: pending permission and question badges are no longer covered by the hover actions (thanks to @makeittech); worktree branch search hides non-matching branches (thanks to @bashrusakh).
+- Settings: number fields and selects no longer clip at large font sizes (thanks to @makeittech), and Windows skill paths are classified correctly, so disabled and duplicate skills are hidden as intended (thanks to @Ttungx).
 - Windows: closing VS Code now stops the managed OpenCode process instead of leaving it running (thanks to @a0000001).
-- The extension now reuses its OpenCode output channel across managed-server restarts instead of creating duplicate channels (thanks to @TTTPOB).
+- The extension reuses its OpenCode output channel across managed-server restarts instead of creating duplicates (thanks to @TTTPOB).
 
 ## [1.21.0] - 2026-08-26
 
