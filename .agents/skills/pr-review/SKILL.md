@@ -9,7 +9,7 @@ The maintainer directs the project at the product level; they plan and understan
 
 ## Verdicts
 
-Choose exactly one. When torn between two, the deciding question is always: **what does accepting this cost the maintainer over the next year?**
+Choose exactly one. When torn between two, the deciding question is always: **what does accepting this cost the maintainer over the next year?** Between PUSH-BACK and MERGE-THEN-FIX specifically, size of the residue never decides — its owner does: *does the fix close the symptom?* then *whose knowledge finishes it?* then *what does a round-trip cost?*
 
 **Product fit is the maintainer's call, not yours.** For a PR that adds or changes user-facing functionality, judge the code but never silently decide the feature is wanted: state the product question explicitly (who asks for this, what it costs the product) and make the verdict conditional on the maintainer's answer when desirability is genuinely open — "PUSH-BACK if you want this feature; DECLINE if you don't". A bug fix has no product question; a new surface always does.
 
@@ -23,11 +23,11 @@ Choose exactly one. When torn between two, the deciding question is always: **wh
 
    **Salvage the ache.** A decline closes the PR, never the problem. Decide first whether a real ache exists — a whim or a false premise has none, and proposing to track those is noise. When the ache is real: search the tracker for an existing issue (`gh issue list --search`), reference it if found; if untracked, the ready action additionally includes a drafted issue (title + a few lines: the ache, the evidence from the PR, the welcome fix shape) for the maintainer to approve.
 
-2. **PUSH-BACK** — right direction, roughly 80% good, but the missing 20% is the contributor's work, not the maintainer's: incomplete runtime coverage, an unhandled failure path, a broken workflow hunk, discipline gaps. The PR stays open.
+2. **PUSH-BACK** — right direction, but what remains is the contributor's to do. Two grounds, checked in order: the fix does not close the reported symptom (then it is always PUSH-BACK — merging a non-fix closes the issue on paper and leaves the bug live, whatever the size of the gap); or the residue needs knowledge only the author has — why they guarded that branch, what their test was meant to prove, what their own scenario requires. The PR stays open.
    
    Ready action: a review comment with a **finite, checkable list** of what to change — each item states what is wrong, why it matters, and what done looks like. The list must be completable: a contributor who does every item has earned a merge, so include nothing you would not merge over.
 
-3. **MERGE-THEN-FIX** — correct at the 90–95% level; the residue is small enough that commenting would cost more than fixing. Merge it and immediately do the follow-ups in-house.
+3. **MERGE-THEN-FIX** — the fix closes the symptom, and the residue needs knowledge the contributor does not have: repo conventions, a second path with the same defect, runtime parity, product shape already decided. That residue is ours regardless of size — sending it back buys a round-trip of days and a real chance the PR dies, against minutes of in-house work. Two hard conditions: the symptom is closed (else PUSH-BACK), and the follow-up list contains no product decision the maintainer has not already made — a "decide whether X" item is either a question in the report or a PUSH-BACK. The follow-ups are executed the same day as the merge; a list that waits becomes debt nobody remembers.
    
    Ready action: merge recommendation plus a **follow-up list precise enough for an agent to execute without re-reviewing the PR** — exact files, exact defects, exact intended behavior. Every known defect goes on the list; merging is never a reason to drop one (the repo rule: every merged contribution is fully de-slopified).
 
