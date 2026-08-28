@@ -26,7 +26,7 @@ import { useGlobalSessionStatus, useSessionPermissions, useSessionQuestionCount 
 import { useSessionMessageRecordsForExport } from '@/sync/use-sync';
 import { useViewportStore, viewportSessionKey } from '@/sync/viewport-store';
 import { DraggableSessionRow } from '../folders/sessionFolderDnd';
-import { canShowSessionWorktreeMenu, getSessionWorktreeMenuDisabled, nodeContainsSessionId, nodeHasPinnedMembershipChange, selectQuestionBadgeSessionScopes } from './sessionNodeItemUtils';
+import { canShowSessionWorktreeMenu, getSessionWorktreeMenuDisabled, nodeContainsSessionId, nodeHasPinnedMembershipChange, selectQuestionBadgeSessionScopes, selectRowBadgeVisibilityClass } from './sessionNodeItemUtils';
 import type { SessionNode } from '../types';
 import { formatProjectLabel, formatSessionCompactDateLabel, formatSessionDateLabel, normalizePath, renderHighlightedText } from '../utils';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -685,6 +685,14 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
   const pendingQuestionLabel = pendingQuestionCount === 1
     ? t('sessions.sidebar.session.status.questionPendingSingle')
     : t('sessions.sidebar.session.status.questionPendingMany', { count: pendingQuestionCount });
+  // Actions are permanently visible (with matching permanent padding) only in
+  // the non-VSCode alwaysShowActions layout; every other layout hover-reveals
+  // them over the row's right edge, where the badges live (#2284).
+  const badgeVisibilityClass = selectRowBadgeVisibilityClass({
+    actionsAlwaysVisible: alwaysShowActions && !isVSCode,
+    menuOpen: isSessionMenuOpen,
+    hideOnHoverClass,
+  });
   const showUnreadStatus = !isMovingToWorktree && !isStreaming && needsAttention && !isActive;
   const showStatusMarker = isStreaming || showUnreadStatus;
   // Both states are the same static dot; only the color separates "running"
@@ -1390,7 +1398,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                             </>
                           )}
                         </span>
-                      ) : (showActivityDuration || sessionGoalGlyph || showInlineBranchMarker) ? (
+                      ) : (showActivityDuration || sessionGoalGlyph || showInlineBranchMarker || renderContext === 'recent') ? (
                         <div className="relative ml-1 flex h-4 flex-shrink-0 items-center justify-end">
                           <span className={cn(
                             'inline-flex items-center gap-1 whitespace-nowrap text-right transition-opacity duration-150',
@@ -1414,19 +1422,31 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                                     style={prIconColor ? { color: prIconColor } : undefined}
                                   />
                                 ) : null}
+                                {/* The recent activity list shows its compact
+                                    timestamp inline (touch runtimes already get
+                                    it through the alwaysShowActions branch);
+                                    it shares the slot with the goal/branch
+                                    metadata and hides on hover exactly like
+                                    them, so the revealed row actions never
+                                    overlap it. */}
+                                {renderContext === 'recent' ? (
+                                  <span className="flex-shrink-0 text-[0.72rem] leading-none text-muted-foreground/75 tabular-nums">
+                                    {sessionCompactUpdatedLabel}
+                                  </span>
+                                ) : null}
                               </>
                             )}
                           </span>
                         </div>
                       ) : null}
                       {pendingPermissionCount > 0 ? (
-                        <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1 py-0.5 text-[0.7rem] text-destructive flex-shrink-0" title={t('sessions.sidebar.session.status.permissionRequired')} aria-label={t('sessions.sidebar.session.status.permissionRequired')}>
+                        <span className={cn('inline-flex items-center gap-1 rounded bg-destructive/10 px-1 py-0.5 text-[0.7rem] text-destructive flex-shrink-0', badgeVisibilityClass)} title={t('sessions.sidebar.session.status.permissionRequired')} aria-label={t('sessions.sidebar.session.status.permissionRequired')}>
                           <Icon name="shield" className="h-3 w-3" />
                           <span className="leading-none">{pendingPermissionCount}</span>
                         </span>
                       ) : null}
                       {pendingQuestionCount > 0 ? (
-                        <span className="inline-flex items-center gap-1 rounded bg-status-info/10 px-1 py-0.5 text-[0.7rem] text-status-info flex-shrink-0" title={pendingQuestionLabel} aria-label={pendingQuestionLabel}>
+                        <span className={cn('inline-flex items-center gap-1 rounded bg-status-info/10 px-1 py-0.5 text-[0.7rem] text-status-info flex-shrink-0', badgeVisibilityClass)} title={pendingQuestionLabel} aria-label={pendingQuestionLabel}>
                           <Icon name="question" className="h-3 w-3" />
                           <span className="leading-none">{pendingQuestionCount}</span>
                         </span>

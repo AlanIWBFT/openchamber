@@ -15,6 +15,7 @@ import { useUIStore } from '@/stores/useUIStore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const contextPanelSource = readFileSync(join(__dirname, '..', 'ContextPanel.tsx'), 'utf-8');
+const browserPaneSource = readFileSync(join(__dirname, '..', '..', 'browser', 'BrowserPane.tsx'), 'utf-8');
 const DIRECTORY = '/path/to/repository';
 
 beforeEach(() => {
@@ -39,5 +40,11 @@ describe('issue #3175 browser capture while the context panel is closed', () => 
     expect(panel.tabs).toHaveLength(1);
     expect(panel.tabs[0]?.mode).toBe('browser');
     expect(panel.tabs[0]?.targetPath).toBe('https://example.com');
+  });
+
+  test('reveals the browser again if it was closed before capture', () => {
+    expect(browserPaneSource).toContain(
+      'openContextBrowser(directory, webview.getURL())',
+    );
   });
 });

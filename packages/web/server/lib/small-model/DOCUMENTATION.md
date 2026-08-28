@@ -116,9 +116,11 @@ other runtime API.
      endpoint, (3) the endpoint OpenCode resolved at runtime, or (4) the
     provider's `api` field from the models.dev catalog. The credential follows
     the same shape: config `options.apiKey`, then the runtime credential, then
-    the auth.json entry. Configured API keys honor OpenCode's `{env:NAME}` and
-    `{file:path}` substitutions; file contents and resolved credentials remain
-    server-side.
+    the auth.json entry. `provider.<id>.options.headers` is sent with the
+    request and overrides the bearer default, so gateways that authenticate on
+    their own header work here exactly as they do in a chat turn. Configured API
+    keys and header values honor OpenCode's `{env:NAME}` and `{file:path}`
+    substitutions; file contents and resolved credentials remain server-side.
   - The runtime credential is refused for providers listed in
     `OWN_CREDENTIAL_HANDLING`. Their branches need the stored entry rather than
     a bearer token: the clearest case is the ChatGPT-plan `openai` login, whose
@@ -135,6 +137,17 @@ other runtime API.
 - `routes.js` — `GET /api/small-model` (resolution preview) and
   `POST /api/small-model/generate` (`{ prompt, system?, maxOutputTokens?,
   model?, directory? }` → `{ text, providerID, modelID, source }`).
+- `config-injection.js` — applies the Settings → Chat → Small Model override
+  to the config injected into the **managed OpenCode process**
+  (`OPENCODE_CONFIG_CONTENT`), so OpenCode's own internal `small_model`
+  consumers — session title and summary generation — use the user's explicit
+  choice instead of OpenCode's fallback chain. Only an explicit override
+  (`smallModelUseDefault === false` with a non-empty `smallModelOverride`) is
+  injected; "use default" leaves the config untouched so OpenCode's own
+  resolution stays authoritative. Wired into `getManagedOpenCodeEnv` in
+  `server/index.js`; the pure helper is unit-tested in
+  `config-injection.test.js`. External OpenCode servers are unaffected (they
+  are not launched with this env).
 
 ## Which providers the pickers may offer
 
