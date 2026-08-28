@@ -586,8 +586,6 @@ export const ProvidersPage: React.FC = () => {
       }
 
       toast.success(t('settings.providers.page.toast.providerDisconnected'));
-      // Only accumulate when the server actually deferred a restart (e.g. auth removed).
-      // removed:false payloads must not create a phantom pending Apply & Restart.
       // Use the helper so an externally managed OpenCode that requires a manual
       // restart records the deferred-restart guidance instead of toasting a
       // misleading "disconnect failed" for a write that already persisted.
@@ -940,15 +938,9 @@ export const ProvidersPage: React.FC = () => {
               size="xs"
               className="!font-normal"
               onClick={() => {
-                setShowAuthPanel((prev) => {
-                  const next = !prev;
-                  if (!next) {
-                    setAuthPanelDismissedForId(selectedProvider.id);
-                  } else {
-                    setAuthPanelDismissedForId(null);
-                  }
-                  return next;
-                });
+                const nextOpen = !showAuthPanel;
+                setShowAuthPanel(nextOpen);
+                setAuthPanelDismissedForId(nextOpen ? null : selectedProvider.id);
               }}
             >
               {showAuthPanel ? t('settings.providers.page.actions.hide') : t('settings.providers.page.actions.reconnect')}
