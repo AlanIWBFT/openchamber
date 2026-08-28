@@ -2322,7 +2322,7 @@ export const RemoteInstancesPage: React.FC = () => {
               min={5}
               max={240}
               step={1}
-              className="w-16 tabular-nums"
+              className="w-20 tabular-nums"
               value={draft.connectionTimeoutSec}
               onValueChange={(next) => {
                 updateDraft((current) => ({
@@ -2350,7 +2350,7 @@ export const RemoteInstancesPage: React.FC = () => {
               min={1}
               max={65535}
               step={1}
-              className="w-20 tabular-nums"
+              className="w-32 tabular-nums"
               value={draft.remoteOpenchamber.preferredPort}
               onValueChange={(next) => {
                 updateDraft((current) => ({
@@ -2517,7 +2517,7 @@ export const RemoteInstancesPage: React.FC = () => {
                 min={1}
                 max={65535}
                 step={1}
-                className="w-20 tabular-nums"
+                className="w-32 tabular-nums"
                 value={draft.localForward.preferredLocalPort}
                 onValueChange={(next) => {
                   updateDraft((current) => ({
@@ -2775,7 +2775,7 @@ export const RemoteInstancesPage: React.FC = () => {
                           min={1}
                           max={65535}
                           step={1}
-                          className="w-16 tabular-nums"
+                          className="w-32 tabular-nums"
                           value={forward.localPort}
                           onValueChange={(next) => {
                             updateForward((item) => ({
@@ -2817,7 +2817,7 @@ export const RemoteInstancesPage: React.FC = () => {
                             min={1}
                             max={65535}
                             step={1}
-                            className="w-16 tabular-nums"
+                            className="w-32 tabular-nums"
                             value={forward.remotePort}
                             onValueChange={(next) => {
                               updateForward((item) => ({
