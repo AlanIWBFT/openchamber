@@ -1852,6 +1852,7 @@ export const dict = {
   'directoryExplorerDialog.toast.desktopDeniedAccess': 'Desktop denied directory access.',
   'directoryExplorerDialog.toast.failedToOpenDirectory': 'Failed to open directory',
   'directoryExplorerDialog.toast.desktopCouldNotGrantAccess': 'Desktop could not grant file access.',
+  'directoryExplorerDialog.toast.addedProjects': 'Added {count} project(s)',
   'directoryExplorerDialog.toast.failedToAddProject': 'Failed to add project',
   'directoryExplorerDialog.toast.cloneUrlRequired': 'Enter a repository URL before cloning.',
   'directoryExplorerDialog.toast.selectValidDirectoryPath': 'Please select a valid directory path.',

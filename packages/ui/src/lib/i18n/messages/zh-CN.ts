@@ -1818,6 +1818,7 @@ export const dict: Record<I18nKey, string> = {
   'directoryExplorerDialog.toast.desktopDeniedAccess': '桌面端拒绝了目录访问。',
   'directoryExplorerDialog.toast.failedToOpenDirectory': '打开目录失败',
   'directoryExplorerDialog.toast.desktopCouldNotGrantAccess': '桌面端无法授予文件访问权限。',
+  'directoryExplorerDialog.toast.addedProjects': '已添加 {count} 个项目',
   'directoryExplorerDialog.toast.failedToAddProject': '添加项目失败',
   'directoryExplorerDialog.toast.cloneUrlRequired': '克隆前请输入仓库 URL。',
   'directoryExplorerDialog.toast.selectValidDirectoryPath': '请选择有效的目录路径。',

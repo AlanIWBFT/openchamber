@@ -1830,6 +1830,7 @@ export const dict: Record<I18nKey, string> = {
   "directoryExplorerDialog.toast.desktopDeniedAccess": "Десктопному застосунку заборонено доступ до каталогу.",
   "directoryExplorerDialog.toast.failedToOpenDirectory": "Не вдалося відкрити каталог",
   "directoryExplorerDialog.toast.desktopCouldNotGrantAccess": "Десктопний застосунок не зміг надати доступ до файлу.",
+  "directoryExplorerDialog.toast.addedProjects": "Додано {count} проєкт(и)",
   "directoryExplorerDialog.toast.failedToAddProject": "Не вдалося додати проєкт",
   "directoryExplorerDialog.toast.cloneUrlRequired": "Введіть URL репозиторію перед клонуванням.",
   "directoryExplorerDialog.toast.selectValidDirectoryPath": "Виберіть правильний шлях до каталогу.",

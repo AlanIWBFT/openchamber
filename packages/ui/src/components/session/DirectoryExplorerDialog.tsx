@@ -493,6 +493,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
           });
           return;
         }
+        toast.success(t('directoryExplorerDialog.toast.addedProjects', { count: added.length }));
         setSelectedPaths([]);
         handleClose();
         return;

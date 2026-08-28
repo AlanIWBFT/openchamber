@@ -1830,6 +1830,7 @@ export const dict: Record<I18nKey, string> = {
   "directoryExplorerDialog.toast.desktopDeniedAccess": "El escritorio denegó el acceso al directorio.",
   "directoryExplorerDialog.toast.failedToOpenDirectory": "No se pudo abrir el directorio",
   "directoryExplorerDialog.toast.desktopCouldNotGrantAccess": "El escritorio no pudo otorgar acceso al archivo.",
+  "directoryExplorerDialog.toast.addedProjects": "Se añadieron {count} proyecto(s)",
   "directoryExplorerDialog.toast.failedToAddProject": "No se pudo añadir el proyecto",
   "directoryExplorerDialog.toast.cloneUrlRequired": "Introduce una URL de repositorio antes de clonar.",
   "directoryExplorerDialog.toast.selectValidDirectoryPath": "Por favor selecciona una ruta de directorio válida.",

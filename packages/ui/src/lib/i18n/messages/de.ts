@@ -1651,6 +1651,7 @@ export const dict = {
   'directoryExplorerDialog.toast.desktopDeniedAccess': 'Desktop hat den Zugriff auf das Verzeichnis verweigert.',
   'directoryExplorerDialog.toast.failedToOpenDirectory': 'Fehler beim Öffnen des Verzeichnisses',
   'directoryExplorerDialog.toast.desktopCouldNotGrantAccess': 'Desktop konnte keinen Dateizugriff gewähren.',
+  'directoryExplorerDialog.toast.addedProjects': '{count} Projekt(e) hinzugefügt',
   'directoryExplorerDialog.toast.failedToAddProject': 'Fehler beim Hinzufügen des Projekts',
   'directoryExplorerDialog.toast.cloneUrlRequired': 'Geben Sie eine Repository-URL ein, bevor Sie klonen.',
   'directoryExplorerDialog.toast.selectValidDirectoryPath': 'Bitte wählen Sie einen gültigen Verzeichnispfad aus.',

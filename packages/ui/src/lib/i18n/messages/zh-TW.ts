@@ -1822,6 +1822,7 @@ export const dict: Record<I18nKey, string> = {
   'directoryExplorerDialog.toast.desktopDeniedAccess': '桌面端拒絕了目錄存取。',
   'directoryExplorerDialog.toast.failedToOpenDirectory': '開啟目錄失敗',
   'directoryExplorerDialog.toast.desktopCouldNotGrantAccess': '桌面端無法授予檔案存取權限。',
+  'directoryExplorerDialog.toast.addedProjects': '已新增 {count} 個專案',
   'directoryExplorerDialog.toast.failedToAddProject': '新增專案失敗',
   'directoryExplorerDialog.toast.cloneUrlRequired': '複製前請輸入儲存庫 URL。',
   'directoryExplorerDialog.toast.selectValidDirectoryPath': '請選擇有效的目錄路徑。',

@@ -1921,6 +1921,7 @@ export const dict: Record<I18nKey, string> = {
   'directoryExplorerDialog.title': 'Dodaj katalog projektu',
   'directoryExplorerDialog.toast.desktopCouldNotGrantAccess': 'Aplikacja desktopowa nie mogła przyznać dostępu do pliku.',
   'directoryExplorerDialog.toast.desktopDeniedAccess': 'Aplikacja desktopowa odmówiła dostępu do katalogu.',
+  'directoryExplorerDialog.toast.addedProjects': 'Dodano {count} projektów',
   'directoryExplorerDialog.toast.failedToAddProject': 'Nie udało się dodać projektu',
   'directoryExplorerDialog.toast.cloneUrlRequired': 'Wpisz URL repozytorium przed klonowaniem.',
   'directoryExplorerDialog.toast.failedToOpenDirectory': 'Nie udało się otworzyć katalogu',
