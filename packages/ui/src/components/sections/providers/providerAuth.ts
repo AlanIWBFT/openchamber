@@ -74,17 +74,28 @@ export interface ProviderCredentialInput {
    * `packages/web/server/lib/walkthrough/DOCUMENTATION.md:134`.
    */
   optionsApiKey?: string | null;
+  /**
+   * The provider declares environment variables it reads credentials from.
+   * Multi-variable providers (Bedrock, Azure, Vertex) never resolve a single
+   * `Provider.key` upstream, so without this signal they read as
+   * "Credentials missing" even when fully configured.
+   */
+  envDeclared?: boolean;
 }
 
 /**
- * Prefer authoritative credential signals. Do not treat Provider.env length as
- * proof of credentials — that array is declared env var *names*, not values.
+ * Prefer authoritative credential signals. Declared env vars are the weakest of
+ * them — the array holds variable *names*, not values — but for providers whose
+ * credentials span several env vars it is the only signal OpenCode exposes.
  */
 export const providerHasCredentials = (input: ProviderCredentialInput): boolean => {
   if (typeof input.key === 'string' && input.key.trim().length > 0) {
     return true;
   }
   if (typeof input.optionsApiKey === 'string' && input.optionsApiKey.trim().length > 0) {
+    return true;
+  }
+  if (input.envDeclared === true) {
     return true;
   }
   return input.authSourceExists === true;

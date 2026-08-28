@@ -53,6 +53,14 @@ import {
   type ProviderConfigScope,
 } from './custom-provider-form';
 
+/**
+ * Providers whose credentials come from several env vars (Bedrock, Azure,
+ * Vertex) never get a single resolved `Provider.key` from OpenCode, so the
+ * declared env list is the only signal that they are configured at all.
+ */
+const providerDeclaresEnv = (provider: { env?: string[] } | undefined): boolean =>
+  Array.isArray(provider?.env) && provider.env.some((name) => name.trim().length > 0);
+
 const formatCompactNumber = (value: number) => new Intl.NumberFormat(getCurrentIntlLocale(), {
   notation: 'compact',
   compactDisplay: 'short',
@@ -340,6 +348,7 @@ export const ProvidersPage: React.FC = () => {
       key: provider?.key,
       authSourceExists: sources.auth.exists,
       optionsApiKey: (provider as { options?: { apiKey?: string | null } } | undefined)?.options?.apiKey ?? null,
+      envDeclared: providerDeclaresEnv(provider),
     });
     const isEditableCustomProvider = Boolean(
       provider && isConfigDefinedCustomProvider(provider, sources)
@@ -860,6 +869,7 @@ export const ProvidersPage: React.FC = () => {
     key: selectedProvider.key,
     authSourceExists: selectedSources?.auth.exists,
     optionsApiKey: (selectedProvider as { options?: { apiKey?: string | null } }).options?.apiKey ?? null,
+    envDeclared: providerDeclaresEnv(selectedProvider),
   });
   const authStatusIncomplete = requiresProviderAuth(sourcesLoaded, hasCredentials, isEditableCustomProvider);
   const showModelsSection = shouldShowModelsSection({

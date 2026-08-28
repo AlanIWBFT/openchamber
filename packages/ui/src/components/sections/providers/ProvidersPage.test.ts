@@ -77,8 +77,8 @@ describe('provider auth method helpers', () => {
 });
 
 describe('provider credential state helpers', () => {
-  test('providerHasCredentials ignores declared env names and requires key or auth source', () => {
-    // Built-in catalog entry with env var names but no actual credential.
+  test('providerHasCredentials requires key, options.apiKey, declared env, or auth source', () => {
+    // Built-in catalog entry with no credential signal at all.
     expect(providerHasCredentials({ key: undefined, authSourceExists: false })).toBe(false);
     expect(providerHasCredentials({ key: '', authSourceExists: false })).toBe(false);
     expect(providerHasCredentials({ key: '   ', authSourceExists: false })).toBe(false);
@@ -87,6 +87,14 @@ describe('provider credential state helpers', () => {
     expect(providerHasCredentials({ key: 'sk-...', authSourceExists: false })).toBe(true);
     // Auth.json provenance alone is enough while sources are authoritative.
     expect(providerHasCredentials({ key: undefined, authSourceExists: true })).toBe(true);
+  });
+
+  test('providerHasCredentials counts declared env vars for multi-variable providers', () => {
+    // Bedrock/Azure/Vertex resolve credentials from several env vars, so
+    // OpenCode never sets Provider.key for them; the declared env list is the
+    // only signal that the provider is configured.
+    expect(providerHasCredentials({ key: undefined, authSourceExists: false, envDeclared: true })).toBe(true);
+    expect(providerHasCredentials({ key: undefined, authSourceExists: false, envDeclared: false })).toBe(false);
   });
 
   test('providerHasCredentials treats options.apiKey as a usable credential', () => {
