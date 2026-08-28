@@ -41,7 +41,7 @@ Execute the approved closes/comments with retries and ~1–2s spacing between ca
 
 The review bot's `review:*` labels are a pre-sort, not a verdict: `review:ready` PRs go first (the bot found no code defects — likely MERGE/MERGE-THEN-FIX), `review:blocked` ones carry a bot comment whose findings the verdict review verifies rather than rediscovers. Bot labels never replace the pr-review pass — the bot cannot judge product fit or maintainability scope.
 
-Split the clean pool smallest-first (tiny diffs are fast wins and most likely mergeable). Fan out subagents in batches of ~10 PRs each; every subagent receives the full `pr-review` skill text as its instructions plus its PR numbers, reads real diffs (`gh pr view`, `gh pr diff`) and the local checkout, and returns per-PR verdict blocks in the skill's output format.
+Split the clean pool smallest-first (tiny diffs are fast wins and most likely mergeable). Fan out the `pr-reviewer` subagent (`.opencode/agent/pr-reviewer.md`, which loads the `pr-review` skill and carries the hard rules) — one PR per call, or ~10 PRs per general subagent that receives the full `pr-review` skill text when `pr-reviewer` is unavailable. The subagent inherits the chat's model; never hand verdicts to a smaller model to save quota — a verdict from a small model is a pre-sort, not a decision. Each returns per-PR verdict blocks in the skill's output format.
 
 **Report format.** The consolidated report is what the maintainer decides from — calibrate each entry so no follow-up question is needed, without ballooning:
 
