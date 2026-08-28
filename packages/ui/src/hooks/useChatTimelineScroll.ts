@@ -8,6 +8,7 @@ import {
     CHAT_LIST_ANCHOR_OFFSET,
     getAnchoredTurnMetrics,
     getRowBottom,
+    resolveRealContentEndOffset,
     resolveTimelineIsAtEnd,
     TIMELINE_FOLLOW_REARM_THRESHOLD_PX,
     type TimelineListMeasurementState,
@@ -588,7 +589,25 @@ export const useChatTimelineScroll = ({
                 quietTimer = null;
                 widthResizingRef.current = false;
                 if (isAtEndRef.current && pendingAnchorRef.current === null) {
-                    void listRef.current?.scrollToEnd({ animated: false });
+                    // Not scrollToEnd: the list's end offset comes from the
+                    // total content length, which still carries pre-wrap row
+                    // sizes (and any reserved anchored end space) right after a
+                    // width change. Landing there parks the last row near the
+                    // top of the viewport with a blank tail below it. Target
+                    // the measured bottom of the last real row instead.
+                    const list = listRef.current;
+                    const state = list?.getState();
+                    const offset = state
+                        ? resolveRealContentEndOffset({
+                            state,
+                            composerOverlayHeight: composerOverlayHeightRef.current,
+                        })
+                        : null;
+                    if (list && offset !== null) {
+                        void list.scrollToOffset({ offset, animated: false });
+                    } else {
+                        void list?.scrollToEnd({ animated: false });
+                    }
                 }
             }, 350);
         });
@@ -637,15 +656,15 @@ export const useChatTimelineScroll = ({
                 const lastIndex = state.data.length - 1;
                 const lastBottom = lastIndex >= 0 ? getRowBottom(state, lastIndex) : null;
                 if (lastBottom !== null && state.scroll > lastBottom) {
-                    const visibleLength = Math.max(
-                        0,
-                        state.scrollLength - composerOverlayHeightRef.current - CHAT_LIST_ANCHOR_OFFSET,
-                    );
-                    void list.scrollToOffset({
-                        offset: Math.max(0, lastBottom - visibleLength),
-                        animated: false,
+                    const offset = resolveRealContentEndOffset({
+                        state,
+                        composerOverlayHeight: composerOverlayHeightRef.current,
+                        extraInset: CHAT_LIST_ANCHOR_OFFSET,
                     });
-                    return;
+                    if (offset !== null) {
+                        void list.scrollToOffset({ offset, animated: false });
+                        return;
+                    }
                 }
             }
         }
