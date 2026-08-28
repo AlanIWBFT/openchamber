@@ -33,6 +33,8 @@ Choose exactly one. When torn between two, the deciding question is always: **wh
 
 4. **MERGE** — nothing to fix. Ready action: merge with a short genuine thank-you.
 
+**Link the issues a fix closes.** For every MERGE and MERGE-THEN-FIX verdict on a bug fix, search open issues for the symptom the PR resolves (`gh issue list --search` with the error strings and area terms) — contributors often fix problems without linking them. Any match goes into the ready action as a proposed "Closes #N" / close-on-merge so fixed issues never linger open unlinked.
+
 Manual verification the agent cannot perform (device testing, packaged builds, visual states) does not create a fifth verdict: pick the verdict the code earns and attach a **"needs your hands"** line saying exactly what to check and what outcome confirms it.
 
 ## Process

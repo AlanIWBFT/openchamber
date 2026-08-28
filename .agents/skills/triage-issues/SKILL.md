@@ -20,11 +20,21 @@ Fetch all open issues with `gh issue list --limit` above the real count. Bucket 
 
 | Bucket | Signal | Likely verdict |
 |---|---|---|
-| Stale-fixed | references code/behavior changed by merged PRs; CHANGELOG `[Unreleased]`/recent releases mention the symptom | CLOSE-FIXED (verify before closing) |
+| Stale-fixed | references code/behavior changed by merged PRs; CHANGELOG `[Unreleased]`/recent releases mention the symptom | CLOSE-FIXED (verify per *Silently-fixed detection*) |
 | Dead needs-info | `needs-info` with no reporter reply > 30 days | close as stale |
 | Duplicate clusters | title/error-string similarity across open issues | CLOSE-DUPLICATE |
 | Feature wishes | `enhancement` | FEATURE-DECISION or CLOSE-DECLINE |
 | Traced bugs | `root-cause:found` | FIX-READY candidates, verify the trace still applies |
+
+### Silently-fixed detection
+
+Many fixes land without linking the issue they resolve, so an issue can sit open with a perfectly valid-looking repro that describes code which no longer exists. A fresh-looking issue is not proof of a live bug — probe in this order, strongest evidence first:
+
+1. **Mechanism anchor.** For issues carrying `root-cause:found` (or any comment citing `file:line`), check whether the cited code changed since the issue's date: `git log -L<line>,<line>:<file> --since=<issue date>` (fall back to `git log --since -- <file>` when lines drifted). Untouched code → the bug is live. Changed code → re-read the mechanism on current main; if it is gone, this is CLOSE-FIXED with the commit as evidence.
+2. **Repro re-run.** When the intake comment carries an inline reproduction script or test, run it against current main. Passing repro = fixed, with the run as evidence.
+3. **Symptom search.** Extract the issue's distinctive strings (error messages, function names, user-visible symptom terms) and search `git log --grep`, `CHANGELOG.md`, and merged PR titles/bodies *since the issue's creation date*.
+
+CLOSE-FIXED always names its evidence (commit, PR, or repro run); a hunch that "this area was reworked" downgrades to a comment asking the reporter to retry on current main, keeping the issue open on the needs-reporter clock.
 
 Weigh trusted community reviewers' comments (see the `triage-prs` skill's rule — same names, same weight) and the intake bot's "For the maintainer" lines as strong signals. Deliver the sweep as one report and stop for approval.
 
