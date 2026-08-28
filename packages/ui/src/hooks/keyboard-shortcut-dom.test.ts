@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test';
+import { Window } from 'happy-dom';
 
-import { hasOpenDropdown, isTypingInEditableTarget } from './keyboard-shortcut-dom';
+import { hasOpenDropdown, isEditableEventTarget, shouldStopDropdownImeEscape } from './keyboard-shortcut-dom';
+
+const domWindow = new Window();
+Object.assign(globalThis, { document: domWindow.document, HTMLElement: domWindow.HTMLElement });
 
 test('does not treat an unrelated visible listbox as an open dropdown', () => {
   const promptNavigator = {} as Element;
@@ -29,26 +33,25 @@ test('detects an open select popup', () => {
   expect(hasOpenDropdown(root)).toBe(true);
 });
 
-// isTypingInEditableTarget — the mod+digit surface switcher guard (issue
-// #2503): while the user is typing in an editable target, ctrl/cmd+digit
-// must keep its normal meaning (browser tab switching, in-input chords)
-// instead of switching the context panel surface.
-const targetWithClosest = (result: Element | null): EventTarget =>
-  ({ closest: (selector: string) => (selector === 'input, textarea, [contenteditable="true"]' ? result : null) }) as unknown as EventTarget;
-
-test('editable guard is false for a null target', () => {
-  expect(isTypingInEditableTarget(null)).toBe(false);
+test('stops IME Escape before an open dropdown dismiss listener', () => {
+  expect(shouldStopDropdownImeEscape({ key: 'Escape', isComposing: true, keyCode: 0 }, true)).toBe(true);
+  expect(shouldStopDropdownImeEscape({ key: 'Escape', isComposing: false, keyCode: 229 }, true)).toBe(true);
+  expect(shouldStopDropdownImeEscape({ key: 'Escape', isComposing: false, keyCode: 27 }, true)).toBe(false);
+  expect(shouldStopDropdownImeEscape({ key: 'Escape', isComposing: true, keyCode: 0 }, false)).toBe(false);
 });
 
-test('editable guard is false for a target without closest', () => {
-  expect(isTypingInEditableTarget({} as EventTarget)).toBe(false);
+test('treats inputs, textareas, selects, and contenteditable elements as editable targets', () => {
+  expect(isEditableEventTarget(document.createElement('input'))).toBe(true);
+  expect(isEditableEventTarget(document.createElement('textarea'))).toBe(true);
+  expect(isEditableEventTarget(document.createElement('select'))).toBe(true);
+
+  const editableDiv = document.createElement('div');
+  Object.defineProperty(editableDiv, 'isContentEditable', { value: true });
+  expect(isEditableEventTarget(editableDiv)).toBe(true);
 });
 
-test('editable guard is true inside an input, textarea or contenteditable', () => {
-  const editable = {} as Element;
-  expect(isTypingInEditableTarget(targetWithClosest(editable))).toBe(true);
-});
-
-test('editable guard is false outside editable surfaces', () => {
-  expect(isTypingInEditableTarget(targetWithClosest(null))).toBe(false);
+test('does not treat a plain element or non-element target as editable', () => {
+  expect(isEditableEventTarget(document.createElement('div'))).toBe(false);
+  expect(isEditableEventTarget(document.createElement('button'))).toBe(false);
+  expect(isEditableEventTarget(null)).toBe(false);
 });
