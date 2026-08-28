@@ -20,6 +20,7 @@ import { toast } from '@/components/ui';
 import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
 import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import type { ConfigChangeScope } from '@/lib/configSync';
 import { recordDeferredOpenCodeRestart } from '@/lib/opencode/deferredRestart';
 import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/lib/clipboard';
@@ -421,6 +422,32 @@ export const ProvidersPage: React.FC = () => {
     refreshProviderSources();
   }, [refreshProviderSources, setSelectedProvider]);
 
+  // The mutation above already persisted to disk. If OpenCode is externally
+  // managed (e.g. the user is running a separate `opencode serve` they have to
+  // restart themselves), reloadOpenCodeConfiguration throws with
+  // `requiresManualRestart`. Surface the restart guidance instead of a
+  // misleading "mutation failed" toast and ensure the deferred-restart
+  // payload is recorded so the Settings page can show pending-restart
+  // guidance consistently across providers, API keys, custom providers,
+  // and disconnects.
+  const applyConfigReloadOrRecordDeferred = React.useCallback(
+    async (scope: ConfigChangeScope, idForDeferred?: string) => {
+      try {
+        await reloadOpenCodeConfiguration({ scopes: [scope], mode: 'active' });
+        return 'reloaded';
+      } catch (error) {
+        const requiresManual = (error as Error & { requiresManualRestart?: boolean })?.requiresManualRestart === true;
+        if (requiresManual) {
+          if (idForDeferred) {
+            recordDeferredOpenCodeRestart(scope, { id: idForDeferred });
+          }
+          return 'manual-restart';
+        }
+        throw error;
+      }
+    },
+    [],
+  );
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const selectedSources = selectedProviderId ? providerSources[selectedProviderId] : undefined;
 
@@ -445,7 +472,11 @@ export const ProvidersPage: React.FC = () => {
 
       toast.success(t('settings.providers.page.toast.apiKeySaved'));
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      // Mutation succeeded: the auth key is on disk. The reload can fail with
+      // requiresManualRestart when OpenCode is externally managed; the helper
+      // records the deferred-restart payload instead of throwing a misleading
+      // "mutation failed" toast.
+      await applyConfigReloadOrRecordDeferred('providers', providerId);
       markAuthWriteSucceeded(providerId);
     } catch (error) {
       console.error('Failed to save API key:', error);
