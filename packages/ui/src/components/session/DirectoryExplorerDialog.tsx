@@ -469,6 +469,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
 
     setIsConfirming(true);
     try {
+      const shouldCreateSelection = !isCloneMode && shouldCreateTarget && normalizeDirectoryPath(target) === normalizeDirectoryPath(targetPath);
       if (isCloneMode) {
         const remoteUrl = cloneRemoteUrl.trim();
         if (!remoteUrl) {
