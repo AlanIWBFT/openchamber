@@ -4,7 +4,7 @@ import type { Event, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk
 
 const listPendingQuestionsCalls: Array<{ directories?: Array<string | null | undefined> }> = []
 const listPendingPermissionsCalls: Array<{ directories?: Array<string | null | undefined> }> = []
-const todoPersistWrites: Array<{ sessionID: string; todos: unknown }> = []
+const todoPersistWrites: Array<{ directory: string; sessionID: string; todos: unknown }> = []
 let pendingQuestionsResponse: QuestionRequest[] = []
 let pendingPermissionsResponse: PermissionRequest[] = []
 let pendingQuestionsShouldThrow = false
@@ -44,8 +44,8 @@ mock.module("@/stores/useConfigStore", () => ({
 mock.module("@/stores/useTodosPersistStore", () => ({
   useTodosPersistStore: {
     getState: () => ({
-      setSessionTodos: (sessionID: string, todos: unknown) => {
-        todoPersistWrites.push({ sessionID, todos })
+      setSessionTodos: (directory: string, sessionID: string, todos: unknown) => {
+        todoPersistWrites.push({ directory, sessionID, todos })
       },
     }),
   },
@@ -66,9 +66,11 @@ mock.module("@/components/ui", () => ({
 
 import { INITIAL_STATE, type State } from "../types"
 import { ChildStoreManager, type DirectoryStore } from "../child-store"
+import { getRuntimeKey } from "@/lib/runtime-switch"
 const {
   createEventRoutingIndex,
   handleEvent,
+  resyncBlockingRequestsForActiveDirectory,
   resyncBlockingRequestsForDirectory,
   setActiveSession,
 } = await import("../sync-context")
@@ -129,6 +131,34 @@ describe("resyncBlockingRequestsForDirectory", () => {
     expect(listPendingPermissionsCalls[0]).toEqual({ directories: ["/repo"] })
   })
 
+  test("resume recovery refreshes blocking requests only for the active materialized directory", async () => {
+    const childStores = new ChildStoreManager()
+    childStores.ensureChild("/resume-active", { bootstrap: false }).setState({
+      session: [{ id: "ses_a", title: "ses_a", time: { created: 1, updated: 1 }, version: "1" } as State["session"][number]],
+    })
+    childStores.ensureChild("/resume-inactive", { bootstrap: false }).setState({
+      session: [{ id: "ses_b", title: "ses_b", time: { created: 1, updated: 1 }, version: "1" } as State["session"][number]],
+    })
+    pendingQuestionsResponse = [buildQuestion()]
+
+    await resyncBlockingRequestsForActiveDirectory("/resume-active", childStores)
+
+    expect(listPendingQuestionsCalls).toEqual([{ directories: ["/resume-active"] }])
+    expect(listPendingPermissionsCalls).toEqual([{ directories: ["/resume-active"] }])
+    expect(childStores.getChild("/resume-active")?.getState().question.ses_a?.[0]?.id).toBe("que_1")
+    expect(childStores.getChild("/resume-inactive")?.getState().question.ses_b).toBe(undefined)
+  })
+
+  test("resume recovery does not materialize or fetch an unopened directory", async () => {
+    const childStores = new ChildStoreManager()
+
+    await resyncBlockingRequestsForActiveDirectory("/unopened", childStores)
+
+    expect(childStores.getChild("/unopened")).toBe(undefined)
+    expect(listPendingQuestionsCalls).toHaveLength(0)
+    expect(listPendingPermissionsCalls).toHaveLength(0)
+  })
+
   test("merges newly fetched questions/permissions into the directory store", async () => {
     const store = createDirectoryStore({})
     pendingQuestionsResponse = [buildQuestion()]
@@ -183,6 +213,36 @@ describe("resyncBlockingRequestsForDirectory", () => {
     const store = createDirectoryStore({ session: [] })
     await resyncBlockingRequestsForDirectory("/repo", store)
     expect(listPendingQuestionsCalls).toHaveLength(0)
+    expect(listPendingPermissionsCalls).toHaveLength(0)
+  })
+
+  test("recovers an explicit session candidate before directory bootstrap materializes it", async () => {
+    const store = createDirectoryStore({ session: [] })
+    pendingQuestionsResponse = [buildQuestion()]
+
+    await resyncBlockingRequestsForDirectory("/repo", store, ["ses_a"], { includePermissions: false })
+
+    expect(listPendingQuestionsCalls).toEqual([{ directories: ["/repo"] }])
+    expect(listPendingPermissionsCalls).toHaveLength(0)
+    expect(store.getState().question.ses_a?.[0]?.id).toBe("que_1")
+  })
+
+  test("limits explicit question-only recovery to the requested session", async () => {
+    const store = createDirectoryStore({
+      session: [
+        { id: "ses_a", title: "ses_a", time: { created: 1, updated: 1 }, version: "1" },
+        { id: "ses_b", title: "ses_b", time: { created: 1, updated: 1 }, version: "1" },
+      ] as State["session"],
+    })
+    pendingQuestionsResponse = [
+      buildQuestion(),
+      buildQuestion({ id: "que_b", sessionID: "ses_b" }),
+    ]
+
+    await resyncBlockingRequestsForDirectory("/repo", store, ["ses_a"], { includePermissions: false })
+
+    expect(store.getState().question.ses_a?.[0]?.id).toBe("que_1")
+    expect(store.getState().question.ses_b).toBe(undefined)
     expect(listPendingPermissionsCalls).toHaveLength(0)
   })
 
@@ -257,10 +317,10 @@ describe("resyncBlockingRequestsForDirectory", () => {
       storeWrites += 1
     })
     setActiveSession("/target", "ses_a")
-    handleEvent("global", event, childStores, routingIndex)
+    handleEvent("global", event, childStores, routingIndex, getRuntimeKey())
 
     expect(store.getState().todo.ses_a).toEqual(todos)
-    expect(todoPersistWrites).toEqual([{ sessionID: "ses_a", todos }])
+    expect(todoPersistWrites).toEqual([{ directory: "/target", sessionID: "ses_a", todos }])
     expect(storeWrites).toBe(1)
 
     const stateAfterFirstSnapshot = store.getState()
@@ -272,10 +332,10 @@ describe("resyncBlockingRequestsForDirectory", () => {
     expect(duplicateTodos).not.toBe(todos)
     expect(duplicateTodos).toEqual(todos)
 
-    handleEvent("global", duplicateEvent, childStores, routingIndex)
+    handleEvent("global", duplicateEvent, childStores, routingIndex, getRuntimeKey())
 
     expect(store.getState()).toBe(stateAfterFirstSnapshot)
-    expect(todoPersistWrites).toEqual([{ sessionID: "ses_a", todos }])
+    expect(todoPersistWrites).toEqual([{ directory: "/target", sessionID: "ses_a", todos }])
     expect(storeWrites).toBe(1)
     unsubscribe()
     childStores.disposeAll()
