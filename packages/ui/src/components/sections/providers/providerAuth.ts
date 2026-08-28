@@ -89,4 +89,17 @@ export const shouldAutoOpenAuthPanel = (input: {
   sourcesLoaded: boolean;
   hasCredentials: boolean;
   userDismissed: boolean;
-}): boolean => input.sourcesLoaded && !input.hasCredentials && !input.userDismissed;
+  /**
+   * Config-defined custom providers (providerSources.custom present and parsed
+   * via `isConfigDefinedCustomProvider`) do not auto-open the auth panel: the
+   * provider is editable directly in the form, and a stale `Credentials
+   * missing` summary would be misleading. Optional for back-compat; defaults to
+   * `false`, restoring the pre-rewrite exemption that `requiresProviderAuth`
+   * carried via `providerAvailability.ts`.
+   */
+  isEditableCustomProvider?: boolean;
+}): boolean =>
+  input.sourcesLoaded &&
+  !input.hasCredentials &&
+  !input.userDismissed &&
+  !input.isEditableCustomProvider;

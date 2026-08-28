@@ -23,7 +23,6 @@ import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
 import type { ConfigChangeScope } from '@/lib/configSync';
 import { recordDeferredOpenCodeRestart } from '@/lib/opencode/deferredRestart';
 import { cn } from '@/lib/utils';
-import { copyTextToClipboard } from '@/lib/clipboard';
 import type { ModelMetadata } from '@/types';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -32,8 +31,8 @@ import { shouldLoadAvailableProviders } from './providerAvailability';
 import {
   getOAuthAuthMethods,
   parseAuthPayload,
-requiresOpenCodeRestartAfterOAuth,
   providerHasCredentials,
+  requiresOpenCodeRestartAfterOAuth,
   shouldAutoOpenAuthPanel,
   shouldShowApiKeyAuth,
   shouldShowModelsSection,
@@ -167,7 +166,6 @@ export const ProvidersPage: React.FC = () => {
   const [authMethodsByProvider, setAuthMethodsByProvider] = React.useState<Record<string, AuthMethod[]>>({});
   const [authLoading, setAuthLoading] = React.useState(false);
   const [apiKeyInputs, setApiKeyInputs] = React.useState<Record<string, string>>({});
-  const [oauthCodes, setOauthCodes] = React.useState<Record<string, string>>({});
   const [authBusyKey, setAuthBusyKey] = React.useState<string | null>(null);
   const [modelQuery, setModelQuery] = React.useState('');
   const [availableProviders, setAvailableProviders] = React.useState<ProviderOption[]>([]);
@@ -342,11 +340,15 @@ export const ProvidersPage: React.FC = () => {
       key: provider?.key,
       authSourceExists: sources.auth.exists,
     });
+    const isEditableCustomProvider = Boolean(
+      provider && isConfigDefinedCustomProvider(provider, sources)
+    );
     if (
       shouldAutoOpenAuthPanel({
         sourcesLoaded: true,
         hasCredentials: hasCreds,
         userDismissed: authPanelDismissedForId === selectedProviderId,
+        isEditableCustomProvider,
       })
     ) {
       setShowAuthPanel(true);
@@ -394,7 +396,7 @@ export const ProvidersPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedProviderId, providerSourcesRevision, t]);
+  }, [selectedProviderId, providerSourcesRevision, settingsDirectory, t]);
 
   const refreshProviderSources = React.useCallback(() => {
     setProviderSourcesRevision((revision) => revision + 1);
@@ -534,7 +536,10 @@ export const ProvidersPage: React.FC = () => {
       setEditingCustomScope(null);
       setCustomAuthFailureHint(null);
       setLastCustomPersistId(null);
-      await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active' });
+      // Mutation succeeded; route through the helper so an externally managed
+      // OpenCode does not produce a misleading "save failed" toast for a write
+      // that already persisted.
+      await applyConfigReloadOrRecordDeferred('providers', plan.providerID);
       markAuthWriteSucceeded(plan.providerID);
     } catch (error) {
       console.error('Failed to save custom provider:', error);
@@ -556,6 +561,9 @@ export const ProvidersPage: React.FC = () => {
     if (requiresOpenCodeRestartAfterOAuth(providerId)) {
       recordDeferredOpenCodeRestart('providers', { id: providerId });
     }
+    // Optimistic mark + sources refetch so the page does not stick on a stale
+    // "Credentials missing" summary while the providers refresh lands.
+    markAuthWriteSucceeded(providerId);
   };
 
   const handleDisconnectProvider = async (providerId: string) => {
@@ -579,7 +587,10 @@ export const ProvidersPage: React.FC = () => {
       toast.success(t('settings.providers.page.toast.providerDisconnected'));
       // Only accumulate when the server actually deferred a restart (e.g. auth removed).
       // removed:false payloads must not create a phantom pending Apply & Restart.
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      // Use the helper so an externally managed OpenCode that requires a manual
+      // restart records the deferred-restart guidance instead of toasting a
+      // misleading "disconnect failed" for a write that already persisted.
+      await applyConfigReloadOrRecordDeferred('providers', providerId);
       setAuthPanelDismissedForId(null);
       refreshProviderSources();
     } catch (error) {
