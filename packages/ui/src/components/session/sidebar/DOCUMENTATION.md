@@ -42,9 +42,12 @@ existing data; it is never treated as an authoritative empty list.
 
 Web and desktop show managed Chats before optional Recent activity. Chats use
 their shared managed root for folders and never expose worktree actions. Project
-display can be all projects or one selected project. VS Code excludes worktrees
-and managed Chats, while retaining its workspace-scoped grouped list and inline
-archived buckets.
+display can be all projects or one selected project. The mobile sessions sheet
+(`apps/MobileSessionsSheet.tsx`) partitions the same way through
+`partitionSidebarSessions` and lists Chats as a collapsible section above the
+project tree, with no Recent projection. VS Code excludes worktrees and managed
+Chats, while retaining its workspace-scoped grouped list and inline archived
+buckets.
 
 Directory demand always includes known project roots and worktrees. Visibility
 only changes priority. Row mounts must not start bootstrap work. Selection and
@@ -71,3 +74,4 @@ make every row observe unrelated streaming updates.
 - Empty successful lists, unresolved loads, and failed loads are separate UI states. Failed groups expose Retry and retain prior data.
 - Directory permission failures remain visible even when stale sessions are retained. Flat groups inspect every represented root/worktree directory; local Desktop may open the native picker for the exact failed directory, while other runtimes keep the ordinary Retry action.
 - Pins and folder assignments are not pruned from the first startup snapshot or from optimistic mutations. Confirmed local deletion and routed external deletion clean immediately; a later authoritative omission after an established baseline covers missed external delete events.
+- Pending-permission/question row badges fade with the same hover/menu-open rule as the date label, except on always-visible-actions rows, which reserve permanent padding and keep the badges shown (`selectRowBadgeVisibilityClass` in `sessions/sessionNodeItemUtils.ts`).

@@ -493,6 +493,7 @@ export const useKeyboardShortcuts = () => {
         && !event.repeat
         && eventMatchesShortcutPrefix(event, switchSurfacePrefix, heldKeysRef.current)
       ) {
+        if (isEditableEventTarget(event.target)) return;
         const state = useUIStore.getState();
         if (!state.isMobile && effectiveDirectory) {
           const directory = normalizeContextPanelDirectoryKey(effectiveDirectory);
