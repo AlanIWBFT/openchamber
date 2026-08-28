@@ -1,7 +1,7 @@
 ---
 mode: primary
 hidden: true
-model: zai-coding-plan/glm-5.3-flash
+model: opencode-go/mimo-v2.5
 color: "#c4920a"
 permission:
   edit: allow
