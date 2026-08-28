@@ -7,7 +7,7 @@ Turn an unbounded issue queue into a short list of maintainer decisions. Three p
 
 ## Verdicts
 
-- **FIX-READY** — a real bug with a traced mechanism (`root-cause:found` from intake, or traced during this sweep). Ready action: a one-line fix-backlog entry (file:line, mechanism, suggested fix shape) — these accumulate into the sweep's fix list for agents to implement.
+- **FIX-READY** — a real bug with a traced mechanism (`root-cause:found` from intake, or traced during this sweep) and **no open PR for it** (see *Existing PR first*). Ready action: a one-line fix-backlog entry (file:line, mechanism, suggested fix shape) — these accumulate into the sweep's fix list for agents to implement.
 - **NEEDS-REPORTER** — cannot proceed without the reporter. Ready action: the single unanswerable question, posted once; the issue then lives on a clock (close as stale after ~30 days of silence).
 - **CLOSE-FIXED** — behavior fixed by a merged change. Ready action: close comment naming the commit/PR and the release that carries it.
 - **CLOSE-DUPLICATE** — same failure as an existing issue. Keep the issue with the better evidence, close the other naming it.
@@ -16,6 +16,8 @@ Turn an unbounded issue queue into a short list of maintainer decisions. Three p
   - **"так" (wanted)** → post the acceptance comment (what was approved and, when known, the welcome implementation shape), add the `accepted` label, and leave it open. `accepted` marks the decision as made — later sweeps never re-ask an `accepted` issue, and `label:accepted` is the implementation roadmap for agents and contributors.
   - **"ні" (declined)** → post the drafted decline comment (with ache salvage where one underlies it) and close as not planned.
   - A conditional answer ("так, але тільки як настройка", "ні в такому вигляді, але X — так") is folded into the posted comment verbatim in spirit — the maintainer's condition becomes the recorded scope.
+
+**Existing PR first.** Before any verdict that sends an issue toward implementation (FIX-READY, an `accepted` feature), find out whether someone already has the fix in flight: `gh pr list --search "<issue-number> OR <error string> OR <title terms>" --state open`, plus the issue's own timeline (linked PRs, "opened a PR" comments — the reporter's fix is easy to miss when the PR body says `fixes #N` and the issue thread stays silent). An open PR moves the issue out of the fix backlog and into the PR queue: the ready action is a verdict on that PR (apply the `pr-review` skill), never a parallel in-house fix. A contributor who reported a bug and fixed it the same day, then watched a duplicate patch land on top, is owed a public apology and a changelog credit; the check costs one command.
 
 ## Phase 1 — Mechanical sweep
 
@@ -27,7 +29,7 @@ Fetch all open issues with `gh issue list --limit` above the real count. Bucket 
 | Dead needs-info | `needs-info` with no reporter reply > 30 days | close as stale |
 | Duplicate clusters | title/error-string similarity across open issues | CLOSE-DUPLICATE |
 | Feature wishes | `enhancement` | FEATURE-DECISION or CLOSE-DECLINE |
-| Traced bugs | `root-cause:found` | FIX-READY candidates, verify the trace still applies |
+| Traced bugs | `root-cause:found` | FIX-READY candidates, verify the trace still applies and no PR is open for it |
 
 ### Silently-fixed detection
 
