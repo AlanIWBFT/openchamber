@@ -35,7 +35,9 @@ Choose exactly one. When torn between two, the deciding question is always: **wh
 
 **Link the issues a fix closes.** For every MERGE and MERGE-THEN-FIX verdict on a bug fix, search open issues for the symptom the PR resolves (`gh issue list --search` with the error strings and area terms) — contributors often fix problems without linking them. Any match goes into the ready action as a proposed "Closes #N" / close-on-merge so fixed issues never linger open unlinked.
 
-Manual verification the agent cannot perform (device testing, packaged builds, visual states) does not create a fifth verdict: pick the verdict the code earns and attach a **"needs your hands"** line saying exactly what to check and what outcome confirms it.
+Manual verification the agent cannot perform (device testing, packaged builds, visual states) does not create a fifth verdict: pick the verdict the code earns and attach a **"needs your hands"** line saying exactly what to check and what outcome confirms it — marked as one of two kinds, chosen by consequence:
+- **gate (до мержу)** — the check guards an irreversible or hard-to-revert path: data loss, upgrade/restart flows, auth, anything where users would hit the breakage before the maintainer notices and a revert would not save them. The PR waits for this check.
+- **smoke (після мержу, за нагоди)** — low-risk visual or interaction polish where a revert is one commit and the blast radius is cosmetic. Merging first is fine; the line states plainly that skipping the check is accepted risk, not debt — never pad this list to feel thorough.
 
 ## Process
 
