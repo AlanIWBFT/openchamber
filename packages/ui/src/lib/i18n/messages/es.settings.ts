@@ -1932,7 +1932,7 @@ export const settingsDict = {
   "settings.openchamber.visual.section.streaming": "Streaming",
   "settings.openchamber.visual.field.streamingAutoFollow": "Seguir el contenido nuevo durante el streaming",
   "settings.openchamber.visual.field.streamingAutoFollowAria": "Seguir automáticamente el contenido nuevo mientras se transmite una respuesta",
-  "settings.openchamber.visual.field.streamingAutoFollowInfo": "Mientras llega una respuesta, la vista se desplaza hacia el contenido más reciente. Desactívalo para mantener la vista quieta y desplazarte manualmente.",
+  "settings.openchamber.visual.field.streamingAutoFollowInfo": "Mientras llega una respuesta, la vista se desplaza hacia el contenido más reciente. Desactívalo para mantener la vista quieta y desplazarte manualmente; enviar un mensaje desde la mitad del chat tampoco moverá la vista.",
   "settings.openchamber.visual.section.messageAppearance": "Apariencia de los mensajes",
   "settings.openchamber.visual.section.toolsAndFiles": "Herramientas y archivos",
   "settings.openchamber.visual.section.composer": "Compositor",

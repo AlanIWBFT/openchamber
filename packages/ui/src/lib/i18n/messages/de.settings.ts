@@ -1882,7 +1882,7 @@ export const settingsDict = {
   'settings.openchamber.visual.section.streaming': 'Streaming',
   'settings.openchamber.visual.field.streamingAutoFollow': 'Neuen Inhalten beim Streaming folgen',
   'settings.openchamber.visual.field.streamingAutoFollowAria': 'Neuen Inhalten automatisch folgen, während eine Antwort gestreamt wird',
-  'settings.openchamber.visual.field.streamingAutoFollowInfo': 'Während eine Antwort eintrifft, folgt die Ansicht laufend dem neuesten Inhalt. Deaktivieren, um die Ansicht ruhig zu halten und manuell zu scrollen.',
+  'settings.openchamber.visual.field.streamingAutoFollowInfo': 'Während eine Antwort eintrifft, folgt die Ansicht laufend dem neuesten Inhalt. Deaktivieren, um die Ansicht ruhig zu halten und manuell zu scrollen; das Senden einer Nachricht aus der Mitte des Chats lässt die Ansicht dann ebenfalls an Ort und Stelle.',
   'settings.openchamber.visual.section.messageAppearance': 'Nachrichten-Erscheinungsbild',
   'settings.openchamber.visual.section.toolsAndFiles': 'Werkzeuge & Dateien',
   'settings.openchamber.visual.section.composer': 'Komponist',

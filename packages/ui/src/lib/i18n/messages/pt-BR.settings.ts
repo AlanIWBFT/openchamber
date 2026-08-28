@@ -1932,7 +1932,7 @@ export const settingsDict = {
   "settings.openchamber.visual.section.streaming": "Streaming",
   "settings.openchamber.visual.field.streamingAutoFollow": "Seguir o novo conteúdo durante o streaming",
   "settings.openchamber.visual.field.streamingAutoFollowAria": "Seguir automaticamente o novo conteúdo enquanto uma resposta é transmitida",
-  "settings.openchamber.visual.field.streamingAutoFollowInfo": "Enquanto uma resposta chega, a visualização acompanha o conteúdo mais recente. Desative para manter a visualização parada e rolar manualmente.",
+  "settings.openchamber.visual.field.streamingAutoFollowInfo": "Enquanto uma resposta chega, a visualização acompanha o conteúdo mais recente. Desative para manter a visualização parada e rolar manualmente; enviar uma mensagem do meio da conversa também deixará a visualização onde está.",
   "settings.openchamber.visual.section.messageAppearance": "Aparência das mensagens",
   "settings.openchamber.visual.section.toolsAndFiles": "Ferramentas e arquivos",
   "settings.openchamber.visual.section.composer": "Campo de mensagem",

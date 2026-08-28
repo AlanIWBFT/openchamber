@@ -318,6 +318,14 @@ export const useChatTimelineScroll = ({
         }
     }, [clearAnchor, clearGoToBottomReasserts, hideScrollButton]);
 
+    // User preference: with auto-follow off, streaming growth never moves the
+    // viewport. Sending from the live edge still parks the new message at the
+    // top, but no glide or end-follow correction runs afterwards; sending from
+    // mid-history leaves the viewport untouched.
+    const streamingAutoFollowEnabled = useUIStore((state) => state.streamingAutoFollowEnabled);
+    const streamingAutoFollowEnabledRef = React.useRef(streamingAutoFollowEnabled);
+    streamingAutoFollowEnabledRef.current = streamingAutoFollowEnabled;
+
     // Sending arms the anchor. The message id is not known here (the optimistic
     // row is created by the store), so the next new user message id claims it.
     // Whether the send-time anchor positioning may animate. Sending from the
@@ -328,6 +336,11 @@ export const useChatTimelineScroll = ({
     const anchorPositionInstantRef = React.useRef(false);
 
     const scrollToBottomOnSend = React.useCallback(() => {
+        // With auto-follow off, a reader who scrolled away from the end stays
+        // exactly where they are: the sent message is not anchored and the
+        // scroll-to-bottom pill (already showing) leads to it. From the live
+        // edge, sending anchors the new turn as usual.
+        if (!streamingAutoFollowEnabledRef.current && !isAtEndRef.current) return;
         anchorPositionInstantRef.current = !isAtEndRef.current;
         isAtEndRef.current = true;
         setUserOwnsScroll(false);
@@ -540,13 +553,6 @@ export const useChatTimelineScroll = ({
         first: null,
         second: null,
     });
-    // User preference: with auto-follow off, streaming growth never moves the
-    // viewport — the anchored user message still parks at the top on send, but
-    // no glide or end-follow correction runs afterwards.
-    const streamingAutoFollowEnabled = useUIStore((state) => state.streamingAutoFollowEnabled);
-    const streamingAutoFollowEnabledRef = React.useRef(streamingAutoFollowEnabled);
-    streamingAutoFollowEnabledRef.current = streamingAutoFollowEnabled;
-
     // While the list width is resizing, every pinning write fights the
     // per-frame row re-measure and the pinned viewport shakes. Corrections
     // stand down for the whole resize and the visible content is held by the

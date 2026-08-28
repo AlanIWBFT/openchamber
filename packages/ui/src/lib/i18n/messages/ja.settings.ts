@@ -1965,7 +1965,7 @@ export const settingsDict = {
   'settings.openchamber.visual.section.streaming': 'ストリーミング',
   'settings.openchamber.visual.field.streamingAutoFollow': '応答のストリーミング中に新しい内容を追従',
   'settings.openchamber.visual.field.streamingAutoFollowAria': '応答のストリーミング中に新しい内容へ自動スクロールする',
-  'settings.openchamber.visual.field.streamingAutoFollowInfo': '応答の受信中、ビューは常に最新の内容へスクロールします。オフにするとビューは動かず、手動でスクロールできます。',
+  'settings.openchamber.visual.field.streamingAutoFollowInfo': '応答の受信中、ビューは常に最新の内容へスクロールします。オフにするとビューは動かず、手動でスクロールできます。その場合、チャットの途中からメッセージを送信してもビューは移動しません。',
   'settings.openchamber.visual.section.messageAppearance': 'メッセージの外観',
   'settings.openchamber.visual.section.toolsAndFiles': 'ツールとファイル',
   'settings.openchamber.visual.section.composer': '入力欄',

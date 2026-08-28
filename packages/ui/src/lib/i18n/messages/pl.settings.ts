@@ -1236,7 +1236,7 @@ export const settingsDict = {
   'settings.openchamber.visual.section.streaming': 'Streaming',
   'settings.openchamber.visual.field.streamingAutoFollow': 'Podążaj za nową treścią podczas streamingu',
   'settings.openchamber.visual.field.streamingAutoFollowAria': 'Automatycznie podążaj za nową treścią podczas streamowania odpowiedzi',
-  'settings.openchamber.visual.field.streamingAutoFollowInfo': 'Podczas napływania odpowiedzi widok płynnie podąża za najnowszą treścią. Wyłącz, aby widok pozostał nieruchomy i przewijać ręcznie.',
+  'settings.openchamber.visual.field.streamingAutoFollowInfo': 'Podczas napływania odpowiedzi widok płynnie podąża za najnowszą treścią. Wyłącz, aby widok pozostał nieruchomy i przewijać ręcznie; wysłanie wiadomości ze środka czatu również nie przesunie wtedy widoku.',
   'settings.openchamber.visual.section.messageAppearance': 'Wygląd wiadomości',
   'settings.openchamber.visual.section.toolsAndFiles': 'Narzędzia i pliki',
   'settings.openchamber.visual.section.composer': 'Pole wiadomości',

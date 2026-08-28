@@ -1839,7 +1839,7 @@ export const settingsDict = {
   'settings.openchamber.visual.section.streaming': '串流',
   'settings.openchamber.visual.field.streamingAutoFollow': '串流時跟隨新內容',
   'settings.openchamber.visual.field.streamingAutoFollowAria': '回覆串流時自動跟隨新內容',
-  'settings.openchamber.visual.field.streamingAutoFollowInfo': '回覆串流時，畫面會持續捲動到最新內容。關閉後畫面保持不動，可手動捲動。',
+  'settings.openchamber.visual.field.streamingAutoFollowInfo': '回覆串流時，畫面會持續捲動到最新內容。關閉後畫面保持不動，可手動捲動；此時從聊天中間傳送訊息也不會移動畫面。',
   'settings.openchamber.visual.section.messageAppearance': '訊息外觀',
   'settings.openchamber.visual.section.toolsAndFiles': '工具與檔案',
   'settings.openchamber.visual.section.composer': '輸入框',

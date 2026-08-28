@@ -1932,7 +1932,7 @@ export const settingsDict = {
   'settings.openchamber.visual.section.streaming': '스트리밍',
   'settings.openchamber.visual.field.streamingAutoFollow': '스트리밍 중 새 내용 따라가기',
   'settings.openchamber.visual.field.streamingAutoFollowAria': '응답 스트리밍 중 새 내용으로 자동 스크롤',
-  'settings.openchamber.visual.field.streamingAutoFollowInfo': '응답이 스트리밍되는 동안 화면이 최신 내용으로 계속 이동합니다. 끄면 화면이 고정되어 직접 스크롤할 수 있습니다.',
+  'settings.openchamber.visual.field.streamingAutoFollowInfo': '응답이 스트리밍되는 동안 화면이 최신 내용으로 계속 이동합니다. 끄면 화면이 고정되어 직접 스크롤할 수 있으며, 채팅 중간에서 메시지를 보내도 화면이 이동하지 않습니다.',
   'settings.openchamber.visual.section.messageAppearance': '메시지 모양',
   'settings.openchamber.visual.section.toolsAndFiles': '도구 및 파일',
   'settings.openchamber.visual.section.composer': '입력창',

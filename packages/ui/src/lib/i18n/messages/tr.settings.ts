@@ -2205,7 +2205,7 @@ export const settingsDict = {
   'settings.openchamber.visual.section.streaming': 'Streaming',
   'settings.openchamber.visual.field.streamingAutoFollow': 'Streaming sırasında yeni içeriği takip et',
   'settings.openchamber.visual.field.streamingAutoFollowAria': 'Bir yanıt akarken yeni içeriği otomatik olarak takip et',
-  'settings.openchamber.visual.field.streamingAutoFollowInfo': 'Bir yanıt akarken görünüm en yeni içeriğe doğru kayar. Görünümün sabit kalması için bunu kapatın ve elle kaydırın.',
+  'settings.openchamber.visual.field.streamingAutoFollowInfo': 'Bir yanıt akarken görünüm en yeni içeriğe doğru kayar. Görünümün sabit kalması için bunu kapatın ve elle kaydırın; bu durumda sohbetin ortasından mesaj göndermek de görünümü yerinden oynatmaz.',
   'settings.openchamber.visual.field.sessionTabsGroup': 'Session sekmeleri',
   'settings.openchamber.visual.field.sessionTabs': 'Session\'ları başlıkta sekme olarak göster',
   'settings.openchamber.visual.field.sessionTabsAria': 'Başlıktaki session sekmelerini aç/kapat',
