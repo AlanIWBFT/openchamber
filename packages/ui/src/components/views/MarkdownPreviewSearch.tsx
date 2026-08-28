@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import { findMatchRanges } from './markdownPreviewFind';
 
 /**
@@ -23,8 +24,10 @@ import { findMatchRanges } from './markdownPreviewFind';
  */
 const MARK_ATTR = 'data-md-find';
 const CURRENT_MARK_ATTR = 'data-md-find-current';
-const MARK_CLASS = 'rounded-[2px] bg-[var(--status-warning)]/40';
-const CURRENT_MARK_CLASS = 'rounded-[2px] bg-[var(--status-warning)]/80';
+const MARK_CLASS = 'rounded-[2px] bg-status-warning/30 text-foreground';
+const CURRENT_MARK_CLASS = 'rounded-[2px] bg-status-warning/60 text-foreground';
+/** Keystrokes re-walk the whole preview, so coalesce bursts of typing. */
+const SEARCH_DEBOUNCE_MS = 120;
 
 const isMarkElement = (node: Node): boolean => {
   return node instanceof Element && node.hasAttribute(MARK_ATTR);
@@ -67,7 +70,10 @@ const applySearch = (container: HTMLElement, query: string): HTMLElement[] => {
 
   const textNodes: Text[] = [];
   while (walker.nextNode()) {
-    textNodes.push(walker.currentNode as Text);
+    const node = walker.currentNode;
+    if (node instanceof Text) {
+      textNodes.push(node);
+    }
   }
 
   for (const node of textNodes) {
@@ -114,6 +120,8 @@ type MarkdownPreviewSearchProps = {
   onOpenChange: (open: boolean) => void;
   /** Bumped every time the find shortcut is pressed to re-focus the input. */
   focusNonce: number;
+  /** Layout overrides for the floating bar (position, offsets). */
+  className?: string;
 };
 
 export const MarkdownPreviewSearch: React.FC<MarkdownPreviewSearchProps> = ({
@@ -121,6 +129,7 @@ export const MarkdownPreviewSearch: React.FC<MarkdownPreviewSearchProps> = ({
   open,
   onOpenChange,
   focusNonce,
+  className,
 }) => {
   const { t } = useI18n();
   const [query, setQuery] = React.useState('');
@@ -130,6 +139,9 @@ export const MarkdownPreviewSearch: React.FC<MarkdownPreviewSearchProps> = ({
   const marksRef = React.useRef<HTMLElement[]>([]);
   const queryRef = React.useRef(query);
   queryRef.current = query;
+  const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Focus returns here when the bar closes, so Escape does not strand focus.
+  const returnFocusRef = React.useRef<HTMLElement | null>(null);
 
   const runSearch = React.useCallback((nextQuery: string) => {
     const container = containerRef.current;
@@ -143,6 +155,31 @@ export const MarkdownPreviewSearch: React.FC<MarkdownPreviewSearchProps> = ({
     setTotal(marksRef.current.length);
     setIndex(0);
   }, [containerRef]);
+
+  const scheduleSearch = React.useCallback((nextQuery: string) => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      runSearch(nextQuery);
+    }, SEARCH_DEBOUNCE_MS);
+  }, [runSearch]);
+
+  React.useEffect(() => () => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+  }, []);
+
+  const close = React.useCallback(() => {
+    onOpenChange(false);
+    const target = returnFocusRef.current;
+    returnFocusRef.current = null;
+    if (target?.isConnected) {
+      target.focus();
+    }
+  }, [onOpenChange]);
 
   // Re-apply highlights when the renderer re-morphs the container (theme or
   // content changes), ignoring mutations this widget produces itself. Only
@@ -171,11 +208,16 @@ export const MarkdownPreviewSearch: React.FC<MarkdownPreviewSearchProps> = ({
     };
   }, [containerRef, open, runSearch]);
 
-  // Focus the input when the bar opens.
+  // Focus the input when the bar opens, remembering what to restore on close.
   React.useEffect(() => {
-    if (open) {
-      inputRef.current?.focus();
+    if (!open) {
+      return;
     }
+    const previous = document.activeElement;
+    if (previous instanceof HTMLElement && !returnFocusRef.current) {
+      returnFocusRef.current = previous;
+    }
+    inputRef.current?.focus();
   }, [open]);
 
   // Pressing the find shortcut again re-focuses and re-selects the query.
@@ -226,23 +268,23 @@ export const MarkdownPreviewSearch: React.FC<MarkdownPreviewSearchProps> = ({
       }
     } else if (event.key === 'Escape') {
       event.preventDefault();
-      onOpenChange(false);
+      close();
     }
-  }, [goToNext, goToPrevious, onOpenChange]);
+  }, [close, goToNext, goToPrevious]);
 
   if (!open) {
     return null;
   }
 
   return (
-    <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-lg border border-border/60 bg-[var(--surface-elevated)] px-1.5 py-1 shadow-lg">
+    <div className={cn('absolute right-3 top-3 z-10 flex items-center gap-1 rounded-lg border border-border/60 bg-[var(--surface-elevated)] px-1.5 py-1 shadow-lg', className)}>
       <Icon name="search" className="ml-0.5 size-3.5 text-muted-foreground" />
       <Input
         ref={inputRef}
         value={query}
         onChange={(event) => {
           setQuery(event.target.value);
-          runSearch(event.target.value);
+          scheduleSearch(event.target.value);
         }}
         onKeyDown={handleKeyDown}
         placeholder={t('filesView.preview.find.placeholder')}
@@ -291,7 +333,7 @@ export const MarkdownPreviewSearch: React.FC<MarkdownPreviewSearchProps> = ({
         variant="ghost"
         size="sm"
         className="size-6 p-0 text-muted-foreground"
-        onClick={() => onOpenChange(false)}
+        onClick={close}
         title={t('filesView.preview.find.closeAria')}
         aria-label={t('filesView.preview.find.closeAria')}
       >
