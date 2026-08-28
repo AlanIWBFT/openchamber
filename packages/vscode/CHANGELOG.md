@@ -21,6 +21,14 @@
 - Chat: sending without a selected provider or model now explains what is missing instead of silently doing nothing (thanks to @rvaldemar).
 - Chat: `/init` remains available in slash-command autocomplete after a conversation has started (thanks to @Dawnfz-Lenfeng).
 - Chat: a diff that arrives with a truncated header no longer crashes the tool card (thanks to @pascalandr).
+- Chat: a code block with JavaScript template strings no longer freezes the webview. The highlighter skips a grammar rule that could backtrack forever, and a highlight that still hangs is abandoned after five seconds and shown as plain text (thanks to @makeittech).
+- Chat: a completed reasoning block now shows in full when a session is reopened, instead of replaying as if the model were still thinking (thanks to @makeittech).
+- Chat: the text-selection menu no longer disappears above the viewport when a selection runs past the top of the scroll area (thanks to @makeittech).
+- Chat: a manually chosen model now stays selected when switching between Build and Plan modes (thanks to @makeittech).
+- Chat: the sticky user-message header no longer paints its fade over the first lines of the reply (thanks to @makeittech).
+- Sidebar: the pending permission and question badges no longer get covered by the hover actions on a session row (thanks to @makeittech).
+- Settings: number fields and selects no longer clip their values at large interface font sizes or tight spacing (thanks to @makeittech).
+- The extension now starts in the current workspace folder instead of a previously used one restored from storage (thanks to @makeittech).
 - Composer: typing three backticks now leaves the caret inside the completed code fence, empty inputs keep a visible caret, and platform autocorrect behavior is preserved (thanks to @franzudev, @TTTPOB, and @IbrahimKhan12).
 - Chat: bare links next to Chinese, Japanese, or full-width punctuation no longer absorb that punctuation into the URL (thanks to @gaojunran).
 - Chat: inline code, chips, and model-picker highlights remain readable in high-contrast themes (thanks to @difagume and @bashrusakh).

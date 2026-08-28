@@ -39,6 +39,23 @@ All notable changes to this project will be documented in this file.
 - Settings/GitHub: refreshing account state no longer briefly unmounts the settings page and interrupts disconnect actions (thanks to @floze-the-genius).
 - Settings: fixed the Cloudflare Tunnel download link shown when cloudflared is not installed (thanks to @AyoubAchour).
 - Providers: small-model tasks now use a configured Anthropic endpoint correctly, without duplicating `/v1`, and Google models without reasoning support no longer receive an unsupported thinking option (thanks to @mpeter and @IngTian).
+- Files: the rendered Markdown preview has an in-document search (Ctrl/Cmd+F) with match highlighting and next/previous navigation, in both the inline and fullscreen preview (thanks to @makeittech).
+- Chat: a code block with JavaScript template strings no longer freezes the renderer or turns the window black. The syntax highlighter skipped a grammar rule that could backtrack forever, and a highlight that still hangs is abandoned after five seconds and shown as plain text (thanks to @makeittech).
+- Chat: a completed reasoning block now shows in full when a session is reopened, instead of replaying as if the model were still thinking (thanks to @makeittech).
+- Chat: the text-selection menu no longer disappears above the viewport when a selection runs past the top of the scroll area (thanks to @makeittech).
+- Chat: Ctrl/Cmd+digit panel switching is ignored while typing in an input, so browser tab shortcuts work again from the composer and other fields (thanks to @makeittech).
+- Chat: a manually chosen model now stays selected when switching between Build and Plan modes (thanks to @makeittech).
+- Chat: the sticky user-message header no longer paints its fade over the first lines of the reply (thanks to @makeittech).
+- Sidebar: rows in the Recent section show a compact timestamp on web and desktop, not only on touch devices (thanks to @makeittech).
+- Sidebar: the pending permission and question badges no longer get covered by the hover actions on a session row (thanks to @makeittech).
+- Files: clicking a folder or file in the sidebar tree now opens it reliably on macOS trackpads, where a tiny pointer move used to start a drag and swallow the click (thanks to @makeittech).
+- Git: after a checkout, branch, stash, merge, rebase, or reset the status panel refreshes from the real repository state instead of a stale cache (thanks to @makeittech).
+- Git: branches that exist on the remote but were never fetched locally now appear in branch lists (thanks to @makeittech).
+- Settings: the Small Model chosen in Settings is now passed to the managed OpenCode process, so session titles and other small-model tasks use it (thanks to @makeittech).
+- Settings: a change made right before closing the window is saved instead of being lost to the pending write (thanks to @makeittech).
+- Settings: number fields and selects no longer clip their values at large interface font sizes or tight spacing (thanks to @makeittech).
+- Providers: small-model requests now send the custom headers configured on the provider, such as an API-gateway subscription key, matching how chat requests authenticate (thanks to @dmitrii-galantsev).
+- VS Code: the extension starts in the current workspace folder instead of a previously used one restored from storage (thanks to @makeittech).
 - Projects: the folder picker can enter a directory that is already a project, so it can be selected as the starting point for browsing elsewhere (thanks to @weixiang1862).
 - Projects: sending, forking, and image attachments now work in projects whose path contains non-ASCII characters, such as `Masaüstü` (thanks to @fitzgpt).
 - Git: the Branch diff scope no longer shows an empty or wrong comparison for branches created with `git switch -c` or `git checkout -b` from the current branch (thanks to @gaojunran).
