@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // readConfig reads merged opencode config layers from disk; mock it so each
 // test controls the provider config without touching the filesystem. call.js
-// imports only readConfig from shared.js, so the rest of that module is left
-// untouched for this file.
+// imports the config readers and a plain-object predicate from shared.js, so
+// the rest of that module is left untouched for this file.
 vi.mock('../opencode/shared.js', () => ({
   readConfig: vi.fn(),
   readConfigLayers: vi.fn(),
@@ -70,6 +70,7 @@ describe('callSmallModel — custom provider config', () => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
     delete process.env.OPENCHAMBER_TEST_PROVIDER_KEY;
+    delete process.env.OPENCHAMBER_TEST_GATEWAY_KEY;
   });
 
   describe('config-supplied credentials (no auth.json entry)', () => {
@@ -156,6 +157,72 @@ describe('callSmallModel — custom provider config', () => {
       expect(init.headers['Ocp-Apim-Subscription-Key']).toBe('sub-key');
       expect(init.headers['x-tenant']).toBe('team');
       expect(init.headers.Authorization).toBe('Bearer sk-config');
+    });
+
+    it('resolves a relative header file from the config layer that defines it', async () => {
+      const configPath = '/config/opencode.json';
+      const secretPath = '/config/gateway-key';
+      vi.spyOn(fs, 'readFileSync').mockImplementation((filePath) => {
+        if (filePath === secretPath) return 'sub-key\n';
+        throw new Error(`Unexpected file read: ${filePath}`);
+      });
+      const provider = {
+        custom: {
+          options: {
+            apiKey: 'sk-config',
+            baseURL: 'https://proxy.example.test/v1',
+            headers: { 'x-gateway-key': '{file:./gateway-key}' },
+          },
+        },
+      };
+      readConfig.mockReturnValue({ provider });
+      readConfigLayers.mockReturnValue({
+        customConfig: {},
+        projectConfig: {},
+        userConfig: { provider },
+        paths: { customPath: null, projectPath: '/project/opencode.json', userPath: configPath },
+      });
+      fetchMock.mockResolvedValue(ok('hello'));
+
+      await callSmallModel({
+        auth: {},
+        catalog: {},
+        workingDirectory: '/project',
+        providerID: 'custom',
+        modelID: 'model',
+        prompt: 'hi',
+      });
+
+      expect(lastCall(fetchMock).init.headers['x-gateway-key']).toBe('sub-key');
+      expect(fs.readFileSync).toHaveBeenCalledWith(secretPath, 'utf8');
+    });
+
+    it('overrides Authorization without depending on header-name casing', async () => {
+      readConfig.mockReturnValue({
+        provider: {
+          custom: {
+            options: {
+              apiKey: 'sk-config',
+              baseURL: 'https://proxy.example.test/v1',
+              headers: { authorization: 'Basic gateway-token' },
+            },
+          },
+        },
+      });
+      fetchMock.mockResolvedValue(ok('hello'));
+
+      await callSmallModel({
+        auth: {},
+        catalog: {},
+        workingDirectory: '/project',
+        providerID: 'custom',
+        modelID: 'model',
+        prompt: 'hi',
+      });
+
+      const headers = lastCall(fetchMock).init.headers;
+      expect(headers.authorization).toBe('Basic gateway-token');
+      expect(headers.Authorization).toBeUndefined();
     });
 
     it('uses apiKey and baseURL from provider config when no auth.json entry exists', async () => {
