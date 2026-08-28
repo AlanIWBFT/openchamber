@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui';
 import { useI18n, type I18nKey } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import { reportSettingsSaveState } from '@/lib/persistence';
 import { useIsVSCodeRuntime } from '@/hooks/useRuntimeAPIs';
 import {
@@ -20,7 +21,7 @@ import {
 } from '@/lib/responseStyle';
 import type { DesktopSettings } from '@/lib/desktop';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import { noteDeferredRestartFromPayload, recordDeferredOpenCodeRestart } from '@/lib/opencode/deferredRestart';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import {
   SettingsSection,
@@ -242,13 +243,20 @@ export const BehaviorPage: React.FC = () => {
         throw new Error(await readApiError(response, t('settings.behavior.page.toast.saveFailed')));
       }
 
+      const payload = await response.json().catch(() => null);
+      const deferred = noteDeferredRestartFromPayload(payload, 'behavior', { id: 'agents-md' });
+
       await saveBehaviorSetting({
         globalBehaviorPrompt: content,
       }, t('settings.behavior.page.toast.saveFailed'));
 
       setPrompt(content);
       setInitialPrompt(content);
-      toast.success(t('settings.behavior.page.toast.saved'));
+      toast.success(
+        deferred
+          ? t('settings.view.pendingRestart.saved')
+          : t('settings.behavior.page.toast.saved'),
+      );
     } catch (error) {
       console.error('Failed to save behavior:', error);
       const message = error instanceof Error ? error.message : t('settings.behavior.page.toast.saveFailed');
@@ -266,19 +274,8 @@ export const BehaviorPage: React.FC = () => {
         t('settings.behavior.page.toast.saveFailed'),
       );
       setInitialOptimizeSystemPrompt(optimizeSystemPrompt);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : t('settings.behavior.page.toast.saveFailed');
-      toast.error(message);
-      setIsApplyingPromptOptimization(false);
-      return;
-    }
-
-    try {
-      await reloadOpenCodeConfiguration({
-        message: t('settings.behavior.page.systemPromptOptimization.restarting'),
-        mode: 'projects',
-        scopes: ['all'],
-      });
+      recordDeferredOpenCodeRestart('behavior', { id: 'optimize-system-prompt' });
+      toast.success(t('settings.view.pendingRestart.saved'));
     } catch (error) {
       const message = error instanceof Error ? error.message : t('settings.behavior.page.toast.saveFailed');
       toast.error(message);
@@ -317,7 +314,7 @@ export const BehaviorPage: React.FC = () => {
           >
             {isApplyingPromptOptimization
               ? t('settings.common.actions.saving')
-              : t('settings.openchamber.opencodeCli.actions.saveAndReload')}
+              : t('settings.common.actions.saveChanges')}
           </Button>
         </SettingsSection>
       )}
@@ -379,7 +376,7 @@ export const BehaviorPage: React.FC = () => {
             onValueChange={(value) => setResponseStylePreset(value)}
             disabled={isLoading || !responseStyleEnabled}
           >
-            <SelectTrigger size={SETTINGS_SELECT_SIZE} className={SETTINGS_SELECT_ROW_TRIGGER_CLASS}>
+            <SelectTrigger size={SETTINGS_SELECT_SIZE} className={cn(SETTINGS_SELECT_ROW_TRIGGER_CLASS, 'max-w-72')}>
               <SelectValue>
                 {(value) => {
                   if (value === 'custom') return t('settings.behavior.page.responseStyle.option.custom');
