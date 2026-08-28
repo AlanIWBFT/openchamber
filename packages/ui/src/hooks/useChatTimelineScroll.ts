@@ -13,6 +13,11 @@ import {
     type TimelineListMeasurementState,
     type TimelineScrollMode,
 } from '@/components/chat/lib/scroll/timelineScrollAnchoring';
+import {
+    isFollowReleaseKey,
+    isMiddleButtonPan,
+    nestedScrollableConsumesWheelUp,
+} from '@/components/chat/lib/scroll/timelineScrollIntent';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Chat timeline scroll ownership.
@@ -772,8 +777,12 @@ export const useChatTimelineScroll = ({
             onManualNavigationRef.current();
         };
         const handleWheel = (event: WheelEvent) => {
-            // Scrolling toward the end is not opting out of follow.
-            if (event.deltaY < 0 && canScrollUp()) gesture();
+            // Scrolling toward the end is not opting out of follow, and an
+            // upward wheel that a nested scroller still consumes never
+            // reaches the timeline.
+            if (event.deltaY < 0 && !nestedScrollableConsumesWheelUp(scrollNode, event.target) && canScrollUp()) {
+                gesture();
+            }
         };
         // Touch mirrors wheel by finger direction, not by having already left
         // the end: while a stream keeps re-pinning the viewport, waiting for
@@ -797,14 +806,19 @@ export const useChatTimelineScroll = ({
             touchLastY = null;
         };
         const handlePointerDown = (event: PointerEvent) => {
-            // The scrollbar track is the scroll node itself; a tap on a row
-            // only breaks follow when the viewport already left the end.
+            // A middle-button pan scrolls without wheel events (and is the
+            // only scroll gesture for wheel-less mice), so the press is the
+            // opt-out. Otherwise the scrollbar track is the scroll node
+            // itself; a tap on a row only breaks follow when the viewport
+            // already left the end.
+            if (isMiddleButtonPan(scrollNode, event)) {
+                if (canScrollUp()) gesture();
+                return;
+            }
             if ((event.target === scrollNode || !isAtEndRef.current) && canScrollUp()) gesture();
         };
         const handleKeyDown = (event: KeyboardEvent) => {
-            if ((event.key === 'PageUp' || event.key === 'Home' || event.key === 'ArrowUp') && canScrollUp()) {
-                gesture();
-            }
+            if (isFollowReleaseKey(event) && canScrollUp()) gesture();
         };
         const handleScroll = () => {
             queueSave();
