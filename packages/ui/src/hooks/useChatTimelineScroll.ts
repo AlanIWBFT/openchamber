@@ -594,6 +594,27 @@ export const useChatTimelineScroll = ({
         };
     }, [scrollNode]);
 
+    // Keep the live edge in view after content growth. Within a viewport of
+    // the end the remaining distance is glided so a revealed block and the
+    // scroll read as one motion; further behind, the viewport first jumps to
+    // one screen above the end and glides only that last screen, so the
+    // reader is never left staring at a gap several screens tall. Writes go
+    // to the scroll node directly: routing each chunk through the list's
+    // scrollToEnd bookkeeping roughly doubled frame production when measured.
+    // A user gesture interrupts the native smooth scroll on its own, and the
+    // gesture handler drops live follow so no later correction re-engages.
+    const followEnd = React.useCallback(() => {
+        const node = scrollRef.current;
+        if (!node) return;
+        const end = node.scrollHeight - node.clientHeight;
+        const distance = end - node.scrollTop;
+        if (distance <= 1) return;
+        if (distance > node.clientHeight) {
+            node.scrollTop = end - node.clientHeight;
+        }
+        node.scrollTo({ top: end, behavior: 'smooth' });
+    }, []);
+
     const onTimelineDataChange = React.useCallback(() => {
         if (widthResizingRef.current) return;
 
@@ -649,12 +670,18 @@ export const useChatTimelineScroll = ({
         }
         if (!isLiveFollowActive()) return;
 
-        // Since @legendapp/list 3.3.x, maintainScrollAtEnd follows content
-        // growth on its own — including a tail row growing in place — and
-        // releases when the user scrolls away. Following the end therefore
-        // needs no correction here; this handler only serves the
-        // anchored-turn glide below.
-        if (modeRef.current === 'following-end') return;
+        // Following the end is owned here, not left to the list's
+        // maintainScrollAtEnd. The list's animated maintain is single-flight:
+        // growth that lands while a glide is still in flight is dropped until
+        // the next trigger, and its re-pin threshold is a tenth of the
+        // viewport. In a narrow viewport (the VS Code sidebar) one revealed
+        // block is several viewports tall, so every block left the reader a
+        // second behind and multiple screens above the live edge — measured
+        // at 45% of the stream time spent 500-1600px behind at 420x640.
+        if (modeRef.current === 'following-end') {
+            followEnd();
+            return;
+        }
 
         const frames = dataChangeFramesRef.current;
         if (frames.first !== null) cancelAnimationFrame(frames.first);
@@ -703,7 +730,7 @@ export const useChatTimelineScroll = ({
 
             });
         });
-    }, [isLiveFollowActive, scheduleShowScrollButton]);
+    }, [followEnd, isLiveFollowActive, scheduleShowScrollButton]);
 
     // The streaming tail grows inside one row without changing the entries
     // array, so data-change callbacks are silent for the entire stream. The
