@@ -7,6 +7,7 @@
 - Chat: pending permission and question cards come back after the webview reloads or when the session is opened late, instead of the session hanging on a tool that is waiting for an answer nobody can see (thanks to @yangyaofei).
 - Chat: dismissing the agent's questions without answering and sending a new task no longer leaves the session looking frozen on the dismissed question (thanks to @bashrusakh).
 - Chat: with "Follow new content while streaming" turned off, sending a message while scrolled up now leaves the view where it is instead of jumping to the new message.
+- Chat: scrolling away from a streaming reply with a middle-button pan or Shift+Space now stops auto-follow, the same as the wheel does. An upward wheel inside a tool output box scrolls that box instead of releasing the whole chat (thanks to @pascalandr).
 - Chat: pressing PageUp/PageDown in the prompt box, or moving the caret through a long prompt, no longer shifts the whole panel up and hides its top edge.
 - GitHub Copilot usage now shows a single AI Credits window, matching Copilot's token-based quota, in place of the old Chat Requests and Completions windows (thanks to @jakoss).
 - Updating OpenCode no longer fails with a bare "Bad Request": the extension names the release to install, which recent OpenCode versions require, and shows OpenCode's own reason when an update is refused (thanks to @mdatsev and @yulia-ivashko).
