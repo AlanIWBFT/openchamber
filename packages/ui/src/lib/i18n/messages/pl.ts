@@ -357,6 +357,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.moveToWorktree.confirm.cancel': 'Anuluj',
   'sessions.sidebar.session.moveToWorktree.sourceVerificationFailed': 'Nie udało się zweryfikować zmian w źródle. Żaden worktree ani sesja nie został zmieniony.',
   'sessions.sidebar.session.moveToWorktree.applyChangesFailed': 'Cel nie mógł przyjąć zmian ze źródła. Sesja i zmiany w źródle nie zostały przeniesione. Spróbuj ponownie i wybierz Przenieś tylko sesję.',
+  'sessions.sidebar.session.moveToWorktree.changesMayBeInDestination': 'Połączenie zostało zerwane, zanim cel potwierdził przeniesienie. Sesja mogła nie zostać przeniesiona, a niezatwierdzone zmiany mogą już być w docelowym worktree. Sprawdź go przed ponowną próbą.',
   'sessions.sidebar.session.menu.runFusion': 'Uruchom fusion',
   'sessions.sidebar.session.menu.openInSidePanel': 'Otwórz w panelu bocznym',
   'sessions.sidebar.session.actions.openInEditor': 'Otwórz w edytorze',

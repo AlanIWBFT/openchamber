@@ -564,6 +564,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.moveToWorktree.confirm.cancel': 'キャンセル',
   'sessions.sidebar.session.moveToWorktree.sourceVerificationFailed': 'ソースの変更を検証できませんでした。worktreeもセッションも変更されませんでした。',
   'sessions.sidebar.session.moveToWorktree.applyChangesFailed': '宛先がソースの変更を受け付けられませんでした。セッションもソースの変更も移動されていません。再試行して「セッションのみ移動」を選んでください。',
+  'sessions.sidebar.session.moveToWorktree.changesMayBeInDestination': '移動が宛先で確定する前に接続が切れました。セッションは移動していない可能性があり、コミットしていない変更はすでに移動先のワークツリーにあるかもしれません。再試行する前に確認してください。',
   'sessions.sidebar.session.menu.runFusion': 'フュージョンを実行',
   'sessions.sidebar.session.menu.openInSidePanel': 'サイドパネルで開く',
   'sessions.sidebar.session.actions.openInEditor': 'エディターで開く',

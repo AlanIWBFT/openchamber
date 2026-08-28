@@ -48,6 +48,7 @@ import { MultiRunFusionDialog } from '@/components/multirun/MultiRunFusionDialog
 import { FusionIcon } from '@/components/icons/FusionIcon';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import {
+  buildSessionTreeMoveMessages,
   requestSessionTreeMove,
   useIsSessionWorktreeMovePending,
 } from '@/lib/worktrees/sessionWorktreeMove';
@@ -1047,12 +1048,10 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                         descendants: collectNodeDescendantSessions(node),
                         sourceDirectory: sessionDirectory,
                         destination: target.metadata,
-                        messages: {
-                          success: t('sessions.sidebar.session.moveToWorktree.existingSuccess'),
-                          failure: t('sessions.sidebar.session.moveToWorktree.existingFailed'),
-                          sourceVerificationFailed: t('sessions.sidebar.session.moveToWorktree.sourceVerificationFailed'),
-                          applyChangesFailed: t('sessions.sidebar.session.moveToWorktree.applyChangesFailed'),
-                        },
+                        messages: buildSessionTreeMoveMessages(t, {
+                          success: 'sessions.sidebar.session.moveToWorktree.existingSuccess',
+                          failure: 'sessions.sidebar.session.moveToWorktree.existingFailed',
+                        }),
                       });
                     }}
                   >
@@ -1086,12 +1085,10 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                       root: resolvedSession,
                       descendants: collectNodeDescendantSessions(node),
                       sourceDirectory: sessionDirectory,
-                      messages: {
-                        success: t('sessions.sidebar.session.moveToWorktree.success'),
-                        failure: t('sessions.sidebar.session.moveToWorktree.failed'),
-                        sourceVerificationFailed: t('sessions.sidebar.session.moveToWorktree.sourceVerificationFailed'),
-                        applyChangesFailed: t('sessions.sidebar.session.moveToWorktree.applyChangesFailed'),
-                      },
+                      messages: buildSessionTreeMoveMessages(t, {
+                        success: 'sessions.sidebar.session.moveToWorktree.success',
+                        failure: 'sessions.sidebar.session.moveToWorktree.failed',
+                      }),
                     });
                   }}
                   className="[&>svg]:mr-1"

@@ -564,6 +564,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.session.moveToWorktree.confirm.cancel": "Cancelar",
   "sessions.sidebar.session.moveToWorktree.sourceVerificationFailed": "No se pudieron verificar los cambios de la fuente. No se modificó ningún worktree ni sesión.",
   "sessions.sidebar.session.moveToWorktree.applyChangesFailed": "El destino no pudo aceptar los cambios de la fuente. No se movieron la sesión ni los cambios. Reintenta y elige Mover solo la sesión.",
+  "sessions.sidebar.session.moveToWorktree.changesMayBeInDestination": "La conexión se cortó antes de que el destino confirmara el movimiento. Puede que la sesión no se haya movido y que tus cambios sin confirmar ya estén en el worktree de destino. Compruébalo antes de volver a intentarlo.",
   "sessions.sidebar.session.menu.runFusion": "Ejecutar fusion",
   "sessions.sidebar.session.menu.openInSidePanel": "Abrir en panel lateral",
   "sessions.sidebar.session.actions.openInEditor": "Abrir en el editor",

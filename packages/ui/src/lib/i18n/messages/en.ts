@@ -563,6 +563,7 @@ export const dict = {
   'sessions.sidebar.session.moveToWorktree.confirm.cancel': 'Cancel',
   'sessions.sidebar.session.moveToWorktree.sourceVerificationFailed': 'Source changes could not be verified. No worktree or session was changed.',
   'sessions.sidebar.session.moveToWorktree.applyChangesFailed': 'The destination could not accept the source changes. The session and source changes were not moved. Retry and choose Move session only.',
+  'sessions.sidebar.session.moveToWorktree.changesMayBeInDestination': 'The connection dropped before the destination confirmed the move. The session may not have moved, and your uncommitted changes may already be in the destination worktree. Check there before retrying.',
   'sessions.sidebar.session.menu.runFusion': 'Run fusion',
   'sessions.sidebar.session.menu.openInSidePanel': 'Open in Side Panel',
   'sessions.sidebar.session.actions.openInEditor': 'Open in Editor',

@@ -564,6 +564,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.moveToWorktree.confirm.cancel': '取消',
   'sessions.sidebar.session.moveToWorktree.sourceVerificationFailed': '无法验证源的更改。未更改任何工作树或会话。',
   'sessions.sidebar.session.moveToWorktree.applyChangesFailed': '目的地无法接受源的更改。会话和源更改均未移动。请重试并选择“仅移动会话”。',
+  'sessions.sidebar.session.moveToWorktree.changesMayBeInDestination': '在目的地确认移动之前连接中断。会话可能没有移动，未提交的更改可能已经在目标工作树中。重试前请先检查。',
   'sessions.sidebar.session.menu.runFusion': '运行融合',
   'sessions.sidebar.session.menu.openInSidePanel': '在侧边面板中打开',
   'sessions.sidebar.session.actions.openInEditor': '在编辑器中打开',

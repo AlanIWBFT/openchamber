@@ -394,6 +394,7 @@ export const dict = {
   'sessions.sidebar.session.moveToWorktree.confirm.cancel': 'Annuler',
   'sessions.sidebar.session.moveToWorktree.sourceVerificationFailed': 'Les modifications de la source n’ont pas pu être vérifiées. Aucun worktree ni session n’a été modifié.',
   'sessions.sidebar.session.moveToWorktree.applyChangesFailed': 'La destination n’a pas pu accepter les modifications de la source. La session et les modifications n’ont pas été déplacées. Réessayez et choisissez Déplacer la session uniquement.',
+  'sessions.sidebar.session.moveToWorktree.changesMayBeInDestination': 'La connexion a été perdue avant que la destination ne confirme le déplacement. La session n’a peut-être pas été déplacée, et vos modifications non validées se trouvent peut-être déjà dans le worktree de destination. Vérifiez-le avant de réessayer.',
   'sessions.sidebar.session.menu.runFusion': 'Exécuter la fusion',
   'sessions.sidebar.session.menu.openInSidePanel': 'Ouvrir dans le panneau latéral',
   'sessions.sidebar.session.actions.openInEditor': 'Ouvrir dans l\'éditeur',

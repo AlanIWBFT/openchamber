@@ -20,6 +20,12 @@ kept at this root in `types.ts` and `utils.tsx`.
   changes and roll back session-only if a later descendant fails. The root moves
   last and carries source changes once, which prevents rollback from replaying the
   transferred patch into the source.
+- Failure cleanup: a worktree created for the move is removed only after a
+  definite failure. When the change-carrying request fails without confirming
+  its outcome, that worktree is KEPT (it may hold the only copy of the user's
+  changes), both directories are refreshed authoritatively because the session
+  may have moved server-side, and the toast points the user at the destination.
+  Existing destinations are never removed; they get the same guidance.
 
 `MainLayout` and `VSCodeLayout` call `useSessionListSync({ isVSCode })`
 unconditionally. The hook publishes complete directory bootstrap demand,

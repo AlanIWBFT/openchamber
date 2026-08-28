@@ -33,6 +33,7 @@ const makeMoveMessages = (): SessionTreeMoveMessages => ({
   failure: 'move failed',
   sourceVerificationFailed: 'source verification failed',
   applyChangesFailed: 'apply changes failed',
+  changesMayBeInDestination: 'changes may be in destination',
 });
 
 const makeExistingIntent = (): SessionTreeMoveIntent => ({

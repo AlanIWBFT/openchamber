@@ -564,6 +564,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.session.moveToWorktree.confirm.cancel": "Скасувати",
   "sessions.sidebar.session.moveToWorktree.sourceVerificationFailed": "Не вдалося перевірити зміни в джерелі. Жоден worktree чи сесію не змінено.",
   "sessions.sidebar.session.moveToWorktree.applyChangesFailed": "Призначення не змогло прийняти зміни з джерела. Сесію та зміни в джерелі не перенесено. Спробуйте знову й оберіть Перенести лише сесію.",
+  "sessions.sidebar.session.moveToWorktree.changesMayBeInDestination": "З’єднання обірвалося, перш ніж призначення підтвердило перенесення. Сесія могла не переїхати, а незакомічені зміни можуть уже бути в цільовому worktree. Перевірте його, перш ніж повторювати.",
   "sessions.sidebar.session.menu.runFusion": "Запустити fusion",
   "sessions.sidebar.session.menu.openInSidePanel": "Відкрити на бічній панелі",
   "sessions.sidebar.session.actions.openInEditor": "Відкрити в редакторі",

@@ -577,6 +577,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.moveToWorktree.confirm.cancel': '取消',
   'sessions.sidebar.session.moveToWorktree.sourceVerificationFailed': '無法驗證來源的變更。未變更任何工作樹或工作階段。',
   'sessions.sidebar.session.moveToWorktree.applyChangesFailed': '目的地無法接受來源的變更。工作階段與來源變更均未移動。請重試並選擇「僅移動工作階段」。',
+  'sessions.sidebar.session.moveToWorktree.changesMayBeInDestination': '在目的地確認移動之前連線中斷。工作階段可能沒有移動，未提交的變更可能已經在目標工作樹中。重試前請先檢查。',
   'sessions.sidebar.session.menu.runFusion': '執行 fusion',
   'sessions.sidebar.session.menu.openInSidePanel': '在側邊面板中開啟',
   'sessions.sidebar.session.actions.openInEditor': '在編輯器中開啟',

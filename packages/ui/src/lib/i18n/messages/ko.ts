@@ -564,6 +564,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.moveToWorktree.confirm.cancel': '취소',
   'sessions.sidebar.session.moveToWorktree.sourceVerificationFailed': '원본 변경 사항을 확인하지 못했습니다. worktree와 세션 모두 변경되지 않았습니다.',
   'sessions.sidebar.session.moveToWorktree.applyChangesFailed': '목적지가 원본 변경 사항을 받아들이지 못했습니다. 세션과 원본 변경 사항이 이동되지 않았습니다. 다시 시도해 세션만 이동을 선택하세요.',
+  'sessions.sidebar.session.moveToWorktree.changesMayBeInDestination': '목적지가 이동을 확인하기 전에 연결이 끊겼습니다. 세션이 이동하지 않았을 수 있고, 커밋하지 않은 변경 사항이 이미 대상 워크트리에 있을 수 있습니다. 다시 시도하기 전에 확인하세요.',
   'sessions.sidebar.session.menu.runFusion': 'fusion 실행',
   'sessions.sidebar.session.menu.openInSidePanel': '사이드 패널에서 열기',
   'sessions.sidebar.session.actions.openInEditor': '편집기에서 열기',

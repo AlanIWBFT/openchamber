@@ -3015,6 +3015,7 @@ export const dict = {
   'sessions.sidebar.session.moveToWorktree.confirm.cancel': 'Abbrechen',
   'sessions.sidebar.session.moveToWorktree.sourceVerificationFailed': 'Die Änderungen in der Quelle konnten nicht geprüft werden. Es wurde kein Worktree und keine Sitzung geändert.',
   'sessions.sidebar.session.moveToWorktree.applyChangesFailed': 'Das Ziel konnte die Änderungen der Quelle nicht übernehmen. Sitzung und Änderungen wurden nicht verschoben. Versuche es erneut und wähle Nur Sitzung verschieben.',
+  'sessions.sidebar.session.moveToWorktree.changesMayBeInDestination': 'Die Verbindung brach ab, bevor das Ziel den Wechsel bestätigt hat. Die Sitzung wurde möglicherweise nicht verschoben, und deine nicht committeten Änderungen liegen eventuell schon im Ziel-Worktree. Sieh dort nach, bevor du es erneut versuchst.',
   'sessions.sidebar.session.export.failedLoadHistory': 'Die vollständige Sitzungshistorie konnte nicht geladen werden',
   'sessions.sidebar.session.status.movingToWorktree': 'Sitzung wird in einen neuen Worktree verschoben',
   'gitView.header.updateBranch': 'Branch aktualisieren',
