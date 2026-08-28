@@ -3773,12 +3773,69 @@ export async function createBranch(directory, branchName, options = {}) {
   }
 }
 
+// Deliberately not `--quiet`: simple-git resolves a quiet non-zero exit as
+// success, so the ref itself has to be echoed for the answer to mean anything.
+const gitRefExists = async (git, ref) => {
+  try {
+    const output = await git.raw(['show-ref', '--verify', ref]);
+    return String(output).trim().length > 0;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The branch selector lists remote-tracking branches beside local ones, so
+ * picking `origin/main` means "work on main", not "detach HEAD at the remote's
+ * commit" — which is what a literal checkout of a remote-tracking ref does.
+ * Resolve such a pick to the local branch, creating it with tracking when it
+ * does not exist yet. Anything we cannot resolve is checked out as requested,
+ * leaving git's own DWIM behavior intact.
+ */
+const resolveBranchCheckoutTarget = async (git, branchName) => {
+  const requested = String(branchName || '').trim();
+  if (!requested) {
+    throw new Error('Branch name is required');
+  }
+
+  const asRequested = { branch: requested, remoteRef: null };
+
+  if (await gitRefExists(git, `refs/heads/${requested}`)) {
+    return asRequested;
+  }
+
+  const remoteRef = requested.replace(/^remotes\//, '');
+  if (!(await gitRefExists(git, `refs/remotes/${remoteRef}`))) {
+    return asRequested;
+  }
+
+  const remotes = await git.getRemotes();
+  const remote = remotes.find((entry) => entry?.name && remoteRef.startsWith(`${entry.name}/`));
+  if (!remote) {
+    return asRequested;
+  }
+
+  const localBranch = remoteRef.slice(remote.name.length + 1);
+  // `origin/HEAD` names no branch of its own; it is a pointer to one.
+  if (!localBranch || localBranch === 'HEAD') {
+    return asRequested;
+  }
+
+  const localExists = await gitRefExists(git, `refs/heads/${localBranch}`);
+  return { branch: localBranch, remoteRef: localExists ? null : remoteRef };
+};
+
 export async function checkoutBranch(directory, branchName) {
   const { git } = await createRepositoryGitContext(directory);
 
   try {
-    await git.checkout(branchName);
-    return { success: true, branch: branchName };
+    const target = await resolveBranchCheckoutTarget(git, branchName);
+    if (target.remoteRef) {
+      await git.raw(['checkout', '-b', target.branch, '--track', target.remoteRef]);
+    } else {
+      await git.checkout(target.branch);
+    }
+    return { success: true, branch: target.branch };
   } catch (error) {
     console.error('Failed to checkout branch:', error);
     throw error;
