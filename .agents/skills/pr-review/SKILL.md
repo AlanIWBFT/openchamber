@@ -35,9 +35,7 @@ Choose exactly one. When torn between two, the deciding question is always: **wh
 
 **Link the issues a fix closes.** For every MERGE and MERGE-THEN-FIX verdict on a bug fix, search open issues for the symptom the PR resolves (`gh issue list --search` with the error strings and area terms) — contributors often fix problems without linking them. Any match goes into the ready action as a proposed "Closes #N" / close-on-merge so fixed issues never linger open unlinked.
 
-Manual verification the agent cannot perform (device testing, packaged builds, visual states) does not create a fifth verdict: pick the verdict the code earns and attach a **"needs your hands"** line saying exactly what to check and what outcome confirms it — marked as one of two kinds, chosen by consequence:
-- **gate (до мержу)** — the check guards an irreversible or hard-to-revert path: data loss, upgrade/restart flows, auth, anything where users would hit the breakage before the maintainer notices and a revert would not save them. The PR waits for this check.
-- **smoke (після мержу, за нагоди)** — low-risk visual or interaction polish where a revert is one commit and the blast radius is cosmetic. Merging first is fine; the line states plainly that skipping the check is accepted risk, not debt — never pad this list to feel thorough.
+A **"needs your hands"** line exists only when a manual check GATES the merge — the check guards an irreversible or hard-to-revert path (data loss, upgrade/restart flows, auth, destructive gestures) where users would hit the breakage before the maintainer notices and a revert would not save them. Then the verdict itself says so: "MERGE — після твоєї перевірки X", with exactly what to check and what outcome confirms it. There is no "check later, when you get a chance" kind: a plain MERGE means merge — residual cosmetic risk is absorbed by the verdict, because users surface it and a revert costs one commit. If the reviewer feels the urge to hand the maintainer a post-merge checklist, that is residual uncertainty to either resolve (investigate more) or accept (say nothing) — never to offload.
 
 ## Process
 

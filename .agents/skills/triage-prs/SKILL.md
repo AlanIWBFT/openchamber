@@ -47,7 +47,7 @@ Split the clean pool smallest-first (tiny diffs are fast wins and most likely me
 
 - Every PR/issue reference is a clickable link: `[#3177](https://github.com/openchamber/openchamber/pull/3177)` (issues: `/issues/N`) — never a bare number.
 - One entry per PR, 2–4 sentences: what it does for the user, whether the problem is real, why this verdict, the main risk or the thing the decision turns on. "Closes #N" links included.
-- "Needs your hands" lives INSIDE the PR's own entry as a final line, never as a separate section repeating the numbers — a number appearing twice reads as a duplicate.
+- A "needs your hands" line appears only when the check gates the merge (per the pr-review skill), and lives INSIDE the PR's own entry as its final line — never as a separate section repeating the numbers. A plain MERGE entry carries no checklist.
 - Thread-state line first for pickup-mode entries.
 - A one-line entry ("точковий фікс") is fine only for genuinely trivial diffs; a verdict the maintainer must weigh (product calls, larger features) gets the full 4 sentences.
 
