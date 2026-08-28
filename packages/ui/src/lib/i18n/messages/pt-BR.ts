@@ -131,6 +131,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.sessions.section.worktrees": "Worktrees",
   "mobile.sessions.section.otherProjects": "Trocar de projeto",
   "mobile.sessions.section.projects": "Projetos",
+  "mobile.sessions.section.chats": "Conversas",
   "mobile.sessions.empty.noProjectsTitle": "Sem projetos",
   "mobile.sessions.empty.noProjectsDescription": "Adicione um projeto para começar a conversar com seu código.",
   "mobile.sessions.empty.noSessionsTitle": "Sem sessões",

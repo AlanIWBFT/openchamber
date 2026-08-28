@@ -103,6 +103,7 @@ export const dict = {
   'mobile.sessions.section.worktrees': 'Worktrees',
   'mobile.sessions.section.otherProjects': 'Projekt wechseln',
   'mobile.sessions.section.projects': 'Projekte',
+  'mobile.sessions.section.chats': 'Chats',
   'mobile.sessions.empty.noProjectsTitle': 'Noch keine Projekte',
   'mobile.sessions.empty.noProjectsDescription': 'Füge ein Projekt hinzu, um mit deinem Code zu chatten.',
   'mobile.sessions.empty.noSessionsTitle': 'Noch keine Sitzungen',

@@ -131,6 +131,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.sessions.section.worktrees": "Worktrees",
   "mobile.sessions.section.otherProjects": "Інші проєкти",
   "mobile.sessions.section.projects": "Проєкти",
+  "mobile.sessions.section.chats": "Чати",
   "mobile.sessions.empty.noProjectsTitle": "Ще немає проєктів",
   "mobile.sessions.empty.noProjectsDescription": "Додай проєкт, щоб почати спілкування з кодом.",
   "mobile.sessions.empty.noSessionsTitle": "Ще немає сесій",

@@ -117,6 +117,7 @@ export const dict = {
   'mobile.sessions.section.worktrees': 'Worktree\'ler',
   'mobile.sessions.section.otherProjects': 'Proje değiştir',
   'mobile.sessions.section.projects': 'Projeler',
+  'mobile.sessions.section.chats': 'Sohbetler',
   'mobile.sessions.empty.noProjectsTitle': 'Henüz proje yok',
   'mobile.sessions.empty.noProjectsDescription': 'Kodunuzla sohbet etmeye başlamak için bir proje ekleyin.',
   'mobile.sessions.empty.noSessionsTitle': 'Henüz session yok',

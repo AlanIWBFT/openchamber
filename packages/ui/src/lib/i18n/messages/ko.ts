@@ -131,6 +131,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.sessions.section.worktrees': '워크트리',
   'mobile.sessions.section.otherProjects': '프로젝트 전환',
   'mobile.sessions.section.projects': '프로젝트',
+  'mobile.sessions.section.chats': '채팅',
   'mobile.sessions.empty.noProjectsTitle': '프로젝트 없음',
   'mobile.sessions.empty.noProjectsDescription': '코드와 채팅을 시작하려면 프로젝트를 추가하세요.',
   'mobile.sessions.empty.noSessionsTitle': '세션 없음',

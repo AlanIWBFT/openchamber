@@ -131,6 +131,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.sessions.section.worktrees': '工作樹',
   'mobile.sessions.section.otherProjects': '切換專案',
   'mobile.sessions.section.projects': '專案',
+  'mobile.sessions.section.chats': '聊天',
   'mobile.sessions.empty.noProjectsTitle': '尚無專案',
   'mobile.sessions.empty.noProjectsDescription': '新增專案即可開始與程式碼聊天。',
   'mobile.sessions.empty.noSessionsTitle': '尚無會話',

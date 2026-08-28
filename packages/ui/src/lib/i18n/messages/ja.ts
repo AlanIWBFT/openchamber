@@ -131,6 +131,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.sessions.section.worktrees': 'ワークツリー',
   'mobile.sessions.section.otherProjects': 'プロジェクトを切り替え',
   'mobile.sessions.section.projects': 'プロジェクト',
+  'mobile.sessions.section.chats': 'チャット',
   'mobile.sessions.empty.noProjectsTitle': 'まだプロジェクトがありません',
   'mobile.sessions.empty.noProjectsDescription': 'プロジェクトを追加してコードとチャットを始めましょう。',
   'mobile.sessions.empty.noSessionsTitle': 'まだセッションがありません',
