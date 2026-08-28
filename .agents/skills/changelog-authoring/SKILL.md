@@ -64,6 +64,7 @@ Use `gh pr view <number> --json number,title,body,author,mergedAt` for PR eviden
 ## VS Code Changelog Rules
 
 - Craft entries only for behavior present in the VS Code extension. Exclude Desktop, Web, Mobile/PWA, and main-app-only UI.
+- **Reachability check before every entry.** A change touching shared UI or the VS Code bridge earns a VS Code changelog entry only when the surface is actually mounted from the VS Code entrypoint (`packages/vscode/webview/main.tsx` → `VSCodeApp` → `VSCodeLayout` — which mounts only a subset of shared surfaces; consult the surface map in `packages/vscode/src/DOCUMENTATION.md` when present, trace the mount when not). Shared code that VS Code never mounts is dead there — an entry for it is a false claim users will file bugs about. When in doubt, leave the entry out of the VS Code changelog.
 - Do not copy shared/main bullets here unless changed files or code paths show the feature exists in the extension.
 - Focus on core UI improvements and VS Code integration.
 - Do NOT use "VSCode:" or "VS Code:" prefixes in this file.
