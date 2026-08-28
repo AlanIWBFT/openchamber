@@ -11,6 +11,8 @@ import {
 type BundledLanguageModule = { default: LanguageRegistration[] };
 
 const loadBundledGrammar = async (id: (typeof TEMPLATE_CALL_LANGUAGE_IDS)[number]): Promise<LanguageRegistration> => {
+  // SAFETY: `id` comes from TEMPLATE_CALL_LANGUAGE_IDS, and every Shiki bundled
+  // language module default-exports its grammar array.
   const mod = (await bundledLanguages[id]()) as BundledLanguageModule;
   return mod.default[0];
 };
@@ -45,6 +47,7 @@ describe('sanitizeTemplateCallGrammar', () => {
   });
 
   test('highlights template-literal fixtures within a tight budget after sanitize', async () => {
+    // SAFETY: the javascript bundle default-exports its grammar array.
     const mod = (await bundledLanguages.javascript()) as BundledLanguageModule;
     const patched = mod.default.map((grammar) => sanitizeTemplateCallGrammar(grammar));
 

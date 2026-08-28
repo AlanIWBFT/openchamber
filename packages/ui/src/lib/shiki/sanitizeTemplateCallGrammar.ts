@@ -42,4 +42,4 @@ export const TEMPLATE_CALL_LANGUAGE_IDS = ['javascript', 'typescript', 'jsx', 't
 export type TemplateCallLanguageId = (typeof TEMPLATE_CALL_LANGUAGE_IDS)[number];
 
 export const isTemplateCallLanguageId = (lang: string): lang is TemplateCallLanguageId =>
-  (TEMPLATE_CALL_LANGUAGE_IDS as readonly string[]).includes(lang);
+  TEMPLATE_CALL_LANGUAGE_IDS.some((id) => id === lang);

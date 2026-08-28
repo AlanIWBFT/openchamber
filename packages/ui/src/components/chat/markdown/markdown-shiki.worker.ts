@@ -76,6 +76,8 @@ const loadLanguageSafe = async (instance: Instance, lang: BundledLanguage): Prom
     return;
   }
 
+  // SAFETY: every Shiki bundled-language module default-exports its grammar
+  // array; `lang` is narrowed to a bundled id above.
   const mod = (await bundledLanguages[lang]()) as BundledLanguageModule;
   const grammars = mod.default.map((grammar) => sanitizeTemplateCallGrammar(grammar));
   await instance.loadLanguage(...grammars);
