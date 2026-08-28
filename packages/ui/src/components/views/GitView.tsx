@@ -3,6 +3,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useFireworksCelebration } from '@/contexts/FireworksContext';
 import type { GitIdentityProfile, CommitFileEntry, GitStatus } from '@/lib/api/types';
+import { rankByQuery } from '@/lib/search/fuzzySearch';
 import { useGitIdentitiesStore } from '@/stores/useGitIdentitiesStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -1346,8 +1347,10 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     }
 
     try {
-      await git.checkoutBranch(currentDirectory, normalized);
-      toast.success(t('gitView.toast.checkedOut', { name: normalized }));
+      // Picking a remote-tracking branch checks out the local branch that
+      // tracks it, so report the branch the repository actually landed on.
+      const result = await git.checkoutBranch(currentDirectory, normalized);
+      toast.success(t('gitView.toast.checkedOut', { name: result?.branch || normalized }));
       await refreshStatusAndBranches();
       await refreshLog();
     } catch (err) {
@@ -1417,12 +1420,32 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     }));
   }, [remotes, remoteBranches, remoteUrl, status?.tracking]);
 
+  const currentBranch = status?.current ?? null;
+
+  // The repository's own default branch, so a repo whose default is neither
+  // main, master nor develop stops being compared against a branch that does
+  // not exist.
+  const defaultBranch = React.useMemo(() => {
+    const trackingRemote = status?.tracking?.trim().split('/')[0];
+    return (trackingRemote && branches?.defaultBranches?.[trackingRemote])
+      ?? branches?.defaultBranches?.origin;
+  }, [branches, status?.tracking]);
+
   const baseBranch = React.useMemo(() => deriveBaseBranch({
     remoteNames: new Set(effectiveRemotes.map((remote) => remote.name)),
     localBranches,
     worktreeCreatedFromBranch: worktreeMetadata?.createdFromBranch,
     rootBranchHint,
-  }), [effectiveRemotes, localBranches, rootBranchHint, worktreeMetadata?.createdFromBranch]);
+    defaultBranch,
+    headBranch: currentBranch,
+  }), [
+    currentBranch,
+    defaultBranch,
+    effectiveRemotes,
+    localBranches,
+    rootBranchHint,
+    worktreeMetadata?.createdFromBranch,
+  ]);
 
   const updateTargetBranch = React.useMemo(() => {
     const remoteNames = effectiveRemotes.map((remote) => remote.name);
@@ -1511,7 +1534,6 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
 
   const stagedCount = stagedChangeEntries.length;
   const isBusy = isLoading || syncAction !== null || commitAction !== null;
-  const currentBranch = status?.current ?? null;
   const canShowIntegrateCommitsSection = Boolean(
     worktreeMetadata && repoRootForIntegrate && sourceBranchForIntegrate && shouldShowIntegrateCommits
   );
@@ -2566,7 +2588,8 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
           <DialogHeader className="px-4 pt-4">
             <DialogTitle>{t('gitView.gitmoji.title')}</DialogTitle>
           </DialogHeader>
-          <Command className="h-[420px]">
+          {/* rankByQuery owns filtering/ordering; cmdk must not re-filter. */}
+          <Command className="h-[420px]" shouldFilter={false}>
             <CommandInput
               placeholder={t('gitView.gitmoji.searchPlaceholder')}
               value={gitmojiSearch}
@@ -2575,18 +2598,7 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
             <CommandList>
               <CommandEmpty>{t('gitView.gitmoji.empty')}</CommandEmpty>
               <CommandGroup>
-                {(gitmojiEmojis.length === 0
-                  ? []
-                  : gitmojiEmojis.filter((entry) => {
-                    const term = gitmojiSearch.trim().toLowerCase();
-                    if (!term) return true;
-                    return (
-                      entry.emoji.includes(term) ||
-                      entry.code.toLowerCase().includes(term) ||
-                      entry.description.toLowerCase().includes(term)
-                    );
-                  })
-                ).map((entry) => (
+                {rankByQuery(gitmojiEmojis, gitmojiSearch, (entry) => [entry.code, entry.description, entry.emoji]).map((entry) => (
                   <CommandItem
                     key={entry.code}
                     onSelect={() => handleSelectGitmoji(entry.emoji, entry.code)}
