@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 - Work status: the session cost now counts what its subagents spent, with a line under the context meter splitting the session's own cost from the subagents' share, and each subagent's cost shown next to it in the Subagents list. Previously a session that delegated most of its work looked far cheaper than it was.
+- Git/Worktrees: session menus can now move an idle session and its sub-sessions into an existing worktree, and opening the target list discovers worktrees created outside OpenChamber without a restart (thanks to @mattv8).
 - Files: opening a file over 5,000 lines is no longer blocked — the line-count guard now allows up to 20,000 lines, letting large files reach the virtualized full-file preview instead of being rejected at the open step (thanks @gaojunran).
 - Usage: GitHub Copilot now shows a single AI Credits window, matching Copilot's token-based quota, in place of the old Chat Requests and Completions windows (thanks to @jakoss).
 - Settings: fixed the Cloudflare Tunnel download link shown when cloudflared is not installed (thanks to @AyoubAchour).
@@ -94,7 +95,6 @@ All notable changes to this project will be documented in this file.
 - UI: the default dialog close button is easier to click or tap (thanks to @rockinrimmer).
 - Desktop/Windows: the close button now aligns correctly with the rest of the window chrome.
 - Session assist: recaps and suggested follow-ups now work when the Anthropic provider is configured to use a custom endpoint; they previously failed every time instead of using that configured connection.
-- Git/Worktrees: session menus can now move an idle session and its sub-sessions into an existing worktree, and opening the target list discovers worktrees created outside OpenChamber without a restart (thanks to @mattv8).
 
 ## [1.19.0] - 2026-08-19
 
