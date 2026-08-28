@@ -7,6 +7,8 @@ Turn an unbounded PR queue into a short list of maintainer decisions. The pipeli
 
 Companion: each substantive review inside phase 3 applies the `pr-review` skill; this skill owns only the batch mechanics around it.
 
+**The timeline outranks the snapshot.** Before any verdict or comment on a PR, read its existing comments: a prior maintainer verdict (a push-back list, a recorded product decision like a placement or scope call) is BINDING — a new sweep verifies whether it was addressed at the current HEAD and says so explicitly ("all three prior items resolved" / "item 2 still open"), never re-decides it or asks the maintainer the same product question again. And never post the generic rebase-request on a PR that already carries a substantive review comment — the author already has their instructions; a bare "please rebase" on top reads as the left hand not knowing the right.
+
 ## Phase 1 — Mechanical sweep (no judgment, no LLM verdicts)
 
 Fetch all open PRs with `gh` (the repo is `openchamber/openchamber`). Two measurement rules learned the hard way:
