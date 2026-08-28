@@ -9,7 +9,7 @@
 - Chat: with "Follow new content while streaming" turned off, sending a message while scrolled up now leaves the view where it is instead of jumping to the new message.
 - Chat: pressing PageUp/PageDown in the prompt box, or moving the caret through a long prompt, no longer shifts the whole panel up and hides its top edge.
 - GitHub Copilot usage now shows a single AI Credits window, matching Copilot's token-based quota, in place of the old Chat Requests and Completions windows (thanks to @jakoss).
-- Updating OpenCode no longer fails with a bare "Bad Request": the extension names the release to install, which recent OpenCode versions require, and shows OpenCode's own reason when an update is refused (thanks to @yulia-ivashko).
+- Updating OpenCode no longer fails with a bare "Bad Request": the extension names the release to install, which recent OpenCode versions require, and shows OpenCode's own reason when an update is refused (thanks to @mdatsev and @yulia-ivashko).
 - A saved draft or recalled message containing Windows line endings no longer replaces the chat with a "Selection points outside of document" error, and no longer brings the error back every time you reopen that session (thanks to @mattv8 and @yulia-ivashko).
 - "Add Project" now adds the chosen folder to the workspace instead of failing with "Failed to add project" (thanks to @bashrusakh).
 - Multi-Run groups can now contain more than five models (thanks to @tomzx).
