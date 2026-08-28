@@ -740,7 +740,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
                       <button
                         type="button"
                         onMouseDown={(event) => event.stopPropagation()}
-                        onClick={() => togglePathSelection(row.path)}
+                        onClick={(event) => { event.stopPropagation(); togglePathSelection(row.path); }}
                         title={t('directoryExplorerDialog.browse.selectForAdd')}
                         aria-label={t('directoryExplorerDialog.browse.selectForAdd')}
                         aria-pressed={selectedPaths.includes(row.path)}
