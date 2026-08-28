@@ -165,7 +165,7 @@ const registerUpload = (fsPromises) => {
   return getRoute('POST', '/api/fs/upload');
 };
 
-const registerRead = (fsPromises) => {
+const registerRead = (fsPromises, resolveProjectDirectory = async () => ({ directory: '/repo' })) => {
   const { app, getRoute } = createRouteRegistry();
   registerFsRoutes(app, {
     os: { homedir: () => '/home/user' },
@@ -177,7 +177,7 @@ const registerRead = (fsPromises) => {
     spawn: vi.fn(),
     crypto: { randomUUID: () => 'job-0' },
     normalizeDirectoryPath: (p) => p,
-    resolveProjectDirectory: async () => ({ directory: '/repo' }),
+    resolveProjectDirectory,
     buildAugmentedPath: () => '/usr/bin',
     resolveGitBinaryForSpawn: () => 'git',
     openchamberUserConfigRoot: '/home/user/.config',
@@ -733,7 +733,10 @@ describe('fs read', () => {
       stat: vi.fn(async () => ({ isFile: () => true, size: 4 })),
       readFile: vi.fn(async () => 'data'),
     };
-    const handler = registerRead(fsPromises);
+    const handler = registerRead(fsPromises, async () => ({
+      directory: '/real/proj',
+      requestedDirectory: '/home/user/proj',
+    }));
     const res = createMockResponse();
 
     await handler({

@@ -25,7 +25,7 @@ Own filesystem API behavior for the web server runtime, including workspace-boun
     - `GET /api/fs/list`
   - Owns exec job queue state (`execJobs`) and lifecycle/TTL pruning.
   - Enforces workspace boundary checks with active project + worktree fallback support.
-  - Read-family endpoints (`stat`, `read`, `raw`, `serve`) resolve symlinks before serving and allow paths that are lexically inside the active workspace even when their canonical (realpath) target lives outside it through a workspace-internal symlink (for example `~/test_folder -> /shared/test_folder`). Paths that are not inside the workspace lexically are still rejected before any symlink resolution, and write/exec operations keep the strict canonical containment check.
+  - The active project directory is validated with `fs.realpath`, so when the project root is itself a symlink the workspace base no longer matches the paths the client sends. Workspace resolution therefore retries against the raw directory the client requested (`requestedDirectory` from `resolveProjectDirectory`) before falling back to worktree roots. Symlinks are still resolved afterwards, and write/exec routes keep their canonical containment check against the resolved base.
 - `createFsSearchRuntime({ fsPromises, path, spawn, resolveGitBinaryForSpawn })` from `search.js`
   - Returns `{ searchFilesystemFiles(rootPath, options) }`.
   - Supports fuzzy matching, hidden-file handling, and optional `git check-ignore` filtering.
