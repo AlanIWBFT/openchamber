@@ -50,7 +50,7 @@ interface ProjectsStore {
   manualProjectOrder: string[];
 
   addProject: (path: string, options?: { label?: string; id?: string }) => Promise<ProjectEntry | null>;
-  addProjects: (paths: string[]) => ProjectEntry[];
+  addProjects: (paths: string[]) => Promise<ProjectEntry[]>;
   removeProject: (id: string) => void;
   setActiveProject: (id: string) => void;
   setActiveProjectIdOnly: (id: string) => void;
@@ -654,9 +654,19 @@ export const useProjectsStore = create<ProjectsStore>()(
       return entry;
     },
 
-    addProjects: (paths: string[]) => {
+    addProjects: async (paths: string[]) => {
       if (isVSCodeProjectsRuntime) {
-        return [];
+        // VS Code paths are added via runtimeApis.vscode.addWorkspaceFolder,
+        // which is reached only by addProject. Iterate so valid selections
+        // succeed instead of silently returning [].
+        const added: ProjectEntry[] = [];
+        for (const path of paths) {
+          const project = await get().addProject(path);
+          if (project) {
+            added.push(project);
+          }
+        }
+        return added;
       }
       const current = get();
       const existingPaths = new Set(current.projects.map((project) => project.path));

@@ -486,7 +486,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         // Batch path wins over single-target create: with checkboxes ticked,
         // the user wants the selections added, not a fresh directory created
         // for whatever happens to be typed in the filter.
-        const added = addProjects(selectionToAdd);
+        const added = await addProjects(selectionToAdd);
         if (added.length === 0) {
           toast.error(t('directoryExplorerDialog.toast.failedToAddProject'), {
             description: t('directoryExplorerDialog.toast.selectValidDirectoryPath'),
