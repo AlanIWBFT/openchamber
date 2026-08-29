@@ -1,3 +1,7 @@
+## [Unreleased]
+
+- Switching sessions is faster: the clicked session highlights at once, and its conversation appears as one finished view — text, tool cards, and the recap together — instead of arriving in pieces with a moment of unstyled code blocks.
+
 ## [1.21.1] - 2026-08-29
 
 - **Turkish interface:** OpenChamber can now be used in Turkish (thanks to @fitzgpt).

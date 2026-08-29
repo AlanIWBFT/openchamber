@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- **Chat:** switching sessions is now near-instant. The clicked session highlights at once, and its conversation appears as one finished view — text, tool cards, and the recap together — instead of arriving in pieces with a moment of unstyled code blocks and links. Header session tabs switch without a crossfade, and the tab title no longer jumps when a tab becomes active.
+- Chat: command and skill autocomplete in a Chat (a session that belongs to no project) lists that chat's own commands and skills instead of the project last selected in the sidebar, and file mentions in a new chat draft no longer search the previous project.
+- Files: Ctrl/Cmd+F opens the find bar in the Markdown preview even when nothing inside the preview has focus.
+
 ## [1.21.1] - 2026-08-29
 
 - **Turkish interface:** OpenChamber can now be used in Turkish (thanks to @fitzgpt).
