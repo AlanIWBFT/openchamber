@@ -23,7 +23,7 @@ it('allows the process launcher to be injected', async () => {
   });
   const git = simpleGit({ baseDir: process.cwd(), spawn });
 
-  await expect(git.raw(['--version'])).resolves.toBe('git version injected\n');
+  expect(await Promise.resolve(git.raw(['--version']))).toBe('git version injected\n');
   expect(spawn).toHaveBeenCalledOnce();
 });
 
@@ -49,6 +49,7 @@ it('waits for close when a managed process fails after exit', async () => {
     spawn,
   });
 
-  await expect(git.raw(['--version'])).rejects.toThrow('broker disconnected');
+  const failure = Promise.resolve(git.raw(['--version'])).catch((error) => error);
+  expect((await failure).message).toContain('broker disconnected');
   expect(spawn).toHaveBeenCalledOnce();
 });
