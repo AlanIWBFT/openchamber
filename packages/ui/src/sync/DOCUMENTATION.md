@@ -441,6 +441,13 @@ in a transition behind it. Selection *policy* inside `ChatContainer` (auto-
 opening a draft when nothing is selected) reads the live store value, because
 the deferred one still names the previous session for one commit.
 
+A session whose messages are not in memory at the click keeps the previous
+timeline on screen while they load (up to 400ms), then swaps straight to the
+finished view; the skeleton appears only when loading takes longer. A session
+the user waited for fades in (100ms); one that was ready appears in the same
+frame. The sidebar prefetches the two rows on either side of the open session
+shortly after it settles, so most neighbouring switches are warm.
+
 The timeline's first paint for a session is atomic. `ChatContainer` owns a
 `TimelineRevealGate` per session key (`components/chat/timelineRevealGate.ts`):
 a markdown renderer whose first paint is provisional (blocks not yet in the

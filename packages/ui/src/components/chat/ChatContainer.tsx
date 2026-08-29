@@ -12,6 +12,10 @@ import ChatEmptyState from './ChatEmptyState';
 import { useGlobalSyncStore } from '@/sync/global-sync-store';
 import MessageList, { type MessageListHandle } from './MessageList';
 import { createTimelineRevealGate, TIMELINE_REVEAL_CAP_MS, TimelineRevealGateContext } from './timelineRevealGate';
+
+// How long the previous timeline stays on screen while a session that is not
+// in memory loads, before the skeleton takes over.
+const SESSION_SWITCH_HOLD_MS = 400;
 import { PermissionCard } from './PermissionCard';
 import { QuestionCard } from './QuestionCard';
 import { hasActiveQuestionToolInCurrentTurn, recoverPendingQuestionWithRetry } from '@/sync/question-recovery';
@@ -176,6 +180,8 @@ type ChatViewportProps = {
     } | null;
     scrollToBottom: () => void;
     endPinningReleased: boolean;
+    /** The user waited for this session (held or fetched); reveal it with a fade. */
+    revealWaited: boolean;
     sessionQuestions: QuestionRequest[];
     sessionPermissions: PermissionRequest[];
     isProgrammaticFollowActive: boolean;
@@ -212,6 +218,7 @@ const ChatViewport = React.memo(({
     retryOverlay,
     scrollToBottom,
     endPinningReleased,
+    revealWaited,
     sessionQuestions,
     sessionPermissions,
     isProgrammaticFollowActive,
@@ -367,8 +374,9 @@ const ChatViewport = React.memo(({
 
     // Opening a session paints the timeline as one finished picture: the root
     // stays invisible while any renderer holds a provisional first paint, then
-    // everything appears together. A warm switch, where nothing is held,
-    // reveals in the same frame; a cold open fades in once as a whole.
+    // everything appears together. A session the user waited for fades in
+    // once as a whole; one that was ready at the click shows in the same
+    // frame.
     const timelineRootRef = React.useRef<HTMLDivElement | null>(null);
     const revealGate = React.useMemo(() => createTimelineRevealGate(), [currentSessionKey]);
     React.useLayoutEffect(() => {
@@ -391,7 +399,7 @@ const ChatViewport = React.memo(({
             if (finished) return;
             revealGate.close();
             if (revealGate.holds === 0) {
-                reveal(false);
+                reveal(revealWaited);
                 return;
             }
             revealGate.onEmpty = () => reveal(true);
@@ -402,7 +410,7 @@ const ChatViewport = React.memo(({
             if (timer !== null) window.clearTimeout(timer);
             revealGate.onEmpty = null;
         };
-    }, [revealGate]);
+    }, [revealGate, revealWaited]);
 
     const scrollContainerProps = React.useMemo(() => ({
         className: 'absolute inset-0 overflow-y-auto overflow-x-hidden z-0 chat-scroll overlay-scrollbar-target',
@@ -486,6 +494,7 @@ const ChatViewport = React.memo(({
         && prev.retryOverlay === next.retryOverlay
         && prev.scrollToBottom === next.scrollToBottom
         && prev.endPinningReleased === next.endPinningReleased
+        && prev.revealWaited === next.revealWaited
         && prev.sessionQuestions === next.sessionQuestions
         && prev.sessionPermissions === next.sessionPermissions
         && prev.isProgrammaticFollowActive === next.isProgrammaticFollowActive
@@ -625,10 +634,53 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 }) => {
     const messagesEnabled = messagesEnabledProp ?? active;
     const { t } = useI18n();
-    // Session UI state
-    const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
-    const currentSessionDirectory = useSessionUIStore((s) => s.currentSessionDirectory);
+    // Session UI state. The selection is published synchronously by the
+    // sidebar click, but the chat swaps its content on a deferred copy: the
+    // first commit paints the cheap reactions (active row, URL, tab) while the
+    // timeline for the new session renders in an interruptible transition
+    // behind it. Both fields travel as one value so the key, the message
+    // subscription, and the loader target never mix an old directory with a
+    // new session id.
+    const liveSessionId = useSessionUIStore((s) => s.currentSessionId);
+    const liveSessionDirectory = useSessionUIStore((s) => s.currentSessionDirectory);
     const materializedDraftSessionId = useSessionUIStore((s) => s.materializedDraftSessionId);
+    const liveSelection = React.useMemo(
+        () => ({ sessionId: liveSessionId, directory: liveSessionDirectory }),
+        [liveSessionId, liveSessionDirectory],
+    );
+    // A session whose messages are not in memory yet keeps the previous
+    // timeline on screen while they load, instead of flashing a skeleton
+    // between two conversations. The hold ends when the session becomes
+    // renderable or after SESSION_SWITCH_HOLD_MS, whichever comes first, and
+    // never applies when nothing was shown before or when the session was just
+    // created from a draft.
+    const liveSessionRenderable = useSessionRenderable(liveSessionId ?? '', liveSessionDirectory ?? undefined);
+    const shownSelectionRef = React.useRef(liveSelection);
+    const [expiredHoldSessionId, setExpiredHoldSessionId] = React.useState<string | null>(null);
+    const holdPreviousTimeline = Boolean(liveSessionId)
+        && !liveSessionRenderable
+        && liveSessionId !== materializedDraftSessionId
+        && shownSelectionRef.current.sessionId !== null
+        && shownSelectionRef.current.sessionId !== liveSessionId
+        && expiredHoldSessionId !== liveSessionId;
+    React.useEffect(() => {
+        if (!holdPreviousTimeline || !liveSessionId) return;
+        const timer = window.setTimeout(() => setExpiredHoldSessionId(liveSessionId), SESSION_SWITCH_HOLD_MS);
+        return () => window.clearTimeout(timer);
+    }, [holdPreviousTimeline, liveSessionId]);
+    // A session the user waited for (not in memory at the click) fades in; one
+    // that was ready appears in the same frame. Decided once per selection so
+    // a later, warm visit to the same session is instant again.
+    const lastLiveSessionIdRef = React.useRef<string | null | undefined>(undefined);
+    const waitedSessionIdRef = React.useRef<string | null>(null);
+    if (liveSessionId !== lastLiveSessionIdRef.current) {
+        lastLiveSessionIdRef.current = liveSessionId;
+        waitedSessionIdRef.current = liveSessionId && !liveSessionRenderable ? liveSessionId : null;
+    }
+    const targetSelection = holdPreviousTimeline ? shownSelectionRef.current : liveSelection;
+    const { sessionId: currentSessionId, directory: currentSessionDirectory } = React.useDeferredValue(targetSelection);
+    shownSelectionRef.current = { sessionId: currentSessionId, directory: currentSessionDirectory };
+    const revealWaited = Boolean(currentSessionId) && currentSessionId === waitedSessionIdRef.current;
     const clearMaterializedDraftSession = useSessionUIStore((s) => s.clearMaterializedDraftSession);
     const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
     const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
@@ -941,13 +993,17 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         };
     }, []);
 
+    // Selection policy reads the live selection, not the deferred one: right
+    // after a click the deferred id still names the previous session (or
+    // nothing) for one commit, and acting on that would open a draft over the
+    // session the user just chose.
     React.useEffect(() => {
-        if (autoOpenDraft && !currentSessionId && !draftOpen) {
+        if (autoOpenDraft && !liveSessionId && !draftOpen) {
             // Programmatic fallback, not user navigation — must not clear the
             // persisted last-session pointer the cold-launch restore reads.
             openNewSessionDraft({ automatic: true });
         }
-    }, [autoOpenDraft, currentSessionId, draftOpen, openNewSessionDraft]);
+    }, [autoOpenDraft, liveSessionId, draftOpen, openNewSessionDraft]);
 
     const activeTurnChangeRef = React.useRef<(turnId: string | null) => void>(() => {});
     const handleActiveTurnChange = React.useCallback((turnId: string | null) => {
@@ -1437,6 +1493,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 retryOverlay={retryOverlay}
                 scrollToBottom={resumeToLatestInstant}
                 endPinningReleased={userOwnsScroll}
+                revealWaited={revealWaited}
                 sessionQuestions={sessionQuestions}
                 sessionPermissions={sessionPermissions}
                 isProgrammaticFollowActive={isFollowingProgrammatically}
