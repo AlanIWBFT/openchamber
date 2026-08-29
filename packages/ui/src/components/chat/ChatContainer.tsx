@@ -11,11 +11,18 @@ import { Skeleton } from '@/components/ui/skeleton';
 import ChatEmptyState from './ChatEmptyState';
 import { useGlobalSyncStore } from '@/sync/global-sync-store';
 import MessageList, { type MessageListHandle } from './MessageList';
-import { createTimelineRevealGate, TIMELINE_REVEAL_CAP_MS, TimelineRevealGateContext } from './timelineRevealGate';
+import { createTimelineRevealGate, TIMELINE_REVEAL_CAP_MS, TimelineRevealGateContext, type TimelineRevealGate } from './timelineRevealGate';
 
 // How long the previous timeline stays on screen while a session that is not
 // in memory loads, before the skeleton takes over.
 const SESSION_SWITCH_HOLD_MS = 400;
+// End inset reserved for the status row that floats over the timeline's
+// bottom edge (its tallest resting height plus the mb-2 gap).
+const STATUS_OVERLAY_RESERVED_HEIGHT = 40;
+// A freshly opened timeline is shown once its content height has held still
+// for this many consecutive frames, or after the cap.
+const TIMELINE_SETTLE_STABLE_FRAMES = 2;
+const TIMELINE_SETTLE_CAP_MS = 300;
 import { PermissionCard } from './PermissionCard';
 import { QuestionCard } from './QuestionCard';
 import { hasActiveQuestionToolInCurrentTurn, recoverPendingQuestionWithRetry } from '@/sync/question-recovery';
@@ -182,6 +189,7 @@ type ChatViewportProps = {
     endPinningReleased: boolean;
     /** The user waited for this session (held or fetched); reveal it with a fade. */
     revealWaited: boolean;
+    revealGate: TimelineRevealGate;
     sessionQuestions: QuestionRequest[];
     sessionPermissions: PermissionRequest[];
     isProgrammaticFollowActive: boolean;
@@ -219,6 +227,7 @@ const ChatViewport = React.memo(({
     scrollToBottom,
     endPinningReleased,
     revealWaited,
+    revealGate,
     sessionQuestions,
     sessionPermissions,
     isProgrammaticFollowActive,
@@ -378,19 +387,49 @@ const ChatViewport = React.memo(({
     // once as a whole; one that was ready at the click shows in the same
     // frame.
     const timelineRootRef = React.useRef<HTMLDivElement | null>(null);
-    const revealGate = React.useMemo(() => createTimelineRevealGate(), [currentSessionKey]);
+    const endPinningReleasedRef = React.useRef(endPinningReleased);
+    endPinningReleasedRef.current = endPinningReleased;
     React.useLayoutEffect(() => {
         const root = timelineRootRef.current;
         if (!root) return;
         root.setAttribute('data-timeline-reveal', 'pending');
         let finished = false;
         let timer: number | null = null;
+        let frame: number | null = null;
+        // Revealed once the geometry has settled: after the last hold the
+        // list still lays rows out from its own measurements over a few
+        // frames, so the timeline stays hidden — pinned to the end on every
+        // frame — until the content height has held still for two frames,
+        // then shows already sitting on the end. The settle is bounded so a
+        // list that keeps growing (images, late tool output) still appears.
         const reveal = (fade: boolean) => {
             if (finished) return;
             finished = true;
             if (timer !== null) window.clearTimeout(timer);
-            if (fade) root.setAttribute('data-timeline-reveal', 'fading');
-            else root.removeAttribute('data-timeline-reveal');
+            const startedAt = performance.now();
+            let lastHeight = -1;
+            let stableFrames = 0;
+            const settle = () => {
+                frame = null;
+                const node = scrollRef.current;
+                let height = -1;
+                if (node) {
+                    height = node.scrollHeight;
+                    if (!endPinningReleasedRef.current) {
+                        const end = height - node.clientHeight;
+                        if (end - node.scrollTop > 1) node.scrollTop = end;
+                    }
+                }
+                stableFrames = height === lastHeight ? stableFrames + 1 : 0;
+                lastHeight = height;
+                if (stableFrames < TIMELINE_SETTLE_STABLE_FRAMES && performance.now() - startedAt < TIMELINE_SETTLE_CAP_MS) {
+                    frame = window.requestAnimationFrame(settle);
+                    return;
+                }
+                if (fade) root.setAttribute('data-timeline-reveal', 'fading');
+                else root.removeAttribute('data-timeline-reveal');
+            };
+            frame = window.requestAnimationFrame(settle);
         };
         // Holds are taken in layout effects, including those of rows the list
         // mounts in a nested synchronous pass; a microtask runs after all of
@@ -408,9 +447,10 @@ const ChatViewport = React.memo(({
         return () => {
             finished = true;
             if (timer !== null) window.clearTimeout(timer);
+            if (frame !== null) window.cancelAnimationFrame(frame);
             revealGate.onEmpty = null;
         };
-    }, [revealGate, revealWaited]);
+    }, [revealGate, revealWaited, scrollRef]);
 
     const scrollContainerProps = React.useMemo(() => ({
         className: 'absolute inset-0 overflow-y-auto overflow-x-hidden z-0 chat-scroll overlay-scrollbar-target',
@@ -495,6 +535,7 @@ const ChatViewport = React.memo(({
         && prev.scrollToBottom === next.scrollToBottom
         && prev.endPinningReleased === next.endPinningReleased
         && prev.revealWaited === next.revealWaited
+        && prev.revealGate === next.revealGate
         && prev.sessionQuestions === next.sessionQuestions
         && prev.sessionPermissions === next.sessionPermissions
         && prev.isProgrammaticFollowActive === next.isProgrammaticFollowActive
@@ -681,6 +722,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     const { sessionId: currentSessionId, directory: currentSessionDirectory } = React.useDeferredValue(targetSelection);
     shownSelectionRef.current = { sessionId: currentSessionId, directory: currentSessionDirectory };
     const revealWaited = Boolean(currentSessionId) && currentSessionId === waitedSessionIdRef.current;
+
     const clearMaterializedDraftSession = useSessionUIStore((s) => s.clearMaterializedDraftSession);
     const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
     const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
@@ -693,6 +735,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     const currentSessionKey = currentSessionId
         ? JSON.stringify([getRuntimeKey(), effectiveSessionDirectory, currentSessionId])
         : null;
+    // One gate per opened session; the scroll hook holds it until the
+    // viewport is pinned to the end so the first visible frame is already
+    // at the bottom.
+    const revealGate = React.useMemo(() => createTimelineRevealGate(), [currentSessionKey]);
     const ensureSessionRenderable = React.useCallback(
         (sessionId: string) => sync.ensureSessionRenderable(sessionId, false, effectiveSessionDirectory),
         [effectiveSessionDirectory, sync],
@@ -1014,7 +1060,11 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     // OVER the timeline's bottom edge; its measured height keeps the live
     // streaming line above it and reserves matching end inset in the list.
     const [statusOverlayHeight, setStatusOverlayHeight] = React.useState(0);
-    const composerOverlayHeight = statusOverlayHeight;
+    // The reserve is fixed so the timeline's end does not move when the row
+    // appears a commit after the session opened: a viewport pinned to the end
+    // would otherwise be left sitting the row's height above it. Measurement
+    // only extends the reserve for a taller row.
+    const composerOverlayHeight = Math.max(STATUS_OVERLAY_RESERVED_HEIGHT, statusOverlayHeight);
     const statusOverlayObserverRef = React.useRef<ResizeObserver | null>(null);
     const onStatusOverlayNode = React.useCallback((node: HTMLDivElement | null) => {
         statusOverlayObserverRef.current?.disconnect();
@@ -1071,6 +1121,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         sessionMessageCount,
         composerOverlayHeight,
         lastUserMessageId,
+        sessionIsWorking,
+        revealGate,
         onActiveTurnChange: handleActiveTurnChange,
     });
 
@@ -1494,6 +1546,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 scrollToBottom={resumeToLatestInstant}
                 endPinningReleased={userOwnsScroll}
                 revealWaited={revealWaited}
+                revealGate={revealGate}
                 sessionQuestions={sessionQuestions}
                 sessionPermissions={sessionPermissions}
                 isProgrammaticFollowActive={isFollowingProgrammatically}

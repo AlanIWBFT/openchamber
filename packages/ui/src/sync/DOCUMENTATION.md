@@ -461,6 +461,16 @@ through `Suspense`: a suspended boundary shows its fallback for a tick and
 React then throttles later-resolving boundaries by ~300ms, which staggered
 user and assistant text on a cold open.
 
+An opened session is shown already at its end. The scroll hook holds the gate
+until the viewport is pinned; the recap note holds it until the session record
+is in memory, because it cannot decide whether it renders before that and would
+otherwise grow the footer under a pinned viewport. The reveal itself runs on
+the next frame after the last hold releases, with one exact pin against the
+final content height. Afterwards "at the end" is an invariant, not a scroll:
+while the reader sits on the end of a session that is not producing output,
+content growth re-pins with one instant write; output growth belongs to the
+follow logic, which glides only while the session is working.
+
 `bun run profile:switch` measures both moments; see `scripts/perf/DOCUMENTATION.md`.
 
 Select leaf values, not containers:
