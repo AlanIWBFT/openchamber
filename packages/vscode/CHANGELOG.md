@@ -1,7 +1,7 @@
-## [Unreleased]
+## [1.21.1] - 2026-08-29
 
 - **Turkish interface:** OpenChamber can now be used in Turkish (thanks to @fitzgpt).
-- **`/btw` side questions:** a btw session now answers the side question instead of carrying on with the parent's plan, and forks at the last completed turn so a reply that is still streaming is never inherited (thanks to @pocharlies).
+- `/btw` side questions: a btw session now answers the side question instead of carrying on with the parent's plan, and forks at the last completed turn so a reply that is still streaming is never inherited (thanks to @pocharlies).
 - Chat scrolling: with "Follow new content while streaming" off, sending while scrolled up leaves the view where it is; a middle-button pan or Shift+Space stops auto-follow like the wheel does (thanks to @pascalandr); PageUp/PageDown in the prompt box no longer shifts the whole panel up.
 - Chat no longer crashes or freezes on: very large tool results, which are capped before rendering (thanks to @JSap0914); a code block with JavaScript template strings that sent the highlighter into endless backtracking (thanks to @makeittech); a diff with a truncated header (thanks to @pascalandr); and a draft or recalled message with Windows line endings, which threw "Selection points outside of document" on every visit (thanks to @yulia-ivashko).
 - Chat: a session no longer looks frozen after the webview reloads or is opened late — pending permission and question cards come back (thanks to @yangyaofei) — nor after dismissing the agent's questions and sending a new task (thanks to @bashrusakh).

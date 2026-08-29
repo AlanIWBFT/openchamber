@@ -4,9 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.21.1] - 2026-08-29
+
 - **Turkish interface:** OpenChamber can now be used in Turkish (thanks to @fitzgpt).
 - **Git/Worktrees:** session menus can now move an idle session and its sub-sessions into an existing worktree. OpenChamber discovers worktrees created elsewhere when the target list opens, asks before transferring uncommitted changes, and keeps those changes safe if a move fails partway (thanks to @mattv8).
-- **`/btw` side questions:** a btw session now answers the side question instead of carrying on with the parent's plan, and forks at the last completed turn so a reply that is still streaming is never inherited (thanks to @pocharlies).
+- `/btw` side questions: a btw session now answers the side question instead of carrying on with the parent's plan, and forks at the last completed turn so a reply that is still streaming is never inherited (thanks to @pocharlies).
 - Chat scrolling: with "Follow new content while streaming" off, sending from the middle of a conversation no longer jumps to the new message; a middle-button pan or Shift+Space stops auto-follow like the wheel does, and an upward wheel inside a tool output box scrolls that box instead of the chat (thanks to @pascalandr); PageUp/PageDown in the prompt box no longer shifts the whole window up and hides the title bar.
 - Chat no longer crashes or freezes on: very large tool results, which are capped before rendering (thanks to @JSap0914); a code block with JavaScript template strings, which could send the syntax highlighter into endless backtracking (thanks to @makeittech); a diff with a truncated header (thanks to @pascalandr); and a draft or recalled message containing Windows line endings, which threw "Selection points outside of document" on every visit (thanks to @yulia-ivashko).
 - Chat: a session no longer looks frozen after a page reload or a late second client — pending permission and question cards come back (thanks to @yangyaofei) — nor after dismissing the agent's questions and sending a new task (thanks to @bashrusakh).
