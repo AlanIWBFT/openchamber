@@ -928,7 +928,8 @@ describe('OpenCode lifecycle', () => {
     }
     child.stdout.emit('data', 'opencode lifecycle {"version":1,"type":"database-migration","state":"started"}\n');
 
-    await vi.advanceTimersByTimeAsync(60_000);
+    vi.advanceTimersByTime(60_000);
+    await Promise.resolve();
     expect(child.kill).not.toHaveBeenCalled();
     expect(runtime.getOpenCodeStartupState()).toEqual({ phase: 'migrating' });
 
@@ -1017,10 +1018,12 @@ describe('OpenCode lifecycle', () => {
     child.stdout.emit('data', 'opencode lifecycle {"version":1,"type":"database-migration","state":"failed"}\n');
     child.stderr.emit('data', 'migration process remained alive\n');
 
-    const rejected = expect(starting).rejects.toThrow('migration process remained alive');
-    await vi.advanceTimersByTimeAsync(5_000);
+    const failure = starting.catch((error) => error);
+    for (let attempt = 0; attempt < 10; attempt += 1) await Promise.resolve();
+    vi.advanceTimersByTime(5_000);
+    await Promise.resolve();
 
-    await rejected;
+    expect((await failure).message).toContain('migration process remained alive');
     expect(child.kill).toHaveBeenCalledTimes(1);
     expect(spawnMock).toHaveBeenCalledTimes(1);
   });

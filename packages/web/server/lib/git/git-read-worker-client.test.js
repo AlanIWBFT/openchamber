@@ -37,6 +37,7 @@ const canRunGit = () => {
     return false;
   }
 };
+const itIf = (condition) => condition ? it : it.skip;
 
 describe('GitReadWorkerClient', () => {
   it('loads all real worker entries without launching Git', async () => {
@@ -53,7 +54,7 @@ describe('GitReadWorkerClient', () => {
     }
   });
 
-  it.runIf(canRunGit())('runs a complete file diff in a real worker', async () => {
+  itIf(canRunGit())('runs a complete file diff in a real worker', async () => {
     const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-git-read-worker-'));
     try {
       const runGit = (args) => execFileSync('git', args, { cwd: repository, stdio: 'ignore' });
