@@ -74,6 +74,13 @@ const createMockResponse = () => {
   };
 };
 
+const waitForCalls = async (mock, count) => {
+  for (let index = 0; index < 100 && mock.mock.calls.length !== count; index += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  expect(mock).toHaveBeenCalledTimes(count);
+};
+
 describe('git routes index mutations', () => {
   beforeEach(() => {
     gitLibraries.stageFiles.mockReset();
@@ -317,9 +324,7 @@ describe('git routes status discovery', () => {
     const firstRequest = route({ query: { directory: '/opened/project' } }, firstResponse);
     const secondRequest = route({ query: { directory: '/opened/project' } }, secondResponse);
 
-    await vi.waitFor(() => {
-      expect(gitLibraries.getStatus).toHaveBeenCalledTimes(1);
-    });
+    await waitForCalls(gitLibraries.getStatus, 1);
     resolveStatus({ current: 'main', files: [], isClean: true, ahead: 0, behind: 0 });
     await Promise.all([firstRequest, secondRequest]);
 
@@ -349,7 +354,7 @@ describe('git routes status discovery', () => {
       { query: { directory: requestDirectory } },
       response,
     );
-    await Promise.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(gitLibraries.getStatus).not.toHaveBeenCalled();
     resolveStatus({ current: 'shared', files: [], isClean: true, ahead: 0, behind: 0 });
@@ -376,17 +381,13 @@ describe('git routes status discovery', () => {
       { query: { directory: '/opened/project' } },
       passiveResponse,
     );
-    await vi.waitFor(() => {
-      expect(gitLibraries.getStatus).toHaveBeenCalledTimes(1);
-    });
+    await waitForCalls(gitLibraries.getStatus, 1);
 
     const authoritativeRequest = getRoute('GET', '/api/git/status')(
       { query: { directory: '/opened/project' } },
       authoritativeResponse,
     );
-    await vi.waitFor(() => {
-      expect(gitLibraries.getStatus).toHaveBeenCalledTimes(2);
-    });
+    await waitForCalls(gitLibraries.getStatus, 2);
     const laterPassiveResponse = createMockResponse();
     const laterPassiveRequest = getRoute('GET', '/api/git/status/passive')(
       { query: { directory: '/opened/project' } },
