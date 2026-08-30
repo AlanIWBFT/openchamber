@@ -341,44 +341,19 @@ export const useChatTimelineScroll = ({
     }, [clearAnchor, clearGoToBottomReasserts, hideScrollButton]);
 
     // User preference: with auto-follow off, streaming growth never moves the
-    // viewport. Sending from the live edge still parks the new message at the
-    // top, but no glide or end-follow correction runs afterwards; sending from
-    // mid-history leaves the viewport untouched.
+    // viewport after the sent message has been brought into view.
     const streamingAutoFollowEnabled = useUIStore((state) => state.streamingAutoFollowEnabled);
     const streamingAutoFollowEnabledRef = React.useRef(streamingAutoFollowEnabled);
     streamingAutoFollowEnabledRef.current = streamingAutoFollowEnabled;
 
-    // Sending arms the anchor. The message id is not known here (the optimistic
-    // row is created by the store), so the next new user message id claims it.
-    // Whether the send-time anchor positioning may animate. Sending from the
-    // live edge parks the new message with a short smooth scroll; sending
-    // from mid-history teleports — a long smooth scroll through the
-    // virtualized timeline gets cancelled by rows mounting and measuring
-    // along the way and dies partway there.
     const anchorPositionInstantRef = React.useRef(false);
 
     const scrollToBottomOnSend = React.useCallback(() => {
-        // With auto-follow off, a reader who scrolled away from the end stays
-        // exactly where they are: the sent message is not anchored and the
-        // scroll-to-bottom pill (already showing) leads to it. From the live
-        // edge, sending anchors the new turn as usual.
-        if (!streamingAutoFollowEnabledRef.current && !isAtEndRef.current) return;
-        anchorPositionInstantRef.current = !isAtEndRef.current;
-        isAtEndRef.current = true;
-        setUserOwnsScroll(false);
-        modeRef.current = 'anchoring-new-turn';
-        liveFollowGenerationRef.current = userGenerationRef.current;
-        armedForNextUserMessageRef.current = true;
-        // The optimistic row is not committed yet; the next NEW user message id
-        // relative to this baseline claims the anchor, independent of whether
-        // the commit lands before or after this call.
-        armBaselineUserMessageIdRef.current = lastArmedUserMessageIdRef.current;
-        pendingAnchorRef.current = null;
-        positionedAnchorRef.current = null;
-        settledAnchorRef.current = null;
-        activeAnchorIndexRef.current = null;
-        hideScrollButton();
-    }, [hideScrollButton]);
+        // Jump first when the reader is in older history. The optimistic row is
+        // appended immediately afterwards and following-end keeps it at the
+        // bottom instead of parking it at the top of the viewport.
+        goToBottom('instant');
+    }, [goToBottom]);
 
     // Claim the anchor as soon as the sent row exists in the timeline. The
     // comparison is against the baseline captured when the send armed the
