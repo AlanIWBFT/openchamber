@@ -38,7 +38,8 @@ import { WindowsWindowControls } from '@/components/desktop/WindowsWindowControl
 import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { useDeviceInfo, useTabletStandalonePwaRuntime } from '@/lib/device';
 import { cn } from '@/lib/utils';
-import { eventMatchesShortcut, formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
+import { formatShortcutForDisplay, getEffectiveShortcutCombo, type ShortcutActionId } from '@/lib/shortcuts';
+import { useKeybinds } from '@/hooks/useKeybind';
 import {
 } from '@/lib/quota/model-families';
 
@@ -70,7 +71,7 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { buildExportFilename, downloadAsMarkdown, formatSessionAsMarkdown, saveAsMarkdownDesktop } from '@/lib/exportSession';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { startSessionTreeWorktreeMove, useIsSessionWorktreeMovePending } from '@/lib/worktrees/sessionWorktreeMove';
+import { buildSessionTreeMoveMessages, requestSessionTreeMove, useIsSessionWorktreeMovePending } from '@/lib/worktrees/sessionWorktreeMove';
 
 const DESKTOP_HEADER_ICON_BUTTON_CLASS = 'app-region-no-drag inline-flex h-8 w-8 items-center justify-center gap-2 rounded-md typography-ui-label font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50 hover:bg-interactive-hover transition-colors';
 
@@ -256,7 +257,7 @@ type DesktopServicesMenuProps = {
   isDesktopServicesOpen: boolean;
   setIsDesktopServicesOpen: React.Dispatch<React.SetStateAction<boolean>>;
   refreshCurrentInstanceLabel: () => Promise<void>;
-  shortcutLabel: (actionId: string) => string;
+  shortcutLabel: (actionId: ShortcutActionId) => string;
   remoteUpdateInfo: UpdateInfo | null;
   remoteUpdateChecking: boolean;
   remoteUpdateError: string | null;
@@ -433,7 +434,6 @@ export const Header: React.FC = () => {
   const { t } = useI18n();
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const openContextOverview = useUIStore((state) => state.openContextOverview);
-  const openContextPlan = useUIStore((state) => state.openContextPlan);
   const closeContextPanel = useUIStore((state) => state.closeContextPanel);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
   const sessionTabsEnabled = useUIStore((state) => state.sessionTabsEnabled);
@@ -485,8 +485,6 @@ export const Header: React.FC = () => {
     const pathSegments = activeProject.path.split(/[\\/]/).filter(Boolean);
     return pathSegments[pathSegments.length - 1] ?? null;
   }, [activeProject]);
-  const quotaResults = useQuotaStore((state) => state.results);
-  const fetchAllQuotas = useQuotaStore((state) => state.fetchAllQuotas);
   const loadQuotaSettings = useQuotaStore((state) => state.loadSettings);
 
   const { isMobile } = useDeviceInfo();
@@ -1061,12 +1059,15 @@ export const Header: React.FC = () => {
       }
     }
 
-    startSessionTreeWorktreeMove({
+    requestSessionTreeMove({
+      kind: 'quick',
       root,
       descendants,
       sourceDirectory: sessionDirectory,
-      successMessage: t('sessions.sidebar.session.moveToWorktree.success'),
-      failureMessage: t('sessions.sidebar.session.moveToWorktree.failed'),
+      messages: buildSessionTreeMoveMessages(t, {
+        success: 'sessions.sidebar.session.moveToWorktree.success',
+        failure: 'sessions.sidebar.session.moveToWorktree.failed',
+      }),
     });
   }, [currentSessionId, isCurrentSessionActive, isCurrentSessionMovingToWorktree, sessionDirectory, t]);
 
@@ -1264,21 +1265,6 @@ export const Header: React.FC = () => {
   const isContextPanelActive = activeContextMode === 'context';
 
 
-  const handleOpenContextPlan = React.useCallback(() => {
-    const directory = normalize(openDirectory || '');
-    if (!directory) {
-      return;
-    }
-
-    const panelState = useUIStore.getState().contextPanelByDirectory[directory];
-    if (getActiveContextMode(panelState) === 'plan') {
-      closeContextPanel(directory);
-      return;
-    }
-
-    openContextPlan(directory);
-  }, [closeContextPanel, openContextPlan, openDirectory]);
-
 
   const desktopHeaderIconButtonClass = DESKTOP_HEADER_ICON_BUTTON_CLASS;
   // Left padding the header needs to clear the OS window controls (macOS
@@ -1370,6 +1356,14 @@ export const Header: React.FC = () => {
       return undefined;
     }
 
+    // Custom in-window controls (frameless Electron, right side) own the right
+    // edge: no inline padding, so the pr-0 class applies and the close button
+    // sits flush with the window corner per Windows conventions. Only the
+    // browser's native window-controls overlay reserves padding + right inset.
+    if (usesFramelessChrome && windowControlsSide === 'right') {
+      return undefined;
+    }
+
     return {
       // Left inset is handled by the no-drag spacer (see renderDesktop); only
       // the right inset / titlebar height are owned by the window-controls overlay.
@@ -1377,7 +1371,7 @@ export const Header: React.FC = () => {
       minHeight: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
       height: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
     };
-  }, [isDesktopApp, isVSCode, usesFramelessChrome]);
+  }, [isDesktopApp, isVSCode, usesFramelessChrome, windowControlsSide]);
 
   const updateHeaderHeight = React.useCallback(() => {
     if (typeof document === 'undefined') {
@@ -1445,67 +1439,26 @@ export const Header: React.FC = () => {
     }
   }, [isDesktopApp]);
 
-  const shortcutLabel = React.useCallback((actionId: string) => {
+  const shortcutLabel = React.useCallback((actionId: ShortcutActionId) => {
     return formatShortcutForDisplay(getEffectiveShortcutCombo(actionId, shortcutOverrides));
   }, [shortcutOverrides]);
 
-  // Desktop keeps instances only: quota and MCP now live in the work-status
-  // panel, which reports them per session rather than per window. The mobile
-  // menu below is untouched — it has no panel to defer to.
-  const servicesTabs = React.useMemo(() => {
-    const base: Array<{ value: 'instance' | 'usage' | 'mcp'; label: string; icon: React.ReactNode }> = [];
-    if (isDesktopApp) {
-      base.push({ value: 'instance', label: t('layout.services.instance'), icon: <Icon name="server" className="h-3.5 w-3.5" /> });
-    }
-    return base;
-  }, [isDesktopApp, t]);
 
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const toggleServicesCombo = getEffectiveShortcutCombo('toggle_services_menu', shortcutOverrides);
-      if (eventMatchesShortcut(e, toggleServicesCombo)) {
-        e.preventDefault();
-
-        if (isDesktopServicesOpen) {
-          setIsDesktopServicesOpen(false);
-        } else {
-          setIsDesktopServicesOpen(true);
-          void refreshCurrentInstanceLabel();
-        }
+  useKeybinds({
+    rename_current_session: () => {
+      if (!currentSessionId || isMobile) return false;
+      beginHeaderSessionRename();
+    },
+    toggle_services_menu: () => {
+      if (isDesktopServicesOpen) {
+        setIsDesktopServicesOpen(false);
         return;
       }
-
-      // The desktop menu holds one destination now, so this shortcut opens it
-      // rather than cycling. The binding is kept: it is user-configurable and
-      // silently dropping it would break existing setups.
-      const cycleServicesCombo = getEffectiveShortcutCombo('cycle_services_tab', shortcutOverrides);
-      if (eventMatchesShortcut(e, cycleServicesCombo)) {
-        e.preventDefault();
-        if (servicesTabs.length === 0) return;
-        setIsDesktopServicesOpen(true);
-        void refreshCurrentInstanceLabel();
-        return;
-      }
-
-      const toggleContextPlanCombo = getEffectiveShortcutCombo('toggle_context_plan', shortcutOverrides);
-      if (eventMatchesShortcut(e, toggleContextPlanCombo)) {
-        e.preventDefault();
-        handleOpenContextPlan();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    shortcutOverrides,
-    isDesktopServicesOpen,
-    servicesTabs,
-    quotaResults.length,
-    fetchAllQuotas,
-    refreshCurrentInstanceLabel,
-    handleOpenContextPlan,
-  ]);
+      setIsDesktopServicesOpen(true);
+      void refreshCurrentInstanceLabel();
+    },
+  });
 
   const desktopSidebarActions = (
     <>

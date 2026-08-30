@@ -1372,8 +1372,10 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     }
 
     try {
-      await git.checkoutBranch(gitDirectory, normalized);
-      toast.success(t('gitView.toast.checkedOut', { name: normalized }));
+      // Picking a remote-tracking branch checks out the local branch that
+      // tracks it, so report the branch the repository actually landed on.
+      const result = await git.checkoutBranch(gitDirectory, normalized);
+      toast.success(t('gitView.toast.checkedOut', { name: result?.branch || normalized }));
       await refreshStatusAndBranches();
       await refreshLog();
     } catch (err) {

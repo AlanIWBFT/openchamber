@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CodeMirrorEditor } from '@/components/ui/CodeMirrorEditor';
 import { GoToLineDialog } from './GoToLineDialog';
+import { MarkdownPreviewSearch } from './MarkdownPreviewSearch';
 import { PreviewToggleButton } from './PreviewToggleButton';
 import { JsonTreeView } from '@/components/ui/JsonTreeView';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
@@ -45,7 +46,7 @@ import {
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useFileSearchStore } from '@/stores/useFileSearchStore';
 import { useDeviceInfo } from '@/lib/device';
-import { cn, getModifierLabel, getRevealLabelKey, hasModifier } from '@/lib/utils';
+import { cn, getRevealLabelKey } from '@/lib/utils';
 import { getLanguageFromExtension, getImageMimeType, isBinaryFile, isDrawioFile, isImageFile, isPdfFile, isSvgFile, looksLikeBinaryText } from '@/lib/toolHelpers';
 import { shouldAllowFileDraftSave, shouldScheduleFileAutosave } from '@/lib/fileEditorAutosave';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
@@ -75,7 +76,9 @@ import { ensurePierreThemeRegistered } from '@/lib/shiki/appThemeRegistry';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import { isBrowserClientRuntime, openDesktopFileInApp, openDesktopPath } from '@/lib/desktop';
 import { useOpenInAppsStore } from '@/stores/useOpenInAppsStore';
-import { eventMatchesShortcut, getEffectiveShortcutCombo } from '@/lib/shortcuts';
+import { useKeybind, useKeybinds } from '@/hooks/useKeybind';
+import { isEditableEventTarget } from '@/hooks/keyboard-shortcut-dom';
+import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import { useI18n } from '@/lib/i18n';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { syncScheduledTaskLoops } from '@/lib/scheduledTasksApi';
@@ -967,6 +970,24 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   const [copiedContent, setCopiedContent] = React.useState(false);
   const [copiedPath, setCopiedPath] = React.useState(false);
   const [isGoToLineOpen, setIsGoToLineOpen] = React.useState(false);
+  // In-preview find for the rendered Markdown preview (Ctrl/Cmd+F).
+  const [mdPreviewFindOpen, setMdPreviewFindOpen] = React.useState(false);
+  const [mdPreviewFindFocusNonce, setMdPreviewFindFocusNonce] = React.useState(0);
+  const mdPreviewContainerRef = React.useRef<HTMLDivElement | null>(null);
+  // Give the rendered preview keyboard focus (without scrolling it) unless the
+  // user is typing somewhere else, so Cmd/Ctrl+F opens the preview find bar
+  // right after a Markdown file opens and after any click inside it.
+  const focusMdPreviewContainer = React.useCallback((event?: React.MouseEvent<HTMLDivElement>) => {
+    const container = event?.currentTarget ?? mdPreviewContainerRef.current;
+    if (!container) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== container) {
+      if (isEditableEventTarget(active)) return;
+      if (container.contains(active)) return;
+    }
+    container.focus({ preventScroll: true });
+  }, []);
+  const mdFullscreenPreviewContainerRef = React.useRef<HTMLDivElement | null>(null);
 
   const canCreateFile = Boolean(files.writeFile);
   const canCreateFolder = Boolean(files.createDirectory);
@@ -1032,7 +1053,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   const setPendingFileNavigation = useUIStore((state) => state.setPendingFileNavigation);
   const pendingFileFocusPath = useUIStore((state) => state.pendingFileFocusPath);
   const setPendingFileFocusPath = useUIStore((state) => state.setPendingFileFocusPath);
-  const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
   const fileEditorKeymap = useUIStore((state) => state.fileEditorKeymap);
   const settingsDefaultFileViewerPreview = useConfigStore((state) => state.settingsDefaultFileViewerPreview);
   const showMessageTTSButtons = useConfigStore((state) => state.showMessageTTSButtons);
@@ -1759,35 +1779,45 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     setAutoSaveStatus('idle');
   }, [selectedFile?.path]);
 
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!hasModifier(e)) {
+  useKeybinds({
+    save_file: (event) => {
+      if (!(event.target instanceof Node) || !editorWrapperRef.current?.contains(event.target)) return false;
+
+      // Cancel pending auto-save because the explicit save should run immediately.
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      if (!isSaving) {
+        void saveDraft().then((saved) => {
+          if (!saved) return;
+          setAutoSaveStatus('saved');
+          setTimeout(() => setAutoSaveStatus('idle'), 2000);
+        });
+      }
+    },
+    find_in_file: (event) => {
+      if (!(event.target instanceof Node)) return false;
+
+      // Rendered Markdown preview: open the in-preview find bar instead of the
+      // editor search. Registered through the keybind schema rather than a raw
+      // window listener so it cannot swallow Cmd/Ctrl+F app-wide while a
+      // Markdown file happens to be selected behind another panel tab.
+      if (isMarkdown && getMdViewMode() === 'preview') {
+        if (isMobile) return false;
+        const previewContainer = isFullscreen
+          ? mdFullscreenPreviewContainerRef.current
+          : mdPreviewContainerRef.current;
+        if (!previewContainer?.contains(event.target)) return false;
+        setMdPreviewFindOpen(true);
+        setMdPreviewFindFocusNonce((value) => value + 1);
         return;
       }
 
-      if (e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        // Cancel pending auto-save; user wants immediate save
-        if (autoSaveTimerRef.current) {
-          clearTimeout(autoSaveTimerRef.current);
-          autoSaveTimerRef.current = null;
-        }
-        if (!isSaving) {
-          void saveDraft().then((saved) => {
-            if (!saved) return;
-            setAutoSaveStatus('saved');
-            setTimeout(() => setAutoSaveStatus('idle'), 2000);
-          });
-        }
-      } else if (e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        setIsSearchOpen(true);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSaving, saveDraft]);
+      if (!editorWrapperRef.current?.contains(event.target)) return false;
+      setIsSearchOpen(true);
+    },
+  });
 
   const loadSelectedFile = React.useCallback(async (node: FileNode) => {
     const loadId = activeFileLoadIdRef.current + 1;
@@ -2490,6 +2520,14 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     return mdViewMode;
   }, [mdViewMode]);
 
+  const mdPreviewFocusTargetPath = selectedFile && isMarkdown && getMdViewMode() === 'preview' && !fileLoading
+    ? selectedFile.path
+    : null;
+  React.useEffect(() => {
+    if (!mdPreviewFocusTargetPath || isMobile) return;
+    focusMdPreviewContainer();
+  }, [focusMdPreviewContainer, isFullscreen, isMobile, mdPreviewFocusTargetPath]);
+
   const saveJsonViewMode = React.useCallback((mode: 'tree' | 'text') => {
     setJsonViewMode(mode);
     try {
@@ -2906,42 +2944,21 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     };
   }, [isMobile, nudgeEditorSelectionAboveKeyboard]);
 
-  React.useEffect(() => {
+  useKeybind('open_go_to_line', (event) => {
     if (!canEdit || textViewMode !== 'edit' || isMobile) {
-      return;
+      return false;
     }
 
-    const goToLineCombo = getEffectiveShortcutCombo('open_go_to_line', shortcutOverrides);
+    const target = event.target as Element | null;
+    if (target?.closest('[role="dialog"]')) return false;
+    if (!(target instanceof Node) || !editorWrapperRef.current?.contains(target)) return false;
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as Element | null;
-      if (target?.closest('[role="dialog"]')) {
-        return;
-      }
+    const isEditorTarget = Boolean(target?.closest('.cm-editor'));
+    const isTypingTarget = Boolean(target?.closest('input, textarea, [contenteditable="true"], [role="textbox"]'));
+    if (isTypingTarget && !isEditorTarget) return false;
 
-      const isEditorTarget = Boolean(target?.closest('.cm-editor'));
-      const isTypingTarget = Boolean(
-        target?.closest('input, textarea, [contenteditable="true"], [role="textbox"]')
-      );
-      if (isTypingTarget && !isEditorTarget) {
-        return;
-      }
-
-      const activeElement = document.activeElement as Element | null;
-      const editorHasFocus = Boolean(activeElement?.closest('.cm-editor'));
-      if (!editorHasFocus) {
-        return;
-      }
-
-      if (eventMatchesShortcut(event, goToLineCombo)) {
-        event.preventDefault();
-        setIsGoToLineOpen(true);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canEdit, isMobile, shortcutOverrides, textViewMode]);
+    setIsGoToLineOpen(true);
+  });
 
   const editorFontSize = useUIStore((state) => state.editorFontSize);
 
@@ -3196,6 +3213,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     }
 
     const docked = layout === 'docked';
+    const saveShortcut = formatShortcutForDisplay(getEffectiveShortcutCombo('save_file'));
     const wrapperCls = docked
       ? 'pointer-events-auto flex flex-wrap items-center gap-1'
       : 'pointer-events-auto flex items-center gap-1 rounded-lg border border-[var(--interactive-border)] bg-[var(--surface-elevated)] p-1 shadow-sm';
@@ -3225,14 +3243,14 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
                 <Icon name="check" className="size-3.5" />
                 {t('filesView.editor.saved')}
               </span>
-            ) : isDirty ? withTooltip(t(autoSaveEnabled ? 'filesView.editor.saveNowTitle' : 'filesView.editor.saveNowManualTitle', { shortcut: `${getModifierLabel()}+S` }),
+            ) : isDirty ? withTooltip(t(autoSaveEnabled ? 'filesView.editor.saveNowTitle' : 'filesView.editor.saveNowManualTitle', { shortcut: saveShortcut }),
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => void saveDraft()}
                 className="h-6 gap-1 px-1 text-muted-foreground opacity-80 hover:bg-transparent hover:opacity-100 focus-visible:bg-transparent active:bg-transparent"
-                title={t(autoSaveEnabled ? 'filesView.editor.saveNowTitle' : 'filesView.editor.saveNowManualTitle', { shortcut: `${getModifierLabel()}+S` })}
-                aria-label={t('filesView.editor.saveAria', { shortcut: `${getModifierLabel()}+S` })}
+                title={t(autoSaveEnabled ? 'filesView.editor.saveNowTitle' : 'filesView.editor.saveNowManualTitle', { shortcut: saveShortcut })}
+                aria-label={t('filesView.editor.saveAria', { shortcut: saveShortcut })}
               >
                 <Icon name="save-3" className="size-4" />
               </Button>
@@ -3391,6 +3409,23 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
               saveHtmlViewMode(getHtmlViewMode() === 'preview' ? 'edit' : 'preview');
             }}
           />
+        )}
+
+        {isMarkdown && getMdViewMode() === 'preview' && (
+          withTooltip(t('filesView.editor.findInFile'),
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setMdPreviewFindOpen(true);
+                setMdPreviewFindFocusNonce((value) => value + 1);
+              }}
+              className="size-6 p-0 text-foreground opacity-100 transition-opacity hover:bg-transparent focus-visible:bg-transparent active:bg-transparent"
+              title={t('filesView.editor.findInFile')}
+            >
+              <Icon name="search" className="size-4" />
+            </Button>
+          )
         )}
 
         {isMarkdown && getMdViewMode() === 'preview' && showMessageTTSButtons && (
@@ -3869,34 +3904,55 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
               </div>
             </ErrorBoundary>
           ) : selectedFile && isMarkdown && getMdViewMode() === 'preview' ? (
-            <div className="oc-file-preview h-full overflow-auto p-3" ref={markdownPreviewRef}>
-              <FilePreviewCommentMenu
-                containerRef={markdownPreviewRef}
-                filePath={selectedFile.path}
-                fileContent={fileContent}
-              />
-              {fileContent.length > 500 * 1024 && (
-                <div className="mb-3 rounded-md border border-status-warning/20 bg-status-warning/10 px-3 py-2 text-sm text-status-warning">
-                  {t('filesView.warning.largeFilePreviewLimited', { sizeKb: Math.round(fileContent.length / 1024) })}
-                </div>
-              )}
-              <ErrorBoundary
-                fallback={
-                  <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2">
-                    <div className="mb-1 font-medium text-destructive">{t('filesView.error.previewUnavailable')}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {t('filesView.error.switchToEditMode')}
-                    </div>
-                  </div>
-                }
+            <div className="relative h-full min-h-0">
+              <div
+                className="oc-file-preview h-full overflow-auto p-3 outline-none"
+                // Focusable so Cmd/Ctrl+F reaches the find bar: the keybind only
+                // fires when the event target sits inside this container, and a
+                // plain div never holds focus. -1 keeps it out of the tab order.
+                tabIndex={-1}
+                onMouseDown={focusMdPreviewContainer}
+                ref={(node) => {
+                  markdownPreviewRef.current = node;
+                  mdPreviewContainerRef.current = node;
+                }}
               >
-                <SimpleMarkdownRenderer
-                  content={fileContent}
-                  className="typography-markdown-body"
-                  stripFrontmatter
-                  enableFileReferences={false}
+                <FilePreviewCommentMenu
+                  containerRef={markdownPreviewRef}
+                  filePath={selectedFile.path}
+                  fileContent={fileContent}
                 />
-              </ErrorBoundary>
+                {fileContent.length > 500 * 1024 && (
+                  <div className="mb-3 rounded-md border border-status-warning/20 bg-status-warning/10 px-3 py-2 text-sm text-status-warning">
+                    {t('filesView.warning.largeFilePreviewLimited', { sizeKb: Math.round(fileContent.length / 1024) })}
+                  </div>
+                )}
+                <ErrorBoundary
+                  fallback={
+                    <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2">
+                      <div className="mb-1 font-medium text-destructive">{t('filesView.error.previewUnavailable')}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {t('filesView.error.switchToEditMode')}
+                      </div>
+                    </div>
+                  }
+                >
+                  <SimpleMarkdownRenderer
+                    content={fileContent}
+                    className="typography-markdown-body"
+                    stripFrontmatter
+                    enableFileReferences={false}
+                  />
+                </ErrorBoundary>
+              </div>
+              {!isFullscreen && (
+                <MarkdownPreviewSearch
+                  containerRef={mdPreviewContainerRef}
+                  open={mdPreviewFindOpen}
+                  onOpenChange={setMdPreviewFindOpen}
+                  focusNonce={mdPreviewFindFocusNonce}
+                />
+              )}
             </div>
           ) : selectedFile && isHtml && htmlViewMode === 'preview' ? (
             isHtmlAssetAuthLoading ? (
@@ -4240,7 +4296,19 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
               ) : null}
             </div>
           ) : isMarkdown && getMdViewMode() === 'preview' ? (
-            <div className="oc-file-preview h-full overflow-auto p-4" ref={markdownPreviewRef}>
+            // The find bar is a sibling of the scroll container, never a child:
+            // inside it, its own "1/3" and "No matches" text would be walked and
+            // highlighted by the search it drives.
+            <div className="relative h-full min-h-0">
+            <div
+              className="oc-file-preview h-full overflow-auto p-4 outline-none"
+              tabIndex={-1}
+              onMouseDown={focusMdPreviewContainer}
+              ref={(node) => {
+                markdownPreviewRef.current = node;
+                mdFullscreenPreviewContainerRef.current = node;
+              }}
+            >
               {selectedFile ? (
                 <FilePreviewCommentMenu
                   containerRef={markdownPreviewRef}
@@ -4270,6 +4338,14 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
                   enableFileReferences={false}
                 />
               </ErrorBoundary>
+            </div>
+              <MarkdownPreviewSearch
+                containerRef={mdFullscreenPreviewContainerRef}
+                open={mdPreviewFindOpen}
+                onOpenChange={setMdPreviewFindOpen}
+                focusNonce={mdPreviewFindFocusNonce}
+                className="right-4 top-16"
+              />
             </div>
           ) : canUseShikiFileView && textViewMode === 'view' ? (
             renderShikiFileView(selectedFile, isLargeFile ? fileContent : draftContent, fullscreenViewVirtualizer)
