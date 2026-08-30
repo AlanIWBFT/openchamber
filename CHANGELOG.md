@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Files: Ctrl/Cmd+F opens the find bar in the Markdown preview even when nothing inside the preview has focus.
 - Chat: a turn that OpenCode stopped no longer ends with nothing on screen — what OpenCode reported shows under the last message, and a message an idle session has left unanswered is named as such. The status report (Ctrl/Cmd+Shift+L) now lists the last session errors, rejected sends, the managed OpenCode process's last error, and where the log files are.
 - Chat: a session opened from the sidebar lands at its end and stays there, instead of landing above the bottom or snapping up a moment later while the recap and subagent cards finish measuring.
+- Git: a project whose root is not a Git repository now works with the repositories nested inside it. The Git tab opens the first one it finds, a picker next to the branch dropdown switches between them, and the diff, pull request, walkthrough, and mobile Changes views follow the same choice (thanks to @jaygupta17).
 - Git: the commit graph no longer leaves a gap in a lane when the same branch is merged twice (thanks to @Naputt1).
 - Desktop: on Windows and Linux the close button sits flush against the window edge, so the exact top-right corner closes the window, and its hover color follows the theme (thanks to @kydorn).
 
