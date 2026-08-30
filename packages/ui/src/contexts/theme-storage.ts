@@ -1,5 +1,6 @@
 import type { ThemeMode } from '@/types/theme';
 import { DEFAULT_DARK_THEME_ID, DEFAULT_LIGHT_THEME_ID, getThemeById } from '@/lib/theme/themes';
+import { isTransientRuntimeKey } from '@/lib/runtime-switch';
 
 type StoredThemePreferences = {
   themeMode: ThemeMode;
@@ -21,56 +22,56 @@ const THEME_PREFERENCES_KEY_PREFIX = 'openchamber.theme.v2:';
 export const getThemePreferencesStorageKey = (runtimeKey: string): string =>
   `${THEME_PREFERENCES_KEY_PREFIX}${encodeURIComponent(runtimeKey)}`;
 
-// Runtime keys that mean "no instance connected" — the uninitialized default
-// and the mobile disconnect state. They carry no instance theme, so scoped
-// storage must not read or write them: a write would pin whatever theme was
-// current at that moment (e.g. cold-boot defaults) to a key every future
-// launch resolves before connecting, and a read would surface that stale
-// entry on the mobile connect splash. The global splash hints are the right
-// fallback for those phases.
-const TRANSIENT_RUNTIME_KEYS = new Set(['', 'url:default', 'mobile-disconnected']);
+const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'system'];
 
-export const isTransientRuntimeKey = (runtimeKey: string): boolean =>
-  TRANSIENT_RUNTIME_KEYS.has(runtimeKey);
+const isThemeMode = (value: string): value is ThemeMode =>
+  THEME_MODES.some((mode) => mode === value);
 
-export const readThemePreferencesForRuntime = (runtimeKey: string): StoredThemePreferences | null => {
-  if (typeof window === 'undefined' || isTransientRuntimeKey(runtimeKey)) {
-    return null;
-  }
-  let raw: string | null = null;
+// Boundary parser for the scoped entry. A malformed or partial payload is a
+// failure (`null`), never a valid default: the caller then falls back to the
+// legacy seed or keeps its current preferences.
+const parseStoredThemePreferences = (raw: string): StoredThemePreferences | null => {
   try {
-    raw = localStorage.getItem(getThemePreferencesStorageKey(runtimeKey));
-  } catch {
-    return null;
-  }
-  if (!raw) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object') {
+    // SAFETY: this key is written only by `writeThemePreferencesForRuntime`
+    // with exactly this shape. Every field is still re-checked below, and a
+    // field of the wrong type throws on `.trim()` into the catch.
+    const candidate = JSON.parse(raw) as Partial<StoredThemePreferences> | null;
+    if (candidate === null) {
       return null;
     }
-    const candidate = parsed as Record<string, unknown>;
-    if (candidate.themeMode !== 'light' && candidate.themeMode !== 'dark' && candidate.themeMode !== 'system') {
+    const themeMode = candidate.themeMode ?? '';
+    if (!isThemeMode(themeMode)) {
       return null;
     }
-    if (typeof candidate.lightThemeId !== 'string' || typeof candidate.darkThemeId !== 'string') {
-      return null;
-    }
-    const lightThemeId = candidate.lightThemeId.trim();
-    const darkThemeId = candidate.darkThemeId.trim();
+    const lightThemeId = (candidate.lightThemeId ?? '').trim();
+    const darkThemeId = (candidate.darkThemeId ?? '').trim();
     if (!lightThemeId || !darkThemeId) {
       return null;
     }
-    return { themeMode: candidate.themeMode, lightThemeId, darkThemeId };
+    return { themeMode, lightThemeId, darkThemeId };
   } catch {
     return null;
   }
 };
 
+const readLocalStorageItem = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+export const readThemePreferencesForRuntime = (runtimeKey: string): StoredThemePreferences | null => {
+  if (isTransientRuntimeKey(runtimeKey)) {
+    return null;
+  }
+  const raw = readLocalStorageItem(getThemePreferencesStorageKey(runtimeKey));
+  return raw ? parseStoredThemePreferences(raw) : null;
+};
+
 export const writeThemePreferencesForRuntime = (runtimeKey: string, preferences: StoredThemePreferences): void => {
-  if (typeof window === 'undefined' || isTransientRuntimeKey(runtimeKey)) {
+  if (isTransientRuntimeKey(runtimeKey)) {
     return;
   }
   try {
@@ -118,16 +119,12 @@ const readLegacyThemePreferences = (): StoredThemePreferences => {
   let lightThemeId: string = DEFAULT_LIGHT_THEME_ID;
   let darkThemeId: string = DEFAULT_DARK_THEME_ID;
 
-  if (typeof window === 'undefined') {
-    return { themeMode, lightThemeId, darkThemeId };
-  }
+  const legacyMode = readLocalStorageItem('themeMode');
+  const legacyUseSystem = readLocalStorageItem('useSystemTheme');
+  const legacyThemeId = readLocalStorageItem('selectedThemeId');
+  const legacyVariant = readLocalStorageItem('selectedThemeVariant');
 
-  const legacyMode = localStorage.getItem('themeMode');
-  const legacyUseSystem = localStorage.getItem('useSystemTheme');
-  const legacyThemeId = localStorage.getItem('selectedThemeId');
-  const legacyVariant = localStorage.getItem('selectedThemeVariant');
-
-  if (legacyMode === 'light' || legacyMode === 'dark' || legacyMode === 'system') {
+  if (legacyMode !== null && isThemeMode(legacyMode)) {
     themeMode = legacyMode;
   } else if (legacyUseSystem !== null) {
     const useSystem = legacyUseSystem === 'true';
@@ -148,13 +145,13 @@ const readLegacyThemePreferences = (): StoredThemePreferences => {
     themeMode = legacyVariant;
   }
 
-  const legacyLightId = localStorage.getItem('lightThemeId');
-  const legacyDarkId = localStorage.getItem('darkThemeId');
-  if (typeof legacyLightId === 'string' && legacyLightId.trim().length > 0) {
-    lightThemeId = legacyLightId.trim();
+  const legacyLightId = readLocalStorageItem('lightThemeId')?.trim();
+  const legacyDarkId = readLocalStorageItem('darkThemeId')?.trim();
+  if (legacyLightId) {
+    lightThemeId = legacyLightId;
   }
-  if (typeof legacyDarkId === 'string' && legacyDarkId.trim().length > 0) {
-    darkThemeId = legacyDarkId.trim();
+  if (legacyDarkId) {
+    darkThemeId = legacyDarkId;
   }
 
   return { themeMode, lightThemeId, darkThemeId };

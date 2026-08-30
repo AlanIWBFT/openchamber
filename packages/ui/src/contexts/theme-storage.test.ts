@@ -5,12 +5,12 @@ import { DEFAULT_DARK_THEME_ID, DEFAULT_LIGHT_THEME_ID } from '@/lib/theme/theme
 import {
   adoptThemePreferencesForRuntime,
   getThemePreferencesStorageKey,
-  isTransientRuntimeKey,
   readThemePreferencesForRuntime,
   resolveThemePreferencesForRuntime,
   resolveThemePreferencesFromStorageEvent,
   writeThemePreferencesForRuntime,
 } from './theme-storage';
+import { isTransientRuntimeKey } from '@/lib/runtime-switch';
 
 let createdWindow = false;
 let createdLocalStorage = false;
