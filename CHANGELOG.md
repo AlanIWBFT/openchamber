@@ -4,18 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- **Linear integration:** connect a Linear workspace in Settings → Integrations, browse its issues in the context rail with status, priority, assignee, and team filters, and start a session or worktree straight from an issue. Sessions started that way post started, completed, and failed comments on the issue, each linking back to the session; chat can also attach an issue to the next send (thanks to @AlexKutas).
-- **Voice: the voice follows the language of the text.** With "Match the voice to the language of the text" (Settings → Voice, on by default) the local provider switches to a model for the reply's language — Kokoro for Chinese/English and Piper models for Ukrainian, German, French, Spanish, Italian, Portuguese, Polish, Russian, Dutch, Czech, Turkish, and Swedish, downloaded on first use — and macOS say switches to an installed voice of that language. The local voice picker lists every installed model's voices.
-- **Git: projects made of several repositories.** A project whose root is not itself a Git repository — a folder of plugins, a workspace of services — now works with the repositories inside it. The Git tab opens the first one it finds, a picker next to the branch dropdown switches between them, and the diff, pull request, walkthrough, and mobile Changes views follow the same choice; the work status card shows the chosen repository's branch and changes with the folder named under the branch (thanks to @jaygupta17).
-- **Chat:** sessions opened from the sidebar stay at the latest message, and switching between sessions no longer causes conversation jumps, partial rendering, crossfades, or tab-title shifts.
-- Chat: command and skill autocomplete in a Chat (a session that belongs to no project) lists that chat's own commands and skills instead of the project last selected in the sidebar, and file mentions in a new chat draft no longer search the previous project.
-- Files: Ctrl/Cmd+F opens the find bar in the Markdown preview even when nothing inside the preview has focus.
-- GitHub: account connection has moved to Settings → Integrations. The pull-request panel now includes account controls, and its context-rail icon appears only when GitHub is connected.
-- Chat: a turn that OpenCode stopped no longer ends with nothing on screen — what OpenCode reported shows under the last message, and a message an idle session has left unanswered is named as such. The status report (Ctrl/Cmd+Shift+L) now lists the last session errors, rejected sends, the managed OpenCode process's last error, and where the log files are.
-- Git: the commit graph no longer leaves a gap in a lane when the same branch is merged twice (thanks to @Naputt1).
-- Settings: the theme is now remembered per OpenChamber instance. Two windows connected to different instances no longer swap themes with each other or overwrite each other's choice on every settings sync; each window boots with the theme of the instance it points at (thanks to @kydorn).
-- Scheduled tasks: a task's Goal and Auto-accept settings no longer disappear after a run when another OpenChamber process — an older desktop, CLI, or VS Code build — shares the same project config. Every process now rewrites only what it changed and leaves the rest of each task exactly as stored.
-- Desktop: on Windows and Linux the close button sits flush against the window edge, so the exact top-right corner closes the window, and its hover color follows the theme (thanks to @kydorn).
+- **Linear integration:** connect a workspace in Settings → Integrations, browse and filter issues, and start a session or worktree from an issue. OpenChamber reports session progress back to Linear and can attach an issue to the next chat message (thanks to @AlexKutas).
+- **Voice:** local text-to-speech and macOS say now choose a voice that matches the reply's language. Additional local models download on first use, and the voice picker lists voices from every installed model.
+- **Git:** projects containing several repositories can now switch between them from the Git tab. Diff, pull request, walkthrough, mobile Changes, and work status follow the selected repository (thanks to @jaygupta17).
+- **Chat:** sessions opened from the sidebar stay at the latest message, and switching sessions no longer causes jumps, partial rendering, crossfades, or tab-title shifts.
+- Chat: command, skill, and file autocomplete in projectless chats no longer uses the previously selected project.
+- Chat: reverting to a message, or forking from one, now brings its attached context back to the composer — review comments, chat and file quotes, terminal selections, and browser annotations are no longer lost.
+- Chat: stopped and unanswered turns now explain what happened. The status report includes recent session, send, and managed OpenCode errors, plus log locations.
+- Files: Ctrl/Cmd+F opens search in the Markdown preview even when the preview is not focused.
+- GitHub: account connection has moved to Settings → Integrations. The pull-request panel includes account controls, and its context-rail icon appears only when connected.
+- Git: the commit graph no longer leaves a lane gap when the same branch is merged twice (thanks to @Naputt1).
+- Settings: themes are now remembered per OpenChamber instance, so windows connected to different instances keep their own theme (thanks to @kydorn).
+- Scheduled tasks: Goal, Auto-accept, and other task settings are preserved when older OpenChamber builds share the same project config.
+- Desktop: on Windows and Linux, the close button reaches the top-right corner and follows the theme on hover (thanks to @kydorn).
 
 ## [1.21.1] - 2026-08-29
 

@@ -333,3 +333,78 @@ export function readContextPart(part: ContextCarrierPart): ContextPartPayload | 
 export function hasContextParts(parts: ContextCarrierPart[]): boolean {
     return parts.some((part) => readContextPart(part) !== null);
 }
+
+/**
+ * The composer draft a context payload came from, so reverting or forking a
+ * message can put its attached context back on the chips instead of dropping
+ * it. Linked issues/PRs have no draft form — they are owned by their own
+ * pickers — so they map to null.
+ */
+export function draftFromContextPayload(
+    payload: ContextPartPayload,
+): Omit<InlineCommentDraft, 'id' | 'createdAt' | 'sessionKey'> | null {
+    switch (payload.kind) {
+        case 'code-comment': {
+            const draft: Omit<InlineCommentDraft, 'id' | 'createdAt' | 'sessionKey'> = {
+                source: payload.source,
+                fileLabel: payload.fileLabel,
+                startLine: payload.startLine,
+                endLine: payload.endLine,
+                code: payload.code,
+                language: payload.language,
+                text: payload.text,
+            };
+            if (payload.side) draft.side = payload.side;
+            return draft;
+        }
+        case 'terminal':
+            return {
+                source: 'terminal',
+                fileLabel: payload.terminalLabel,
+                startLine: payload.startLine,
+                endLine: payload.endLine,
+                code: payload.output,
+                language: '',
+                text: '',
+                terminalId: payload.terminalId,
+            };
+        case 'browser-annotation':
+            return {
+                source: 'preview-annotation',
+                fileLabel: payload.pageUrl,
+                startLine: 0,
+                endLine: 0,
+                code: payload.prompt,
+                language: '',
+                text: payload.text,
+            };
+        case 'pr-comment':
+            return { source: 'pr-comment', fileLabel: payload.label, startLine: 0, endLine: 0, code: payload.body, language: '', text: payload.text };
+        case 'pr-check':
+            return { source: 'pr-check', fileLabel: payload.label, startLine: 0, endLine: 0, code: payload.output, language: '', text: payload.text };
+        case 'file-quote':
+            return {
+                source: 'file-quote',
+                fileLabel: payload.fileLabel,
+                startLine: payload.startLine ?? 0,
+                endLine: payload.endLine ?? 0,
+                code: payload.quote,
+                language: '',
+                text: payload.text,
+            };
+        case 'chat-quote':
+            return {
+                source: 'chat-quote',
+                fileLabel: payload.messageId ?? '',
+                startLine: 0,
+                endLine: 0,
+                code: payload.quote,
+                language: '',
+                text: payload.text,
+            };
+        case 'github-issue':
+        case 'github-pr':
+        case 'linear-issue':
+            return null;
+    }
+}
