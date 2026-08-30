@@ -464,6 +464,14 @@ the user waited for fades in (100ms); one that was ready appears in the same
 frame. The sidebar prefetches the two rows on either side of the open session
 shortly after it settles, so most neighbouring switches are warm.
 
+The column changes as one. The composer and the status chip above it read
+the session the timeline shows (`components/chat/chatColumnSession.ts`), not
+the live selection: read live, they re-shaped a commit ahead of the swap
+(a taller draft, chips, a working chip) and the outgoing timeline, pinned to
+its end, jumped before it was replaced. The reveal effect below runs once per
+gate for the same reason — `revealWaited` flips for the outgoing session at
+the click, and re-running on it hid that timeline before the next one mounted.
+
 The timeline's first paint for a session is atomic. `ChatContainer` owns a
 `TimelineRevealGate` per session key (`components/chat/timelineRevealGate.ts`):
 a markdown renderer whose first paint is provisional (blocks not yet in the
