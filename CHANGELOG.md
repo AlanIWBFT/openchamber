@@ -13,6 +13,8 @@ All notable changes to this project will be documented in this file.
 - Chat: a turn that OpenCode stopped no longer ends with nothing on screen — what OpenCode reported shows under the last message, and a message an idle session has left unanswered is named as such. The status report (Ctrl/Cmd+Shift+L) now lists the last session errors, rejected sends, the managed OpenCode process's last error, and where the log files are.
 - Chat: a session opened from the sidebar lands at its end and stays there, instead of landing above the bottom or snapping up a moment later while the recap and subagent cards finish measuring.
 - Git: the commit graph no longer leaves a gap in a lane when the same branch is merged twice (thanks to @Naputt1).
+- Settings: the theme is now remembered per OpenChamber instance. Two windows connected to different instances no longer swap themes with each other or overwrite each other's choice on every settings sync; each window boots with the theme of the instance it points at (thanks to @kydorn).
+- Scheduled tasks: a task's Goal and Auto-accept settings no longer disappear after a run when another OpenChamber process — an older desktop, CLI, or VS Code build — shares the same project config. Every process now rewrites only what it changed and leaves the rest of each task exactly as stored.
 - Desktop: on Windows and Linux the close button sits flush against the window edge, so the exact top-right corner closes the window, and its hover color follows the theme (thanks to @kydorn).
 
 ## [1.21.1] - 2026-08-29
