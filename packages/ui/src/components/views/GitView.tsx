@@ -1799,13 +1799,17 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     [handleRevertPaths]
   );
 
+  // Context-panel tabs are keyed by the project root, not by the repository
+  // being diffed: the diff surface resolves the selected nested repository on
+  // its own, so opening the tab under `gitDirectory` would park it under a key
+  // the panel never displays.
   const handleViewChangeDiff = React.useCallback((path: string, staged: boolean) => {
-    if (gitDirectory && !isMobile) {
-      openContextDiff(gitDirectory, path, staged);
+    if (currentDirectory && !isMobile) {
+      openContextDiff(currentDirectory, path, staged);
       return;
     }
     navigateToDiff(path, staged);
-  }, [gitDirectory, isMobile, navigateToDiff, openContextDiff]);
+  }, [currentDirectory, isMobile, navigateToDiff, openContextDiff]);
 
   const openStashes = React.useCallback(() => setIsStashesDialogOpen(true), []);
 
