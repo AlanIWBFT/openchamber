@@ -46,6 +46,8 @@ import {
 import type { SessionContextUsage } from '@/stores/types/sessionTypes';
 import { DesktopHostSwitcherDialog } from '@/components/desktop/DesktopHostSwitcher';
 import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
+import { ProjectActionsButton } from '@/components/layout/ProjectActionsButton';
+import { useProjectActionsContext } from '@/hooks/useProjectActionsContext';
 import { SessionSwitcherDropdown } from '@/components/session/SessionSwitcherDropdown';
 import { SessionTabsStrip, type SessionTabMenuArgs } from './SessionTabsStrip';
 import { canUseElectronDesktopIPC, invokeDesktop, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag, type UpdateInfo } from '@/lib/desktop';
@@ -998,27 +1000,9 @@ export const Header: React.FC = () => {
     return normalize(openDirectory || activeProject?.path || '');
   }, [activeProject?.path, openDirectory]);
 
-  const activeProjectRef = React.useMemo(() => {
-    if (!activeProject) {
-      return null;
-    }
-    return { id: activeProject.id, path: activeProject.path };
-  }, [activeProject]);
-
-  const lastProjectActionsContextRef = React.useRef<{
-    projectRef: { id: string; path: string };
-    directory: string;
-  } | null>(null);
-
-  React.useEffect(() => {
-    if (!activeProjectRef || !actionDirectory) {
-      return;
-    }
-    lastProjectActionsContextRef.current = {
-      projectRef: activeProjectRef,
-      directory: actionDirectory,
-    };
-  }, [actionDirectory, activeProjectRef]);
+  // Same resolution the titlebar overlay used to own: worktree → session →
+  // draft → project path, sticky across session switches.
+  const projectActionsContext = useProjectActionsContext();
 
 
   const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
@@ -1295,6 +1279,13 @@ export const Header: React.FC = () => {
 
   const desktopSidebarActions = (
     <>
+      {projectActionsContext ? (
+        <ProjectActionsButton
+          projectRef={projectActionsContext.projectRef}
+          directory={projectActionsContext.directory}
+          className="mr-2"
+        />
+      ) : null}
       <OpenInAppButton directory={actionDirectory} className="mr-1" />
       {/* Instances only exist in the desktop app. On web the menu was left
           holding a single dev-only shutdown action, which is not a reason to
