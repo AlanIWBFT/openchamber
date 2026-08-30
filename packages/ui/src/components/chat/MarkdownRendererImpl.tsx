@@ -962,7 +962,7 @@ const useMorphdomMarkdown = ({
       // or re-decorating ordinary blocks.
       refreshMermaidViewers();
     }
-  }, [containerRef, text, streaming, imageMode, ctx, refreshMermaidViewers]);
+  }, [containerRef, text, streaming, imageMode, ctx, refreshMermaidViewers, revealGate]);
 
   React.useEffect(() => () => {
     mermaidViewerRef.current?.cleanup();

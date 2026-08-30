@@ -748,7 +748,11 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     // One gate per opened session; the scroll hook holds it until the
     // viewport is pinned to the end so the first visible frame is already
     // at the bottom.
-    const revealGate = React.useMemo(() => createTimelineRevealGate(), [currentSessionKey]);
+    const revealGateRef = React.useRef<{ key: string | null; gate: TimelineRevealGate } | null>(null);
+    if (revealGateRef.current?.key !== currentSessionKey) {
+        revealGateRef.current = { key: currentSessionKey, gate: createTimelineRevealGate() };
+    }
+    const revealGate = revealGateRef.current.gate;
     const chatColumnSession = React.useMemo<ChatColumnSession>(
         () => ({ sessionId: currentSessionId ?? null, directory: currentSessionId ? effectiveSessionDirectory ?? null : null }),
         [currentSessionId, effectiveSessionDirectory],
