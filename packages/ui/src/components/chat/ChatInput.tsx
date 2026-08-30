@@ -1367,9 +1367,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             ...additionalParts.flatMap(p => p.attachments ?? []),
         ];
 
-        // Arm the timeline anchor BEFORE the optimistic user row can commit;
-        // arming after (or a frame later) races the commit and the anchor
-        // never claims the new message.
+        // Return to the live edge before the optimistic user row commits so it
+        // appears at the bottom and subsequent output can follow it.
         scrollToBottom?.();
 
         const sendPromise = sendMessage(
