@@ -984,7 +984,9 @@ export const createUiAuth = ({
     handlePasskeyList,
     handlePasskeyRevoke,
     handleResetAuth,
-    ensureSessionToken: async (req, _res) => {
+    ensureSessionToken: (req, _res) => {
+      const urlAuth = authenticateUrlAuthToken(req);
+      if (urlAuth) return clientSessionToken(urlAuth);
       return resolveAuthenticatedSessionToken(req);
     },
     dispose,
