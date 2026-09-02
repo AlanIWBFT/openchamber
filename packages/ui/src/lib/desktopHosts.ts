@@ -415,10 +415,11 @@ const RELAY_PROBE_RETRY_DELAY_MS = 400;
 const fetchRelayProbe = async (
   tunnel: ReturnType<typeof createRelayTunnelClient>,
   path: string,
+  timeoutMs: number,
   init?: RequestInit,
 ): Promise<Response> => {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), RELAY_PROBE_TIMEOUT_MS);
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await tunnel.fetch(path, { ...init, signal: controller.signal });
   } finally {
@@ -448,8 +449,13 @@ const fetchRelayProbeUntilDeadline = async (
   init?: RequestInit,
 ): Promise<Response> => {
   for (;;) {
+    // Every attempt is capped by what is LEFT of the budget, not by the full
+    // per-request timeout: an attempt started just under the deadline would
+    // otherwise run the whole 8s past it, and the switch flow waits on this.
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) throw new Error('relay probe deadline exceeded');
     try {
-      return await fetchRelayProbe(tunnel, path, init);
+      return await fetchRelayProbe(tunnel, path, Math.min(RELAY_PROBE_TIMEOUT_MS, remainingMs), init);
     } catch (error) {
       if (tunnel.getStatus().state === 'error') throw error;
       if (Date.now() >= deadline) throw error;

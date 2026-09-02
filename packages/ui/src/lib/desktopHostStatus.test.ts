@@ -98,4 +98,41 @@ describe('desktop host statuses', () => {
     expect(getDesktopHostStatusSnapshot()).not.toBe(before);
     expect(before.byHostId.remote).toBe(undefined);
   });
+
+  test('a slow older run cannot overwrite a newer result', async () => {
+    // Startup warm-up, opening the switcher and the refresh button all probe;
+    // whichever finishes last must not be whichever started first.
+    probeResults['https://remote.example'] = { status: 'unreachable', latencyMs: 0 };
+    let releaseSlow!: () => void;
+    probeGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
+
+    const slowRun = probeDesktopHosts([host('remote', 'https://remote.example')]);
+    await Promise.resolve();
+
+    probeGate = null;
+    probeResults['https://remote.example'] = { status: 'ok', latencyMs: 30 };
+    await probeDesktopHosts([host('remote', 'https://remote.example')]);
+    expect(getDesktopHostStatusSnapshot().byHostId.remote?.status).toBe('ok');
+
+    releaseSlow();
+    await slowRun;
+
+    expect(getDesktopHostStatusSnapshot().byHostId.remote?.status).toBe('ok');
+    expect(getDesktopHostStatusSnapshot().byHostId.remote?.latencyMs).toBe(30);
+  });
+
+  test('a status recorded by the switch flow outranks a probe already running', async () => {
+    probeResults['https://remote.example'] = { status: 'unreachable', latencyMs: 0 };
+    let releaseSlow!: () => void;
+    probeGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
+
+    const slowRun = probeDesktopHosts([host('remote', 'https://remote.example')]);
+    await Promise.resolve();
+    setDesktopHostStatus('remote', { status: 'ok', latencyMs: 7, via: 'relay' });
+
+    releaseSlow();
+    await slowRun;
+
+    expect(getDesktopHostStatusSnapshot().byHostId.remote?.status).toBe('ok');
+  });
 });

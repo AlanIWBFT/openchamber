@@ -40,6 +40,13 @@ type DesktopHostStatusSnapshot = {
  * them first.
  */
 const statuses = new Map<string, DesktopHostStatus>();
+// Startup warm-up, opening the switcher and the refresh button can all be in
+// flight at once, and a probe's duration varies by an order of magnitude
+// between a loopback host and a relay host working through tunnel retries.
+// Without ordering, a slow older run lands last and replaces a fresh "ok" with
+// its own stale "unreachable". Each host remembers which run owns its status.
+let probeRunSequence = 0;
+const owningRunByHostId = new Map<string, number>();
 let activeProbeRuns = 0;
 let snapshot: DesktopHostStatusSnapshot = { byHostId: {}, isProbing: false };
 const listeners = new Set<() => void>();
@@ -69,8 +76,13 @@ const setStatus = (hostId: string, status: DesktopHostStatus): void => {
   publishSnapshot();
 };
 
-/** Record a status learned outside a probe run — the switch flow probes too. */
+/**
+ * Record a status learned outside a probe run — the switch flow probes too, and
+ * its result is the freshest thing anyone has, so it takes ownership away from
+ * any probe run still running for that host.
+ */
 export const setDesktopHostStatus = (hostId: string, status: DesktopHostStatus): void => {
+  owningRunByHostId.set(hostId, ++probeRunSequence);
   setStatus(hostId, status);
 };
 
@@ -85,6 +97,7 @@ export const pruneDesktopHostStatuses = (configuredHostIds: readonly string[]): 
   for (const hostId of Array.from(statuses.keys())) {
     if (keep.has(hostId)) continue;
     statuses.delete(hostId);
+    owningRunByHostId.delete(hostId);
     changed = true;
   }
   if (changed) publishSnapshot();
@@ -134,12 +147,17 @@ const probeHost = async (host: DesktopHost, localClientToken: string): Promise<D
  */
 export const probeDesktopHosts = async (hosts: readonly DesktopHost[]): Promise<void> => {
   if (!isDesktopShell()) return;
+  const run = ++probeRunSequence;
+  for (const host of hosts) owningRunByHostId.set(host.id, run);
   activeProbeRuns += 1;
   publishSnapshot();
   try {
     const localClientToken = await getLocalClientToken();
     await Promise.all(hosts.map(async (host) => {
-      setStatus(host.id, await probeHost(host, localClientToken));
+      const status = await probeHost(host, localClientToken);
+      // A newer run (or a switch) claimed this host while we were probing.
+      if (owningRunByHostId.get(host.id) !== run) return;
+      setStatus(host.id, status);
     }));
   } finally {
     activeProbeRuns -= 1;
