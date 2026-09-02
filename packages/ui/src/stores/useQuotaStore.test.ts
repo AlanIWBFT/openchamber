@@ -6,6 +6,7 @@ let isInitialized = true
 const fetched: string[] = []
 
 type StubPayload = { usageDropdownProviders: string[] } | ProviderResult
+let quotaRequestsFail = false;
 const json = (body: StubPayload) => new Response(
   JSON.stringify(body),
   { status: 200, headers: { "content-type": "application/json" } },
@@ -22,6 +23,7 @@ mock.module("@/lib/runtime-fetch", () => ({
   ...runtimeFetchModule,
   runtimeFetch: async (path: string) => {
     fetched.push(path)
+    if (quotaRequestsFail) throw new Error("network down")
     if (path.startsWith("/api/config/settings")) return json({ usageDropdownProviders: ["claude"] })
     return json({ providerId: "claude", providerName: "Claude", ok: true, configured: true, usage: null, fetchedAt: 1 })
   },
@@ -40,6 +42,7 @@ describe("Usage quotas are loaded once per ready instance", () => {
     runtimeKey = "url:https://instance-a"
     isInitialized = true
     fetched.length = 0
+    quotaRequestsFail = false
     useQuotaStore.getState().resetForRuntimeSwitch()
   })
 
@@ -96,5 +99,41 @@ describe("Usage quotas are loaded once per ready instance", () => {
     await useQuotaStore.getState().ensureLoadedForRuntime()
 
     expect(fetched).toHaveLength(0)
+  })
+
+  test("a failed load is not recorded as loaded, so the next ask retries it", async () => {
+    quotaRequestsFail = true
+    await useQuotaStore.getState().ensureLoadedForRuntime()
+
+    expect(useQuotaStore.getState().loadedRuntimeKey).toBeNull()
+
+    quotaRequestsFail = false
+    fetched.length = 0
+    await useQuotaStore.getState().ensureLoadedForRuntime()
+
+    expect(fetched.length).toBeGreaterThan(0)
+    expect(useQuotaStore.getState().loadedRuntimeKey).toBe("url:https://instance-a")
+  })
+
+  test("concurrent asks share one load", async () => {
+    await Promise.all([
+      useQuotaStore.getState().ensureLoadedForRuntime(),
+      useQuotaStore.getState().ensureLoadedForRuntime(),
+    ])
+
+    expect(fetched.filter((path) => path.startsWith("/api/quota/"))).toHaveLength(1)
+  })
+
+  test("a switch drops the previous instance's display settings", async () => {
+    await useQuotaStore.getState().ensureLoadedForRuntime()
+    expect(useQuotaStore.getState().dropdownProviderIds).toEqual(["claude"])
+    useQuotaStore.getState().setDisplayMode("remaining")
+
+    useQuotaStore.getState().resetForRuntimeSwitch()
+
+    // `dropdownProviderIds` decides which providers get queried, so carrying it
+    // over would ask the new instance through the old one's selection.
+    expect(useQuotaStore.getState().dropdownProviderIds.length).toBeGreaterThan(1)
+    expect(useQuotaStore.getState().displayMode).toBe("usage")
   })
 })

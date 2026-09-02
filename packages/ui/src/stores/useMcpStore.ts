@@ -54,6 +54,10 @@ type RefreshOptions = {
 };
 
 const ensureFreshInFlight = new Map<string, Promise<void>>();
+// Bumped on every runtime switch. Status is keyed by directory alone and two
+// instances can hold the same project path, so a request already in flight for
+// the previous instance would otherwise write its servers over the new one's.
+let mcpGeneration = 0;
 
 type TestConnectionResult = {
   status?: McpStatus;
@@ -108,6 +112,7 @@ export const useMcpStore = create<McpStore>()(
     refreshedAtKeys: {},
 
     resetForRuntimeSwitch: () => {
+      mcpGeneration += 1;
       ensureFreshInFlight.clear();
       set({
         byDirectory: {},
@@ -144,9 +149,11 @@ export const useMcpStore = create<McpStore>()(
         }));
       }
 
+      const generation = mcpGeneration;
       try {
         const api = getMcpApiClient(directory);
         const result = await api.mcp.status();
+        if (generation !== mcpGeneration) return;
         const data = (result.data ?? {}) as McpStatusMap;
 
         set((state) => ({
@@ -162,6 +169,7 @@ export const useMcpStore = create<McpStore>()(
           refreshedAtKeys: { ...state.refreshedAtKeys, [key]: Date.now() },
         }));
       } catch (error) {
+        if (generation !== mcpGeneration) return;
         const message = error instanceof Error ? error.message : 'Failed to load MCP status';
         set((state) => ({
           loadingKeys: { ...state.loadingKeys, [key]: false },
