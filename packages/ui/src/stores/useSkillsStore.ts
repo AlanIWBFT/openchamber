@@ -173,6 +173,12 @@ interface SkillsStore {
   renameSkill: (name: string, newName: string, directory?: string | null) => Promise<boolean>;
   deleteSkill: (name: string, directory?: string | null) => Promise<boolean>;
   getSkillByName: (name: string, directory?: string | null) => DiscoveredSkill | undefined;
+  /**
+   * Skills are discovered on the connected instance and cached by directory,
+   * which two instances can share — so a switch must drop the caches rather
+   * than report the previous instance's skills for the new one.
+   */
+  resetForRuntimeSwitch: () => void;
 
   // Supporting files
   readSupportingFile: (skillName: string, filePath: string, directory?: string | null) => Promise<string | null>;
@@ -278,6 +284,12 @@ export const useSkillsStore = create<SkillsStore>()(
         skillsByDirectory: {},
         isLoading: false,
         skillDraft: null,
+
+        resetForRuntimeSwitch: () => {
+          skillsLastLoadedAt.clear();
+          skillsLoadInFlight.clear();
+          set({ skills: [], skillsByDirectory: {}, isLoading: false });
+        },
 
         setSelectedSkill: (name: string | null) => {
           set({ selectedSkillName: name });

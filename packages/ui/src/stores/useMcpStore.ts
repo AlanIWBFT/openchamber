@@ -91,6 +91,12 @@ interface McpStore {
   completeAuth: (name: string, code: string, directory?: string | null) => Promise<void>;
   clearAuth: (name: string, directory?: string | null) => Promise<void>;
   testConnection: (name: string, directory?: string | null) => Promise<TestConnectionResult>;
+  /**
+   * MCP status is keyed by directory alone, and two instances can hold the same
+   * project path — so on a switch the previous instance's servers would be
+   * reported for the new one. Drop everything and let consumers re-ask.
+   */
+  resetForRuntimeSwitch: () => void;
 }
 
 export const useMcpStore = create<McpStore>()(
@@ -100,6 +106,17 @@ export const useMcpStore = create<McpStore>()(
     loadingKeys: {},
     lastErrorKeys: {},
     refreshedAtKeys: {},
+
+    resetForRuntimeSwitch: () => {
+      ensureFreshInFlight.clear();
+      set({
+        byDirectory: {},
+        diagnosticsByDirectory: {},
+        loadingKeys: {},
+        lastErrorKeys: {},
+        refreshedAtKeys: {},
+      });
+    },
 
     getStatusForDirectory: (directory) => {
       const key = toKey(directory ?? useDirectoryStore.getState().currentDirectory);

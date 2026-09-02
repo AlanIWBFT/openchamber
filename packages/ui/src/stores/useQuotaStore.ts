@@ -8,8 +8,14 @@ import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { getDefaultModels } from '@/lib/quota/model-families';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { getRuntimeKey, isTransientRuntimeKey } from '@/lib/runtime-switch';
+import { useConfigStore } from '@/stores/useConfigStore';
 
 const QUOTA_REFRESH_INTERVAL_MS = 3 * 60 * 1000;
+// Quotas and their display settings are read from the connected OpenChamber
+// instance, so both belong to that instance. Bumped on every reset so a
+// response in flight for the previous instance cannot land in the new one.
+let quotaGeneration = 0;
 let quotaAutoRefreshConsumers = 0;
 let quotaAutoRefreshInterval: number | null = null;
 
@@ -22,6 +28,8 @@ interface QuotaSettingsState {
 
 interface QuotaStore extends QuotaSettingsState {
   results: ProviderResult[];
+  /** Instance whose quotas `results` describes, or `null` when nothing is loaded. */
+  loadedRuntimeKey: string | null;
   selectedProviderId: QuotaProviderId | null;
   isLoading: boolean;
   isFetchingProvider: Record<string, boolean>;
@@ -40,6 +48,18 @@ interface QuotaStore extends QuotaSettingsState {
   setExpandedFamilies: (providerId: string, familyIds: string[]) => void;
   toggleFamilyExpanded: (providerId: string, familyId: string) => void;
   applyDefaultSelections: (providerId: string, availableModels: string[]) => void;
+  /**
+   * Load settings and quotas once per instance, when that instance is ready.
+   *
+   * Providers report themselves as configured only after the instance can read
+   * their credentials, which on a remote instance is not true the moment the UI
+   * mounts. A fetch fired at mount therefore answers "nothing configured", and
+   * because every provider then has a result, no consumer asks again until the
+   * three-minute refresh — which is why Usage stayed missing from the
+   * work-status panel until Settings -> Usage forced a fresh fetch.
+   */
+  ensureLoadedForRuntime: () => Promise<void>;
+  resetForRuntimeSwitch: () => void;
 }
 
 const parseSettings = (data: Record<string, unknown> | null): QuotaSettingsState => {
@@ -119,6 +139,7 @@ export const useQuotaStore = create<QuotaStore>()(
   devtools(
     (set, get) => ({
       results: [],
+      loadedRuntimeKey: null,
       selectedProviderId: null,
       isLoading: false,
       isFetchingProvider: {},
@@ -130,8 +151,10 @@ export const useQuotaStore = create<QuotaStore>()(
       expandedFamilies: {},
 
       loadSettings: async () => {
+        const generation = quotaGeneration;
         try {
           const settings = await loadSettingsFromRuntime();
+          if (generation !== quotaGeneration) return;
           set(settings);
         } catch (error) {
           console.warn('Failed to load usage settings:', error);
@@ -139,16 +162,19 @@ export const useQuotaStore = create<QuotaStore>()(
       },
 
       fetchQuotas: async (providerIds) => {
+        const generation = quotaGeneration;
         set({ isLoading: true, error: null });
         try {
           await Promise.all(
             providerIds.map((providerId) => get().fetchProviderQuota(providerId))
           );
+          if (generation !== quotaGeneration) return;
           set({
             isLoading: false,
             lastUpdated: Date.now()
           });
         } catch (error) {
+          if (generation !== quotaGeneration) return;
           const message = error instanceof Error ? error.message : 'Failed to fetch quotas';
           set({ isLoading: false, error: message });
         }
@@ -159,6 +185,7 @@ export const useQuotaStore = create<QuotaStore>()(
       },
 
       fetchProviderQuota: async (providerId) => {
+        const generation = quotaGeneration;
         set((state) => ({
           isFetchingProvider: { ...state.isFetchingProvider, [providerId]: true }
         }));
@@ -169,6 +196,7 @@ export const useQuotaStore = create<QuotaStore>()(
             throw new Error(payload?.error || 'Failed to fetch quota');
           }
 
+          if (generation !== quotaGeneration) return;
           const result = payload as ProviderResult;
           set((state) => {
             const next = state.results.filter((entry) => entry.providerId !== providerId);
@@ -176,6 +204,7 @@ export const useQuotaStore = create<QuotaStore>()(
             return { results: next, error: null };
           });
         } catch (error) {
+          if (generation !== quotaGeneration) return;
           const message = error instanceof Error ? error.message : 'Failed to fetch quota';
           const fallback: ProviderResult = {
             providerId,
@@ -192,10 +221,42 @@ export const useQuotaStore = create<QuotaStore>()(
             return { results: next, error: message };
           });
         } finally {
-          set((state) => ({
-            isFetchingProvider: { ...state.isFetchingProvider, [providerId]: false }
-          }));
+          if (generation === quotaGeneration) {
+            set((state) => ({
+              isFetchingProvider: { ...state.isFetchingProvider, [providerId]: false }
+            }));
+          }
         }
+      },
+
+      ensureLoadedForRuntime: async () => {
+        const runtimeKey = getRuntimeKey();
+        if (isTransientRuntimeKey(runtimeKey)) return;
+        // Wait for the instance to report itself initialised. Asking earlier
+        // gets an honest-looking "not configured" for every provider, which is
+        // then cached as if it were the answer.
+        if (!useConfigStore.getState().isInitialized) return;
+        if (get().loadedRuntimeKey === runtimeKey) return;
+        set({ loadedRuntimeKey: runtimeKey });
+        const generation = quotaGeneration;
+        await get().loadSettings();
+        if (generation !== quotaGeneration) return;
+        const { dropdownProviderIds, fetchQuotas } = get();
+        if (dropdownProviderIds.length === 0) return;
+        await fetchQuotas(dropdownProviderIds);
+      },
+
+      resetForRuntimeSwitch: () => {
+        quotaGeneration += 1;
+        set({
+          results: [],
+          loadedRuntimeKey: null,
+          selectedProviderId: null,
+          isLoading: false,
+          isFetchingProvider: {},
+          lastUpdated: null,
+          error: null,
+        });
       },
 
       setSelectedProvider: (providerId) => set({ selectedProviderId: providerId }),
