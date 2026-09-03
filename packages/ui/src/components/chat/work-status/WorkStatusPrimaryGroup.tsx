@@ -3,6 +3,7 @@ import { useI18n } from '@/lib/i18n';
 import { useGitStore } from '@/stores/useGitStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useNestedGitDirectory } from '@/hooks/useNestedGitDirectory';
+import { useWorktreeBootstrapPending } from '@/hooks/useWorktreeBootstrapPending';
 import { runBackgroundNetworkTask } from '@/lib/background-network';
 import { useFreshestPrVisualSummaryForBranch } from '@/stores/useGitHubPrStatusStore';
 import { useSessionMessages } from '@/sync/sync-context';
@@ -67,12 +68,34 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
     ),
   );
 
+  // A worktree that is still being created transiently looks dirty until its
+  // setup commands and initial git reset finish. Those files are not changes
+  // on the branch, so status is neither fetched nor displayed until the
+  // bootstrap settles.
+  const worktreeCreationPending = useWorktreeBootstrapPending(gitDirectory);
+  const awaitingPostBootstrapStatusRef = React.useRef<string | null>(null);
+
   // Warm the shared git cache through the background-network gate so the panel
   // never competes with the chat's own bootstrap traffic for sockets.
   React.useEffect(() => {
     if (!showRepository || !gitDirectory || !git) return;
-    void runBackgroundNetworkTask(() => ensureStatus(gitDirectory, git));
-  }, [gitDirectory, git, ensureStatus, showRepository]);
+    if (worktreeCreationPending) {
+      awaitingPostBootstrapStatusRef.current = gitDirectory;
+      return;
+    }
+    // Right after bootstrap the cache may still hold a status captured
+    // mid-creation; force one fetch so the lifted gate reveals the real
+    // (reset) working tree instead of the transient one.
+    const finishedBootstrap = awaitingPostBootstrapStatusRef.current === gitDirectory;
+    awaitingPostBootstrapStatusRef.current = null;
+    void runBackgroundNetworkTask(async () => {
+      if (finishedBootstrap) {
+        await fetchStatus(gitDirectory, git, { silent: true });
+      } else {
+        await ensureStatus(gitDirectory, git);
+      }
+    });
+  }, [gitDirectory, git, ensureStatus, fetchStatus, showRepository, worktreeCreationPending]);
 
   // Own the live invalidation for the repository readout. The desktop
   // composer's changed-files row no longer renders, so this panel must not
@@ -175,6 +198,7 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
   // event is reset to an empty array too, and carries real content only on
   // revert. Git status is the one authoritative, already-cached answer.
   const changed = React.useMemo(() => {
+    if (worktreeCreationPending) return null;
     const files = gitStatus?.files ?? [];
     if (files.length === 0) return null;
     const stats = gitStatus?.diffStats;
@@ -187,7 +211,7 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
       }
     }
     return { files: files.length, additions, deletions, hasStats: Boolean(stats) };
-  }, [gitStatus?.files, gitStatus?.diffStats]);
+  }, [gitStatus?.files, gitStatus?.diffStats, worktreeCreationPending]);
 
   const attentionReason = gitStatus?.attentionReason
     ?? (gitStatus?.rebaseInProgress ? 'rebase' : null)
