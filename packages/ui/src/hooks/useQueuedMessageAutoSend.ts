@@ -148,18 +148,11 @@ const resolveSessionSendConfig = (sessionId: string) => {
     ?? config.currentModelId
     ?? selection.lastUsedProvider?.modelID;
 
-  // A recorded `null` is an explicit "Default": it stops the lookup and sends
-  // no effort, instead of falling through to the persisted copy.
-  const savedVariant =
+  const variant =
     selectedAgent && providerID && modelID
-      ? (() => {
-        const live = selection.getAgentModelVariantForSession(sessionId, selectedAgent, providerID, modelID);
-        return live !== undefined
-          ? live
-          : context.getAgentModelVariantForSession(sessionId, selectedAgent, providerID, modelID);
-      })()
+      ? (selection.getAgentModelVariantForSession(sessionId, selectedAgent, providerID, modelID)
+        ?? context.getAgentModelVariantForSession(sessionId, selectedAgent, providerID, modelID))
       : undefined;
-  const variant = savedVariant ?? undefined;
 
   return {
     providerID,

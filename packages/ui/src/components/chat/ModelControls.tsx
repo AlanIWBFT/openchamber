@@ -326,13 +326,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const currentModelId = useConfigStore((state) => state.currentModelId);
     const effectiveCurrentVariant = useConfigStore((state) => state.currentVariant);
     const currentVariantSelection = useConfigStore((state) => state.currentVariantSelection);
-    // What the picker shows is what the next send carries: an explicit choice
-    // when there is one, "Default" when "Default" was picked, and otherwise the
-    // inherited effort — showing "Default" while an inherited effort is in
-    // force is how a switch away from it looks like it did not stick.
-    const currentVariant = currentVariantSelection.override === null
-        ? undefined
-        : currentVariantSelection.override ?? effectiveCurrentVariant;
+    const currentVariant = currentVariantSelection.override ?? undefined;
     const currentAgentName = useConfigStore((state) => state.currentAgentName);
     const settingsDefaultVariant = useConfigStore((state) => state.settingsDefaultVariant);
     const settingsDefaultAgent = useConfigStore((state) => state.settingsDefaultAgent);
@@ -734,10 +728,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         const effectiveAgentName = uiAgentName || currentAgentName;
         if (currentSessionId && effectiveAgentName) {
             const savedVariant = getAgentModelVariantForSession(currentSessionId, effectiveAgentName, providerId, modelId);
-            // An explicit "Default" is a choice: it stops the fallbacks below.
-            if (savedVariant === null) {
-                return undefined;
-            }
             if (savedVariant && variantOptions.includes(savedVariant)) {
                 return savedVariant;
             }
@@ -787,9 +777,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
         const effectiveAgentName = agentNameOverride ?? resolveLiveAgentName();
         if (currentSessionId && effectiveAgentName) {
-            // `null`, not `undefined`: picking "Default" is a choice to record,
-            // not the absence of one.
-            saveAgentModelVariantForSession(currentSessionId, effectiveAgentName, providerId, modelId, variant ?? null);
+            saveAgentModelVariantForSession(currentSessionId, effectiveAgentName, providerId, modelId, variant);
         }
     }, [
         addRecentEffort,
@@ -1125,10 +1113,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             return;
         }
 
-        // The chosen effort does not exist on this model: drop the choice and
-        // inherit, rather than pin an explicit "Default" the user never picked.
         if (currentVariant && !availableVariants.includes(currentVariant)) {
-            setCurrentVariant(resolveInheritedVariantForModel(currentProviderId, currentModelId));
+            setCurrentVariantOverride(
+                null,
+                resolveInheritedVariantForModel(currentProviderId, currentModelId),
+            );
             return;
         }
 
@@ -1154,8 +1143,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         const inheritedVariant = resolveInheritedVariantForModel(currentProviderId, currentModelId);
         if (savedVariant && availableVariants.includes(savedVariant)) {
             setCurrentVariantOverride(savedVariant, inheritedVariant);
-        } else if (savedVariant === null || currentVariantSelection.override === null) {
-            // "Default" was picked for this session, or is picked right now.
+        } else if (currentVariantSelection.override === null) {
             setCurrentVariantOverride(null, inheritedVariant);
         } else {
             setCurrentVariant(inheritedVariant);

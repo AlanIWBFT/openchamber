@@ -907,27 +907,10 @@ interface DirectoryScopedConfig {
     selectionSource?: "auto" | "manual";
 }
 
-/**
- * The thinking-effort selection, split into what the user picked and what
- * applies when they picked nothing:
- *
- * - `override: string`    an effort chosen in the picker
- * - `override: null`      "Default" chosen in the picker — send no effort
- * - `override: undefined` nothing chosen — the inherited default applies
- *
- * `null` and `undefined` are not interchangeable: collapsing them makes the
- * "Default" entry unpickable, because the settings default silently takes
- * effect again and the next assistant reply echoes it back as an explicit
- * choice.
- */
 type CurrentVariantSelection = {
     override: string | null | undefined;
     inherited: string | undefined;
 };
-
-const resolveVariantFromSelection = (selection: CurrentVariantSelection): string | undefined => (
-    selection.override === null ? undefined : selection.override ?? selection.inherited
-);
 
 /**
  * Lift the active directory's cached provider/agent snapshot into the top-level
@@ -1925,7 +1908,7 @@ export const useConfigStore = create<ConfigStore>()(
 
                 setCurrentVariantOverride: (override, inherited) => {
                     set((state) => {
-                        const currentVariant = resolveVariantFromSelection({ override, inherited });
+                        const currentVariant = override ?? inherited;
                         if (
                             state.currentVariant === currentVariant
                             && state.currentVariantSelection.override === override
@@ -2551,27 +2534,8 @@ export const useConfigStore = create<ConfigStore>()(
                     if (agentName) {
                         const { currentSessionId } = useSessionUIStore.getState();
 
-                        // Writes the effort alongside the model, because the two are one
-                        // selection: leaving `currentVariantSelection` behind would let the
-                        // picker show one effort while sends carry another.
-                        const applyResolvedModelSelection = (
-                            providerId: string,
-                            modelId: string,
-                            variantSelection: CurrentVariantSelection,
-                        ) => {
+                        const applyResolvedModelSelection = (providerId: string, modelId: string, variant?: string) => {
                             set((state) => {
-                                const variant = resolveVariantFromSelection(variantSelection);
-                                if (
-                                    state.currentProviderId === providerId
-                                    && state.currentModelId === modelId
-                                    && state.currentVariant === variant
-                                    && state.currentVariantSelection.override === variantSelection.override
-                                    && state.currentVariantSelection.inherited === variantSelection.inherited
-                                    && state.selectionSource === "manual"
-                                ) {
-                                    return state;
-                                }
-
                                 const directoryKey = state.activeDirectoryKey;
                                 const baseSnapshot: DirectoryScopedConfig = state.directoryScoped[directoryKey] ?? {
                                     providers: state.providers,
@@ -2597,7 +2561,6 @@ export const useConfigStore = create<ConfigStore>()(
                                     currentProviderId: providerId,
                                     currentModelId: modelId,
                                     currentVariant: variant,
-                                    currentVariantSelection: variantSelection,
                                     selectionSource: "manual",
                                     directoryScoped: {
                                         ...state.directoryScoped,
@@ -2607,24 +2570,16 @@ export const useConfigStore = create<ConfigStore>()(
                             });
                         };
 
-                        const resolveVariantSelectionForModel = (
+                        const resolveVariantForModel = (
                             providerId: string,
                             modelId: string,
                             agentVariant?: string,
-                        ): CurrentVariantSelection => {
+                        ): string | undefined => {
                             const model = providers
                                 .find((provider) => provider.id === providerId)
                                 ?.models.find((candidate) => candidate.id === modelId) as { variants?: Record<string, unknown> } | undefined;
                             const variants = model?.variants;
-                            if (!variants) return { override: undefined, inherited: undefined };
-
-                            const isAvailable = (candidate: string | null | undefined): candidate is string => (
-                                candidate !== null
-                                && candidate !== undefined
-                                && Object.prototype.hasOwnProperty.call(variants, candidate)
-                            );
-
-                            const inherited = [agentVariant, settingsDefaultVariant].find(isAvailable);
+                            if (!variants) return undefined;
 
                             const savedVariant = currentSessionId
                                 ? useSelectionStore.getState().getAgentModelVariantForSession(
@@ -2634,23 +2589,14 @@ export const useConfigStore = create<ConfigStore>()(
                                     modelId,
                                 )
                                 : undefined;
-                            // `null` is this session's explicit "Default"; it outranks
-                            // the agent and settings defaults just like a named effort.
-                            if (savedVariant === null || isAvailable(savedVariant)) {
-                                return { override: savedVariant, inherited };
+
+                            for (const candidate of [savedVariant, agentVariant, settingsDefaultVariant]) {
+                                if (candidate && Object.prototype.hasOwnProperty.call(variants, candidate)) {
+                                    return candidate;
+                                }
                             }
 
-                            // While drafting there is no session record to read the choice
-                            // back from, and switching agent is not a change of effort:
-                            // keep the picker's choice for this same model, "Default"
-                            // (an explicit `null`) included.
-                            const liveSelection = get().currentVariantSelection;
-                            const sameModel = get().currentProviderId === providerId && get().currentModelId === modelId;
-                            if (!currentSessionId && sameModel && (liveSelection.override === null || isAvailable(liveSelection.override))) {
-                                return { override: liveSelection.override, inherited };
-                            }
-
-                            return { override: undefined, inherited };
+                            return undefined;
                         };
 
                         const agent = agents.find((candidate) => candidate.name === agentName);
@@ -2662,11 +2608,14 @@ export const useConfigStore = create<ConfigStore>()(
                         if (currentSessionId) {
                             const existingAgentModel = useSelectionStore.getState().getAgentModelForSession(currentSessionId, agentName);
                             if (existingAgentModel && hasProviderModel(providers, existingAgentModel.providerId, existingAgentModel.modelId)) {
-                                applyResolvedModelSelection(
-                                    existingAgentModel.providerId,
-                                    existingAgentModel.modelId,
-                                    resolveVariantSelectionForModel(existingAgentModel.providerId, existingAgentModel.modelId, agent?.variant),
-                                );
+                                const resolvedVariant = resolveVariantForModel(existingAgentModel.providerId, existingAgentModel.modelId, agent?.variant);
+                                if (
+                                    currentProviderId !== existingAgentModel.providerId
+                                    || currentModelId !== existingAgentModel.modelId
+                                    || get().currentVariant !== resolvedVariant
+                                ) {
+                                    applyResolvedModelSelection(existingAgentModel.providerId, existingAgentModel.modelId, resolvedVariant);
+                                }
                                 return;
                             }
                         }
@@ -2679,7 +2628,7 @@ export const useConfigStore = create<ConfigStore>()(
                             const agentModel = agentProvider?.models.find((model) => model.id === modelID);
 
                             if (agentModel) {
-                                applyResolvedModelSelection(providerID, modelID, resolveVariantSelectionForModel(providerID, modelID, agent?.variant));
+                                applyResolvedModelSelection(providerID, modelID, resolveVariantForModel(providerID, modelID, agent?.variant));
                                 return;
                             }
                         }
@@ -2711,7 +2660,7 @@ export const useConfigStore = create<ConfigStore>()(
                             if (parsed) {
                                 const settingsProvider = providers.find((p) => p.id === parsed.providerId);
                                 if (settingsProvider?.models.some((m) => m.id === parsed.modelId)) {
-                                    applyResolvedModelSelection(parsed.providerId, parsed.modelId, resolveVariantSelectionForModel(parsed.providerId, parsed.modelId, agent?.variant));
+                                    applyResolvedModelSelection(parsed.providerId, parsed.modelId, resolveVariantForModel(parsed.providerId, parsed.modelId, agent?.variant));
                                     return;
                                 }
                             }
