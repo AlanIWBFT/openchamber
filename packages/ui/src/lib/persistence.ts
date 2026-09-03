@@ -205,14 +205,18 @@ export interface SettingsSyncedDetail {
       not filtered; listeners gate their adoption on this flag and keep their
       live state for the fields they own. */
   bootstrap: boolean;
+  /** Whether this sync may replace this window's theme preferences. VS Code
+      settings broadcasts remain bootstrap-grade for shared workspace pointers,
+      but must not copy one webview's theme into another webview. */
+  adoptTheme: boolean;
 }
 
-const dispatchSettingsSynced = (settings: DesktopSettings, bootstrap: boolean): void => {
+const dispatchSettingsSynced = (settings: DesktopSettings, bootstrap: boolean, adoptTheme = bootstrap): void => {
   if (typeof window === 'undefined') {
     return;
   }
   window.dispatchEvent(new CustomEvent<SettingsSyncedDetail>('openchamber:settings-synced', {
-    detail: { settings, bootstrap },
+    detail: { settings, bootstrap, adoptTheme },
   }));
 };
 
@@ -1900,8 +1904,9 @@ export const invalidateSettingsCache = (): void => {
   _settingsCache = null;
 };
 
-export const syncDesktopSettings = async (options?: { bootstrap?: boolean }): Promise<void> => {
+export const syncDesktopSettings = async (options?: { bootstrap?: boolean; adoptTheme?: boolean }): Promise<void> => {
   const bootstrap = options?.bootstrap !== false;
+  const adoptTheme = options?.adoptTheme ?? bootstrap;
   if (typeof window === 'undefined') {
     return;
   }
@@ -2030,7 +2035,7 @@ export const syncDesktopSettings = async (options?: { bootstrap?: boolean }): Pr
       if (!isSettingsRuntimeContextCurrent(context)) return;
     }
 
-    dispatchSettingsSynced(authoritativeSettings, bootstrap);
+    dispatchSettingsSynced(authoritativeSettings, bootstrap, adoptTheme);
   };
 
   try {

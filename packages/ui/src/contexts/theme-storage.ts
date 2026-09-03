@@ -201,10 +201,10 @@ type SettingsSyncThemePayload = Pick<
  * theme lookup downstream and falls back cosmetically.
  */
 export const resolveThemePreferencesFromSettingsSync = (
-  detail: { bootstrap: boolean; settings: SettingsSyncThemePayload } | null,
+  detail: { adoptTheme: boolean; settings: SettingsSyncThemePayload } | null,
   current: StoredThemePreferences,
 ): StoredThemePreferences | null => {
-  if (!detail?.bootstrap) {
+  if (!detail?.adoptTheme) {
     return null;
   }
 

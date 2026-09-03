@@ -875,6 +875,7 @@ describe('updateDesktopSettings', () => {
     expect(synced.length).toBeGreaterThan(0);
     const bootstrapSync = synced.find((detail) => detail.bootstrap);
     expect(bootstrapSync).toBeTruthy();
+    expect(bootstrapSync?.adoptTheme).toBe(true);
     expect(bootstrapSync?.settings.useSystemTheme).toBe(undefined);
     expect(bootstrapSync?.settings.lightThemeId).toBe(undefined);
     expect(bootstrapSync?.settings.darkThemeId).toBe(undefined);
@@ -905,7 +906,37 @@ describe('updateDesktopSettings', () => {
 
     expect(synced.length).toBeGreaterThan(0);
     expect(synced.every((detail) => detail.bootstrap === false)).toBe(true);
+    expect(synced.every((detail) => detail.adoptTheme === false)).toBe(true);
     expect(synced.every((detail) => detail.settings.themeVariant === 'dark')).toBe(true);
+  });
+
+  test('allows a bootstrap sync to preserve the current window theme', async () => {
+    getWindow();
+    invalidateSettingsCache();
+    registerSettingsApi(
+      async (changes) => ({ ...changes } as SettingsPayload),
+      async () => ({
+        settings: { activeProjectId: 'project-a', themeVariant: 'dark' },
+        source: 'web',
+      }),
+    );
+
+    const synced: SettingsSyncedDetail[] = [];
+    const listener = (event: Event): void => {
+      const detail = (event as CustomEvent<SettingsSyncedDetail>).detail;
+      if (detail) synced.push(detail);
+    };
+    window.addEventListener('openchamber:settings-synced', listener);
+    try {
+      await syncDesktopSettings({ adoptTheme: false });
+    } finally {
+      window.removeEventListener('openchamber:settings-synced', listener);
+    }
+
+    const broadcastSync = synced.find((detail) => detail.bootstrap && !detail.adoptTheme);
+    expect(broadcastSync).toBeTruthy();
+    expect(broadcastSync?.settings.activeProjectId).toBe('project-a');
+    expect(broadcastSync?.settings.themeVariant).toBe('dark');
   });
 });
 

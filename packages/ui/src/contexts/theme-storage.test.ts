@@ -295,12 +295,12 @@ describe('settings sync resolution', () => {
   const serverTheme = { useSystemTheme: false as const, themeVariant: 'dark' as const, lightThemeId: 'server-light', darkThemeId: 'server-dark' };
 
   test('a non-bootstrap sync (settings save echo) never changes preferences', () => {
-    expect(resolveThemePreferencesFromSettingsSync({ bootstrap: false, settings: serverTheme }, current)).toBeNull();
+    expect(resolveThemePreferencesFromSettingsSync({ adoptTheme: false, settings: serverTheme }, current)).toBeNull();
     expect(resolveThemePreferencesFromSettingsSync(null, current)).toBeNull();
   });
 
   test('a bootstrap sync adopts the server theme', () => {
-    expect(resolveThemePreferencesFromSettingsSync({ bootstrap: true, settings: serverTheme }, current)).toEqual({
+    expect(resolveThemePreferencesFromSettingsSync({ adoptTheme: true, settings: serverTheme }, current)).toEqual({
       themeMode: 'dark',
       lightThemeId: 'server-light',
       darkThemeId: 'server-dark',
@@ -308,19 +308,19 @@ describe('settings sync resolution', () => {
   });
 
   test('theme fields omitted by the server keep the current preferences (not-set is not reset-to-defaults)', () => {
-    expect(resolveThemePreferencesFromSettingsSync({ bootstrap: true, settings: {} }, current)).toBeNull();
+    expect(resolveThemePreferencesFromSettingsSync({ adoptTheme: true, settings: {} }, current)).toBeNull();
     expect(
-      resolveThemePreferencesFromSettingsSync({ bootstrap: true, settings: { useSystemTheme: true } }, current),
+      resolveThemePreferencesFromSettingsSync({ adoptTheme: true, settings: { useSystemTheme: true } }, current),
     ).toBeNull();
     expect(
-      resolveThemePreferencesFromSettingsSync({ bootstrap: true, settings: { lightThemeId: 'server-light' } }, current),
+      resolveThemePreferencesFromSettingsSync({ adoptTheme: true, settings: { lightThemeId: 'server-light' } }, current),
     ).toEqual({ themeMode: 'system', lightThemeId: 'server-light', darkThemeId: 'dark-theme' });
   });
 
   test('a bootstrap sync carrying the current preferences resolves to no change', () => {
     expect(
       resolveThemePreferencesFromSettingsSync(
-        { bootstrap: true, settings: { useSystemTheme: true, lightThemeId: 'light-theme', darkThemeId: 'dark-theme' } },
+        { adoptTheme: true, settings: { useSystemTheme: true, lightThemeId: 'light-theme', darkThemeId: 'dark-theme' } },
         current,
       ),
     ).toBeNull();
