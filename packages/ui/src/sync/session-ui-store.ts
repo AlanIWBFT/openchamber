@@ -1707,7 +1707,21 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     if (targetSessionId && effectiveAgent) {
       useSelectionStore.getState().saveSessionAgentSelection(targetSessionId, effectiveAgent)
       useSelectionStore.getState().saveAgentModelForSession(targetSessionId, effectiveAgent, providerID, modelID)
-      useSelectionStore.getState().saveAgentModelVariantForSession(targetSessionId, effectiveAgent, providerID, modelID, variant)
+      // `variant` is the effective effort, inherited defaults included.
+      // Recording it verbatim would pin the inherited default as this
+      // session's explicit choice, so the picker jumps from "Default" to
+      // that effort after the send. When the send reflects the live picker
+      // selection, record only an explicit override; sends carrying a
+      // captured configuration for another context keep their variant.
+      const configState = useConfigStore.getState()
+      const reflectsLiveSelection = targetSessionId === get().currentSessionId
+        && configState.currentProviderId === providerID
+        && configState.currentModelId === modelID
+        && configState.currentAgentName === effectiveAgent
+      const variantToRecord = reflectsLiveSelection
+        ? configState.currentVariantSelection.override ?? undefined
+        : variant
+      useSelectionStore.getState().saveAgentModelVariantForSession(targetSessionId, effectiveAgent, providerID, modelID, variantToRecord)
     }
 
     if (targetSessionId) {
