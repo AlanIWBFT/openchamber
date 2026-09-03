@@ -10,6 +10,7 @@ import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
+import { CHAT_DRAFT_PROJECT_ID } from '@/lib/chatDirectories';
 import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
 
 /**
@@ -398,7 +399,10 @@ describe('openNewSessionDraft project binding', () => {
   const projectA = { id: 'proj-a', path: '/projects/alpha', label: 'Alpha' };
   const projectB = { id: 'proj-b', path: '/projects/beta', label: 'Beta' };
 
+  const DRAFT_TARGET_KEY = 'oc.chatInput.lastDraftTarget';
+
   beforeEach(() => {
+    getDeferredSafeStorage().removeItem(DRAFT_TARGET_KEY);
     useSessionUIStore.setState({
       currentSessionId: null,
       currentSessionDirectory: null,
@@ -410,6 +414,10 @@ describe('openNewSessionDraft project binding', () => {
       activeProjectId: projectA.id,
     });
     useDirectoryStore.getState().setDirectory(projectB.path, { showOverlay: false });
+  });
+
+  afterEach(() => {
+    getDeferredSafeStorage().removeItem(DRAFT_TARGET_KEY);
   });
 
   test('defaults an implicit draft to Chat when active project differs', () => {
@@ -448,6 +456,56 @@ describe('openNewSessionDraft project binding', () => {
 
     expect(draft.open).toBe(true);
     expect(draft.selectedProjectId).toBe(projectB.id);
+  });
+
+  test('reopens an implicit draft on the project the target selector was last set to', () => {
+    useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: projectB.id });
+    useSessionUIStore.getState().closeNewSessionDraft();
+    // A chat session leaves its managed scratch directory current; the project
+    // to reopen on can only come from the recorded target.
+    useDirectoryStore.getState().setDirectory(
+      '/Users/tester/.config/openchamber/chats/ses_chat',
+      { showOverlay: false },
+    );
+
+    useSessionUIStore.getState().openNewSessionDraft();
+    const draft = useSessionUIStore.getState().newSessionDraft;
+
+    expect(draft.target).toBe('project');
+    expect(draft.selectedProjectId).toBe(projectB.id);
+    expect(draft.directoryOverride).toBe(projectB.path);
+  });
+
+  test('setNewSessionDraftTarget records Chat, so the next implicit draft opens on Chat', () => {
+    useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: projectB.id });
+    useSessionUIStore.getState().setNewSessionDraftTarget({ projectId: CHAT_DRAFT_PROJECT_ID });
+    useSessionUIStore.getState().closeNewSessionDraft();
+
+    useSessionUIStore.getState().openNewSessionDraft();
+
+    expect(useSessionUIStore.getState().newSessionDraft.target).toBe('chat');
+  });
+
+  test('keeps the Chat default for a record written before the target was stored', () => {
+    getDeferredSafeStorage().setItem(
+      DRAFT_TARGET_KEY,
+      JSON.stringify({ projectId: projectB.id, directory: projectB.path }),
+    );
+
+    useSessionUIStore.getState().openNewSessionDraft();
+
+    expect(useSessionUIStore.getState().newSessionDraft.target).toBe('chat');
+  });
+
+  test('falls back to Chat when the last project target no longer exists', () => {
+    getDeferredSafeStorage().setItem(
+      DRAFT_TARGET_KEY,
+      JSON.stringify({ projectId: 'proj-removed', directory: '/projects/removed', target: 'project' }),
+    );
+
+    useSessionUIStore.getState().openNewSessionDraft();
+
+    expect(useSessionUIStore.getState().newSessionDraft.target).toBe('chat');
   });
 });
 

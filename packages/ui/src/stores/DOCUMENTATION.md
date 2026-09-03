@@ -218,11 +218,22 @@ Each of them therefore keeps two things:
   tracks the **active** project only.
 
 Thinking variants keep the effective value in `currentVariant` so existing send
-paths capture a stable configuration. The transient `currentVariantSelection`
-distinguishes automatic initialization from a picker or shortcut choosing an
-explicit override or `Default`; returning to `Default` restores its inherited
-effective value. Only explicit overrides are stored in the per-session
-selection store.
+paths capture a stable configuration. `currentVariantSelection` says where that
+value came from: a string is an effort chosen in the picker or by the shortcut,
+`null` is an explicit `Default`, and `undefined` is automatic initialization,
+which lets the inherited default apply.
+
+`Default` sends no effort at all. It cannot resolve back to the inherited
+default: the settings default would take effect again, and the next assistant
+reply echoes that effort back as an explicit choice, so the picker jumps off
+`Default` one message after the user chose it. For the same reason the
+per-session selection store records an explicit `Default` (as `null`) instead of
+clearing the entry — a cleared entry is indistinguishable from never having
+chosen, and the settings default wins again on the next agent or session switch.
+
+Every write of `currentVariant` writes `currentVariantSelection` with it. They
+are one selection; updating only the effective value leaves the picker showing
+one effort while sends carry another.
 
 Every loader and mutation takes an explicit directory; omitting it means the
 active project, which is what non-Settings callers pass. A load for another

@@ -31,7 +31,7 @@ import { useSkillsStore } from "@/stores/useSkillsStore"
 import { getDeferredSafeStorage } from "@/stores/utils/safeStorage"
 import { markPendingUserSendAnimation } from "@/lib/userSendAnimation"
 import { normalizePath } from "@/lib/pathNormalization"
-import { CHAT_DRAFT_PROJECT_ID, createChatDirectory, deleteChatDirectory, getChatsRootFromDirectory, warmChatsRootDirectory } from "@/lib/chatDirectories"
+import { CHAT_DRAFT_PROJECT_ID, createChatDirectory, deleteChatDirectory, getChatsRootFromDirectory, isChatDirectoryPath, warmChatsRootDirectory } from "@/lib/chatDirectories"
 import { isVSCodeRuntime } from "@/lib/desktop"
 import { flattenAssistantTextParts } from "@/lib/messages/messageText"
 import { composeForkSessionMessage } from "@/lib/messages/executionMeta"
@@ -261,6 +261,8 @@ function notifyMessageSent(sessionId: string): void {
 // Types
 // ---------------------------------------------------------------------------
 
+type NewSessionDraftTarget = "chat" | "project"
+
 export type NewSessionDraftState = {
   draftId: number
   open: boolean
@@ -276,7 +278,7 @@ export type NewSessionDraftState = {
   syntheticParts?: SyntheticContextPart[]
   targetFolderId?: string
   projectContextPins?: { notes: string[]; plans: string[] }
-  target: "chat" | "project"
+  target: NewSessionDraftTarget
   preparedChatDirectory?: string | null
 }
 
@@ -418,16 +420,25 @@ const resolveDirectoryKey = (session: Session): string | null => {
 const safeStorage = getDeferredSafeStorage()
 const DRAFT_TARGET_STORAGE_KEY = "oc.chatInput.lastDraftTarget"
 
-type PersistedDraftTarget = { projectId: string | null; directory: string | null }
+// `target` records which side of the composer's target selector the user last
+// worked on, so a plain "new session" reopens there instead of always landing
+// on Chat. Records written before this field existed carry no kind — they stay
+// `null` and leave the Chat default in place rather than guessing one.
+type PersistedDraftTarget = {
+  projectId: string | null
+  directory: string | null
+  target: NewSessionDraftTarget | null
+}
 
 const readPersistedDraftTarget = (): PersistedDraftTarget | null => {
   try {
     const raw = safeStorage.getItem(DRAFT_TARGET_STORAGE_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as { projectId?: unknown; directory?: unknown }
+    const parsed = JSON.parse(raw) as { projectId?: unknown; directory?: unknown; target?: unknown }
     return {
       projectId: typeof parsed?.projectId === "string" ? parsed.projectId : null,
       directory: normalizePath(typeof parsed?.directory === "string" ? parsed.directory : null),
+      target: parsed?.target === "chat" || parsed?.target === "project" ? parsed.target : null,
     }
   } catch {
     return null
@@ -723,7 +734,7 @@ const recoverStaleDraftDirectory = async (openedDraft: NewSessionDraftState): Pr
   }
   useSessionUIStore.setState({ newSessionDraft: nextDraft })
   writeRuntimeSessionMemory(runtimeMemoryKey(), { draft: nextDraft })
-  persistDraftTarget({ projectId: nextDraft.selectedProjectId ?? null, directory: recovered })
+  persistDraftTarget({ projectId: nextDraft.selectedProjectId ?? null, directory: recovered, target: nextDraft.target })
   void activateConfigForDirectory(recovered)
 }
 
@@ -831,6 +842,7 @@ export async function materializeOpenDraftSession(selection: {
   persistDraftTarget({
     projectId: draftProjectId,
     directory: createdDirectory,
+    target: draft.target,
   })
 
   const draftSyntheticParts = draft.syntheticParts
@@ -840,10 +852,13 @@ export async function materializeOpenDraftSession(selection: {
   })
 
   const effectiveDraftAgent = trimmedAgent ?? configState.currentAgentName
+  // An explicit "Default" (`null`) is carried over as-is. Flattening it to
+  // `undefined` here would leave the new session with no recorded choice, and
+  // the settings default effort would take the picker back over.
   const variantOverride = configState.currentProviderId === selection.providerID
     && configState.currentModelId === selection.modelID
     && configState.currentAgentName === effectiveDraftAgent
-    ? configState.currentVariantSelection.override ?? undefined
+    ? configState.currentVariantSelection.override
     : selection.variant
 
   useSelectionStore.getState().saveSessionModelSelection(created.id, selection.providerID, selection.modelID)
@@ -1106,14 +1121,34 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const explicitDirectory = options?.directoryOverride !== undefined
       ? normalizePath(options.directoryOverride)
       : null
+    const persistedProjectById = persistedTarget?.projectId
+      ? projects.find((p) => p.id === persistedTarget.projectId) ?? null
+      : null
+    const persistedProjectByDir = resolveDraftProjectForDirectory(projects, availableWorktreesByProject, persistedTarget?.directory ?? null)
+    const currentDirProject = resolveDraftProjectForDirectory(projects, availableWorktreesByProject, currentDirectory)
+    const persistedProject = persistedProjectById ?? persistedProjectByDir
+
+    // Nothing explicit was asked for: reopen on the side the user last worked
+    // on. Only a recorded project target that still resolves to an existing
+    // project beats Chat — a project removed since must not open a draft
+    // pointing at a directory that is no longer registered.
+    const restoresProjectTarget = !isVSCodeRuntime()
+      && !options?.target
+      && options?.directoryOverride === undefined
+      && options?.selectedProjectId === undefined
+      && persistedTarget?.target === "project"
+      && persistedProject !== null
+
     let target = isVSCodeRuntime() ? "project" : options?.target
     if (!target) {
       const hasExplicitProjectTarget = options?.directoryOverride !== undefined
         || (options?.selectedProjectId !== undefined && options.selectedProjectId !== CHAT_DRAFT_PROJECT_ID)
         || isVSCodeRuntime()
-      target = options?.selectedProjectId === CHAT_DRAFT_PROJECT_ID || !hasExplicitProjectTarget
+      target = options?.selectedProjectId === CHAT_DRAFT_PROJECT_ID
         ? "chat"
-        : "project"
+        : hasExplicitProjectTarget || restoresProjectTarget
+          ? "project"
+          : "chat"
     }
     const explicitProject = target === "project" && options?.selectedProjectId
       ? projects.find((p) => p.id === options.selectedProjectId) ?? null
@@ -1126,24 +1161,23 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       return projects[0] ?? null
     })()
 
-    const persistedProjectById = persistedTarget?.projectId
-      ? projects.find((p) => p.id === persistedTarget.projectId) ?? null
-      : null
-    const persistedProjectByDir = resolveDraftProjectForDirectory(projects, availableWorktreesByProject, persistedTarget?.directory ?? null)
-    const currentDirProject = resolveDraftProjectForDirectory(projects, availableWorktreesByProject, currentDirectory)
-
     const selectedProject = target === "chat" ? null : (() => {
       if (explicitProject) return explicitProject
       if (explicitDirectory !== null) return inferredProjectFromDir
-      if (currentDirectory) return currentDirProject
-      return persistedProjectByDir ?? persistedProjectById ?? fallbackProject
+      // A chat session leaves a managed scratch directory behind as the current
+      // one; it owns no project, so it must not decide this draft's project —
+      // the recorded target below knows which project the user last chose.
+      if (currentDirectory && !isChatDirectoryPath(currentDirectory)) return currentDirProject
+      return persistedProject ?? fallbackProject
     })()
 
     const directory = target === "chat" ? null : (() => {
       if (explicitDirectory !== null) return explicitDirectory
       if (explicitProject) return normalizePath(explicitProject.path ?? null)
-      if (currentDirectory) return currentDirectory
-      if (persistedTarget?.directory) return persistedTarget.directory
+      // A chat session's directory is a managed scratch folder, never a
+      // project: letting it through would open a project draft rooted in it.
+      if (currentDirectory && !isChatDirectoryPath(currentDirectory)) return currentDirectory
+      if (persistedTarget?.directory && !isChatDirectoryPath(persistedTarget.directory)) return persistedTarget.directory
       return normalizePath(selectedProject?.path ?? null)
     })()
 
@@ -1151,7 +1185,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       warmChatsRootDirectory()
     }
 
-    persistDraftTarget({ projectId: selectedProject?.id ?? null, directory })
+    persistDraftTarget({ projectId: selectedProject?.id ?? null, directory, target })
 
     const nextDraft: NewSessionDraftState = {
       draftId: nextDraftId++,
@@ -1304,6 +1338,15 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
           directoryOverride: target.projectId === CHAT_DRAFT_PROJECT_ID ? null : target.directoryOverride ?? s.newSessionDraft.directoryOverride,
         },
       }
+    })
+    // Picking a side of the target selector is the choice the next plain "new
+    // session" reopens on, so it is recorded here too — not only when a draft
+    // is opened or a session is created from one.
+    const chosenDraft = get().newSessionDraft
+    persistDraftTarget({
+      projectId: chosenDraft.target === "chat" ? null : chosenDraft.selectedProjectId ?? null,
+      directory: chosenDraft.directoryOverride ?? null,
+      target: chosenDraft.target,
     })
     void activateConfigForDirectory(nextDirectory)
 
