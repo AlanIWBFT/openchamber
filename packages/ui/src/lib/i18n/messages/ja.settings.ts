@@ -1,5 +1,4 @@
 import { linearIntegrationI18n } from './linear-integration.i18n';
-import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.providers.page.openCodeGo.title': 'OpenCode Go 使用量追跡',
   'settings.providers.page.openCodeGo.description': 'OpenCode Go ダッシュボードを接続して、ローリング、週間、月間のクォータを表示します。',
@@ -2234,5 +2233,6 @@ export const settingsDict = {
   'settings.openchamber.visual.option.followUpBehavior.steer.label': 'ステア',
   'settings.openchamber.visual.option.followUpBehavior.queue.label': 'キュー',
   ...linearIntegrationI18n.ja,
-  ...thirdPartyIntegrationI18n.ja,
+  'settings.page.integrations.title': '連携',
+  'settings.page.integrations.description': 'GitHub と Linear を接続すると、OpenChamber が Issue やプルリクエストを扱えるようになります。',
 } as const;

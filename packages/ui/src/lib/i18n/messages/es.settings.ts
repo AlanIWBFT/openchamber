@@ -1,5 +1,4 @@
 import { linearIntegrationI18n } from './linear-integration.i18n';
-import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.providers.page.openCodeGo.title': 'Seguimiento de uso de OpenCode Go',
   'settings.providers.page.openCodeGo.description': 'Conecta el panel de OpenCode Go para ver las cuotas móvil, semanal y mensual.',
@@ -2234,5 +2233,6 @@ export const settingsDict = {
   "settings.openchamber.visual.option.followUpBehavior.steer.label": "Steer",
   "settings.openchamber.visual.option.followUpBehavior.queue.label": "Queue",
   ...linearIntegrationI18n.es,
-  ...thirdPartyIntegrationI18n.es,
+  'settings.page.integrations.title': 'Integraciones',
+  'settings.page.integrations.description': 'Conecta GitHub y Linear para que OpenChamber pueda trabajar con tus issues y pull requests.',
 } as const;

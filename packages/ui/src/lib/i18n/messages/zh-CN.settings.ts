@@ -1,5 +1,4 @@
 import { linearIntegrationI18n } from './linear-integration.i18n';
-import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.providers.page.openCodeGo.title': 'OpenCode Go 用量跟踪',
   'settings.providers.page.openCodeGo.description': '连接 OpenCode Go 控制面板以显示滚动、每周和每月配额。',
@@ -2234,5 +2233,6 @@ export const settingsDict = {
   'settings.openchamber.visual.option.followUpBehavior.steer.label': 'Steer',
   'settings.openchamber.visual.option.followUpBehavior.queue.label': 'Queue',
   ...linearIntegrationI18n['zh-CN'],
-  ...thirdPartyIntegrationI18n['zh-CN'],
+  'settings.page.integrations.title': '集成',
+  'settings.page.integrations.description': '连接 GitHub 和 Linear，让 OpenChamber 可以处理你的 issue 和拉取请求。',
 } as const;
