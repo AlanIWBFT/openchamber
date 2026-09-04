@@ -292,7 +292,6 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
   const isLogLoading = useGitLoadingLog(gitDirectory ?? null);
   const {
     setActiveDirectory,
-    fetchAll,
     ensureAll,
     fetchStatus,
     fetchBranches,
@@ -308,7 +307,6 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     selectNestedRepo,
   } = useGitStore(useShallow((state) => ({
     setActiveDirectory: state.setActiveDirectory,
-    fetchAll: state.fetchAll,
     ensureAll: state.ensureAll,
     fetchStatus: state.fetchStatus,
     fetchBranches: state.fetchBranches,
