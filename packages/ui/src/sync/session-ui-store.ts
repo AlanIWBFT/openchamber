@@ -852,10 +852,13 @@ export async function materializeOpenDraftSession(selection: {
   })
 
   const effectiveDraftAgent = trimmedAgent ?? configState.currentAgentName
+  // An explicit "Default" (`null`) is carried over as-is. Flattening it to
+  // `undefined` here would leave the new session with no recorded choice, and
+  // the settings default effort would take the picker back over.
   const variantOverride = configState.currentProviderId === selection.providerID
     && configState.currentModelId === selection.modelID
     && configState.currentAgentName === effectiveDraftAgent
-    ? configState.currentVariantSelection.override ?? undefined
+    ? configState.currentVariantSelection.override
     : selection.variant
 
   useSelectionStore.getState().saveSessionModelSelection(created.id, selection.providerID, selection.modelID)
