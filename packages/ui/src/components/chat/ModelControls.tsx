@@ -878,11 +878,24 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             && getModelVariantOptions(latestLoadedUserChoice.providerID, latestLoadedUserChoice.modelID).includes(latestLoadedUserChoice.variant)
             ? latestLoadedUserChoice.variant
             : undefined;
+        const restoreAgentName = latestLoadedUserChoice.agent || currentAgentName || undefined;
+        // A message carrying no effort is not evidence that the user has none:
+        // a send under an explicit "Default" carries none either, and the echo
+        // of that very send arrives here. Keep what the session already
+        // recorded, and let a concrete historical effort replace it.
+        const restoredVariant = historicalVariant ?? (currentSessionId && restoreAgentName
+            ? getAgentModelVariantForSession(
+                currentSessionId,
+                restoreAgentName,
+                latestLoadedUserChoice.providerID,
+                latestLoadedUserChoice.modelID,
+            )
+            : undefined);
         const applyResult = applyModelSelectionWithVariant(
             latestLoadedUserChoice.providerID,
             latestLoadedUserChoice.modelID,
-            historicalVariant,
-            latestLoadedUserChoice.agent || currentAgentName || undefined,
+            restoredVariant,
+            restoreAgentName,
         );
         if (applyResult !== 'applied') {
             return;
@@ -906,6 +919,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         latestLoadedUserChoice,
         setAgent,
         applyModelSelectionWithVariant,
+        getAgentModelVariantForSession,
         getModelVariantOptions,
         getSessionModelSelection,
         resolveModelVariantSelection,

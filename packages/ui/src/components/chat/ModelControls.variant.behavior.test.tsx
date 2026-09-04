@@ -40,7 +40,7 @@ const provider = { id: PROVIDER_ID, name: PROVIDER_ID, models: [model] };
 const agent = { name: AGENT, mode: 'primary' as const };
 
 let latestUserChoice: UserModelChoice | null = null;
-let preserveManualOverride = false;
+let forcePreserveManualOverride: boolean | null = null;
 
 /** Every effort written for the session, in order, including `undefined`. */
 const variantWrites: VariantChoice[] = [];
@@ -175,9 +175,19 @@ const useUIStore = create(() => ({
 
 const passthrough = ({ children }: React.PropsWithChildren) => <div>{children}</div>;
 
+// Captured by value before the module is replaced: reading it back off the
+// namespace afterwards would resolve to the replacement and recurse.
+const { shouldPreserveManualModelOverride: realShouldPreserveManualModelOverride } =
+  await import('@/lib/messages/userModelChoice');
+
 mock.module('@/lib/messages/userModelChoice', () => ({
   findLatestUserModelChoice: () => latestUserChoice,
-  shouldPreserveManualModelOverride: () => preserveManualOverride,
+  // The real guard, unless a test opts out: whether it fires decides which
+  // restore branch runs, and the branch that erased a recorded Default is the
+  // one it declines to protect.
+  shouldPreserveManualModelOverride: (args: Parameters<typeof realShouldPreserveManualModelOverride>[0]) => (
+    forcePreserveManualOverride ?? realShouldPreserveManualModelOverride(args)
+  ),
 }));
 
 mock.module('@/stores/useConfigStore', () => ({ useConfigStore }));
@@ -316,7 +326,7 @@ describe('ModelControls effort restore', () => {
     variantWrites.length = 0;
     overrideWrites.length = 0;
     latestUserChoice = null;
-    preserveManualOverride = false;
+    forcePreserveManualOverride = null;
     useSelectionStore.setState({ savedVariant: undefined });
     useConfigStore.setState({
       currentProviderId: PROVIDER_ID,
@@ -356,9 +366,32 @@ describe('ModelControls effort restore', () => {
     }
   });
 
+  test('the echo of a Default send does not erase the recorded Default', async () => {
+    // The reported repro. The send under "Default" carried no effort, so the
+    // message it echoes back carries none either, and its model matches the one
+    // the send saved — which is exactly when the manual-override guard declines
+    // to protect the selection and the history branch runs.
+    latestUserChoice = { id: 'msg-echo', agent: AGENT, providerID: PROVIDER_ID, modelID: MODEL_ID };
+    useSelectionStore.setState({ savedVariant: null });
+    useConfigStore.setState({
+      selectionSource: 'manual',
+      settingsDefaultVariant: 'low',
+      currentVariantSelection: { override: null, inherited: 'low' },
+    });
+
+    const { cleanup } = await renderModelControls();
+    try {
+      expect(useSelectionStore.getState().savedVariant).toBeNull();
+      expect(useConfigStore.getState().currentVariantSelection.override).toBeNull();
+      expect(useConfigStore.getState().currentVariant).toBe(undefined);
+    } finally {
+      await cleanup();
+    }
+  });
+
   test('a preserved manual override keeps a recorded explicit Default', async () => {
     latestUserChoice = { id: 'msg-3', agent: AGENT, providerID: PROVIDER_ID, modelID: MODEL_ID, variant: 'high' };
-    preserveManualOverride = true;
+    forcePreserveManualOverride = true;
     useSelectionStore.setState({ savedVariant: null });
     useConfigStore.setState({ selectionSource: 'manual' });
 
