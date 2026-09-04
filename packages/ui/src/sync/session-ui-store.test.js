@@ -8,6 +8,7 @@ import { setActionRefs, setOptimisticRefs } from './session-actions';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useConfigStore } from '@/stores/useConfigStore';
+import { useSelectionStore } from './selection-store';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
 import { CHAT_DRAFT_PROJECT_ID } from '@/lib/chatDirectories';
@@ -1044,5 +1045,86 @@ describe('deleteSessions option forwarding', () => {
 
     expect(deleted).toBe(false);
     expect(deleteSessionCalls).toEqual([]);
+  });
+});
+
+describe('sendMessage effort record', () => {
+  let originalSendMessage;
+
+  const SESSION = 'session-effort';
+  const PROVIDER = 'provider-a';
+  const MODEL = 'model-a';
+  const AGENT = 'build';
+
+  const readRecord = () => useSelectionStore
+    .getState()
+    .getAgentModelVariantForSession(SESSION, AGENT, PROVIDER, MODEL);
+
+  beforeEach(() => {
+    const childStore = {
+      getState: () => ({ session: [], message: {}, part: {}, session_status: {} }),
+      setState: () => {},
+    };
+    const childStores = {
+      children: new Map(),
+      ensureChild: () => childStore,
+      getChild: () => childStore,
+    };
+    setActionRefs(opencodeClient, childStores, () => '/current/project');
+    setOptimisticRefs(() => {}, () => {});
+    useConfigStore.setState({
+      isConnected: true,
+      currentProviderId: PROVIDER,
+      currentModelId: MODEL,
+      currentAgentName: AGENT,
+      currentVariant: undefined,
+      currentVariantSelection: { override: undefined, inherited: undefined },
+    });
+    useSessionUIStore.setState({
+      currentSessionId: SESSION,
+      currentSessionDirectory: '/current/project',
+      newSessionDraft: { open: false, directoryOverride: null, parentID: null },
+    });
+    originalSendMessage = opencodeClient.sendMessage;
+    opencodeClient.sendMessage = async () => 'msg';
+  });
+
+  afterEach(() => {
+    opencodeClient.sendMessage = originalSendMessage;
+    useSelectionStore.getState().saveAgentModelVariantForSession(SESSION, AGENT, PROVIDER, MODEL, undefined);
+  });
+
+  const send = (variant) => useSessionUIStore.getState().sendMessage(
+    'hello', PROVIDER, MODEL, AGENT, undefined, undefined, undefined, variant, 'normal',
+  );
+
+  test('keeps an explicit Default across the send that follows it', async () => {
+    // What the picker leaves behind: `null` recorded, and a send that carries
+    // no effort because "Default" means exactly that.
+    useSelectionStore.getState().saveAgentModelVariantForSession(SESSION, AGENT, PROVIDER, MODEL, null);
+    useConfigStore.setState({ currentVariantSelection: { override: null, inherited: 'high' } });
+
+    await send(undefined);
+
+    expect(readRecord()).toBeNull();
+  });
+
+  test('records the effort a send carries', async () => {
+    useConfigStore.setState({ currentVariantSelection: { override: 'high', inherited: 'high' } });
+
+    await send('high');
+
+    expect(readRecord()).toBe('high');
+  });
+
+  test('records no choice when the live selection inherits its effort', async () => {
+    useConfigStore.setState({
+      currentVariant: 'high',
+      currentVariantSelection: { override: undefined, inherited: 'high' },
+    });
+
+    await send('high');
+
+    expect(readRecord()).toBe(undefined);
   });
 });

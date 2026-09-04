@@ -780,6 +780,29 @@ const createSessionWithDraftLifecycle = async (
   }
 }
 
+/**
+ * The effort a send should record for its session.
+ *
+ * A send carries `undefined` both when no effort was ever chosen and when the
+ * user explicitly picked "Default", so the sent value alone cannot tell the two
+ * apart, and recording it raw clears a real "Default". The live selection can
+ * tell them apart, because its `override` keeps `null` for "Default" — but only
+ * while it still describes the agent and model being sent to. Otherwise the
+ * send's own value is all there is to go on.
+ */
+const resolveVariantToRecord = (
+  agentName: string | undefined,
+  providerID: string,
+  modelID: string,
+  sentVariant: string | undefined,
+): string | null | undefined => {
+  const config = useConfigStore.getState()
+  const describesThisSend = config.currentProviderId === providerID
+    && config.currentModelId === modelID
+    && config.currentAgentName === agentName
+  return describesThisSend ? config.currentVariantSelection.override : sentVariant
+}
+
 export async function materializeOpenDraftSession(selection: {
   providerID: string
   modelID: string
@@ -852,14 +875,12 @@ export async function materializeOpenDraftSession(selection: {
   })
 
   const effectiveDraftAgent = trimmedAgent ?? configState.currentAgentName
-  // An explicit "Default" (`null`) is carried over as-is. Flattening it to
-  // `undefined` here would leave the new session with no recorded choice, and
-  // the settings default effort would take the picker back over.
-  const variantOverride = configState.currentProviderId === selection.providerID
-    && configState.currentModelId === selection.modelID
-    && configState.currentAgentName === effectiveDraftAgent
-    ? configState.currentVariantSelection.override
-    : selection.variant
+  const variantOverride = resolveVariantToRecord(
+    effectiveDraftAgent,
+    selection.providerID,
+    selection.modelID,
+    selection.variant,
+  )
 
   useSelectionStore.getState().saveSessionModelSelection(created.id, selection.providerID, selection.modelID)
 
@@ -1716,7 +1737,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     if (targetSessionId && effectiveAgent) {
       useSelectionStore.getState().saveSessionAgentSelection(targetSessionId, effectiveAgent)
       useSelectionStore.getState().saveAgentModelForSession(targetSessionId, effectiveAgent, providerID, modelID)
-      useSelectionStore.getState().saveAgentModelVariantForSession(targetSessionId, effectiveAgent, providerID, modelID, variant)
+      useSelectionStore.getState().saveAgentModelVariantForSession(
+        targetSessionId,
+        effectiveAgent,
+        providerID,
+        modelID,
+        resolveVariantToRecord(effectiveAgent, providerID, modelID, variant),
+      )
     }
 
     if (targetSessionId) {

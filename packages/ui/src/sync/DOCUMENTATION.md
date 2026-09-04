@@ -371,6 +371,14 @@ The global sessions store persists and hydrates one bounded, runtime-scoped star
 
 VS Code intentionally has no managed Chats mode. It neither reads nor writes the managed Chats startup cache, regular drafts continue to target the open workspace, and the global session store rejects managed chat sessions from both snapshots and live upserts before any VS Code surface can consume them. Sidebar and switcher filters repeat that exclusion defensively.
 
+### Remembering the last draft target
+
+`session-ui-store.ts` persists the side of the composer's target selector the user last worked on under `oc.chatInput.lastDraftTarget`, so a plain new session reopens there instead of always landing on Chat. The record holds a project id, a directory, and `target`, which is `"chat"`, `"project"`, or `null`.
+
+`null` is what a record written before `target` existed reads as, and it leaves the Chat default in place rather than guessing a side from the directory. A recorded project that no longer exists falls back to Chat the same way. Only a picker choice writes `"chat"` or `"project"`.
+
+A session's own directory is not a target choice. "New session in the current directory" forwards the current session's directory even when that session is a managed chat, and a chat scratch directory names no project, so those overrides resolve to a chat draft. Treating one as an explicit project target is how a plus pressed inside a chat opened a project draft.
+
 When creating a draft in `handleDirectoryEvent`, **only clone the state fields the event will mutate**. Never spread all fields eagerly.
 
 ```typescript
