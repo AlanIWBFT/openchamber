@@ -31,18 +31,30 @@ send never re-resolves mutable UI state:
 {
   id, createdAt,
   content,        // raw text for display and editing
-  text,           // text to deliver (agent mention stripped); defaults to content
+  text,           // text to deliver (agent mention stripped, file mentions resolved); defaults to content
   agentMention?,  // delivered as an `agent` part
   attachments: [{ id, filename, mimeType, size, source, serverPath?, dataUrl }],
+  context: [      // what the composer had attached, in send order
+    { kind: 'context', text, metadata, instructions? },  // a draft chip or linked issue/PR; metadata is the UI's structured payload
+    { kind: 'instruction', text },                       // derived from the text (skill instruction)
+    { kind: 'synthetic', text },                         // handed to the composer by another surface
+  ],
   sendConfig: { providerID, modelID, agent?, variant? }   // required
 }
 ```
 
+The server is a courier for `context`: it validates the shape (a kind it
+knows, a `metadata` object on `context` entries) and delivers each entry as a
+synthetic text part, an entry's `instructions` going out as its own part just
+before it and its `metadata` riding the part verbatim so the timeline renders
+the context block back. The payload inside `metadata` is the UI's contract
+(`lib/messages/contextParts.ts`), parsed by the UI on the way back.
+
 `parseQueuedItemInput` rejects anything the server could not deliver later
-(no text and no attachments, missing model, malformed attachment). Public
-snapshots and broadcasts strip `dataUrl` from attachments — payloads can be
-megabytes of base64 and must not ride every update; the only way to get them
-back is a `take`.
+(no text, attachments, or context; missing model; malformed attachment or
+context entry). Public snapshots and broadcasts strip the payloads —
+attachment `dataUrl` (megabytes of base64) and `context` (a PR diff, say) —
+so they do not ride every update; the only way to get them back is a `take`.
 
 ## Persistence
 
@@ -86,9 +98,10 @@ persisted "sending" flag would strand a message forever.
      list (skills included) goes to `POST /session/:id/command` with the
      captured model, agent, variant, and file parts;
    - otherwise `POST /session/:id/prompt_async` with the parts in the same
-     order a UI send uses: text, files, pending project knowledge
-     (`sessionKnowledgeRuntime.resolvePendingForSession`, synthetic, recorded
-     as delivered only after the prompt is accepted), then the agent mention.
+     order a UI send uses: text, files, the captured context, pending project
+     knowledge (`sessionKnowledgeRuntime.resolvePendingForSession`, synthetic,
+     recorded as delivered only after the prompt is accepted), then the agent
+     mention. The command path sends files and captured context as `parts`.
    Success removes the item, persists, broadcasts, and marks the user
    message sent for notifications. Failure keeps the item, backs off
    2 s → 60 s (doubling per consecutive failure of that item), and re-arms.

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Event } from '@opencode-ai/sdk/v2';
 import { createDeferredSafeJSONStorage } from './utils/safeStorage';
 import type { AttachedFile } from './types/sessionTypes';
+import { contextPartMetadataSchema, type ContextPartMetadata } from '@/lib/messages/contextParts';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { isVSCodeRuntime } from '@/lib/desktop';
@@ -59,10 +60,43 @@ export interface QueuedMessageSendConfig {
     variant?: string;
 }
 
+/**
+ * Context captured with a queued message: whatever the composer had attached
+ * when the message was queued. It leaves the composer with the message, so
+ * delivery (by the server, or by the auto-send hook in VS Code) carries it and
+ * editing the message brings it back.
+ */
+export type QueuedContextPart =
+    | {
+        /** An attached context item: a draft chip or a linked issue/PR. Restored on edit. */
+        kind: 'context';
+        text: string;
+        metadata: ContextPartMetadata;
+        /** Delivered as its own synthetic part right before this one (a linked PR's reading instructions). */
+        instructions?: string;
+    }
+    | {
+        /** Derived from the message text (the skill instruction); re-derived when the text is sent again, so never restored. */
+        kind: 'instruction';
+        text: string;
+    }
+    | {
+        /** Handed to the composer by another surface (conflict resolution); restored as pending on edit. */
+        kind: 'synthetic';
+        text: string;
+    };
+
 export interface QueuedMessage {
     id: string;
+    /** What the user typed, for display and editing. */
     content: string;
+    /** What is delivered: `content` without its leading agent mention, file mentions already resolved. */
+    text: string;
+    /** Agent mentioned at the start of `content`, delivered as an agent part. */
+    agentMention?: string;
     attachments?: AttachedFile[];
+    /** Absent on a server projection item; a take brings it back. */
+    context?: QueuedContextPart[];
     createdAt: number;
     /** Send config captured at queue time — used as-is when auto-sending */
     sendConfig?: QueuedMessageSendConfig;
@@ -70,12 +104,12 @@ export interface QueuedMessage {
 
 interface QueuedMessageInput {
     content: string;
-    attachments?: AttachedFile[];
-    sendConfig?: QueuedMessageSendConfig;
-    /** Text to deliver once the agent mention is stripped; defaults to `content`. */
+    /** Defaults to `content`. */
     text?: string;
-    /** Agent mentioned at the start of `content`, delivered as an agent part. */
     agentMention?: string;
+    attachments?: AttachedFile[];
+    context?: QueuedContextPart[];
+    sendConfig?: QueuedMessageSendConfig;
 }
 
 export type MessageQueueTarget = {
@@ -127,12 +161,26 @@ const serverAttachmentSchema = z.object({
     dataUrl: z.string().optional(),
 });
 
+const serverContextPartSchema = z.discriminatedUnion('kind', [
+    z.object({
+        kind: z.literal('context'),
+        text: z.string(),
+        metadata: contextPartMetadataSchema,
+        instructions: z.string().optional(),
+    }),
+    z.object({ kind: z.literal('instruction'), text: z.string() }),
+    z.object({ kind: z.literal('synthetic'), text: z.string() }),
+]);
+
 const serverItemSchema = z.object({
     id: z.string().min(1),
     createdAt: z.number(),
     content: z.string(),
+    text: z.string(),
     agentMention: z.string().optional(),
     attachments: z.array(serverAttachmentSchema),
+    /** Present only on a taken item; broadcasts and snapshots omit it like attachment payloads. */
+    context: z.array(serverContextPartSchema).optional(),
     sendConfig: serverSendConfigSchema,
 });
 
@@ -199,13 +247,19 @@ const toAttachedFile = (attachment: ServerQueueAttachment): AttachedFile => {
     return file;
 };
 
-const toQueuedMessage = (item: ServerQueueItem): QueuedMessage => ({
-    id: item.id,
-    content: item.content,
-    createdAt: item.createdAt,
-    attachments: item.attachments.length > 0 ? item.attachments.map(toAttachedFile) : undefined,
-    sendConfig: { ...item.sendConfig },
-});
+const toQueuedMessage = (item: ServerQueueItem): QueuedMessage => {
+    const message: QueuedMessage = {
+        id: item.id,
+        content: item.content,
+        text: item.text,
+        createdAt: item.createdAt,
+        sendConfig: { ...item.sendConfig },
+    };
+    if (item.agentMention) message.agentMention = item.agentMention;
+    if (item.attachments.length > 0) message.attachments = item.attachments.map(toAttachedFile);
+    if (item.context) message.context = item.context;
+    return message;
+};
 
 type ServerQueueAttachmentInput = Omit<ServerQueueAttachment, 'dataUrl'> & { dataUrl: string };
 
@@ -214,6 +268,7 @@ type ServerQueueItemInput = {
     text: string;
     agentMention?: string;
     attachments: ServerQueueAttachmentInput[];
+    context: QueuedContextPart[];
     sendConfig: QueuedMessageSendConfig;
 };
 
@@ -240,6 +295,7 @@ const toServerItemInput = (message: QueuedMessageInput, sendConfig: QueuedMessag
         content: message.content,
         text: message.text ?? message.content,
         attachments: (message.attachments ?? []).filter((file) => Boolean(file.dataUrl)).map(toServerAttachment),
+        context: message.context ?? [],
         sendConfig,
     };
     if (message.agentMention) item.agentMention = message.agentMention;
@@ -327,22 +383,32 @@ interface MessageQueueActions {
 
 type MessageQueueStore = MessageQueueState & MessageQueueActions;
 
+/** Messages persisted before version 3 carried only `content`. */
+type PersistedQueuedMessage = Omit<QueuedMessage, 'text'> & { text?: string };
+
 type PersistedMessageQueueState = {
-    queuedMessages?: Record<string, QueuedMessage[]>;
-    quarantinedLegacyMessages?: Record<string, QueuedMessage[]>;
+    queuedMessages?: Record<string, PersistedQueuedMessage[]>;
+    quarantinedLegacyMessages?: Record<string, PersistedQueuedMessage[]>;
     followUpBehavior?: FollowUpBehavior;
     queueModeEnabled?: boolean;
 };
+
+const withDeliveryText = (queues: Record<string, PersistedQueuedMessage[]>): Record<string, QueuedMessage[]> => (
+    Object.fromEntries(Object.entries(queues).map(([key, queue]) => [
+        key,
+        queue.map((message) => ({ ...message, text: message.text ?? message.content })),
+    ]))
+);
 
 export const migrateMessageQueueState = (persistedState: unknown, version: number): Partial<MessageQueueStore> => {
     const state = (persistedState ?? {}) as PersistedMessageQueueState;
     const legacyQueues = version < 2 ? (state.queuedMessages ?? {}) : {};
     return {
-        queuedMessages: version < 2 ? {} : (state.queuedMessages ?? {}),
-        quarantinedLegacyMessages: {
+        queuedMessages: version < 2 ? {} : withDeliveryText(state.queuedMessages ?? {}),
+        quarantinedLegacyMessages: withDeliveryText({
             ...(state.quarantinedLegacyMessages ?? {}),
             ...legacyQueues,
-        },
+        }),
         followUpBehavior: normalizeFollowUpBehavior(state.followUpBehavior, state.queueModeEnabled ?? null),
     };
 };
@@ -424,10 +490,13 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                         const queuedMessage: QueuedMessage = {
                             id,
                             content: message.content,
-                            attachments: message.attachments,
+                            text: message.text ?? message.content,
                             createdAt: Date.now(),
                             sendConfig: message.sendConfig,
                         };
+                        if (message.agentMention) queuedMessage.agentMention = message.agentMention;
+                        if (message.attachments && message.attachments.length > 0) queuedMessage.attachments = message.attachments;
+                        if (message.context && message.context.length > 0) queuedMessage.context = message.context;
 
                         set((state) => {
                             const currentQueue = state.queuedMessages[key] ?? [];
@@ -694,7 +763,7 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
             },
             {
                 name: 'message-queue-store',
-                version: 2,
+                version: 3,
                 storage: createDeferredSafeJSONStorage(),
                 partialize: (state) => ({
                     queuedMessages: Object.fromEntries(

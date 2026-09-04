@@ -29,8 +29,8 @@ describe('cleanupPersistedSessionState', () => {
     // way a server snapshot would, and expect only the projection to go.
     useMessageQueueStore.setState({
       queuedMessages: {
-        [getMessageQueueKey(deleted)]: [{ id: 'q-delete', content: 'delete', createdAt: 1 }],
-        [getMessageQueueKey(retained)]: [{ id: 'q-retain', content: 'retain', createdAt: 1 }],
+        [getMessageQueueKey(deleted)]: [{ id: 'q-delete', content: 'delete', text: 'delete', createdAt: 1 }],
+        [getMessageQueueKey(retained)]: [{ id: 'q-retain', content: 'retain', text: 'retain', createdAt: 1 }],
       },
     });
     useTodosPersistStore.getState().setSessionTodos('/repo-a', 'session-1', [todo]);

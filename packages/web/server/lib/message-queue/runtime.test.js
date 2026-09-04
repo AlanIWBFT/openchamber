@@ -109,8 +109,30 @@ describe('parseQueuedItemInput', () => {
       text: 'hello',
       agentMention: 'reviewer',
       attachments: [],
+      context: [],
       sendConfig: { providerID: 'anthropic', modelID: 'claude', agent: 'build' },
     });
+  });
+
+  it('keeps captured context and rejects a malformed part', () => {
+    const context = [
+      { kind: 'context', text: 'Comment on `a.ts`', metadata: { openchamberContext: { kind: 'code-comment' } }, instructions: '' },
+      { kind: 'instruction', text: 'use the skill' },
+      { kind: 'synthetic', text: 'conflict payload' },
+    ];
+    expect(parseQueuedItemInput(item({ context })).context).toEqual([
+      { kind: 'context', text: 'Comment on `a.ts`', metadata: { openchamberContext: { kind: 'code-comment' } } },
+      { kind: 'instruction', text: 'use the skill' },
+      { kind: 'synthetic', text: 'conflict payload' },
+    ]);
+    expect(() => parseQueuedItemInput(item({ context: [{ kind: 'context', text: 'no metadata' }] }))).toThrow(TypeError);
+    expect(() => parseQueuedItemInput(item({ context: [{ kind: 'other', text: 'x' }] }))).toThrow(TypeError);
+  });
+
+  it('accepts an item that is only context', () => {
+    const parsed = parseQueuedItemInput(item({ content: '', text: '', context: [{ kind: 'synthetic', text: 'just context' }] }));
+    expect(parsed.text).toBe('');
+    expect(parsed.context).toHaveLength(1);
   });
 });
 
@@ -322,6 +344,64 @@ describe('message queue runtime', () => {
     expect(openCode.state.sent).toHaveLength(1);
     expect(openCode.state.sent[0].path).toBe(`/session/${SESSION}/command`);
     expect(openCode.state.sent[0].body).toEqual({ command: 'review', arguments: 'src', model: 'p/m', agent: 'build', variant: 'max' });
+  });
+
+  it('delivers captured context as synthetic parts, instructions first, before project knowledge', async () => {
+    const knowledge = {
+      resolvePendingForSession: async () => ({ text: 'pinned notes', signature: 'sig-1' }),
+      recordDelivered: async () => {},
+    };
+    const { runtime, openCode, emit } = createRuntime({ knowledge });
+    runtime.start();
+    const metadata = { openchamberContext: { kind: 'github-pr', number: 7, title: 'PR', url: 'https://x/pr/7' } };
+    await runtime.enqueue(SESSION, DIRECTORY, item({
+      agentMention: 'reviewer',
+      attachments: [{ id: 'a', filename: 'f.txt', mimeType: 'text/plain', size: 1, source: 'local', dataUrl: 'data:text/plain,hi' }],
+      context: [
+        { kind: 'context', text: 'the diff', metadata, instructions: 'how to read it' },
+        { kind: 'synthetic', text: 'conflict payload' },
+        { kind: 'instruction', text: 'use the skill' },
+      ],
+    }));
+    emit({ type: 'session.status', properties: { sessionID: SESSION, status: { type: 'idle' } } });
+    await settle();
+    expect(openCode.state.sent[0].body.parts).toEqual([
+      { type: 'text', text: 'follow up' },
+      { type: 'file', mime: 'text/plain', filename: 'f.txt', url: 'data:text/plain,hi' },
+      { type: 'text', text: 'how to read it', synthetic: true },
+      { type: 'text', text: 'the diff', synthetic: true, metadata },
+      { type: 'text', text: 'conflict payload', synthetic: true },
+      { type: 'text', text: 'use the skill', synthetic: true },
+      { type: 'text', text: 'pinned notes', synthetic: true },
+      { type: 'agent', name: 'reviewer' },
+    ]);
+  });
+
+  it('sends captured context with a slash command too', async () => {
+    const { runtime, openCode, emit } = createRuntime();
+    runtime.start();
+    openCode.state.commands = [{ name: 'review' }];
+    await runtime.enqueue(SESSION, DIRECTORY, item({
+      content: '/review',
+      text: '/review',
+      context: [{ kind: 'synthetic', text: 'focus on tests' }],
+    }));
+    emit({ type: 'session.status', properties: { sessionID: SESSION, status: { type: 'idle' } } });
+    await settle();
+    expect(openCode.state.sent[0].path).toBe(`/session/${SESSION}/command`);
+    expect(openCode.state.sent[0].body.parts).toEqual([{ type: 'text', text: 'focus on tests', synthetic: true }]);
+  });
+
+  it('keeps captured context out of snapshots and broadcasts, and hands it back on take', async () => {
+    const { runtime, broadcasts } = createRuntime();
+    runtime.start();
+    const context = [{ kind: 'synthetic', text: 'a large diff' }];
+    const { itemId } = await runtime.enqueue(SESSION, DIRECTORY, item({ context }));
+    expect(runtime.sessionSnapshot(SESSION).items[0]).not.toHaveProperty('context');
+    expect(runtime.sessionSnapshot(SESSION).items[0].text).toBe('follow up');
+    expect(broadcasts.at(-1).properties.session.items[0]).not.toHaveProperty('context');
+    const taken = await runtime.take(SESSION, itemId);
+    expect(taken.item.context).toEqual(context);
   });
 
   it('attaches pending project knowledge and records its delivery', async () => {

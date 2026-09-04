@@ -37,6 +37,10 @@ const FETCH_TIMEOUT_MS = 15_000;
 const MESSAGE_TAIL_LIMIT = 2;
 
 const ATTACHMENT_SOURCES = new Set(['local', 'server', 'vscode']);
+// Context captured with a queued message (see QueuedContextPart in the UI
+// store): attached context items carry metadata the timeline renders back;
+// the other kinds are plain synthetic text.
+const CONTEXT_PART_KINDS = new Set(['context', 'instruction', 'synthetic']);
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{4,128}$/;
 
 const getQueuedSendRetryDelayMs = (failures) =>
@@ -89,6 +93,21 @@ const parseAttachment = (value) => {
   return attachment;
 };
 
+const parseContextPart = (value) => {
+  const raw = asRecord(value);
+  if (!raw || !CONTEXT_PART_KINDS.has(raw.kind)) return null;
+  const text = asText(raw.text);
+  if (raw.kind !== 'context') return { kind: raw.kind, text };
+  // The metadata is the UI's structured payload; the server only carries it
+  // to the prompt, so its shape is the UI's to validate on the way back.
+  const metadata = asRecord(raw.metadata);
+  if (!metadata) return null;
+  const part = { kind: 'context', text, metadata };
+  const instructions = asNonEmptyString(raw.instructions);
+  if (instructions) part.instructions = instructions;
+  return part;
+};
+
 /**
  * Validates a queued item posted by a client. Throws a TypeError (→ 400) for
  * anything that could not be delivered later: a queue must never hold an item
@@ -102,13 +121,18 @@ export const parseQueuedItemInput = (value) => {
   const text = raw.text === undefined ? content : asText(raw.text);
   const attachments = (asList(raw.attachments) ?? []).map(parseAttachment);
   if (attachments.some((attachment) => attachment === null)) throw new TypeError('invalid attachment');
-  if (!text.trim() && attachments.length === 0) throw new TypeError('item needs text or attachments');
+  const context = (asList(raw.context) ?? []).map(parseContextPart);
+  if (context.some((part) => part === null)) throw new TypeError('invalid context part');
+  if (!text.trim() && attachments.length === 0 && context.length === 0) {
+    throw new TypeError('item needs text, attachments, or context');
+  }
   const sendConfig = parseSendConfig(raw.sendConfig);
   if (!sendConfig) throw new TypeError('item sendConfig with providerID and modelID is required');
   const item = { content, text };
   const agentMention = asNonEmptyString(raw.agentMention);
   if (agentMention) item.agentMention = agentMention;
   item.attachments = attachments;
+  item.context = context;
   item.sendConfig = sendConfig;
   return item;
 };
@@ -126,10 +150,11 @@ const parseStoredItem = (value) => {
 
 const toPublicAttachment = ({ dataUrl: _dataUrl, ...attachment }) => attachment;
 
-// What clients see: everything except attachment payloads, which can be
-// megabytes of base64 and would otherwise ride every broadcast.
+// What clients see: everything except the payloads — attachment data URLs
+// (megabytes of base64) and captured context (a PR diff, say) — which would
+// otherwise ride every broadcast. A take hands the full item back.
 const toPublicItem = (item) => {
-  const publicItem = { id: item.id, createdAt: item.createdAt, content: item.content };
+  const publicItem = { id: item.id, createdAt: item.createdAt, content: item.content, text: item.text };
   if (item.agentMention) publicItem.agentMention = item.agentMention;
   publicItem.attachments = item.attachments.map(toPublicAttachment);
   publicItem.sendConfig = { ...item.sendConfig };
@@ -371,15 +396,29 @@ export function createMessageQueueRuntime({
     url: attachment.dataUrl,
   });
 
+  // Captured context is delivered the way the composer delivers it: one
+  // synthetic text part per entry, an attached item's metadata riding along
+  // and its reading instructions (a linked PR) going first.
+  const toContextParts = (part) => {
+    const synthetic = { type: 'text', text: part.text, synthetic: true };
+    if (part.kind !== 'context') return [synthetic];
+    synthetic.metadata = part.metadata;
+    return part.instructions
+      ? [{ type: 'text', text: part.instructions, synthetic: true }, synthetic]
+      : [synthetic];
+  };
+
   const sendItem = async (sessionId, directory, item) => {
     const { providerID, modelID, agent, variant } = item.sendConfig;
     const fileParts = item.attachments.map(toFilePart);
+    const contextParts = item.context.flatMap(toContextParts);
     const command = await resolveSlashCommand(item.text, directory);
     if (command) {
       const body = { command: command.name, arguments: command.arguments, model: `${providerID}/${modelID}` };
       if (agent) body.agent = agent;
       if (variant) body.variant = variant;
-      if (fileParts.length > 0) body.parts = fileParts;
+      const extraParts = [...fileParts, ...contextParts];
+      if (extraParts.length > 0) body.parts = extraParts;
       await openCodeFetch(`/session/${encodeURIComponent(sessionId)}/command`, { directory, method: 'POST', body });
       return;
     }
@@ -390,11 +429,12 @@ export function createMessageQueueRuntime({
       ? await sessionKnowledgeRuntime.resolvePendingForSession(sessionId, directory)
         .catch(() => ({ text: '', signature: '' }))
       : { text: '', signature: '' };
-    // Same order as a UI send: the user's text and files, then the standing
-    // context, then the mentioned agent.
+    // Same order as a UI send: the user's text and files, the context queued
+    // with them, then the standing context, then the mentioned agent.
     const parts = [];
     if (item.text.trim()) parts.push({ type: 'text', text: item.text });
     parts.push(...fileParts);
+    parts.push(...contextParts);
     if (knowledge.text) parts.push({ type: 'text', text: knowledge.text, synthetic: true });
     if (item.agentMention) parts.push({ type: 'agent', name: item.agentMention });
     const body = { model: { providerID, modelID } };

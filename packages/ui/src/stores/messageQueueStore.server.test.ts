@@ -49,10 +49,13 @@ const serverItem = (id: string, content: string, extra: Partial<ServerItem> = {}
   id,
   createdAt: 1,
   content,
+  text: content,
   attachments: [],
   sendConfig: { providerID: "p", modelID: "m" },
   ...extra,
 })
+
+const issueMetadata = { openchamberContext: { kind: "github-issue" as const, number: 3, title: "Bug", url: "https://x/issues/3" } }
 
 const session = (items: ServerItem[], sendingId: string | null = null): ServerSession => ({
   sessionId: "session-1",
@@ -90,7 +93,7 @@ describe("server-owned message queue", () => {
   test("hydrate uploads messages queued by an older build before reading the server", async () => {
     useMessageQueueStore.setState({
       queuedMessages: {
-        [key]: [{ id: "local-1", content: "from before", createdAt: 1, sendConfig: { providerID: "p", modelID: "m" } }],
+        [key]: [{ id: "local-1", content: "from before", text: "from before", createdAt: 1, sendConfig: { providerID: "p", modelID: "m" } }],
       },
     })
     respond = (call) => (call.method === "POST"
@@ -101,7 +104,7 @@ describe("server-owned message queue", () => {
     expect(calls[0]).toEqual({
       method: "POST",
       path: "/api/message-queue/sessions/session-1/items",
-      body: { directory: "/repo", item: { content: "from before", text: "from before", attachments: [], sendConfig: { providerID: "p", modelID: "m" } } },
+      body: { directory: "/repo", item: { content: "from before", text: "from before", attachments: [], context: [], sendConfig: { providerID: "p", modelID: "m" } } },
     })
     expect(calls[1]?.path).toBe("/api/message-queue")
     expect(useMessageQueueStore.getState().queuedMessages[key]?.map((m) => m.id)).toEqual(["q1"])
@@ -138,11 +141,42 @@ describe("server-owned message queue", () => {
           text: "hi",
           agentMention: "reviewer",
           attachments: [{ id: "att-1", filename: "note.txt", mimeType: "text/plain", size: 2, source: "local", dataUrl: attachment.dataUrl }],
+          context: [],
           sendConfig: { providerID: "p", modelID: "m", agent: "build" },
         },
       },
     })
     expect(useMessageQueueStore.getState().queuedMessages[key]?.map((m) => m.id)).toEqual(["srv-1"])
+  })
+
+  test("addToQueue hands the captured context to the server, and a take brings it back", async () => {
+    const context = [
+      { kind: "context" as const, text: "issue body", metadata: issueMetadata },
+      { kind: "synthetic" as const, text: "conflict payload" },
+    ]
+    respond = () => json({ revision: 6, session: session([serverItem("srv-1", "with context")]) })
+    await useMessageQueueStore.getState().addToQueue(target, {
+      content: "with context",
+      context,
+      sendConfig: { providerID: "p", modelID: "m" },
+    })
+    expect(calls[0]?.body.item.context).toEqual(context)
+    // The projection carries no context; the server strips payloads from snapshots.
+    expect(useMessageQueueStore.getState().queuedMessages[key]?.[0]?.context).toBe(undefined)
+
+    respond = () => json({ revision: 7, session: session([]), item: serverItem("srv-1", "with context", { context }) })
+    const [taken] = await useMessageQueueStore.getState().takeForSend(target, "srv-1")
+    expect(taken?.context).toEqual(context)
+    expect(taken?.text).toBe("with context")
+  })
+
+  test("a server item with malformed context is rejected at the boundary", async () => {
+    respond = () => new Response(JSON.stringify({
+      revision: 8,
+      session: session([]),
+      item: { ...serverItem("srv-1", "x"), context: [{ kind: "context", text: "x", metadata: { openchamberContext: { kind: "nope" } } }] },
+    }), { status: 200 })
+    await expect(useMessageQueueStore.getState().takeForSend(target, "srv-1")).rejects.toThrow()
   })
 
   test("addToQueue rolls the optimistic entry back when the server refuses", async () => {
@@ -200,7 +234,7 @@ describe("server-owned message queue", () => {
   })
 
   test("removeFromQueue and clearQueue update locally and tell the server", async () => {
-    useMessageQueueStore.setState({ queuedMessages: { [key]: [{ id: "q1", content: "a", createdAt: 1 }, { id: "q2", content: "b", createdAt: 2 }] } })
+    useMessageQueueStore.setState({ queuedMessages: { [key]: [{ id: "q1", content: "a", text: "a", createdAt: 1 }, { id: "q2", content: "b", text: "b", createdAt: 2 }] } })
     respond = () => json({ revision: 10, session: session([serverItem("q2", "b")]) })
     useMessageQueueStore.getState().removeFromQueue(target, "q1")
     expect(useMessageQueueStore.getState().queuedMessages[key]?.map((m) => m.id)).toEqual(["q2"])
@@ -216,7 +250,7 @@ describe("server-owned message queue", () => {
   })
 
   test("reorderQueue sends the complete new order", async () => {
-    useMessageQueueStore.setState({ queuedMessages: { [key]: [{ id: "q1", content: "a", createdAt: 1 }, { id: "q2", content: "b", createdAt: 2 }] } })
+    useMessageQueueStore.setState({ queuedMessages: { [key]: [{ id: "q1", content: "a", text: "a", createdAt: 1 }, { id: "q2", content: "b", text: "b", createdAt: 2 }] } })
     respond = () => json({ revision: 12, session: session([serverItem("q2", "b"), serverItem("q1", "a")]) })
     useMessageQueueStore.getState().reorderQueue(target, "q2", "q1")
     await Promise.resolve()

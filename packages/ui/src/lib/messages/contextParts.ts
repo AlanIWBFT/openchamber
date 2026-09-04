@@ -315,6 +315,12 @@ const contextPayloadSchema = z.discriminatedUnion('kind', [
     }),
 ]);
 
+/**
+ * Part metadata carrying a context payload, for parsing at a trust boundary
+ * (a queued message coming back from the server, for instance).
+ */
+export const contextPartMetadataSchema = z.object({ [CONTEXT_METADATA_KEY]: contextPayloadSchema });
+
 /** The subset of a message part that context read-back inspects. */
 export type ContextCarrierPart = { type: string } & Pick<TextPart, 'metadata'>;
 
