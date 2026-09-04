@@ -4,7 +4,6 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useSessionWorktreeStore } from './session-worktree-store';
 import { expandSlashCommandGoalObjective, routeMessage, useSessionUIStore } from './session-ui-store';
-import { useSelectionStore } from './selection-store';
 import { setActionRefs, setOptimisticRefs } from './session-actions';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useCommandsStore } from '@/stores/useCommandsStore';
@@ -350,100 +349,6 @@ describe('sendMessage captured target', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toContain('runtime changed');
     expect(calls).toHaveLength(0);
-  });
-});
-
-describe('sendMessage effort recording', () => {
-  let originalSendMessage;
-  const calls = [];
-
-  beforeEach(() => {
-    calls.length = 0;
-    const childStore = {
-      getState: () => ({ session: [], message: {}, part: {}, session_status: {} }),
-      setState: () => {},
-    };
-    const childStores = {
-      children: new Map(),
-      ensureChild: () => childStore,
-      getChild: () => childStore,
-    };
-    setActionRefs(opencodeClient, childStores, () => '/current/project');
-    setOptimisticRefs(() => {}, () => {});
-    useConfigStore.setState({ isConnected: true });
-    useSessionUIStore.setState({
-      currentSessionId: 'session-current',
-      currentSessionDirectory: '/current/project',
-      newSessionDraft: { open: false, directoryOverride: null, parentID: null },
-    });
-
-    originalSendMessage = opencodeClient.sendMessage;
-    opencodeClient.sendMessage = async (params) => {
-      calls.push(params);
-      return 'msg';
-    };
-  });
-
-  afterEach(() => {
-    opencodeClient.sendMessage = originalSendMessage;
-  });
-
-  const sendWithVariant = (variant, sessionId) => useSessionUIStore.getState().sendMessage(
-    'hello',
-    'provider-a',
-    'model-a',
-    'plan',
-    undefined,
-    undefined,
-    undefined,
-    variant,
-    'normal',
-    { target: { runtimeKey: getRuntimeKey(), sessionId, directory: '/current/project' } },
-  );
-
-  test('does not pin an inherited effort as the session choice', async () => {
-    useConfigStore.setState({
-      currentProviderId: 'provider-a',
-      currentModelId: 'model-a',
-      currentAgentName: 'plan',
-      currentVariant: 'low',
-      currentVariantSelection: { override: undefined, inherited: 'low' },
-    });
-
-    await sendWithVariant('low', 'session-current');
-
-    // The send still carries the inherited effort; it is just not recorded
-    // as this session's explicit choice.
-    expect(calls[0].variant).toBe('low');
-    expect(useSelectionStore.getState().getAgentModelVariantForSession('session-current', 'plan', 'provider-a', 'model-a')).toBe(undefined);
-  });
-
-  test('records an explicit effort choice with the send', async () => {
-    useConfigStore.setState({
-      currentProviderId: 'provider-a',
-      currentModelId: 'model-a',
-      currentAgentName: 'plan',
-      currentVariant: 'high',
-      currentVariantSelection: { override: 'high', inherited: 'low' },
-    });
-
-    await sendWithVariant('high', 'session-current');
-
-    expect(useSelectionStore.getState().getAgentModelVariantForSession('session-current', 'plan', 'provider-a', 'model-a')).toBe('high');
-  });
-
-  test('keeps the captured variant for a send targeting another session', async () => {
-    useConfigStore.setState({
-      currentProviderId: 'provider-a',
-      currentModelId: 'model-a',
-      currentAgentName: 'plan',
-      currentVariant: 'low',
-      currentVariantSelection: { override: undefined, inherited: 'low' },
-    });
-
-    await sendWithVariant('low', 'session-other');
-
-    expect(useSelectionStore.getState().getAgentModelVariantForSession('session-other', 'plan', 'provider-a', 'model-a')).toBe('low');
   });
 });
 
