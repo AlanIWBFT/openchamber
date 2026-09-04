@@ -90,12 +90,17 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
     }
     if (awaitingPostBootstrapStatus) {
       let cancelled = false;
-      void runBackgroundNetworkTask(() => fetchStatus(gitDirectory, git, { silent: true }))
-        .finally(() => {
+      void runBackgroundNetworkTask(() => fetchStatus(gitDirectory, git, {
+        force: true,
+        silent: true,
+        throwOnError: true,
+      }))
+        .then(() => {
           if (!cancelled) {
             setPostBootstrapRefreshDirectory((current) => (current === gitDirectory ? null : current));
           }
-        });
+        })
+        .catch(() => undefined);
       return () => {
         cancelled = true;
       };

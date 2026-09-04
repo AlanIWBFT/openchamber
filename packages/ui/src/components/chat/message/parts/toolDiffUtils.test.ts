@@ -5,7 +5,6 @@ import {
     getApplyPatchFilePath,
     getDiffPatchEntries,
     getFirstChangedLineFromMetadata,
-    getMutatedToolPaths,
     getPrimaryDiffFromMetadata,
     getPrimaryToolPath,
     getRenderablePatchInfo,
@@ -55,28 +54,6 @@ describe('toolDiffUtils', () => {
             movePath: '/workspace/project/src/second.ts',
             relativePath: 'src/second.ts',
         })).toBe('/workspace/project/src/second.ts');
-    });
-
-    test('lists every apply_patch mutation path, including both sides of a move', () => {
-        expect(getMutatedToolPaths('apply_patch', undefined, {
-            files: [
-                { filePath: '/workspace/project/src/deleted.ts', type: 'delete' },
-                {
-                    filePath: '/workspace/project/src/old.ts',
-                    movePath: '/workspace/project/src/new.ts',
-                    type: 'move',
-                },
-            ],
-        })).toEqual([
-            '/workspace/project/src/deleted.ts',
-            '/workspace/project/src/new.ts',
-            '/workspace/project/src/old.ts',
-        ]);
-    });
-
-    test('does not invent paths for bash or task tools', () => {
-        expect(getMutatedToolPaths('bash', { command: 'date' }, undefined)).toEqual([]);
-        expect(getMutatedToolPaths('task', { description: 'inspect' }, undefined)).toEqual([]);
     });
 
     test('selects the move patch and line from the same non-deleted file', () => {

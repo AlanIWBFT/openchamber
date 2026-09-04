@@ -198,6 +198,7 @@ export function useDraftTarget(enabled: boolean) {
     // about, such as the New Worktree dialog), so the probe never reads the
     // transient bootstrap files as the branch being dirty.
     const selectedDraftDirectoryBootstrapPending = useWorktreeBootstrapPending(selectedDraftDirectory);
+    const draftDirectoryNeedsFreshStatusRef = React.useRef<string | null>(null);
 
     React.useEffect(() => {
         if (
@@ -208,14 +209,24 @@ export function useDraftTarget(enabled: boolean) {
             || newSessionDraft?.bootstrapPendingDirectory
             || selectedDraftDirectoryBootstrapPending
         ) {
+            if (selectedDraftDirectoryBootstrapPending && selectedDraftDirectory) {
+                draftDirectoryNeedsFreshStatusRef.current = selectedDraftDirectory;
+            }
             setDirtyDraftDirectory(null);
             return;
         }
 
         let cancelled = false;
         setDirtyDraftDirectory(null);
-        getGitStatus(selectedDraftDirectory, { mode: 'light' })
+        const needsFreshStatus = draftDirectoryNeedsFreshStatusRef.current === selectedDraftDirectory;
+        const statusRequest = needsFreshStatus
+            ? getGitStatus(selectedDraftDirectory, { mode: 'light', fresh: true })
+            : getGitStatus(selectedDraftDirectory, { mode: 'light' });
+        statusRequest
             .then((status) => {
+                if (!cancelled && needsFreshStatus && draftDirectoryNeedsFreshStatusRef.current === selectedDraftDirectory) {
+                    draftDirectoryNeedsFreshStatusRef.current = null;
+                }
                 if (!cancelled && (status.files?.length ?? 0) > 0) {
                     setDirtyDraftDirectory(selectedDraftDirectory);
                 }
