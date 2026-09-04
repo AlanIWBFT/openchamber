@@ -56,7 +56,6 @@ interface OpenChamberDefaults {
     defaultVariant?: string;
     defaultAgent?: string;
     autoCreateWorktree?: boolean;
-    worktreeFetchSource?: boolean;
     gitmojiEnabled?: boolean;
     defaultFileViewerPreview?: boolean;
     zenModel?: string;
@@ -129,7 +128,6 @@ const requestOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
                         defaultVariant: defaultVariant.length > 0 ? defaultVariant : undefined,
                         defaultAgent: defaultAgent.length > 0 ? defaultAgent : undefined,
                         autoCreateWorktree: typeof data?.autoCreateWorktree === 'boolean' ? data.autoCreateWorktree : undefined,
-                        worktreeFetchSource: typeof data?.worktreeFetchSource === 'boolean' ? data.worktreeFetchSource : undefined,
                         gitmojiEnabled,
                         defaultFileViewerPreview,
                         zenModel: zenModel.length > 0 ? zenModel : undefined,
@@ -176,7 +174,6 @@ const requestOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
             defaultVariant: defaultVariant.length > 0 ? defaultVariant : undefined,
             defaultAgent: defaultAgent.length > 0 ? defaultAgent : undefined,
             autoCreateWorktree: typeof data?.autoCreateWorktree === 'boolean' ? data.autoCreateWorktree : undefined,
-            worktreeFetchSource: typeof data?.worktreeFetchSource === 'boolean' ? data.worktreeFetchSource : undefined,
             gitmojiEnabled,
             defaultFileViewerPreview,
             zenModel: zenModel.length > 0 ? zenModel : undefined,
@@ -1073,7 +1070,6 @@ interface ConfigStore {
     // when neither our settingsDefaultModel nor the resolved agent pins a model.
     opencodeDefaultModel: string | undefined;
     settingsAutoCreateWorktree: boolean;
-    settingsWorktreeFetchSource: boolean;
     settingsGitmojiEnabled: boolean;
     settingsDefaultFileViewerPreview: boolean;
     settingsZenModel: string | undefined;
@@ -1161,7 +1157,6 @@ interface ConfigStore {
     setSettingsDefaultVariant: (variant: string | undefined) => void;
     setSettingsDefaultAgent: (agent: string | undefined) => void;
     setSettingsAutoCreateWorktree: (enabled: boolean) => void;
-    setSettingsWorktreeFetchSource: (enabled: boolean) => void;
     setSettingsGitmojiEnabled: (enabled: boolean) => void;
     setSettingsDefaultFileViewerPreview: (enabled: boolean) => void;
     setSettingsZenModel: (model: string | undefined) => void;
@@ -1243,7 +1238,6 @@ export const useConfigStore = create<ConfigStore>()(
                 opencodeDefaultAgent: undefined,
                 opencodeDefaultModel: undefined,
                 settingsAutoCreateWorktree: false,
-                settingsWorktreeFetchSource: true,
                 settingsGitmojiEnabled: false,
                 settingsDefaultFileViewerPreview: false,
                 settingsZenModel: undefined,
@@ -2188,7 +2182,6 @@ export const useConfigStore = create<ConfigStore>()(
                                     settingsDefaultVariant: openChamberDefaults.defaultVariant,
                                     settingsDefaultAgent: openChamberDefaults.defaultAgent,
                                     settingsAutoCreateWorktree: openChamberDefaults.autoCreateWorktree ?? false,
-                                    settingsWorktreeFetchSource: openChamberDefaults.worktreeFetchSource ?? true,
                                     settingsGitmojiEnabled: openChamberDefaults.gitmojiEnabled ?? false,
                                     settingsDefaultFileViewerPreview: openChamberDefaults.defaultFileViewerPreview ?? false,
                                     settingsZenModel: resolvedZenModel,
@@ -2972,10 +2965,6 @@ export const useConfigStore = create<ConfigStore>()(
                     set({ settingsAutoCreateWorktree: enabled });
                 },
 
-                setSettingsWorktreeFetchSource: (enabled: boolean) => {
-                    set({ settingsWorktreeFetchSource: enabled });
-                },
-
                 setSettingsGitmojiEnabled: (enabled: boolean) => {
                     set({ settingsGitmojiEnabled: enabled });
                 },
@@ -3518,7 +3507,6 @@ export const useConfigStore = create<ConfigStore>()(
                     settingsDefaultVariant: state.settingsDefaultVariant,
                     settingsDefaultAgent: state.settingsDefaultAgent,
                     settingsAutoCreateWorktree: state.settingsAutoCreateWorktree,
-                    settingsWorktreeFetchSource: state.settingsWorktreeFetchSource,
                     settingsGitmojiEnabled: state.settingsGitmojiEnabled,
                     settingsDefaultFileViewerPreview: state.settingsDefaultFileViewerPreview,
                     settingsZenModel: state.settingsZenModel,
