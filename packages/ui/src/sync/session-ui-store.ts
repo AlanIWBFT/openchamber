@@ -14,7 +14,7 @@
 
 import type { ContextPartMetadata } from "@/lib/messages/contextParts"
 import { create } from "zustand"
-import type { Session, Part, Message, TextPart } from "@opencode-ai/sdk/v2/client"
+import type { Session, Part, TextPart } from "@opencode-ai/sdk/v2/client"
 import type { AttachedFile, SessionContextUsage, SessionWorktreeAttachment } from "@/stores/types/sessionTypes"
 import type { WorktreeMetadata } from "@/types/worktree"
 import { opencodeClient } from "@/lib/opencode/client"
@@ -33,7 +33,6 @@ import { markPendingUserSendAnimation } from "@/lib/userSendAnimation"
 import { normalizePath } from "@/lib/pathNormalization"
 import { CHAT_DRAFT_PROJECT_ID, createChatDirectory, deleteChatDirectory, getChatsRootFromDirectory, isChatDirectoryPath, warmChatsRootDirectory } from "@/lib/chatDirectories"
 import { isVSCodeRuntime } from "@/lib/desktop"
-import { flattenAssistantTextParts } from "@/lib/messages/messageText"
 import { composeForkSessionMessage } from "@/lib/messages/executionMeta"
 import { findLatestUserModelChoice } from "@/lib/messages/userModelChoice"
 import { waitForPendingDraftWorktreeRequest } from "@/lib/worktrees/pendingDraftWorktree"
@@ -252,6 +251,12 @@ type AssistantMessageSessionExecution = {
   runAsGoal?: boolean
 }
 
+type AssistantMessageSessionSource = {
+  sessionId: string
+  directory: string
+  text: string
+}
+
 function notifyMessageSent(sessionId: string): void {
   runtimeFetch(`/api/sessions/${sessionId}/message-sent`, { method: "POST" })
     .catch(() => { /* ignore */ })
@@ -385,7 +390,7 @@ export type SessionUIState = {
   forkFromMessage: (sessionId: string, messageId: string) => Promise<void>
   handleSlashUndo: (sessionId: string) => Promise<void>
   handleSlashRedo: (sessionId: string, options?: { fullUnrevert?: boolean }) => Promise<void>
-  createSessionFromAssistantMessage: (sourceMessageId: string, execution: AssistantMessageSessionExecution) => Promise<void>
+  createSessionFromAssistantMessage: (source: AssistantMessageSessionSource, execution: AssistantMessageSessionExecution) => Promise<void>
 
   // Data access helpers (read from sync)
   getSessionsByDirectory: (directory: string) => Session[]
@@ -1977,47 +1982,26 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   },
 
   // ---------------------------------------------------------------------------
-  // createSessionFromAssistantMessage — reads from sync
+  // createSessionFromAssistantMessage — uses the rendered source context
   // ---------------------------------------------------------------------------
-  createSessionFromAssistantMessage: async (sourceMessageId, execution) => {
-    if (!sourceMessageId) return
+  createSessionFromAssistantMessage: async (source, execution) => {
+    if (!source.sessionId) return
     if (!execution?.instructions?.trim()) return
-
-    // Find which session this message belongs to by scanning sync state
-    const state = getDirectoryState()
-    if (!state) return
-
-    let sourceSessionId: string | undefined
-    let sourceMessage: Message | undefined
-
-    for (const [sid, msgs] of Object.entries(state.message ?? {})) {
-      const found = msgs.find((m) => m.id === sourceMessageId)
-      if (found) {
-        sourceSessionId = sid
-        sourceMessage = found
-        break
-      }
-    }
-
-    if (!sourceMessage || sourceMessage.role !== "assistant") return
-
-    const sourceParts = getSyncParts(sourceMessageId)
-    const assistantPlanText = flattenAssistantTextParts(sourceParts)
+    const assistantPlanText = source.text
     if (!assistantPlanText.trim()) return
 
-    const directory = resolveSessionDirectory(
-      sourceSessionId ?? null,
-      (sid) => get().worktreeMetadata.get(sid),
-    )
-    const sourceWorktreeMetadata = sourceSessionId ? get().worktreeMetadata.get(sourceSessionId) : undefined
+    const sourceDirectory = normalizePath(source.directory)
+    if (!sourceDirectory) {
+      throw new Error("Source session directory is unavailable")
+    }
+    const sourceWorktreeMetadata = get().worktreeMetadata.get(source.sessionId)
 
-    const pID = execution.providerID || useSelectionStore.getState().lastUsedProvider?.providerID
-    const mID = execution.modelID || useSelectionStore.getState().lastUsedProvider?.modelID
+    const providerID = execution.providerID || useSelectionStore.getState().lastUsedProvider?.providerID
+    const modelID = execution.modelID || useSelectionStore.getState().lastUsedProvider?.modelID
 
-    if (!pID || !mID) return
+    if (!providerID || !modelID) return
 
-    const sourceDirectory = normalizePath(directory ?? opencodeClient.getDirectory() ?? null)
-    let sessionDirectory = sourceDirectory
+    let sessionDirectory: string | null = sourceDirectory
     let createdWorktree: WorktreeMetadata | null = null
     let createdWorktreeProject: { id: string; path: string } | null = null
 
@@ -2026,11 +2010,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const project = resolveProjectForSessionDirectory(
         projects,
         get().availableWorktreesByProject,
-        sourceDirectory,
+        sourceWorktreeMetadata?.projectDirectory ?? null,
       ) ?? resolveProjectForSessionDirectory(
         projects,
         get().availableWorktreesByProject,
-        sourceWorktreeMetadata?.projectDirectory ?? null,
+        sourceDirectory,
       )
       if (!project?.path) {
         throw new Error("Project is not registered in OpenChamber")
@@ -2061,13 +2045,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       }
     }
 
-    const session = await get().createSession(undefined, sessionDirectory || null, null)
+    const session = await get().createSession(undefined, sessionDirectory, null)
     if (!session) {
       if (createdWorktree && createdWorktreeProject) {
         const { removeProjectWorktree } = await import("@/lib/worktrees/worktreeManager")
         await removeProjectWorktree(createdWorktreeProject, createdWorktree, { deleteLocalBranch: true }).catch(() => undefined)
       }
-      return
+      throw new Error("Failed to create session")
     }
 
     if (createdWorktree) {
@@ -2087,8 +2071,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     await get().sendMessage(
       composeForkSessionMessage(execution.instructions, assistantPlanText),
-      pID,
-      mID,
+      providerID,
+      modelID,
       execution.agent || undefined,
       undefined,
       undefined,
