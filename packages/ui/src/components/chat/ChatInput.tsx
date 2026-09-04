@@ -186,7 +186,6 @@ const MAX_MOBILE_COMPOSER_LINES = 16;
  */
 const MOBILE_COMPOSER_BOUND_GAP_PX = 4;
 const EMPTY_QUEUE: QueuedMessage[] = [];
-const EMPTY_SENDING_IDS: string[] = [];
 const COMPACT_CHAT_PLACEHOLDER_MAX_WIDTH = 560;
 const renameFileForAttachmentCitation = (file: File, filename: string): File => {
     if (file.name === filename) {
@@ -774,8 +773,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         )
     );
     const addToQueue = useMessageQueueStore((state) => state.addToQueue);
-    const clearQueue = useMessageQueueStore((state) => state.clearQueue);
-    const removeFromQueue = useMessageQueueStore((state) => state.removeFromQueue);
+    const takeForSend = useMessageQueueStore((state) => state.takeForSend);
 
     // Inline comment drafts
     const inlineDraftSessionKey = currentSessionId ?? (newSessionDraftOpen ? 'draft' : '');
@@ -929,9 +927,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         // queue consumes them and attaches them as structured context parts.
         const messageToQueue = inputSnapshot.message.replace(/^\n+|\n+$/g, '');
         const attachmentsToQueue = sanitizeAttachmentsForSend(attachedFiles);
+        // Resolved now, not at delivery: the server that sends a queued
+        // message has no agent list, and the mention must match what was
+        // visible when the user typed it.
+        const { sanitizedText, mention } = parseAgentMentions(messageToQueue, agents);
 
         addToQueue(messageQueueTarget, {
             content: messageToQueue,
+            text: sanitizedText,
+            agentMention: mention?.name,
             attachments: attachmentsToQueue.length > 0 ? attachmentsToQueue : undefined,
             sendConfig: currentProviderId && currentModelId ? {
                 providerID: currentProviderId,
@@ -939,6 +943,20 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 agent: currentAgentName ?? undefined,
                 variant: currentVariant ?? undefined,
             } : undefined,
+        }).catch((error) => {
+            console.warn('[queue] failed to queue message:', error);
+            toast.error(t('chat.queuedMessage.toast.queueFailed'));
+            // The composer was cleared on queueing; give the text back unless
+            // the user has already typed something new.
+            const currentInput = composerRef.current?.getValue() ?? messageRef.current;
+            if (!currentInput) {
+                setMessage(messageToQueue);
+            } else {
+                useInputStore.getState().setPendingInputText(messageToQueue, 'append');
+            }
+            if (attachmentsToQueue.length > 0) {
+                useInputStore.getState().setAttachedFiles([...useInputStore.getState().attachedFiles, ...attachmentsToQueue]);
+            }
         });
 
         // Sending while the agent works must still take the reader to the
@@ -959,7 +977,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         if (!isMobile) {
             composerRef.current?.focus();
         }
-    }, [getCurrentInputSnapshot, currentSessionId, messageQueueTarget, attachedFiles, sanitizeAttachmentsForSend, addToQueue, clearAttachedFiles, isMobile, currentProviderId, currentModelId, currentAgentName, currentVariant, scrollToLatest]);
+    }, [getCurrentInputSnapshot, currentSessionId, messageQueueTarget, attachedFiles, sanitizeAttachmentsForSend, addToQueue, clearAttachedFiles, isMobile, currentProviderId, currentModelId, currentAgentName, currentVariant, scrollToLatest, agents, t]);
 
     const handleQueuedMessageEdit = React.useCallback((content: string) => {
         setMessage(content);
@@ -1023,28 +1041,23 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 hasContent: options.presetText.trim().length > 0 || attachedFiles.length > 0 || hasDrafts,
             }
             : getCurrentInputSnapshot();
-        // A queued item stays in the queue until its own send resolves, so the
-        // auto-send hook may already be delivering one of these. Merging it here
-        // would send the same message twice (the window is seconds over a relay).
-        const sendingIds = messageQueueTarget
-            ? useMessageQueueStore.getState().sendingIds[getMessageQueueKey(messageQueueTarget)] ?? EMPTY_SENDING_IDS
-            : EMPTY_SENDING_IDS;
-        const queuedMessagesToSend = (queuedMessageId
-            ? queuedMessages.filter((message) => message.id === queuedMessageId)
-            : queuedMessages
-        ).filter((message) => !sendingIds.includes(message.id));
-
         if (queuedOnly && autoReviewRunning) {
             return;
         }
 
         if (queuedOnly) {
-            if (queuedMessagesToSend.length === 0 || !currentSessionId) return;
+            if (!queuedMessages.some((message) => !queuedMessageId || message.id === queuedMessageId) || !currentSessionId) return;
         } else if ((!inputSnapshot.hasContent && !hasQueuedMessages) || (!currentSessionId && !newSessionDraftOpen)) {
             return;
         }
 
-        const capturedSendConfig = queuedOnly ? queuedMessagesToSend[0]?.sendConfig : undefined;
+        // The projection knows the captured send configuration; the full
+        // messages are taken from the queue only once nothing below can still
+        // bail out, so an early return leaves the queue untouched.
+        const queuedProjection = queuedMessageId
+            ? queuedMessages.filter((message) => message.id === queuedMessageId)
+            : queuedMessages;
+        const capturedSendConfig = queuedOnly ? queuedProjection[0]?.sendConfig : undefined;
         const providerIdToSend = capturedSendConfig?.providerID ?? currentProviderId;
         const modelIdToSend = capturedSendConfig?.modelID ?? currentModelId;
         const agentNameToSend = capturedSendConfig?.agent ?? currentAgentName;
@@ -1115,10 +1128,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         const preparedDocumentMentions = new Map<string, AttachedFile[]>();
         const reservedFilenames = new Set([
             ...attachedFiles.map((attachment) => attachment.filename),
-            ...queuedMessagesToSend.flatMap((queued) => queued.attachments?.map((attachment) => attachment.filename) ?? []),
+            ...queuedProjection.flatMap((queued) => queued.attachments?.map((attachment) => attachment.filename) ?? []),
         ]);
         const mentionTexts = [
-            ...queuedMessagesToSend.map((queued) => queued.content),
+            ...queuedProjection.map((queued) => queued.content),
             ...(!queuedOnly && inputSnapshot.hasContent ? [inputSnapshot.message] : []),
         ];
         for (const rawText of mentionTexts) {
@@ -1148,6 +1161,22 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     return;
                 }
             }
+        }
+
+        // The composer delivers these itself, so they leave the queue now — the
+        // queue's own delivery (server-side, or the auto-send hook in VS Code)
+        // skips anything already in flight, and a message already being
+        // delivered stays out of this send so it cannot go out twice.
+        let queuedMessagesToSend: QueuedMessage[] = [];
+        if (capturedTarget && hasQueuedMessages) {
+            try {
+                queuedMessagesToSend = await takeForSend(capturedTarget, queuedMessageId);
+            } catch (error) {
+                console.warn('[queue] failed to take queued messages for sending:', error);
+                toast.error(t('chat.queuedMessage.toast.takeFailed'));
+                return;
+            }
+            if (queuedOnly && queuedMessagesToSend.length === 0) return;
         }
 
         // Inline review comments and synthetic context are consumed before
@@ -1201,12 +1230,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
 
         if (outgoing.isEmpty) return;
 
-        // Clear queue and input
-        if (capturedTarget && queuedMessageId) {
-            removeFromQueue(capturedTarget, queuedMessageId);
-        } else if (capturedTarget && hasQueuedMessages) {
-            clearQueue(capturedTarget);
-        }
+        // Clear input (the queue was taken above)
         if (!queuedOnly) {
             setMessage('');
             confirmedMentionsRef.current.clear();

@@ -48,6 +48,7 @@ import { getReconnectCandidateSessionIds, mergeBootstrapSessions } from "./recon
 import { messagesBefore } from "./message-ordering"
 import { opencodeClient } from "@/lib/opencode/client"
 import { usePermissionStore } from "@/stores/permissionStore"
+import { applyMessageQueueUpdatedEvent, useMessageQueueStore } from "@/stores/messageQueueStore"
 import {
   processVSCodePermissionAutoAccept,
   processVSCodeReconciledPermissionAutoAccept,
@@ -1577,6 +1578,11 @@ export function handleEvent(
   batch?: DirectoryEventBatch,
   globalEffectsAlreadyApplied = false,
 ) {
+  if ((payload as { type?: unknown }).type === "openchamber:message-queue.updated") {
+    applyMessageQueueUpdatedEvent(payload, expectedRuntimeKey)
+    return
+  }
+
   if ((payload as { type?: unknown }).type === "openchamber:permission-auto-accept.updated") {
     const properties = (payload as unknown as { properties?: unknown }).properties
     if (properties && typeof properties === "object") {
@@ -2241,6 +2247,7 @@ export function SyncProvider(props: {
   // Configure child store manager
   useEffect(() => {
     void usePermissionStore.getState().hydrate().catch(() => undefined)
+    void useMessageQueueStore.getState().hydrate().catch(() => undefined)
   }, [props.sdk])
 
   useEffect(() => {

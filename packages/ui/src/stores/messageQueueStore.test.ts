@@ -1,11 +1,17 @@
-import { beforeEach, describe, expect, test } from "bun:test"
-import {
+import { beforeEach, describe, expect, mock, test } from "bun:test"
+
+// The local queue is the VS Code behavior; every other runtime hands the
+// queue to the server (see messageQueueStore.server.test.ts).
+const desktop = await import("@/lib/desktop")
+mock.module("@/lib/desktop", () => ({ ...desktop, isVSCodeRuntime: () => true }))
+
+const {
   createMessageQueueTarget,
   getMessageQueueKey,
   migrateMessageQueueState,
   parseMessageQueueKey,
   useMessageQueueStore,
-} from "./messageQueueStore"
+} = await import("./messageQueueStore")
 
 beforeEach(() => {
   useMessageQueueStore.setState({ queuedMessages: {}, quarantinedLegacyMessages: {}, sendingIds: {} })
