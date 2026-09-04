@@ -833,10 +833,19 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             candidate: latestLoadedUserChoice,
         })) {
             if (savedSessionModel) {
+                // Same rule as the history restore below: an effort equal to
+                // the inherited default is not evidence of a choice, so it is
+                // not recommitted as an explicit override.
+                const preservedVariant = resolveModelVariantSelection(savedSessionModel.providerId, savedSessionModel.modelId);
+                const inheritedForPreserved = resolveInheritedVariantForModel(
+                    savedSessionModel.providerId,
+                    savedSessionModel.modelId,
+                    currentAgentName || undefined,
+                );
                 applyModelSelectionWithVariant(
                     savedSessionModel.providerId,
                     savedSessionModel.modelId,
-                    resolveModelVariantSelection(savedSessionModel.providerId, savedSessionModel.modelId),
+                    preservedVariant === inheritedForPreserved ? undefined : preservedVariant,
                     currentAgentName || undefined,
                 );
             }
@@ -848,10 +857,23 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             setAgent(latestLoadedUserChoice.agent);
         }
 
-        const historicalVariant = latestLoadedUserChoice.variant
+        // Message metadata records the *effective* effort, inherited defaults
+        // included; only a deviation from what this model would inherit proves
+        // the user chose it. Restoring an inherited-equal effort as an explicit
+        // override would pin the default and move the picker off "Default"
+        // right after every send.
+        const validHistoricalVariant = latestLoadedUserChoice.variant
             && getModelVariantOptions(latestLoadedUserChoice.providerID, latestLoadedUserChoice.modelID).includes(latestLoadedUserChoice.variant)
             ? latestLoadedUserChoice.variant
             : undefined;
+        const inheritedForRestoredModel = resolveInheritedVariantForModel(
+            latestLoadedUserChoice.providerID,
+            latestLoadedUserChoice.modelID,
+            latestLoadedUserChoice.agent || currentAgentName || undefined,
+        );
+        const historicalVariant = validHistoricalVariant === inheritedForRestoredModel
+            ? undefined
+            : validHistoricalVariant;
         const applyResult = applyModelSelectionWithVariant(
             latestLoadedUserChoice.providerID,
             latestLoadedUserChoice.modelID,
@@ -886,6 +908,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         applyModelSelectionWithVariant,
         getModelVariantOptions,
         getSessionModelSelection,
+        resolveInheritedVariantForModel,
         resolveModelVariantSelection,
         saveSessionAgentSelection,
         saveAgentModelVariantForSession,
