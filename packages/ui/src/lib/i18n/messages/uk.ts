@@ -1619,7 +1619,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.autoReview.reviewSessionLabel': 'Сесія ревʼю',
   'chat.autoReview.actions.open': 'Відкрити',
   'chat.autoReview.actions.stop': 'Зупинити',
-  'chat.draftDirtyNotice.tooltip': 'У цій гілці є незакомічені файли.\nНова сесія бачитиме їх. Коміт або worktree тримають їх окремо.',
+  'chat.draftDirtyNotice.tooltip': 'У цій гілці є незакомічені зміни.\nНова сесія може конфліктувати з ними. Можливо, варто спершу закомітити їх або скористатися іншим worktree.',
   'chat.draftDirtyNotice.indicatorAria': 'Незакомічені зміни в цьому каталозі',
   "diffView.hunk.label": "Шматки",
   "diffView.hunk.stage": "Додати",

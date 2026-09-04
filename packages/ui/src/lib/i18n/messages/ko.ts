@@ -1643,7 +1643,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.autoReview.reviewSessionLabel': '리뷰 세션',
   'chat.autoReview.actions.open': '열기',
   'chat.autoReview.actions.stop': '중지',
-  'chat.draftDirtyNotice.tooltip': '이 브랜치에는 커밋되지 않은 파일이 있습니다.\n새 세션에서도 보입니다. 커밋 또는 워크트리로 분리할 수 있습니다.',
+  'chat.draftDirtyNotice.tooltip': '이 브랜치에 커밋되지 않은 변경 사항이 있습니다.\n새 세션의 변경 사항과 충돌할 수 있습니다. 먼저 커밋하거나 다른 워크트리를 사용하는 것이 좋습니다.',
   'chat.draftDirtyNotice.indicatorAria': '이 디렉터리에 커밋되지 않은 변경 사항이 있습니다',
   'diffView.hunk.label': '허크',
   'diffView.hunk.stage': '스테이지',

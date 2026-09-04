@@ -1617,7 +1617,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.autoReview.reviewSessionLabel': '審查工作階段',
   'chat.autoReview.actions.open': '開啟',
   'chat.autoReview.actions.stop': '停止',
-  'chat.draftDirtyNotice.tooltip': '此分支有未提交的檔案。\n新的工作階段會看到它們。提交或工作樹可將它們分開。',
+  'chat.draftDirtyNotice.tooltip': '此分支有未提交的變更。\n新的工作階段可能會與這些變更衝突。你可以考慮先提交變更，或使用其他工作樹。',
   'chat.draftDirtyNotice.indicatorAria': '此目錄有未提交的變更',
   'diffView.hunk.label': '程式碼區塊',
   'diffView.hunk.stage': '暫存',

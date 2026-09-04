@@ -1646,7 +1646,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.autoReview.reviewSessionLabel': 'レビューセッション',
   'chat.autoReview.actions.open': '開く',
   'chat.autoReview.actions.stop': '停止',
-  'chat.draftDirtyNotice.tooltip': 'このブランチには未コミットのファイルがあります。\n新しいセッションからも見えます。コミットまたはワークツリーで分けられます。',
+  'chat.draftDirtyNotice.tooltip': 'このブランチにはコミットされていない変更があります。\n新しいセッションの変更と競合する可能性があります。先にコミットするか、別のワークツリーを使うとよいかもしれません。',
   'chat.draftDirtyNotice.indicatorAria': 'このディレクトリに未コミットの変更があります',
   'rightSidebar.contextNotesTodo.plan.defaultTitle': '計画',
   'rightSidebar.contextNotesTodo.empty.selectProject': 'プロジェクトを選択してメモとTODOを追加します。',

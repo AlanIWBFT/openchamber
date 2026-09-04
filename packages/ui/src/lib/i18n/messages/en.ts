@@ -1641,7 +1641,7 @@ export const dict = {
   'chat.autoReview.reviewSessionLabel': 'Review session',
   'chat.autoReview.actions.open': 'Open',
   'chat.autoReview.actions.stop': 'Stop',
-  'chat.draftDirtyNotice.tooltip': 'This branch has uncommitted files.\nThe new session will see them. A commit or a worktree keeps them separate.',
+  'chat.draftDirtyNotice.tooltip': 'You have uncommitted changes on this branch.\nA new session could conflict with them. You may want to commit them first or use another worktree.',
   'chat.draftDirtyNotice.indicatorAria': 'Uncommitted changes in this directory',
   'diffView.hunk.label': 'Hunks',
   'diffView.hunk.stage': 'Stage',

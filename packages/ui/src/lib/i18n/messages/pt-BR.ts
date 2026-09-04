@@ -1619,7 +1619,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.autoReview.reviewSessionLabel': 'Sessão de revisão',
   'chat.autoReview.actions.open': 'Abrir',
   'chat.autoReview.actions.stop': 'Parar',
-  'chat.draftDirtyNotice.tooltip': 'Esta branch tem arquivos sem commit.\nA nova sessão os verá. Um commit ou um worktree os mantém separados.',
+  'chat.draftDirtyNotice.tooltip': 'Você tem alterações sem commit nesta branch.\nUma nova sessão pode entrar em conflito com elas. Talvez seja melhor fazer commit delas primeiro ou usar outro worktree.',
   'chat.draftDirtyNotice.indicatorAria': 'Alterações sem commit neste diretório',
   "diffView.hunk.label": "Trechos",
   "diffView.hunk.stage": "Preparar",

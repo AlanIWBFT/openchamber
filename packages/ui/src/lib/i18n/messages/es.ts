@@ -1619,7 +1619,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.autoReview.reviewSessionLabel': 'Sesión de revisión',
   'chat.autoReview.actions.open': 'Abrir',
   'chat.autoReview.actions.stop': 'Detener',
-  'chat.draftDirtyNotice.tooltip': 'Esta rama tiene archivos sin confirmar.\nLa nueva sesión los verá. Un commit o un worktree los mantiene separados.',
+  'chat.draftDirtyNotice.tooltip': 'Tienes cambios sin confirmar en esta rama.\nUna nueva sesión podría entrar en conflicto con ellos. Quizás quieras confirmarlos primero o usar otro worktree.',
   'chat.draftDirtyNotice.indicatorAria': 'Cambios sin confirmar en este directorio',
   "diffView.hunk.label": "Fragmentos",
   "diffView.hunk.stage": "Preparar",

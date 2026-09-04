@@ -1405,7 +1405,7 @@ export const dict = {
   'chat.autoReview.reviewSessionLabel': 'Session de revue',
   'chat.autoReview.actions.open': 'Ouvrir',
   'chat.autoReview.actions.stop': 'Arrêter',
-  'chat.draftDirtyNotice.tooltip': 'Cette branche a des fichiers non commités.\nLa nouvelle session les verra. Un commit ou un worktree les garde séparés.',
+  'chat.draftDirtyNotice.tooltip': 'Vous avez des modifications non commitées sur cette branche.\nUne nouvelle session pourrait entrer en conflit avec elles. Vous voudrez peut-être les commiter d’abord ou utiliser un autre worktree.',
   'chat.draftDirtyNotice.indicatorAria': 'Modifications non commitées dans ce répertoire',
   'diffView.hunk.label': 'Sections',
   'diffView.hunk.stage': 'Préparer',
