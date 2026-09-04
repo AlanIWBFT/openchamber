@@ -592,6 +592,32 @@ describe('openNewSessionDraft project binding', () => {
     expect(useSessionUIStore.getState().newSessionDraft.target).toBe('chat');
   });
 
+  test('a chat scratch directory forwarded as override opens a chat draft', () => {
+    // "New session in the current directory" callers forward the current
+    // session's directory even when that session is a chat; its scratch
+    // directory names no project.
+    useSessionUIStore.getState().openNewSessionDraft({
+      directoryOverride: '/Users/tester/.config/openchamber/chats/ses_chat',
+    });
+    const draft = useSessionUIStore.getState().newSessionDraft;
+
+    expect(draft.target).toBe('chat');
+    expect(draft.directoryOverride).toBeNull();
+  });
+
+  test('a chat scratch override opens Chat even when the recorded target is a project', () => {
+    getDeferredSafeStorage().setItem(
+      DRAFT_TARGET_KEY,
+      JSON.stringify({ projectId: projectB.id, directory: projectB.path, target: 'project' }),
+    );
+
+    useSessionUIStore.getState().openNewSessionDraft({
+      directoryOverride: '/Users/tester/.config/openchamber/chats/ses_chat',
+    });
+
+    expect(useSessionUIStore.getState().newSessionDraft.target).toBe('chat');
+  });
+
   test('falls back to Chat when the last project target no longer exists', () => {
     getDeferredSafeStorage().setItem(
       DRAFT_TARGET_KEY,

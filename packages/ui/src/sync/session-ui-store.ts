@@ -1115,9 +1115,15 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const currentDirectory = normalizePath(useDirectoryStore.getState().currentDirectory ?? null)
     const persistedTarget = readPersistedDraftTarget()
 
-    const explicitDirectory = options?.directoryOverride !== undefined
+    // Callers that forward "the current session's directory" forward it for
+    // chat sessions too, and a chat session's scratch directory names no
+    // project. Treating it as an explicit project target would force a project
+    // draft rooted in scratch; it is a request for another chat.
+    const rawExplicitDirectory = options?.directoryOverride !== undefined
       ? normalizePath(options.directoryOverride)
       : null
+    const explicitDirectoryIsChat = rawExplicitDirectory !== null && isChatDirectoryPath(rawExplicitDirectory)
+    const explicitDirectory = explicitDirectoryIsChat ? null : rawExplicitDirectory
     const persistedProjectById = persistedTarget?.projectId
       ? projects.find((p) => p.id === persistedTarget.projectId) ?? null
       : null
@@ -1138,7 +1144,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     let target = isVSCodeRuntime() ? "project" : options?.target
     if (!target) {
-      const hasExplicitProjectTarget = options?.directoryOverride !== undefined
+      const hasExplicitProjectTarget = (options?.directoryOverride !== undefined && !explicitDirectoryIsChat)
         || (options?.selectedProjectId !== undefined && options.selectedProjectId !== CHAT_DRAFT_PROJECT_ID)
         || isVSCodeRuntime()
       target = options?.selectedProjectId === CHAT_DRAFT_PROJECT_ID
