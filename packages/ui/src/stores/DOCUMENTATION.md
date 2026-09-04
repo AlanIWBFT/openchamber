@@ -232,6 +232,13 @@ per-session selection store records an explicit `Default` (as `null`) instead of
 clearing the entry — a cleared entry is indistinguishable from never having
 chosen, and the settings default wins again on the next agent or session switch.
 
+Only a place where the user chose may write `null`. Restore paths — message
+history, a preserved manual override — pass their own "found nothing" through
+as `undefined`, because a session whose history carries no effort is not a
+session where `Default` was picked. A restore that manufactures `null` latches
+the session onto `Default`: `null` outranks the agent and settings defaults by
+design, so the concrete effort it displaced can never come back.
+
 Every write of `currentVariant` writes `currentVariantSelection` with it. They
 are one selection; updating only the effective value leaves the picker showing
 one effort while sends carry another.

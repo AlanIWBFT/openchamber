@@ -725,7 +725,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         return candidates.find((candidate) => candidate !== undefined && variantOptions.includes(candidate));
     }, [agents, currentAgentName, currentModelId, currentProviderId, currentSessionId, currentVariantSelection, effectiveCurrentVariant, getModelVariantOptions, settingsDefaultVariant, uiAgentName]);
 
-    const resolveModelVariantSelection = React.useCallback((providerId: string, modelId: string) => {
+    /**
+     * The session's recorded choice for this model, in the selection store's
+     * three states: an effort name, `null` for an explicit "Default", and
+     * `undefined` for no choice at all. Collapsing `null` into `undefined` here
+     * would hand a real "Default" back to the callers as "nothing chosen", and
+     * they would re-record it as a choice on the next write.
+     */
+    const resolveModelVariantSelection = React.useCallback((providerId: string, modelId: string): string | null | undefined => {
         const variantOptions = getModelVariantOptions(providerId, modelId);
         if (variantOptions.length === 0) {
             return undefined;
@@ -736,7 +743,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             const savedVariant = getAgentModelVariantForSession(currentSessionId, effectiveAgentName, providerId, modelId);
             // An explicit "Default" is a choice: it stops the fallbacks below.
             if (savedVariant === null) {
-                return undefined;
+                return null;
             }
             if (savedVariant && variantOptions.includes(savedVariant)) {
                 return savedVariant;
@@ -770,7 +777,16 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         return liveConfigAgentName || currentAgentName;
     }, [currentAgentName, currentSessionId]);
 
-    const commitVariantSelectionForModel = React.useCallback((providerId: string, modelId: string, variant: string | undefined, agentNameOverride?: string | null) => {
+    /**
+     * Records `variant` as this session's effort for the model, in the same
+     * three states the selection store defines: an effort name, `null` for an
+     * explicit "Default", `undefined` for no choice so the inherited effort
+     * applies. Callers decide which one they mean — the picker turns its own
+     * "Default" into `null`, while restore paths pass `undefined` through when
+     * they found nothing, because "the history carries no effort" is not the
+     * user having chosen "Default".
+     */
+    const commitVariantSelectionForModel = React.useCallback((providerId: string, modelId: string, variant: string | null | undefined, agentNameOverride?: string | null) => {
         const variantOptions = getModelVariantOptions(providerId, modelId);
         if (variantOptions.length === 0) {
             manualVariantSelectionRef.current = false;
@@ -780,16 +796,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
         manualVariantSelectionRef.current = true;
         setCurrentVariantOverride(
-            variant ?? null,
+            variant,
             resolveInheritedVariantForModel(providerId, modelId, agentNameOverride),
         );
-        addRecentEffort(providerId, modelId, variant);
+        addRecentEffort(providerId, modelId, variant ?? undefined);
 
         const effectiveAgentName = agentNameOverride ?? resolveLiveAgentName();
         if (currentSessionId && effectiveAgentName) {
-            // `null`, not `undefined`: picking "Default" is a choice to record,
-            // not the absence of one.
-            saveAgentModelVariantForSession(currentSessionId, effectiveAgentName, providerId, modelId, variant ?? null);
+            saveAgentModelVariantForSession(currentSessionId, effectiveAgentName, providerId, modelId, variant);
         }
     }, [
         addRecentEffort,
@@ -802,7 +816,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         setCurrentVariantOverride,
     ]);
 
-    const applyModelSelectionWithVariant = React.useCallback((providerId: string, modelId: string, variant: string | undefined, agentNameOverride?: string | null) => {
+    const applyModelSelectionWithVariant = React.useCallback((providerId: string, modelId: string, variant: string | null | undefined, agentNameOverride?: string | null) => {
         const effectiveAgentName = agentNameOverride ?? resolveLiveAgentName() ?? undefined;
         const result = tryApplyModelSelection(providerId, modelId, effectiveAgentName);
         if (result !== 'applied') {
@@ -874,15 +888,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             return;
         }
 
+        // The effort is not written again here: `applyModelSelectionWithVariant`
+        // above already recorded `historicalVariant` for this same agent and
+        // model, and a second write can only disagree with the first.
         if (latestLoadedUserChoice.agent) {
             saveSessionAgentSelection(currentSessionId, latestLoadedUserChoice.agent);
-            saveAgentModelVariantForSession(
-                currentSessionId,
-                latestLoadedUserChoice.agent,
-                latestLoadedUserChoice.providerID,
-                latestLoadedUserChoice.modelID,
-                historicalVariant,
-            );
         }
         saveSessionModelSelection(currentSessionId, latestLoadedUserChoice.providerID, latestLoadedUserChoice.modelID);
         latestLoadedUserChoiceRestoreRef.current = restoreKey;
@@ -900,7 +910,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         getSessionModelSelection,
         resolveModelVariantSelection,
         saveSessionAgentSelection,
-        saveAgentModelVariantForSession,
         saveSessionModelSelection,
     ]);
 
@@ -1184,7 +1193,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const handleVariantSelect = React.useCallback((variant: string | undefined) => {
         if (currentProviderId && currentModelId) {
-            commitVariantSelectionForModel(currentProviderId, currentModelId, variant);
+            // Picked in the effort menu, so no effort means the user picked
+            // "Default" — a choice, recorded as `null`.
+            commitVariantSelectionForModel(currentProviderId, currentModelId, variant ?? null);
         }
     }, [commitVariantSelectionForModel, currentModelId, currentProviderId]);
 
@@ -1246,8 +1257,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     ) => {
         try {
             const effectiveAgentName = options?.agentName ?? resolveLiveAgentName() ?? undefined;
+            // `applyVariant` is only set when the user adjusted the effort in
+            // the model picker, so no effort means an explicit "Default".
             const result = options?.applyVariant
-                ? applyModelSelectionWithVariant(providerId, modelId, options.variant, effectiveAgentName)
+                ? applyModelSelectionWithVariant(providerId, modelId, options.variant ?? null, effectiveAgentName)
                 : tryApplyModelSelection(providerId, modelId, effectiveAgentName);
             if (result !== 'applied') {
                 if (result === 'provider-missing') {
@@ -1604,8 +1617,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             }
         }
 
-        const handleMobileModelApply = (providerId: string, modelId: string, variant: string | undefined) => {
-            const result = applyModelSelectionWithVariant(providerId, modelId, variant);
+        const handleMobileModelApply = (providerId: string, modelId: string, variant: string | null | undefined) => {
+            // Chosen in the mobile model sheet, and the row already showed this
+            // effort: no effort there means the user is applying "Default".
+            const result = applyModelSelectionWithVariant(providerId, modelId, variant ?? null);
             if (result !== 'applied') {
                 if (result === 'provider-missing') {
                     console.error('[ModelControls] Provider not available for selection:', providerId);
@@ -1642,7 +1657,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             const variantOptions = getModelVariantOptions(providerId, modelId);
             const hasVariants = variantOptions.length > 0;
             const resolvedVariant = resolveModelVariantSelection(providerId, modelId);
-            const variantLabel = hasVariants ? formatEffortLabel(resolvedVariant) : null;
+            // Both an explicit "Default" and no choice at all read as "Default".
+            const variantLabel = hasVariants ? formatEffortLabel(resolvedVariant ?? undefined) : null;
             const isExpanded = expandedMobileModelKey === rowKey;
             const inlineVariantOptions = [undefined, ...variantOptions].slice(0, MAX_INLINE_MOBILE_VARIANT_OPTIONS);
             const hasVariantOverflow = inlineVariantOptions.length < variantOptions.length + 1;
@@ -1947,7 +1963,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         };
 
         const handleSelect = (variant: string | undefined) => {
-            const result = applyModelSelectionWithVariant(targetProviderId, targetModelId, variant);
+            // Chosen in the mobile effort panel: no effort means "Default".
+            const result = applyModelSelectionWithVariant(targetProviderId, targetModelId, variant ?? null);
             if (result !== 'applied') {
                 return;
             }
