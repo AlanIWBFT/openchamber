@@ -9,6 +9,7 @@
 - Settings: the theme no longer flips when switching sessions across directories, and a theme the extension cannot fully report keeps the current preference (thanks to @kydorn).
 - Settings: Fixel Text is available as an interface font.
 - Usage: exe.dev usage windows are tracked.
+- Settings: the Integrations page, which offered the Claude Code and Cursor plugin installs, is gone.
 
 ## [1.22.0] - 2026-08-30
 

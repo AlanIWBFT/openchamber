@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - Settings: new installs default to the OpenChamber light and dark themes; an existing Flexoki choice is kept.
 - Settings: Fixel Text is available as an interface font.
 - Usage: exe.dev usage windows are tracked.
+- Settings: the Claude Code and Cursor plugin install cards are gone from Settings → Integrations, which now holds only GitHub and Linear.
 - Desktop: the instance switcher keeps its statuses between opens, never shows the connected instance as checking, retries a relay instance for up to fifteen seconds before calling it unreachable, and shows the full instance name. Switching instances clears the previous instance's Linear and GitHub logins, quotas, MCP status, skills, and memory.
 - Desktop: dev server previews work over the private relay.
 - Terminal: the terminal waits for its font before measuring glyphs, so it no longer renders wrong until resized, and connects on servers running under Bun.
