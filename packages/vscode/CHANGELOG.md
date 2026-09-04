@@ -1,3 +1,15 @@
+## [1.22.1] - 2026-09-04
+
+- **OpenCode Go:** the usage request the extension sends to OpenCode Go now carries the `x-opencode-session` header that OpenCode Go requires from 6 September. Chat traffic already had it, because it goes through OpenCode.
+- Message queue: a queued message keeps its attached context, file mentions, and skill; editing it brings them back to the composer.
+- Thinking effort: picking Default now sticks after a send and across agent or session switches, and a reopened session restores the effort its last message used (thanks to @yulia-ivashko).
+- Worktrees: removing a worktree no longer freezes the interface; it runs in the background with a progress toast (thanks to @yulia-ivashko). A worktree created from a branch behind its upstream now fetches first and branches from the remote (thanks to @jtatum).
+- Worktrees: the New Worktree dialog keeps its form when the worktree list changes while open, and a removed worktree leaves the sidebar under every project it was listed in (thanks to @yulia-ivashko).
+- Sessions: starting a rename selects the whole title (thanks to @yulia-ivashko).
+- Settings: the theme no longer flips when switching sessions across directories, and a theme the extension cannot fully report keeps the current preference (thanks to @kydorn).
+- Settings: Fixel Text is available as an interface font.
+- Usage: exe.dev usage windows are tracked.
+
 ## [1.22.0] - 2026-08-30
 
 - Switching sessions is now visually stable, without conversation jumps or partial rendering.
