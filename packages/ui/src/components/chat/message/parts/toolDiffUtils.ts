@@ -200,29 +200,6 @@ export const getPrimaryToolPath = (
     return null;
 };
 
-export const getMutatedToolPaths = (
-    toolName: string,
-    input: Record<string, unknown> | undefined,
-    metadata: Record<string, unknown> | undefined,
-): string[] => {
-    if (toolName === 'apply_patch') {
-        const files = Array.isArray(metadata?.files) ? metadata.files : [];
-        const paths = new Set<string>();
-        for (const file of files) {
-            if (!isRecord(file)) continue;
-            const filePath = getApplyPatchFilePath(file);
-            if (filePath) paths.add(filePath);
-            if (file.type === 'move' && typeof file.filePath === 'string') {
-                paths.add(file.filePath);
-            }
-        }
-        return [...paths];
-    }
-
-    const primaryPath = getPrimaryToolPath(toolName, input, metadata);
-    return primaryPath ? [primaryPath] : [];
-};
-
 const supportsDiffMetadata = (toolName: string): boolean => (
     toolName === 'edit' || toolName === 'multiedit' || toolName === 'apply_patch'
 );
