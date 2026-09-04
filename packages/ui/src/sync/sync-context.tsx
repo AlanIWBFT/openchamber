@@ -38,7 +38,11 @@ import { setSyncRefs, getAllSyncSessions } from "./sync-refs"
 import { useSessionUIStore } from "./session-ui-store"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { upsertSessionRecord } from "./session-records"
-import { applySessionEventToGlobalSessions, applySessionEventsToGlobalSessions } from "./session-event-router"
+import {
+  applySessionEventToGlobalSessions,
+  applySessionEventsToGlobalSessions,
+} from "./session-event-router"
+import { shouldConsumeBulkArchiveEcho } from "./bulk-archive-echo"
 import { syncDebug } from "./debug"
 import { getReconnectCandidateSessionIds, mergeBootstrapSessions } from "./reconnect-recovery"
 import { messagesBefore } from "./message-ordering"
@@ -1585,6 +1589,8 @@ export function handleEvent(
     }
     return
   }
+
+  if (shouldConsumeBulkArchiveEcho(payload, expectedRuntimeKey)) return
 
   const directory = resolveDirectoryFromRoutingIndex(routingIndex, rawDirectory, payload, childStores, batch)
 
