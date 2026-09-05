@@ -28,6 +28,7 @@ const DIFF_CACHE_MAX_ENTRIES = 30;
 const DIFF_CACHE_MAX_TOTAL_SIZE_BYTES = 20 * 1024 * 1024; // 20MB
 const DIFF_CACHE_MAX_GLOBAL_ENTRIES = 200;
 type GitStatusFetchMode = 'full' | 'light';
+type GitStatusReader = 'authoritative' | 'passive';
 type GitStatusRequestOptions = { mode?: 'light'; fresh?: boolean };
 
 // Discovery outcome for a root that is not itself a git repository. The three
@@ -139,8 +140,8 @@ let activeGitRuntimeKey = getRuntimeKey();
 // directory keys the same entry the store's own lookups do.
 const runtimeDirectoryKey = (runtimeKey: string, directory: string) =>
   JSON.stringify([runtimeKey, directory.trim()]);
-const getStatusFetchKey = (runtimeKey: string, directory: string, mode: GitStatusFetchMode): string =>
-  JSON.stringify([runtimeKey, directory, mode]);
+const getStatusFetchKey = (runtimeKey: string, directory: string, mode: GitStatusFetchMode, reader: GitStatusReader): string =>
+  JSON.stringify([runtimeKey, directory, mode, reader]);
 const channelKey = (runtimeKey: string, directory: string, channel: string) =>
   JSON.stringify([runtimeKey, directory, channel]);
 
@@ -181,6 +182,9 @@ const bumpStatusMutationRevision = (runtimeKey: string, directory: string): void
   const key = runtimeDirectoryKey(runtimeKey, directory);
   statusMutationRevisionByDirectory.set(key, (statusMutationRevisionByDirectory.get(key) ?? 0) + 1);
 };
+
+const getStatusMutationRevision = (runtimeKey: string, directory: string): number =>
+  statusMutationRevisionByDirectory.get(runtimeDirectoryKey(runtimeKey, directory)) ?? 0;
 
 // A successful status-affecting git mutation invalidates the runtime adapter's
 // status cache (see lib/gitStatusInvalidation.ts). Bump the per-directory
@@ -704,12 +708,13 @@ export const useGitStore = create<GitStore>()(
           return false;
         }
         const statusFetchMode: GitStatusFetchMode = options.mode ?? 'full';
+        const statusReader: GitStatusReader = git.getPassiveGitStatus && git.getGitStatus === git.getPassiveGitStatus ? 'passive' : 'authoritative';
         const runtimeKey = getRuntimeKey();
-        const statusFetchKey = getStatusFetchKey(runtimeKey, directory, statusFetchMode);
+        const statusFetchKey = getStatusFetchKey(runtimeKey, directory, statusFetchMode, statusReader);
         const statusMutationRevision = getStatusMutationRevision(runtimeKey, directory);
         if (!options.force) {
           const existing = inFlightStatusFetches.get(statusFetchKey)
-            ?? (statusFetchMode === 'light' ? inFlightStatusFetches.get(getStatusFetchKey(runtimeKey, directory, 'full')) : undefined);
+            ?? (statusFetchMode === 'light' ? inFlightStatusFetches.get(getStatusFetchKey(runtimeKey, directory, 'full', statusReader)) : undefined);
           // Join an in-flight request only when it was admitted at the current
           // mutation revision; a request that predates a mutation must not
           // satisfy the post-mutation refresh.
