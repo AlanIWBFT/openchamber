@@ -348,10 +348,12 @@ describe("resyncBlockingRequestsForDirectory", () => {
     const routingIndex = createEventRoutingIndex()
     const refreshes: Array<{ directory: string; paths?: string[] }> = []
     const unsubscribe = sessionEvents.onGitRefreshHint((hint) => refreshes.push(hint))
+    let nextSequence = 1
     // SAFETY: this fixture supplies the SDK event discriminator and the tool
-    // part identity, tool name, and state fields consumed by the reducer.
+    // part identity, sequence, tool name, and state fields consumed by the reducer.
     const toolEvent = (tool: string, status: "pending" | "completed" | "error") => ({
       type: "message.part.updated",
+      seq: nextSequence++,
       properties: {
         part: {
           id: "prt_tool",
