@@ -209,7 +209,7 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
       toast.error(error instanceof Error ? error.message : t('gitView.toast.createBranchFailed'));
       throw error;
     }
-  }, [currentDirectory, git, refreshStatusAndBranches, status?.current, t]);
+  }, [currentDirectory, git, refreshStatusAndBranches, status, t]);
 
   const refreshRemotes = React.useCallback(async () => {
     if (!currentDirectory) {

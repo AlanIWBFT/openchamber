@@ -1877,7 +1877,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
     const isFinalized = execProcessState === false
         || (!execProcessRunning && (status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled'));
-    const isSuccessfullyFinalized = isFinalized && status === 'completed';
     const isError = status === 'error' || status === 'failed' || (typeof unifiedExecMetadata.execError === 'string' && unifiedExecMetadata.execError.length > 0);
 
     const [activeLatched, setActiveLatched] = React.useState<boolean>(!isFinalized);
