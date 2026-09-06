@@ -29,6 +29,7 @@ import {
   beginMessageSnapshot,
   decodeStoredMessageRecords,
   getMessageOrderState,
+  invalidateSessionOrder,
   sortMessages,
   dropSessionOrder,
   preserveConcurrentMessageChanges,
@@ -128,11 +129,11 @@ function sessionMutationPatch(
   return sessionsMutationPatch(state, [sessionId], deleted)
 }
 
-function invalidateSessionLoads(sessionId: string, directories: Iterable<string | null | undefined>): void {
+function invalidateSessionLoads(sessionId: string, directories: Iterable<string | null | undefined>, preserveOrder = false): void {
   const loader = getImperativeSessionMessageLoader()
   if (!loader) return
   for (const directory of new Set(directories)) {
-    if (directory) loader.invalidateSession({ directory, sessionID: sessionId })
+    if (directory) loader.invalidateSession({ directory, sessionID: sessionId }, { preserveOrder })
   }
 }
 
@@ -349,6 +350,8 @@ function reconcileSessionMove(
   }
 
   const destinationSessionIndex = destinationState.session.findIndex((candidate) => candidate.id === session.id)
+  const destinationOrder = getMessageOrderState(destinationStore)
+  invalidateSessionOrder(destinationOrder, session.id)
   const destinationSessions = [...destinationState.session]
   if (destinationSessionIndex === -1) destinationSessions.push(movedSession)
   else destinationSessions[destinationSessionIndex] = movedSession
@@ -372,6 +375,22 @@ function reconcileSessionMove(
   const messages = moveRecordEntries(sourceState.message, destinationState.message, [session.id])
   const messageIds = sourceState.message[session.id]?.map((message) => message.id) ?? []
   const parts = moveRecordEntries(sourceState.part, destinationState.part, messageIds)
+
+  // Stored UI entities have no seq fields: move their side indexes with the cache.
+  const sourceOrder = getMessageOrderState(sourceStore)
+  const records = (sourceState.message[session.id] ?? []).map((info) => ({ info, parts: sourceState.part[info.id] ?? [] }))
+  applyDecodedSequences(destinationOrder, {
+    records,
+    messageSeq: new Map(records.flatMap(({ info }) => {
+      const seq = sourceOrder.message.get(info.id)
+      return seq === undefined ? [] : [[info.id, seq] as const]
+    })),
+    partSeq: new Map(records.flatMap((record) => record.parts.flatMap((part) => {
+      const seq = sourceOrder.part.get(part.id)
+      return seq === undefined ? [] : [[part.id, seq] as const]
+    }))),
+  })
+  dropSessionOrder(sourceOrder, session.id, sourceState.message[session.id], sourceState.part)
 
   sourceStore.setState({
     session: sourceState.session.filter((candidate) => candidate.id !== session.id),
@@ -421,7 +440,7 @@ export async function moveSessionToDirectory(
   // already happened, but we must not publish stale local state to the UI/stores.
   if (isStaleRuntime(expectedRuntimeKey)) return
 
-  invalidateSessionLoads(session.id, [sourceDirectory, destinationDirectory])
+  invalidateSessionLoads(session.id, [sourceDirectory, destinationDirectory], true)
 
   const moved = reconcileSessionMove(session, sourceDirectory, destinationDirectory)
 

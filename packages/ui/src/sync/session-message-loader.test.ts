@@ -507,6 +507,30 @@ describe("SessionMessageLoader", () => {
     childStores.disposeAll()
   })
 
+  test("can invalidate loads for a directory move without discarding cached sequences", async () => {
+    const { beginMessageSnapshot, getMessageOrderState, isCurrentMessageSnapshot } = await import("./message-order")
+    const { childStores, loader } = createLoader(async ({ sessionID }) => response([createRecord(sessionID, "cached", 5)]))
+    const target = { directory: "/repo", sessionID: "session-a" }
+    try {
+      await loader.ensure(target)
+      const store = childStores.getChild(target.directory)!
+      const order = getMessageOrderState(store)
+      const snapshot = beginMessageSnapshot(order, target.sessionID)
+      const parts = new Map(order.part)
+
+      loader.invalidateSession(target, { preserveOrder: true })
+
+      expect(loader.getSnapshot(target).status).toBe("idle")
+      expect(store.getState().message[target.sessionID]?.[0]?.id).toBe("cached")
+      expect(order.message.get("cached")).toBe(5)
+      expect(order.part).toEqual(parts)
+      expect(isCurrentMessageSnapshot(order, target.sessionID, snapshot)).toBe(false)
+    } finally {
+      loader.dispose()
+      childStores.disposeAll()
+    }
+  })
+
   test("prevents an evicted in-flight request from repopulating the store", async () => {
     const pending = deferred<ReturnType<typeof response>>()
     const { childStores, loader } = createLoader(async () => pending.promise)

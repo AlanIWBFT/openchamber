@@ -398,6 +398,7 @@ Message and part IDs are identities only. Persisted timeline order comes from th
 - Missing or invalid sequence is a protocol error; do not fall back to ID, timestamps, or arrival order.
 - Only optimistic messages and parts may temporarily lack sequence, and they sort after authoritative entities in stable insertion order.
 - Sequence state lives in the non-reactive per-directory-store sidecar in `message-order.ts`; UI message/part objects do not retain `seq`.
+- Directory moves invalidate loads while preserving sequence indexes until the message/part cache and its indexes transfer together. Both session snapshot tokens expire; unrelated sessions remain intact. This does not recover a deleted execution environment.
 
 HTTP materialization must declare whether a result is recent, prepend, sparse merge, or complete. A finite page without `X-Next-Cursor` is complete, including a successful empty page. In-flight snapshots preserve newer events, HTTP commits, optimistic state, removals, and session eviction tombstones. Directory or server instance replacement invalidates the entire sidecar so old requests cannot write into the replacement instance.
 
