@@ -370,17 +370,9 @@ mock.module("./global-session-status", () => ({
   },
 }))
 
-mock.module("./session-message-loader", () => ({
-  getImperativeSessionMessageLoader: () => ({
-    invalidateSession: () => {},
-    ensure: async () => {},
-    refreshTail: async () => {},
-    getSnapshot: () => ({ status: "ready" as const }),
-  }),
-}))
-
 mock.module("../lib/runtime-switch", () => ({
   getRuntimeKey: () => runtimeKey,
+  getRuntimeApiBaseUrl: () => "http://opencode.test",
   switchRuntimeEndpoint: ({ runtimeKey: nextRuntimeKey }: { runtimeKey: string }) => {
     runtimeKey = nextRuntimeKey
   },
@@ -538,6 +530,15 @@ describe("moveSessionToDirectory", () => {
     })
     const destination = createStore({})
     const childStores = createChildStores([["/source", source], ["/destination", destination]])
+    const { beginMessageSnapshot, getMessageOrderState, isCurrentMessageSnapshot, recordMessageSequence, recordPartSequence } = await import("./message-order")
+    const sourceOrder = getMessageOrderState(source)
+    const destinationOrder = getMessageOrderState(destination)
+    recordMessageSequence(sourceOrder, message.id, "session-a", 5)
+    recordPartSequence(sourceOrder, part.id, "session-a", message.id, 7)
+    recordMessageSequence(sourceOrder, "other-message", "other-session", 5)
+    const sourceSnapshot = beginMessageSnapshot(sourceOrder, "session-a")
+    const destinationSnapshot = beginMessageSnapshot(destinationOrder, "session-a")
+    const otherSnapshot = beginMessageSnapshot(sourceOrder, "other-session")
     const { moveSessionToDirectory, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/source")
 
@@ -573,6 +574,14 @@ describe("moveSessionToDirectory", () => {
     expect(registeredSessionDirectories).toEqual([{ sessionID: "session-a", directory: "/destination" }])
     expect(movedSessionDirectories).toEqual([{ sessionID: "session-a", directory: "/destination" }])
     expect((globalUpsertedSessions[0] as SessionWithDirectory).directory).toBe("/destination")
+    expect(destinationOrder.message.get(message.id)).toBe(5)
+    expect(destinationOrder.part.get(part.id)).toBe(7)
+    expect(sourceOrder.message.has(message.id)).toBe(false)
+    expect(sourceOrder.part.has(part.id)).toBe(false)
+    expect(isCurrentMessageSnapshot(sourceOrder, "session-a", sourceSnapshot)).toBe(false)
+    expect(isCurrentMessageSnapshot(destinationOrder, "session-a", destinationSnapshot)).toBe(false)
+    expect(isCurrentMessageSnapshot(sourceOrder, "other-session", otherSnapshot)).toBe(true)
+    expect(sourceOrder.message.get("other-message")).toBe(5)
 
     await moveSessionToDirectory(destination.getState().session[0], "/destination", "/source", true)
 
@@ -583,6 +592,30 @@ describe("moveSessionToDirectory", () => {
     expect(destination.getState().session).toHaveLength(0)
     expect(destination.getState().message["session-a"]).toBe(undefined)
     expect(destination.getState().part["message-a"]).toBe(undefined)
+    expect(sourceOrder.message.get(message.id)).toBe(5)
+    expect(sourceOrder.part.get(part.id)).toBe(7)
+    expect(destinationOrder.message.has(message.id)).toBe(false)
+    expect(destinationOrder.part.has(part.id)).toBe(false)
+  })
+})
+
+describe("directory move without a source cache", () => {
+  test("retains destination ordering while invalidating its old snapshots", async () => {
+    const session = { id: "session-a", directory: "/source" } as Session
+    const message = { id: "cached", sessionID: session.id, role: "user", time: { created: 1 } } as Message
+    const destination = createStore({}, { message: { [session.id]: [message] } })
+    const { beginMessageSnapshot, getMessageOrderState, isCurrentMessageSnapshot, recordMessageSequence } = await import("./message-order")
+    const order = getMessageOrderState(destination)
+    recordMessageSequence(order, message.id, session.id, 5)
+    const snapshot = beginMessageSnapshot(order, session.id)
+    const { moveSessionToDirectory, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/destination", destination]]), () => "/source")
+
+    await moveSessionToDirectory(session, "/source", "/destination", false)
+
+    expect(destination.getState().message[session.id]).toEqual([message])
+    expect(order.message.get(message.id)).toBe(5)
+    expect(isCurrentMessageSnapshot(order, session.id, snapshot)).toBe(false)
   })
 })
 
@@ -1885,8 +1918,11 @@ describe("optimisticSend target directory", () => {
       send: async (messageID) => {
         sessionMessagesResult = {
           data: [{
-            info: { id: messageID, role: "user", sessionID: "session-confirmed", time: { created: 1 } } as Message,
-            parts: [{ id: "server-part", type: "text", text: "hello" } as Part],
+            info: {
+              id: messageID, seq: 1, role: "user", sessionID: "session-confirmed", time: { created: 1 },
+              agent: "build", model: { providerID: "test", modelID: "test" },
+            },
+            parts: [{ id: "server-part", seq: 1, messageID, sessionID: "session-confirmed", type: "text", text: "hello" } as Part],
           }],
         }
         const error = new Error("Failed to send message (504): gateway timeout") as Error & { status?: number }
