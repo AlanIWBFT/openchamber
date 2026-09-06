@@ -264,6 +264,7 @@ const parseGoalMetadata = (session: { metadata?: unknown } | undefined) => {
 interface LoopInfo {
   id: string;
   sessionID: JsonValue | undefined;
+  seq: number | null;
   time: JsonObject;
 }
 
@@ -289,7 +290,8 @@ const toLoopMessage = (raw: JsonValue): LoopMessage | null => {
   const id = String(message?.id ?? '');
   if (!id || !message) return null;
   const time: JsonObject = { ...jsonFields(message.time) };
-  const base = { id, sessionID: message.sessionID, time };
+  const seq = isInteger(message.seq) && Number.isSafeInteger(message.seq) ? message.seq : null;
+  const base = { id, sessionID: message.sessionID, seq, time };
   switch (message.type) {
     case 'user':
     case 'synthetic':
@@ -382,30 +384,23 @@ const isLengthTruncated = (info: AssistantInfo | undefined, { errorName = getErr
 const hasRepeatedLengthTail = (messages: LoopMessage[], latestAssistant: LoopMessage | null, goalCreatedAt: number) => {
   const latestInfo = latestAssistant?.info;
   if (!latestAssistant || latestInfo?.role !== 'assistant' || latestInfo.summary === true) return false;
-  const latestIndex = messages.indexOf(latestAssistant);
+  const latestSeq = latestInfo.seq;
   const latestCreated = latestInfo?.time?.created;
   if (
-    latestIndex < 0
+    latestSeq === null || !messages.includes(latestAssistant)
     || !(Number(latestInfo.time.completed) > 0)
     || !positiveNumber(latestCreated)
     || !isLengthTruncated(latestInfo)
   ) return false;
 
   let previous = null;
-  for (let i = 0; i < messages.length; i += 1) {
-    const info = messages[i]?.info;
+  for (const { info } of messages) {
     if (info?.role !== 'assistant' || info.summary === true || !(Number(info.time.completed) > 0)) continue;
     const created = info.time?.created;
     if (!positiveNumber(created)) continue;
-    if (i === latestIndex) continue;
-    if (created > latestCreated || (created === latestCreated && i > latestIndex)) continue;
-    if (
-      !previous
-      || created > previous.created
-      || (created === previous.created && i > previous.index)
-    ) {
-      previous = { info, created, index: i };
-    }
+    const seq = info.seq;
+    if (seq === null || seq >= latestSeq) continue;
+    if (!previous || seq > previous.seq) previous = { info, created, seq };
   }
 
   return Boolean(
