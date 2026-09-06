@@ -490,6 +490,11 @@ describe("moveSessionToDirectory", () => {
     })
     const destination = createStore({})
     const childStores = createChildStores([["/source", source], ["/destination", destination]])
+    const { beginMessageSnapshot } = await import("./message-snapshot")
+    message.seq = 5
+    const sourceSnapshot = beginMessageSnapshot(source, "session-a")
+    const destinationSnapshot = beginMessageSnapshot(destination, "session-a")
+    const otherSnapshot = beginMessageSnapshot(source, "other-session")
     const { moveSessionToDirectory, setActionRefs } = await import("./session-actions")
     setActionRefs(childStores, () => "/source")
 
@@ -517,6 +522,13 @@ describe("moveSessionToDirectory", () => {
     expect(registeredSessionDirectories).toEqual([{ sessionID: "session-a", directory: "/destination" }])
     expect(movedSessionDirectories).toEqual([{ sessionID: "session-a", directory: "/destination" }])
     expect((globalUpsertedSessions[0] as SessionWithDirectory).directory).toBe("/destination")
+    expect(destination.getState().message["session-a"]?.[0].seq).toBe(5)
+    expect(sourceSnapshot.isCurrent()).toBe(false)
+    expect(destinationSnapshot.isCurrent()).toBe(false)
+    expect(otherSnapshot.isCurrent()).toBe(true)
+    sourceSnapshot.dispose()
+    destinationSnapshot.dispose()
+    otherSnapshot.dispose()
 
     await moveSessionToDirectory(destination.getState().session[0], "/destination", "/source")
 
@@ -527,6 +539,30 @@ describe("moveSessionToDirectory", () => {
     expect(destination.getState().session).toHaveLength(0)
     expect(destination.getState().message["session-a"]).toBe(undefined)
     expect(destination.getState().part["message-a"]).toBe(undefined)
+    expect(source.getState().message["session-a"]?.[0].seq).toBe(5)
+  })
+})
+
+describe("directory move without a source cache", () => {
+  test("retains destination ordering while invalidating its old snapshots", async () => {
+    const session: Session = {
+      id: "session-a", directory: "/source", projectID: "project-a", title: "Move", cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { created: 1, updated: 1 },
+    }
+    const message: Message = { id: "cached", sessionID: session.id, seq: 5, role: "user", time: { created: 1 } }
+    const destination = createStore({}, { message: { [session.id]: [message] } })
+    const { beginMessageSnapshot } = await import("./message-snapshot")
+    const snapshot = beginMessageSnapshot(destination, session.id)
+    const { moveSessionToDirectory, setActionRefs } = await import("./session-actions")
+    setActionRefs(createChildStores([["/destination", destination]]), () => "/source")
+
+    await moveSessionToDirectory(session, "/source", "/destination")
+
+    expect(destination.getState().message[session.id]).toEqual([message])
+    expect(destination.getState().message[session.id]?.[0].seq).toBe(5)
+    expect(snapshot.isCurrent()).toBe(false)
+    snapshot.dispose()
   })
 })
 

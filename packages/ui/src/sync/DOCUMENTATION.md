@@ -796,6 +796,13 @@ with missing or invalid message seq is an error, never authoritative empty data.
 There is no part-sequence sidecar. Runtime, store and loader ownership prevent
 retired requests from publishing into a replacement cache.
 
+Directory moves transfer message creation `seq` and part array order with the
+cached transcript. They invalidate in-flight message snapshots in both directory
+stores, including reads outside the loader, while leaving other sessions' reads
+valid. `message-snapshot.ts` tracks only pending reads and releases registrations
+when their owners dispose them. Moving a transcript does not restore its previous
+execution environment.
+
 Revert boundaries are resolved by identity in the sequence-ordered message array.
 If a boundary is absent from a partial cache, retrieve the required history through
 cursor paging; never infer its position from message IDs or use the retired

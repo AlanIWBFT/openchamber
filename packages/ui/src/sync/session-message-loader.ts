@@ -4,7 +4,7 @@ import type { ChildStoreManager, DirectoryStore } from "./child-store"
 import { retry } from "./retry"
 import { mergeOptimisticPage, type OptimisticItem } from "./optimistic"
 import { findMessageIndex, insertMessageChronologically, sortMessagesChronologically } from "./message-ordering"
-import { beginMessageSnapshot, type MessageSnapshot } from "./message-snapshot"
+import { beginMessageSnapshot, invalidateMessageSnapshots, type MessageSnapshot } from "./message-snapshot"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
 import {
   clearDirectorySessionPrefetch,
@@ -709,6 +709,8 @@ export class SessionMessageLoader {
     const normalized = this.normalizeTarget(target)
     if (!normalized) return
     clearSessionPrefetch(normalized.directory, [normalized.sessionID], this.runtimeKey)
+    const store = this.childStores.getChild(normalized.directory)
+    if (store) invalidateMessageSnapshots(store, normalized.sessionID)
     const entry = this.entries.get(this.keyFor(normalized))
     if (!entry) return
     entry.lifecycleGeneration += 1
