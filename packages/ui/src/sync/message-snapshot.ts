@@ -5,6 +5,16 @@ import { observeDirectoryRecoveryEvents, type DirectoryRecoverySource } from "./
 type MessageRecord = { info: Message; parts: Part[] }
 type StoredRecord = { info: StoredMessage; parts: Part[] }
 
+type PendingSnapshot = { sessionID: string; invalidate: () => void }
+const pendingSnapshots = new WeakMap<DirectoryRecoverySource, Set<PendingSnapshot>>()
+
+/** Retire reads without discarding the cached transcript or its creation order. */
+export function invalidateMessageSnapshots(source: DirectoryRecoverySource, sessionID: string): void {
+  for (const snapshot of pendingSnapshots.get(source) ?? []) {
+    if (snapshot.sessionID === sessionID) snapshot.invalidate()
+  }
+}
+
 /**
  * Protect one history read through publication, including time spent fetching
  * more pages. Creation seq orders messages; it is never an update revision.
@@ -19,6 +29,10 @@ export function beginMessageSnapshot(source: DirectoryRecoverySource, sessionID:
   const replacedParts = new Set<string>()
   const removedMessages = new Set<string>()
   let valid = true
+  const pending = pendingSnapshots.get(source) ?? new Set<PendingSnapshot>()
+  pendingSnapshots.set(source, pending)
+  const token = { sessionID, invalidate: () => { valid = false } }
+  pending.add(token)
 
   const touchPart = (messageID: string, partID: string) => {
     let parts = changedParts.get(messageID)
@@ -74,6 +88,8 @@ export function beginMessageSnapshot(source: DirectoryRecoverySource, sessionID:
     isCurrent: () => valid,
     dispose() {
       valid = false
+      pending.delete(token)
+      if (pending.size === 0 && pendingSnapshots.get(source) === pending) pendingSnapshots.delete(source)
       release()
     },
     reconcile(records: readonly StoredRecord[], includeConcurrent = false): MessageRecord[] {

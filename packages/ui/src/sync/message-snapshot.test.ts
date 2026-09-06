@@ -3,7 +3,7 @@ import { createStore } from "zustand/vanilla"
 import type { AssistantMessage, CompactionMessage, StoredMessage, TextPart, ToolPart } from "@/lib/opencode/model"
 import { INITIAL_STATE, type State } from "./types"
 import { recordDirectoryRecoveryEvent } from "./directory-recovery-snapshots"
-import { beginMessageSnapshot } from "./message-snapshot"
+import { beginMessageSnapshot, invalidateMessageSnapshots } from "./message-snapshot"
 
 const message: AssistantMessage & StoredMessage = {
   id: "msg_1", sessionID: "ses_1", seq: 3, role: "assistant", time: { created: 100 },
@@ -17,6 +17,18 @@ const tool = (messageID: string, progress: number): ToolPart => ({
 const source = (initial: Partial<State> = {}) => createStore<State>(() => ({ ...INITIAL_STATE, ...initial }))
 
 describe("in-flight message snapshots", () => {
+  test("disposing an old read again does not detach the next read from move invalidation", () => {
+    const store = source()
+    const first = beginMessageSnapshot(store, "ses_1")
+    first.dispose()
+    const second = beginMessageSnapshot(store, "ses_1")
+    try {
+      first.dispose()
+      invalidateMessageSnapshots(store, "ses_1")
+      expect(second.isCurrent()).toBe(false)
+      expect(() => second.reconcile([{ info: message, parts: [] }])).toThrow()
+    } finally { second.dispose() }
+  })
   test("progress on a newer compaction does not block recovery of an older compaction", () => {
     const old: CompactionMessage & StoredMessage = {
       id: "old", sessionID: "ses_1", seq: 3, role: "compaction", time: { created: 100 }, status: "running", reason: "manual", summary: "",
