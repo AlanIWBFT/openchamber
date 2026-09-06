@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 
 import { createTerminalRuntime } from './runtime.js';
@@ -380,6 +380,31 @@ describe('terminal runtime', () => {
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({ error: 'Terminal runtime is shutting down' });
     expect(harness.processes).toHaveLength(0);
+  });
+
+  it('kills a PTY whose asynchronous spawn resolves after force shutdown', async () => {
+    const started = deferred();
+    const released = deferred();
+    const kill = vi.fn();
+    const harness = createHarness({
+      loadPtyProvider: async () => ({
+        backend: 'fake-pty',
+        spawn: async () => {
+          started.resolve();
+          await released.promise;
+          return { kill };
+        },
+      }),
+    });
+    const response = createResponse();
+    const creating = harness.routes.post.get('/api/terminal/create')({ body: { sessionId: 'late-spawn', cwd: '/repo' } }, response);
+    await started.promise;
+    harness.runtime.forceShutdown();
+    released.resolve();
+    await creating;
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: 'Terminal runtime is shutting down' });
   });
 
   it('creates client-identified sessions and forwards bounded resize operations', async () => {
