@@ -760,6 +760,30 @@ describe("SessionMessageLoader", () => {
     childStores.disposeAll()
   })
 
+  test("can invalidate loads for a directory move without discarding cached sequences", async () => {
+    const { beginMessageSnapshot } = await import("./message-snapshot")
+    const { childStores, loader } = createLoader(async ({ sessionID }) => response([createRecord(sessionID, "cached", 5)]))
+    const target = { directory: "/repo", sessionID: "session-a" }
+    try {
+      await loader.ensure(target)
+      const store = childStores.getChild(target.directory)!
+      const snapshot = beginMessageSnapshot(store, target.sessionID)
+      const parts = store.getState().part
+
+      loader.invalidateSession(target)
+
+      expect(loader.getSnapshot(target).status).toBe("idle")
+      expect(store.getState().message[target.sessionID]?.[0]?.id).toBe("cached")
+      expect(store.getState().message[target.sessionID]?.[0]?.seq).toBe(5)
+      expect(store.getState().part).toBe(parts)
+      expect(snapshot.isCurrent()).toBe(false)
+      snapshot.dispose()
+    } finally {
+      loader.dispose()
+      childStores.disposeAll()
+    }
+  })
+
   test("prevents an evicted in-flight request from repopulating the store", async () => {
     const pending = deferred<MessagePage>()
     const { childStores, loader } = createLoader(async () => pending.promise)
