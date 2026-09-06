@@ -105,6 +105,7 @@ const v2OpenCode = ({ messages, active = {}, childPages = [[]], childrenStatus =
 
 const assistantRecord = (overrides = {}) => ({
   id: 'msg_a1',
+  seq: 1,
   sessionID: SESSION_ID,
   type: 'assistant',
   agent: 'build',
@@ -135,6 +136,40 @@ const runTick = async (runtime) => {
 };
 
 describe('session goal tick on v2 messages', () => {
+  it.each([false, true])('stops after backend truncation recovery, allowing only explicit Resume (resumed=%s)', async (resumed) => {
+    const { calls } = v2OpenCode({ messages: [
+      ...[10, 11, 12].map((seq) => assistantRecord({ id: `msg_${seq}`, seq, finish: 'length' })),
+      { id: 'idle', seq: 13, sessionID: SESSION_ID, type: 'idle', outcome: 'failed',
+        error: { type: 'output-limit', message: 'Response still truncated after two output token limit continuations' }, time: { created: 30 } },
+    ] });
+    const seam = wired({ openchamber: { goal: activeGoal(resumed ? { statusReason: 'resumed' } : {}) } });
+    const { runtime, getSmallModelService } = makeRuntime(seam);
+    await runTick(runtime);
+    expect(seam.persistSessionGoal.mock.calls.at(-1)[2].status).toBe(resumed ? 'active' : 'blocked');
+    expect(getSmallModelService).not.toHaveBeenCalled();
+    expect(calls.filter((call) => call.path.endsWith('/prompt'))).toHaveLength(resumed ? 1 : 0);
+  });
+
+  it.each([
+    { middleFinish: 'stop', expectedStatus: 'active' },
+    { middleFinish: 'length', expectedStatus: 'blocked' },
+  ])('uses creation sequence for consecutive truncation despite reversed timestamps ($expectedStatus)', async ({ middleFinish, expectedStatus }) => {
+    const { calls } = v2OpenCode({ messages: [
+      assistantRecord({ id: 'z', seq: 10, finish: middleFinish === 'stop' ? 'length' : 'stop', time: { created: 300, completed: 301 } }),
+      assistantRecord({ id: 'm', seq: 11, finish: middleFinish, time: { created: 200, completed: 201 } }),
+      assistantRecord({ id: 'a', seq: 12, finish: 'length', time: { created: 400, completed: 401 } }),
+    ] });
+    const seam = wired({ openchamber: { goal: activeGoal() } });
+    const { runtime, getSmallModelService } = makeRuntime(seam);
+    try {
+      await runTick(runtime);
+      expect(seam.persistSessionGoal.mock.calls.at(-1)[2].status).toBe(expectedStatus);
+      expect(getSmallModelService).not.toHaveBeenCalled();
+      expect(calls.filter((call) => call.path.endsWith('/prompt'))).toHaveLength(expectedStatus === 'active' ? 1 : 0);
+    } finally {
+      runtime.stop();
+    }
+  });
   it('reads the flat v2 assistant record, audits it, and continues on the same model and agent', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const { calls } = v2OpenCode({
