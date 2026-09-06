@@ -50,7 +50,7 @@ import { recordSendFailure } from "./send-failure-log"
 import { draftFromContextPayload, readContextPart, type ContextCarrierPart } from "@/lib/messages/contextParts"
 import { useInlineCommentDraftStore, type InlineCommentDraftTarget } from "@/stores/useInlineCommentDraftStore"
 import { materializeSessionSnapshots } from "./materialization"
-import { beginMessageSnapshot } from "./message-snapshot"
+import { beginMessageSnapshot, invalidateMessageSnapshots } from "./message-snapshot"
 import { sessionEvents } from "@/lib/sessionEvents"
 import { fileTreeChanges } from "@/lib/fileTreeChanges"
 import {
@@ -285,6 +285,8 @@ function reconcileSessionMove(
   const destinationStore = stores?.ensureChild(destinationDirectory, { bootstrap: false })
   const sourceState = sourceStore?.getState()
   const destinationState = destinationStore?.getState()
+  if (sourceStore) invalidateMessageSnapshots(sourceStore, session.id)
+  if (destinationStore) invalidateMessageSnapshots(destinationStore, session.id)
   const liveSession = sourceState?.session.find((candidate) => candidate.id === session.id)
   const adoptedSession = liveSession
     ? undefined
