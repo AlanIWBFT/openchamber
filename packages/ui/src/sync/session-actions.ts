@@ -23,7 +23,7 @@ import { draftFromContextPayload, readContextPart, type ContextCarrierPart } fro
 import { useInlineCommentDraftStore, type InlineCommentDraftTarget } from "@/stores/useInlineCommentDraftStore"
 import { materializeSessionSnapshots } from "./materialization"
 import { dropSessionCaches } from "./session-cache"
-import { beginMessageSnapshot } from "./message-snapshot"
+import { beginMessageSnapshot, invalidateMessageSnapshots } from "./message-snapshot"
 import { sessionEvents } from "@/lib/sessionEvents"
 import {
   getOriginalSessionID,
@@ -272,6 +272,8 @@ function reconcileSessionMove(
   const destinationStore = stores?.ensureChild(destinationDirectory, { bootstrap: false })
   const sourceState = sourceStore?.getState()
   const destinationState = destinationStore?.getState()
+  if (sourceStore) invalidateMessageSnapshots(sourceStore, session.id)
+  if (destinationStore) invalidateMessageSnapshots(destinationStore, session.id)
   const liveSession = sourceState?.session.find((candidate) => candidate.id === session.id)
   const movedSession: Session = {
     ...mergeSessionDirectoryMetadata(session, liveSession),
