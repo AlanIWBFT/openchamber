@@ -26,6 +26,7 @@ import {
   dropSessionOrder,
   getMessageSequenceBoundary,
   getMessageOrderState,
+  invalidateSessionOrder,
   preserveConcurrentMessageChanges,
   sortMessages,
   sortParts as sortOrderedParts,
@@ -531,7 +532,7 @@ export class SessionMessageLoader {
     this.getEntry(target).optimistic.delete(input.messageID)
   }
 
-  invalidateSession(target: SessionMessageTarget): void {
+  invalidateSession(target: SessionMessageTarget, options?: { preserveOrder?: boolean }): void {
     const normalized = this.normalizeTarget(target)
     if (!normalized) return
     const entry = this.entries.get(this.keyFor(normalized))
@@ -544,7 +545,9 @@ export class SessionMessageLoader {
     const store = this.childStores.getChild(normalized.directory)
     if (store) {
       const state = store.getState()
-      dropSessionOrder(getMessageOrderState(store), normalized.sessionID, state.message[normalized.sessionID], state.part)
+      const order = getMessageOrderState(store)
+      if (options?.preserveOrder) invalidateSessionOrder(order, normalized.sessionID)
+      else dropSessionOrder(order, normalized.sessionID, state.message[normalized.sessionID], state.part)
     }
     entry.snapshot = createDefaultState(entry.snapshot.generation)
     clearSessionPrefetch(normalized.directory, [normalized.sessionID], this.runtimeKey)
