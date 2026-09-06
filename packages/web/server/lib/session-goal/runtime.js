@@ -249,16 +249,17 @@ const isLengthTruncated = (info, errorName = getErrorName(info?.error)) => {
 
 // Summary messages are assistant-shaped, but they are compaction turns rather
 // than agent turns. They must not break or satisfy the consecutive truncation
-// check; only completed, non-summary assistant turns participate. Chronology
-// comes from `time.created`, never from message IDs; array position is only a
-// tie-breaker for equal timestamps.
+// check; only completed, non-summary assistant turns participate. Authoritative
+// sequence defines adjacency; creation time only gates the goal boundary.
 const hasRepeatedLengthTail = (messages, latestAssistant, goalCreatedAt) => {
   const latestInfo = latestAssistant?.info;
   if (latestInfo?.summary === true) return false;
   const latestIndex = messages.indexOf(latestAssistant);
   const latestCreated = latestInfo?.time?.created;
+  const latestSeq = latestInfo?.seq;
   if (
     latestIndex < 0
+    || !Number.isSafeInteger(latestSeq)
     || !(latestInfo?.time?.completed > 0)
     || !(Number.isFinite(latestCreated) && latestCreated > 0)
     || !isLengthTruncated(latestInfo)
@@ -269,17 +270,12 @@ const hasRepeatedLengthTail = (messages, latestAssistant, goalCreatedAt) => {
     const info = messages[i]?.info;
     if (info?.role !== 'assistant' || info.summary === true || !(info.time?.completed > 0)) continue;
     const created = info.time?.created;
-    // An unknown timestamp cannot safely participate in chronology. Ignore it
-    // rather than letting an unrelated older message hide known chronology.
+    // Without creation time we cannot establish that the turn belongs to this goal.
     if (!(Number.isFinite(created) && created > 0)) continue;
-    if (i === latestIndex) continue;
-    if (created > latestCreated || (created === latestCreated && i > latestIndex)) continue;
-    if (
-      !previous
-      || created > previous.created
-      || (created === previous.created && i > previous.index)
-    ) {
-      previous = { info, created, index: i };
+    const seq = info.seq;
+    if (!Number.isSafeInteger(seq) || seq >= latestSeq) continue;
+    if (!previous || seq > previous.seq) {
+      previous = { info, created, seq };
     }
   }
 
