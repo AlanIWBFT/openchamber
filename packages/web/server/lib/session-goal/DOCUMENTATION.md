@@ -122,7 +122,8 @@ before touching the filesystem). Rationale: metadata rides every
       a second consecutive completed, non-summary assistant turn that is also
       truncated settles the goal as `blocked` (`repeated output truncation`).
       The consecutive state is derived from the loaded message history, not
-      persisted, using `info.time.created` chronology rather than message IDs.
+      persisted, using authoritative `info.seq` order rather than timestamps or
+      message IDs. Creation time still determines the Goal boundary.
       Summary messages are not agent turns; an ordinary completed assistant
       turn naturally breaks the consecutive condition. Explicit Resume grants
       one new recovery attempt over the same transcript; the continuation

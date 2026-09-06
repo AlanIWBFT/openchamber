@@ -46,9 +46,11 @@ const startIdleTick = async (fetchImpl) => {
   return { runtime, getSmallModelService };
 };
 
+let messageSequence = 0;
 const assistantMessage = (id, infoOverrides = {}) => ({
   info: {
     id,
+    seq: ++messageSequence,
     sessionID: SESSION_ID,
     role: 'assistant',
     providerID: 'provider',
@@ -553,6 +555,26 @@ describe('session goal live activity gate', () => {
     expect(requests.filter((request) => request.pathname === `/session/${SESSION_ID}/prompt_async`)).toHaveLength(2);
     expect(lastPatchedGoal(requests)).toMatchObject({ status: 'active' });
     runtime.stop();
+  });
+
+  it.each([
+    { middleFinish: 'stop', expectedStatus: 'active' },
+    { middleFinish: 'length', expectedStatus: 'blocked' },
+  ])('uses sequence adjacency despite reversed timestamps ($expectedStatus)', async ({ middleFinish, expectedStatus }) => {
+    const messages = [
+      assistantMessage('z', { seq: 10, finish: middleFinish === 'stop' ? 'length' : 'stop', time: { created: 300, completed: 301 } }),
+      assistantMessage('m', { seq: 11, finish: middleFinish, time: { created: 200, completed: 201 } }),
+      assistantMessage('a', { seq: 12, finish: 'length', time: { created: 400, completed: 401 } }),
+    ];
+    const { runtime, requests, service } = createRuntimeHarness({ messages });
+    try {
+      await runIdleTick(runtime);
+      expect(lastPatchedGoal(requests).status).toBe(expectedStatus);
+      expect(service.generateSmallModelText).not.toHaveBeenCalled();
+      expect(requests.filter((request) => request.pathname.endsWith('/prompt_async'))).toHaveLength(expectedStatus === 'active' ? 1 : 0);
+    } finally {
+      runtime.stop();
+    }
   });
 
   it('keeps MessageAbortedError pause behavior instead of continuing', async () => {
