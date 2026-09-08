@@ -61,6 +61,7 @@ import {
   wasEarlyWindowClosed,
 } from './early-startup.mjs';
 import { createStartupSingleFlight } from './startup-single-flight.mjs';
+import { createDesktopDeepLinkQueue, createDesktopNavigationReadiness } from './desktop-deep-links.mjs';
 import { createServerDependencyPreload } from './server-dependency-preload.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { isSplashColor, redactHostsConfigForRemote } from './remote-page-policy.mjs';
@@ -438,6 +439,7 @@ const quitConfirmationMessage = () => {
 };
 
 const shutdownBackgroundServices = () => {
+  state.mainWindow?.__ocNavigationReadiness?.reset();
   if (state.backgroundShutdownPromise) return state.backgroundShutdownPromise;
   if (state.backgroundShutdownComplete) return Promise.resolve();
   setDesktopKeepAwakeActive(false);
@@ -2015,15 +2017,12 @@ const setTaskbarProgress = (value) => {
   }
 };
 
-const pendingDeepLinks = [];
-const PENDING_SESSION_LINK_FALLBACK_MS = 10_000;
-
 // A session link (`openchamber://session/<id>`) can also name the message to
 // show (`?message=<id>`) and the saved host that owns the session
 // (`?host=<id>`). The renderer validates the IDs and opens a session of
 // another host in that host's window, as for a notification click.
 const sessionDeepLinkTarget = (link) => {
-  const target = { sessionId: link.value };
+  const target = { sessionId: link.value, directory: link.directory || '' };
   const messageId = readDeepLinkQueryParam(link.raw, 'message');
   if (messageId) target.messageId = messageId;
   const runtimeKey = runtimeKeyForDeepLinkHost(readDeepLinkQueryParam(link.raw, 'host'));
@@ -2031,18 +2030,11 @@ const sessionDeepLinkTarget = (link) => {
   return target;
 };
 
-// Hands the main window's renderer the session links that arrived before it
-// could listen, as { sessionId, messageId?, runtimeKey? }.
-const takePendingSessionDeepLinks = () => {
-  const taken = [];
-  for (let index = pendingDeepLinks.length - 1; index >= 0; index -= 1) {
-    const link = pendingDeepLinks[index];
-    if (link.type !== 'session' || !link.value) continue;
-    pendingDeepLinks.splice(index, 1);
-    taken.unshift(sessionDeepLinkTarget(link));
-  }
-  return taken;
-};
+const pendingDeepLinks = createDesktopDeepLinkQueue({
+  isReady: (link) => isMainWindowReadyForDeepLink(link),
+  dispatch: (link, onHostSwitch) => dispatchDeepLink(link, onHostSwitch),
+  onError: (error) => log.warn('[electron] deep-link dispatch failed:', error),
+});
 
 const parseDeepLink = (raw) => {
   if (typeof raw !== 'string') return null;
@@ -2086,7 +2078,7 @@ const queueHostAction = (action) => {
   emitToWindow(state.mainWindow, 'openchamber:host-actions-ready');
 };
 
-const switchToHostById = async (rawId) => {
+const switchToHostById = async (rawId, onHostSwitch) => {
   const id = typeof rawId === 'string' ? rawId.trim() : '';
   if (!id) return;
   const config = readDesktopHostsConfig();
@@ -2125,6 +2117,7 @@ const switchToHostById = async (rawId) => {
     ? { target: 'local', status: 'ok' }
     : { target: 'remote', status: 'ok', hostId: id, url: apiBaseUrl };
   log.info('[electron] switching to host', { id, bootOutcome });
+  onHostSwitch();
   await activateMainWindow(targetUrl, state.localOrigin, bootOutcome, { apiBaseUrl, clientToken, requestHeaders });
 };
 
@@ -2160,13 +2153,13 @@ const confirmConnectDeepLink = async (payload) => {
   }
 };
 
-const dispatchDeepLink = (link) => {
+const dispatchDeepLink = (link, onHostSwitch) => {
   if (!link) return;
   log.info('[electron] dispatching deep-link', { type: link.type, valueLen: link.value?.length || 0 });
   if (link.type === 'connect') {
     const pairing = parsePairingDeepLink(link.raw, { protocol: DEEP_LINK_PROTOCOL });
     if (pairing) {
-      void confirmConnectDeepLink({
+      return confirmConnectDeepLink({
         serverUrl: pairing.target,
         label: pairing.fingerprint ? `${pairing.label} (${pairing.fingerprint})` : pairing.label,
       }).then((confirmed) => {
@@ -2176,7 +2169,6 @@ const dispatchDeepLink = (link) => {
         }
         queueHostAction({ type: 'pairing', link: link.raw.trim() });
       });
-      return;
     }
     log.warn('[electron] invalid connect deep-link payload');
     return;
@@ -2208,43 +2200,24 @@ const dispatchDeepLink = (link) => {
     return;
   }
   if (link.type === 'host' && link.value) {
-    void switchToHostById(link.value);
-    return;
+    return switchToHostById(link.value, onHostSwitch);
   }
   log.warn('[electron] unknown deep-link action:', link.type);
 };
 
-// Session links wait for the renderer to take them (desktop_take_pending_session_links)
-// once its listener is mounted: an event sent when the page has merely loaded
-// reached no listener on a cold start and the link was lost. The late flush
-// still delivers them to a renderer that never asks (an older remote UI).
-const flushPendingDeepLinks = ({ includeSessions }) => {
-  const kept = [];
-  while (pendingDeepLinks.length > 0) {
-    const link = pendingDeepLinks.shift();
-    if (link.type === 'session' && !includeSessions) {
-      kept.push(link);
-      continue;
-    }
-    dispatchDeepLink(link);
-  }
-  pendingDeepLinks.push(...kept);
-};
-
-const isMainWindowReadyForDeepLink = () =>
-  Boolean(state.mainWindow)
+const isMainWindowReadyForDeepLink = (link) =>
+  state.startupResolved
+  && !state.quitInProgress
+  && Boolean(state.mainWindow)
   && !state.mainWindow.isDestroyed()
-  && !state.mainWindow.webContents.isLoading();
+  && (link.type !== 'session' || state.mainWindow.__ocNavigationReadiness.isReady(state.mainWindow.webContents.mainFrame))
+  && !state.mainWindow.webContents.isLoadingMainFrame();
 
 const handleDeepLinks = (urls) => {
   for (const raw of urls) {
     const parsed = parseDeepLink(raw);
     if (!parsed) continue;
-    if (isMainWindowReadyForDeepLink()) {
-      dispatchDeepLink(parsed);
-    } else {
-      pendingDeepLinks.push(parsed);
-    }
+    pendingDeepLinks.enqueue(parsed);
   }
 };
 
@@ -2644,6 +2617,8 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
     }),
   }));
   browserWindow.__ocLabel = label || nextWindowLabel();
+  browserWindow.__ocNavigationReadiness = createDesktopNavigationReadiness({ onReady: () => void pendingDeepLinks.flush() });
+  browserWindow.once('closed', () => browserWindow.__ocNavigationReadiness.reset());
   browserWindow.__ocRuntimeConfig = { apiBaseUrl: desktopApiBaseUrl, clientToken: desktopClientToken, requestHeaders: desktopRequestHeaders };
   browserWindow.__ocInitScript = buildInitScript(desktopLocalOrigin, state.bootOutcome, desktopApiBaseUrl, desktopClientToken, desktopRequestHeaders);
   browserWindow.__ocTitleBarOverlayEnabled = titleBarOverlayEnabled;
@@ -2872,6 +2847,13 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
   attachRendererRecovery(browserWindow, { log, label: 'window' });
   attachDevWindowTape(app, browserWindow);
 
+  browserWindow.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) browserWindow.__ocNavigationReadiness.reset();
+  });
+  browserWindow.webContents.on('render-process-gone', () => {
+    browserWindow.__ocNavigationReadiness.reset();
+  });
+
   browserWindow.webContents.on('dom-ready', () => {
     if (browserWindow.__ocLabel === 'main') {
       recordElectronStartupPerformance('electron.renderer.dom-ready', {
@@ -2903,11 +2885,10 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
         documentClass: classifyStartupDocument(browserWindow.webContents.getURL()),
       });
     }
-    if (state.mainWindow && browserWindow.id === state.mainWindow.id && pendingDeepLinks.length > 0) {
-      const timer = setTimeout(() => flushPendingDeepLinks({ includeSessions: false }), 400);
-      if (typeof timer?.unref === 'function') timer.unref();
-      const lateTimer = setTimeout(() => flushPendingDeepLinks({ includeSessions: true }), PENDING_SESSION_LINK_FALLBACK_MS);
-      if (typeof lateTimer?.unref === 'function') lateTimer.unref();
+    if (browserWindow.__ocLabel === 'main' && !state.quitInProgress) {
+      const remotePage = /^https?:\/\//i.test(browserWindow.webContents.getURL()) && !isLocalSender(browserWindow.webContents);
+      browserWindow.__ocNavigationReadiness.loaded(browserWindow.webContents.mainFrame, remotePage);
+      void pendingDeepLinks.flush();
     }
   });
 
@@ -3013,6 +2994,7 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
       await navigateWindow(mainWindow, url, { allowAbort: true });
     }
     if (state.quitInProgress) return mainWindow;
+    void pendingDeepLinks.flush();
     mainWindow.show();
     mainWindow.focus();
     return mainWindow;
@@ -3024,6 +3006,7 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
     url,
     runtimeConfig,
   });
+  void pendingDeepLinks.flush();
   return state.mainWindow;
 };
 
@@ -5524,11 +5507,6 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (!browserWindow || !state.mainWindow || browserWindow.id !== state.mainWindow.id) return [];
       return pendingHostActions.splice(0, pendingHostActions.length);
 
-    case 'desktop_take_pending_session_links':
-      // Session links open in the main window only.
-      if (!browserWindow || !state.mainWindow || browserWindow.id !== state.mainWindow.id) return [];
-      return takePendingSessionDeepLinks();
-
     case 'desktop_open_host_session': {
       const runtimeKey = readTrimmedString(args.runtimeKey);
       const sessionId = readTrimmedString(args.sessionId);
@@ -5556,22 +5534,15 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       const projectId = typeof args.projectId === 'string' ? args.projectId.trim() : '';
       const hasMainWindow = state.mainWindow && !state.mainWindow.isDestroyed();
 
-      // No live main window (e.g. "Open in main window" from a mini-chat after
-      // the main window was closed): create one and open the session in it. A
-      // fresh window can't take an immediate emit, so queue the session as a
-      // pending deep-link and let did-finish-load flush it once ready.
-      if (!hasMainWindow) {
-        if (sessionId) pendingDeepLinks.push({ type: 'session', value: sessionId });
-        await openMainWindow();
+      if (!hasMainWindow || sessionId) {
+        await focusMainWindowWithSession(sessionId, directory);
         return { focused: true };
       }
 
       if (state.mainWindow.isMinimized()) state.mainWindow.restore();
       state.mainWindow.show();
       state.mainWindow.focus();
-      if (sessionId) {
-        emitToWindow(state.mainWindow, 'openchamber:open-session', { sessionId, directory });
-      } else if (mode === 'draft') {
+      if (mode === 'draft') {
         emitToWindow(state.mainWindow, 'openchamber:open-draft-session', { directory, projectId });
       }
       return { focused: true };
@@ -6066,6 +6037,7 @@ const isLocalSender = (webContents) => {
 };
 
 const COMMANDS_SAFE_FOR_REMOTE = new Set([
+  'desktop_navigation_ready',
   'desktop_hosts_get',
   'desktop_host_probe',
   'desktop_switch_to_local',
@@ -6097,6 +6069,14 @@ ipcMain.handle('openchamber:invoke', async (event, command, args) => {
   }
   const local = isLocalSender(event.sender);
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  if (command === 'desktop_navigation_ready') {
+    if (event.senderFrame !== event.sender.mainFrame || (args?.ready !== true && args?.ready !== false)) {
+      throw new Error('Navigation readiness requires a top-frame boolean');
+    }
+    if (!browserWindow || browserWindow !== state.mainWindow) return null;
+    browserWindow.__ocNavigationReadiness.report(event.senderFrame, args.ready);
+    return null;
+  }
   const result = await handleInvoke(browserWindow, command, args);
   return !local && command === 'desktop_hosts_get' ? redactHostsConfigForRemote(result) : result;
 });
@@ -6283,22 +6263,11 @@ const revealMainWindow = async () => {
   return target;
 };
 
-// Open a session in the main window, creating one first if none is alive. A
-// freshly created window can't receive an immediate emit (its renderer hasn't
-// mounted its listeners yet), so we queue the session as a pending deep-link —
-// the did-finish-load handler flushes it once the window is ready.
+// Cold, authenticating and mounted main windows share the receiver gate.
 const focusMainWindowWithSession = async (sessionId, directory) => {
-  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
-    if (state.mainWindow.isMinimized()) state.mainWindow.restore();
-    state.mainWindow.show();
-    state.mainWindow.focus();
-    if (sessionId) {
-      emitToWindow(state.mainWindow, 'openchamber:open-session', { sessionId, directory: directory || '' });
-    }
-    return;
-  }
-  if (sessionId) pendingDeepLinks.push({ type: 'session', value: sessionId });
-  await openMainWindow();
+  if (sessionId) pendingDeepLinks.enqueue({ type: 'session', value: sessionId, directory: directory || '' });
+  await revealMainWindow();
+  void pendingDeepLinks.flush();
 };
 
 const dispatchTrayAction = async (action) => {
