@@ -186,7 +186,12 @@ Scheduled tasks, the global watcher, and managed health monitoring start only
 after final readiness and use the same activation path after a successful retry.
 The startup pipeline retains the authoritative bootstrap promise, and the
 returned web server controller exposes it together with replayable lifecycle
-state for the Electron startup page.
+state for Electron. `finalizing` means database migration has completed but
+OpenCode is not yet ready. The proxy holds requests through `migrating` and
+`finalizing` even beyond its ordinary readiness deadline; failure, shutdown, and
+downstream disconnect end the wait. Electron's initial local SDK reads wait
+before starting their client timeout, so a long migration cannot exhaust those
+requests. The desktop main document owns the loading display without reloading.
 
 Before spawn, `applyProviderEnvAliases` fills unset Google credential aliases
 from any present sibling (`GOOGLE_GENERATIVE_AI_API_KEY`, `GOOGLE_API_KEY`,

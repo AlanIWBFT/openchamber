@@ -109,7 +109,7 @@ describe('issue #2815 active-only chat iframe source guard', () => {
   });
 
   test('renders the iframe only when an active chat has a session and URL', () => {
-    const start = contextPanelSource.indexOf('{activeChatTab && activeChatSessionID && activeChatSrc ? (');
+    const start = contextPanelSource.indexOf('{canMountChat && activeChatTab && activeChatSessionID && activeChatSrc ? (');
     expect(start).toBeGreaterThan(-1);
     const end = contextPanelSource.indexOf(') : null}', start);
     expect(end).toBeGreaterThan(start);
@@ -129,6 +129,16 @@ describe('issue #2815 active-only chat iframe source guard', () => {
     expect(contextPanelSource).toContain(
       "const activeChatSessionID = isOpen && activeTab?.mode === 'chat'",
     );
+  });
+
+  test('defers desktop iframe mounting until app initialization without discarding saved tabs', () => {
+    expect(contextPanelSource).toContain('const isInitialized = useConfigStore((state) => state.isInitialized);');
+    expect(contextPanelSource).toContain('const [chatInitialized, setChatInitialized] = React.useState(isInitialized);');
+    expect(contextPanelSource).toContain('if (isInitialized) setChatInitialized(true);');
+    expect(contextPanelSource).not.toContain('setChatInitialized(false)');
+    expect(contextPanelSource).toContain('const canMountChat = !isDesktopStartupManaged() || chatInitialized;');
+    expect(contextPanelSource).toContain('{canMountChat && activeChatTab && activeChatSessionID && activeChatSrc ? (');
+    expect(useUIStore.getState().contextPanelByDirectory[DIRECTORY].tabs).toHaveLength(11);
   });
 
   test('answers the mounted iframe visibility handshake from the active tab', () => {

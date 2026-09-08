@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppStartupOverlay } from '@/components/ui/AppStartupOverlay';
+import { isDesktopStartupManaged } from '@/lib/desktop-startup';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ChatView } from '@/components/views/ChatView';
 import { AppLinkConfirmDialog } from '@/components/chat/AppLinkConfirmDialog';
@@ -362,6 +363,7 @@ function App({ apis }: AppProps) {
   // Desktop shells strictly require a valid boot outcome before dismissing.
   // Non-main outcomes (chooser/recovery) can dismiss without waiting for init.
   React.useEffect(() => {
+    if (isDesktopStartupManaged()) return;
     if (!canDismissInitialLoading({
       isDesktopShell: isDesktopRuntime,
       isInitialized,
@@ -388,7 +390,7 @@ function App({ apis }: AppProps) {
   // sees a specific error instead of a generic spinner, but do NOT
   // dismiss the splash (that only happens on a valid outcome).
   React.useEffect(() => {
-    if (!isDesktopRuntime || bootInjectionStatus !== 'malformed') {
+    if (isDesktopStartupManaged() || !isDesktopRuntime || bootInjectionStatus !== 'malformed') {
       return;
     }
 
@@ -500,7 +502,7 @@ function App({ apis }: AppProps) {
   }, [isInitialized]);
 
   React.useEffect(() => {
-    if (!initRetryExhausted) return;
+    if (isDesktopStartupManaged() || !initRetryExhausted) return;
 
     const loadingElement = document.getElementById('initial-loading');
     if (loadingElement) {
@@ -643,8 +645,18 @@ function App({ apis }: AppProps) {
       void useSessionUIStore.getState().setCurrentSession(sessionId, directory);
     };
 
-    window.addEventListener('openchamber:open-session', handler as EventListener);
-    return () => window.removeEventListener('openchamber:open-session', handler as EventListener);
+    window.addEventListener('openchamber:open-session', handler);
+    const reportReady = (ready: boolean) => {
+      if (!isDesktopShell() || window.parent !== window) return;
+      void invokeDesktop('desktop_navigation_ready', { ready }).catch((error) => {
+        console.warn('[desktop] Failed to report navigation readiness:', error);
+      });
+    };
+    reportReady(true);
+    return () => {
+      window.removeEventListener('openchamber:open-session', handler);
+      reportReady(false);
+    };
   }, []);
 
   // Open a draft Mini Chat window from the native File menu / tray. Uses a
@@ -955,7 +967,7 @@ function App({ apis }: AppProps) {
                   <SyncAppEffects embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled} />
                   <OpenCodeUpdateToast />
                   <MainLayout />
-                  <AppStartupOverlay ready={isInitialized && (!isDesktopRuntime || (bootOutcomeKnown && bootViewIsMain))} />
+                  {!isDesktopStartupManaged() && <AppStartupOverlay ready={isInitialized && (!isDesktopRuntime || (bootOutcomeKnown && bootViewIsMain))} />}
                   <Toaster />
                   <AppLinkConfirmDialog />
                   <SharedTrustConfirmDialog />

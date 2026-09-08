@@ -736,7 +736,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
             }
             if (migrationState === 'completed' && migrationActive) {
               migrationActive = false;
-              publishOpenCodeStartupState('launching');
+              publishOpenCodeStartupState('finalizing');
               armStartupTimeout();
               continue;
             }
@@ -1072,7 +1072,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }
   };
 
-  const startOpenCode = async () => {
+  const startOpenCode = async ({ deferReady = false } = {}) => {
     assertNotShuttingDown();
     publishOpenCodeStartupState('launching');
     let lastError = null;
@@ -1083,7 +1083,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         state.openCodeProcess = serverInstance;
         state.startingOpenCodeProcess = null;
         syncToHmrState();
-        publishOpenCodeStartupState('ready');
+        if (!deferReady) publishOpenCodeStartupState('ready');
         return serverInstance;
       } catch (error) {
         lastError = error;
@@ -1426,7 +1426,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         }
 
         state.lastOpenCodeError = null;
-        await startOpenCode();
+        await startOpenCode({ deferReady: true });
       }
       await waitForOpenCodePort();
       try {
