@@ -1,6 +1,7 @@
 import { OpenCodeCompatibilityGate } from '@/components/update/OpenCodeCompatibilityGate';
 import React from 'react';
 import { startDiagnosticCapture } from '@/lib/diagnostics/capture';
+import { z } from 'zod';
 import { AppStartupOverlay } from '@/components/ui/AppStartupOverlay';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AppLinkConfirmDialog } from '@/components/chat/AppLinkConfirmDialog';
@@ -36,7 +37,7 @@ import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
 import { useWindowTitle } from '@/hooks/useWindowTitle';
 import { useRootScrollLock } from '@/hooks/useRootScrollLock';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { isDesktopLocalOriginActive, isDesktopShell, restartDesktopApp, invokeDesktop, getMiniChatRuntimeArgs, openSessionInOwningHostWindow, takePendingDesktopSessionLinks } from '@/lib/desktop';
+import { isDesktopLocalOriginActive, isDesktopShell, restartDesktopApp, invokeDesktop, getMiniChatRuntimeArgs, openSessionInOwningHostWindow } from '@/lib/desktop';
 import { isDesktopSafeStart } from '@/lib/desktopSafeStart';
 import { runPendingDesktopHostActions } from '@/lib/desktopHostActions';
 import {
@@ -506,30 +507,31 @@ function App({ apis }: AppProps) {
     if (typeof window === 'undefined') return;
 
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ sessionId?: string; directory?: string; messageId?: string; runtimeKey?: string }>).detail;
-      const sessionId = typeof detail?.sessionId === 'string' ? detail.sessionId.trim() : '';
-      if (!sessionId) return;
-      const directory = typeof detail?.directory === 'string' && detail.directory.trim().length > 0
-        ? detail.directory.trim()
-        : null;
-      const messageId = typeof detail?.messageId === 'string' ? detail.messageId.trim() || null : null;
-      if (openSessionInOwningHostWindow(sessionId, String(detail?.runtimeKey ?? '').trim(), messageId)) return;
-      // A session event carries the owning directory; a link carries none and
-      // lets the opener resolve it from the global session list.
-      void openSession(sessionId, { directory, messageId });
+      if (!(event instanceof CustomEvent)) return;
+      const parsed = z.object({ sessionId: z.string().trim().min(1), directory: z.string().trim().optional(), messageId: z.string().trim().optional(), runtimeKey: z.string().trim().optional() }).safeParse(event.detail);
+      if (!parsed.success) return;
+      const { sessionId, directory, messageId, runtimeKey } = parsed.data;
+      // A notification click names the runtime that owns the session. When
+      // this window is on another instance, the desktop shell opens the
+      // session in a window for the owning one.
+      if (openSessionInOwningHostWindow(sessionId, runtimeKey || null, messageId || null)) {
+        return;
+      }
+      void openSession(sessionId, { directory: directory || null, messageId: messageId || null });
     };
 
-    window.addEventListener('openchamber:open-session', handler as EventListener);
-    // A link that launched the app arrived before this listener existed; the
-    // desktop shell keeps it until the window asks. Taking is one-shot, so a
-    // cleanup must not drop links already taken (Strict Mode re-runs this).
-    void takePendingDesktopSessionLinks().then((links) => {
-      for (const link of links) {
-        if (openSessionInOwningHostWindow(link.sessionId, link.runtimeKey, link.messageId)) continue;
-        void openSessionLink(link.sessionId, link.messageId);
-      }
-    });
-    return () => window.removeEventListener('openchamber:open-session', handler as EventListener);
+    window.addEventListener('openchamber:open-session', handler);
+    const reportReady = (ready: boolean) => {
+      if (!isDesktopShell() || window.parent !== window) return;
+      void invokeDesktop('desktop_navigation_ready', { ready }).catch((error) => {
+        console.warn('[desktop] Failed to report navigation readiness:', error);
+      });
+    };
+    reportReady(true);
+    return () => {
+      window.removeEventListener('openchamber:open-session', handler);
+      reportReady(false);
+    };
   }, []);
 
   // Host work the desktop shell queued (a confirmed pairing link, a relay host
