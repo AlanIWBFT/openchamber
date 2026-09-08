@@ -1,4 +1,5 @@
 import React from 'react';
+import { isDesktopStartupManaged } from '@/lib/desktop-startup';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
@@ -246,7 +247,7 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
   // it never hangs (e.g. an unavailable session renders its own state).
   const splashDismissedRef = React.useRef(false);
   React.useEffect(() => {
-    if (splashDismissedRef.current || !isInitialized) return;
+    if (isDesktopStartupManaged() || splashDismissedRef.current || !isInitialized) return;
     const dismiss = () => {
       if (splashDismissedRef.current) return;
       splashDismissedRef.current = true;

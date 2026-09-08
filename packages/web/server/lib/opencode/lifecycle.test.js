@@ -218,12 +218,16 @@ describe('OpenCode lifecycle', () => {
   it('activates ready dependents after managed bootstrap passes its final health check', async () => {
     const child = createMockChild();
     const onOpenCodeReady = vi.fn();
+    let finishHealthCheck;
+    const healthResult = new Promise((resolve) => { finishHealthCheck = resolve; });
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ healthy: true }),
+      json: () => healthResult,
     }));
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode lifecycle {"version":1,"type":"database-migration","state":"started"}\n');
+        child.stdout.emit('data', 'opencode lifecycle {"version":1,"type":"database-migration","state":"completed"}\n');
         child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
       });
       return child;
@@ -232,7 +236,12 @@ describe('OpenCode lifecycle', () => {
       onOpenCodeReady,
     }, {}, { ENV_EFFECTIVE_PORT: null });
 
-    await expect(runtime.bootstrapOpenCodeAtStartup()).resolves.toEqual({ status: 'ready' });
+    const startup = runtime.bootstrapOpenCodeAtStartup();
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    expect(runtime.getOpenCodeStartupState().phase).toBe('finalizing');
+    expect(onOpenCodeReady).not.toHaveBeenCalled();
+    finishHealthCheck({ healthy: true });
+    await expect(startup).resolves.toEqual({ status: 'ready' });
 
     expect(onOpenCodeReady).toHaveBeenCalledTimes(1);
     await runtime.state.openCodeProcess.close();
@@ -966,7 +975,7 @@ describe('OpenCode lifecycle', () => {
     child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
     const server = await starting;
 
-    expect(phases).toEqual(['idle', 'launching', 'migrating', 'launching', 'ready']);
+    expect(phases).toEqual(['idle', 'launching', 'migrating', 'finalizing', 'ready']);
     await server.close();
   });
 

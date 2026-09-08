@@ -1,8 +1,8 @@
-import { createConfiguredWebAPIs, getDesktopRelayRestoreReady } from './runtimeConfig';
+import { failDesktopStartup, initializeDesktopStartup } from '@openchamber/ui/lib/desktop-startup';
 import { registerSW } from 'virtual:pwa-register';
 
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
-import { resolveHostedSurface, watchHostedSurfaceViewport, type HostedSurface } from '@openchamber/ui/lib/runtimeSurface';
+import type { HostedSurface } from '@openchamber/ui/lib/runtimeSurface';
 import {
   isEmbeddedSessionChat,
   requestEmbeddedSessionRuntimeBootstrap,
@@ -16,8 +16,6 @@ declare global {
     __OPENCHAMBER_SURFACE__?: HostedSurface;
   }
 }
-
-const hostedSurface: HostedSurface = resolveHostedSurface();
 
 type PrerenderingDocument = Document & {
   prerendering?: boolean;
@@ -85,6 +83,10 @@ const unregisterDevelopmentServiceWorkers = (): void => {
 };
 
 const start = async (): Promise<void> => {
+  await initializeDesktopStartup();
+  const { resolveHostedSurface, watchHostedSurfaceViewport } = await import('@openchamber/ui/lib/runtimeSurface');
+  const hostedSurface = resolveHostedSurface();
+  const { createConfiguredWebAPIs, getDesktopRelayRestoreReady } = await import('./runtimeConfig');
   const embeddedBootstrap = isEmbeddedSessionChat()
     ? await requestEmbeddedSessionRuntimeBootstrap()
     : null;
@@ -105,7 +107,10 @@ const start = async (): Promise<void> => {
   await import('@openchamber/ui/main');
 };
 
-void start();
+void start().catch((error) => {
+  failDesktopStartup();
+  console.error('[startup] Failed to initialize OpenChamber:', error);
+});
 
 if (import.meta.hot) {
   import.meta.hot.on('openchamber:theme-updated', (theme: unknown) => {

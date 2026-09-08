@@ -12,7 +12,8 @@ import { promisify } from 'node:util';
 import updaterPkg from 'electron-updater';
 import { ElectronSshManager } from './ssh-manager.mjs';
 import { replaceFileWithRetry } from './windows-file-replace.mjs';
-import { buildQuitPageHtml, buildStartupPageHtml, closeMiniChatWindows, getStartupFailureDialogCopy, getStartupPageCopy } from './quit-page.mjs';
+import { buildQuitPageHtml, closeMiniChatWindows, getStartupFailureDialogCopy } from './quit-page.mjs';
+import { createDesktopDeepLinkQueue, createDesktopStartup } from './desktop-startup.mjs';
 import { createTrayController } from './tray.mjs';
 import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { stopEmbeddedServer } from './server-shutdown.mjs';
@@ -349,7 +350,6 @@ const state = {
   requestHeaders: {},
   bootOutcome: null,
   startupResolved: false,
-  openCodeStartupPhase: 'launching',
   openCodeStartupUnsubscribe: null,
   initScript: null,
   mainWindow: null,
@@ -1632,8 +1632,19 @@ const startLocalServer = async () => {
   state.sidecarUrl = url;
   state.openCodeStartupUnsubscribe?.();
   state.openCodeStartupUnsubscribe = handle.onOpenCodeStartupState?.((startupState) => {
-    setOpenCodeStartupPhase(startupState.phase);
+    // Only the retained bootstrap promise releases initial renderer requests.
+    if (startupState.phase !== 'ready' && startupState.phase !== 'idle') desktopStartup.update(startupState.phase);
   }) || null;
+  void handle.waitForOpenCodeStartup().then((result) => {
+    desktopStartup.update(result.status === 'ready' ? 'ready' : 'failed');
+    state.openCodeStartupUnsubscribe?.();
+    state.openCodeStartupUnsubscribe = null;
+  }, (error) => {
+    log.error('[electron] OpenCode startup failed:', error);
+    desktopStartup.update('failed');
+    state.openCodeStartupUnsubscribe?.();
+    state.openCodeStartupUnsubscribe = null;
+  });
   recordElectronStartupPerformance('electron.server.ready', {
     durationMs: performance.now() - serverStartedAt,
   });
@@ -1835,31 +1846,6 @@ const computeBootOutcome = ({ envTargetUrl, probe, config, localAvailable }) => 
   return { target: 'remote', status, hostId: host.id, url: host.apiUrl || host.url, ...availability };
 };
 
-const readSplashColor = (settings, key, fallback) => {
-  // The renderer hands the colours over IPC (desktop_set_window_theme) and
-  // main stores them under `desktopSplashColors`; the flat `splash*` keys are
-  // what builds before the settings split wrote and are read as a fallback.
-  const owned = settings.desktopSplashColors && typeof settings.desktopSplashColors === 'object'
-    ? settings.desktopSplashColors[key]
-    : undefined;
-  const legacy = settings[`splash${key.charAt(0).toUpperCase()}${key.slice(1)}`];
-  const value = typeof owned === 'string' ? owned : legacy;
-  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
-};
-
-const buildStartupSplashHtml = () => {
-  const settings = readSettingsRoot();
-  return buildStartupPageHtml({
-    locale: app.getLocale(),
-    colors: {
-      backgroundLight: readSplashColor(settings, 'bgLight', '#f5f5f4'),
-      foregroundLight: readSplashColor(settings, 'fgLight', '#1c1917'),
-      backgroundDark: readSplashColor(settings, 'bgDark', '#0c0a09'),
-      foregroundDark: readSplashColor(settings, 'fgDark', '#fafaf9'),
-    },
-  });
-};
-
 const scheduleServerDependencyPreloadAfterStartupPaint = (browserWindow) => {
   if (!browserWindow || browserWindow.isDestroyed() || browserWindow.__ocServerPreloadScheduled) return;
   browserWindow.__ocServerPreloadScheduled = true;
@@ -1889,53 +1875,13 @@ const scheduleServerDependencyPreloadAfterStartupPaint = (browserWindow) => {
   })();
 };
 
-const updateStartupPageDocument = (browserWindow, phase) => {
-  if (!browserWindow || browserWindow.isDestroyed() || state.startupResolved || state.quitInProgress) return;
-  const copy = getStartupPageCopy(app.getLocale(), phase);
-  const script = `(() => { const title = document.querySelector('h1'); const detail = document.querySelector('p'); if (title) title.textContent = ${JSON.stringify(copy.title)}; if (detail) detail.textContent = ${JSON.stringify(copy.detail)}; document.title = ${JSON.stringify(copy.title)}; })()`;
-  void browserWindow.webContents.executeJavaScript(script).catch(() => {});
-};
-
-const setOpenCodeStartupPhase = (phase) => {
-  state.openCodeStartupPhase = phase;
-  updateStartupPageDocument(state.mainWindow, phase);
-};
-
-const waitForLocalOpenCodeStartup = async () => {
-  const controller = state.serverHandle;
-  if (!controller?.waitForOpenCodeStartup) return true;
-  let result;
-  try {
-    result = await controller.waitForOpenCodeStartup();
-  } catch (error) {
-    log.warn('[electron] OpenCode startup wait failed:', error);
-    result = { status: 'failed' };
-  }
-  while (result?.status !== 'ready') {
-    if (!state.mainWindow || state.mainWindow.isDestroyed()) return false;
-    const copy = getStartupFailureDialogCopy(app.getLocale());
-    const choice = await dialog.showMessageBox(state.mainWindow, {
-      type: 'error',
-      title: copy.title,
-      message: copy.title,
-      detail: copy.detail,
-      buttons: [copy.retry, copy.quit],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true,
-    });
-    if (choice.response === 1) return false;
-    setOpenCodeStartupPhase('launching');
-    try {
-      await controller.restartOpenCode();
-      return true;
-    } catch (error) {
-      log.warn('[electron] OpenCode startup retry failed:', error);
-      result = { status: 'failed' };
+const desktopStartup = createDesktopStartup((snapshot) => {
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    if (!browserWindow.isDestroyed() && isLocalSender(browserWindow.webContents)) {
+      browserWindow.webContents.send('openchamber:startup-state', snapshot);
     }
   }
-  return true;
-};
+});
 
 const isBenignNavigationAbort = (error) => {
   if (!error || typeof error !== 'object') {
@@ -1948,6 +1894,14 @@ const isBenignNavigationAbort = (error) => {
 
   const message = typeof error.message === 'string' ? error.message : '';
   return message.includes('ERR_ABORTED') || message.includes(' (-3) loading ');
+};
+
+const reportInitialDocumentFailure = (error) => {
+  if (state.quitInProgress || isBenignNavigationAbort(error) || !desktopStartup.documentFailed()) return;
+  desktopStartup.update('failed');
+  markStartupSurfaceReady();
+  const copy = getStartupFailureDialogCopy(app.getLocale());
+  dialog.showErrorBox(copy.title, copy.detail);
 };
 
 const navigateWindow = async (browserWindow, url, { allowAbort = false } = {}) => {
@@ -2084,7 +2038,11 @@ const setTaskbarProgress = (value) => {
   }
 };
 
-const pendingDeepLinks = [];
+const pendingDeepLinks = createDesktopDeepLinkQueue({
+  isReady: (link) => isMainWindowReadyForDeepLink(link),
+  dispatch: (link, onHostSwitch) => dispatchDeepLink(link, onHostSwitch),
+  onError: (error) => log.warn('[electron] deep-link dispatch failed:', error),
+});
 
 const parseDeepLink = (raw) => {
   if (typeof raw !== 'string') return null;
@@ -2234,7 +2192,7 @@ const redeemConnectPairingDeepLink = async (payload, serverUrl) => {
   };
 };
 
-const switchToHostById = async (rawId) => {
+const switchToHostById = async (rawId, onHostSwitch) => {
   const id = typeof rawId === 'string' ? rawId.trim() : '';
   if (!id) return;
   const config = readDesktopHostsConfig();
@@ -2266,6 +2224,7 @@ const switchToHostById = async (rawId) => {
     ? { target: 'local', status: 'ok' }
     : { target: 'remote', status: 'ok', hostId: id, url: apiBaseUrl };
   log.info('[electron] switching to host', { id, bootOutcome });
+  onHostSwitch();
   await activateMainWindow(targetUrl, state.localOrigin, bootOutcome, { apiBaseUrl, clientToken, requestHeaders });
 };
 
@@ -2301,14 +2260,14 @@ const confirmConnectDeepLink = async (payload) => {
   }
 };
 
-const dispatchDeepLink = (link) => {
+const dispatchDeepLink = (link, onHostSwitch) => {
   if (!link) return;
   log.info('[electron] dispatching deep-link', { type: link.type, valueLen: link.value?.length || 0 });
   if (link.type === 'connect') {
     const pairingPayload = parseConnectPairingDeepLinkPayload(link.raw);
     if (pairingPayload) {
       const previewUrl = pairingPayload.candidates[0]?.url || pairingPayload.label;
-      void confirmConnectDeepLink({
+      return confirmConnectDeepLink({
         serverUrl: previewUrl,
         token: 'pairing-v2',
         label: pairingPayload.fingerprint ? `${pairingPayload.label} (${pairingPayload.fingerprint})` : pairingPayload.label,
@@ -2331,9 +2290,8 @@ const dispatchDeepLink = (link) => {
           return;
         }
         const id = await importConnectDeepLink(importedPayload);
-        if (id) void switchToHostById(id);
+        if (id) await switchToHostById(id, onHostSwitch);
       });
-      return;
     }
     log.warn('[electron] invalid connect deep-link payload');
     return;
@@ -2356,36 +2314,27 @@ const dispatchDeepLink = (link) => {
   }
 
   if (link.type === 'session' && link.value) {
-    emitToPrimaryWindow('openchamber:open-session', { sessionId: link.value });
+    emitToPrimaryWindow('openchamber:open-session', { sessionId: link.value, directory: link.directory || '' });
     return;
   }
   if (link.type === 'host' && link.value) {
-    void switchToHostById(link.value);
-    return;
+    return switchToHostById(link.value, onHostSwitch);
   }
   log.warn('[electron] unknown deep-link action:', link.type);
 };
 
-const flushPendingDeepLinks = () => {
-  while (pendingDeepLinks.length > 0) {
-    dispatchDeepLink(pendingDeepLinks.shift());
-  }
-};
-
-const isMainWindowReadyForDeepLink = () =>
-  Boolean(state.mainWindow)
+const isMainWindowReadyForDeepLink = (link) =>
+  state.startupResolved
+  && Boolean(state.mainWindow)
   && !state.mainWindow.isDestroyed()
-  && !state.mainWindow.webContents.isLoading();
+  && (link.type !== 'session' || state.mainWindow.__ocNavigationFrame === state.mainWindow.webContents.mainFrame)
+  && !state.mainWindow.webContents.isLoadingMainFrame();
 
 const handleDeepLinks = (urls) => {
   for (const raw of urls) {
     const parsed = parseDeepLink(raw);
     if (!parsed) continue;
-    if (isMainWindowReadyForDeepLink()) {
-      dispatchDeepLink(parsed);
-    } else {
-      pendingDeepLinks.push(parsed);
-    }
+    pendingDeepLinks.enqueue(parsed);
   }
 };
 
@@ -2566,6 +2515,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
   };
 
   const browserWindow = new BrowserWindow(options);
+  browserWindow.__ocNavigationFrame = null;
   browserWindow.__ocLabel = label || nextWindowLabel();
   browserWindow.__ocRuntimeConfig = { apiBaseUrl: desktopApiBaseUrl, clientToken: desktopClientToken, requestHeaders: desktopRequestHeaders };
   browserWindow.__ocInitScript = buildInitScript(desktopLocalOrigin, state.bootOutcome, desktopApiBaseUrl, desktopClientToken, desktopRequestHeaders);
@@ -2745,6 +2695,18 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
   });
   attachRendererRecovery(browserWindow, { log, label: 'window' });
 
+  browserWindow.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) browserWindow.__ocNavigationFrame = null;
+  });
+  browserWindow.webContents.on('render-process-gone', () => {
+    browserWindow.__ocNavigationFrame = null;
+  });
+  browserWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
+    if (isMainFrame && browserWindow.__ocLabel === 'main') {
+      reportInitialDocumentFailure({ errno: errorCode, message: errorDescription });
+    }
+  });
+
   browserWindow.webContents.on('dom-ready', () => {
     if (browserWindow.__ocLabel === 'main') {
       recordElectronStartupPerformance('electron.renderer.dom-ready', {
@@ -2756,21 +2718,18 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
       void browserWindow.webContents.executeJavaScript(initScript).catch(() => {});
     }
     if (browserWindow.__ocLabel === 'main') {
-      updateStartupPageDocument(browserWindow, state.openCodeStartupPhase);
       // Electron can skip ready-to-show for fast local documents on Windows.
       if (
         process.platform === 'win32' &&
         !state.startupResolved &&
         !state.quitInProgress &&
-        classifyStartupDocument(browserWindow.webContents.getURL()) === 'splash' &&
         !browserWindow.isVisible()
       ) {
         browserWindow.show();
         browserWindow.focus();
       }
       if (
-        !state.startupResolved &&
-        classifyStartupDocument(browserWindow.webContents.getURL()) === 'splash'
+        !state.startupResolved
       ) {
         scheduleServerDependencyPreloadAfterStartupPaint(browserWindow);
       }
@@ -2784,9 +2743,9 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
       });
     }
     browserWindow.webContents.setZoomFactor(1);
-    if (state.mainWindow && browserWindow.id === state.mainWindow.id && pendingDeepLinks.length > 0) {
-      const timer = setTimeout(flushPendingDeepLinks, 400);
-      if (typeof timer?.unref === 'function') timer.unref();
+    if (browserWindow.__ocLabel === 'main') {
+      desktopStartup.documentLoaded();
+      void pendingDeepLinks.flush();
     }
   });
 
@@ -2800,21 +2759,17 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     browserWindow.focus();
     if (
       browserWindow.__ocLabel === 'main' &&
-      !state.startupResolved &&
-      classifyStartupDocument(browserWindow.webContents.getURL()) === 'splash'
+      !state.startupResolved
     ) {
       scheduleServerDependencyPreloadAfterStartupPaint(browserWindow);
     }
   });
 
   if (url) {
-    void navigateWindow(browserWindow, url);
-  } else {
-    void navigateWindow(
-      browserWindow,
-      `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupSplashHtml())}`,
-      { allowAbort: true },
-    );
+    void navigateWindow(browserWindow, url).catch((error) => {
+      log.error('[electron] window navigation failed:', error);
+      if (browserWindow.__ocLabel === 'main') reportInitialDocumentFailure(error);
+    });
   }
 
   return browserWindow;
@@ -2822,8 +2777,6 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
 
 const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig = {}) => {
   if (state.quitInProgress) return state.mainWindow;
-  state.openCodeStartupUnsubscribe?.();
-  state.openCodeStartupUnsubscribe = null;
   state.startupResolved = true;
   state.localOrigin = localOrigin;
   state.apiBaseUrl = typeof runtimeConfig.apiBaseUrl === 'string' ? runtimeConfig.apiBaseUrl : state.apiBaseUrl;
@@ -2848,7 +2801,12 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.__ocRuntimeConfig = rendererRuntimeConfig;
     mainWindow.__ocInitScript = state.initScript;
-    await navigateWindow(mainWindow, url, { allowAbort: true });
+    if (mainWindow.__ocStartupDocumentUrl !== new URL(url).href) {
+      await navigateWindow(mainWindow, url, { allowAbort: true });
+    }
+    mainWindow.__ocStartupDocumentUrl = null;
+    desktopStartup.configure();
+    void pendingDeepLinks.flush();
     mainWindow.show();
     mainWindow.focus();
     return mainWindow;
@@ -2860,6 +2818,8 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
     url,
     runtimeConfig,
   });
+  desktopStartup.configure();
+  void pendingDeepLinks.flush();
   return state.mainWindow;
 };
 
@@ -2990,6 +2950,7 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
       additionalArguments: [
         `--openchamber-local-origin=${desktopLocalOrigin}`,
         `--openchamber-api-base-url=${desktopApiBaseUrl}`,
+        `--openchamber-local-ui-origin=${state.localUiUrl ? new URL(state.localUiUrl).origin : ''}`,
         `--openchamber-client-token=${desktopClientToken}`,
         `--openchamber-runtime-headers=${JSON.stringify(desktopRequestHeaders)}`,
         `--openchamber-home=${desktopHome}`,
@@ -3118,11 +3079,11 @@ const resolveInitialUrl = async () => {
     ? null
     : await spawnLocalServer();
 
-  const localUiUrl = usePackagedUi
+  const localUiUrl = state.localUiUrl || (usePackagedUi
     ? buildPackagedUiUrl('/index.html')
     : startupProbePlan.probeHmrUi && await waitForHealth(hmrUiUrl, 8_000, 100)
     ? hmrUiUrl
-    : localUrl;
+    : localUrl);
   state.localUiUrl = localUiUrl;
 
   state.sidecarUrl = localUrl;
@@ -3194,10 +3155,6 @@ const resolveInitialUrl = async () => {
     config,
     localAvailable,
   });
-
-  if (localUrl && apiBaseUrl === localUrl && !(await waitForLocalOpenCodeStartup())) {
-    throw new Error('Local OpenCode startup was cancelled');
-  }
 
   return { initialUrl, localOrigin, localUiUrl, bootOutcome, apiBaseUrl, clientToken, requestHeaders };
 };
@@ -4848,22 +4805,15 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       const projectId = typeof args.projectId === 'string' ? args.projectId.trim() : '';
       const hasMainWindow = state.mainWindow && !state.mainWindow.isDestroyed();
 
-      // No live main window (e.g. "Open in main window" from a mini-chat after
-      // the main window was closed): create one and open the session in it. A
-      // fresh window can't take an immediate emit, so queue the session as a
-      // pending deep-link and let did-finish-load flush it once ready.
-      if (!hasMainWindow) {
-        if (sessionId) pendingDeepLinks.push({ type: 'session', value: sessionId });
-        await openMainWindow();
+      if (!hasMainWindow || sessionId) {
+        await focusMainWindowWithSession(sessionId, directory);
         return { focused: true };
       }
 
       if (state.mainWindow.isMinimized()) state.mainWindow.restore();
       state.mainWindow.show();
       state.mainWindow.focus();
-      if (sessionId) {
-        emitToWindow(state.mainWindow, 'openchamber:open-session', { sessionId, directory });
-      } else if (mode === 'draft') {
+      if (mode === 'draft') {
         emitToWindow(state.mainWindow, 'openchamber:open-draft-session', { directory, projectId });
       }
       return { focused: true };
@@ -5257,6 +5207,7 @@ const isLocalSender = (webContents) => {
 };
 
 const COMMANDS_SAFE_FOR_REMOTE = new Set([
+  'desktop_navigation_ready',
   'desktop_hosts_get',
   'desktop_host_probe',
   'desktop_new_window',
@@ -5283,7 +5234,28 @@ ipcMain.handle('openchamber:invoke', async (event, command, args) => {
     throw new Error('IPC not available for this origin');
   }
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  if (command === 'desktop_navigation_ready') {
+    if (event.senderFrame !== event.sender.mainFrame || (args?.ready !== true && args?.ready !== false)) {
+      throw new Error('Navigation readiness requires a top-frame boolean');
+    }
+    if (!browserWindow || browserWindow !== state.mainWindow) return null;
+    browserWindow.__ocNavigationFrame = args.ready ? event.senderFrame : null;
+    if (args.ready) void pendingDeepLinks.flush();
+    return null;
+  }
   return handleInvoke(browserWindow, command, args);
+});
+
+ipcMain.handle('openchamber:startup', async (event) => {
+  if (!isLocalSender(event.sender) || event.senderFrame !== event.sender.mainFrame) throw new Error('Startup IPC is local top-frame only');
+  await desktopStartup.waitForConfiguration();
+  if (event.sender.isDestroyed() || !isLocalSender(event.sender)) throw new Error('Startup document is no longer available');
+  const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  if (browserWindow?.__ocInitScript) await event.sender.executeJavaScript(browserWindow.__ocInitScript);
+  const localProxyOrigin = shouldUseSameOriginDevProxy(event.sender.getURL(), state.sidecarUrl)
+    ? new URL(event.sender.getURL()).origin
+    : '';
+  return { localOrigin: state.sidecarUrl || '', localProxyOrigin, state: desktopStartup.getState() };
 });
 
 ipcMain.handle('openchamber:dialog:open', async (event, options) => {
@@ -5460,22 +5432,11 @@ const revealMainWindow = async () => {
   return target;
 };
 
-// Open a session in the main window, creating one first if none is alive. A
-// freshly created window can't receive an immediate emit (its renderer hasn't
-// mounted its listeners yet), so we queue the session as a pending deep-link —
-// the did-finish-load handler flushes it once the window is ready.
+// Cold, authenticating and already-mounted windows use the same receiver gate.
 const focusMainWindowWithSession = async (sessionId, directory) => {
-  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
-    if (state.mainWindow.isMinimized()) state.mainWindow.restore();
-    state.mainWindow.show();
-    state.mainWindow.focus();
-    if (sessionId) {
-      emitToWindow(state.mainWindow, 'openchamber:open-session', { sessionId, directory: directory || '' });
-    }
-    return;
-  }
-  if (sessionId) pendingDeepLinks.push({ type: 'session', value: sessionId });
-  await openMainWindow();
+  if (sessionId) pendingDeepLinks.enqueue({ type: 'session', value: sessionId, directory: directory || '' });
+  await revealMainWindow();
+  void pendingDeepLinks.flush();
 };
 
 const dispatchTrayAction = async (action) => {
@@ -5683,20 +5644,41 @@ app.whenReady().then(async () => {
     // eventually opened instead of trusting reachability from login time.
     state.startupResolved = !isLocalServerSkipped();
     state.initScript = buildInitScript(localOrigin, state.bootOutcome, apiBaseUrl, clientToken, state.requestHeaders);
+    desktopStartup.configure();
     log.info('[electron] started in background without window');
     return;
   }
 
-  state.mainWindow = createBrowserWindow({
-    label: 'main',
-    restoreGeometry: true,
-    url: null,
-  });
+  // Packaged assets paint before the backend exists. The renderer waits only
+  // for its endpoint/auth bootstrap, never for OpenCode, before mounting React.
+  if (!shouldUsePackagedUi()) await inheritUserShellEnv();
+  let startupUrl = buildPackagedUiUrl('/index.html');
+  let initialConfiguration;
+  if (!shouldUsePackagedUi()) {
+    const hmrUrl = `http://127.0.0.1:${process.env.OPENCHAMBER_HMR_UI_PORT || '5173'}`;
+    if (await waitForHealth(hmrUrl, 8_000, 100)) {
+      startupUrl = hmrUrl;
+    } else {
+      // No early document is available. Resolve the existing loopback/remote
+      // fallback first, respecting skip-local-server and its trust boundary.
+      markStartupSurfaceReady();
+      initialConfiguration = await resolveInitialUrl();
+    }
+  }
+  if (!initialConfiguration) {
+    state.localUiUrl = startupUrl;
+    state.mainWindow = createBrowserWindow({
+      label: 'main',
+      restoreGeometry: true,
+      url: startupUrl,
+    });
+    state.mainWindow.__ocStartupDocumentUrl = new URL(startupUrl).href;
+  }
 
   const initial = extractInitialDeepLinks();
   if (initial.length > 0) handleDeepLinks(initial);
 
-  const { initialUrl, localOrigin, bootOutcome, apiBaseUrl, clientToken, requestHeaders } = await resolveInitialUrl();
+  const { initialUrl, localOrigin, bootOutcome, apiBaseUrl, clientToken, requestHeaders } = initialConfiguration || await resolveInitialUrl();
   await activateMainWindow(initialUrl, localOrigin, bootOutcome, { apiBaseUrl, clientToken, requestHeaders });
 
   // Notify renderer on OS wake-from-sleep so the SSE event pipeline can
@@ -5707,9 +5689,13 @@ app.whenReady().then(async () => {
 }).catch((error) => {
   if (state.quitInProgress) return;
   log.error('[electron] startup failed:', error);
-  state.quitInProgress = true;
-  void shutdownBackgroundServices().finally(() => {
-    state.allowWindowClose = true;
-    app.exit(1);
-  });
+  desktopStartup.update('failed');
+  desktopStartup.configure();
+  state.mainWindow?.show();
+  if (!state.mainWindow) {
+    const copy = getStartupFailureDialogCopy(app.getLocale());
+    dialog.showErrorBox(copy.title, copy.detail);
+  } else {
+    reportInitialDocumentFailure(error);
+  }
 });
