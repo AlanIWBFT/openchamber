@@ -632,6 +632,8 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
     const actionsBlock = chatSurfaceMode !== 'peek' && ((canCopyMessage && hasCopyableText) || onRevert || effectiveOnFork || onToggleContextPin) && showUserActions ? (
         <div className={cn(
             'group/user-actions',
+            // Keep the external toolbar's intrinsic width from sizing the bubble.
+            userActionsMode === 'external-actions' && '[contain:inline-size]',
             isMobile
                 ? userActionsMode === 'inline'
                     ? 'flex items-center justify-end pt-2 pb-3'
@@ -645,6 +647,7 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
             <div
                 className={cn(
                     'flex items-center justify-end gap-1.5 [&_button]:!h-[26px] [&_button]:!w-[26px] [&_svg]:!size-3.5',
+                    userActionsMode === 'external-actions' && 'shrink-0',
                     isMobile
                         ? userActionsMode === 'inline'
                             ? 'translate-x-5'
