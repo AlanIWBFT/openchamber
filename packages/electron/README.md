@@ -78,6 +78,22 @@ PDF iframes also start with an opaque origin under the packaged UI protocol. The
 
 The preload bridge exposes desktop-only APIs to the web UI through `window.__OPENCHAMBER_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI.
 
+Main-window session deep links wait for the top-frame React navigation receiver
+to register. Navigation and renderer loss clear that readiness. Native focus,
+connect and host links can bypass waiting sessions; only an actual host navigation
+discards the earlier sessions it overtook. Declining a connection or failing
+before navigation keeps them queued. `desktop-deep-links.mjs` owns this in-memory,
+single-dispatch queue. The readiness IPC accepts a boolean only from the current
+main window's top frame, including a remote runtime page; it exposes no native
+host privileges. The standard entry/splash/configuration startup flow owns page
+loading independently of this queue.
+
+Remote pages that do not report readiness retain upstream's ten-second
+best-effort delivery fallback. The timer belongs to the loaded document and is
+cancelled on navigation, renderer loss, readiness reports, window closure and
+shutdown. Local packaged and development pages always wait for their receiver.
+Session links preserve optional message focus and explicit directory hints.
+
 The compatibility gate can reuse the embedded managed OpenCode CLI preflight
 through `desktop_managed_opencode_compatible`. Main matches the requested
 API origin to the local backend and reads the lifecycle-owned preflight promise.
