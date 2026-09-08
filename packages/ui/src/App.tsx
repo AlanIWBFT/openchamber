@@ -529,7 +529,14 @@ function App({ apis }: AppProps) {
         else void openSessionLink(link.sessionId, link.messageId);
       }
     });
-    return () => window.removeEventListener('openchamber:open-session', handler as EventListener);
+    return () => {
+      window.removeEventListener('openchamber:open-session', handler as EventListener);
+      if (isDesktopShell() && window.parent === window) {
+        void invokeDesktop('desktop_navigation_ready', { ready: false }).catch((error) => {
+          console.warn('[desktop] Failed to report navigation readiness:', error);
+        });
+      }
+    };
   }, []);
 
   // Host work the desktop shell queued (a confirmed pairing link, a relay host
