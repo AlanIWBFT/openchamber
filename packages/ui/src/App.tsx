@@ -681,8 +681,18 @@ function App({ apis }: AppProps) {
       void useSessionUIStore.getState().setCurrentSession(sessionId, directory);
     };
 
-    window.addEventListener('openchamber:open-session', handler as EventListener);
-    return () => window.removeEventListener('openchamber:open-session', handler as EventListener);
+    window.addEventListener('openchamber:open-session', handler);
+    const reportReady = (ready: boolean) => {
+      if (!isDesktopShell() || window.parent !== window) return;
+      void invokeDesktop('desktop_navigation_ready', { ready }).catch((error) => {
+        console.warn('[desktop] Failed to report navigation readiness:', error);
+      });
+    };
+    reportReady(true);
+    return () => {
+      window.removeEventListener('openchamber:open-session', handler);
+      reportReady(false);
+    };
   }, []);
 
   // Open a draft Mini Chat window from the native File menu / tray. Uses a
