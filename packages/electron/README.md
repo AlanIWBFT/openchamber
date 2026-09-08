@@ -16,12 +16,51 @@ On Windows, latency-sensitive Git status, PR-context, and per-file diff reads ar
 
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
 
-For a local runtime, the startup page remains authoritative until the managed
-OpenCode bootstrap reports ready. OpenCode database migrations are shown on the
-startup page and may run longer than the normal server-listening timeout without
-being killed. A migration/startup failure stays outside the application UI and
-offers an explicit retry or quit choice. A configured reachable remote runtime
-does not wait for the local managed OpenCode bootstrap.
+Desktop loads the main HTML document directly, without a separate startup page.
+The local top-frame preload handshake waits for endpoint/auth configuration,
+not OpenCode readiness, before the renderer imports runtime-dependent code.
+The main UI and OpenCode then initialize concurrently. Local SDK calls and the
+initial health check wait for the authoritative OpenCode bootstrap before their
+normal request timeout starts. Explicit cancellation and runtime switching end
+that caller's wait without stopping OpenCode.
+HMR keeps its same-origin API proxy. The main-process handshake identifies that
+proxy origin explicitly so local readiness applies to both proxy and direct
+backend requests, without delaying remote requests.
+
+The renderer retains `initial-loading` outside the React root. It hides when the
+root mounts, including an authentication screen, but shows again for database migration and the following startup
+finalization, without navigation, remounting, or consuming read retry attempts.
+Its background is 90% opaque, matching the configuration-update overlay. It disables
+root-element interaction but does not suspend global shortcuts or native commands.
+Startup failure keeps this surface
+visible and asks the user to restart OpenChamber. If the main document itself
+cannot load, a native error dialog provides the same instruction. Remote runtime
+requests do not wait for the local bootstrap. Mini Chat uses the same startup
+handshake and request wait. Web, mobile, and VS Code retain
+their existing client startup behavior.
+
+The first main document has its own load-success boundary, separate from runtime
+configuration. A load failure before that boundary reports one native restart
+instruction. Intentional navigation cancellation and shutdown do not report it;
+later renderer crash recovery remains unchanged.
+
+Session deep links stay in the existing in-memory queue until the main app has
+installed its navigation listener and the main document has finished loading.
+Unmounting, document navigation and renderer exit clear that readiness. Host
+switches finish before following links are considered for the new document.
+There is no persistent queue, delivery acknowledgement or automatic resend.
+Native connection, host-switch and focus links do not require the session listener,
+so a login screen can still accept a new connection link even with blocked session
+links ahead of it. Native links may overtake those sessions, but not each other.
+Once a valid host switch begins navigation, it cancels the blocked sessions it
+overtook so they cannot open on the new host. Sessions queued after that switch
+link still wait for the new receiver. Declined connections, invalid targets and
+failures before navigation preserve the blocked sessions, as do focus links.
+
+Desktop defers mounting a restored side-panel chat iframe until the main app has
+initialized. Later config failures do not unmount an already-open iframe. The saved
+tab stays intact; the iframe does not need its own migration
+protocol or consume request retries while the local database is migrating.
 
 Same-origin session-chat iframes complete an authenticated parent-frame handshake before creating their SDK client. The parent supplies its active in-memory endpoint and credentials; when relay is active it also supplies the public relay descriptor without any pairing grant, because Electron preload and IPC are unavailable inside the iframe. The iframe establishes its own transport and rebinds its SDK before rendering. Additional windows retain their own per-window runtime bootstrap instead of being overwritten by the main window. Credentials are never placed in iframe URLs, and other child pages do not receive this runtime state.
 
@@ -35,6 +74,7 @@ The preload bridge exposes desktop-only APIs to the web UI through `window.__OPE
 | `electron-host-probe.mjs` | Chromium direct-host probes, identity checks, attempt deadlines, and response cleanup |
 | `host-probe-policy.mjs` | Selector fast attempt and unreachable-only retry policy |
 | `startup-single-flight.mjs` | One-shot startup promise coordinator that retains the first success or failure to prevent duplicate local server initialization |
+| `desktop-startup.mjs` | Renderer configuration, OpenCode readiness, first-document load state, and the in-memory deep-link queue |
 | `server-dependency-preload.mjs` | Guarded one-shot preload of environment-independent server dependencies |
 | `server-preload-env.test.mjs` | Isolated import-graph environment audit run by tests and before `bundle:main` |
 | `startup-url-selection.mjs` | Pure bundled/HMR startup probe and loopback connection-limit policy |

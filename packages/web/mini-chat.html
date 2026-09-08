@@ -87,6 +87,7 @@
     <script>
       // Safety net: never let the splash hang if the app fails to dismiss it.
       setTimeout(function() {
+        if (window.__OPENCHAMBER_STARTUP__) return;
         var loading = document.getElementById('initial-loading');
         if (loading) {
           loading.classList.add('fade-out');

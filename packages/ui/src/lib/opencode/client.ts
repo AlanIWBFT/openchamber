@@ -31,6 +31,7 @@ export type FetchPermissionResult =
   | { state: "unknown" };
 import { getRuntimeUrlResolver } from "@/lib/runtime-url";
 import { runtimeFetch } from "@/lib/runtime-fetch";
+import { waitForDesktopOpenCode } from "@/lib/desktop-startup";
 import { getRuntimeKey } from "@/lib/runtime-switch";
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
 import { markStartupTrace } from "@/lib/startupTrace";
@@ -220,6 +221,10 @@ export const createRuntimeOpencodeClient = (config: RuntimeOpencodeClientConfig)
   return createOpencodeClient({
     ...config,
     fetch: async (input: string | URL | Request, init?: RequestInit) => {
+      const runtimeKey = getRuntimeKey();
+      const callerSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+      await waitForDesktopOpenCode(config.baseUrl, callerSignal ?? undefined);
+      if (runtimeKey !== getRuntimeKey()) throw new DOMException('Runtime changed during startup', 'AbortError');
       const method = String(
         init?.method ?? (input instanceof Request ? input.method : 'GET'),
       ).toUpperCase();
@@ -227,7 +232,6 @@ export const createRuntimeOpencodeClient = (config: RuntimeOpencodeClientConfig)
         return runtimeFetch(input, init);
       }
       const timeout = createTimeoutSignal(requestTimeoutMs);
-      const callerSignal = init?.signal;
       const supportsAny = typeof AbortSignal !== 'undefined'
         && typeof (AbortSignal as { any?: unknown }).any === 'function';
       let signal: AbortSignal;
@@ -1676,6 +1680,9 @@ class OpencodeService {
   // Lightweight readiness check. Full diagnostics still live at /health.
   async checkHealth(): Promise<boolean> {
     try {
+      const runtimeKey = getRuntimeKey();
+      await waitForDesktopOpenCode(this.baseUrl);
+      if (runtimeKey !== getRuntimeKey()) return false;
       const normalizedBase = this.baseUrl.endsWith('/') ? this.baseUrl.replace(/\/+$/, '') : this.baseUrl;
       const healthUrl = normalizedBase === '/api' || normalizedBase.endsWith('/api')
         ? '/api/opencode/health'

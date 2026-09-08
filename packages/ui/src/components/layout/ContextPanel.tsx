@@ -26,6 +26,8 @@ import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
+import { isDesktopStartupManaged } from '@/lib/desktop-startup';
+import { useConfigStore } from '@/stores/useConfigStore';
 import { useBrowserFaviconStore } from '@/stores/useBrowserFaviconStore';
 import { useFilesViewTabsStore } from '@/stores/useFilesViewTabsStore';
 import { useUIStore, type ContextPanelMode, type PendingDiffScope } from '@/stores/useUIStore';
@@ -446,6 +448,13 @@ const truncateTabLabel = (value: string, maxChars: number): string => {
 
 
 export const ContextPanel: React.FC = () => {
+  const isInitialized = useConfigStore((state) => state.isInitialized);
+  const [chatInitialized, setChatInitialized] = React.useState(isInitialized);
+  // Only gate the first mount; later config failures must not reload an open iframe.
+  React.useEffect(() => {
+    if (isInitialized) setChatInitialized(true);
+  }, [isInitialized]);
+  const canMountChat = !isDesktopStartupManaged() || chatInitialized;
   const { t } = useI18n();
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const directoryKey = React.useMemo(() => normalizeDirectoryKey(effectiveDirectory), [effectiveDirectory]);
@@ -1241,7 +1250,7 @@ export const ContextPanel: React.FC = () => {
             <EditorTreeColumn visible={contextEditorTreeVisible} />
           </div>
         ) : null}
-        {activeChatTab && activeChatSessionID && activeChatSrc ? (
+        {canMountChat && activeChatTab && activeChatSessionID && activeChatSrc ? (
           <iframe
             key={activeChatTab.id}
             ref={(node) => {

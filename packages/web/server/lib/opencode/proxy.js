@@ -708,6 +708,7 @@ export const registerOpenCodeProxy = (app, deps) => {
   const isStillWaiting = (runtimeState) => {
     const waitElapsed = runtimeState.openCodeNotReadySince === 0 ? 0 : Date.now() - runtimeState.openCodeNotReadySince;
     return (
+      runtimeState.startupPhase === 'launching' || runtimeState.startupPhase === 'migrating' || runtimeState.startupPhase === 'finalizing' ||
       (!runtimeState.isOpenCodeReady && (runtimeState.openCodeNotReadySince === 0 || waitElapsed < OPEN_CODE_READY_GRACE_MS)) ||
       runtimeState.isRestartingOpenCode ||
       !runtimeState.openCodePort
@@ -734,6 +735,9 @@ export const registerOpenCodeProxy = (app, deps) => {
       return next();
     }
 
+    if (getRuntime().startupPhase === 'failed' || getRuntime().isShuttingDown) {
+      return res.status(503).json({ error: 'OpenCode startup failed or is shutting down' });
+    }
     if (!isStillWaiting(getRuntime())) {
       return next();
     }
@@ -741,9 +745,9 @@ export const registerOpenCodeProxy = (app, deps) => {
     const holdStartedAt = performance.now();
     const routeClass = classifyReadinessRoute(req.path);
     const deadline = Date.now() + Math.min(OPEN_CODE_READY_GRACE_MS, READINESS_HOLD_MAX_MS);
-    while (Date.now() < deadline) {
+    while (true) {
       // Client gave up (closed/aborted) — stop holding.
-      if (res.writableEnded || req.aborted) {
+      if (res.writableEnded || res.destroyed || req.aborted) {
         recordStartupPerformance('proxy.readiness-hold', {
           durationMs: performance.now() - holdStartedAt,
           outcome: 'aborted',
@@ -751,8 +755,9 @@ export const registerOpenCodeProxy = (app, deps) => {
         });
         return;
       }
-      await sleep(READINESS_HOLD_POLL_MS);
-      if (!isStillWaiting(getRuntime())) {
+      const current = getRuntime();
+      if (current.startupPhase === 'failed' || current.isShuttingDown) break;
+      if (!isStillWaiting(current)) {
         recordStartupPerformance('proxy.readiness-hold', {
           durationMs: performance.now() - holdStartedAt,
           outcome: 'ready',
@@ -760,6 +765,8 @@ export const registerOpenCodeProxy = (app, deps) => {
         });
         return next();
       }
+      if (Date.now() >= deadline && current.startupPhase !== 'migrating' && current.startupPhase !== 'finalizing') break;
+      await sleep(READINESS_HOLD_POLL_MS);
     }
 
     recordStartupPerformance('proxy.readiness-hold', {
@@ -767,7 +774,7 @@ export const registerOpenCodeProxy = (app, deps) => {
       outcome: 'timeout',
       routeClass,
     });
-    if (!res.headersSent) {
+    if (!res.headersSent && !res.destroyed) {
       res.status(503).json({
         error: 'OpenCode is restarting',
         restarting: true,
