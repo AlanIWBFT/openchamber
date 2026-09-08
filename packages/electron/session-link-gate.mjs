@@ -2,10 +2,11 @@
 // A document that asks for its pending links (desktop_take_pending_session_links)
 // has mounted its listener, and until then an event sent to it reaches nobody:
 // the splash and an application document that finished loading look ready but
-// are not. A remote page never asks, so an application document counts as
+// are not. A remote page never asks, so only a remote document counts as
 // listening once the fallback delay has passed without a request.
 export const createSessionLinkGate = ({ fallbackMs, onFallback }) => {
   let listening = false;
+  let frame;
   let fallbackTimer = null;
 
   const cancelFallback = () => {
@@ -14,16 +15,29 @@ export const createSessionLinkGate = ({ fallbackMs, onFallback }) => {
   };
 
   return {
-    isListening: () => listening,
-    documentAsked() {
+    isListening: (currentFrame) => listening && frame === currentFrame,
+    documentAsked(currentFrame) {
       cancelFallback();
+      frame = currentFrame;
       listening = true;
     },
-    documentReplaced() {
+    documentStopped(currentFrame) {
+      if (frame !== currentFrame) return;
       cancelFallback();
       listening = false;
     },
-    applicationDocumentLoaded() {
+    documentReplaced() {
+      cancelFallback();
+      frame = undefined;
+      listening = false;
+    },
+    applicationDocumentLoaded(currentFrame, remote = true) {
+      if (frame !== currentFrame) {
+        cancelFallback();
+        listening = false;
+        frame = currentFrame;
+      }
+      if (!remote) return;
       if (listening || fallbackTimer) return;
       fallbackTimer = setTimeout(() => {
         fallbackTimer = null;
