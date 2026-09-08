@@ -1,5 +1,6 @@
 import { OpenCodeCompatibilityGate } from '@/components/update/OpenCodeCompatibilityGate';
 import React from 'react';
+import { z } from 'zod';
 import { AppStartupOverlay } from '@/components/ui/AppStartupOverlay';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AppLinkConfirmDialog } from '@/components/chat/AppLinkConfirmDialog';
@@ -27,7 +28,7 @@ import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
 import { useWindowTitle } from '@/hooks/useWindowTitle';
 import { useRootScrollLock } from '@/hooks/useRootScrollLock';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { isDesktopLocalOriginActive, isDesktopShell, restartDesktopApp, invokeDesktop, takePendingDesktopSessionLinks } from '@/lib/desktop';
+import { isDesktopLocalOriginActive, isDesktopShell, restartDesktopApp, invokeDesktop } from '@/lib/desktop';
 import {
   getInjectedBootOutcome,
   getBootInjectionStatus,
@@ -40,6 +41,7 @@ import {
 import type { RecoveryVariant } from '@/components/onboarding/DesktopConnectionRecovery';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { openSessionLink } from '@/lib/router/openSessionFromRoute';
+import { requestMessageFocus } from '@/lib/router/messageFocus';
 import { restoreLastActiveSession } from '@/sync/last-session-restore';
 import { markSessionViewed } from '@/sync/notification-store';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -480,35 +482,36 @@ function App({ apis }: AppProps) {
     if (typeof window === 'undefined') return;
 
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ sessionId?: string; directory?: string; messageId?: string }>).detail;
-      const sessionId = typeof detail?.sessionId === 'string' ? detail.sessionId.trim() : '';
-      if (!sessionId) return;
-      const directory = typeof detail?.directory === 'string' && detail.directory.trim().length > 0
-        ? detail.directory.trim()
-        : null;
+      if (!(event instanceof CustomEvent)) return;
+      const parsed = z.object({ sessionId: z.string().trim().min(1), directory: z.string().trim().optional(), messageId: z.string().trim().optional() }).safeParse(event.detail);
+      if (!parsed.success) return;
+      const { sessionId, directory, messageId } = parsed.data;
       // A link (a desktop deep link, a link to this window's instance) carries
       // no directory; the route opener resolves it from the global session
       // list, as for a web link.
       if (!directory) {
-        void openSessionLink(sessionId, typeof detail?.messageId === 'string' ? detail.messageId.trim() : null);
+        void openSessionLink(sessionId, messageId || null);
         return;
       }
+      if (messageId) requestMessageFocus(sessionId, messageId);
       void useSessionUIStore.getState().setCurrentSession(sessionId, directory);
     };
 
-    window.addEventListener('openchamber:open-session', handler as EventListener);
-    // A link that launched the app arrived before this listener existed; the
-    // desktop shell keeps it until the window asks. Taking is one-shot, so a
-    // cleanup must not drop links already taken (Strict Mode re-runs this).
-    void takePendingDesktopSessionLinks().then((links) => {
-      for (const link of links) void openSessionLink(link.sessionId, link.messageId);
-    });
-    return () => window.removeEventListener('openchamber:open-session', handler as EventListener);
+    window.addEventListener('openchamber:open-session', handler);
+    const reportReady = (ready: boolean) => {
+      if (!isDesktopShell() || window.parent !== window) return;
+      void invokeDesktop('desktop_navigation_ready', { ready }).catch((error) => {
+        console.warn('[desktop] Failed to report navigation readiness:', error);
+      });
+    };
+    reportReady(true);
+    return () => {
+      window.removeEventListener('openchamber:open-session', handler);
+      reportReady(false);
+    };
   }, []);
 
-  // Launch continuity: reopen the session that was open when the app last
-  // closed, once per page load. A link or route that already opened
-  // something wins; see restoreLastActiveSession.
+  // Explicit navigation wins over launch continuity.
   const lastSessionRestoreStartedRef = React.useRef(false);
   React.useEffect(() => {
     if (!isInitialized || lastSessionRestoreStartedRef.current) return;
