@@ -1054,6 +1054,8 @@ const serverUtilsRuntime = createServerUtilsRuntime({
     openCodeNotReadySince,
     isOpenCodeReady,
     isRestartingOpenCode,
+    startupPhase: openCodeLifecycleRuntime.getOpenCodeStartupState().phase,
+    isShuttingDown,
   }),
   getOpenCodeAuthHeaders,
   buildOpenCodeUrl,

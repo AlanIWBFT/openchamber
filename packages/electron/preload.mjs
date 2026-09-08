@@ -44,6 +44,17 @@ const isLocalPage = currentOrigin !== 'null'
   || (localOrigin && currentOrigin === localOrigin)
   || (localUiOrigin && currentOrigin === localUiOrigin));
 
+if (isLocalPage && process.isMainFrame) {
+  contextBridge.exposeInMainWorld('__OPENCHAMBER_STARTUP__', {
+    bootstrap: () => ipcRenderer.invoke('openchamber:startup'),
+    subscribe: (listener) => {
+      const handler = (_event, snapshot) => listener(snapshot);
+      ipcRenderer.on('openchamber:startup-state', handler);
+      return () => ipcRenderer.off('openchamber:startup-state', handler);
+    },
+  });
+}
+
 // Remote pages need __OPENCHAMBER_LOCAL_ORIGIN__ so the HostSwitcher knows
 // the URL of the Local entry (isDesktopLocalOriginActive() falls back to
 // window.location.origin otherwise — wrong on remote). Low risk: the value

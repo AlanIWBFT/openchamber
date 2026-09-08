@@ -1,4 +1,5 @@
 import { StrictMode } from 'react'
+import { DesktopStartupReady } from './lib/desktop-startup'
 import { createRoot } from 'react-dom/client'
 import './styles/fonts'
 import './styles/katex-css'
@@ -62,6 +63,7 @@ preloadMarkdownRenderer();
 
 createRoot(rootElement).render(
   <StrictMode>
+    <DesktopStartupReady />
     <I18nProvider>
       <ThemeSystemProvider>
         <ThemeProvider>

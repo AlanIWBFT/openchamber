@@ -35,6 +35,84 @@ describe('OpenCode proxy SSE forwarding', () => {
     upstreamServer = undefined;
   });
 
+  it('holds past the ordinary deadline during migration and finalization', async () => {
+    const upstream = express();
+    let upstreamRequests = 0;
+    upstream.get('/config', (_req, res) => { upstreamRequests++; res.json({ ok: true }); });
+    upstreamServer = await listen(upstream);
+    const port = upstreamServer.address().port;
+    const runtime = { openCodePort: port, isOpenCodeReady: false, openCodeNotReadySince: 0, startupPhase: 'migrating' };
+    const app = express();
+    registerOpenCodeProxy(app, {
+      fs: {}, os: {}, path, OPEN_CODE_READY_GRACE_MS: 30,
+      getRuntime: () => runtime,
+      getOpenCodeAuthHeaders: () => ({}),
+      buildOpenCodeUrl: (route) => `http://127.0.0.1:${port}${route}`,
+      ensureOpenCodeApiPrefix: () => {},
+    });
+    proxyServer = await listen(app);
+    let completed = false;
+    const response = fetch(`http://127.0.0.1:${proxyServer.address().port}/api/config`, { signal: AbortSignal.timeout(3000) })
+      .then((result) => { completed = true; return result; });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(completed).toBe(false);
+    runtime.startupPhase = 'finalizing';
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(completed).toBe(false);
+    expect(upstreamRequests).toBe(0);
+    runtime.startupPhase = 'ready';
+    runtime.isOpenCodeReady = true;
+    expect((await response).status).toBe(200);
+    expect(upstreamRequests).toBe(1);
+  });
+
+  it('ends held and subsequent requests when migration fails', async () => {
+    const runtime = { openCodePort: null, isOpenCodeReady: false, openCodeNotReadySince: 0, startupPhase: 'migrating' };
+    const app = express();
+    registerOpenCodeProxy(app, {
+      fs: {}, os: {}, path, OPEN_CODE_READY_GRACE_MS: 30,
+      getRuntime: () => runtime,
+      getOpenCodeAuthHeaders: () => ({}),
+      buildOpenCodeUrl: () => { throw new Error('Must not forward'); },
+      ensureOpenCodeApiPrefix: () => {},
+    });
+    proxyServer = await listen(app);
+    const url = `http://127.0.0.1:${proxyServer.address().port}/api/config`;
+    const response = fetch(url, { signal: AbortSignal.timeout(3000) });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    runtime.startupPhase = 'failed';
+    expect((await response).status).toBe(503);
+    expect((await fetch(url)).status).toBe(503);
+  });
+
+  it('drops a disconnected read instead of forwarding it after migration', async () => {
+    let upstreamRequests = 0;
+    const upstream = express();
+    upstream.get('/config', (_req, res) => { upstreamRequests++; res.json({ ok: true }); });
+    upstreamServer = await listen(upstream);
+    const port = upstreamServer.address().port;
+    const runtime = { openCodePort: port, isOpenCodeReady: false, openCodeNotReadySince: 0, startupPhase: 'migrating' };
+    const app = express();
+    registerOpenCodeProxy(app, {
+      fs: {}, os: {}, path, OPEN_CODE_READY_GRACE_MS: 30,
+      getRuntime: () => runtime,
+      getOpenCodeAuthHeaders: () => ({}),
+      buildOpenCodeUrl: (route) => `http://127.0.0.1:${port}${route}`,
+      ensureOpenCodeApiPrefix: () => {},
+    });
+    proxyServer = await listen(app);
+    const abort = new AbortController();
+    const response = fetch(`http://127.0.0.1:${proxyServer.address().port}/api/config`, { signal: abort.signal });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    abort.abort();
+    await expect(response).rejects.toHaveProperty('name', 'AbortError');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    runtime.startupPhase = 'ready';
+    runtime.isOpenCodeReady = true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(upstreamRequests).toBe(0);
+  });
+
   it('forwards event streams with nginx-safe headers', async () => {
     let seenAuthorization = null;
 

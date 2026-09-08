@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 
 export type OpenCodeStartupState =
-  | { phase: "idle" | "launching" | "migrating" | "ready" }
+  | { phase: "idle" | "launching" | "migrating" | "finalizing" | "ready" }
   | { phase: "failed"; error: string };
 
 export type OpenCodeStartupResult =

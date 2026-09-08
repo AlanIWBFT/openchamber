@@ -3,10 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildQuitPageHtml,
   buildSplashLogoSvg,
-  buildStartupPageHtml,
   closeMiniChatWindows,
   getStartupFailureDialogCopy,
-  getStartupPageCopy,
   normalizeQuitLocale,
 } from './quit-page.mjs';
 
@@ -43,14 +41,7 @@ describe('quit page lifecycle', () => {
     expect(svg).not.toContain('aria-hidden="true"');
   });
 
-  test('renders localized startup migration and failure copy', () => {
-    const html = buildStartupPageHtml({ locale: 'zh-CN' });
-
-    expect(html).toContain('正在启动 OpenChamber');
-    expect(getStartupPageCopy('zh-CN', 'migrating')).toEqual({
-      title: '正在升级本地数据',
-      detail: '此一次性升级可能需要几分钟，请保持 OpenChamber 开启。',
-    });
-    expect(getStartupFailureDialogCopy('zh-CN')).toMatchObject({ retry: '重试', quit: '退出' });
+  test('native startup failure asks for an app restart', () => {
+    expect(getStartupFailureDialogCopy('zh-CN')).toEqual({ title: 'OpenChamber 启动失败', detail: '请重启 OpenChamber 后重试。' });
   });
 });
