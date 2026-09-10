@@ -16,6 +16,7 @@ class FakeWorker extends EventEmitter {
   constructor() {
     super();
     this.messages = [];
+    this.ref = vi.fn();
     this.unref = vi.fn();
   }
 
@@ -40,6 +41,24 @@ const canRunGit = () => {
 const itIf = (condition) => condition ? it : it.skip;
 
 describe('GitReadWorkerClient', () => {
+  it.each([false, true])('lets a Node owner exit after its request settles (cancel=%s)', (cancel) => {
+    const moduleUrl = new URL('./git-read-worker-client.js', import.meta.url).href;
+    const source = `
+      import { Worker } from 'node:worker_threads';
+      import { GitReadWorkerClient } from ${JSON.stringify(moduleUrl)};
+      const client = new GitReadWorkerClient({ poolSize: 1, createWorker: () => new Worker(
+        "const { parentPort } = require('node:worker_threads'); parentPort.on('message', (message) => { if (message.type === 'request') setTimeout(() => parentPort.postMessage({ type: 'response', requestId: message.requestId, ok: true, result: 'done' }), 50); });",
+        { eval: true, execArgv: [] }
+      ) });
+      const controller = new AbortController();
+      client.run('status', {}, { signal: controller.signal }).then(console.log, (error) => console.log(error.message));
+      if (${cancel}) controller.abort(new Error('cancelled'));
+    `;
+    expect(execFileSync(process.execPath, ['--input-type=module', '--eval', source], {
+      encoding: 'utf8', timeout: 5_000, windowsHide: true,
+    }).trim()).toBe(cancel ? 'cancelled' : 'done');
+  });
+
   it('loads all real worker entries without launching Git', async () => {
     const client = new GitReadWorkerClient();
 
@@ -93,6 +112,8 @@ describe('GitReadWorkerClient', () => {
     const queued = client.run('status', { directory: 'queued' });
 
     expect(workers).toHaveLength(GIT_READ_WORKER_POOL_SIZE);
+    expect(workers[0].ref).toHaveBeenCalledTimes(1);
+    expect(workers[0].unref).not.toHaveBeenCalled();
     expect(workers.flatMap(requestMessages).map((message) => message.requestId)).toEqual(['1', '2', '3', '4']);
 
     workers[1].respond('2', 'second-result');
@@ -102,6 +123,7 @@ describe('GitReadWorkerClient', () => {
     await expect(queued).resolves.toBe('queued-result');
 
     workers[0].respond('1', 'first-result');
+    expect(workers[0].unref).toHaveBeenCalledTimes(1);
     for (let index = 2; index < GIT_READ_WORKER_POOL_SIZE; index += 1) {
       workers[index].respond(String(index + 1), `result-${index}`);
     }
@@ -128,6 +150,7 @@ describe('GitReadWorkerClient', () => {
 
     controller.abort(timeout);
     await expect(timedOut).rejects.toBe(timeout);
+    expect(workers[0].unref).toHaveBeenCalledTimes(1);
     expect(workers[0].messages.some((message) => message.type === 'cancel' && message.requestId === '1')).toBe(true);
     expect(workers.flatMap(requestMessages).map((message) => message.requestId)).toEqual(['1', '2']);
 
@@ -207,5 +230,15 @@ describe('GitReadWorkerClient', () => {
 
     await expect(client.run('status', { directory: 'first' })).rejects.toBe(failure);
     await expect(client.run('status', { directory: 'second' })).rejects.toBe(failure);
+  });
+
+  it('releases the worker reference when posting a request fails', async () => {
+    const worker = new FakeWorker();
+    const failure = new Error('Cannot clone request');
+    worker.postMessage = () => { throw failure; };
+    const client = new GitReadWorkerClient({ createWorker: () => worker, poolSize: 1 });
+    await expect(client.run('status', {})).rejects.toBe(failure);
+    expect(worker.ref).toHaveBeenCalledTimes(1);
+    expect(worker.unref).toHaveBeenCalledTimes(1);
   });
 });

@@ -85,7 +85,6 @@ export class GitReadWorkerClient {
 
     const worker = this.createWorker();
     lane.worker = worker;
-    worker.unref?.();
     worker.on('message', (message) => this.handleMessage(lane, worker, message));
     worker.on('error', (error) => this.handleWorkerFailure(lane, worker, error));
     worker.on('exit', (code) => {
@@ -121,7 +120,9 @@ export class GitReadWorkerClient {
         lane.activeRequest = request;
         request.lane = lane;
         try {
-          this.ensureWorker(lane).postMessage({
+          const worker = this.ensureWorker(lane);
+          worker.ref?.();
+          worker.postMessage({
             type: 'request',
             requestId: request.requestId,
             operation: request.operation,
@@ -166,6 +167,7 @@ export class GitReadWorkerClient {
         // The worker failure/exit handler owns cleanup when IPC is already gone.
       }
       this.settleRequest(request, error);
+      lane.worker?.unref?.();
       if (this.lanes.every((candidate) => candidate.circuitOpen)) {
         this.rejectQueuedRequests(createUnavailableError());
       } else {
@@ -194,6 +196,7 @@ export class GitReadWorkerClient {
     lane.activeRequest = null;
     lane.circuitOpen = false;
     request.lane = null;
+    worker.unref?.();
     if (!request.settled) {
       if (message.ok) {
         this.settleRequest(request, null, message.result);
@@ -211,6 +214,7 @@ export class GitReadWorkerClient {
       return;
     }
 
+    worker.unref?.();
     lane.worker = null;
     lane.circuitOpen = false;
     const activeRequest = lane.activeRequest;
