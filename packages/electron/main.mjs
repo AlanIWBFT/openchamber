@@ -113,6 +113,7 @@ import {
   shouldAllowBrowserPanelPermission,
 } from './browser-panel-security.mjs';
 import { isSpaceId, spaceIdOfPreviewPartition, spacePreviewPartition, spacePreviewProxyConfig } from './space-preview.mjs';
+import { loadWindowsShell } from './windows-shell.mjs';
 import { shouldBlockGuestFrameNavigation } from './guest-frame-navigation.mjs';
 import { createRelayDevTunnelBridge } from './relay-dev-tunnel.mjs';
 import { parsePairingDeepLink } from './pairing-deep-link.mjs';
@@ -3860,6 +3861,15 @@ const buildPlatformInstalledApps = async (apps) => {
   return buildInstalledApps(apps);
 };
 
+const openValidatedPath = async (validated) => {
+  if (process.platform === 'win32' && validated.stats.isDirectory()) {
+    await loadWindowsShell({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }).openDirectory(validated.path);
+    return;
+  }
+  const errorMessage = await shell.openPath(validated.path);
+  if (errorMessage) throw new Error(`Failed to open path: ${errorMessage}`);
+};
+
 const spawnDetachedLinux = (program, args) => new Promise((resolve, reject) => {
   const child = spawn(program, args, {
     detached: true,
@@ -4969,10 +4979,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (appName && process.platform !== 'linux' && process.platform !== 'win32') {
         throw new Error(unsupportedAppSpecificOpenError('paths'));
       }
-      const errorMessage = await shell.openPath(validated.path);
-      if (errorMessage) {
-        throw new Error(`Failed to open path: ${errorMessage}`);
-      }
+      await openValidatedPath(validated);
       return null;
     }
 
@@ -4996,10 +5003,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_reveal_path': {
       const validated = await validateLocalPath(typeof args.path === 'string' ? args.path.trim() : '');
       if (validated.stats.isDirectory()) {
-        const errorMessage = await shell.openPath(validated.path);
-        if (errorMessage) {
-          throw new Error(`Failed to reveal path: ${errorMessage}`);
-        }
+        await openValidatedPath(validated);
         return null;
       }
 
@@ -5017,8 +5021,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       const validated = await validateLocalPath(projectPath, 'Project path');
       if (process.platform === 'win32') {
         if (appId === 'finder') {
-          const error = await shell.openPath(validated.path);
-          if (error) throw new Error(error);
+          await openValidatedPath(validated);
           return null;
         }
         runSpecChain(buildWindowsOpenProjectSpecs({ projectPath: validated.path, appId, appName }), appName);
