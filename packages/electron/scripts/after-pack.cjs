@@ -5,13 +5,23 @@ const { Arch } = require('electron-builder');
 const { setExecutableUuid } = require('./macos-executable-uuid.cjs');
 const { verifyPackagedAppContents } = require('./packaged-app-contents.cjs');
 
-module.exports = (context) => {
+module.exports = async (context) => {
   const { appInfo } = context.packager;
   const contentsPath = path.join(context.appOutDir, `${appInfo.productFilename}.app`, 'Contents');
   const resourcesPath = context.electronPlatformName === 'darwin'
     ? path.join(contentsPath, 'Resources')
     : path.join(context.appOutDir, 'resources');
   verifyPackagedAppContents(resourcesPath, { platform: context.electronPlatformName, arch: Arch[context.arch] });
+  if (context.electronPlatformName === 'win32') {
+    const { detectExecutableArch } = await import('./ensure-electron.mjs');
+    const nativePath = path.join(resourcesPath, 'native', 'openchamber_shell.node');
+    const executablePath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.exe`);
+    const nativeArch = detectExecutableArch(nativePath);
+    if (!nativeArch || nativeArch !== detectExecutableArch(executablePath)) {
+      throw new Error(`Missing or wrong-architecture Windows shell module at ${nativePath}`);
+    }
+    return;
+  }
   if (context.electronPlatformName !== 'darwin') return;
 
   const executablePath = path.join(contentsPath, 'MacOS', appInfo.productFilename);

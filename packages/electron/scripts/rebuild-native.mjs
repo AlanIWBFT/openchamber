@@ -152,4 +152,6 @@ try {
   }
 }
 
+execFileSync(process.execPath, [path.join(__dirname, 'build-windows-shell.mjs')], { stdio: 'inherit', windowsHide: true });
+
 console.log('[electron] native modules rebuilt successfully');
