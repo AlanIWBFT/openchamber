@@ -512,6 +512,19 @@ The server (`packages/web/server/lib/fs/ripgrep.js`) looks for ripgrep in this o
   Popups close with the window that opened them and do not count as app windows
   when closing the last one hides the app on macOS.
 
+## Windows directory actions
+
+The local `native/windows-shell` N-API module calls `ShellExecuteExW` with the default verb on a COM STA worker.
+Registered file managers such as Directory Opus receive the request. The promise settles after dispatch, without waiting for the file manager to close.
+Main-process IPC and path validation remain the entry boundary.
+
+`rebuild:native` compiles this module against the installed Electron headers using the existing node-gyp and node-addon-api toolchain.
+Windows packages place it in `resources/native`; `after-pack.cjs` checks it against the packaged executable's architecture.
+Development loads it from `native/windows-shell/build/Release`.
+
+For a focused rebuild, run `bun run --cwd packages/electron build:windows-shell` in the Visual Studio 2022 Developer Shell,
+then `bun run --cwd packages/electron test:windows-shell`. Tests never compile the module.
+
 ## IPC Pattern
 
 Renderer code should call the desktop bridge exposed by `preload.mjs`. Do not import Electron from shared UI code.
