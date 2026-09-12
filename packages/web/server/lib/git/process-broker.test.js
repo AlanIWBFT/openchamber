@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import simpleGit from 'simple-git';
 import { describe, expect, it } from 'vitest';
 import { resolveGitBinary } from './git-binary.js';
@@ -24,6 +26,21 @@ describe.runIf(available)('Windows process broker', () => {
       process.execPath,
       ['-e', "process.stderr.write('failed');process.exit(7)"],
     )).rejects.toMatchObject({ code: 7, stderr: 'failed' });
+  });
+
+  it.each(['stdout', 'stderr'])('closes the command before rejecting a %s buffer overflow', async (stream) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-broker-overflow-'));
+    try {
+      await expect(execFileWithProcessBroker(process.execPath, [
+        '-e', `process.${stream}.write(Buffer.alloc(4096));setInterval(()=>{},60000)`,
+      ], { cwd: directory, maxBuffer: 1024 })).rejects.toMatchObject({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' });
+      // A still-running Windows child holds its current directory open.
+      fs.rmdirSync(directory);
+      expect(await execFileWithProcessBroker(process.execPath, ['-e', "process.stdout.write('next')"]))
+        .toEqual({ stdout: 'next', stderr: '' });
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('keeps streams and commands independent under output backpressure', async () => {
