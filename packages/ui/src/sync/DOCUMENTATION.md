@@ -453,6 +453,17 @@ Cleanup uses the canonical archive/delete actions, including confirmed `404`
 deletion, persisted-state cleanup and runtime guards. Settings shares the run
 state and shows loading or fetch failure separately from an eligible count.
 
+The local delete actions stop session execution before deleting it. If
+the host confirms that the exact session ID belongs to a deleted-space read-only
+archive, deletion skips Stop and review-metadata writes. Directory names and
+generic 409 errors never grant this exemption. A failed identity read keeps the
+ordinary Stop requirement, and a runtime switch cancels the pending deletion.
+UI cleanup still waits for the SDK DELETE to confirm success or absence. If
+Stop returns `404` during deletion, a same-runtime session read must also return
+`404` before cached state is removed. An existing session, another read error,
+or a runtime switch leaves deletion failed. Archive uses the backend-owned
+archive operation and requires its confirmed record. It does not issue a UI Stop.
+
 ### Live cross-directory session/status view
 
 Extension session subscriptions project these same stores through `lib/guests/workspace.ts`; they own no poller or git discovery. `global-session-status.observedById` retains explicit live activity/outcomes for at most 2,000 sessions in memory. A status snapshot can establish current activity but does not manufacture a successful turn. An error followed by idle retains its failed outcome until another run starts; runtime reset clears observations. Extension task status remains extension-owned.

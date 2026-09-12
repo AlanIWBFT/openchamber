@@ -26,7 +26,13 @@ const sessionMoveErrorsById = new Map<string, Error>()
 let globalHasLoaded = true
 const deletedChatDirectories: string[] = []
 let sessionStopError: Error | null = null
-beforeEach(() => { sessionStopError = null })
+let archiveIdentityResponse: MockRouteResponse = { status: 200, body: { readOnly: false } }
+let beforeArchiveIdentityResolve: (() => void) | null = null
+beforeEach(() => {
+  sessionStopError = null
+  archiveIdentityResponse = { status: 200, body: { readOnly: false } }
+  beforeArchiveIdentityResolve = null
+})
 const globalUpsertedSessions: unknown[] = []
 const globalUpsertedSessionBatches: Session[][] = []
 const globalRemovedSessionIds: string[] = []
@@ -295,6 +301,10 @@ mock.module("@/stores/useGlobalSessionsStore", () => ({
 
 mock.module("@/lib/runtime-fetch", () => ({
   runtimeFetch: async (path: string, init?: { body?: string }) => {
+    if (path.startsWith('/api/openchamber/spaces/archives/chat/')) {
+      beforeArchiveIdentityResolve?.()
+      return Response.json(archiveIdentityResponse.body, { status: archiveIdentityResponse.status })
+    }
     const payload = JSON.parse(String(init?.body ?? "{}"))
     openchamberRouteRequests.push({ path, body: payload })
     beforeArchiveRouteResolve?.(path)
@@ -608,6 +618,49 @@ describe("confirmed session removal", () => {
     globalHasLoaded = true
     deletedChatDirectories.length = 0
   })
+
+  for (const scoped of [false, true]) {
+    for (const result of ['deleted', 'failed', 'runtime-switch'] as const) {
+      test(`read-only archive ${scoped ? 'directory-scoped' : 'current'} deletion: ${result}`, async () => {
+        archiveIdentityResponse.body = { readOnly: true }
+        const session: Session = {
+          id: 'session-a', directory: '/test/project', projectID: 'project-a', title: 'Archived', cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: 1, updated: 1, archived: 2 },
+        }
+        const source = createStore({}, { session: [session] })
+        const { deleteSession, deleteSessionInDirectory, setActionRefs } = await import('./session-actions')
+        setActionRefs(createChildStores([['/test/project', source]]), () => '/test/project')
+        if (result === 'failed') sessionDeleteError = new Error('delete failed')
+        if (result === 'runtime-switch') beforeArchiveIdentityResolve = () => { runtimeKey = 'another-runtime' }
+        const deleted = await (scoped ? deleteSessionInDirectory(session.id, session.directory) : deleteSession(session.id))
+        expect(deleted).toBe(result === 'deleted')
+        expect(replyCalls.some((call) => call.method === 'session.stop')).toBe(false)
+        expect(openchamberRouteRequests).toEqual([])
+        expect(replyCalls.some((call) => call.method === 'session.delete')).toBe(result !== 'runtime-switch')
+        expect(source.getState().session).toEqual(result === 'deleted' ? [] : [session])
+        expect(deletedCleanupIdentities.length).toBe(result === 'deleted' ? 1 : 0)
+      })
+    }
+  }
+
+  for (const identity of [
+    { status: 503, body: { readOnly: true } },
+    { status: 200, body: { readOnly: 'true' } },
+    { status: 200, body: { readOnly: false } },
+  ]) {
+    test(`unconfirmed archive identity cannot bypass a Stop 409: ${JSON.stringify(identity)}`, async () => {
+      archiveIdentityResponse = identity
+      sessionStopError = Object.assign(new Error('conflict'), { status: 409 })
+      const source = createStore({})
+      const { deleteSession, setActionRefs } = await import('./session-actions')
+      setActionRefs(createChildStores([['/test/project', source]]), () => '/test/project')
+      expect(await deleteSession('session-a')).toBe(false)
+      expect(replyCalls.some((call) => call.method === 'session.stop')).toBe(true)
+      expect(replyCalls.some((call) => call.method === 'session.delete')).toBe(false)
+      expect(deletedCleanupIdentities).toEqual([])
+    })
+  }
 
   test("does not remove live or persisted state when delete fails", async () => {
     sessionDeleteError = new Error("delete failed")
@@ -1401,9 +1454,9 @@ describe("confirmed session removal stop requirements", () => {
 
   test("does not treat a stop 404 as confirmation that the session was deleted", async () => {
     sessionStopError = notFound("Stop route")
-    const source = createStore({}, {
-      session: [{ id: "session-a", directory: "/test/project", time: { created: 1 } } as Session],
-    })
+    const existing = sessionFixture("session-a")
+    sessionRecords.set(existing.id, existing)
+    const source = createStore({}, { session: [existing] })
     const { deleteSession, setActionRefs } = await import("./session-actions")
     setActionRefs(createChildStores([["/test/project", source]]), () => "/test/project")
 
@@ -1411,6 +1464,9 @@ describe("confirmed session removal stop requirements", () => {
     expect(replyCalls.some((call) => call.method === "session.delete")).toBe(false)
     expect(source.getState().session.map((item) => item.id)).toEqual(["session-a"])
     expect(globalRemovedSessionIds).toEqual([])
+    expect(replyCalls.filter((call) => call.method === "session.get")).toEqual([
+      { method: "session.get", params: { sessionID: "session-a", directory: "/test/project" } },
+    ])
   })
 })
 
