@@ -61,6 +61,8 @@ import { requestSessionArchiveBatch, requestSessionLinksUpdate, requestSessionMe
 import { registerBulkArchiveEchoes, releaseBulkArchiveEchoes } from "./bulk-archive-echo"
 import { markSessionUnreadSeen } from "./session-unread"
 import { captureRuntimeInstance, getRuntimeKey } from "@/lib/runtime-switch"
+import { readSpaceArchiveChatState } from "@/lib/spaces/spaces-api"
+import { isVSCodeRuntime } from "@/lib/desktop"
 import { isRelayModeActive } from "@/lib/relay/runtime-tunnel"
 import { getErrorStatus, isAmbiguousSendFailure } from "./send-failure-classification"
 import { isFormRequestNotFoundError } from "./form-request-error"
@@ -1618,6 +1620,17 @@ export type DeleteSessionOptions = {
   expectedRuntimeKey?: string
 }
 
+async function isConfirmedReadOnlyArchive(sessionId: string): Promise<boolean> {
+  if (isVSCodeRuntime()) return false
+  try {
+    return (await readSpaceArchiveChatState(sessionId, AbortSignal.timeout(5_000))).readOnly
+  } catch {
+    // No affirmative identity means no exemption. The normal Stop path still
+    // has to succeed; a read-only denial or any other 409 is not ignored.
+    return false
+  }
+}
+
 /**
  * Delete one session.
  *
@@ -1639,15 +1652,23 @@ export async function deleteSession(sessionId: string, options?: DeleteSessionOp
   const sessionDirectory = getSessionDirectory(sessionId)
   const chatDirectoryCleanup = planChatDirectoryCleanup(sessionId, getGlobalSessionSnapshot(sessionId), sessionDirectory)
   const deletedSessionIds = getKnownSessionSubtreeIds(sessionId)
+  const readOnlyArchive = await isConfirmedReadOnlyArchive(sessionId)
+  if (isStaleRuntime(expectedRuntimeKey)) return false
   try {
-    await stopSessionExecution(sessionId, sessionDirectory ?? undefined)
+    if (!readOnlyArchive) await stopSessionExecution(sessionId, sessionDirectory ?? undefined)
   } catch (error) {
+    if (await confirmMissingSessionAfterStopFailure(getErrorStatus(error), sessionId, sessionDirectory, expectedRuntimeKey) && !isStaleRuntime(expectedRuntimeKey)) {
+      finalizeConfirmedSessionDeletion(sessionId, deletedSessionIds, sessionDirectory, expectedRuntimeKey)
+      await cleanupDeletedChatDirectory(chatDirectoryCleanup)
+      return true
+    }
+    if (isStaleRuntime(expectedRuntimeKey)) return false
     recordSessionActionFailure(sessionId, toError(error))
     return false
   }
   if (isStaleRuntime(expectedRuntimeKey)) return false
   try {
-    await cleanupReviewMetadataBeforeDelete(sessionId, sessionDirectory, expectedRuntimeKey)
+    if (!readOnlyArchive) await cleanupReviewMetadataBeforeDelete(sessionId, sessionDirectory, expectedRuntimeKey)
     if (isStaleRuntime(expectedRuntimeKey)) return false
     const deleted = await opencodeClient.deleteSession(sessionId, sessionDirectory)
     if (isStaleRuntime(expectedRuntimeKey)) return false
@@ -1670,6 +1691,21 @@ export async function deleteSession(sessionId: string, options?: DeleteSessionOp
       return true
     }
     return false
+  }
+}
+
+async function confirmMissingSessionAfterStopFailure(
+  stopStatus: number | null,
+  sessionId: string,
+  directory: string | undefined,
+  expectedRuntimeKey: string,
+): Promise<boolean> {
+  if (stopStatus !== 404 || isStaleRuntime(expectedRuntimeKey)) return false
+  try {
+    await opencodeClient.getSession(sessionId, directory)
+    return false
+  } catch (confirmationError) {
+    return getErrorStatus(confirmationError) === 404 && !isStaleRuntime(expectedRuntimeKey)
   }
 }
 
