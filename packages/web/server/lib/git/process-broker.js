@@ -69,7 +69,7 @@ export const execFileWithProcessBroker = (command, args, options = {}) => {
     let stdoutBytes = 0;
     let stderrBytes = 0;
     let settled = false;
-    let aborted = null;
+    let failure = null;
 
     const finish = (error, result) => {
       if (settled) return;
@@ -79,19 +79,20 @@ export const execFileWithProcessBroker = (command, args, options = {}) => {
       else resolve(result);
     };
     const onAbort = () => {
-      aborted = options.signal?.reason instanceof Error
+      if (failure || settled) return;
+      failure = options.signal?.reason instanceof Error
         ? options.signal.reason
         : Object.assign(new Error('The operation was aborted'), { code: 'ABORT_ERR' });
       child.kill();
     };
     const collect = (target, chunk, stream) => {
+      if (failure || settled) return;
       const bytes = Buffer.from(chunk);
       if (stream === 'stdout') stdoutBytes += bytes.length;
       else stderrBytes += bytes.length;
       if (stdoutBytes > maxBuffer || stderrBytes > maxBuffer) {
-        const error = Object.assign(new Error(`${stream} maxBuffer length exceeded`), { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' });
+        failure = Object.assign(new Error(`${stream} maxBuffer length exceeded`), { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' });
         child.kill();
-        finish(error);
         return;
       }
       target.push(bytes);
@@ -99,10 +100,10 @@ export const execFileWithProcessBroker = (command, args, options = {}) => {
 
     child.stdout.on('data', (chunk) => collect(stdout, chunk, 'stdout'));
     child.stderr.on('data', (chunk) => collect(stderr, chunk, 'stderr'));
-    child.once('error', (error) => finish(error));
+    child.once('error', (error) => finish(failure ?? error));
     child.once('close', (code) => {
-      if (aborted) {
-        finish(aborted);
+      if (failure) {
+        finish(failure);
         return;
       }
       const stdoutBuffer = Buffer.concat(stdout);

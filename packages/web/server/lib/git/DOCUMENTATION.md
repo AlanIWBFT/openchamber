@@ -182,6 +182,7 @@ The following functions are internal helpers used by exported functions:
   Commit snapshots never expose hunk mutations. Mobile uses its separate Changes
   surface and VS Code does not mount these controls.
 - Untracked patches from `getDiff` and `getUntrackedDiffs` use `git diff --no-index` with separate stdout, stderr, and process exit status. Exit codes 0 and 1 return stdout only, so line-ending warnings never become patch text or request failures. Other exits and process failures reject the single-file request; the batch keeps an empty entry for the failed path and preserves the other results.
+- Broker-backed buffered reads stop retaining output at `maxBuffer`, cancel the command, and wait for `close` before rejecting with the original overflow error. This preserves command-tree cleanup ownership and prevents callers from removing a working directory while the cancelled child still holds it open.
 - `status.files` exposes both `index` and `working_dir` codes. Shared UI uses these as separate scopes: staged rows are derived from non-empty `index` statuses, while unstaged rows are derived from `working_dir` statuses and untracked files.
 - A file with both staged and unstaged changes can appear in both UI sections. Staged rows request diffs with `staged: true`; unstaged rows request normal working-tree diffs.
 - The shared Git panel exposes explicit staging actions. Unstaged rows use `stageFile`, staged rows use `unstageFile`, and commits operate on the current staged index.
