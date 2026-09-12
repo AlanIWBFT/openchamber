@@ -6,11 +6,16 @@ import { switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from './session-ui-store';
+import { ChildStoreManager } from './child-store';
+import { deleteSessionInDirectory, setActionRefs } from './session-actions';
+import { resetSessionActionFailures, takeSessionActionFailure } from './session-action-failures';
 import { replaceGlobalSessionStatusById } from './global-session-status';
 import { buildSessionRetentionCandidates, isSessionKeptByUser, runSessionRetentionCleanup, useSessionRetentionRunStore } from './session-retention';
 import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
 
 const now = Date.now();
+let childStores: ChildStoreManager;
+const loadSessions = useGlobalSessionsStore.getState().loadSessions;
 const day = 86_400_000;
 const session = (id: string, patch: Partial<Session> = {}): Session => ({
   id, projectID: 'project', directory: '/retention-project', title: id, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
@@ -32,8 +37,13 @@ const seed = (sessions: Session[]) => useGlobalSessionsStore.getState().applySna
 );
 
 beforeEach(() => {
+  resetSessionActionFailures();
   switchRuntimeEndpoint({ apiBaseUrl: 'https://retention.test', runtimeKey: 'retention-test' });
+  childStores = new ChildStoreManager();
+  setActionRefs(childStores, () => '/retention-project');
+  spyOn(opencodeClient, 'stopSession').mockResolvedValue(undefined);
   useGlobalSessionsStore.getState().resetForRuntimeSwitch();
+  useGlobalSessionsStore.setState({ loadSessions });
   useSessionUIStore.setState({ currentSessionId: null, isLoading: false });
   replaceGlobalSessionStatusById(new Map());
   useUIStore.setState({ autoDeleteEnabled: true, autoDeleteAfterDays: 30, sessionRetentionAction: 'delete', sessionRetentionOnlyArchived: false, autoDeleteLastRunAt: 0 });
@@ -48,7 +58,10 @@ beforeEach(() => {
   });
   spyOn(console, 'error').mockImplementation(() => {});
 });
-afterEach(() => { mock.restore(); });
+afterEach(() => {
+  mock.restore();
+  childStores.disposeAll();
+});
 
 describe('retention eligibility', () => {
   test('retains recent, current, archived and running sessions', () => {
@@ -119,6 +132,19 @@ describe('retention eligibility', () => {
 });
 
 describe('retention execution', () => {
+  test('retains a session when stopping execution before deletion fails', async () => {
+    seed([session('old')]);
+    spyOn(opencodeClient, 'stopSession').mockRejectedValue(new Error('exec termination failed'));
+    const remove = spyOn(opencodeClient, 'deleteSession');
+
+    const result = await runSessionRetentionCleanup({ force: true });
+
+    expect(result.completedIds).toEqual([]);
+    expect(result.failedIds).toEqual(['old']);
+    expect(remove.mock.calls).toHaveLength(0);
+    expect(useGlobalSessionsStore.getState().entityById.has('old')).toBe(true);
+  });
+
   test('claims the shared lock before loading and releases it after failure', async () => {
     let finish!: () => void;
     const loading = new Promise<void>((resolve) => { finish = resolve; });
@@ -165,6 +191,57 @@ describe('retention execution', () => {
     expect(result.failedIds).toEqual([]);
     expect(useGlobalSessionsStore.getState().entityById.has('gone')).toBe(false);
   });
+
+  test('confirms a missing session after Stop 404 before reconciling deletion', async () => {
+    seed([session('gone')]);
+    spyOn(opencodeClient, 'stopSession').mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }));
+    const read = spyOn(opencodeClient, 'getSession').mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }));
+    const remove = spyOn(opencodeClient, 'deleteSession');
+
+    const result = await runSessionRetentionCleanup({ force: true });
+
+    expect(result.completedIds).toEqual(['gone']);
+    expect(result.failedIds).toEqual([]);
+    expect(read.mock.calls).toEqual([['gone', '/retention-project']]);
+    expect(remove.mock.calls).toHaveLength(0);
+    expect(useGlobalSessionsStore.getState().entityById.has('gone')).toBe(false);
+  });
+
+  test('confirms Stop 404 in the explicitly selected directory for cross-directory deletion', async () => {
+    seed([session('gone', { directory: '/explicit-directory' }), session('neighbor', { directory: '/explicit-directory' })]);
+    const stop = spyOn(opencodeClient, 'stopSession').mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }));
+    const read = spyOn(opencodeClient, 'getSession').mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }));
+    const remove = spyOn(opencodeClient, 'deleteSession');
+
+    expect(await deleteSessionInDirectory('gone', '/explicit-directory')).toBe(true);
+    expect(stop.mock.calls).toEqual([['gone', '/explicit-directory']]);
+    expect(read.mock.calls).toEqual([['gone', '/explicit-directory']]);
+    expect(remove.mock.calls).toHaveLength(0);
+    expect(useGlobalSessionsStore.getState().entityById.has('gone')).toBe(false);
+  });
+
+  for (const confirmation of ['exists', 'offline', 'runtime-switch'] as const) {
+    test(`does not reconcile Stop 404 when confirmation is ${confirmation}`, async () => {
+      seed([session('old')]);
+      spyOn(opencodeClient, 'stopSession').mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }));
+      spyOn(opencodeClient, 'getSession').mockImplementation(async () => {
+        if (confirmation === 'exists') return session('old');
+        if (confirmation === 'offline') throw new Error('offline');
+        switchRuntimeEndpoint({ apiBaseUrl: 'https://retention-other.test', runtimeKey: 'retention-other' });
+        seed([session('old')]);
+        throw Object.assign(new Error('not found'), { status: 404 });
+      });
+      const remove = spyOn(opencodeClient, 'deleteSession');
+
+      const result = await runSessionRetentionCleanup({ force: true });
+
+      expect(result.completedIds).toEqual([]);
+      expect(result.failedIds).toEqual(['old']);
+      expect(remove.mock.calls).toHaveLength(0);
+      expect(useGlobalSessionsStore.getState().entityById.has('old')).toBe(true);
+      if (confirmation === 'runtime-switch') expect(takeSessionActionFailure(['old'])).toBeNull();
+    });
+  }
 
   test('does not accept a false delete confirmation, and preserves unrelated successes', async () => {
     seed([session('bad'), session('good')]);

@@ -586,6 +586,7 @@ All under `/api/openchamber/spaces`, a namespace of the host's beside `/api/open
 | `POST /places/<place>/clean-up` | Since 5e-4: removes what OpenChamber can make again; `{ freedBytes, kept: [{ kind, reason }], disk }`. 409 `space_preparing` while a space is being made, 409 `image_pulling` while the image is being downloaded. See "Places page". |
 | `POST /places/<place>/image` | Downloads the image ahead of the first space (journey step 0); answers 202 with the disk, `imagePulling` set, while the download goes on. See "Places page". |
 | `GET /archives` | Since 5e-2: `{ archives: [{ spaceId, name, projectDirectory, directory, archivedAt }] }`, which directory holds which deleted space's chats. Reachable with the switch off too, see "Chat archive". |
+| `GET /archives/chat/:sessionID` | `{ readOnly: boolean }` from the same host-owned session ID set as the archive guard, including while the switch is off. The local delete flow uses an affirmative answer to skip Stop and metadata writes before its normal SDK DELETE. |
 | `POST /<id>/setup` | Since 5d-4: `{ commands }`. Runs the project's setup commands again in a running space; answers the listed entry once the run began. See "Setup commands". |
 | `GET /<id>/setup` | Since 5d-4: `{ setup, output }`, the setup as the list carries it and the end of the failed command's output, or null. |
 | `GET /idle-stop`, `PUT /idle-stop` | Since 5d-3: the idle stop setting, `{ enabled, hours }`, kept in the host's settings and told to every running space. See "Idle stop". |
