@@ -1442,6 +1442,12 @@ export async function deleteSession(sessionId: string, options?: DeleteSessionOp
   try {
     await stopSessionExecution(sessionId, sessionDirectory ?? undefined)
   } catch (error) {
+    if (await confirmMissingSessionAfterStopFailure(getErrorStatus(error), sessionId, sessionDirectory, expectedRuntimeKey) && !isStaleRuntime(expectedRuntimeKey)) {
+      finalizeConfirmedSessionDeletion(sessionId, deletedSessionIds, sessionDirectory, expectedRuntimeKey)
+      await cleanupDeletedChatDirectory(chatDirectoryCleanup)
+      return true
+    }
+    if (isStaleRuntime(expectedRuntimeKey)) return false
     recordSessionActionFailure(sessionId, toError(error))
     return false
   }
@@ -1486,6 +1492,12 @@ export async function deleteSessionInDirectory(
   try {
     await stopSessionExecution(sessionId, directory)
   } catch (error) {
+    if (await confirmMissingSessionAfterStopFailure(getErrorStatus(error), sessionId, directory, expectedRuntimeKey) && !isStaleRuntime(expectedRuntimeKey)) {
+      finalizeConfirmedSessionDeletion(sessionId, deletedSessionIds, directory, expectedRuntimeKey)
+      await cleanupDeletedChatDirectory(chatDirectoryCleanup)
+      return true
+    }
+    if (isStaleRuntime(expectedRuntimeKey)) return false
     recordSessionActionFailure(sessionId, toError(error))
     return false
   }
@@ -1510,6 +1522,21 @@ export async function deleteSessionInDirectory(
       return true
     }
     return false
+  }
+}
+
+async function confirmMissingSessionAfterStopFailure(
+  stopStatus: number | null,
+  sessionId: string,
+  directory: string | undefined,
+  expectedRuntimeKey: string,
+): Promise<boolean> {
+  if (stopStatus !== 404 || isStaleRuntime(expectedRuntimeKey)) return false
+  try {
+    await opencodeClient.getSession(sessionId, directory)
+    return false
+  } catch (confirmationError) {
+    return getErrorStatus(confirmationError) === 404 && !isStaleRuntime(expectedRuntimeKey)
   }
 }
 
