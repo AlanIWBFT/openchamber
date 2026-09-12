@@ -150,9 +150,15 @@ describe('bounded history loading', () => {
   test('uses the real shared loader and stops paging as soon as three pairs are available', async () => {
     let requests = 0;
     const childStores = new ChildStoreManager();
+    const history = ['one', 'two', 'three'].flatMap(pair).map((record, index) => ({
+      info: { ...record.info, seq: index + 1 },
+      parts: record.parts.map((part, partIndex) => ({
+        ...part, id: `${record.info.id}-part-${partIndex}`, messageID: record.info.id, seq: index + 1,
+      })),
+    }));
     const sdk = createOpencodeClient({ baseUrl: 'http://session-title.test', fetch: async () => {
       requests += 1;
-      return new Response(JSON.stringify(requests === 1 ? pair('three') : [...pair('one'), ...pair('two')]), {
+      return new Response(JSON.stringify((requests === 1 ? history.slice(4) : history.slice(0, 4)).reverse()), {
         headers: { 'Content-Type': 'application/json', 'x-next-cursor': requests === 1 ? 'older' : 'much-older' },
       });
     } });
@@ -166,7 +172,7 @@ describe('bounded history loading', () => {
           return (state?.message.session ?? []).map((info) => ({ info, parts: state?.part[info.id] ?? [] }));
         },
       });
-      expect(turns).toHaveLength(3);
+      expect(turns.map((turn) => turn.user.info.id)).toEqual(['one', 'two', 'three']);
       expect(requests).toBe(2);
       expect(loader.getSnapshot(target).complete).toBe(false);
     } finally { loader.dispose(); childStores.disposeAll(); }
