@@ -351,6 +351,10 @@ export type SpaceArchive = z.infer<typeof archiveSchema>;
 export const listSpaceArchives = async (signal?: AbortSignal): Promise<SpaceArchive[]> =>
   (await request(`${SPACES_ROUTE}/archives`, z.object({ archives: z.array(archiveSchema) }), { signal })).archives;
 
+/** Exact host-owned identity, used before deletion skips the ordinary session's stop prelude. */
+export const readSpaceArchiveChatState = (sessionId: string, signal?: AbortSignal): Promise<{ readOnly: boolean }> =>
+  request(`${SPACES_ROUTE}/archives/chat/${encodeURIComponent(sessionId)}`, z.object({ readOnly: z.boolean() }), { signal });
+
 // What an apply would do, read while the dialog is open: the work brought out of the space now, and
 // where the space stands for an apply as uncommitted changes. `changedPaths` counts against the
 // space's start; `newPaths` is what the next apply as changes writes, null when it cannot be told.
