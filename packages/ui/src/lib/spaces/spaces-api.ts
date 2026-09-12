@@ -390,6 +390,10 @@ export type SpaceArchive = z.infer<typeof archiveSchema>;
 export const listSpaceArchives = async (signal?: AbortSignal): Promise<SpaceArchive[]> =>
   (await request(`${SPACES_ROUTE}/archives`, z.object({ archives: z.array(archiveSchema) }), { signal })).archives;
 
+/** Exact host-owned identity, used before deletion skips the ordinary session's stop prelude. */
+export const readSpaceArchiveChatState = (sessionId: string, signal?: AbortSignal): Promise<{ readOnly: boolean }> =>
+  request(`${SPACES_ROUTE}/archives/chat/${encodeURIComponent(sessionId)}`, z.object({ readOnly: z.boolean() }), { signal });
+
 const applyPreviewSchema = z.object({
   changedPaths: z.number().int().min(0),
   changedBytes: z.number().min(0),

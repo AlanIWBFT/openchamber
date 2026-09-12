@@ -72,6 +72,7 @@ import { registerBulkArchiveEchoes, releaseBulkArchiveEchoes } from "./bulk-arch
 import { markSessionUnreadSeen } from "./session-unread"
 import { captureRuntimeInstance, getRuntimeKey } from "@/lib/runtime-switch"
 import { markDefiniteTransportFailure } from "@/lib/relay/transport-error"
+import { readSpaceArchiveChatState } from "@/lib/spaces/spaces-api"
 import { isRelayModeActive } from "@/lib/relay/runtime-tunnel"
 import { getErrorStatus, isAmbiguousSendFailure } from "./send-failure-classification"
 import { isFormAlreadySettledError, isFormRequestNotFoundError } from "./form-request-error"
@@ -81,7 +82,6 @@ import { promoteRestoredSessionOrdering } from "./session-ordering"
 import { normalizePath } from "@/lib/pathNormalization"
 import { mergeMessages } from "./optimistic"
 import { trackPromptInFlight } from "./prompts-in-flight"
-import { deleteChatDirectory } from "@/lib/chatDirectories"
 import { createChatDraftIdentity, type ChatDraftIdentity } from "@/lib/chatDraftPersistence"
 import { LOCATION_SCOPED_FORM_SESSION_ID } from "./location-scoped-forms"
 import { cancelSessionTitleGeneration } from "./session-title-generation"
@@ -1462,21 +1462,6 @@ export function reconcileExternallyDeletedSession(identity: {
   finalizeConfirmedSessionDeletion(identity.sessionId, getKnownSessionSubtreeIds(identity.sessionId), identity.directory, identity.runtimeKey)
 }
 
-type ChatDirectoryCleanupPlan = {
-  directory: string | undefined
-  rootDeleted: boolean
-  cascadeIds: ReadonlySet<string>
-}
-
-function planChatDirectoryCleanup(sessionId: string, snapshot: Session | null, directory: string | undefined): ChatDirectoryCleanupPlan {
-  const global = useGlobalSessionsStore.getState()
-  return {
-    directory,
-    rootDeleted: Boolean(snapshot && snapshot.parentID == null),
-    cascadeIds: computeSubtreeIds([...global.activeSessions, ...global.archivedSessions], sessionId),
-  }
-}
-
 export function isChatDirectoryStillReferenced(directory: string, excludedIds: ReadonlySet<string>): boolean {
   const global = useGlobalSessionsStore.getState()
   if (!global.hasLoaded) return true
@@ -1486,35 +1471,42 @@ export function isChatDirectoryStillReferenced(directory: string, excludedIds: R
   ))
 }
 
-async function cleanupDeletedChatDirectory(plan: ChatDirectoryCleanupPlan): Promise<void> {
-  if (!plan.directory || !plan.rootDeleted) return
-  if (isChatDirectoryStillReferenced(plan.directory, plan.cascadeIds)) return
-  try {
-    await deleteChatDirectory(plan.directory)
-  } catch (error) {
-    console.warn("[session-actions] deleted chat directory cleanup failed", error)
-  }
-}
-
 export type DeleteSessionOptions = {
   expectedRuntimeKey?: string
+}
+
+async function isConfirmedReadOnlyArchive(sessionId: string): Promise<boolean> {
+  if (isVSCodeRuntime()) return false
+  try {
+    return (await readSpaceArchiveChatState(sessionId, AbortSignal.timeout(5_000))).readOnly
+  } catch {
+    // No affirmative identity means no exemption. The normal Stop path still
+    // has to succeed; a read-only denial or any other 409 is not ignored.
+    return false
+  }
 }
 
 export async function deleteSession(sessionId: string, options?: DeleteSessionOptions): Promise<boolean> {
   const expectedRuntimeKey = options?.expectedRuntimeKey ?? getRuntimeKey()
   if (isStaleRuntime(expectedRuntimeKey)) return false
   const sessionDirectory = getSessionDirectory(sessionId)
-  const chatDirectoryCleanup = planChatDirectoryCleanup(sessionId, getGlobalSessionSnapshot(sessionId), sessionDirectory)
   const deletedSessionIds = getKnownSessionSubtreeIds(sessionId)
+  const readOnlyArchive = await isConfirmedReadOnlyArchive(sessionId)
+  if (isStaleRuntime(expectedRuntimeKey)) return false
   try {
-    await stopSessionExecution(sessionId, sessionDirectory ?? undefined)
+    if (!readOnlyArchive) await stopSessionExecution(sessionId, sessionDirectory ?? undefined)
   } catch (error) {
+    if (await confirmMissingSessionAfterStopFailure(getErrorStatus(error), sessionId, sessionDirectory, expectedRuntimeKey) && !isStaleRuntime(expectedRuntimeKey)) {
+      finalizeConfirmedSessionDeletion(sessionId, deletedSessionIds, sessionDirectory, expectedRuntimeKey)
+      return true
+    }
+    if (isStaleRuntime(expectedRuntimeKey)) return false
     recordSessionActionFailure(sessionId, toError(error))
     return false
   }
   if (isStaleRuntime(expectedRuntimeKey)) return false
   try {
-    await cleanupReviewMetadataBeforeDelete(sessionId, sessionDirectory, expectedRuntimeKey)
+    if (!readOnlyArchive) await cleanupReviewMetadataBeforeDelete(sessionId, sessionDirectory, expectedRuntimeKey)
     if (isStaleRuntime(expectedRuntimeKey)) return false
     const deleted = await opencodeClient.deleteSession(sessionId, sessionDirectory)
     if (isStaleRuntime(expectedRuntimeKey)) return false
@@ -1522,7 +1514,6 @@ export async function deleteSession(sessionId: string, options?: DeleteSessionOp
       throw new Error("session.delete failed: server did not confirm deletion")
     }
     finalizeConfirmedSessionDeletion(sessionId, deletedSessionIds, sessionDirectory, expectedRuntimeKey)
-    await cleanupDeletedChatDirectory(chatDirectoryCleanup)
     return true
   } catch (error) {
     console.error("[session-actions] deleteSession failed", error)
@@ -1530,10 +1521,24 @@ export async function deleteSession(sessionId: string, options?: DeleteSessionOp
     if ((error as { status?: number })?.status === 404) {
       if (isStaleRuntime(expectedRuntimeKey)) return false
       finalizeConfirmedSessionDeletion(sessionId, deletedSessionIds, sessionDirectory, expectedRuntimeKey)
-      await cleanupDeletedChatDirectory(chatDirectoryCleanup)
       return true
     }
     return false
+  }
+}
+
+async function confirmMissingSessionAfterStopFailure(
+  stopStatus: number | null,
+  sessionId: string,
+  directory: string | undefined,
+  expectedRuntimeKey: string,
+): Promise<boolean> {
+  if (stopStatus !== 404 || isStaleRuntime(expectedRuntimeKey)) return false
+  try {
+    await opencodeClient.getSession(sessionId, directory)
+    return false
+  } catch (confirmationError) {
+    return getErrorStatus(confirmationError) === 404 && !isStaleRuntime(expectedRuntimeKey)
   }
 }
 

@@ -244,6 +244,12 @@ export function registerSpaceRoutes(app: RouteApp, { getJourney, getPlaces = () 
     res.json({ archives: getArchive()?.listArchives() ?? [] });
   });
 
+  // Uses the same host-owned identity set as the read-only guard, not a directory hint.
+  app.get(`${SPACES_ROUTE}/archives/chat/:sessionID`, (req, res) => {
+    const id = req.params.sessionID;
+    res.json({ readOnly: typeof id === 'string' && (getArchive()?.isArchivedChat(id) ?? false) });
+  });
+
   app.get(`${SPACES_ROUTE}/idle-stop`, withJourney(async (journey, _req, res) => {
     res.json(await journey.readIdleStopSetting());
   }));
