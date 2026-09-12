@@ -43,6 +43,59 @@ describe.runIf(available)('Windows process broker', () => {
     }
   });
 
+  it.each([
+    ['completed', false],
+    ['unknown', false],
+    ['completed', true],
+    ['unknown', true],
+  ])('handles Cancel for a %s command with malformed payload=%s', async (target, malformed) => {
+    const spawn = getProcessBrokerSpawn();
+    const completed = spawn(process.execPath, ['-e', 'process.stdin.resume()']);
+    const completedClose = new Promise((resolve, reject) => {
+      completed.once('error', reject);
+      completed.once('close', resolve);
+    });
+    completed.stdin.on('error', () => {});
+    completed.stdout.resume();
+    completed.stderr.resume();
+    completed.stdin.end();
+    expect(await completedClose).toBe(0);
+
+    const child = spawn(process.execPath, ['-e', "process.stdout.write('ready:');process.stdin.pipe(process.stdout)"]);
+    const output = [];
+    child.stdout.on('data', (chunk) => output.push(chunk));
+    child.stderr.resume();
+    child.stdin.on('error', () => {});
+    const closed = new Promise((resolve) => child.once('close', resolve));
+    const outcome = new Promise((resolve) => {
+      child.once('error', (error) => resolve({ error }));
+      child.once('close', (code) => resolve({ code, stdout: Buffer.concat(output).toString() }));
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        child.stdout.once('data', resolve);
+        child.once('error', reject);
+      });
+      expect(child.client).toBe(completed.client);
+      // Send the wire-level Cancel (type 11): kill() correctly refuses after local close.
+      const id = target === 'completed' ? completed.id : completed.id + 1_000_000n;
+      child.client.write(11, id, malformed ? Buffer.from([1]) : Buffer.alloc(0));
+      child.stdin.end('independent');
+      const result = await outcome;
+      if (malformed) {
+        expect(result.error).toBeInstanceOf(Error);
+        expect(await closed).toBe(-1);
+      } else {
+        expect(result).toEqual({ code: 0, stdout: 'ready:independent' });
+        expect(await execFileWithProcessBroker(process.execPath, ['-e', "process.stdout.write('next')"]))
+          .toEqual({ stdout: 'next', stderr: '' });
+      }
+    } finally {
+      if (!child.closed) child.kill();
+      await closed;
+    }
+  });
+
   it('keeps streams and commands independent under output backpressure', async () => {
     const managedSpawn = getProcessBrokerSpawn();
     expect(managedSpawn).toBeTypeOf('function');
