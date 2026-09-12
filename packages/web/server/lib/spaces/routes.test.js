@@ -16,7 +16,7 @@ afterEach(async () => {
 });
 
 /** An app with the routes over `journey`, or with the feature off when `journey` is null. */
-const serve = async ({ journey, places = [], switchState = { enabled: true }, machinePlace = null, dockerSetup = null } = {}) => {
+const serve = async ({ journey, places = [], switchState = { enabled: true }, machinePlace = null, dockerSetup = null, archive = null } = {}) => {
   const app = express();
   app.use(express.json());
   const calls = [];
@@ -25,6 +25,7 @@ const serve = async ({ journey, places = [], switchState = { enabled: true }, ma
     getJourney: () => state.journey,
     getPlaces: () => places,
     getDockerSetup: () => (dockerSetup && state.journey ? { placeId: 'docker', setup: dockerSetup } : null),
+    getArchive: () => archive,
     readSwitch: async () => ({ enabled: state.enabled, spaces: state.enabled ? [{ id: ID, name: 'One', state: 'running' }] : [] }),
     setSwitch: async (enabled) => {
       calls.push(['setSwitch', enabled]);
@@ -78,6 +79,15 @@ const journeyOf = (overrides = {}) => {
 };
 
 describe('space routes', () => {
+  it('identifies read-only chats by host-owned id even with spaces disabled', async () => {
+    const ids = new Set(['ses_archived']);
+    const { call } = await serve({ switchState: { enabled: false }, archive: { isArchivedChat: (id) => ids.has(id) } });
+    expect(await call('GET', `${SPACES_ROUTE}/archives/chat/ses%5Farchived`)).toEqual({ status: 200, body: { readOnly: true } });
+    expect(await call('GET', `${SPACES_ROUTE}/archives/chat/ses_other?directory=/archive`)).toEqual({ status: 200, body: { readOnly: false } });
+    ids.clear();
+    expect(await call('GET', `${SPACES_ROUTE}/archives/chat/ses_archived`)).toEqual({ status: 200, body: { readOnly: false } });
+  });
+
   it('answers every journey route with 404 and isolated_spaces_off while the feature is off, and the switch still works', async () => {
     const { call, calls } = await serve({ journey: null, switchState: { enabled: false } });
     for (const [method, path] of [['GET', ''], ['POST', ''], ['GET', '/places'], ['POST', `/${ID}/start`], ['POST', `/${ID}/stop`], ['POST', `/${ID}/restart`], ['POST', `/${ID}/restart-opencode`], ['POST', `/${ID}/grants`], ['GET', '/logins'], ['GET', '/custom-providers'], ['DELETE', `/${ID}`], ['GET', `/${ID}/journal`], ['GET', `/${ID}/apply`], ['POST', `/${ID}/apply`], ['GET', '/idle-stop'], ['PUT', '/idle-stop'], ['POST', `/${ID}/setup`], ['GET', `/${ID}/setup`], ['GET', '/places/docker/disk'], ['POST', '/places/docker/clean-up'], ['POST', '/places/docker/image'], ['GET', '/places/local/setup'], ['POST', '/places/local/setup']]) {
