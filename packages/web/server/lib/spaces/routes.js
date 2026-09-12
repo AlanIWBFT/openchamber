@@ -184,6 +184,11 @@ export function registerSpaceRoutes(app, { getJourney, getPlaces = () => [], rea
     res.json({ archives: getArchive()?.listArchives() ?? [] });
   });
 
+  // Uses the same host-owned identity set as the read-only guard, not a directory hint.
+  app.get(`${SPACES_ROUTE}/archives/chat/:sessionID`, (req, res) => {
+    res.json({ readOnly: getArchive()?.isArchivedChat(req.params.sessionID) ?? false });
+  });
+
   // The idle stop setting (decision 11): kept in the settings and told to every running space.
   app.get(`${SPACES_ROUTE}/idle-stop`, withJourney(async (journey, _req, res) => {
     res.json(await journey.readIdleStopSetting());
