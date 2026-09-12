@@ -1316,9 +1316,9 @@ describe("confirmed session removal stop requirements", () => {
 
   test("does not treat a stop 404 as confirmation that the session was deleted", async () => {
     sessionStopError = notFound("Stop route")
-    const source = createStore({}, {
-      session: [{ id: "session-a", directory: "/test/project", time: { created: 1 } } as Session],
-    })
+    const existing = sessionFixture("session-a")
+    sessionRecords.set(existing.id, existing)
+    const source = createStore({}, { session: [existing] })
     const { deleteSession, setActionRefs } = await import("./session-actions")
     setActionRefs(createChildStores([["/test/project", source]]), () => "/test/project")
 
@@ -1326,6 +1326,9 @@ describe("confirmed session removal stop requirements", () => {
     expect(replyCalls.some((call) => call.method === "session.delete")).toBe(false)
     expect(source.getState().session.map((item) => item.id)).toEqual(["session-a"])
     expect(globalRemovedSessionIds).toEqual([])
+    expect(replyCalls.filter((call) => call.method === "session.get")).toEqual([
+      { method: "session.get", params: { sessionID: "session-a", directory: "/test/project" } },
+    ])
   })
 })
 
