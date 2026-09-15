@@ -2,11 +2,12 @@ import type { StoreApi } from "zustand"
 import type { SessionStatus } from "@/lib/opencode/model"
 import { type DirectoryStore } from "./child-store"
 import { runBackgroundNetworkTask } from "@/lib/background-network"
-import { readDirectoryStatusSnapshot, selectHeldSessionStatuses } from "./directory-recovery-snapshots"
+import { beginSessionStatusRequest, readDirectoryStatusSnapshot, selectHeldSessionStatuses } from "./directory-recovery-snapshots"
 import { hasPromptInFlight, withPromptsInFlight } from "./prompts-in-flight"
 import { getReconnectCandidateSessionIds } from "./reconnect-recovery"
 import { opencodeClient } from "@/lib/opencode/client"
 import { applyGlobalSessionStatusSnapshot, getDirectoryOwnedSessionIds } from "./global-session-status"
+import { markRecordedInterruptedTurn } from "./interrupted-turn-recovery"
 import { getViewedSessionMaterializationTarget } from "./viewed-sessions"
 
 const syncSnapshotSignature = (value: unknown): string => JSON.stringify(value)
@@ -40,41 +41,18 @@ type DirectorySessionStatusSnapshot = NonNullable<
 
 type StatusSnapshotMode = "monotonic" | "authoritative"
 
-export function createSessionStatusRequestCoordinator() {
-  const states = new WeakMap<StoreApi<DirectoryStore>, { next: number; applied: number }>()
-
-  return (owner: StoreApi<DirectoryStore>): (() => boolean) => {
-    const state = states.get(owner) ?? { next: 0, applied: 0 }
-    const generation = state.next + 1
-    state.next = generation
-    states.set(owner, state)
-
-    return () => {
-      const current = states.get(owner)
-      if (!current || generation < current.applied) return false
-      current.applied = generation
-      return true
-    }
-  }
-}
-
-export const beginSessionStatusRequest = createSessionStatusRequestCoordinator()
-
 export function applySessionStatusSnapshot(
   store: StoreApi<DirectoryStore>,
   snapshot: DirectorySessionStatusSnapshot,
   candidateSessionIds: string[],
   mode: StatusSnapshotMode,
-  requestBaseline?: Record<string, SessionStatus>,
 ): boolean {
-  const baseline = requestBaseline ?? store.getState().session_status
   let changed = false
   store.setState((state: DirectoryStore) => {
     const current = state.session_status ?? {}
     let next: Record<string, SessionStatus> | undefined
     let nextInvalidated: Record<string, true> | undefined
     const draft = () => (next ??= { ...current })
-    const changedDuringRequest = (sessionId: string) => current[sessionId] !== baseline[sessionId]
 
     if (!state.sessionStatusReady) {
       changed = true
@@ -82,7 +60,7 @@ export function applySessionStatusSnapshot(
 
     for (const [sessionId, rawStatus] of Object.entries(snapshot)) {
       const incoming = toSessionStatus(rawStatus)
-      if (!incoming || incoming.type === "idle" || changedDuringRequest(sessionId)) continue
+      if (!incoming || incoming.type === "idle") continue
       const held = current[sessionId]
       if (incoming.type === "busy" && held?.type === "retry" && (held.next === undefined || held.next > Date.now())) continue
       if (!haveEquivalentSyncSnapshots(current[sessionId], incoming)) {
@@ -103,7 +81,7 @@ export function applySessionStatusSnapshot(
         continue
       }
 
-      if (changedDuringRequest(sessionId) || hasPromptInFlight(sessionId)) continue
+      if (hasPromptInFlight(sessionId)) continue
 
       const existing = current[sessionId]
       if (mode === "monotonic" && existing) continue
@@ -133,25 +111,23 @@ export async function resyncDirectorySessionStatuses(
 ): Promise<DirectorySessionStatusSnapshot | null> {
   const invalidatedAtStart = store.getState().sessionStatusInvalidated
   const isCurrentRequest = beginSessionStatusRequest(store)
-  const baseline = store.getState().session_status
-  const nextStatuses = await readDirectoryStatusSnapshot(store, () => opencodeClient.getActiveSessionStatuses(directory))
-  if (nextStatuses === null || isStale?.()) return null
-  if (!isCurrentRequest()) return null
-  const currentInvalidated = store.getState().sessionStatusInvalidated
-  const eligibleIds = candidateSessionIds.filter((id) => (
-    !currentInvalidated?.[id] || currentInvalidated === invalidatedAtStart
-  ))
-  applySessionStatusSnapshot(store, nextStatuses, eligibleIds, mode, baseline)
-  if (mode === "authoritative") {
-    store.setState({ sessionStatusReady: true })
-    const state = store.getState()
-    applyGlobalSessionStatusSnapshot(
-      directory,
-      withPromptsInFlight(selectHeldSessionStatuses(nextStatuses, state.session), state.session_status),
-      getDirectoryOwnedSessionIds(directory, state.session),
-    )
-  }
-  return nextStatuses
+  return readDirectoryStatusSnapshot(store, () => opencodeClient.getActiveSessionStatuses(directory), (nextStatuses) => {
+    if (isStale?.() || !isCurrentRequest()) return false
+    const currentInvalidated = store.getState().sessionStatusInvalidated
+    const eligibleIds = candidateSessionIds.filter((id) => (
+      !currentInvalidated?.[id] || currentInvalidated === invalidatedAtStart
+    ))
+    applySessionStatusSnapshot(store, nextStatuses, eligibleIds, mode)
+    if (mode === "authoritative") {
+      store.setState({ sessionStatusReady: true })
+      const state = store.getState()
+      applyGlobalSessionStatusSnapshot(directory, withPromptsInFlight(selectHeldSessionStatuses(nextStatuses, state.session), state.session_status), getDirectoryOwnedSessionIds(directory, state.session))
+      for (const sessionId of candidateSessionIds) {
+        markRecordedInterruptedTurn(store, sessionId)
+      }
+    }
+    return true
+  })
 }
 
 export function maybePollStatusAfterMessageCompletion(

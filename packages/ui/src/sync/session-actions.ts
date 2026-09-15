@@ -74,6 +74,7 @@ import { captureRuntimeInstance, getRuntimeKey } from "@/lib/runtime-switch"
 import { markDefiniteTransportFailure } from "@/lib/relay/transport-error"
 import { readSpaceArchiveChatState } from "@/lib/spaces/spaces-api"
 import { isRelayModeActive } from "@/lib/relay/runtime-tunnel"
+import { isVSCodeRuntime } from "@/lib/desktop"
 import { getErrorStatus, isAmbiguousSendFailure } from "./send-failure-classification"
 import { isFormAlreadySettledError, isFormRequestNotFoundError } from "./form-request-error"
 import { ConnectionLostError } from "./connection-lost-error"
@@ -86,10 +87,10 @@ import { createChatDraftIdentity, type ChatDraftIdentity } from "@/lib/chatDraft
 import { LOCATION_SCOPED_FORM_SESSION_ID } from "./location-scoped-forms"
 import { cancelSessionTitleGeneration } from "./session-title-generation"
 import { recordSessionActionFailure } from "./session-action-failures"
+import { beginSessionStatusRequest, readDirectoryStatusSnapshot } from "./directory-recovery-snapshots"
 import { applyForkInheritance } from "@/lib/sessionForkInheritance"
 import { getSessionGoal } from "@/lib/sessionGoalMetadata"
 import { fetchGoalObjectiveContent, writeGoalObjectiveFile } from "@/lib/goalObjectiveFiles"
-import { isVSCodeRuntime } from "@/lib/desktop"
 import { selectRevertedMessages, selectVisibleMessages } from "./message-boundary"
 
 const SEND_CONFIRMATION_REFETCH_LIMIT = 30
@@ -1761,19 +1762,25 @@ async function restoreArchivedSession(
     const store = sessionDirectory ? _childStores?.getChild(sessionDirectory) : undefined
     if (store) {
       const before = store.getState()
-      const statuses = await opencodeClient.getActiveSessionStatuses(sessionDirectory).catch(() => null)
-      if (!isStaleRuntime(expectedRuntimeKey) && statuses !== null) {
-        store.setState((current) => {
-          if (current.sessionStatusInvalidated !== before.sessionStatusInvalidated
-            || current.session_status[sessionId] !== before.session_status[sessionId]) return current
-          const invalidated = { ...current.sessionStatusInvalidated }
-          delete invalidated[sessionId]
-          return {
-            session_status: { ...current.session_status, [sessionId]: statuses[sessionId] ?? { type: "idle" } },
-            sessionStatusInvalidated: invalidated,
-          }
+      const sdk = opencodeClient.getSdkClient()
+      const acceptStatus = beginSessionStatusRequest(store)
+      // The restore already committed. A rejected status read is unknown, not
+      // an action failure or a reason to mark this session idle.
+      await readDirectoryStatusSnapshot(store, () => opencodeClient.getActiveSessionStatuses(sessionDirectory), (statuses) => {
+        if (isStaleRuntime(expectedRuntimeKey) || opencodeClient.getSdkClient() !== sdk
+          || !sessionDirectory || _childStores?.getChild(sessionDirectory) !== store) return false
+        const current = store.getState()
+        if (current.sessionStatusInvalidated !== before.sessionStatusInvalidated
+          || current.session_status[sessionId] !== before.session_status[sessionId]
+          || !acceptStatus()) return false
+        const invalidated = { ...current.sessionStatusInvalidated }
+        delete invalidated[sessionId]
+        store.setState({
+          session_status: { ...current.session_status, [sessionId]: statuses[sessionId] ?? { type: "idle" } },
+          sessionStatusInvalidated: invalidated,
         })
-      }
+        return true
+      }).catch(() => null)
     }
     if (relocate && !isStaleRuntime(expectedRuntimeKey)) {
       void import("@/lib/worktrees/relocateRestoredSession")
