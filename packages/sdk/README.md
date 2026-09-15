@@ -85,6 +85,12 @@ A complete three-file example is on the [Build an extension](https://openchamber
 
 ## In the page
 
+For a full-screen board, add `"page": true` under `contributes`, or `"page": { "entry": "panel/page.html", "title": "Board" }` for separate HTML. Users open it from the Extension pages menu above the session list. `ctx.surface` is `"page"`. The extension cannot open the page itself.
+
+With `sessions` approved, use `listProjects()`, `listWorktrees(projectId)`, and `listSessions(projectId)`. Subscribe through `await onProjects(listener)`, `await onWorktrees(projectId, listener)`, or `await onSessions(projectId, listener)` and retain the returned unsubscribe function. Snapshots distinguish loading, ready, and error; session activity and observed turn outcomes are separate from your task status.
+
+`startSession` accepts `projectId` and `worktree: { kind: "new", name: "fix-login", baseBranch: "main" }` or `{ kind: "existing", directory }`. It preserves the current screen by default. `openSession(sessionId)` explicitly opens the chat. `host.storage.get/set/delete/keys` stores your own JSON on the connected server without a file-access grant. See [API.md](./API.md) for limits and partial results. The `tasks-demo` page exercises these methods together.
+
 ```ts
 import { connectHost, HostRequestError } from '@openchamber/sdk';
 
