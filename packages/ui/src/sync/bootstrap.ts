@@ -7,6 +7,7 @@ import { emitSyncConfigChanged } from "./sync-refs"
 import { warmChatsRootDirectory } from "../lib/chatDirectories"
 import { runBackgroundNetworkTask } from "../lib/background-network"
 import {
+  beginSessionStatusRequest,
   readDirectoryStatusSnapshot,
   readDirectoryFormSnapshot,
   readDirectoryPermissionSnapshot,
@@ -89,7 +90,6 @@ type DirectoryBootstrapInput = {
     projects: Project[]
     path: GlobalState["path"]
   }
-  beginSessionStatusRequest?: () => () => boolean
   loadSessions: (directory: string) => Promise<void> | void
 }
 
@@ -139,14 +139,15 @@ async function initializeDirectory(input: DirectoryBootstrapInput): Promise<Boot
   // config read cannot suppress pending form or permission recovery.
   const critical = Promise.allSettled([
     read(async () => {
-      const isCurrentRequest = input.beginSessionStatusRequest?.() ?? (() => true)
-      const session_status = await readDirectoryStatusSnapshot(store, async () => {
+      const isCurrentRequest = beginSessionStatusRequest(store)
+      await readDirectoryStatusSnapshot(store, async () => {
         const statuses = await opencodeClient.getActiveSessionStatuses(directory)
         if (statuses === null) throw new Error("session.active failed")
         return statuses
+      }, (session_status) => {
+        if (input.isStale?.() || !isCurrentRequest()) return false
+        return commit({ session_status, sessionStatusReady: true })
       })
-      if (input.isStale?.() || !isCurrentRequest()) return
-      commit({ session_status, sessionStatusReady: true })
     }),
     read(async () => {
       const form = await readDirectoryFormSnapshot(store, () => (
