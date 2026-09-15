@@ -8,10 +8,10 @@ import type { DirectoryStore } from "../child-store"
 import { bootstrapDirectory } from "../bootstrap"
 import {
   applySessionStatusSnapshot,
-  createSessionStatusRequestCoordinator,
   needsSnapshotAfterStatusPoll,
   shouldTriggerStaleResync,
 } from "../sync-context"
+import { beginSessionStatusRequest, createSessionStatusRequestCoordinator, readDirectoryStatusSnapshot } from "../directory-recovery-snapshots"
 
 type StatusSnapshot = Record<string, SessionStatus>
 
@@ -73,18 +73,19 @@ describe("applySessionStatusSnapshot", () => {
     expect(store.getState().sessionStatusReady).toBe(true)
   })
 
-  test("preserves a newer status transition that lands during the request", () => {
+  test("preserves a newer status transition that lands during the request", async () => {
     const original = { type: "busy" } satisfies SessionStatus
     const store = createDirectoryStore({ session_status: { ses_a: original } })
-    const baseline = store.getState().session_status
-    store.setState({ session_status: { ses_a: { type: "idle" } } })
+    const snapshot = await readDirectoryStatusSnapshot(store, async () => {
+      store.setState({ session_status: { ses_a: { type: "idle" } } })
+      return { ses_a: BUSY }
+    })
 
     applySessionStatusSnapshot(
       store,
-      { ses_a: { type: "retry", attempt: 2, message: "old", next: 30 } },
+      snapshot,
       ["ses_a"],
       "authoritative",
-      baseline,
     )
 
     expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
@@ -189,7 +190,7 @@ afterEach(() => { for (const restore of restoreSpies.splice(0).reverse()) restor
 
 function startBootstrap(
   statusResult: BootstrapStatusResult | Promise<BootstrapStatusResult>,
-  beginSessionStatusRequest?: () => () => boolean,
+  store = createDirectoryStore({ sessionStatusReady: false }),
 ) {
   let started!: () => void
   const requestStarted = new Promise<void>((resolve) => { started = resolve })
@@ -202,7 +203,6 @@ function startBootstrap(
     spyOn(opencodeClient, "listPendingPermissions").mockResolvedValue([]),
   ]
   for (const spy of spies) restoreSpies.push(() => spy.mockRestore())
-  const store = createDirectoryStore({ sessionStatusReady: false })
   const tasks = bootstrapDirectory({
     directory: "C:/repo",
     store,
@@ -212,10 +212,11 @@ function startBootstrap(
       projects: [],
       path: { directory: "C:/repo", worktree: "C:/repo", home: "C:/home" },
     },
-    beginSessionStatusRequest,
     loadSessions: () => undefined,
   })
   return {
+    store,
+    environment: tasks.environment,
     requestStarted,
     promise: Promise.all([tasks.sessions, tasks.environment]),
     getState: store.getState,
@@ -230,6 +231,18 @@ async function bootstrapWithStatus(statusResult: BootstrapStatusResult) {
 }
 
 describe("bootstrapDirectory session status", () => {
+  test("preserves a usable older response when the newer bootstrap fails", async () => {
+    let resolveStatus!: (result: BootstrapStatusResult) => void
+    const older = startBootstrap(new Promise<BootstrapStatusResult>((resolve) => { resolveStatus = resolve }))
+    await older.requestStarted
+    const newer = startBootstrap(null, older.store)
+    expect(await newer.environment).toBe("failed")
+    resolveStatus({ ses_a: BUSY })
+    expect(await older.environment).toBe("complete")
+    expect(older.getState().session_status.ses_a).toEqual(BUSY)
+    expect(older.getState().sessionStatusReady).toBe(true)
+  })
+
   test("marks a successful empty status snapshot as resolved", async () => {
     const state = await bootstrapWithStatus({})
     expect(state.sessionStatusReady).toBe(true)
@@ -258,14 +271,29 @@ describe("bootstrapDirectory session status", () => {
   })
 
   test("ignores a snapshot superseded by a newer directory request", async () => {
-    const bootstrap = startBootstrap(
-      { ses_a: { type: "busy" } },
-      () => () => false,
-    )
+    let resolveStatus!: (result: BootstrapStatusResult) => void
+    const bootstrap = startBootstrap(new Promise<BootstrapStatusResult>((resolve) => { resolveStatus = resolve }))
+    await bootstrap.requestStarted
+    const newer = startBootstrap({}, bootstrap.store)
+    expect(await newer.environment).toBe("complete")
+    resolveStatus({ ses_a: BUSY })
     await bootstrap.promise
 
     expect(bootstrap.getState().session_status).toEqual({})
-    expect(bootstrap.getState().sessionStatusReady).toBe(false)
+    expect(bootstrap.getState().sessionStatusReady).toBe(true)
+  })
+
+  test("bootstrap and polling share the same successful-response authority", async () => {
+    let resolveStatus!: (result: BootstrapStatusResult) => void
+    const bootstrap = startBootstrap(new Promise<BootstrapStatusResult>((resolve) => { resolveStatus = resolve }))
+    await bootstrap.requestStarted
+    const accept = beginSessionStatusRequest(bootstrap.store)
+    const snapshot = await readDirectoryStatusSnapshot(bootstrap.store, async () => ({}))
+    expect(accept()).toBe(true)
+    applySessionStatusSnapshot(bootstrap.store, snapshot, [], "authoritative")
+    resolveStatus({ ses_a: BUSY })
+    await bootstrap.promise
+    expect(bootstrap.getState().session_status).toEqual({})
   })
 })
 

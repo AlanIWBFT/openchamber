@@ -28,6 +28,45 @@ const session: Session = {
 }
 
 describe("directory recovery snapshots", () => {
+  test("a stale publication returns no authoritative snapshot and preserves the store", async () => {
+    const store = source({ session_status: { session: { type: "busy" } } })
+    const before = store.getState()
+    const response = deferred<State["session_status"]>()
+    let stale = false
+    const snapshot = readDirectoryStatusSnapshot(store, () => response.promise, (session_status) => {
+      if (stale) return false
+      store.setState({ session_status })
+      return true
+    })
+    stale = true
+    response.resolve({})
+    expect(await snapshot).toBeNull()
+    expect(store.getState()).toBe(before)
+  })
+
+  for (const eventLast of [false, true]) {
+    test(`preserves the latest idle/optimistic transition (event last: ${eventLast})`, async () => {
+      const manager = new ChildStoreManager()
+      const store = manager.ensureChild("/repo", { bootstrap: false })
+      store.setState({ session: [session], session_status: { session: { type: "busy" } } })
+      const response = deferred<State["session_status"]>()
+      const snapshot = readDirectoryStatusSnapshot(store, () => response.promise)
+      const optimistic = () => store.setState({ session_status: { session: { type: "busy" } } })
+      try {
+        if (eventLast) optimistic()
+        handleEvent("/repo", { type: "session.idle", properties: { sessionID: "session" } },
+          manager, createEventRoutingIndex(), getRuntimeKey(), true)
+        if (!eventLast) optimistic()
+        response.resolve({})
+        expect(await snapshot).toEqual({ session: { type: eventLast ? "idle" : "busy" } })
+      } finally {
+        response.resolve({})
+        manager.disposeAll()
+        replaceGlobalSessionStatusById(new Map())
+      }
+    })
+  }
+
   test("a failed status read stays null even when live events arrive during the request", async () => {
     const store = source()
     const response = deferred<State["session_status"] | null>()
