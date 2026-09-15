@@ -111,6 +111,14 @@ with display activity while leaving the global display resolver unchanged.
 The VS Code queue gate and its live inputs are documented in
 `../stores/DOCUMENTATION.md`.
 
+`directory-recovery-snapshots.ts` owns the status-request coordinator shared by
+bootstrap, polling, restore and cold-message recovery. Only a successfully accepted response supersedes an older
+request; a failed or stale read grants no authority. In-flight event observations
+protect even no-op status events, while the current store preserves subsequent
+optimistic transitions. Reconciliation and publication run synchronously within
+the observation window; stale reads never publish. OpenCode v2's active snapshot supplies loop membership;
+retry details remain on the assistant message and recover with message reads.
+
 | Layer / Store | Owns | Scope |
 |---|---|---|
 | `ChildStoreManager` and child directory stores | Priority-scheduled directory bootstrap plus `session`, `message`, `part`, `permission`, `form`, etc. | One runtime and one store per directory |
@@ -975,20 +983,23 @@ OpenCode holds archive state since 2.1: archive and restore go through
 OpenChamber's batch routes (`session-archive-batch.ts`), which set it on
 OpenCode's record, and OpenCode announces `session.archived` /
 `session.unarchived` to every client, so a session archived in the TUI moves
-here too. A session whose directory was deleted cannot be changed on OpenCode
-where it is, so the server moves it to its project's main folder first
-(OpenCode announces `session.moved`); when archiving, its archive file marks
-the session archived before the move, so the sidebar never shows it as active
-under the project. The server folds that file onto the records it serves and
-announces its changes as `openchamber:session-archived`. Restore clears
-`time.archived`; every reader classifies archive state by its truthiness.
+here too. Archive and restore use `session.update` with `archived: true/false`.
+These ordinary property updates are directory-independent in the local backend,
+so a deleted worktree does not require relocation. Legacy archive files are
+migration input only; runtime readers use the backend's `time.archived`.
 
-OpenCode's `archived` list filter cannot see the sessions only that file
-marks, so the global sessions store loads every session of a scope and splits
+The global sessions store loads every session of a scope and splits
 active from archived client-side (`splitGlobalSessionsByArchived`). A restored
 session re-enters its live directory store through the event; until then it
 remains fully visible through the global store (sidebar, switcher) and
 addressable by ID (message loading).
+
+OpenChamber's batch route returns backend-confirmed stamps and
+per-session failures. The client updates its global cache after confirmation;
+the session event restores live directory membership. Archive invalidates the
+session's earlier status coverage, so restore requests a fresh status snapshot
+through the shared recovery observer and request coordinator. A failed or stale
+read leaves activity unknown and does not undo the confirmed restore.
 
 The full-app collection retains active records whose directory is absent from
 the current topology. Display grouping first resolves exact configured
