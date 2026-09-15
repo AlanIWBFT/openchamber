@@ -322,7 +322,12 @@ describe("resyncBlockingRequestsForDirectory", () => {
 
   test("refreshes Git once when a mutating tool settles, from a snapshot or a live transition", () => {
     const childStores = new ChildStoreManager()
-    childStores.ensureChild("/repo", { bootstrap: false })
+    childStores.ensureChild("/repo", { bootstrap: false }).setState({
+      message: { ses_a: [{
+        id: "msg_assistant", sessionID: "ses_a", seq: 1, role: "assistant",
+        time: { created: 1 }, agent: "build", providerID: "openai", modelID: "model",
+      }] },
+    })
     const routingIndex = createEventRoutingIndex()
     const refreshes: Array<{ directory: string; paths?: string[] }> = []
     const unsubscribe = sessionEvents.onGitRefreshHint((hint) => refreshes.push(hint))

@@ -44,7 +44,7 @@ import { retry } from "./retry"
 import { touchStreamingSession, updateChangedStreamingSessions, updateStreamingState } from "./streaming"
 import { countSyncPerformance } from "./performance-diagnostics"
 import { runBackgroundNetworkTask } from "@/lib/background-network"
-import { readDirectoryStatusSnapshot, recordDirectoryRecoveryEvent } from "./directory-recovery-snapshots"
+import { beginSessionStatusRequest, readDirectoryStatusSnapshot, recordDirectoryRecoveryEvent } from "./directory-recovery-snapshots"
 import { setActionRefs } from "./session-actions"
 import { setSyncRefs, getAllSyncSessions, emitSyncConfigChanged, getDirectoryState } from "./sync-refs"
 import { useSessionUIStore } from "./session-ui-store"
@@ -341,26 +341,6 @@ const CHILD_SESSION_DISCOVERY_INTERVAL_MS = 15_000
 // requests, which would otherwise queue interactive traffic (opening a
 // session) behind them on the browser's ~6 sockets per origin. Later ticks
 // still cover every directory via the per-directory timestamps.
-export function createSessionStatusRequestCoordinator() {
-  const states = new WeakMap<StoreApi<DirectoryStore>, { next: number; applied: number }>()
-
-  return (owner: StoreApi<DirectoryStore>): (() => boolean) => {
-    const state = states.get(owner) ?? { next: 0, applied: 0 }
-    const generation = state.next + 1
-    state.next = generation
-    states.set(owner, state)
-
-    return () => {
-      const current = states.get(owner)
-      if (!current || generation < current.applied) return false
-      current.applied = generation
-      return true
-    }
-  }
-}
-
-const beginSessionStatusRequest = createSessionStatusRequestCoordinator()
-
 const requestSignature = (items: Array<{ id: string }> | undefined): string => {
   if (!items || items.length === 0) return ""
   return items
@@ -769,16 +749,13 @@ export function applySessionStatusSnapshot(
   snapshot: DirectorySessionStatusSnapshot,
   candidateSessionIds: string[],
   mode: StatusSnapshotMode,
-  requestBaseline?: Record<string, SessionStatus>,
 ): boolean {
-  const baseline = requestBaseline ?? store.getState().session_status
   let changed = false
   store.setState((state: DirectoryStore) => {
     const current = state.session_status ?? {}
     let next: Record<string, SessionStatus> | undefined
     let nextInvalidated: Record<string, true> | undefined
     const draft = () => (next ??= { ...current })
-    const changedDuringRequest = (sessionId: string) => current[sessionId] !== baseline[sessionId]
 
     if (!state.sessionStatusReady) {
       changed = true
@@ -788,7 +765,7 @@ export function applySessionStatusSnapshot(
     // active session; candidates only limit which absent entries may be lowered.
     for (const [sessionId, rawStatus] of Object.entries(snapshot)) {
       const incoming = toSessionStatus(rawStatus)
-      if (!incoming || incoming.type === "idle" || changedDuringRequest(sessionId)) continue
+      if (!incoming || incoming.type === "idle") continue
       if (!haveEquivalentSyncSnapshots(current[sessionId], incoming)) {
         draft()[sessionId] = incoming
         changed = true
@@ -808,8 +785,6 @@ export function applySessionStatusSnapshot(
         // Active entries were merged from the full snapshot above.
         continue
       }
-
-      if (changedDuringRequest(sessionId)) continue
 
       // Snapshot reports this candidate idle (absent, or explicit idle).
       const existing = current[sessionId]
@@ -843,22 +818,24 @@ async function resyncDirectorySessionStatuses(
 ): Promise<DirectorySessionStatusSnapshot | null> {
   const invalidatedAtStart = store.getState().sessionStatusInvalidated
   const isCurrentRequest = beginSessionStatusRequest(store)
-  const baseline = store.getState().session_status
-  const nextStatuses = await readDirectoryStatusSnapshot(store, () => opencodeClient.getActiveSessionStatuses())
   // null = fetch failed; preserve existing state. {} or populated = a snapshot
   // of active sessions — reconciled per `mode` (absence ≠ idle under monotonic).
-  if (nextStatuses === null || isStale?.()) return null
-  if (!isCurrentRequest()) return null
-  const currentInvalidated = store.getState().sessionStatusInvalidated
-  const eligibleIds = candidateSessionIds.filter((id) => (
-    !currentInvalidated?.[id] || currentInvalidated === invalidatedAtStart
-  ))
-  applySessionStatusSnapshot(store, nextStatuses, eligibleIds, mode, baseline)
-  if (mode === "authoritative") {
-    store.setState({ sessionStatusReady: true })
-    applyGlobalSessionStatusSnapshot(directory, nextStatuses, getDirectoryOwnedSessionIds(directory, store.getState().session))
-  }
-  return nextStatuses
+  return readDirectoryStatusSnapshot(store, () => opencodeClient.getActiveSessionStatuses(directory), (nextStatuses) => {
+    if (isStale?.() || !isCurrentRequest()) return false
+    const currentInvalidated = store.getState().sessionStatusInvalidated
+    const eligibleIds = candidateSessionIds.filter((id) => (
+      !currentInvalidated?.[id] || currentInvalidated === invalidatedAtStart
+    ))
+    applySessionStatusSnapshot(store, nextStatuses, eligibleIds, mode)
+    if (mode === "authoritative") {
+      store.setState({ sessionStatusReady: true })
+      applyGlobalSessionStatusSnapshot(directory, nextStatuses, getDirectoryOwnedSessionIds(directory, store.getState().session))
+      for (const sessionId of candidateSessionIds) {
+        markRecordedInterruptedTurn(store, sessionId)
+      }
+    }
+    return true
+  })
 }
 
 /**
@@ -2701,7 +2678,6 @@ export function SyncProvider(props: {
               projects: globalState.projects,
               path: globalState.path,
             },
-            beginSessionStatusRequest: () => beginSessionStatusRequest(store),
             // Each page owns its bounded retry. Replaying the whole list here
             // multiplies attempts and holds a bootstrap slot behind failures.
             loadSessions: async (dir) => {

@@ -1314,6 +1314,23 @@ describe("session restore (unarchive)", () => {
     expect(source.getState().sessionStatusInvalidated?.["session-a"]).toBeUndefined()
   })
 
+  test("a no-op busy event during restore still supersedes an older idle snapshot", async () => {
+    unarchiveBatchResponse = { status: 200, body: { restored: [restored("session-a", "/test/project")], failedIds: [] } }
+    const source = createStore({}, { session_status: { "session-a": { type: "busy" } }, sessionStatusReady: true })
+    const { unarchiveSession, setActionRefs } = await import("./session-actions")
+    const { recordDirectoryRecoveryEvent } = await import("./directory-recovery-snapshots")
+    setActionRefs(createChildStores([["/test/project", source]]), () => "/test/project")
+    const before = source.getState().session_status
+    readActiveStatusSnapshot = async () => {
+      recordDirectoryRecoveryEvent(source, { type: "session.status", properties: { sessionID: "session-a", status: { type: "busy" } } })
+      expect(source.getState().session_status).toBe(before)
+      return {}
+    }
+
+    expect(await unarchiveSession("session-a")).toBe(true)
+    expect(source.getState().session_status["session-a"]).toEqual({ type: "busy" })
+  })
+
   test("fails when the server keeps the session archived", async () => {
     unarchiveBatchResponse = { status: 200, body: { restored: [restored("session-a", "/test/project", 2)], failedIds: [] } }
     const source = createStore({}, { session: [] })

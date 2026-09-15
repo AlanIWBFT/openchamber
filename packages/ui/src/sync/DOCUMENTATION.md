@@ -91,6 +91,14 @@ of button visibility.
 
 ## Ownership map
 
+`directory-recovery-snapshots.ts` owns the status-request coordinator shared by
+bootstrap, polling, restore and cold-message recovery. Only a successfully accepted response supersedes an older
+request; a failed or stale read grants no authority. In-flight event observations
+protect even no-op status events, while the current store preserves subsequent
+optimistic transitions. Reconciliation and publication run synchronously within
+the observation window; stale reads never publish. OpenCode v2's active snapshot supplies loop membership;
+retry details remain on the assistant message and recover with message reads.
+
 | Layer / Store | Owns | Scope |
 |---|---|---|
 | `ChildStoreManager` and child directory stores | Priority-scheduled directory bootstrap plus `session`, `message`, `part`, `permission`, `form`, etc. | One runtime and one store per directory |
@@ -731,22 +739,13 @@ Examples of global-store updates performed in `session-actions.ts`:
 
 ### Restore (unarchive) contract
 
-The OpenCode server cannot clear `time.archived` over HTTP: `session.update`
-only applies the field when the payload carries a finite number, so an omitted
-key is a no-op and `null` is silently ignored. Restore therefore writes
-`time.archived = 0` (`UNARCHIVED_TIMESTAMP` in `session-actions.ts`). Every
-client-side reader classifies archive state by truthiness of `time.archived`,
-so `0` reads as active in the UI, the event reducer, and the OpenCode app/TUI.
-
-The server's `time_archived IS NULL` list filter still excludes such rows, so
-any query that wants a truthful active list must fetch inclusively
-(`archived: true`) and split client-side (`splitGlobalSessionsByArchived`).
-The global sessions store does this for its full and per-directory loads;
-directory bootstrap keeps using the server filter because live child stores
-must not hold archived sessions. A restored session re-enters its live
-directory store through the authoritative `session.updated` event the server
-publishes for the update; until then it remains fully visible through the
-global store (sidebar, switcher) and addressable by ID (message loading).
+Restore clears the backend archive timestamp through `session.update` with
+`archivedAt: null`. OpenChamber's batch route returns confirmed stamps and
+per-session failures. The client updates its global cache after confirmation;
+the session event restores live directory membership. Archive invalidates the
+session's earlier status coverage, so restore requests a fresh status snapshot
+through the shared recovery observer and request coordinator. A failed or stale
+read leaves activity unknown and does not undo the confirmed restore.
 
 The full-app collection retains active records whose directory is absent from
 the current topology. Display grouping first resolves exact configured
