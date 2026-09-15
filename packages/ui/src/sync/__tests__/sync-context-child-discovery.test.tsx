@@ -93,6 +93,7 @@ mock.module('@/lib/opencode/client', () => ({
     getVcs: async () => undefined,
     listPendingForms: async () => [],
     listPendingPermissions: async () => [],
+    listRunningShells: async (directory: string) => ({ directory, shells: [] }),
     // The host's status map: these tests run without one, as a failed read.
     getHostSessionStatusSnapshot: async () => null,
     getProvidersForConfig: async () => ({ providers: [], models: [] }),
@@ -330,13 +331,13 @@ describe('SyncProvider sibling watchdog reads', () => {
         const statusReads: string[] = []
         const sessionReads: string[] = []
         let failing = true
-        readActiveStatuses = async (directory) => {
+        readActiveStatuses = async (directory): Promise<Record<string, SessionStatus> | null> => {
           statusReads.push(directory)
           if (directory === DIRECTORY && failing) {
             if (failure === 'rejection') throw new Error('Status unavailable')
             return null
           }
-          return { ses_healthy: { type: 'busy' } }
+          return directory === otherDirectory ? { ses_healthy: { type: 'busy' } } : {}
         }
         readSession = async (id, directory) => {
           sessionReads.push(directory ?? '')
@@ -445,9 +446,9 @@ describe('SyncProvider sibling watchdog reads', () => {
       const statusReads: string[] = []
       const sessionReads: string[] = []
       let failing = true
-      readActiveStatuses = async (directory) => {
+      readActiveStatuses = async (directory): Promise<Record<string, SessionStatus>> => {
         statusReads.push(directory)
-        return { ses_parent: { type: 'busy' }, ses_healthy: { type: 'busy' } }
+        return directory === DIRECTORY ? { ses_parent: { type: 'busy' } } : { ses_healthy: { type: 'busy' } }
       }
       readSession = async (id, directory) => {
         sessionReads.push(directory ?? '')
