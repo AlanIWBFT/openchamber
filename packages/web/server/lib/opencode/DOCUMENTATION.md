@@ -156,6 +156,23 @@ Transport-triggered health checks share the periodic monitor's failure accountin
 
 Managed health failures are classified as `timeout`, `connection_refused`, `connection_reset`, `invalid_response`, or `error`. The lifecycle retains the latest counted failure with a bounded detail string and source. Managed process wrappers continue capturing a sanitized, bounded stderr tail after readiness and retain exit code/signal. Before replacing a managed process, lifecycle snapshots the reason, latest health failure, process diagnostics/aliveness, busy-session count, and timestamp into `lastOpenCodeRestartDiagnostics`; successful startup does not clear this snapshot, and `/health` exposes it for post-restart diagnosis without process environment or credentials.
 
+Managed process ownership starts at spawn. The registry and runtime process
+handle include children that have not announced readiness yet, so shutdown can
+stop an in-flight startup. Readiness timeout, malformed startup output, and
+health-probe errors close that child before retrying. Shutdown cancels further
+startup attempts. Closing a process is single-flight and unregisters it only
+after it exits.
+
+On Windows, managed teardown invokes the existing tree termination command
+before terminating the root. Calling `child.kill()` first loses the ancestry
+needed to find Git, shell, and MCP descendants. On POSIX, the managed child
+starts in its own process group and teardown escalates against that group even
+if the root has already exited. A tool ignoring SIGTERM must not survive just
+because the server closed its own pipes. The
+`lifecycle-process.test.js` regressions launch real parent/child fixtures and
+check PID exit plus registry cleanup. macOS results do not validate Windows
+ConPTY or Console Window Host behavior.
+
 ## Public exports (env-runtime.js)
 - `createOpenCodeEnvRuntime(dependencies)`: creates runtime that owns OpenCode CLI environment and binary discovery state.
 - OpenCode CLI resolution order is persisted settings, environment overrides, bundled Desktop CLI when available, PATH, known install locations, then platform shell discovery.
@@ -332,6 +349,7 @@ Managed health failures are classified as `timeout`, `connection_refused`, `conn
 
 ## Public exports (shutdown-runtime.js)
 - `createGracefulShutdownRuntime(dependencies)`: creates graceful shutdown runtime for managed OpenCode and web server teardown sequencing.
+- After stopping owned runtimes and OpenCode, HTTP shutdown closes active connections as well as the listener. A remaining SSE response must not hold Desktop open until its fallback deadline. Upgraded sockets remain the responsibility of their owning runtime.
 - Returned API:
   - `gracefulShutdown(options?)`
 
