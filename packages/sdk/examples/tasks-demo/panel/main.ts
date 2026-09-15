@@ -21,8 +21,11 @@ host.onResolve(({ args }) => {
   return task ? attachPayload(task) : null;
 });
 
+let didMount = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
+  if (didMount) return;
+  didMount = true;
   // The rail icon shows how many tasks are open until the user opens the panel.
   void host.setBadge(openTasks().length).catch(() => undefined);
   while (root.firstChild) root.removeChild(root.firstChild);
@@ -58,7 +61,7 @@ host.onReady((ctx) => {
     actions.style.opacity = selected ? '1' : '0.5';
     actions.style.pointerEvents = selected ? 'auto' : 'none';
   };
-  mountSearchField(page, { value: query, placeholder: 'Search tasks', onChange: (v) => { query = v; paint(); } });
+  const search = mountSearchField(page, { value: query, placeholder: 'Search tasks', onChange: (v) => { query = v; search.update({ value: v }); paint(); } });
   page.append(listRoot);
 
   const current = (): (typeof TASKS)[number] => {
@@ -96,7 +99,7 @@ host.onReady((ctx) => {
   if (ctx.surface === 'dialog') {
     mountButton(actions, { label: 'Close', variant: 'ghost', size: 'sm', onClick: () => void host.close() });
   }
-  mountCheckbox(page, { label: 'Start sessions on a new worktree', checked: worktree, onChange: (v) => { worktree = v; } });
+  const worktreeChoice = mountCheckbox(page, { label: 'Start sessions on a new worktree', checked: worktree, onChange: (v) => { worktree = v; worktreeChoice.update({ checked: v }); } });
   mountBanner(page, { tone: 'info', title: 'What this tests', body: 'attach and sessionLink need no capability. startSession needs "sessions" (and "prompt" because it sends text). Send prompt needs "prompt". Draft summary needs "model": it asks the Small Model for one sentence and puts it in the chat box. Type /task DEMO-2 in the chat to attach through a command; the rail badge counts open tasks; "Create task from message" and "Summarize session" are in the message and session menus.' });
   paint();
 });

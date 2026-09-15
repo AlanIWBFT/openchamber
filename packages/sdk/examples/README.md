@@ -29,10 +29,16 @@ below when you change one.
 
 ## Rebuild after editing
 
+`onReady` is a repeated snapshot, not a one-time mount event. Examples apply the theme on every snapshot, mount controls and register subscriptions once, and update existing handles afterward. Input values and selections belong to the extension. Keep them when switching tabs. Compare relevant connection/settings/item values before refreshing data or replacing content.
+
+For Git URL installs, commit the built JavaScript and the lockfile; ignore `node_modules/`. To publish an extension update, bump its own `package.json` version, rebuild, commit, and push. OpenChamber does not build source or install dependencies during installation.
+
 From the repo root:
 
 ```bash
 bun packages/sdk/scripts/bundle-guest.ts packages/sdk/examples/hello-kit/panel/main.ts packages/sdk/examples/hello-kit/panel/main.js
+bun packages/sdk/scripts/bundle-guest.ts packages/sdk/examples/github-token/panel/main.ts packages/sdk/examples/github-token/panel/main.js
+bun packages/sdk/scripts/bundle-guest.ts packages/sdk/examples/service-echo/panel/main.ts packages/sdk/examples/service-echo/panel/main.js
 bun packages/sdk/scripts/bundle-guest.ts --node packages/sdk/examples/service-echo/service/main.ts packages/sdk/examples/service-echo/service/main.js
 bun packages/sdk/scripts/bundle-guest.ts packages/sdk/examples/config-editor/panel/main.ts packages/sdk/examples/config-editor/panel/main.js
 bun packages/sdk/scripts/bundle-guest.ts packages/sdk/examples/tasks-demo/panel/main.ts packages/sdk/examples/tasks-demo/panel/main.js

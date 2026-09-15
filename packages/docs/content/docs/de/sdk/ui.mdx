@@ -14,11 +14,49 @@ Die Elemente lesen ihre Farben aus CSS-Variablen, die `applyHostReady` auf die S
 ```ts
 import { applyHostReady } from "@openchamber/sdk/ui";
 
+let mounted = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
-  // mount things here
+  if (mounted) return;
+  mounted = true;
+  // Mount controls and register listeners once here.
 });
 ```
+
+`onReady` kann bei geöffneter Seite mehrfach laufen, etwa wenn sich der Sitzungskontext ändert. Wende das Theme jedes Mal an, aber mounte Controls und registriere Listener nur einmal. Bewahre Entwürfe außerhalb der Renderfunktionen auf. Blende beim Tabwechsel vorhandene Panels aus oder stelle ihre Werte aus deinem Zustand wieder her.
+
+## Auswahl und Eingaben synchron halten
+
+`mountTabs`, `mountSelect`, `mountCheckbox` und `mountSwitch` melden Änderungen über `onChange`, ändern `activeId`, `value` oder `checked` aber nicht selbst. Speichere den Wert und gib ihn mit `update` zurück. Text- und Suchfelder zeigen Eingaben sofort, brauchen aber ebenfalls `update({ value })`, sonst kann ein späteres Update alte Werte wiederherstellen. `onClick` ändert die Variante eines Buttons nicht. Nutze für eine Moduswahl lieber `mountTabs`.
+
+Mounte diese Controls einmal im vorhandenen `root` des Panels:
+
+```ts
+import { mountSelect, mountTabs } from "@openchamber/sdk/ui";
+
+let activeId = "convert";
+const tabs = mountTabs(root, {
+  items: [{ id: "convert", label: "Convert" }, { id: "format", label: "Format" }],
+  activeId,
+  onChange: (next) => {
+    activeId = next;
+    tabs.update({ activeId });
+    // Show the matching panel without discarding its draft values.
+  },
+});
+
+let format = "json";
+const select = mountSelect(root, {
+  options: [{ id: "json", label: "JSON" }, { id: "yaml", label: "YAML" }],
+  value: format,
+  onChange: (next) => {
+    format = next;
+    select.update({ value: format });
+  },
+});
+```
+
+Tausche für einen Formatwechsel beide Werte im Zustand und rufe `update({ value })` an beiden vorhandenen Select-Handles auf. Mounte dafür keine neuen Controls. Rufe beim Entfernen `dispose()` auf.
 
 ## Was du mounten kannst
 
@@ -47,11 +85,15 @@ Neben den Elementen kommen drei einfache Helfer mit. `filterSelectOptions(option
 ```ts
 import { applyHostReady, mountEmpty, mountList, mountSearchField } from "@openchamber/sdk/ui";
 
+let mounted = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
+  if (mounted) return;
+  mounted = true;
   const root = document.querySelector("#root")!;
   const searchRoot = root.appendChild(document.createElement("div"));
   const listRoot = root.appendChild(document.createElement("div"));
+  const emptyRoot = root.appendChild(document.createElement("div"));
 
   let query = "";
   let empty: { dispose: () => void } | null = null;
@@ -71,15 +113,16 @@ host.onReady((ctx) => {
     list.update({ items: rows });
     empty?.dispose();
     empty = rows.length === 0
-      ? mountEmpty(listRoot, { title: "No tasks match", body: "Try a shorter search." })
+      ? mountEmpty(emptyRoot, { title: "No tasks match", body: "Try a shorter search." })
       : null;
   };
 
-  mountSearchField(searchRoot, {
+  const search = mountSearchField(searchRoot, {
     value: query,
     placeholder: "Search tasks",
     onChange: (next) => {
       query = next;
+      search.update({ value: next });
       paint();
     },
   });
@@ -94,6 +137,8 @@ host.onReady((ctx) => {
 Deine Seite läuft in einer Sandbox und kann nicht selbst einen neuen Tab öffnen. Wenn du `mountText` verwendest, gib `onOpenUrl` mit und reiche den Link an OpenChamber weiter:
 
 ```ts
+import { mountText } from "@openchamber/sdk/ui";
+
 mountText(root, {
   text: comment.body,
   onOpenUrl: (url) => void host.openUrl(url),

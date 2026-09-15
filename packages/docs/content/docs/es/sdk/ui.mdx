@@ -14,11 +14,49 @@ Los controles leen sus colores de variables CSS que `applyHostReady` escribe en 
 ```ts
 import { applyHostReady } from "@openchamber/sdk/ui";
 
+let mounted = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
-  // mount things here
+  if (mounted) return;
+  mounted = true;
+  // Mount controls and register listeners once here.
 });
 ```
+
+`onReady` puede ejecutarse varias veces mientras el panel está abierto, por ejemplo al cambiar el contexto de sesión. Aplica el tema en cada llamada, pero monta controles y registra listeners solo una vez. Guarda los borradores fuera de las funciones de renderizado. Al cambiar de pestaña, oculta los paneles existentes o restaura sus valores desde el estado.
+
+## Sincroniza la selección y los campos
+
+`mountTabs`, `mountSelect`, `mountCheckbox` y `mountSwitch` notifican cambios mediante `onChange`, pero no actualizan `activeId`, `value` o `checked` por sí mismos. Guarda el valor y devuélvelo con `update`. Los campos de texto y búsqueda muestran lo escrito inmediatamente, pero también necesitan `update({ value })` para que una actualización posterior no restaure valores antiguos. `onClick` no cambia la variante del botón. Para elegir un modo, usa `mountTabs`.
+
+Monta estos controles una vez en el `root` existente del panel:
+
+```ts
+import { mountSelect, mountTabs } from "@openchamber/sdk/ui";
+
+let activeId = "convert";
+const tabs = mountTabs(root, {
+  items: [{ id: "convert", label: "Convert" }, { id: "format", label: "Format" }],
+  activeId,
+  onChange: (next) => {
+    activeId = next;
+    tabs.update({ activeId });
+    // Show the matching panel without discarding its draft values.
+  },
+});
+
+let format = "json";
+const select = mountSelect(root, {
+  options: [{ id: "json", label: "JSON" }, { id: "yaml", label: "YAML" }],
+  value: format,
+  onChange: (next) => {
+    format = next;
+    select.update({ value: format });
+  },
+});
+```
+
+Para intercambiar formatos, intercambia ambos valores del estado y llama a `update({ value })` en ambos select existentes. No montes controles nuevos para cambiar sus valores. Llama a `dispose()` al retirar un control.
 
 ## Qué puedes montar
 
@@ -47,11 +85,15 @@ Junto a los controles se incluyen tres helpers sencillos. `filterSelectOptions(o
 ```ts
 import { applyHostReady, mountEmpty, mountList, mountSearchField } from "@openchamber/sdk/ui";
 
+let mounted = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
+  if (mounted) return;
+  mounted = true;
   const root = document.querySelector("#root")!;
   const searchRoot = root.appendChild(document.createElement("div"));
   const listRoot = root.appendChild(document.createElement("div"));
+  const emptyRoot = root.appendChild(document.createElement("div"));
 
   let query = "";
   let empty: { dispose: () => void } | null = null;
@@ -71,15 +113,16 @@ host.onReady((ctx) => {
     list.update({ items: rows });
     empty?.dispose();
     empty = rows.length === 0
-      ? mountEmpty(listRoot, { title: "No tasks match", body: "Try a shorter search." })
+      ? mountEmpty(emptyRoot, { title: "No tasks match", body: "Try a shorter search." })
       : null;
   };
 
-  mountSearchField(searchRoot, {
+  const search = mountSearchField(searchRoot, {
     value: query,
     placeholder: "Search tasks",
     onChange: (next) => {
       query = next;
+      search.update({ value: next });
       paint();
     },
   });
@@ -94,6 +137,8 @@ host.onReady((ctx) => {
 Tu página se ejecuta en un entorno aislado y no puede abrir una pestaña nueva por sí misma. Cuando uses `mountText`, pasa `onOpenUrl` y entrega el enlace a OpenChamber:
 
 ```ts
+import { mountText } from "@openchamber/sdk/ui";
+
 mountText(root, {
   text: comment.body,
   onOpenUrl: (url) => void host.openUrl(url),

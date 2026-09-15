@@ -19,6 +19,8 @@ const host = connectHost();
 
 `onReady` fires with the first snapshot and again whenever OpenChamber refreshes it.
 
+It is not a one-time mount callback. Mount your UI and register subscriptions once; use later snapshots to update the theme and context without replacing inputs or drafts. See the guarded example in [UI kit](/sdk/ui/). Field listeners such as `onConnection` replay their current value and can receive it again with a refreshed snapshot. Compare the fields your data depends on before starting another request, and ignore responses from superseded requests.
+
 | Field | What it is |
 | --- | --- |
 | `theme.mode` | `light` or `dark` |

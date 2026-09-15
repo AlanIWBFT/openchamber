@@ -14,11 +14,49 @@ Os controles leem suas cores de variáveis CSS que `applyHostReady` escreve na p
 ```ts
 import { applyHostReady } from "@openchamber/sdk/ui";
 
+let mounted = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
-  // mount things here
+  if (mounted) return;
+  mounted = true;
+  // Mount controls and register listeners once here.
 });
 ```
+
+`onReady` pode executar várias vezes enquanto o painel está aberto, inclusive quando o contexto da sessão muda. Aplique o tema em cada chamada, mas monte controles e registre listeners apenas uma vez. Guarde rascunhos fora das funções de renderização. Ao trocar de aba, oculte os painéis existentes ou restaure seus valores a partir do estado.
+
+## Sincronize a seleção e os campos
+
+`mountTabs`, `mountSelect`, `mountCheckbox` e `mountSwitch` informam mudanças por `onChange`, mas não alteram `activeId`, `value` ou `checked` sozinhos. Salve o valor e devolva-o com `update`. Campos de texto e busca mostram a digitação imediatamente, mas também precisam de `update({ value })` para que uma atualização posterior não restaure um valor antigo. `onClick` não muda a variante do botão. Para escolher um modo, prefira `mountTabs`.
+
+Monte estes controles uma vez no `root` existente do painel:
+
+```ts
+import { mountSelect, mountTabs } from "@openchamber/sdk/ui";
+
+let activeId = "convert";
+const tabs = mountTabs(root, {
+  items: [{ id: "convert", label: "Convert" }, { id: "format", label: "Format" }],
+  activeId,
+  onChange: (next) => {
+    activeId = next;
+    tabs.update({ activeId });
+    // Show the matching panel without discarding its draft values.
+  },
+});
+
+let format = "json";
+const select = mountSelect(root, {
+  options: [{ id: "json", label: "JSON" }, { id: "yaml", label: "YAML" }],
+  value: format,
+  onChange: (next) => {
+    format = next;
+    select.update({ value: format });
+  },
+});
+```
+
+Para inverter formatos, troque os dois valores no estado e chame `update({ value })` nos dois selects existentes. Não monte controles novos para mudar seus valores. Chame `dispose()` ao remover um controle.
 
 ## O que você pode montar
 
@@ -47,11 +85,15 @@ Três helpers simples acompanham os controles. `filterSelectOptions(options, que
 ```ts
 import { applyHostReady, mountEmpty, mountList, mountSearchField } from "@openchamber/sdk/ui";
 
+let mounted = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
+  if (mounted) return;
+  mounted = true;
   const root = document.querySelector("#root")!;
   const searchRoot = root.appendChild(document.createElement("div"));
   const listRoot = root.appendChild(document.createElement("div"));
+  const emptyRoot = root.appendChild(document.createElement("div"));
 
   let query = "";
   let empty: { dispose: () => void } | null = null;
@@ -71,15 +113,16 @@ host.onReady((ctx) => {
     list.update({ items: rows });
     empty?.dispose();
     empty = rows.length === 0
-      ? mountEmpty(listRoot, { title: "No tasks match", body: "Try a shorter search." })
+      ? mountEmpty(emptyRoot, { title: "No tasks match", body: "Try a shorter search." })
       : null;
   };
 
-  mountSearchField(searchRoot, {
+  const search = mountSearchField(searchRoot, {
     value: query,
     placeholder: "Search tasks",
     onChange: (next) => {
       query = next;
+      search.update({ value: next });
       paint();
     },
   });
@@ -94,6 +137,8 @@ host.onReady((ctx) => {
 Sua página roda em um ambiente isolado e não consegue abrir uma nova aba sozinha. Ao usar `mountText`, passe `onOpenUrl` e entregue o link ao OpenChamber:
 
 ```ts
+import { mountText } from "@openchamber/sdk/ui";
+
 mountText(root, {
   text: comment.body,
   onOpenUrl: (url) => void host.openUrl(url),

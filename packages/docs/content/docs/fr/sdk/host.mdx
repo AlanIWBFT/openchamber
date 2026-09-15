@@ -19,6 +19,8 @@ const host = connectHost();
 
 `onReady` se déclenche avec le premier instantané, puis à chaque fois qu'OpenChamber le rafraîchit.
 
+Ce n'est pas un callback de montage unique. Montez l'interface et inscrivez les abonnements une fois, puis actualisez le thème et le contexte sans remplacer les champs ni les brouillons. Consultez l'exemple protégé dans [UI kit](/sdk/ui/). Les listeners comme `onConnection` livrent immédiatement la valeur actuelle et peuvent la répéter avec un nouvel instantané. Comparez les champs utiles avant une nouvelle requête et ignorez les réponses des requêtes remplacées.
+
 | Champ | Ce que c'est |
 | --- | --- |
 | `theme.mode` | `light` ou `dark` |

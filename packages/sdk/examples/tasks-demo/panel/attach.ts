@@ -126,7 +126,7 @@ const renderPicker = (): void => {
         .map((t) => ({ id: t.id, leading: t.id, title: t.title, badge: { label: t.kind, tone: t.kind === 'pull' ? 'info' as const : 'success' as const } })),
     });
   };
-  mountSearchField(page, { value: query, placeholder: 'Search tasks', onChange: (v) => { query = v; paint(); } });
+  const search = mountSearchField(page, { value: query, placeholder: 'Search tasks', onChange: (v) => { query = v; search.update({ value: v }); paint(); } });
   page.append(listRoot);
   paint();
 };
@@ -209,12 +209,19 @@ const renderSessionAction = (item: GuestSessionItem): void => {
 
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
-  if (isGuestMessageItem(ctx.item)) {
-    renderMessageAction(ctx.item);
-  } else if (isGuestSessionItem(ctx.item)) {
-    renderSessionAction(ctx.item);
-  } else if (ctx.item) {
-    renderDetails(ctx.item);
+});
+
+let previousItem: string | undefined;
+host.onItem((item) => {
+  const serialized = JSON.stringify(item);
+  if (serialized === previousItem) return;
+  previousItem = serialized;
+  if (isGuestMessageItem(item)) {
+    renderMessageAction(item);
+  } else if (isGuestSessionItem(item)) {
+    renderSessionAction(item);
+  } else if (item) {
+    renderDetails(item);
   } else {
     renderPicker();
   }

@@ -278,13 +278,33 @@ Always call theme first:
 ```ts
 import { applyHostReady, mountList } from '@openchamber/sdk/ui';
 
+let mounted = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
+  if (mounted) return;
+  mounted = true;
   // then mount…
 });
 ```
 
 Every mount returns `{ update(partial), dispose() }`. `update` merges the fields you pass and repaints; `dispose` removes the node and its listeners.
+
+Selection controls report a proposed value; the caller commits it with `update`. Use `activeId` for tabs, `value` for selects, and `checked` for checkboxes and switches. Text and search inputs display typing immediately, but call `update({ value })` too so later updates do not restore stale props. Button clicks do not change `variant`; use tabs for mode selection. Preserve input state across tab changes instead of remounting empty fields.
+
+```ts
+import { mountTabs } from '@openchamber/sdk/ui';
+
+let activeId = 'convert';
+const tabs = mountTabs(root, {
+  items: [{ id: 'convert', label: 'Convert' }, { id: 'format', label: 'Format' }],
+  activeId,
+  onChange: (next) => {
+    activeId = next;
+    tabs.update({ activeId });
+    // Show the matching panel while preserving its draft values.
+  },
+});
+```
 
 ### 2.1 Theme
 
@@ -470,25 +490,29 @@ Do not go around the guest contract through `RuntimeAPIs`.
 
 ## 6. Minimal panel sketch
 
+Mount once and keep the handles. `onReady` can repeat when the session or theme changes. Field listeners replay their current values too; compare relevant fields before fetching data again. For a complete request example with stale-response handling, see [the extension example](https://docs.openchamber.dev/sdk/example/).
+
 ```ts
-import { connectHost, HostRequestError } from '@openchamber/sdk';
+import { connectHost } from '@openchamber/sdk';
 import { applyHostReady, mountList, mountEmpty } from '@openchamber/sdk/ui';
 
 const host = connectHost();
 const root = document.querySelector('#root')!;
 
+let mounted = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
+  if (mounted) return;
+  mounted = true;
 
-  if (!ctx.connection.connected) {
-    mountEmpty(root, {
+  const signInRoot = root.appendChild(document.createElement('div'));
+  const listRoot = root.appendChild(document.createElement('div'));
+  mountEmpty(signInRoot, {
       title: 'Connect Acme',
       action: { label: 'Sign in', onClick: () => { void host.oauthStart(); } },
-    });
-    return;
-  }
+  });
 
-  mountList(root, {
+  mountList(listRoot, {
     items: [], // fill from host.request
     onSelect: (id) => {
       void host.attach({
@@ -499,18 +523,10 @@ host.onReady((ctx) => {
       });
     },
   });
-});
-
-host.onConnection(async (connection) => {
-  if (!connection.connected) return;
-  try {
-    const res = await host.request({ method: 'GET', path: '/api/v2/tasks' });
-    // parse res.body, then remount / update the list
-  } catch (error) {
-    if (error instanceof HostRequestError && error.code === 'DISCONNECTED') {
-      await host.oauthStart();
-    }
-  }
+  host.onConnection((connection) => {
+    signInRoot.hidden = connection.connected;
+    listRoot.hidden = !connection.connected;
+  });
 });
 ```
 
@@ -526,4 +542,3 @@ host.onConnection(async (connection) => {
 | [GUEST_SERVICES.md](https://github.com/openchamber/openchamber/blob/main/packages/sdk/GUEST_SERVICES.md)                                                                                                                                                                                                                       | Local service contract              |
 | [src/ui/DOCUMENTATION.md](https://github.com/openchamber/openchamber/blob/main/packages/sdk/src/ui/DOCUMENTATION.md)                                                                                                                                                                                                       | UI kit invariants                 |
 | [sdk.mdx](https://github.com/openchamber/openchamber/blob/main/packages/docs/content/docs/sdk.mdx) / [sdk/host.mdx](https://github.com/openchamber/openchamber/blob/main/packages/docs/content/docs/sdk/host.mdx) / [sdk/ui.mdx](https://github.com/openchamber/openchamber/blob/main/packages/docs/content/docs/sdk/ui.mdx) | Author-facing website pages       |
-

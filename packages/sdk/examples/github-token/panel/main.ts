@@ -7,8 +7,11 @@ const host = connectHost();
 const root = document.querySelector('#root');
 if (!root) throw new Error('no root');
 
+let didMount = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
+  if (didMount) return;
+  didMount = true;
   while (root.firstChild) root.removeChild(root.firstChild);
   const page = document.createElement('div');
   page.style.padding = '12px'; page.style.display = 'flex'; page.style.flexDirection = 'column'; page.style.gap = '10px';
@@ -22,7 +25,9 @@ host.onReady((ctx) => {
   let mounted: Array<{ dispose: () => void }> = [];
   const clear = (): void => { for (const m of mounted) m.dispose(); mounted = []; while (body.firstChild) body.removeChild(body.firstChild); while (header.firstChild) header.removeChild(header.firstChild); };
 
+  let generation = 0;
   const paint = async (): Promise<void> => {
+    const currentGeneration = ++generation;
     clear();
     if (!connection.connected) {
       mounted.push(mountEmpty(body, {
@@ -39,6 +44,7 @@ host.onReady((ctx) => {
     try {
       const visibility = settings.visibility && ['all', 'public', 'private'].includes(settings.visibility) ? settings.visibility : 'all';
       const result = await host.request({ method: 'GET', path: '/user/repos', query: { per_page: '30', sort: 'updated', visibility } });
+      if (currentGeneration !== generation) return;
       spinner.dispose();
       if (result.status !== 200) {
         mounted.push(mountBanner(body, { tone: 'error', title: `GitHub answered ${result.status}`, body: result.body.slice(0, 200) }));
@@ -53,11 +59,20 @@ host.onReady((ctx) => {
         },
       }));
     } catch (error) {
+      if (currentGeneration !== generation) return;
       spinner.dispose();
       mounted.push(mountBanner(body, { tone: 'error', title: 'Request failed', body: error instanceof HostRequestError ? `${error.code}: ${error.message}` : String(error) }));
     }
   };
-  host.onConnection((next) => { connection = next; void paint(); });
-  host.onSettings((next) => { settings = next; void paint(); });
+  host.onConnection((next) => {
+    if (next.connected === connection.connected && next.account === connection.account) return;
+    connection = next;
+    void paint();
+  });
+  host.onSettings((next) => {
+    if (next.visibility === settings.visibility) return;
+    settings = next;
+    void paint();
+  });
   void paint();
 });

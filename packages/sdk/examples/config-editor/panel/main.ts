@@ -77,8 +77,11 @@ const clear = (node: Element, mounted: Disposable[]): void => {
   while (node.firstChild) node.removeChild(node.firstChild);
 };
 
+let didMount = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
+  if (didMount) return;
+  didMount = true;
   while (root.firstChild) root.removeChild(root.firstChild);
   const page = column(root, '12px');
   page.style.padding = '12px';

@@ -40,9 +40,10 @@ host.onReady((context) => {
   const projectControl = document.createElement('div');
   controls.append(projectControl);
   const worktree = mountSelect(controls, { label: 'Session directory', value: destination,
-    options: [{ id: 'root', label: 'Project root' }, { id: 'new', label: 'New worktree' }], onChange: (value) => { destination = value; } });
+    options: [{ id: 'root', label: 'Project root' }, { id: 'new', label: 'New worktree' }], onChange: (value) => { destination = value; worktree.update({ value }); } });
   const selectProject = async (id: string) => {
     projectId = id;
+    projects.update({ value: id });
     destination = 'root';
     worktree.update({ value: 'root' });
     stopSessions(); stopWorktrees();
@@ -61,9 +62,9 @@ host.onReady((context) => {
     } catch (error) { releaseSessions(); throw error; }
   };
   const projects = mountSelect(projectControl, { label: 'Project', value: '', options: [], onChange: (id) => { void report(() => selectProject(id)); } });
-  mountSelect(controls, { label: 'Task', value: taskId, options: TASKS.map((task) => ({ id: task.id, label: task.title })), onChange: (value) => { taskId = value; } });
-  mountTextField(controls, { label: 'New worktree name and branch', value: '', onChange: (value) => { branchName = value; } });
-  mountTextField(controls, { label: 'Base branch or ref', value: '', onChange: (value) => { baseBranch = value; } });
+  const taskChoice = mountSelect(controls, { label: 'Task', value: taskId, options: TASKS.map((task) => ({ id: task.id, label: task.title })), onChange: (value) => { taskId = value; taskChoice.update({ value }); } });
+  const branchField = mountTextField(controls, { label: 'New worktree name and branch', value: '', onChange: (value) => { branchName = value; branchField.update({ value }); } });
+  const baseField = mountTextField(controls, { label: 'Base branch or ref', value: '', onChange: (value) => { baseBranch = value; baseField.update({ value }); } });
   const start = mountButton(controls, { label: 'Start session', onClick: () => {
     void report(async () => {
       const task = TASKS.find((entry) => entry.id === taskId);
@@ -81,7 +82,7 @@ host.onReady((context) => {
       } finally { start.update({ loading: false }); }
     });
   } });
-  const notes = mountTextField(activity, { label: 'Board notes', value: '', multiline: true, onChange: (value) => { noteEdited = true; note = value; } });
+  const notes = mountTextField(activity, { label: 'Board notes', value: '', multiline: true, onChange: (value) => { noteEdited = true; note = value; notes.update({ value }); } });
   mountButton(activity, { label: 'Save notes', variant: 'outline', onClick: () => { void report(async () => {
     await host.storage.set('board-notes', note);
     notice.update({ tone: 'success', title: 'Notes saved', body: 'Stored with this extension on the connected server.' });

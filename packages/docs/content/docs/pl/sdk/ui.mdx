@@ -14,11 +14,49 @@ Kontrolki czytają kolory ze zmiennych CSS, które `applyHostReady` zapisuje na 
 ```ts
 import { applyHostReady } from "@openchamber/sdk/ui";
 
+let mounted = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
-  // mount things here
+  if (mounted) return;
+  mounted = true;
+  // Mount controls and register listeners once here.
 });
 ```
+
+`onReady` może uruchamiać się wielokrotnie, gdy panel jest otwarty, na przykład po zmianie kontekstu sesji. Stosuj motyw za każdym razem, ale montuj kontrolki i rejestruj listenery tylko raz. Przechowuj szkice poza funkcjami renderującymi. Przy zmianie zakładki ukrywaj istniejące panele lub odtwarzaj ich wartości ze stanu.
+
+## Synchronizacja wyboru i pól
+
+`mountTabs`, `mountSelect`, `mountCheckbox` i `mountSwitch` zgłaszają zmiany przez `onChange`, ale same nie zmieniają `activeId`, `value` ani `checked`. Zapisz wartość i przekaż ją z powrotem przez `update`. Pola tekstowe i wyszukiwania pokazują wpisany tekst od razu, ale też wymagają `update({ value })`, aby późniejsza aktualizacja nie przywróciła starej wartości. `onClick` nie zmienia wariantu przycisku. Do wyboru trybu użyj `mountTabs`.
+
+Zamontuj te kontrolki raz w istniejącym `root` panelu:
+
+```ts
+import { mountSelect, mountTabs } from "@openchamber/sdk/ui";
+
+let activeId = "convert";
+const tabs = mountTabs(root, {
+  items: [{ id: "convert", label: "Convert" }, { id: "format", label: "Format" }],
+  activeId,
+  onChange: (next) => {
+    activeId = next;
+    tabs.update({ activeId });
+    // Show the matching panel without discarding its draft values.
+  },
+});
+
+let format = "json";
+const select = mountSelect(root, {
+  options: [{ id: "json", label: "JSON" }, { id: "yaml", label: "YAML" }],
+  value: format,
+  onChange: (next) => {
+    format = next;
+    select.update({ value: format });
+  },
+});
+```
+
+Aby zamienić formaty, zamień obie wartości w stanie i wywołaj `update({ value })` na obu istniejących selectach. Nie montuj nowych kontrolek do zmiany wartości. Przy usuwaniu kontrolki wywołaj `dispose()`.
 
 ## Co możesz zamontować
 
@@ -47,11 +85,15 @@ Obok kontrolek dostajesz trzy proste funkcje pomocnicze. `filterSelectOptions(op
 ```ts
 import { applyHostReady, mountEmpty, mountList, mountSearchField } from "@openchamber/sdk/ui";
 
+let mounted = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
+  if (mounted) return;
+  mounted = true;
   const root = document.querySelector("#root")!;
   const searchRoot = root.appendChild(document.createElement("div"));
   const listRoot = root.appendChild(document.createElement("div"));
+  const emptyRoot = root.appendChild(document.createElement("div"));
 
   let query = "";
   let empty: { dispose: () => void } | null = null;
@@ -71,15 +113,16 @@ host.onReady((ctx) => {
     list.update({ items: rows });
     empty?.dispose();
     empty = rows.length === 0
-      ? mountEmpty(listRoot, { title: "No tasks match", body: "Try a shorter search." })
+      ? mountEmpty(emptyRoot, { title: "No tasks match", body: "Try a shorter search." })
       : null;
   };
 
-  mountSearchField(searchRoot, {
+  const search = mountSearchField(searchRoot, {
     value: query,
     placeholder: "Search tasks",
     onChange: (next) => {
       query = next;
+      search.update({ value: next });
       paint();
     },
   });
@@ -94,6 +137,8 @@ host.onReady((ctx) => {
 Twoja strona działa w sandboxie i nie może sama otworzyć nowej karty. Gdy używasz `mountText`, przekaż `onOpenUrl` i oddaj link OpenChamber:
 
 ```ts
+import { mountText } from "@openchamber/sdk/ui";
+
 mountText(root, {
   text: comment.body,
   onOpenUrl: (url) => void host.openUrl(url),

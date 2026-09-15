@@ -14,11 +14,49 @@ description: Кнопки, поля, випадні списки, вкладки
 ```ts
 import { applyHostReady } from "@openchamber/sdk/ui";
 
+let mounted = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
-  // mount things here
+  if (mounted) return;
+  mounted = true;
+  // Mount controls and register listeners once here.
 });
 ```
+
+`onReady` може спрацьовувати багато разів, поки панель відкрита, зокрема при зміні контексту сесії. Застосовуйте тему щоразу, але монтуйте елементи й реєструйте слухачів лише один раз. Зберігайте чернетки поза функціями малювання. При перемиканні вкладок приховуйте наявні панелі або відновлюйте значення зі стану, а не очищайте їх.
+
+## Синхронізація вибору та введення
+
+`mountTabs`, `mountSelect`, `mountCheckbox` і `mountSwitch` повідомляють про зміни через `onChange`, але самі не змінюють `activeId`, `value` або `checked`. Збережіть значення й передайте його назад через `update`. Текстові та пошукові поля одразу показують введений текст, але також потребують `update({ value })`, інакше наступне оновлення може повернути старе значення. `onClick` кнопки не змінює її variant. Для вибору режиму краще використати `mountTabs`.
+
+Змонтуйте ці елементи один раз у наявному `root` панелі:
+
+```ts
+import { mountSelect, mountTabs } from "@openchamber/sdk/ui";
+
+let activeId = "convert";
+const tabs = mountTabs(root, {
+  items: [{ id: "convert", label: "Convert" }, { id: "format", label: "Format" }],
+  activeId,
+  onChange: (next) => {
+    activeId = next;
+    tabs.update({ activeId });
+    // Show the matching panel without discarding its draft values.
+  },
+});
+
+let format = "json";
+const select = mountSelect(root, {
+  options: [{ id: "json", label: "JSON" }, { id: "yaml", label: "YAML" }],
+  value: format,
+  onChange: (next) => {
+    format = next;
+    select.update({ value: format });
+  },
+});
+```
+
+Для кнопки обміну форматами поміняйте обидва значення у стані й викличте `update({ value })` на обох наявних select. Не монтуйте нові елементи для зміни значень. При видаленні елемента викликайте `dispose()`.
 
 ## Що можна змонтувати
 
@@ -47,11 +85,15 @@ host.onReady((ctx) => {
 ```ts
 import { applyHostReady, mountEmpty, mountList, mountSearchField } from "@openchamber/sdk/ui";
 
+let mounted = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
+  if (mounted) return;
+  mounted = true;
   const root = document.querySelector("#root")!;
   const searchRoot = root.appendChild(document.createElement("div"));
   const listRoot = root.appendChild(document.createElement("div"));
+  const emptyRoot = root.appendChild(document.createElement("div"));
 
   let query = "";
   let empty: { dispose: () => void } | null = null;
@@ -71,15 +113,16 @@ host.onReady((ctx) => {
     list.update({ items: rows });
     empty?.dispose();
     empty = rows.length === 0
-      ? mountEmpty(listRoot, { title: "No tasks match", body: "Try a shorter search." })
+      ? mountEmpty(emptyRoot, { title: "No tasks match", body: "Try a shorter search." })
       : null;
   };
 
-  mountSearchField(searchRoot, {
+  const search = mountSearchField(searchRoot, {
     value: query,
     placeholder: "Search tasks",
     onChange: (next) => {
       query = next;
+      search.update({ value: next });
       paint();
     },
   });
@@ -94,6 +137,8 @@ host.onReady((ctx) => {
 Ваша сторінка працює в пісочниці і не може сама відкрити нову вкладку. Коли використовуєте `mountText`, передайте `onOpenUrl` і віддайте посилання OpenChamber:
 
 ```ts
+import { mountText } from "@openchamber/sdk/ui";
+
 mountText(root, {
   text: comment.body,
   onOpenUrl: (url) => void host.openUrl(url),

@@ -67,7 +67,9 @@ const clear = () => {
   mounted = [];
 };
 
+let generation = 0;
 const paint = async (connected: boolean) => {
+  const currentGeneration = ++generation;
   clear();
   if (!connected) {
     mounted.push(mountEmpty(root, {
@@ -77,8 +79,10 @@ const paint = async (connected: boolean) => {
     return;
   }
   const spinner = mountSpinner(root, { label: "Loading repositories" });
+  mounted.push(spinner);
   try {
     const result = await host.request({ method: "GET", path: "/user/repos", query: { per_page: "30", sort: "updated" } });
+    if (currentGeneration !== generation) return;
     spinner.dispose();
     if (result.status !== 200) {
       mounted.push(mountBanner(root, { tone: "error", title: `GitHub answered ${result.status}` }));
@@ -93,6 +97,7 @@ const paint = async (connected: boolean) => {
       },
     }));
   } catch (error) {
+    if (currentGeneration !== generation) return;
     spinner.dispose();
     const text = error instanceof HostRequestError ? `${error.code}: ${error.message}` : String(error);
     mounted.push(mountBanner(root, { tone: "error", title: "Request failed", body: text }));
@@ -101,9 +106,16 @@ const paint = async (connected: boolean) => {
 
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
-  void paint(ctx.connection.connected);
 });
-host.onConnection((connection) => void paint(connection.connected));
+let previousConnection: string | undefined;
+host.onConnection((connection) => {
+  const key = JSON.stringify(connection);
+  if (key === previousConnection) return;
+  previousConnection = key;
+  void paint(connection.connected);
+});
 ```
+
+Para instalar e atualizar por URL Git, faça commit de `panel/main.js` compilado junto com o HTML e o manifesto. O OpenChamber não instala dependências npm nem compila TypeScript na instalação. Versione o lockfile, coloque `node_modules/` no `.gitignore` e inclua as dependências do navegador no IIFE. Para lançar uma atualização, aumente a versão própria da extensão em `package.json`, compile novamente, faça commit e push. Escolha Update em Settings → Extensions. Uma URL fixada a uma tag Git permanece nessa tag.
 
 Compile a partir da pasta com `bunx openchamber-guest-bundle panel/main.ts panel/main.js` e depois adicione a pasta em Configurações → Extensões. Mais cinco exemplos (todos os controles de UI, uma lista de tarefas com ações e um comando de barra, um serviço local, um editor de arquivo de configuração, um pacote somente com ferramentas) estão em [github.com/openchamber/openchamber/tree/main/packages/sdk/examples](https://github.com/openchamber/openchamber/tree/main/packages/sdk/examples).

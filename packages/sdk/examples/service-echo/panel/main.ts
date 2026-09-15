@@ -5,8 +5,11 @@ const host = connectHost();
 const root = document.querySelector('#root');
 if (!root) throw new Error('no root');
 
+let didMount = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
+  if (didMount) return;
+  didMount = true;
   while (root.firstChild) root.removeChild(root.firstChild);
   const page = document.createElement('div');
   page.style.padding = '12px'; page.style.display = 'flex'; page.style.flexDirection = 'column'; page.style.gap = '10px';
@@ -24,7 +27,7 @@ host.onReady((ctx) => {
   mountButton(statusRow, { label: 'Refresh status', size: 'sm', variant: 'ghost', onClick: () => void refresh().catch(() => {}) });
 
   let message = 'hello from the panel';
-  mountTextField(page, { label: 'Message to echo', value: message, onChange: (v) => { message = v; } });
+  const messageField = mountTextField(page, { label: 'Message to echo', value: message, onChange: (v) => { message = v; messageField.update({ value: v }); } });
   const output = mountText(page, { text: 'No calls yet. The first request spawns the service process (needs approval).' });
 
   const call = async (label: string, run: () => Promise<{ status: number; body: string }>): Promise<void> => {

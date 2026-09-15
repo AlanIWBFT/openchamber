@@ -19,6 +19,8 @@ const host = connectHost();
 
 `onReady` feuert mit dem ersten Snapshot und danach jedes Mal, wenn OpenChamber ihn aktualisiert.
 
+Das ist kein einmaliger Mount-Callback. Mounte die UI und registriere Abonnements einmal; aktualisiere danach Theme und Kontext, ohne Eingaben oder Entwürfe zu ersetzen. Ein Beispiel mit Mount-Schutz steht im [UI kit](/sdk/ui/). Listener wie `onConnection` liefern sofort den aktuellen Wert und können ihn bei neuen Snapshots wiederholen. Vergleiche die relevanten Felder vor einer neuen Anfrage und ignoriere Antworten überholter Anfragen.
+
 | Feld | Was es ist |
 | --- | --- |
 | `theme.mode` | `light` oder `dark` |

@@ -19,6 +19,8 @@ const host = connectHost();
 
 `onReady` odpala się z pierwszą migawką i ponownie za każdym razem, gdy OpenChamber ją odświeża.
 
+To nie jest jednorazowy callback montowania. Zamontuj UI i zarejestruj subskrypcje raz, a potem aktualizuj motyw i kontekst bez zastępowania pól ani szkiców. Przykład z ochroną przed ponownym montowaniem znajdziesz w [UI kit](/sdk/ui/). Listenery takie jak `onConnection` od razu przekazują bieżącą wartość i mogą ją powtórzyć z nową migawką. Porównuj istotne pola przed nowym żądaniem i ignoruj odpowiedzi zastąpionych żądań.
+
 | Pole | Co to jest |
 | --- | --- |
 | `theme.mode` | `light` lub `dark` |

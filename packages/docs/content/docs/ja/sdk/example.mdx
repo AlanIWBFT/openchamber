@@ -67,7 +67,9 @@ const clear = () => {
   mounted = [];
 };
 
+let generation = 0;
 const paint = async (connected: boolean) => {
+  const currentGeneration = ++generation;
   clear();
   if (!connected) {
     mounted.push(mountEmpty(root, {
@@ -77,8 +79,10 @@ const paint = async (connected: boolean) => {
     return;
   }
   const spinner = mountSpinner(root, { label: "Loading repositories" });
+  mounted.push(spinner);
   try {
     const result = await host.request({ method: "GET", path: "/user/repos", query: { per_page: "30", sort: "updated" } });
+    if (currentGeneration !== generation) return;
     spinner.dispose();
     if (result.status !== 200) {
       mounted.push(mountBanner(root, { tone: "error", title: `GitHub answered ${result.status}` }));
@@ -93,6 +97,7 @@ const paint = async (connected: boolean) => {
       },
     }));
   } catch (error) {
+    if (currentGeneration !== generation) return;
     spinner.dispose();
     const text = error instanceof HostRequestError ? `${error.code}: ${error.message}` : String(error);
     mounted.push(mountBanner(root, { tone: "error", title: "Request failed", body: text }));
@@ -101,9 +106,16 @@ const paint = async (connected: boolean) => {
 
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
-  void paint(ctx.connection.connected);
 });
-host.onConnection((connection) => void paint(connection.connected));
+let previousConnection: string | undefined;
+host.onConnection((connection) => {
+  const key = JSON.stringify(connection);
+  if (key === previousConnection) return;
+  previousConnection = key;
+  void paint(connection.connected);
+});
 ```
+
+Git URL でのインストールと更新には、ビルド済みの `panel/main.js` を HTML とマニフェストと一緒にコミットしてください。OpenChamber はインストール時に npm 依存関係を導入したり TypeScript をビルドしたりしません。ロックファイルをコミットし、`node_modules/` を `.gitignore` に追加し、ブラウザー用の依存関係を IIFE に含めます。更新を公開するには、拡張機能自身の `package.json` のバージョンを上げ、再ビルド、コミット、push を行い、Settings → Extensions で Update を選びます。Git タグに固定した URL はそのタグに留まります。
 
 フォルダ内で `bunx openchamber-guest-bundle panel/main.ts panel/main.js` を実行してビルドし、設定 → 拡張機能 でそのフォルダを追加します。さらに 5 つの例(すべての UI コントロール、アクションとスラッシュコマンド付きのタスク一覧、ローカルサービス、設定ファイルエディタ、ツールのみのパッケージ)が [github.com/openchamber/openchamber/tree/main/packages/sdk/examples](https://github.com/openchamber/openchamber/tree/main/packages/sdk/examples) にあります。

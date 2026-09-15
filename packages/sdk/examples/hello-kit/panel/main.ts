@@ -36,20 +36,25 @@ const section = (title: string): HTMLElement => {
   return box;
 };
 
+let didMount = false;
 host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
+  if (didMount) return;
+  didMount = true;
   while (root.firstChild) root.removeChild(root.firstChild);
 
   const status = section('Host state');
   const statusText = mountText(status, { text: '' });
-  const paintStatus = (directory: string | null, session: { id: string; title: string; busy: boolean } | null): void => {
+  let context = ctx;
+  const paintStatus = (): void => {
+    const { directory, session, theme, surface } = context;
     statusText.update({
-      text: `Directory: ${directory ?? '—'}\nSession: ${session ? `${session.title} (${session.busy ? 'busy' : 'idle'})` : 'none'}\nTheme: ${ctx.theme.mode}, surface: ${ctx.surface}`,
+      text: `Directory: ${directory ?? '—'}\nSession: ${session ? `${session.title} (${session.busy ? 'busy' : 'idle'})` : 'none'}\nTheme: ${theme.mode}, surface: ${surface}`,
     });
   };
-  paintStatus(ctx.directory, ctx.session);
-  host.onDirectory((directory) => paintStatus(directory, ctx.session));
-  host.onSession((session) => paintStatus(ctx.directory, session));
+  host.onReady((next) => { context = next; paintStatus(); });
+  host.onDirectory((directory) => { context = { ...context, directory }; paintStatus(); });
+  host.onSession((session) => { context = { ...context, session }; paintStatus(); });
 
   const tabsBox = section('Tabs');
   let activeTab = 'one';
@@ -80,10 +85,10 @@ host.onReady((ctx) => {
 
   const fields = section('Fields');
   let name = '';
-  mountTextField(fields, { label: 'Name', value: name, placeholder: 'Type something', onChange: (v) => { name = v; } });
-  mountTextField(fields, { label: 'Secret', value: '', password: true, helper: 'Masked input', onChange: () => {} });
-  mountTextField(fields, { label: 'Notes', value: '', multiline: true, rows: 3, mono: true, onChange: () => {} });
-  mountTextField(fields, { label: 'With error', value: 'oops', error: 'This value is not valid', onChange: () => {} });
+  const nameField = mountTextField(fields, { label: 'Name', value: name, placeholder: 'Type something', onChange: (v) => { name = v; nameField.update({ value: v }); } });
+  const secretField = mountTextField(fields, { label: 'Secret', value: '', password: true, helper: 'Masked input', onChange: (value) => secretField.update({ value }) });
+  const notesField = mountTextField(fields, { label: 'Notes', value: '', multiline: true, rows: 3, mono: true, onChange: (value) => notesField.update({ value }) });
+  const errorField = mountTextField(fields, { label: 'With error', value: 'oops', error: 'This value is not valid', onChange: (value) => errorField.update({ value }) });
   let picked: string | null = 'b';
   const select = mountSelect(fields, {
     label: 'Searchable select',
@@ -127,7 +132,7 @@ host.onReady((ctx) => {
     empty?.dispose(); empty = null;
     if (rows.length === 0) empty = mountEmpty(emptyRoot, { title: 'No tasks match', body: 'Try a shorter search.' });
   };
-  mountSearchField(listBox, { value: query, placeholder: 'Search tasks', onChange: (v) => { query = v; paintList(); } });
+  const search = mountSearchField(listBox, { value: query, placeholder: 'Search tasks', onChange: (v) => { query = v; search.update({ value: v }); paintList(); } });
   listBox.append(listRoot, emptyRoot);
   paintList();
 });

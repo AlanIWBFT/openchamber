@@ -19,6 +19,8 @@ const host = connectHost();
 
 `onReady` ilk anlık görüntüyle tetiklenir ve OpenChamber onu her yenilediğinde yeniden tetiklenir.
 
+Bu, yalnızca bir kez çalışan bir bağlama callback'i değildir. Arayüzü ve abonelikleri bir kez oluşturun; sonraki çağrılarda alanları veya taslakları değiştirmeden temayı ve bağlamı güncelleyin. [UI kit](/sdk/ui/) sayfasındaki korumalı örneğe bakın. `onConnection` gibi dinleyiciler mevcut değeri hemen iletir ve yeni görüntülerde aynı değeri tekrar iletebilir. Yeni istekten önce ilgili alanları karşılaştırın ve yerini yeni isteklerin aldığı eski yanıtları yok sayın.
+
 | Alan | Anlamı |
 | --- | --- |
 | `theme.mode` | `light` veya `dark` |
