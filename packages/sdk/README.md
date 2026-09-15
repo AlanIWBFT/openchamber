@@ -14,6 +14,18 @@ npm install @openchamber/sdk
 
 The package ships compiled JavaScript with type declarations, so any bundler works. Its version matches the OpenChamber release it shipped with, so `@openchamber/sdk@1.24.0` is the contract of OpenChamber 1.24.0.
 
+## Preview builds
+
+Preview packages are for testing unreleased SDK changes against a matching development build of OpenChamber. They do not imply compatibility with the published app of the same base version.
+
+```bash
+npm install @openchamber/sdk@preview
+```
+
+Maintainers can run **Publish SDK preview** in GitHub Actions, select the source branch, and enter a positive preview number. For example, `1` publishes `1.23.2-preview.1` under the `preview` npm tag. Each publication needs an unused number. The workflow uses the existing `NPM_TOKEN` secret and publishes only the SDK. It changes the version in its temporary checkout, without creating commits or release tags or changing `latest`.
+
+The workflow must exist on the default branch before GitHub exposes its manual trigger. Once it does, select `bohdan/dev` to publish that branch's SDK. Enable `dry_run` to validate without publishing. Validation installs the packed SDK in an isolated project and checks its imports, TypeScript declarations, and extension bundler before publishing that same archive.
+
 ## What you ship
 
 A folder with three files:
