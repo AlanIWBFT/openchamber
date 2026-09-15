@@ -3,6 +3,23 @@ import type { State } from "./types"
 
 export type DirectoryRecoverySource = { getState: () => State }
 
+export function createSessionStatusRequestCoordinator() {
+  const states = new WeakMap<DirectoryRecoverySource, { next: number; applied: number }>()
+  return (owner: DirectoryRecoverySource): (() => boolean) => {
+    const state = states.get(owner) ?? { next: 0, applied: 0 }
+    const generation = ++state.next
+    states.set(owner, state)
+    // Call only at commit: a newer failed or stale request grants no authority.
+    return () => {
+      if (generation < state.applied) return false
+      state.applied = generation
+      return true
+    }
+  }
+}
+
+export const beginSessionStatusRequest = createSessionStatusRequestCoordinator()
+
 type RecoveryObserver = (event: Event) => void
 const observers = new WeakMap<DirectoryRecoverySource, Set<RecoveryObserver>>()
 
@@ -39,8 +56,8 @@ function removedSessionID(event: Event): string | undefined {
 
 export function readDirectoryStatusSnapshot(
   source: DirectoryRecoverySource,
-  read: () => Promise<State["session_status"]>,
-): Promise<State["session_status"]> {
+  read: () => Promise<State["session_status"] | null>,
+): Promise<State["session_status"] | null> {
   const before = source.getState().session_status
   const changes = new Map<string, SessionStatus | null>()
   return withRecoveryObserver(source, (event) => {
@@ -51,15 +68,19 @@ export function readDirectoryStatusSnapshot(
     const removed = removedSessionID(event)
     if (removed) changes.set(removed, null)
   }, async () => {
-    const snapshot = { ...await read() }
+    const fetched = await read()
+    if (fetched === null) return null
+    const snapshot = { ...fetched }
+    for (const [id, status] of changes) {
+      if (status) snapshot[id] = status
+      else delete snapshot[id]
+    }
+    // The store includes accepted events and subsequent optimistic mutations.
+    // Recorded no-op events protect unchanged entries, but cannot undo a newer turn.
     const current = source.getState().session_status
     for (const id of new Set([...Object.keys(before), ...Object.keys(current)])) {
       if (before[id] === current[id]) continue
       if (current[id]) snapshot[id] = current[id]
-      else delete snapshot[id]
-    }
-    for (const [id, status] of changes) {
-      if (status) snapshot[id] = status
       else delete snapshot[id]
     }
     return snapshot

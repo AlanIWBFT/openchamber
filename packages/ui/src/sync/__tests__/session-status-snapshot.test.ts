@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import { create, type StoreApi } from "zustand"
-import type { OpencodeClient, Project, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import { createOpencodeClient, type SessionStatus } from "@opencode-ai/sdk/v2/client"
 
 import { INITIAL_STATE, type State } from "../types"
 import type { DirectoryStore } from "../child-store"
 import { bootstrapDirectory } from "../bootstrap"
 import {
   applySessionStatusSnapshot,
-  createSessionStatusRequestCoordinator,
   needsSnapshotAfterStatusPoll,
   shouldTriggerStaleResync,
 } from "../sync-context"
+import { createSessionStatusRequestCoordinator, readDirectoryStatusSnapshot } from "../directory-recovery-snapshots"
 
 type StatusSnapshot = Record<string, SessionStatus>
 
@@ -39,7 +39,7 @@ const BUSY: SessionStatus = { type: "busy" }
 describe("session status request coordinator", () => {
   test("rejects only responses older than an already applied response", () => {
     const begin = createSessionStatusRequestCoordinator()
-    const store = {}
+    const store = createDirectoryStore({})
 
     const first = begin(store)
     const second = begin(store)
@@ -72,18 +72,20 @@ describe("applySessionStatusSnapshot", () => {
     expect(store.getState().sessionStatusReady).toBe(true)
   })
 
-  test("preserves a newer status transition that lands during the request", () => {
+  test("preserves a newer status transition that lands during the request", async () => {
     const original = { type: "busy" } as SessionStatus
     const store = createDirectoryStore({ session_status: { ses_a: original } })
-    const baseline = store.getState().session_status
-    store.setState({ session_status: { ses_a: { type: "idle" } } })
+    const snapshot = await readDirectoryStatusSnapshot(store, async () => {
+      store.setState({ session_status: { ses_a: { type: "idle" } } })
+      return { ses_a: { type: "retry", attempt: 2, message: "old", next: 30 } }
+    })
+    if (!snapshot) throw new Error("Expected successful snapshot")
 
     applySessionStatusSnapshot(
       store,
-      { ses_a: { type: "retry", attempt: 2, message: "old", next: 30 } },
+      snapshot,
       ["ses_a"],
       "authoritative",
-      baseline,
     )
 
     expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
@@ -172,79 +174,107 @@ describe("applySessionStatusSnapshot", () => {
   })
 })
 
-type BootstrapStatusResult = { data?: StatusSnapshot; error?: unknown; response?: { status?: number } }
-
-function createBootstrapSdk(statusResult: BootstrapStatusResult | Promise<BootstrapStatusResult>) {
-  const result = <T,>(data: T) => Promise.resolve({ data })
-  return {
-    config: { get: () => result({}) },
-    path: { get: () => result({ state: "", config: "", worktree: "", directory: "C:/repo", home: "" }) },
-    session: { status: () => Promise.resolve(statusResult) },
-    command: { list: () => result([]) },
-    mcp: { status: () => result({}) },
-    lsp: { status: () => result([]) },
-    vcs: { get: () => result(undefined) },
-    question: { list: () => result([]) },
-    permission: { list: () => result([]) },
-  } as unknown as OpencodeClient
-}
-
 function startBootstrap(
-  statusResult: BootstrapStatusResult | Promise<BootstrapStatusResult>,
-  beginSessionStatusRequest?: () => () => boolean,
+  statusResult: Response | Promise<Response>,
+  store = createDirectoryStore({ sessionStatusReady: false }),
 ) {
-  let state: State = { ...INITIAL_STATE }
-  const promise = bootstrapDirectory({
+  let markStarted!: () => void
+  const started = new Promise<void>((resolve) => { markStarted = resolve })
+  const sdk = createOpencodeClient({
+    baseUrl: "https://bootstrap.test",
+    fetch: async (request) => {
+      const url = new URL(request instanceof Request ? request.url : request.toString())
+      if (url.pathname === "/session/status") {
+        markStarted()
+        return statusResult
+      }
+      return Response.json(url.pathname === "/project/current" ? { id: "project" }
+        : url.pathname === "/path" ? { state: "", config: "", worktree: "C:/repo", directory: "C:/repo", home: "" }
+        : url.pathname === "/config" || url.pathname === "/mcp" ? {}
+        : url.pathname === "/vcs" ? { branch: "main" } : [])
+    },
+  })
+  const bootstrap = bootstrapDirectory({
     directory: "C:/repo",
-    sdk: createBootstrapSdk(statusResult),
-    getState: () => state,
-    set: (patch) => { state = { ...state, ...patch } },
+    sdk,
+    store,
+    set: (patch) => store.setState(patch),
     global: {
       config: {},
-      projects: [{ id: "project", worktree: "C:/repo" } as Project],
+      projects: [],
     },
-    beginSessionStatusRequest,
     loadSessions: () => undefined,
   })
   return {
-    promise,
-    getState: () => state,
-    setState: (patch: Partial<State>) => { state = { ...state, ...patch } },
+    promise: bootstrap.environment,
+    sessions: bootstrap.sessions,
+    started,
+    store,
+    getState: store.getState,
+    setState: store.setState,
   }
 }
 
-async function bootstrapWithStatus(statusResult: BootstrapStatusResult) {
+async function bootstrapWithStatus(statusResult: Response) {
   const bootstrap = startBootstrap(statusResult)
   await bootstrap.promise
   return bootstrap.getState()
 }
 
 describe("bootstrapDirectory session status", () => {
+  test("preserves a usable older response when the newer request fails", async () => {
+    let resolveStatus!: (result: Response) => void
+    const older = startBootstrap(new Promise<Response>((resolve) => { resolveStatus = resolve }))
+    await older.started
+    const newer = startBootstrap(Response.json({ message: "offline" }, { status: 400 }), older.store)
+    expect(await newer.promise).toBe("failed")
+    resolveStatus(Response.json({ ses_a: { type: "busy" } }))
+    expect(await older.promise).toBe("complete")
+    expect(older.getState().session_status.ses_a).toEqual(BUSY)
+    expect(older.getState().sessionStatusReady).toBe(true)
+  })
+
+  test("preserves retry recovery metadata during bootstrap parsing", async () => {
+    const retry: SessionStatus = {
+      type: "retry", attempt: 1, message: "Rate limited", next: 1000,
+      resolution: { kind: "rate_limited", retry: "automatic", action: "wait", retryAfterMs: 1000, providerCode: "rate_limit" },
+      action: { reason: "limit", provider: "openai", title: "Retry", message: "Wait", label: "Details" },
+    }
+    const state = await bootstrapWithStatus(Response.json({ ses_a: retry }))
+    expect(state.session_status.ses_a).toEqual(retry)
+  })
+
+  test("a nullable failed read stays failure rather than an authoritative empty snapshot", async () => {
+    const store = createDirectoryStore({ session_status: { ses_a: BUSY }, sessionStatusReady: false })
+    const state = store.getState()
+    expect(await readDirectoryStatusSnapshot(store, async () => null)).toBeNull()
+    expect(store.getState()).toBe(state)
+  })
+
   test("marks a successful empty status snapshot as resolved", async () => {
-    const state = await bootstrapWithStatus({ data: {} })
+    const state = await bootstrapWithStatus(Response.json({}))
     expect(state.sessionStatusReady).toBe(true)
     expect(state.session_status).toEqual({})
   })
 
   test("preserves unresolved status when the status request fails", async () => {
-    const state = await bootstrapWithStatus({
-      error: new Error("status unavailable"),
-      response: { status: 400 },
-    })
-    expect(state.status).toBe("complete")
+    const bootstrap = startBootstrap(Response.json({ message: "status unavailable" }, { status: 400 }))
+    expect(await bootstrap.sessions).toBe("complete")
+    expect(await bootstrap.promise).toBe("failed")
+    const state = bootstrap.getState()
+    expect(state.status).toBe("partial")
     expect(state.sessionStatusReady).toBe(false)
   })
 
   test("does not overwrite a newer status while the snapshot is in flight", async () => {
-    let resolveStatus!: (result: BootstrapStatusResult) => void
-    const statusResult = new Promise<BootstrapStatusResult>((resolve) => {
+    let resolveStatus!: (result: Response) => void
+    const statusResult = new Promise<Response>((resolve) => {
       resolveStatus = resolve
     })
     const bootstrap = startBootstrap(statusResult)
+    await bootstrap.started
     bootstrap.setState({ session_status: { ses_a: { type: "busy" } } })
-    resolveStatus({
-      data: { ses_a: { type: "retry", attempt: 1, message: "older", next: 10 } },
-    })
+    resolveStatus(Response.json({ ses_a: { type: "retry", attempt: 1, message: "older", next: 10 } }))
     await bootstrap.promise
 
     expect(bootstrap.getState().session_status.ses_a).toEqual({ type: "busy" })
@@ -252,14 +282,16 @@ describe("bootstrapDirectory session status", () => {
   })
 
   test("ignores a snapshot superseded by a newer directory request", async () => {
-    const bootstrap = startBootstrap(
-      { data: { ses_a: { type: "busy" } } },
-      () => () => false,
-    )
+    let resolveStatus!: (result: Response) => void
+    const bootstrap = startBootstrap(new Promise<Response>((resolve) => { resolveStatus = resolve }))
+    await bootstrap.started
+    const newer = startBootstrap(Response.json({}), bootstrap.store)
+    expect(await newer.promise).toBe("complete")
+    resolveStatus(Response.json({ ses_a: { type: "busy" } }))
     await bootstrap.promise
 
     expect(bootstrap.getState().session_status).toEqual({})
-    expect(bootstrap.getState().sessionStatusReady).toBe(false)
+    expect(bootstrap.getState().sessionStatusReady).toBe(true)
   })
 })
 
