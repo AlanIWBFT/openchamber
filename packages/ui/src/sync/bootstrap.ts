@@ -8,6 +8,7 @@ import { warmChatsRootDirectory } from "../lib/chatDirectories"
 import { runBackgroundNetworkTask } from "../lib/background-network"
 import { sessionStatusSnapshotSchema } from "../lib/opencode/session-status"
 import {
+  beginSessionStatusRequest,
   readDirectoryStatusSnapshot,
   readDirectoryQuestionSnapshot,
   readDirectoryPermissionSnapshot,
@@ -115,7 +116,6 @@ type DirectoryBootstrapInput = {
     config: State["config"]
     projects: Project[]
   }
-  beginSessionStatusRequest?: () => () => boolean
   loadSessions: (directory: string) => Promise<void> | void
 }
 
@@ -166,11 +166,11 @@ async function initializeDirectory(input: DirectoryBootstrapInput): Promise<Boot
   // config/MCP cannot suppress pending questions or permission recovery.
   const critical = Promise.allSettled([
     read(async () => {
-      const isCurrentRequest = input.beginSessionStatusRequest?.() ?? (() => true)
+      const isCurrentRequest = beginSessionStatusRequest(store)
       const session_status = await readDirectoryStatusSnapshot(store, async () => (
         sessionStatusSnapshotSchema.parse(unwrap(await sdk.session.status({ directory }), "session.status"))
       ))
-      if (input.isStale?.() || !isCurrentRequest()) return
+      if (session_status === null || input.isStale?.() || !isCurrentRequest()) return
       commit({ session_status, sessionStatusReady: true })
     }),
     read(async () => {

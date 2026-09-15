@@ -116,7 +116,11 @@ describe("directory status HTTP boundary", () => {
 
   test("preserves Windows root addressing and valid retry fields through the real SDK", async () => {
     const requests: URL[] = []
-    const status = { session: { type: "retry", attempt: 2, message: "Retrying", next: 1234 } }
+    const status = { session: {
+      type: "retry", attempt: 2, message: "Retrying", next: 1234,
+      action: { reason: "capacity", provider: "openai", title: "Retry", message: "Wait", label: "Details", link: "https://status.test/details" },
+      resolution: { kind: "rate_limited", retry: "automatic", action: "wait", retryAfterMs: 1000, providerCode: "rate_limit_exceeded" },
+    } }
     const fetch = spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       requests.push(new URL(input instanceof Request ? input.url : input.toString()))
       return Response.json(status)
