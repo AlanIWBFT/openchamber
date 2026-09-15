@@ -4,6 +4,23 @@ import type { State } from "./types"
 
 export type DirectoryRecoverySource = { getState: () => State }
 
+export function createSessionStatusRequestCoordinator() {
+  const states = new WeakMap<DirectoryRecoverySource, { next: number; applied: number }>()
+  return (owner: DirectoryRecoverySource): (() => boolean) => {
+    const state = states.get(owner) ?? { next: 0, applied: 0 }
+    const generation = ++state.next
+    states.set(owner, state)
+    // Only a successfully committed response supersedes an older request.
+    return () => {
+      if (generation < state.applied) return false
+      state.applied = generation
+      return true
+    }
+  }
+}
+
+export const beginSessionStatusRequest = createSessionStatusRequestCoordinator()
+
 type RecoveryObserver = (event: SyncEvent) => void
 const observers = new WeakMap<DirectoryRecoverySource, Set<RecoveryObserver>>()
 
@@ -55,10 +72,12 @@ export function readDirectoryStatusSnapshot(
 export function readDirectoryStatusSnapshot(
   source: DirectoryRecoverySource,
   read: () => Promise<State["session_status"] | null>,
+  commit?: (snapshot: State["session_status"]) => boolean,
 ): Promise<State["session_status"] | null>
 export function readDirectoryStatusSnapshot(
   source: DirectoryRecoverySource,
   read: () => Promise<State["session_status"] | null>,
+  commit?: (snapshot: State["session_status"]) => boolean,
 ): Promise<State["session_status"] | null> {
   const before = source.getState().session_status
   const changes = new Map<string, SessionStatus | null>()
@@ -73,17 +92,20 @@ export function readDirectoryStatusSnapshot(
     const fetched = await read()
     if (fetched === null) return null
     const snapshot = { ...fetched }
+    for (const [id, status] of changes) {
+      if (status) snapshot[id] = status
+      else delete snapshot[id]
+    }
+    // The store includes accepted events and subsequent optimistic mutations.
+    // No-op events protect unchanged entries, but cannot undo a newer turn.
     const current = source.getState().session_status
     for (const id of new Set([...Object.keys(before), ...Object.keys(current)])) {
       if (before[id] === current[id]) continue
       if (current[id]) snapshot[id] = current[id]
       else delete snapshot[id]
     }
-    for (const [id, status] of changes) {
-      if (status) snapshot[id] = status
-      else delete snapshot[id]
-    }
-    return snapshot
+    // Reconcile and publish without yielding; keep observing until publication.
+    return !commit || commit(snapshot) ? snapshot : null
   })
 }
 
