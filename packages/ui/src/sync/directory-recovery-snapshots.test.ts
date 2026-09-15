@@ -27,6 +27,29 @@ const session: Session = {
 }
 
 describe("directory recovery snapshots", () => {
+  for (const eventLast of [false, true]) {
+    test(`preserves the latest transition when an idle event and optimistic turn overlap (event last: ${eventLast})`, async () => {
+      const manager = new ChildStoreManager()
+      const store = manager.ensureChild("/repo", { bootstrap: false })
+      store.setState({ session: [session], session_status: { session: { type: "busy" } } })
+      const response = deferred<State["session_status"]>()
+      const snapshot = readDirectoryStatusSnapshot(store, () => response.promise)
+      const optimistic = () => store.setState({ session_status: { session: { type: "busy" } } })
+      try {
+        if (eventLast) optimistic()
+        handleEvent("/repo", { id: "event-idle", type: "session.idle", properties: { sessionID: "session" } },
+          manager, createEventRoutingIndex(), getRuntimeKey(), true)
+        if (!eventLast) optimistic()
+        response.resolve({})
+        expect(await snapshot).toEqual({ session: { type: eventLast ? "idle" : "busy" } })
+      } finally {
+        response.resolve({})
+        manager.disposeAll()
+        replaceGlobalSessionStatusById(new Map())
+      }
+    })
+  }
+
   test("the event pipeline preserves repeated busy events without publishing a redundant store update", async () => {
     const manager = new ChildStoreManager()
     const store = manager.ensureChild("/repo", { bootstrap: false })
