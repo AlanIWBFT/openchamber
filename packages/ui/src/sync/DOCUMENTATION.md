@@ -605,6 +605,16 @@ while the reader sits on the end of a session that is not producing output,
 content growth re-pins with one instant write; output growth belongs to the
 follow logic, which glides only while the session is working.
 
+`useChatTimelineScroll` retires an outgoing scroll container through
+`components/chat/lib/scroll/retireScrollContent.ts`. Chromium can retain a
+queued scroll event's target while animation frames are suspended, keeping its
+detached conversation tree alive. After React's commit and Markdown DOM-cache
+capture, a microtask clears the retired container's remaining children. The
+cleanup requires both a disconnected node and released ownership, so ref
+reattachment, Strict Mode and connected hidden views keep their contents.
+Nodes already transferred to the Markdown cache remain intact. This shared
+cleanup runs independently of animation frames across all chat runtimes.
+
 `bun run profile:switch` measures both moments; see `scripts/perf/DOCUMENTATION.md`.
 
 Select leaf values, not containers:
