@@ -10,6 +10,14 @@ Desktop starts the OpenChamber web server in the same Electron main process. The
 
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
 
+The foreground window loads its HTML splash before resolving the backend.
+Login-shell environment discovery runs asynchronously so the splash can paint
+while shell startup files run. Startup callers share one probe and await its
+result before reading shell-provided server flags or importing the backend.
+The probe tries interactive login, then login-only on failure, with a five-second
+timeout per attempt. Failure preserves the inherited process environment.
+Confirmed quit cancels an in-flight probe and waits for its process to exit.
+
 Quit, relaunch, and update installation await the in-process server's `stop()`
 before exiting Electron. This lets the backend release its terminals, managed
 OpenCode process, and guest services. `server-shutdown.mjs` bounds the server
@@ -32,6 +40,7 @@ The preload bridge exposes desktop-only APIs to the web UI through `window.__OPE
 | `electron-host-probe.mjs` | Chromium direct-host probes, identity checks, attempt deadlines, and response cleanup |
 | `host-probe-policy.mjs` | Selector fast attempt and unreachable-only retry policy |
 | `startup-url-selection.mjs` | Pure bundled/HMR startup probe and loopback connection-limit policy |
+| `shell-environment.mjs` | Asynchronous login-shell environment discovery and shared one-shot probe |
 | `preload.mjs` | Safe bridge from the rendered UI to Electron IPC |
 | `ssh-manager.mjs` | SSH host import, connection lifecycle, tunnel/port forwarding helpers |
 | `scripts/electron-dev.mjs` | Desktop dev launcher with Vite HMR support |
