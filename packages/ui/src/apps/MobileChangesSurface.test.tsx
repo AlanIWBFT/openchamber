@@ -210,4 +210,7 @@ test('mobile comparisons drill into files, retry, resume, change source, and yie
       else Reflect.deleteProperty(globalThis, name);
     }
   }
-});
+  // One scenario loads the Changes surface and walks every mode in happy-dom.
+  // It takes about a second on an idle machine, but the full suite runs four
+  // test processes at once, and there it crossed the 5 second default on Windows.
+}, 30_000);
