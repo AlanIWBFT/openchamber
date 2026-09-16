@@ -4,6 +4,7 @@ import { buildVSCodeThemeFromPalette, type VSCodeThemePalette } from './adapter'
 import { compactTheme, type ThemeDefinition } from '../definition';
 import { contrastRatio, mixColor, onColor, readableText, withOpacity } from '../color';
 import { MAX_THEME_IMPORT_BYTES, ThemeImportError } from '../importErrors';
+import { adaptImportedRoles } from './adapt';
 
 const hex = z.string().regex(/^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i);
 const tokenSettings = z.object({ foreground: hex.optional() });
@@ -97,6 +98,7 @@ export function importVSCodeTheme(text: string, filename: string): ThemeDefiniti
   for (const [key, color] of Object.entries(source.colors)) {
     if (color !== null) colors[key] = color;
   }
+  const authoredColors = { ...colors };
   const authoredBackground = colors['editor.background'];
   if (!authoredBackground) throw new ThemeImportError('background');
   const dark = source.type ? ['dark', 'hc', 'hc-black'].includes(source.type) : onColor(authoredBackground, '#ffffff') === '#ffffff';
@@ -141,7 +143,7 @@ export function importVSCodeTheme(text: string, filename: string): ThemeDefiniti
   else {
     const { surface, interactive } = mapped.colors;
     // Match the quietest border/surface pairing in the built-in OpenChamber
-    // palettes: about 1.15 dark and 1.20 light. Focus/status/diff stay authored.
+    // palettes: about 1.15 dark and 1.20 light. Other roles are handled separately.
     const border = normalizeImportedBorder(interactive.border,
       [surface.background, surface.muted, surface.elevated], surface.background, dark ? 1.15 : 1.2);
     interactive.border = border;
@@ -187,6 +189,7 @@ export function importVSCodeTheme(text: string, filename: string): ThemeDefiniti
     highlights: mapped.colors.syntax.highlights,
   };
   const name = formatImportedThemeName(source.name ?? (filename.replace(/\.(jsonc?|code-theme)$/i, '').replace(/[-_]color[-_]theme$/i, '').trim().slice(0, 160) || 'VS Code'));
+  adaptImportedRoles(mapped, authoredColors, base);
   return compactTheme({
     metadata: { id: `vscode-import-${variant}`, name, variant, author: source.author, description: source.description ?? '', version: '1.0.0', tags: ['imported', 'vscode'] },
     colors: {

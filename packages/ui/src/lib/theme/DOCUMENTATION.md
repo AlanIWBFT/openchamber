@@ -46,10 +46,28 @@ edge contrast: at least 1.15 on dark surfaces and 1.20 on light surfaces. It lif
 the authored hue into a readable tint and adjusts overlay alpha against canvas,
 sidebar and elevated surfaces, so an opaque edge cannot disappear on one of them.
 Inherited tool/divider/blockquote borders follow it; explicit component borders,
-focus, status, diff and high-contrast palettes keep their authored values. Palettes
+focus, status, diff and high-contrast palettes are outside border normalization. Palettes
 mixing light and dark surfaces retain the original border because one overlay
 cannot provide that quiet contrast consistently. The live VS Code adapter does
 not normalize borders, and existing saved theme files are not rewritten.
+
+`vscode/adapt.ts` adapts imported UI roles after source mapping. A button fill that
+disappears on the canvas/sidebar is not a usable app accent: prefer authored link,
+badge or list-highlight colors before syntax accents. Primary and info must remain
+readable on the sidebar and same-polarity selected/elevated backgrounds because
+session timers use these colors directly. An effectively invisible focus ring uses
+the resulting primary. Primary-dependent fallbacks are updated with the accent.
+
+Info must also differ chromatically from primary. Compare alpha-composited colors
+in OKLab's a/b plane, with a minimum distance of 0.075. Prefer an authored palette
+candidate separated from error/warning/success too; otherwise rotate the info hue
+in OKLCH with bounded candidates. Update the entire info family together. This is
+an import policy, not a change to session indicators or the live VS Code palette.
+
+User-message backgrounds need at least 1.1 contrast against the chat canvas while
+retaining readable message text. Strengthen a faint existing bubble in its original
+light/dark direction, or derive a neutral surface when the bubble equals the canvas.
+Visible authored bubbles and syntax/diff colors remain unchanged by this pass.
 
 `vscode/import.ts` owns file conversion for Settings and the maintainer CLI.
 It accepts bounded JSON/JSONC with literal VS Code colors. Missing neutral roles
