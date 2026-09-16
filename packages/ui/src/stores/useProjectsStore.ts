@@ -7,6 +7,7 @@ import type { ProjectEntry } from '@/lib/api/types';
 import type { DesktopSettings } from '@/lib/desktop';
 import { type SettingsSyncedDetail, updateDesktopSettings } from '@/lib/persistence';
 import { createProjectIdFromPath } from '@/lib/projectId';
+import { parseNonEmptyTrimmedString } from '@/lib/settings/parsers';
 import { getDeferredSafeStorage } from './utils/safeStorage';
 import { useDirectoryStore } from './useDirectoryStore';
 import { streamDebugEnabled } from '@/stores/utils/streamDebug';
@@ -144,14 +145,6 @@ const normalizeDefaultModel = (value: unknown): string | undefined => {
     return undefined;
   }
   return trimmed;
-};
-
-const normalizeOptionalProjectString = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed || undefined;
 };
 
 const normalizeIconBackground = (value: unknown): string | null => {
@@ -299,7 +292,7 @@ const sanitizeProjects = (value: unknown): ProjectEntry[] => {
     if (typeof candidate.color === 'string' && candidate.color.trim().length > 0) {
       project.color = candidate.color.trim();
     }
-    const defaultAgent = normalizeOptionalProjectString(candidate.defaultAgent);
+    const defaultAgent = parseNonEmptyTrimmedString(candidate.defaultAgent, {});
     if (defaultAgent) {
       project.defaultAgent = defaultAgent;
     }
@@ -849,7 +842,7 @@ export const useProjectsStore = create<ProjectsStore>()(
           updated.iconBackground = normalizeIconBackground(meta.iconBackground);
         }
         if (meta.defaultAgent !== undefined) {
-          const normalized = normalizeOptionalProjectString(meta.defaultAgent);
+          const normalized = parseNonEmptyTrimmedString(meta.defaultAgent, {});
           if (normalized) {
             updated.defaultAgent = normalized;
           } else {
