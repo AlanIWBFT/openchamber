@@ -107,3 +107,17 @@ VS Code returns 501 for theme management routes and exposes no import controls.
 The import dialog explicitly renders its backdrop when nested inside Settings.
 Base UI omits nested backdrops by default, so a click on the parent's backdrop
 does not dismiss the child modal. Keep dismissal with the dialog primitive.
+
+Agent identity colors are allocated by `lib/agentColors.ts` from the resolved
+theme and full visible agent roster. Build retains `status.success`; the other
+agents use distinct syntax colors, excluding near-duplicates of Build's color.
+Primary/all-mode agents allocate before subagents. Sorting by name makes results
+independent of server ordering or picker search. Reuse starts only after the
+available distinct colors are exhausted; unknown historical names have a stable
+syntax fallback without extending the roster.
+
+`hooks/useAgentColors.ts` shares one resolver per immutable theme/agent-array pair
+across composer menus, mobile controls and message footers. Weak keys release
+obsolete snapshots. A theme or roster replacement recomputes assignments; ordinary
+message renders and unrelated config changes reuse them. CSS classes and inline
+labels resolve the same existing theme variables, with no separate agent palette.

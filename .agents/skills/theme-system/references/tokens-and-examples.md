@@ -53,6 +53,9 @@ Primary means “act”; selection means “currently active.” Do not use prim
 
 Use `syntax.*` for code display: backgrounds/text, keywords, strings and diff highlights. Agent and Git-identity markers may reuse the palette to distinguish entities; those colors carry no status meaning. Layout surfaces, borders and interaction states use their own roles.
 
+Build's agent identity intentionally stays on `status.success`. Reserve that
+visible color when allocating syntax colors to other agents.
+
 ## Usage
 
 Prefer semantic utility classes when available:

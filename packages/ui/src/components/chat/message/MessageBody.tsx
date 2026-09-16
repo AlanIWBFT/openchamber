@@ -59,7 +59,7 @@ import {
 } from '@/lib/reviewFlow';
 import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
 import { useProviderLogo } from '@/hooks/useProviderLogo';
-import { getAgentColor } from '@/lib/agentColors';
+import { useAgentColors } from '@/hooks/useAgentColors';
 import { isCapacitorMobileApp } from '@/apps/mobileNativeChrome';
 import { WorktreeRequiresGitRepositoryError } from '@/lib/worktrees/worktreeCreate';
 
@@ -2585,11 +2585,7 @@ const AssistantMessageBody = React.memo(({
                                             onError={handleFooterLogoError}
                                         />
                                     ) : (
-                                        <Icon
-                                            name="brain-ai-3"
-                                            className="h-3.5 w-3.5 flex-shrink-0"
-                                            style={{ color: `var(${getAgentColor(footerAgentName).var})` }}
-                                        />
+                                        <AgentModelIcon agentName={footerAgentName} />
                                     )}
                                     <span data-fact-model className="truncate">{footerModelName}</span>
                                 </span>
@@ -2702,6 +2698,12 @@ const AssistantMessageBody = React.memo(({
         </div>
     );
 });
+
+function AgentModelIcon({ agentName }: { agentName: string | undefined }) {
+    // Roster/color changes need to update this icon, not rerender the transcript body.
+    const getAgentColor = useAgentColors();
+    return <Icon name="brain-ai-3" className="h-3.5 w-3.5 flex-shrink-0" style={{ color: `var(${getAgentColor(agentName).var})` }} />;
+}
 
 const MessageBody = React.memo(({ isUser, ...props }: MessageBodyProps) => {
 

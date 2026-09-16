@@ -623,6 +623,16 @@
     --agent-color-bg: var(--syntax-variable);
   }
 
+  .agent-string {
+    --agent-color: var(--syntax-string);
+    --agent-color-bg: var(--syntax-string);
+  }
+
+  .agent-operator {
+    --agent-color: var(--syntax-operator);
+    --agent-color-bg: var(--syntax-operator);
+  }
+
   /* Apply colors with opacity for badges */
   .agent-badge {
     background: rgb(from var(--agent-color-bg) r g b / 0.1);
