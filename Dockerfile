@@ -11,6 +11,11 @@ COPY packages/web/package.json ./packages/web/
 COPY packages/electron/package.json ./packages/electron/
 COPY packages/vscode/package.json ./packages/vscode/
 COPY packages/mobile/package.json ./packages/mobile/
+COPY packages/sdk/package.json ./packages/sdk/
+# `packages/sdk/examples/*` are workspaces too, and a frozen install fails
+# when a workspace is missing. Copy the directory rather than each manifest
+# so a new example does not silently break the image build.
+COPY packages/sdk/examples ./packages/sdk/examples
 RUN bun install --frozen-lockfile --ignore-scripts
 
 FROM deps AS builder
@@ -20,6 +25,10 @@ COPY . .
 # and the patches/ directory is not present yet. Apply patch-package here, after
 # the full source copy, so the web bundle ships the patched ghostty-web.
 RUN bunx patch-package
+# The server imports @openchamber/sdk at runtime, and deps installed with
+# --ignore-scripts, so the root postinstall never built it. Build it here
+# so the runtime stage can copy the output.
+RUN bun run --cwd packages/sdk build
 RUN bun run build:web
 
 FROM oven/bun:1.4.2 AS runtime
@@ -69,6 +78,8 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages/web/node_modules ./packages/web/node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/packages/web/package.json ./packages/web/package.json
+COPY --from=builder /app/packages/sdk/package.json ./packages/sdk/package.json
+COPY --from=builder /app/packages/sdk/dist ./packages/sdk/dist
 COPY --from=builder /app/packages/web/bin ./packages/web/bin
 COPY --from=builder /app/packages/web/server ./packages/web/server
 COPY --from=builder /app/packages/web/dist ./packages/web/dist
