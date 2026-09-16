@@ -27,3 +27,10 @@ Sidebar root/runtime changes remount the scoped tree. Its bounded module cache
 provides continuity between mounts; request cancellation for collapsed paths
 stops queued batches, while already-started reads may populate the same-scope
 cache. Runtime changes and unmount invalidate those active reads.
+
+Sidebar rows use browser `content-visibility: auto` to skip layout and paint for
+offscreen row contents without unmounting them. The explicit row height follows
+the meta line height, the icon minimum and vertical padding, so remembered
+offscreen dimensions cannot retain an old font size. Expanded child lists
+sit outside each row's containment, so expansion, scrolling, focus and menus keep
+their existing DOM structure. Reopening still refreshes directory contents.

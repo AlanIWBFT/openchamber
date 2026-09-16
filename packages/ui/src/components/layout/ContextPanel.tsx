@@ -726,6 +726,12 @@ export const ContextPanel: React.FC = () => {
       return;
     }
 
+    // Portalled menus and dialogs own Escape even though their React events
+    // still pass through this panel's capture handler.
+    if (event.target instanceof Node && !event.currentTarget.contains(event.target)) {
+      return;
+    }
+
     // Terminal owns Escape so the PTY receives it (e.g. Vim Normal mode).
     // The terminal input listens in the bubble phase; stopping capture here
     // would swallow the key before the terminal ever sees it (issue #2644).
