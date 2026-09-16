@@ -28,7 +28,7 @@ import {
   readEmbeddedThemeBootstrap,
   readEmbeddedThemeSearchParams,
 } from './theme-embedded-bootstrap';
-import { isValidTheme } from './theme-validation';
+import { themeSchema, themeListSchema } from '@/lib/theme/definition';
 import { getSyncedThemeFromPayload, getSyncedThemeVariant } from './theme-sync-payload';
 import { getRuntimeKey, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import {
@@ -209,8 +209,9 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
 
   useEffect(() => {
     const handleThemeHmr = (event: Event) => {
-      const theme = (event as CustomEvent<unknown>).detail;
-      if (!isValidTheme(theme)) return;
+      const parsedTheme = themeSchema.safeParse((event as CustomEvent<unknown>).detail);
+      if (!parsedTheme.success) return;
+      const theme = parsedTheme.data;
 
       const nextTheme = withPrColors(theme);
       setDevelopmentThemes((previous) => {
@@ -287,8 +288,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
 
       const payload = await res.json();
       if (request !== customThemesRequestRef.current || runtimeKey !== getRuntimeKey()) return;
-      const incoming = Array.isArray(payload?.themes) ? payload.themes : [];
-      const normalized = incoming.filter(isValidTheme);
+      const normalized = themeListSchema.parse(payload?.themes);
       setCustomThemes(normalized);
     } catch {
       // ignore

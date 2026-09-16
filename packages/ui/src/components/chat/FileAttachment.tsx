@@ -331,7 +331,7 @@ const VSCodeFileChip = memo(({ file, onRemove }: FileChipProps) => {
         }
       }}
       className="inline-flex items-center gap-1 text-xs pr-1 rounded-sm border border-solid bg-transparent text-foreground not-italic hover:opacity-90 transition-colors text-left"
-      style={{ borderColor: 'var(--syntax-punctuation)' }}
+      style={{ borderColor: 'var(--interactive-border)' }}
       title={file.vscodePath}
     >
       <span
@@ -503,7 +503,7 @@ export const ActiveEditorFileSuggestion = memo(() => {
       {showSelectionPin && (
         <div
           className="inline-flex items-center gap-1 text-xs pr-1 rounded-sm italic text-muted-foreground border border-dashed bg-transparent"
-          style={{ borderColor: 'var(--syntax-punctuation)' }}
+          style={{ borderColor: 'var(--interactive-border)' }}
           title={relativePath}
         >
           <button
@@ -522,7 +522,7 @@ export const ActiveEditorFileSuggestion = memo(() => {
       {showFileAdd && (
         <div
           className="inline-flex items-center gap-1 text-xs pr-1 rounded-sm italic text-muted-foreground border border-dashed bg-transparent"
-          style={{ borderColor: 'var(--syntax-punctuation)' }}
+          style={{ borderColor: 'var(--interactive-border)' }}
           title={relativePath}
         >
           <button

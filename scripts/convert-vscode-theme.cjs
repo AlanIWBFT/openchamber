@@ -247,10 +247,6 @@ function normalizeZedTheme(theme) {
 // Generate markdown colors from theme palette
 function generateMarkdownColors(primary, surface, syntax) {
   return {
-    heading1: primary.base,
-    heading2: primary.hover,
-    heading3: syntax.base.keyword,
-    heading4: surface.foreground,
     link: syntax.base.keyword,
     linkHover: primary.hover,
     inlineCode: syntax.base.function,

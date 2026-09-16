@@ -35,6 +35,11 @@ Use status colors only for actual feedback.
 
 Each family may expose foreground, background, and border variants.
 
+`status.*Foreground` is text on a solid status fill. On a tinted status background,
+use the computed `--status-error-text`, `--status-warning-text`,
+`--status-success-text` or `--status-info-text`. Tinted buttons use the shared
+Button variants, whose labels are contrast-adjusted independently of the fill.
+
 ### Primary
 
 - `primary.base`: primary CTA
@@ -77,6 +82,9 @@ const { currentTheme } = useThemeSystem();
 
 Input footers stay transparent over the elevated input surface.
 
+Inputs, cards, dropdowns and dialogs use the elevated role. Component-level
+opacity is allowed; it changes the strength of the same semantic surface.
+
 ### Active Item
 
 ```tsx
@@ -89,7 +97,7 @@ Input footers stay transparent over the elevated input surface.
 ### Error Feedback
 
 ```tsx
-<div className="bg-[var(--status-error-background)] text-[var(--status-error-foreground)]" />
+<div className="bg-[var(--status-error-background)] text-[var(--status-error-text)]" />
 ```
 
 ### Neutral Card

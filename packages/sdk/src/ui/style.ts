@@ -14,6 +14,11 @@ const OC_ALIAS = {
   'interactive-focus-ring': 'focus',
   'primary': 'primary',
   'primary-foreground': 'primary-fg',
+  'primary-text': 'primary-text',
+  'success-text': 'success-text',
+  'warning-text': 'warning-text',
+  'error-text': 'error-text',
+  'info-text': 'info-text',
   'status-success': 'success',
   'status-warning': 'warning',
   'status-error': 'error',
@@ -40,6 +45,8 @@ const selection = v('interactive-selection', 'transparent');
 const selectionFg = v('interactive-selection-foreground', 'inherit');
 const focus = v('interactive-focus-ring', 'currentColor');
 const primary = v('primary', 'currentColor');
+const primaryText = v('primary-text', 'inherit');
+const errorText = v('error-text', 'inherit');
 const font = v('font-sans', 'inherit');
 const mono = v('font-mono', 'monospace');
 const radius = v('radius', '9px');
@@ -53,7 +60,7 @@ const focusRing = `box-shadow: 0 0 0 2px ${focus};`;
 const tone = (name: 'success' | 'warning' | 'error' | 'info'): string => {
   const color = v(`status-${name}`, 'currentColor');
   return `
-.oc-sdk[data-tone="${name}"], .oc-sdk [data-tone="${name}"] { --oc-sdk-tone: ${color}; }`;
+.oc-sdk[data-tone="${name}"], .oc-sdk [data-tone="${name}"] { --oc-sdk-tone: ${color}; --oc-sdk-tone-text: ${v(`${name}-text`, 'inherit')}; }`;
 };
 
 export const UI_CSS = `
@@ -67,12 +74,12 @@ export const UI_CSS = `
 .oc-sdk-mono { font-family: ${mono}; }
 .oc-sdk-muted { color: ${muted}; }
 ${tone('success')}${tone('warning')}${tone('error')}${tone('info')}
-.oc-sdk[data-tone="primary"], .oc-sdk [data-tone="primary"] { --oc-sdk-tone: ${primary}; }
+.oc-sdk[data-tone="primary"], .oc-sdk [data-tone="primary"] { --oc-sdk-tone: ${primary}; --oc-sdk-tone-text: ${primaryText}; }
 
 .oc-sdk-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px; border: 1px solid transparent; border-radius: ${radius}; font-size: 0.875rem; font-weight: 500; line-height: 1; white-space: nowrap; transition: background 150ms ease-out, color 150ms ease-out; }
 .oc-sdk-btn[data-size="sm"] { height: 32px; padding: 0 10px; font-size: 0.8125rem; }
 .oc-sdk-btn[data-size="xs"] { height: 24px; padding: 0 8px; font-size: 0.75rem; border-radius: 6px; }
-.oc-sdk-btn[data-variant="default"] { color: ${primary}; background: ${mix(primary, 10, bg)}; border-color: ${mix(primary, 12)}; }
+.oc-sdk-btn[data-variant="default"] { color: ${primaryText}; background: ${mix(primary, 10, bg)}; border-color: ${mix(primary, 12)}; }
 .oc-sdk-btn[data-variant="default"]:hover { background: ${mix(primary, 16, bg)}; }
 .oc-sdk-btn[data-variant="default"]:active { background: ${mix(primary, 22, bg)}; }
 .oc-sdk-btn[data-variant="secondary"] { background: ${hover}; }
@@ -82,7 +89,7 @@ ${tone('success')}${tone('warning')}${tone('error')}${tone('info')}
 .oc-sdk-btn[data-variant="ghost"] { background: transparent; }
 .oc-sdk-btn[data-variant="ghost"]:hover { background: ${hover}; }
 .oc-sdk-btn[data-variant="ghost"]:active { background: ${active}; }
-.oc-sdk-btn[data-variant="destructive"] { --oc-sdk-tone: ${v('status-error', 'red')}; color: var(--oc-sdk-tone); background: ${mix('var(--oc-sdk-tone)', 7, bg)}; border-color: ${mix('var(--oc-sdk-tone)', 12)}; }
+.oc-sdk-btn[data-variant="destructive"] { --oc-sdk-tone: ${v('status-error', 'red')}; color: ${errorText}; background: ${mix('var(--oc-sdk-tone)', 7, bg)}; border-color: ${mix('var(--oc-sdk-tone)', 12)}; }
 .oc-sdk-btn[data-variant="destructive"]:hover { background: ${mix('var(--oc-sdk-tone)', 9, bg)}; }
 .oc-sdk-btn[data-variant="destructive"]:active { background: ${mix('var(--oc-sdk-tone)', 11, bg)}; }
 .oc-sdk-btn[data-loading="true"] { opacity: .5; pointer-events: none; }
@@ -91,7 +98,7 @@ ${tone('success')}${tone('warning')}${tone('error')}${tone('info')}
 .oc-sdk-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .oc-sdk-field-label { font-size: 0.8125rem; font-weight: 500; }
 .oc-sdk-field-note { font-size: 0.75rem; color: ${muted}; }
-.oc-sdk-field[data-invalid="true"] .oc-sdk-field-note { color: ${v('status-error', 'red')}; }
+.oc-sdk-field[data-invalid="true"] .oc-sdk-field-note { color: ${errorText}; }
 .oc-sdk-input { display: block; width: 100%; min-width: 0; height: 36px; padding: 0 12px; border: 0; border-radius: ${radius}; background: ${elevated}; color: ${fg}; font-size: 0.875rem; line-height: 1.45; appearance: none; box-shadow: inset 0 0 0 1px ${mix(border, 60)}; transition: background 150ms ease-out, box-shadow 150ms ease-out; }
 textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
 .oc-sdk-input::placeholder { color: ${muted}; }
@@ -122,7 +129,7 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
 .oc-sdk-option { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 8px; font-size: 0.8125rem; text-align: left; }
 .oc-sdk-option[data-active="true"] { background: ${hover}; }
 .oc-sdk-option[aria-selected="true"] { background: ${selection}; color: ${selectionFg}; }
-.oc-sdk-option[data-destructive="true"] { color: ${v('status-error', 'red')}; }
+.oc-sdk-option[data-destructive="true"] { color: ${errorText}; }
 .oc-sdk-option[data-destructive="true"][data-active="true"] { background: ${mix(v('status-error', 'red'), 10)}; }
 .oc-sdk-option-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .oc-sdk-option-hint { flex: 0 0 auto; font-size: 0.75rem; color: ${muted}; }
@@ -152,7 +159,7 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
 .oc-sdk-tab-count { font-size: 0.75rem; font-variant-numeric: tabular-nums; color: ${muted}; }
 
 .oc-sdk-badge { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 9999px; font-size: 11px; font-weight: 500; line-height: 16px; white-space: nowrap; background: ${hover}; color: ${muted}; }
-.oc-sdk-badge[data-tone] { color: var(--oc-sdk-tone); background: ${mix('var(--oc-sdk-tone)', 15)}; }
+.oc-sdk-badge[data-tone] { color: var(--oc-sdk-tone-text, var(--oc-sdk-tone)); background: ${mix('var(--oc-sdk-tone)', 15)}; }
 
 .oc-sdk-list { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .oc-sdk-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 6px; text-align: left; transition: background 120ms ease-out; }
@@ -178,7 +185,7 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
 
 .oc-sdk-banner { display: flex; align-items: flex-start; gap: 12px; padding: 8px 12px; border: 1px solid ${mix('var(--oc-sdk-tone)', 40)}; border-radius: 8px; background: ${mix('var(--oc-sdk-tone)', 10)}; }
 .oc-sdk-banner-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.oc-sdk-banner-title { font-size: 0.8125rem; font-weight: 500; color: var(--oc-sdk-tone); }
+.oc-sdk-banner-title { font-size: 0.8125rem; font-weight: 500; color: var(--oc-sdk-tone-text, var(--oc-sdk-tone)); }
 .oc-sdk-banner-body { font-size: 0.8125rem; color: ${muted}; }
 .oc-sdk-banner-action { flex: 0 0 auto; }
 
@@ -195,6 +202,6 @@ textarea.oc-sdk-input { height: auto; padding: 8px 12px; resize: vertical; }
 .oc-sdk-menu { position: relative; display: inline-flex; }
 
 .oc-sdk-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.oc-sdk-text a { color: ${primary}; text-decoration: underline; text-underline-offset: 2px; }
+.oc-sdk-text a { color: ${primaryText}; text-decoration: underline; text-underline-offset: 2px; }
 .oc-sdk-text img { display: block; max-width: 100%; margin: 8px 0; border-radius: 8px; border: 1px solid ${mix(border, 60)}; }
 `;

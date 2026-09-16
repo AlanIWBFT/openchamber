@@ -519,10 +519,6 @@
   --markdown-code-block-line-height: var(--markdown-code-block-line-height);
 
   /* Markdown color variables */
-  --markdown-heading1: var(--markdown-heading1);
-  --markdown-heading2: var(--markdown-heading2);
-  --markdown-heading3: var(--markdown-heading3);
-  --markdown-heading4: var(--markdown-heading4);
   --markdown-link: var(--markdown-link);
   --markdown-link-hover: var(--markdown-link-hover);
   --markdown-list-marker: var(--markdown-list-marker);

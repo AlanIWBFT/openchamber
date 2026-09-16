@@ -122,7 +122,7 @@ const isLinearIssueListPriority = (value: string): value is LinearIssueListPrior
 
 const labelChipStyle = (color: string | null): React.CSSProperties | undefined => {
   if (!color) {
-    return { backgroundColor: 'color-mix(in srgb, var(--surface-mutedForeground) 12%, transparent)' };
+    return { backgroundColor: 'color-mix(in srgb, var(--surface-muted-foreground) 12%, transparent)' };
   }
   return {
     color,

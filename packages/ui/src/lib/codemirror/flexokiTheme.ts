@@ -5,6 +5,7 @@ import { HighlightStyle, defaultHighlightStyle, syntaxHighlighting } from '@code
 import { classHighlighter, tags as t } from '@lezer/highlight';
 
 import type { Theme } from '@/types/theme';
+import { resolveSyntaxTokens } from '../theme/syntax';
 
 export function createFlexokiCodeMirrorTheme(
   theme: Theme,
@@ -17,7 +18,7 @@ export function createFlexokiCodeMirrorTheme(
 
   const monoFont = theme.config?.fonts?.mono || 'monospace';
   const highlights = theme.colors.syntax.highlights || {};
-  const tokens = theme.colors.syntax.tokens || {};
+  const tokens = resolveSyntaxTokens(theme.colors.syntax);
 
   const contentFontSize = options?.fontSize ? `${options.fontSize}px` : 'var(--text-code)';
 

@@ -1092,10 +1092,6 @@ html:not(.dark) .chat-scroll {
 .markdown-content.markdown-reasoning {
   font-size: var(--text-markdown);
   color: var(--surface-muted-foreground);
-  --markdown-heading1: inherit;
-  --markdown-heading2: inherit;
-  --markdown-heading3: inherit;
-  --markdown-heading4: inherit;
   --markdown-link: inherit;
   --markdown-link-hover: var(--surface-foreground);
   --markdown-blockquote: inherit;

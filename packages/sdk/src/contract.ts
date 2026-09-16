@@ -25,6 +25,12 @@ export type HostThemeTokens = {
   selectionForeground: string;
   /** Text on `primary`. */
   primaryForeground: string;
+  /** Host-computed text on neutral or tinted surfaces, not on a solid fill. */
+  primaryText: string;
+  successText: string;
+  warningText: string;
+  errorText: string;
+  infoText: string;
   success: string;
   warning: string;
   error: string;

@@ -118,7 +118,7 @@ const JsonRow = React.memo(
 
     return (
       <div
-        className="flex items-center py-0.5 px-2 hover:bg-[var(--surface-hover)] rounded-sm cursor-default font-mono text-xs leading-5 whitespace-nowrap"
+        className="flex items-center py-0.5 px-2 rounded-sm cursor-default font-mono text-xs leading-5 whitespace-nowrap"
         style={{ paddingLeft: `${indent + 8}px` }}
         onContextMenu={handleContextMenu}
       >
@@ -156,7 +156,7 @@ const JsonRow = React.memo(
               {node.type === 'object' ? '{' : '['}
             </span>
           ) : (
-            <span style={{ color: 'var(--surface-mutedForeground)' }}>
+            <span className="text-muted-foreground">
               {getCollapsedPreview(node)}
             </span>
           )

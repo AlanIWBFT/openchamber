@@ -37,6 +37,11 @@ const readyPayload = {
       active: '#e5e5e5',
       selectionForeground: '#111111',
       primaryForeground: '#ffffff',
+      primaryText: '#123456',
+      successText: '#224433',
+      warningText: '#664422',
+      errorText: '#882233',
+      infoText: '#334488',
       success: '#16a34a',
       warning: '#d97706',
       error: '#dc2626',
@@ -55,6 +60,19 @@ const readyPayload = {
 };
 
 describe('parseHostMessage', () => {
+  test('requires computed theme text colors and rejects malformed values', () => {
+    const tokens = { ...readyPayload.theme.tokens, primaryText: '#112233', successText: '#224433', warningText: '#664422', errorText: '#882233', infoText: '#334488' };
+    const envelope = { channel: OPENCHAMBER_SDK_CHANNEL, v: OPENCHAMBER_SDK_API_VERSION, type: 'ready', payload: { ...readyPayload, theme: { ...readyPayload.theme, tokens } } };
+    const message = hostMessageSchema.parse(envelope);
+    expect(message?.type).toBe('ready');
+    if (message?.type !== 'ready') throw new Error('Expected ready snapshot');
+    expect(message.payload.theme.tokens).toEqual(tokens);
+    for (const key of ['primaryText', 'successText', 'warningText', 'errorText', 'infoText']) {
+      const missing = Object.fromEntries(Object.entries(tokens).filter(([name]) => name !== key));
+      expect(hostMessageSchema.safeParse({ ...envelope, payload: { ...envelope.payload, theme: { ...envelope.payload.theme, tokens: missing } } }).success).toBe(false);
+    }
+    expect(hostMessageSchema.safeParse({ ...envelope, payload: { ...envelope.payload, theme: { ...envelope.payload.theme, tokens: { ...tokens, primaryText: '' } } } }).success).toBe(false);
+  });
   test('accepts ready', () => {
     const message = parseHostMessage({
       channel: OPENCHAMBER_SDK_CHANNEL,

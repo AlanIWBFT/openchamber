@@ -1406,10 +1406,8 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                 style={{ paddingLeft: ROW_TEXT_LEFT_PX + depth * ROW_DEPTH_STEP_PX }}
                 className={cn(
                   'group relative my-0.5 flex cursor-pointer items-center rounded-md py-1 pr-1.5',
-                  // Active (currently open) session gets a subtle primary tint;
-                  // multi-select highlight takes precedence when both apply.
-                  isActive && !isRowSelected && 'bg-primary/10',
-                  isRowSelected && 'bg-interactive-selection',
+                  (isActive || isRowSelected) && 'bg-interactive-selection text-interactive-selection-foreground',
+                  isRowSelected && 'ring-1 ring-inset ring-border',
                 )}
               />
             }
@@ -1443,7 +1441,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                       {/* Unread emphasis is color-only: a font-weight change
                           would reflow the truncated title and cause a micro
                           horizontal shift when the status flips. */}
-                      <div className={cn('block min-w-0 flex-1 truncate typography-ui-label font-normal', isActive ? 'text-primary' : needsAttention ? 'text-foreground' : 'text-foreground/80')}>{renderHighlightedText(sessionTitle, normalizedSessionSearchQuery)}</div>
+                      <div className={cn('block min-w-0 flex-1 truncate typography-ui-label font-normal', isActive || isRowSelected ? 'text-interactive-selection-foreground' : needsAttention ? 'text-foreground' : 'text-foreground/80')}>{renderHighlightedText(sessionTitle, normalizedSessionSearchQuery)}</div>
                       {!archivedBucket && sessionDirectory && (renderContext === 'recent'
                         || (sessionGroupingMode === 'flat' && node.worktree
                           && normalizePath(node.worktree.path) !== normalizePath(node.worktree.projectDirectory))) ? (

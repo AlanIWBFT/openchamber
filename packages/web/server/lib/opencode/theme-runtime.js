@@ -34,46 +34,24 @@ export const createThemeRuntime = (dependencies) => {
     const status = colors.status;
     const syntax = colors.syntax;
     const syntaxBase = syntax && typeof syntax === 'object' ? syntax.base : null;
-    const syntaxHighlights = syntax && typeof syntax === 'object' ? syntax.highlights : null;
 
-    if (!primary || !surface || !interactive || !status || !syntaxBase || !syntaxHighlights) {
+    if (!primary || !surface || !interactive || !status || !syntaxBase) {
       return null;
     }
 
-    // Minimal fields required by CSSVariableGenerator and diff/syntax rendering.
+    // Authored inputs only. The UI resolves optional roles before rendering.
     const required = [
       primary.base,
-      primary.foreground,
       surface.background,
       surface.foreground,
       surface.muted,
       surface.mutedForeground,
       surface.elevated,
-      surface.elevatedForeground,
-      surface.subtle,
       interactive.border,
-      interactive.selection,
-      interactive.selectionForeground,
-      interactive.focusRing,
-      interactive.hover,
       status.error,
-      status.errorForeground,
-      status.errorBackground,
-      status.errorBorder,
       status.warning,
-      status.warningForeground,
-      status.warningBackground,
-      status.warningBorder,
       status.success,
-      status.successForeground,
-      status.successBackground,
-      status.successBorder,
       status.info,
-      status.infoForeground,
-      status.infoBackground,
-      status.infoBorder,
-      syntaxBase.background,
-      syntaxBase.foreground,
       syntaxBase.keyword,
       syntaxBase.string,
       syntaxBase.number,
@@ -82,9 +60,6 @@ export const createThemeRuntime = (dependencies) => {
       syntaxBase.type,
       syntaxBase.comment,
       syntaxBase.operator,
-      syntaxHighlights.diffAdded,
-      syntaxHighlights.diffRemoved,
-      syntaxHighlights.lineNumber,
     ];
 
     if (!required.every(isValidThemeColor)) {

@@ -24,6 +24,10 @@ Add to `packages/ui/src/lib/theme/themes/`:
 
 Use existing themes (e.g., `flexoki-dark.json`) as reference for the full structure.
 
+Read `packages/ui/src/lib/theme/DOCUMENTATION.md` before changing the format or
+its consumers. JSON stores authored colors and exceptions; `requireTheme`
+resolves the complete runtime palette. Keep syntax inheritance in `syntax.ts`.
+
 ### 2. Register in presets.ts
 
 ```typescript

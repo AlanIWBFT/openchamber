@@ -55,8 +55,8 @@ const basename = (path: string): string => {
     return segments[segments.length - 1] ?? path;
 };
 
-const ENTRY_ACTION_CLASS = 'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[var(--surface-mutedForeground)] hover:bg-[var(--interactive-hover)] hover:text-[var(--surface-foreground)]';
-const ENTRY_LABEL_CLASS = 'text-[10px] font-medium uppercase tracking-wide text-[var(--surface-mutedForeground)] opacity-60';
+const ENTRY_ACTION_CLASS = 'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-[var(--interactive-hover)] hover:text-[var(--surface-foreground)]';
+const ENTRY_LABEL_CLASS = 'text-[10px] font-medium uppercase tracking-wide text-muted-foreground opacity-60';
 
 const DraftPreviewEntry: React.FC<{
     draft: InlineCommentDraft;
@@ -110,8 +110,8 @@ const DraftPreviewEntry: React.FC<{
     return (
         <div>
             <div className="flex items-center gap-1.5 px-3 py-1.5"
-                style={{ backgroundColor: 'color-mix(in srgb, var(--surface-mutedForeground) 8%, transparent)' }}>
-                <span className="text-xs font-medium text-[var(--surface-mutedForeground)]">{index + 1}.</span>
+                style={{ backgroundColor: 'color-mix(in srgb, var(--surface-muted-foreground) 8%, transparent)' }}>
+                <span className="text-xs font-medium text-muted-foreground">{index + 1}.</span>
                 <span className="min-w-0 flex-1 truncate text-xs font-medium text-[var(--surface-foreground)]" title={title}>
                     {title}
                 </span>
@@ -180,7 +180,7 @@ const DraftPreviewEntry: React.FC<{
                                     }
                                 }}
                                 placeholder={t('chat.textSelection.comment.placeholder')}
-                                className="mt-0.5 w-full resize-none rounded-md border border-[var(--interactive-border)] bg-[var(--surface-background)] px-2 py-1 text-sm text-[var(--surface-foreground)] outline-none placeholder:text-[var(--surface-mutedForeground)]"
+                                className="mt-0.5 w-full resize-none rounded-md border border-[var(--interactive-border)] bg-[var(--surface-background)] px-2 py-1 text-sm text-[var(--surface-foreground)] outline-none placeholder:text-muted-foreground"
                                 style={{ minHeight: 0 }}
                             />
                         ) : (

@@ -18,6 +18,7 @@ import {
 import { guestMessageSchema } from '@openchamber/sdk/schemas';
 
 import { useThemeSystem } from '@/contexts/useThemeSystem';
+import { getReadableThemeColors } from '@/lib/theme/readableColors';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useI18n } from '@/lib/i18n';
@@ -168,6 +169,7 @@ export const PluginPane: React.FC<PluginPaneProps> = ({
     [currentSessionId, session, sessionBusy],
   );
 
+  const readableColors = React.useMemo(() => getReadableThemeColors(currentTheme), [currentTheme]);
   const ready = React.useMemo<HostReadyContext>(() => ({
     theme: {
       mode: currentTheme.metadata.variant === 'dark' ? 'dark' : 'light',
@@ -185,9 +187,14 @@ export const PluginPane: React.FC<PluginPaneProps> = ({
         mutedSurface: currentTheme.colors.surface.muted,
         elevatedForeground: currentTheme.colors.surface.elevatedForeground,
         active: currentTheme.colors.interactive.active,
-        selectionForeground: currentTheme.colors.interactive.selectionForeground,
+        selectionForeground: readableColors.selectionForeground,
         // Same fallback the app's CSS generator uses for themes without one.
         primaryForeground: currentTheme.colors.primary.foreground ?? '#ffffff',
+        primaryText: readableColors.tinted.primary,
+        successText: readableColors.tinted.success,
+        warningText: readableColors.tinted.warning,
+        errorText: readableColors.tinted.error,
+        infoText: readableColors.tinted.info,
         success: currentTheme.colors.status.success,
         warning: currentTheme.colors.status.warning,
         error: currentTheme.colors.status.error,
@@ -204,7 +211,7 @@ export const PluginPane: React.FC<PluginPaneProps> = ({
     connection: oauthStatus?.connection ?? EMPTY_GUEST_CONNECTION,
     settings: oauthStatus?.settings ?? {},
     item,
-  }), [currentTheme, directory, item, locale, oauthStatus, sessionSnapshot, surface]);
+  }), [currentTheme, readableColors, directory, item, locale, oauthStatus, sessionSnapshot, surface]);
 
   const frameKey = `${guestId}:${guest?.version ?? ''}:${guestEnabled}:service-${guest?.service?.granted ? '1' : '0'}`;
 

@@ -10,7 +10,7 @@ import { Slot } from "@/components/ui/slot"
 // sits atop the dark background.
 const TINT_PRIMARY = [
   "bg-[color-mix(in_srgb,var(--primary-base)_10%,var(--background))]",
-  "text-[var(--primary-base)]",
+  "text-[var(--primary-text)]",
   "border border-[color-mix(in_srgb,var(--primary-base)_12%,transparent)]",
   "hover:bg-[color-mix(in_srgb,var(--primary-base)_16%,var(--background))]",
   "active:bg-[color-mix(in_srgb,var(--primary-base)_22%,var(--background))]",
@@ -22,7 +22,7 @@ const TINT_PRIMARY = [
 
 const TINT_DESTRUCTIVE = [
   "bg-[color-mix(in_srgb,var(--status-error)_7%,var(--background))]",
-  "text-[var(--status-error)]",
+  "text-[var(--error-text)]",
   "border border-[color-mix(in_srgb,var(--status-error)_9%,transparent)]",
   "hover:bg-[color-mix(in_srgb,var(--status-error)_11%,var(--background))]",
   "active:bg-[color-mix(in_srgb,var(--status-error)_16%,var(--background))]",
@@ -34,7 +34,7 @@ const TINT_DESTRUCTIVE = [
 
 const TINT_INFO = [
   "bg-[color-mix(in_srgb,var(--status-info)_4%,var(--background))]",
-  "text-[var(--status-info)]",
+  "text-[var(--info-text)]",
   "border border-[color-mix(in_srgb,var(--status-info)_8%,transparent)]",
   "hover:bg-[color-mix(in_srgb,var(--status-info)_7%,var(--background))]",
   "active:bg-[color-mix(in_srgb,var(--status-info)_10%,var(--background))]",
@@ -66,25 +66,17 @@ const buttonVariants = cva(
           "bg-interactive-hover text-foreground border border-border/60 hover:bg-interactive-active",
         outline:
           "bg-[var(--surface-elevated)] text-foreground border border-border/60 hover:bg-interactive-hover hover:text-foreground",
-        // Flat chip for "one-of-N" toggles. Unselected: hairline border + hover
-        // fill. Selected (aria-pressed): same tinted palette as the default
-        // button (pale primary fill + primary text + soft primary border).
+         // A chip represents selection, independently of the primary action.
         chip: cn(
           "border border-border/60 bg-transparent text-foreground hover:bg-interactive-hover hover:text-foreground",
-          "aria-pressed:bg-[color-mix(in_srgb,var(--primary-base)_10%,var(--background))]",
-          "aria-pressed:text-[var(--primary-base)]",
-          "aria-pressed:border-[color-mix(in_srgb,var(--primary-base)_12%,transparent)]",
-          "aria-pressed:hover:bg-[color-mix(in_srgb,var(--primary-base)_16%,var(--background))]",
-          "aria-pressed:hover:text-[var(--primary-base)]",
-          "dark:aria-pressed:bg-[color-mix(in_srgb,var(--primary-base)_16%,transparent)]",
-          "dark:aria-pressed:border-[color-mix(in_srgb,var(--primary-base)_20%,transparent)]",
-          "dark:aria-pressed:hover:bg-[color-mix(in_srgb,var(--primary-base)_22%,transparent)]",
+           "aria-pressed:bg-interactive-selection aria-pressed:text-interactive-selection-foreground",
+           "aria-pressed:hover:bg-interactive-selection aria-pressed:hover:text-interactive-selection-foreground",
         ),
         secondary:
           "bg-interactive-hover text-foreground hover:bg-interactive-active",
         ghost:
           "text-foreground hover:bg-interactive-hover hover:text-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+         link: "text-[var(--primary-text)] underline-offset-4 hover:underline",
       },
       size: {
         default: "h-9 px-3.5 has-[>svg]:px-3",
