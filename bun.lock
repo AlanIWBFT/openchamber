@@ -143,42 +143,42 @@
     },
     "packages/sdk/examples/config-editor": {
       "name": "@openchamber/example-config-editor",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "dependencies": {
         "@openchamber/sdk": "workspace:*",
       },
     },
     "packages/sdk/examples/github-token": {
       "name": "@openchamber/example-github-token",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "dependencies": {
         "@openchamber/sdk": "workspace:*",
       },
     },
     "packages/sdk/examples/hello-kit": {
       "name": "@openchamber/example-hello-kit",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "dependencies": {
         "@openchamber/sdk": "workspace:*",
       },
     },
     "packages/sdk/examples/service-echo": {
       "name": "@openchamber/example-service-echo",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "dependencies": {
         "@openchamber/sdk": "workspace:*",
       },
     },
     "packages/sdk/examples/tasks-demo": {
       "name": "@openchamber/example-tasks-demo",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "dependencies": {
         "@openchamber/sdk": "workspace:*",
       },
     },
     "packages/sdk/examples/tools-only": {
       "name": "@openchamber/example-tools-only",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "dependencies": {
         "@openchamber/sdk": "workspace:*",
       },

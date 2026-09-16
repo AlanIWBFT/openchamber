@@ -7,11 +7,13 @@ import {
   mountEmpty,
   mountList,
   mountSpinner,
+  mountSearchField,
   mountTabs,
   mountText,
   mountTextField,
   type Tone,
 } from '@openchamber/sdk/ui';
+import { card, codeSample, createExample, element, paragraph } from '../../shared.ts';
 
 // Reads a file outside the open project (`~/.config/opencode/opencode.json`,
 // capability `filesystem`), parses it as JSON, and shows it as a browsable tree
@@ -82,12 +84,15 @@ host.onReady((ctx) => {
   applyHostReady(ctx, document.documentElement);
   if (didMount) return;
   didMount = true;
-  while (root.firstChild) root.removeChild(root.firstChild);
-  const page = column(root, '12px');
-  page.style.padding = '12px';
-
-  const header = row(page);
-  const body = column(page);
+  const app = createExample(root, { number: '05', title: 'Config Studio', description: 'A clear view of your OpenCode configuration. Explore its structure, edit with intent, and review the change before saving.', api: 'Scoped filesystem' });
+  const file = card(app.content, 'opencode.json', CONFIG_PATH);
+  const statusRow = row(file);
+  const state = mountBadge(statusRow, { label: 'Reading file…' });
+  const size = paragraph(statusRow, '', 'inline-note');
+  const header = row(file);
+  const searchRoot = column(file);
+  const body = column(file);
+  codeSample(app.content, 'const file = await host.readFile("~/.config/opencode/opencode.json");\nawait host.writeFile(path, draft);\n// Access is limited to the manifest’s filesystem pattern.');
   const headerMounted: Disposable[] = [];
   const mounted: Disposable[] = [];
 
@@ -96,11 +101,20 @@ host.onReady((ctx) => {
   let parsed: Json | null = null;
   let fileExists = false;
   let parseError: string | null = null;
-  let tab: 'explore' | 'raw' = 'explore';
+  let tab: 'explore' | 'raw' | 'review' = 'explore';
   let path: string[] = [];
   let saving = false;
+  let query = '';
+  let reloadControl: ReturnType<typeof mountButton> | undefined;
+  const search = mountSearchField(searchRoot, { value: '', placeholder: 'Filter keys in this object…', onChange: (value) => { query = value; search.update({ value }); paintBody(); } });
+  const paintState = () => {
+    state.update({ label: saving ? 'Saving…' : draft !== raw ? 'Unsaved changes' : fileExists ? 'Saved on this instance' : 'New file', tone: draft !== raw ? 'warning' : 'neutral' });
+    size.textContent = `${new TextEncoder().encode(draft).length.toLocaleString()} bytes · JSON`;
+    reloadControl?.update({ disabled: saving || draft !== raw });
+  };
 
   const load = async (): Promise<void> => {
+    searchRoot.hidden = true;
     clear(header, headerMounted);
     clear(body, mounted);
     const spinner = mountSpinner(body, { label: 'Reading opencode.json' });
@@ -125,7 +139,8 @@ host.onReady((ctx) => {
       paint();
     } catch (error) {
       spinner.dispose();
-      mounted.push(mountBanner(body, { tone: 'error', title: 'Could not read config', body: errorText(error) }));
+      state.update({ label: 'Read failed', tone: 'error' });
+      mounted.push(mountBanner(body, { tone: 'error', title: 'Could not read config', body: errorText(error), action: { label: 'Try again', onClick: () => void load() } }));
     }
   };
 
@@ -172,17 +187,19 @@ host.onReady((ctx) => {
       items: [
         { id: 'explore', label: 'Explore' },
         { id: 'raw', label: 'Raw' },
+        { id: 'review', label: 'Review' },
       ],
       activeId: tab,
       onChange: (id) => {
-        tab = id === 'raw' ? 'raw' : 'explore';
+        tab = id === 'raw' ? 'raw' : id === 'review' ? 'review' : 'explore';
         paint();
       },
     }));
     if (parsed !== null && isRecord(parsed) && typeof parsed.$schema === 'string') {
       headerMounted.push(mountBadge(header, { label: 'schema', tone: 'info' }));
     }
-    headerMounted.push(mountButton(header, { label: 'Reload', variant: 'ghost', size: 'xs', disabled: saving, onClick: () => void load() }));
+    reloadControl = mountButton(header, { label: 'Reload', variant: 'ghost', size: 'xs', disabled: saving || draft !== raw, onClick: () => void load() });
+    headerMounted.push(reloadControl);
   };
 
   const paintExplore = (): void => {
@@ -236,9 +253,9 @@ host.onReady((ctx) => {
       return;
     }
 
-    const entries = entriesOf(node);
+    const entries = entriesOf(node).filter(([key]) => key.toLowerCase().includes(query.toLowerCase()));
     if (entries.length === 0) {
-      mounted.push(mountEmpty(body, { title: 'Empty', body: Array.isArray(node) ? 'This array has no items.' : 'This object has no keys.' }));
+      mounted.push(mountEmpty(body, { title: query ? 'No matching keys' : 'Empty', body: query ? 'Try a shorter filter.' : Array.isArray(node) ? 'This array has no items.' : 'This object has no keys.' }));
       return;
     }
     mounted.push(mountList(body, {
@@ -255,6 +272,7 @@ host.onReady((ctx) => {
       }),
       onSelect: (id) => {
         path = [...path, id];
+        query = ''; search.update({ value: '' });
         paint();
       },
     }));
@@ -269,12 +287,16 @@ host.onReady((ctx) => {
       rows: 18,
       placeholder: '{\n  "$schema": "https://opencode.ai/config.json"\n}',
       helper: parseError ?? undefined,
-      onChange: (next) => { draft = next; editor.update({ value: next }); },
+      onChange: (next) => { draft = next; editor.update({ value: next }); paintState(); },
     });
     mounted.push(editor);
     const actions = row(body);
-    const button = mountButton(actions, { label: 'Save', size: 'sm', loading: saving, onClick: () => void save() });
+    const button = mountButton(actions, { label: 'Review changes', size: 'sm', disabled: saving, onClick: () => { tab = 'review'; paint(); } });
     mounted.push(button);
+    mounted.push(mountButton(actions, { label: 'Format JSON', variant: 'outline', disabled: saving, onClick: () => {
+      try { draft = JSON.stringify(JSON.parse(draft), null, 2) + '\n'; editor.update({ value: draft }); paintState(); }
+      catch (error) { editor.update({ error: error instanceof Error ? error.message : String(error) }); }
+    } }));
     mounted.push(mountButton(actions, {
       label: 'Discard changes',
       disabled: saving,
@@ -284,10 +306,27 @@ host.onReady((ctx) => {
     }));
   };
 
-  const paint = (): void => {
-    paintHeader();
+  const paintReview = () => {
+    let valid = true;
+    try { JSON.parse(draft); } catch (error) { valid = false; mounted.push(mountBanner(body, { tone: 'error', title: 'Fix the JSON before saving', body: error instanceof Error ? error.message : String(error) })); }
+    const comparison = element('div', 'grid'); body.append(comparison);
+    for (const [title, value] of [['On disk', raw], ['Your draft', draft]]) {
+      const side = card(comparison, title);
+      side.append(element('pre', 'code', value.slice(0, 80000) || 'No file yet'));
+      if (value.length > 80000) paragraph(side, 'Preview limited to 80,000 characters. Saving writes the complete draft.');
+    }
+    const actions = row(body);
+    mounted.push(mountButton(actions, { label: 'Save', loading: saving, disabled: !valid || draft === raw, onClick: () => void save() }));
+    mounted.push(mountButton(actions, { label: 'Back to editor', variant: 'ghost', onClick: () => { tab = 'raw'; paint(); } }));
+    paragraph(body, 'Writes only the declared config file on the connected instance.');
+  };
+  const paintBody = (): void => {
     clear(body, mounted);
-    if (tab === 'raw') paintRaw(); else paintExplore();
+    searchRoot.hidden = tab !== 'explore';
+    if (tab === 'raw') paintRaw(); else if (tab === 'review') paintReview(); else paintExplore();
+  };
+  const paint = (): void => {
+    paintState(); paintHeader(); paintBody();
   };
 
   void load();

@@ -27,7 +27,7 @@ const load = async (name: string, script = 'main') => {
   const window = new Window({ settings: { disableJavaScriptEvaluation: false } });
   windows.push(window, parent);
   Object.defineProperty(window, 'parent', { value: parent });
-  window.document.body.innerHTML = '<main id="root"></main>';
+  window.document.body.innerHTML = '<div id="root"></div>';
   const messages: GuestMessage[] = [];
   spyOn(parent, 'postMessage').mockImplementation((data) => { messages.push(guestMessageSchema.parse(data)); });
   const send = (message: HostMessage) => window.dispatchEvent(new window.MessageEvent('message', { source: parent, data: message }));
@@ -56,7 +56,7 @@ const load = async (name: string, script = 'main') => {
   runInNewContext(await readFile(new URL(`${name}/panel/${script}.js`, examples), 'utf8'), {
     window, document: window.document, HTMLElement: window.HTMLElement, MessageEvent: window.MessageEvent, console,
     HTMLInputElement: window.HTMLInputElement, HTMLStyleElement: window.HTMLStyleElement, HTMLAnchorElement: window.HTMLAnchorElement,
-    TextEncoder, setTimeout: window.setTimeout.bind(window), clearTimeout: window.clearTimeout.bind(window),
+    TextEncoder, URL, crypto, performance, setTimeout: window.setTimeout.bind(window), clearTimeout: window.clearTimeout.bind(window),
   });
   return { window, messages, send, ready, reply, request, button, update };
 };
@@ -99,13 +99,13 @@ describe('checked-in SDK examples', () => {
     app.ready();
     app.reply(app.request('service-status'), { status: 'stopped' });
     await tick();
-    const input = app.window.document.querySelector('input');
+    const input = app.window.document.querySelector('textarea');
     if (!input) throw new Error('Missing message field');
     input.value = 'Echo this';
     input.dispatchEvent(new app.window.Event('input', { bubbles: true }));
     app.ready();
     expect(input.value).toBe('Echo this');
-    app.button('Echo (POST)').click();
+    app.button('Send request').click();
     const request = app.request('service-request');
     if (request.type !== 'service-request') throw new Error('Missing service request');
     expect(request.payload.body).toBe('{"message":"Echo this"}');
@@ -115,14 +115,39 @@ describe('checked-in SDK examples', () => {
     expect(app.window.document.body.textContent).toContain('HTTP 200');
   });
 
+  test('repository refresh failures preserve results and context is composed without sending', async () => {
+    const app = await load('github-token');
+    app.ready({ ...context, connection: { connected: true, account: 'fixture' } });
+    app.reply(app.request('request'), { status: 200, body: JSON.stringify([{ full_name: 'example/repo', html_url: 'https://github.com/example/repo', description: 'A useful project', stargazers_count: 12, private: false }]) });
+    await tick();
+    app.button('Add context to chat').click();
+    const compose = app.request('compose');
+    if (compose.type !== 'compose') throw new Error('Missing compose');
+    expect(compose.payload.text).toContain('example/repo');
+    app.reply(compose);
+    app.button('Refresh').click();
+    app.reply(app.request('request'), { status: 503, body: 'Unavailable' });
+    await tick();
+    expect(app.window.document.body.textContent).toContain('example/repo');
+    expect(app.window.document.body.textContent).toContain('HTTP 503');
+    expect(app.messages.some((message) => message.type === 'prompt' || message.type === 'start-session')).toBe(false);
+  });
+
   test('task commands resolve without ready and repeated ready keeps the panel', async () => {
     const app = await load('tasks-demo');
     app.send({ channel: 'openchamber.sdk', v: 1, type: 'resolve', id: 'command', payload: { command: 'task', args: 'DEMO-2' } });
+    await tick();
+    app.reply(app.request('storage'), { storage: true, op: 'keys', keys: [] });
     await tick();
     const result = app.request('resolve-result');
     if (result.type !== 'resolve-result' || !('item' in result.payload)) throw new Error('Missing task result');
     expect(result.payload.item?.id).toBe('DEMO-2');
     app.ready();
+    for (const message of [...app.messages]) {
+      if (message.type === 'storage' && message.payload.op === 'keys') app.reply(message, { storage: true, op: 'keys', keys: [] });
+      if (message.type === 'storage' && message.payload.op === 'get') app.reply(message, { storage: true, op: 'get', found: false });
+    }
+    await tick();
     app.reply(app.request('badge'));
     const input = app.window.document.querySelector('input');
     if (!input) throw new Error('Missing task search');
@@ -130,7 +155,7 @@ describe('checked-in SDK examples', () => {
     input.dispatchEvent(new app.window.Event('input', { bubbles: true }));
     app.ready();
     expect(input.value).toBe('DEMO-2');
-    expect(app.window.document.querySelectorAll('input').length).toBe(1);
+    expect(app.window.document.querySelectorAll('h1').length).toBe(1);
     expect(app.messages.filter((message) => message.type === 'badge').length).toBe(1);
   });
 
@@ -151,8 +176,10 @@ describe('checked-in SDK examples', () => {
     expect(app.window.document.querySelector('textarea')).toBe(input);
     app.button('Explore').click(); app.button('Raw').click();
     expect(app.window.document.querySelector('textarea')?.value).toBe('{"draft":true}');
+    app.button('Review changes').click();
     app.button('Save').click();
     const pending = app.request('file-write');
+    app.button('Back to editor').click();
     const newer = app.window.document.querySelector('textarea');
     if (!newer) throw new Error('Missing editor during save');
     newer.value = '{"draft":"newer"}';
