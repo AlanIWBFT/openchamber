@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
+import { GUEST_SCROLLBAR_CSS } from '@openchamber/sdk';
 
 import { loadRelayGuestDocument } from './relay-document';
 
@@ -27,6 +28,17 @@ const loader = (assets: Map<string, Asset>, requests: string[]) => async (path: 
 const decode = (url: string) => atob(url.slice(url.indexOf(',') + 1).split('#')[0]);
 
 describe('relay guest documents', () => {
+  test('keeps host scrollbar styles when turning served HTML into a relay document', async () => {
+    const requests: string[] = [];
+    const assets = new Map<string, Asset>([
+      [`${prefix}index.html`, { type: 'text/html', body: `<!doctype html><html><head></head><body><textarea></textarea></body></html><style data-openchamber-guest-styles>${GUEST_SCROLLBAR_CSS}</style>` }],
+    ]);
+    const html = await loadRelayGuestDocument('demo', 'index.html', loader(assets, requests));
+    const document = new DOMParser().parseFromString(html, 'text/html');
+    expect(document.querySelector('[data-openchamber-guest-styles]')?.textContent).toBe(GUEST_SCROLLBAR_CSS);
+    expect(requests).toEqual([`${prefix}index.html`]);
+  });
+
   test('embeds scripts, nested CSS, images and fonts without requesting host UI paths', async () => {
     const assets = new Map<string, Asset>([
       [`${prefix}panel/index.html`, { type: 'text/html', body: '<script src="main.js"></script><link rel="stylesheet" href="css/main.css"><img src="../icon.svg"><div style="background:url(../icon.svg)"></div>' }],

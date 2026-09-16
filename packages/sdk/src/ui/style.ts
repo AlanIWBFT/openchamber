@@ -1,3 +1,5 @@
+import { GUEST_SCROLLBAR_CSS } from '../scrollbar-style.ts';
+
 /** Host CSS variable → `--oc-*` alias written by `theme.ts`. */
 const OC_ALIAS = {
   'surface-background': 'bg',
@@ -65,6 +67,7 @@ const tone = (name: 'success' | 'warning' | 'error' | 'info'): string => {
 };
 
 export const UI_CSS = `
+${GUEST_SCROLLBAR_CSS}
 .oc-sdk { box-sizing: border-box; color: ${fg}; font-family: ${font}; font-size: 0.875rem; line-height: 1.45; }
 .oc-sdk *, .oc-sdk *::before, .oc-sdk *::after { box-sizing: border-box; }
 /* :where() keeps the reset at zero specificity so every primitive class below overrides it. */

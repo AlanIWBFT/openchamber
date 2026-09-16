@@ -27,6 +27,7 @@ import {
 } from './catalog.js';
 import { runGuestFileOperation } from './files.js';
 import { injectGuestAssetTokens, parseGuestUrlToken } from './html-tokens.js';
+import { injectGuestDocumentStyles } from './html-styles.js';
 import { installGuest, installGuestFromZipBuffer, parseInstallRequest, uninstallGuest } from './install.js';
 import { guestUploadMaxBytes, readGuestUploadBody } from './upload.js';
 import { checkAllGuestUpdates, updateGuest, withGuestUpdate } from './updates.js';
@@ -817,8 +818,8 @@ export const registerGuestRoutes = (app, {
         return res.status(404).end();
       }
       const token = parseGuestUrlToken(req.query.oc_url_token);
-      const body = contentType.startsWith('text/html') && token
-        ? injectGuestAssetTokens(raw.toString('utf8'), token)
+      const body = contentType.startsWith('text/html')
+        ? injectGuestDocumentStyles(injectGuestAssetTokens(raw.toString('utf8'), token))
         : raw;
       res.setHeader('Content-Type', contentType);
       res.setHeader('X-Content-Type-Options', 'nosniff');

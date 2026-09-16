@@ -182,6 +182,8 @@ host.onReady((ctx) => {
 });
 ```
 
+OpenChamber supplies thin, theme-aware native scrollbars inside extension documents, including nested lists, tabs, and textareas. The UI kit includes the same defaults for development previews. Existing installed bundles get the host stylesheet without rebuilding. Custom rendering hosts can use `GUEST_SCROLLBAR_CSS` from `@openchamber/sdk`. Authors can override these default rules; an extension's CSP still applies.
+
 ## Schemas
 
 `@openchamber/sdk/schemas` exports the zod schemas for the manifest and the messages, for tools that validate extensions. The main entry has no zod dependency, so a page bundle stays small.
