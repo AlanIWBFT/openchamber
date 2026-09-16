@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { CONTEXT_SURFACES, sortContextSurfaces } from '../lib/surfaces/registry';
 import { useTerminalStore } from './useTerminalStore';
-import { getContextPanelWidthKey, useUIStore } from './useUIStore';
+import { useUIStore } from './useUIStore';
 
 const getContextPanelTabs = (directory: string) => useUIStore.getState().contextPanelByDirectory[directory]?.tabs ?? [];
 
@@ -636,7 +636,6 @@ describe('useUIStore file editor visibility', () => {
     const state = useUIStore.getState();
     expect(state.contextEditorVisible).toBe(false);
     expect(state.contextPanelByDirectory[directory]?.tabs.filter((tab) => tab.mode === 'file')).toHaveLength(2);
-    expect(getContextPanelWidthKey('file', false)).toBe('file-tree');
   });
 
   test('the editor and the tree are never hidden together', () => {
@@ -870,26 +869,32 @@ describe('useUIStore per-surface panel widths', () => {
     expect(panel?.widthFractionByMode.walkthrough).toBeUndefined();
   });
 
-  test('the file surface sizes its tree-only state apart from its editor state', () => {
-    expect(getContextPanelWidthKey('file', false)).toBe('file-tree');
-    expect(getContextPanelWidthKey('file', true)).toBe('file');
-    expect(getContextPanelWidthKey('diff', false)).toBe('diff');
-
+  test('tree resizing and visibility changes preserve the full editor width', () => {
     const store = useUIStore.getState();
-    store.setContextPanelWidth(directory, 'file-tree', 400, 1000);
     store.setContextPanelWidth(directory, 'file', 800, 1000);
+    store.openContextFile(directory, '/repo/a.ts');
+    store.setContextEditorTreeWidth(260);
+    store.toggleContextEditor();
+    expect(useUIStore.getState().contextEditorTreeWidth).toBe(260);
+    store.setContextEditorTreeWidth(300);
+    store.openContextFile(directory, '/repo/b.ts');
+    expect(useUIStore.getState().contextEditorTreeWidth).toBe(300);
+    const fileIds = useUIStore.getState().contextPanelByDirectory[directory]?.tabs.map((tab) => tab.id) ?? [];
+    store.closeContextPanelTabs(directory, fileIds);
 
     const panel = useUIStore.getState().contextPanelByDirectory[directory];
-    expect(panel?.widthFractionByMode['file-tree']).toBe(0.4);
-    expect(panel?.widthFractionByMode.file).toBe(0.8);
+    expect(useUIStore.getState().contextEditorTreeWidth).toBe(300);
+    expect(panel?.widthByMode).toEqual({ file: 800 });
+    expect(panel?.widthFractionByMode).toEqual({ file: 0.8 });
   });
 
-  test('restores the persisted tree-only file width on reload', async () => {
+  test('restores the shared tree width and ignores obsolete tree-only panel widths', async () => {
     useUIStore.persist.setOptions({
       storage: {
         getItem: () => ({
           version: 20,
           state: {
+            contextEditorTreeWidth: 260,
             contextPanelByDirectory: {
               [directory]: {
                 isOpen: true,
@@ -913,8 +918,9 @@ describe('useUIStore per-surface panel widths', () => {
       await useUIStore.persist.rehydrate();
 
       const panel = useUIStore.getState().contextPanelByDirectory[directory];
-      expect(panel?.widthByMode).toEqual({ 'file-tree': 400, file: 800 });
-      expect(panel?.widthFractionByMode).toEqual({ 'file-tree': 0.4, file: 0.8 });
+      expect(useUIStore.getState().contextEditorTreeWidth).toBe(260);
+      expect(panel?.widthByMode).toEqual({ file: 800 });
+      expect(panel?.widthFractionByMode).toEqual({ file: 0.8 });
     } finally {
       useUIStore.persist.setOptions(originalPersistOptions);
     }

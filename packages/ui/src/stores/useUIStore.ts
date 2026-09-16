@@ -21,13 +21,9 @@ import { sanitizeWorkStatusSectionOrder, type WorkStatusSectionId } from '@/comp
 export type PendingDiffScope = 'working' | 'staged' | 'turn' | 'branch' | 'commit' | 'pr';
 export type { ContextPanelMode };
 
-// The file surface with no file open is only its tree, and keeps a width of
-// its own: closing the last file or hiding the editor returns the panel to it,
-// and showing a file restores the editor width stored under 'file'.
-const CONTEXT_PANEL_FILE_TREE_WIDTH_KEY = 'file-tree';
-type ContextPanelWidthKey = ContextPanelMode | typeof CONTEXT_PANEL_FILE_TREE_WIDTH_KEY;
-export const getContextPanelWidthKey = (mode: ContextPanelMode, showsEditor: boolean): ContextPanelWidthKey =>
-  mode === 'file' && !showsEditor ? CONTEXT_PANEL_FILE_TREE_WIDTH_KEY : mode;
+// The docked column and the tree-only panel share one pixel width.
+export const clampContextEditorTreeWidth = (width: number): number =>
+  Math.min(480, Math.max(200, Math.round(width)));
 
 const contextPanelModeSchema = z.enum(['diff', 'walkthrough', 'file', 'context', 'plan', 'chat', 'browser', 'git', 'pr', 'linear', 'notes', 'terminal']);
 const persistedPanelWidthsSchema = z.object({
@@ -165,10 +161,10 @@ type ContextPanelDirectoryState = {
   activeTabId: string | null;
   // Legacy pixel widths and the last resize value, used until the panel's
   // available area is known and a responsive ratio can be captured.
-  widthByMode: Partial<Record<ContextPanelWidthKey, number>>;
+  widthByMode: Partial<Record<ContextPanelMode, number>>;
   // Ratios captured when a user resizes a surface. These remain responsive
   // across window sizes while widthByMode preserves older persisted values.
-  widthFractionByMode: Partial<Record<ContextPanelWidthKey, number>>;
+  widthFractionByMode: Partial<Record<ContextPanelMode, number>>;
   touchedAt: number;
 };
 
@@ -738,11 +734,10 @@ const sanitizeContextPanelByDirectory = (
 
     // Legacy single `width` values are intentionally dropped: widths are now
     // per-surface, seeded from registry defaults until the user resizes.
-    const widthByMode: Partial<Record<ContextPanelWidthKey, number>> = {};
-    const widthFractionByMode: Partial<Record<ContextPanelWidthKey, number>> = {};
+    const widthByMode: Partial<Record<ContextPanelMode, number>> = {};
+    const widthFractionByMode: Partial<Record<ContextPanelMode, number>> = {};
     const savedWidths = persistedPanelWidthsSchema.parse(rawState);
-    const widthKeys: ContextPanelWidthKey[] = [...contextPanelModeSchema.options, CONTEXT_PANEL_FILE_TREE_WIDTH_KEY];
-    for (const mode of widthKeys) {
+    for (const mode of contextPanelModeSchema.options) {
       const pixels = savedWidths.widthByMode[mode];
       const fraction = savedWidths.widthFractionByMode[mode];
       if (pixels !== undefined) widthByMode[mode] = clampContextPanelWidth(pixels);
@@ -1034,7 +1029,7 @@ interface UIStore {
   closeContextPanelTabs: (directory: string, tabIds: readonly string[]) => void;
   closeContextPanel: (directory: string) => void;
   toggleContextPanelExpanded: (directory: string) => void;
-  setContextPanelWidth: (directory: string, mode: ContextPanelWidthKey, width: number, availableWidth?: number) => void;
+  setContextPanelWidth: (directory: string, mode: ContextPanelMode, width: number, availableWidth?: number) => void;
   setNotesPanelHeight: (height: number) => void;
   setWorkStatusSectionExpanded: (sectionId: string, expanded: boolean) => void;
   setWorkStatusScrollTop: (scrollTop: number) => void;
@@ -1422,7 +1417,7 @@ export const useUIStore = create<UIStore>()(
           if (!Number.isFinite(width)) {
             return;
           }
-          set({ contextEditorTreeWidth: Math.min(480, Math.max(200, Math.round(width))) });
+          set({ contextEditorTreeWidth: clampContextEditorTreeWidth(width) });
         },
 
         // Rail entry point: activates the most recent tab of the requested
