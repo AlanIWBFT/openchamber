@@ -28,6 +28,64 @@ sidebar/panel, and the shared elevated role from an editor-widget, dropdown or
 input pair in that order. OpenChamber currently has one elevated role for fields
 and floating UI, so it cannot retain different VS Code input and popup fills at
 the same time. Always keep the foreground paired with the chosen source.
-List selection precedes editor selection and keeps its paired foreground; pressed
-controls use toolbar-active, never list-selection. Input backgrounds are not hover
+Selection prefers the authored list pair, then menu and editor pairs, but skips
+a candidate that becomes indistinguishable from a shared canvas, sidebar or
+elevated surface when another authored pair remains visible. Keep the matching
+foreground. This collision check does not impose a minimum contrast style on
+intentionally subtle palettes. Pressed controls use toolbar-active, never list-selection. Input backgrounds are not hover
 states, chat bubbles are not sidebars, and diagnostic colors are not search highlights.
+
+A transparent input/widget border does not disable the app's generic borders;
+use the next painted border role from the source palette. Transparent editor
+diagnostic fills likewise fall back to status tints, because an editor underline
+and an app alert have different background needs. Focus rings retain the authored
+focus color and alpha rather than replacing its opacity with a fixed percentage.
+
+File/catalog import normalizes generic borders to the built-in palettes' quiet
+edge contrast: at least 1.15 on dark surfaces and 1.20 on light surfaces. It lifts
+the authored hue into a readable tint and adjusts overlay alpha against canvas,
+sidebar and elevated surfaces, so an opaque edge cannot disappear on one of them.
+Inherited tool/divider/blockquote borders follow it; explicit component borders,
+focus, status, diff and high-contrast palettes keep their authored values. Palettes
+mixing light and dark surfaces retain the original border because one overlay
+cannot provide that quiet contrast consistently. The live VS Code adapter does
+not normalize borders, and existing saved theme files are not rewritten.
+
+`vscode/import.ts` owns file conversion for Settings and the maintainer CLI.
+It accepts bounded JSON/JSONC with literal VS Code colors. Missing neutral roles
+derive from the imported canvas, while the adapter owns UI role precedence.
+General semantic selectors override general TextMate rules unless semantic
+highlighting is disabled. Language-specific selectors do not become global colors.
+Missing code categories inherit code text, not the default OpenChamber syntax.
+`include` and external token files fail explicitly instead of guessing missing data.
+
+The provider persists imports through `POST /api/config/themes` before adding them
+to its runtime-scoped library. A successful save invalidates older reloads. Runtime
+switches reject late application, and newer theme choices/imports win over an
+upload in flight. The server assigns content-based IDs and atomically publishes
+new files without overwrite; identical retries reuse the file. VS Code keeps the
+import action unavailable because its active theme belongs to VS Code.
+
+`vscode/catalog.ts` parses server catalog/package responses and runs resolved
+package sources through the same converter. Manifest labels remain authoritative;
+standalone file import humanizes lowercase slug names. The dialog keeps at most
+24 search results and 40 variants, debounces searches, aborts obsolete reads, and
+discards the dialog on runtime changes. Batch saves are sequential, retain each
+successful theme after a sibling failure, and leave the active selection alone.
+Completion has a success toast and full-opacity checked rows;
+partial failures remain explicit and successful variants stay installed.
+
+All server-loaded custom themes, including manually added JSON files, expose
+deletion in the existing picker. `customThemeIds` records that source independently
+of ID spelling or tags. The provider commits a
+successful DELETE before removing the item, invalidates older reloads, and resets
+only a selected deleted ID to its built-in mode default. Runtime generations
+prevent old mutations applying even after switching away and back.
+
+`RuntimeAPIs.themeFiles` is an optional local native picker. The web adapter exposes
+it only to trusted desktop pages; browser/hosted-mobile/Capacitor use file inputs.
+VS Code returns 501 for theme management routes and exposes no import controls.
+
+The import dialog explicitly renders its backdrop when nested inside Settings.
+Base UI omits nested backdrops by default, so a click on the parent's backdrop
+does not dismiss the child modal. Keep dismissal with the dialog primitive.

@@ -75,3 +75,34 @@ test('falls back to editor selection as a pair and gives high-contrast borders p
   expect(theme.colors.interactive.border).toBe('#ffffff');
   expect(theme.colors.interactive.focusRing).toBe('#00ffff');
 });
+
+test('avoids a list selection that disappears on the shared elevated surface', () => {
+  const theme = buildVSCodeThemeFromPalette({ kind: 'dark', colors: {
+    'editor.background': '#151313', 'editor.foreground': '#CECDC3',
+    'editorWidget.background': '#282726', 'sideBar.background': '#151313',
+    'list.activeSelectionBackground': '#282726', 'list.activeSelectionForeground': '#ff0000',
+    'editor.selectionBackground': '#403E3C', 'editor.selectionForeground': '#CECDC3',
+  } });
+  expect(theme.colors.interactive.selection).toBe('#403E3C');
+  expect(theme.colors.interactive.selectionForeground).toBe('#CECDC3');
+});
+
+test('does not turn borderless inputs or transparent editor diagnostics into borderless app controls and alerts', () => {
+  const theme = buildVSCodeThemeFromPalette({ kind: 'dark', colors: {
+    'editor.background': '#1e1e2e', 'editorWidget.background': '#181825',
+    'widget.border': '#00000000', 'input.border': '#00000000', 'panel.border': '#585b70',
+    'editorError.foreground': '#f38ba8', 'editorError.background': '#00000000',
+    'focusBorder': '#cba6f7',
+  } });
+  expect(theme.colors.interactive.border).toBe('#585b70');
+  expect(theme.colors.status.errorBackground).toBe('#f38ba829');
+  expect(theme.colors.interactive.focusRing).toBe('#cba6f7');
+});
+
+test('preserves intentionally subtle authored focus and border colors instead of retuning the palette', () => {
+  const theme = buildVSCodeThemeFromPalette({ kind: 'dark', colors: {
+    'editor.background': '#00151A', 'input.border': '#1B3743', 'focusBorder': '#268BD240',
+  } });
+  expect(theme.colors.interactive.border).toBe('#1B3743');
+  expect(theme.colors.interactive.focusRing).toBe('#268BD240');
+});

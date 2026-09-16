@@ -190,6 +190,10 @@ Use an explicit override when testing a different OpenCode CLI build or when a u
 - Multiple native windows.
 - Native notifications.
 - User-confirmed local folder selection. The shared UI supplies the requested directory as the picker `defaultPath`; confirmation is required before filesystem access is retried.
+- Theme-file selection uses the local `~/.vscode/extensions` directory when present.
+  The local-page-gated `desktop_pick_theme_file` command returns only the selected
+  filename, bounded text, and byte size. Its host stays local when the renderer
+  connects to a remote API server; remote pages receive no native picker privileges.
 - One-click open/reveal/open-in-app actions.
 - Desktop host switcher and deep-link imports.
 - Local and remote instance handling.

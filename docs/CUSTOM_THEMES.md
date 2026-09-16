@@ -1,5 +1,29 @@
 # Custom themes
 
+Open **Settings → Appearance → Import VS Code theme** to search Open VSX.
+Choose a package, compare the variant previews, and select the variants to import.
+Batch import keeps your current theme active. Open VSX is a separate catalog;
+themes published only in Microsoft Marketplace may not appear.
+
+**Choose JSON file** imports a self-contained `.json` or `.jsonc` file. Desktop
+starts its native picker in the local `~/.vscode/extensions` folder when it exists,
+even when connected to a remote server. Browsers and mobile use their own picker.
+UI colors use the same
+surface mapping as the VS Code runtime adapter; general TextMate and semantic
+token colors populate the syntax palette, and diff colors remain separate.
+Regular imports adapt generic border intensity to OpenChamber's standard light
+and dark palettes while retaining the source hue. High-contrast themes keep
+their authored borders.
+The theme is saved on the connected server and selected in its light/dark mode.
+Package imports resolve JSON `include` and token files inside the downloaded VSIX.
+For individual files with those references, export the active theme with
+**Developer: Generate Color Theme From Current Settings** in VS Code first.
+
+Delete a custom theme using the trash icon beside it in the theme dropdown.
+This includes valid themes you added directly to the server's `themes` folder.
+Deleting a selected theme restores the standard OpenChamber theme for that mode.
+Built-in themes cannot be deleted. Delete and reimport a theme to update it.
+
 Save a JSON file in `~/.config/openchamber/themes/`, then open **Settings → Theme → Reload themes** and select it. A custom OpenChamber data directory uses its own `themes` folder.
 
 ## Start with the base colors

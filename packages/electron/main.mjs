@@ -3802,6 +3802,10 @@ const closeAllDevTunnels = () => {
 
 const handleInvoke = async (browserWindow, command, args = {}) => {
   switch (command) {
+    case 'desktop_pick_theme_file': {
+      const { pickThemeFile } = await import('./theme-file-picker.mjs');
+      return pickThemeFile({ showDialog: (options) => dialog.showOpenDialog(browserWindow || undefined, options) });
+    }
     case 'desktop_start_window_drag':
       return null;
 

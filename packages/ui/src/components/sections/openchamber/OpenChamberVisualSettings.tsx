@@ -1,4 +1,6 @@
 import React from 'react';
+import { ThemeImportButton } from './ThemeImportButton';
+import { ThemeSelectItem } from './ThemeSelectItem';
 
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import type { ThemeMode } from '@/types/theme';
@@ -947,9 +949,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                     {lightThemes.map((theme) => (
-                                                        <SelectItem key={theme.metadata.id} value={theme.metadata.id}>
-                                                            {formatThemeLabel(theme.metadata.name, 'light')}
-                                                        </SelectItem>
+                                                        <ThemeSelectItem key={theme.metadata.id} id={theme.metadata.id} label={formatThemeLabel(theme.metadata.name, 'light')} />
                                                     ))}
                                                 </SelectContent>
                                             </Select>
@@ -968,9 +968,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                     {darkThemes.map((theme) => (
-                                                        <SelectItem key={theme.metadata.id} value={theme.metadata.id}>
-                                                            {formatThemeLabel(theme.metadata.name, 'dark')}
-                                                        </SelectItem>
+                                                        <ThemeSelectItem key={theme.metadata.id} id={theme.metadata.id} label={formatThemeLabel(theme.metadata.name, 'dark')} />
                                                     ))}
                                                 </SelectContent>
                                             </Select>
@@ -1003,6 +1001,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                 {t('settings.openchamber.visual.field.themeImportInfoTooltip')}
                                             </SettingsInfoHint>
                                         </div>
+                                        <ThemeImportButton />
                                     </div>
                                 </SettingsTwoColumn>
 
