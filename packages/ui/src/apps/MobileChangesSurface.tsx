@@ -385,6 +385,9 @@ export const MobileChangesPane: React.FC<MobileChangesPaneProps> = ({ rootDirect
       return;
     }
     const cacheKey = diffCacheKey(route.path, route.staged);
+    // A path reported as a nested repository by an earlier read may be diffable
+    // now; each read decides again.
+    setNestedRepositoryKey(null);
     if (!currentDirectory || getDiff(currentDirectory, cacheKey)) {
       setDiffLoadError(null);
       return;
