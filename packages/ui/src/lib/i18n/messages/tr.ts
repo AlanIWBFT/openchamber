@@ -1538,6 +1538,7 @@ export const dict = {
   'contextUsage.tooltip.contextLimit': 'Bağlam limiti: {tokens}',
   'contextUsage.tooltip.outputLimit': 'Çıktı limiti: {tokens}',
   'contextUsage.tooltip.cost': 'Maliyet: {cost}',
+  'contextUsage.compacted.description': 'Bağlam sıkıştırıldı. Kullanım bir sonraki yanıttan sonra güncellenecek.',
   'contextSidebar.session.untitled': 'Adsız Session',
   'contextSidebar.empty.openSession': 'Bağlamı incelemek için bir session açın.',
   'contextSidebar.section.context': 'Bağlam',

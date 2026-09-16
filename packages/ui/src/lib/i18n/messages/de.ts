@@ -1359,6 +1359,7 @@ export const dict = {
   'contextUsage.tooltip.contextLimit': 'Kontextlimit: {tokens}',
   'contextUsage.tooltip.outputLimit': 'Ausgabelimit: {tokens}',
   'contextUsage.tooltip.cost': 'Kosten: {cost}',
+  'contextUsage.compacted.description': 'Kontext komprimiert. Die Auslastung wird nach der nächsten Antwort aktualisiert.',
   'contextSidebar.session.untitled': 'Unbenannte Sitzung',
   'contextSidebar.empty.openSession': 'Öffnen Sie eine Sitzung, um den Kontext zu prüfen.',
   'contextSidebar.section.context': 'Kontext',

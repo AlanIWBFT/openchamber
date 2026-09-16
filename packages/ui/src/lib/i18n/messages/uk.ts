@@ -1529,6 +1529,7 @@ export const dict: Record<I18nKey, string> = {
   "contextUsage.tooltip.contextLimit": "Обмеження контексту: {tokens}",
   "contextUsage.tooltip.outputLimit": "Ліміт виводу: {tokens}",
   "contextUsage.tooltip.cost": "Вартість: {cost}",
+  "contextUsage.compacted.description": "Контекст стиснуто. Використання оновиться після наступної відповіді.",
   "contextSidebar.session.untitled": "Сесія без назви",
   "contextSidebar.empty.openSession": "Відкрийте сесію, щоб перевірити контекст.",
   "contextSidebar.section.context": "Контекст",

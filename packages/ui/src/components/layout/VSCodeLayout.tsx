@@ -9,8 +9,9 @@ import { useSessions, useDirectorySync, useSessionMessages, useSessionMessagesRe
 import { useSubagentCostRollup } from '@/components/chat/work-status/useSubagentCostRollup';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
-import { contextTokensFromBreakdown } from '@/stores/utils/tokenUtils';
+import { buildSessionContextUsage, isSameContextUsage } from '@/stores/utils/tokenUtils';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
+import { toContextUsageReading } from '@/components/ui/contextUsageReading';
 import { McpDropdown } from '@/components/mcp/McpDropdown';
 import { ArchiveAllDropdown } from '@/components/session/ArchiveAllDropdown';
 import { SessionSwitcherDropdown } from '@/components/session/SessionSwitcherDropdown';
@@ -701,39 +702,22 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
   }, [loadQuotaSettings]);
 
   const currentModel = getCurrentModel();
-  const headerMessageSummary = React.useMemo(() => {
-    type AssistantTokens = { input: number; output: number; reasoning: number; cache: { read: number; write: number } };
-    let latestAssistantModel: ReturnType<typeof getCurrentModel> | undefined;
-    let lastTokens: AssistantTokens | undefined;
-    let lastMessageId: string | undefined;
-
+  const latestAssistantModel = React.useMemo(() => {
     for (let i = currentSessionMessages.length - 1; i >= 0; i -= 1) {
-      const message = currentSessionMessages[i] as { role?: unknown; providerID?: unknown; modelID?: unknown; tokens?: AssistantTokens };
+      const message = currentSessionMessages[i];
       if (message.role !== 'assistant') {
         continue;
       }
 
-      if (!latestAssistantModel && typeof message.providerID === 'string' && typeof message.modelID === 'string') {
-        const provider = providers.find((entry) => entry.id === message.providerID);
-        latestAssistantModel = provider?.models.find((entry) => entry.id === message.modelID);
-      }
-
-      if (!lastTokens && message.tokens) {
-        const total = contextTokensFromBreakdown(message.tokens);
-        if (total > 0) {
-          lastTokens = message.tokens;
-          lastMessageId = (currentSessionMessages[i] as { id?: string }).id;
-        }
-      }
-
-      if (latestAssistantModel && lastTokens) {
-        break;
+      const provider = providers.find((entry) => entry.id === message.providerID);
+      const model = provider?.models.find((entry) => entry.id === message.modelID);
+      if (model) {
+        return model;
       }
     }
 
-    return { latestAssistantModel, lastTokens, lastMessageId };
+    return undefined;
   }, [currentSessionMessages, providers]);
-  const latestAssistantModel = headerMessageSummary.latestAssistantModel;
   const modelForLimits = currentModel?.limit ? currentModel : latestAssistantModel;
   const limit = modelForLimits && typeof modelForLimits.limit === 'object' && modelForLimits.limit !== null
     ? (modelForLimits.limit as Record<string, unknown>)
@@ -741,27 +725,9 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
   const contextLimit = limit && typeof limit.context === 'number' ? limit.context : 0;
   const outputLimit = limit && typeof limit.output === 'number' ? limit.output : 0;
 
-  const contextUsage = React.useMemo<SessionContextUsage | null>(() => {
-    if (!currentSessionId || !headerMessageSummary.lastTokens) {
-      return null;
-    }
-
-    const lastTokens = headerMessageSummary.lastTokens;
-    const totalTokens = contextTokensFromBreakdown(lastTokens);
-    const thresholdLimit = contextLimit > 0 ? contextLimit : 200000;
-    const percentage = contextLimit > 0 ? Math.round((totalTokens / contextLimit) * 100) : 0;
-    const normalizedOutput = outputLimit > 0 ? Math.round((lastTokens.output / outputLimit) * 100) : undefined;
-
-    return {
-      totalTokens,
-      percentage,
-      contextLimit: contextLimit || 0,
-      outputLimit: outputLimit || undefined,
-      normalizedOutput,
-      thresholdLimit,
-      lastMessageId: headerMessageSummary.lastMessageId,
-    };
-  }, [contextLimit, currentSessionId, headerMessageSummary.lastMessageId, headerMessageSummary.lastTokens, outputLimit]);
+  const contextUsage = React.useMemo<SessionContextUsage | null>(() => (
+    currentSessionId ? buildSessionContextUsage(currentSessionMessages, contextLimit, outputLimit) : null
+  ), [contextLimit, currentSessionId, currentSessionMessages, outputLimit]);
   const [stableContextUsage, setStableContextUsage] = React.useState<SessionContextUsage | null>(null);
   const isContextUsageResolvedForSession = !currentSessionId || currentSessionMessagesResolved;
 
@@ -771,22 +737,8 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
       return;
     }
 
-    if (contextUsage && contextUsage.totalTokens > 0) {
-      setStableContextUsage((prev) => {
-        if (
-          prev
-          && prev.totalTokens === contextUsage.totalTokens
-          && prev.percentage === contextUsage.percentage
-          && prev.contextLimit === contextUsage.contextLimit
-          && (prev.outputLimit ?? 0) === (contextUsage.outputLimit ?? 0)
-          && (prev.normalizedOutput ?? 0) === (contextUsage.normalizedOutput ?? 0)
-          && prev.thresholdLimit === contextUsage.thresholdLimit
-          && prev.lastMessageId === contextUsage.lastMessageId
-        ) {
-          return prev;
-        }
-        return contextUsage;
-      });
+    if (contextUsage) {
+      setStableContextUsage((prev) => (isSameContextUsage(prev, contextUsage) ? prev : contextUsage));
       return;
     }
 
@@ -1032,10 +984,9 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
           <Icon name="settings-3" className="h-5 w-5" />
         </button>
       )}
-      {showContextUsage && stableContextUsage && stableContextUsage.totalTokens > 0 && (
+      {showContextUsage && stableContextUsage && (
         <ContextUsageDisplay
-          totalTokens={stableContextUsage.totalTokens}
-          percentage={stableContextUsage.percentage}
+          reading={toContextUsageReading(stableContextUsage)}
           contextLimit={stableContextUsage.contextLimit}
           outputLimit={stableContextUsage.outputLimit ?? 0}
           cost={(sessionTotalCost ?? 0) > 0 ? sessionTotalCost : null}
