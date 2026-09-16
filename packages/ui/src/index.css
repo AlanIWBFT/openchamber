@@ -275,7 +275,8 @@ div[data-chat-input-footer="true"] {
   mask-size: 100% 100%;
 }
 
-[data-scroll-shadow="true"][data-orientation="vertical"][data-top-bottom-scroll="true"] {
+[data-scroll-shadow="true"][data-orientation="vertical"][data-top-bottom-scroll="true"],
+.chat-scroll[data-scroll-shadow="true"][data-orientation="vertical"][data-top-scroll="true"] {
   mask-image: linear-gradient(
     to bottom,
     transparent 0%,
@@ -294,7 +295,7 @@ div[data-chat-input-footer="true"] {
   );
 }
 
-[data-scroll-shadow="true"][data-orientation="vertical"][data-top-scroll="true"] {
+[data-scroll-shadow="true"][data-orientation="vertical"][data-top-scroll="true"]:not(.chat-scroll) {
   mask-image: linear-gradient(
     to bottom,
     transparent 0%,
@@ -326,7 +327,8 @@ div[data-chat-input-footer="true"] {
   opacity: 1;
 }
 
-[data-scroll-shadow="true"][data-orientation="vertical"][data-bottom-scroll="true"] {
+[data-scroll-shadow="true"][data-orientation="vertical"][data-bottom-scroll="true"],
+.chat-scroll[data-scroll-shadow="true"][data-orientation="vertical"]:not([data-top-scroll="true"]):not([data-top-bottom-scroll="true"]) {
   mask-image: linear-gradient(
     to bottom,
     #000 0%,
