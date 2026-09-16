@@ -7,11 +7,12 @@
 | Token | Usage |
 |---|---|
 | `surface.background` | Main app background |
-| `surface.elevated` | Inputs, cards, panels, popovers |
+| `surface.elevated` | Inputs, cards, dialogs, dropdowns, popovers |
+| `surface.elevatedForeground` | Text and neutral controls on elevated surfaces |
 | `surface.muted` | Secondary backgrounds and sidebars |
 | `surface.foreground` | Primary text |
 | `surface.mutedForeground` | Secondary text and hints |
-| `surface.subtle` | Subtle dividers |
+| `surface.subtle` | Quiet, non-interactive background accents |
 
 ### Interactive
 
@@ -50,7 +51,7 @@ Primary means “act”; selection means “currently active.” Do not use prim
 
 ### Syntax
 
-Use `syntax.*` only for code display: code backgrounds/text, keywords, strings, and diff highlights. Never use syntax colors for ordinary UI chrome.
+Use `syntax.*` for code display: backgrounds/text, keywords, strings and diff highlights. Agent and Git-identity markers may reuse the palette to distinguish entities; those colors carry no status meaning. Layout surfaces, borders and interaction states use their own roles.
 
 ## Usage
 
@@ -84,6 +85,17 @@ Input footers stay transparent over the elevated input surface.
 
 Inputs, cards, dropdowns and dialogs use the elevated role. Component-level
 opacity is allowed; it changes the strength of the same semantic surface.
+
+`oc-surface-elevated` establishes the elevated text context for children that use
+`text-foreground`. Glass popovers, tooltips and composers do this automatically,
+as do the semantic `bg-surface-elevated`, `bg-card` and `bg-popover` classes.
+An opaque `bg-background` or `bg-surface-background` restores canvas text.
+Use `oc-surface-code` for code text and `syntax.background` for its painted body.
+Fields retain their elevated base on hover and layer `interactive.hover` over it;
+`subtle` is neither hover nor disabled state. Dividers use `interactive.border`.
+
+Focus uses `interactive.focusRing` (`ring-ring`), not the primary action color.
+Keep focus indicators on the real focused control; global rules must not erase them.
 
 ### Active Item
 

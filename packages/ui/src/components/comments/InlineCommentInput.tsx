@@ -175,7 +175,7 @@ export function InlineCommentInput({
             ? t('inlineComment.input.placeholderShort')
             : t('inlineComment.input.placeholder', { shortcut: saveShortcut })}
           className={cn(
-            'min-w-0 flex-1 resize-none bg-transparent text-sm leading-5 text-[var(--surface-foreground)] outline-none placeholder:text-muted-foreground placeholder:opacity-60',
+            'min-w-0 flex-1 resize-none bg-transparent text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground placeholder:opacity-60',
             isMobile ? 'py-1.5 text-base leading-6' : 'py-1.5'
           )}
           style={{ minHeight: 0, height: 'auto' }}

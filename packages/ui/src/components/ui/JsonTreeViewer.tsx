@@ -146,13 +146,13 @@ const JsonRow = React.memo(
             >
               {/^\d+$/.test(node.key) ? node.key : `"${node.key}"`}
             </span>
-            <span className="mr-1 text-[var(--surface-foreground)]">:</span>
+            <span className="mr-1 text-[var(--syntax-foreground)]">:</span>
           </>
         )}
 
         {node.isExpandable ? (
           isExpanded ? (
-            <span className="text-[var(--surface-foreground)]">
+            <span className="text-[var(--syntax-foreground)]">
               {node.type === 'object' ? '{' : '['}
             </span>
           ) : (

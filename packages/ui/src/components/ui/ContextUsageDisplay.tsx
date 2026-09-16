@@ -140,7 +140,7 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
       ? cn(
         'rounded-md px-2 py-1.5 text-foreground transition-colors',
         'hover:bg-interactive-hover',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
       )
       : 'text-muted-foreground/60',
     className,

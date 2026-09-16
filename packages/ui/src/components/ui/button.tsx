@@ -48,7 +48,7 @@ const buttonVariants = cva(
   [
     "group relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] [corner-shape:squircle] supports-[corner-shape:squircle]:rounded-[50px] typography-ui-label font-medium lowercase tracking-[0.01em] shrink-0 select-none",
     "transition-[background-color,border-color,color,opacity] duration-150 ease-out outline-none",
-    "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+    "focus-visible:border-ring focus-visible:ring-ring focus-visible:ring-[3px]",
     "aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
     "disabled:pointer-events-none disabled:opacity-50",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
@@ -62,18 +62,18 @@ const buttonVariants = cva(
           "focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
         ),
         info: TINT_INFO,
-        neutral:
-          "bg-interactive-hover text-foreground border border-border/60 hover:bg-interactive-active",
+         neutral:
+           "bg-secondary text-secondary-foreground border border-border/60 hover:[background-image:linear-gradient(var(--interactive-hover),var(--interactive-hover))] active:[background-image:linear-gradient(var(--interactive-active),var(--interactive-active))]",
         outline:
-          "bg-[var(--surface-elevated)] text-foreground border border-border/60 hover:bg-interactive-hover hover:text-foreground",
+           "oc-surface-elevated bg-surface-elevated text-foreground border border-border/60 hover:[background-image:linear-gradient(var(--interactive-hover),var(--interactive-hover))] active:[background-image:linear-gradient(var(--interactive-active),var(--interactive-active))]",
          // A chip represents selection, independently of the primary action.
         chip: cn(
           "border border-border/60 bg-transparent text-foreground hover:bg-interactive-hover hover:text-foreground",
            "aria-pressed:bg-interactive-selection aria-pressed:text-interactive-selection-foreground",
            "aria-pressed:hover:bg-interactive-selection aria-pressed:hover:text-interactive-selection-foreground",
         ),
-        secondary:
-          "bg-interactive-hover text-foreground hover:bg-interactive-active",
+         secondary:
+           "bg-secondary text-secondary-foreground hover:[background-image:linear-gradient(var(--interactive-hover),var(--interactive-hover))] active:[background-image:linear-gradient(var(--interactive-active),var(--interactive-active))]",
         ghost:
           "text-foreground hover:bg-interactive-hover hover:text-foreground",
          link: "text-[var(--primary-text)] underline-offset-4 hover:underline",

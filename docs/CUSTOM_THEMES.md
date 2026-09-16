@@ -46,8 +46,9 @@ Use hex or `rgb()`/`rgba()` colors for automatic contrast adjustment. Hex alpha 
 ## Color roles
 
 - `surface.background` is the main canvas, `muted` is the secondary area, and `elevated` is for cards, inputs, dropdowns and dialogs. Components may adjust opacity while using the same role.
-- `surface.foreground` and `mutedForeground` are primary and secondary text.
+- `surface.foreground` and `mutedForeground` are primary and secondary text. `surface.elevatedForeground` controls text in dialogs, menus, cards and fields; it defaults to `foreground`.
 - `primary.base` is the main action. `interactive.selection` is the selected state. They are independent.
+- Fields keep their elevated background during hover, with `interactive.hover` layered over it. Focus uses `interactive.focusRing`; separators use `interactive.border`. `surface.subtle` is a quiet background, not a hover or focus color.
 - Status colors represent feedback. Solid fills get a contrasting foreground; tinted buttons and alerts get separate computed text colors. Those computed colors are not extra authoring fields.
 - Syntax controls code in chat, files and diffs. It uses your palette rather than a fixed third-party highlighting theme.
 
@@ -66,7 +67,7 @@ Add an override only when the default relationship does not fit your palette.
 | `markdown` | `link`, `linkHover`, `inlineCode`, `inlineCodeBackground`, `blockquote`, `blockquoteBorder`, `listMarker`, `bold`, `italic`, `strikethrough`, `hr` |
 | `tools` | `border`, `icon`, `title`, `description`; `edit` accepts `addedBackground`, `removedBackground`, `modifiedBackground`, `lineNumber` |
 
-`syntax.base.background` and `foreground` inherit the main canvas and text. `syntax.highlights` accepts `diffAdded`, `diffRemoved`, `diffModified`, their `Background` variants, `lineNumber` and `lineNumberActive`. Diff backgrounds inherit their corresponding diff color at a low opacity.
+`syntax.base.background` and `foreground` inherit the main canvas and text. Choose a code background close to `surface.background` for a subtle separation. Code surfaces render that color directly, without an automatic blend with the canvas. `syntax.highlights` accepts `diffAdded`, `diffRemoved`, `diffModified`, their `Background` variants, `lineNumber` and `lineNumberActive`. Diff backgrounds inherit their corresponding diff color at a low opacity.
 
 `syntax.tokens` contains exceptions to the shared mapping. `method` and `functionCall` inherit `base.function`; `class`, `struct` and `enum` inherit `className`, which defaults to `base.type`; `key` and `tagAttribute` inherit `variableProperty`. For distinct class and property colors, only those two overrides are needed.
 

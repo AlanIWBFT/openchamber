@@ -314,12 +314,13 @@ const buildColors = (theme: Theme): Record<string, string> => {
   const st = theme.colors.status;
   const base = theme.colors.syntax.base;
   const hl = theme.colors.syntax.highlights ?? {};
+  const codeBackground = base.background;
 
   const diffAddedBg = pick(hl.diffAddedBackground, st.successBackground);
   const diffRemovedBg = pick(hl.diffRemovedBackground, st.errorBackground);
 
   return {
-    'editor.background': base.background,
+    'editor.background': codeBackground,
     'editor.foreground': base.foreground,
     'editor.hoverHighlightBackground': pick(i.hover, s.subtle),
     'editor.lineHighlightBackground': s.muted,
@@ -339,7 +340,7 @@ const buildColors = (theme: Theme): Record<string, string> => {
     'editorHoverWidget.background': s.elevated,
     'editorLineNumber.activeForeground': pick(hl.lineNumberActive, s.foreground),
     'editorLineNumber.foreground': pick(hl.lineNumber, s.mutedForeground),
-    'editorGutter.background': s.background,
+    'editorGutter.background': codeBackground,
     'editorGutter.modifiedBackground': st.info,
     'editorGutter.addedBackground': st.success,
     'editorGutter.deletedBackground': st.error,

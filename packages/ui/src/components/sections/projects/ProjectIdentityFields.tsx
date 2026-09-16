@@ -158,7 +158,7 @@ export const ProjectIdentityFields: React.FC<ProjectIdentityFieldsProps> = ({ fo
             className={cn(
               'h-7 w-7 rounded-md border transition-colors flex items-center justify-center',
               color === null
-                ? 'border-2 border-foreground bg-[var(--primary-base)]/10'
+                ? 'border-2 border-foreground bg-interactive-selection'
                 : 'border-border/40 hover:border-border hover:bg-[var(--surface-muted)]',
             )}
             title={t('settings.projects.page.field.none')}
@@ -173,7 +173,7 @@ export const ProjectIdentityFields: React.FC<ProjectIdentityFieldsProps> = ({ fo
               className={cn(
                 'h-7 w-7 rounded-md border transition-colors',
                 color === entry.key
-                  ? 'border-2 border-foreground ring-1 ring-[var(--primary-base)]/40'
+                  ? 'border-2 border-foreground ring-1 ring-interactive-selection'
                   : 'border-transparent hover:border-border/70',
               )}
               style={{ backgroundColor: entry.cssVar }}
@@ -206,7 +206,7 @@ export const ProjectIdentityFields: React.FC<ProjectIdentityFieldsProps> = ({ fo
             className={cn(
               'h-7 w-7 rounded-md border transition-colors flex items-center justify-center',
               icon === null
-                ? 'border-2 border-foreground bg-[var(--primary-base)]/10'
+                ? 'border-2 border-foreground bg-interactive-selection'
                 : 'border-border/40 hover:border-border hover:bg-[var(--surface-muted)]',
             )}
             title={t('settings.projects.page.field.none')}
@@ -223,7 +223,7 @@ export const ProjectIdentityFields: React.FC<ProjectIdentityFieldsProps> = ({ fo
                 className={cn(
                   'h-7 w-7 rounded-md border transition-colors flex items-center justify-center',
                   icon === entry.key
-                    ? 'border-2 border-foreground bg-[var(--primary-base)]/10'
+                    ? 'border-2 border-foreground bg-interactive-selection'
                     : 'border-transparent hover:border-border hover:bg-[var(--surface-muted)]',
                 )}
                 title={entry.label}

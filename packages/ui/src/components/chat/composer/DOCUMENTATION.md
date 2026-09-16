@@ -185,10 +185,11 @@ makes WebKit re-measure them after every decoration redraw, and the composer
 rebuilds every decoration on every keystroke. That cost is felt worst during
 IME composition.
 
-The non-iOS native selection tint comes from `--primary`, not the selection
-token: themes define `--interactive-selection` with its own alpha, so mixing it
-with transparent again is nearly invisible. The iOS system overlay owns its
-visible selection fill.
+The non-iOS native selection uses `--interactive-selection` directly, including
+its authored alpha, with `--interactive-selection-foreground` for selected text.
+Do not dilute it again or substitute the primary action color. Both composer
+caret paths follow the elevated field foreground; the file editor/terminal cursor
+color may belong to a different background. The iOS system overlay owns its visible selection fill.
 
 The content element keeps the existing correction policy: on in the mobile UI,
 off elsewhere. CodeMirror also reads the attribute and reverts Apple and

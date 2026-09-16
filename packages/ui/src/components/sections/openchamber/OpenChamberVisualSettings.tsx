@@ -1617,11 +1617,11 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                         className={cn(
                                                             'flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors',
                                                             selected
-                                                                ? 'border-primary bg-primary/5'
-                                                                : 'border-border hover:border-border/80 hover:bg-muted/50'
+                                                                ? 'border-border bg-interactive-selection text-interactive-selection-foreground'
+                                                                : 'border-border hover:border-border/80 hover:bg-interactive-hover'
                                                         )}
                                                     >
-                                                        <span className={cn('typography-ui-label', selected ? 'text-foreground' : 'text-muted-foreground')}>
+                                                        <span className={cn('typography-ui-label', selected ? 'text-inherit' : 'text-muted-foreground')}>
                                                             {tUnsafe(option.labelKey)}
                                                         </span>
                                                         <div className="mt-2 w-full rounded-md border border-border/60 bg-muted/30 p-2">

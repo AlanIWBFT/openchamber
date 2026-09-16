@@ -620,7 +620,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
         }}
         placeholder={t('chat.textSelection.comment.placeholder')}
         className={cn(
-          'flex-1 resize-none bg-transparent text-sm leading-5 text-[var(--surface-foreground)] outline-none placeholder:text-muted-foreground placeholder:opacity-60',
+          'flex-1 resize-none bg-transparent text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground placeholder:opacity-60',
           // The width cap sizes the floating desktop pill; on mobile the pill
           // spans the bottom bar and the cap would strand slack space to the
           // right of the attach button.
@@ -788,7 +788,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
             className={cn(
               'px-3.5 py-1.5 rounded-full',
               'text-sm font-medium',
-              'text-[var(--surface-foreground)]',
+              'text-foreground',
               'hover:bg-[var(--interactive-hover)]',
               'transition-colors duration-150'
             )}
@@ -806,7 +806,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
                 className={cn(
                   'px-3.5 py-1.5 rounded-full',
                   'text-sm font-medium',
-                  'text-[var(--surface-foreground)]',
+                  'text-foreground',
                   'hover:bg-[var(--interactive-hover)]',
                   'transition-colors duration-150'
                 )}
@@ -829,7 +829,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
                 className={cn(
                   'flex items-center gap-1.5 px-3.5 py-1.5 rounded-full',
                   'text-sm font-medium',
-                  'text-[var(--surface-foreground)]',
+                  'text-foreground',
                   'hover:bg-[var(--interactive-hover)] disabled:opacity-60 disabled:cursor-not-allowed',
                   'transition-colors duration-150'
                 )}

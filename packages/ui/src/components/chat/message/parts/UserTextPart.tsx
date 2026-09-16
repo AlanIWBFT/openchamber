@@ -265,7 +265,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                 <button
                     type="button"
                     onClick={handleCollapse}
-                    className="absolute top-0 right-0 z-10 flex items-center justify-center rounded-sm bg-[var(--surface-elevated)] p-0.5 text-muted-foreground hover:text-[var(--surface-foreground)] hover:bg-[var(--interactive-hover)] transition-colors"
+                    className="absolute top-0 right-0 z-10 flex items-center justify-center rounded-sm bg-surface-elevated p-0.5 text-muted-foreground hover:text-foreground hover:bg-interactive-hover transition-colors"
                     aria-label={t('chat.message.userText.collapseAria')}
                 >
                     <Icon name="arrow-up-s" className="h-3.5 w-3.5" />

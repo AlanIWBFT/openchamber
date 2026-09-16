@@ -84,7 +84,7 @@ export class CSSVariableGenerator {
     vars.push(`  --primary-foreground: ${theme.colors.primary.foreground} !important;`);
 
     vars.push(`  --secondary: ${theme.colors.surface.muted} !important;`);
-    vars.push(`  --secondary-foreground: ${theme.colors.surface.mutedForeground} !important;`);
+    vars.push(`  --secondary-foreground: ${theme.colors.surface.foreground} !important;`);
 
     vars.push(`  --accent: ${theme.colors.surface.subtle} !important;`);
     vars.push(`  --accent-foreground: ${theme.colors.surface.foreground} !important;`);
@@ -264,6 +264,7 @@ const sidebarBaseRgb = hexToRgb(theme.colors.surface.muted);
     vars.push(`  --syntax-variable: ${syntax.base.variable};`);
     vars.push(`  --syntax-type: ${syntax.base.type};`);
     vars.push(`  --syntax-operator: ${syntax.base.operator};`);
+    vars.push(`  --syntax-line-number: ${syntax.highlights?.lineNumber ?? syntax.base.comment};`);
 
     const tokens = resolveSyntaxTokens(syntax);
     for (const [key, value] of Object.entries(tokens)) {

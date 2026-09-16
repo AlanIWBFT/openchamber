@@ -77,8 +77,8 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                     <button
                         type="button"
                         className={cn(
-                            'flex w-full items-center justify-between rounded-lg border border-border/40 bg-background/95 px-2 py-1.5 text-left',
-                            !agentName ? 'bg-primary/10 text-primary' : 'text-foreground'
+                            'flex w-full items-center justify-between rounded-lg border border-border/40 px-2 py-1.5 text-left',
+                            !agentName ? 'bg-interactive-selection text-interactive-selection-foreground' : 'text-foreground hover:bg-interactive-hover'
                         )}
                         onClick={() => {
                             handleAgentChange('');
@@ -88,7 +88,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                         <span className={cn('typography-meta', !agentName ? 'font-medium' : 'text-muted-foreground')}>
                             {t('settings.commands.agentSelector.notSelected')}
                         </span>
-                        {!agentName && <div className="h-2 w-2 rounded-full bg-primary" />}
+                        {!agentName && <div className="h-2 w-2 rounded-full bg-current" />}
                     </button>
                     {agents.map((agent) => {
                         const isSelected = agent.name === agentName;
@@ -98,8 +98,8 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                                 key={agent.name}
                                 type="button"
                                 className={cn(
-                                    'flex w-full items-center justify-between rounded-lg border border-border/40 bg-background/95 px-2 py-1.5 text-left',
-                                    isSelected ? 'bg-primary/10 text-primary' : 'text-foreground'
+                                    'flex w-full items-center justify-between rounded-lg border border-border/40 px-2 py-1.5 text-left',
+                                    isSelected ? 'bg-interactive-selection text-interactive-selection-foreground' : 'text-foreground hover:bg-interactive-hover'
                                 )}
                                 onClick={() => {
                                     handleAgentChange(agent.name);
@@ -115,7 +115,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                                     )}
                                 </div>
                                 {isSelected && (
-                                    <div className="h-2 w-2 rounded-full bg-primary" />
+                                    <div className="h-2 w-2 rounded-full bg-current" />
                                 )}
                             </button>
                         );

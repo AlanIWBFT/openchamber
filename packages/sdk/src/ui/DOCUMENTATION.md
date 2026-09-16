@@ -34,6 +34,7 @@ Every `mountX(root, props)` returns `{ update(partial), dispose() }`.
 - Call `applyHostReady` from `onReady` before the first mount. Without those tokens the kit has no colours.
 - The required `*Text` tokens come from the host's `lib/theme/readableColors.ts`. The SDK never duplicates the contrast calculation. `applyHostTheme` writes both naming schemes on every snapshot. Tinted button labels, badge text, banner titles and error text use these values; fills keep the base colors.
 - Colours come only from `var(--host-name, var(--oc-alias, fallback))`. No literal hex in `style.ts`.
+- Inputs and picker triggers use the elevated pair; hover/pressed colors layer over that fill. Popups scope the text foreground for nested neutral controls. Secondary buttons use the muted surface, selected tabs use the selection pair, and focus stays independent from primary actions.
 - A mount paints from `props`. The only hidden state is UI state: open popup, highlighted row, typed filter. `update()` merges props and keeps that state unless the related prop changed.
 - Every string lands through `textContent`. `mountText` is the only place that creates `a` and `img`, and only for `http(s)` URLs.
 - `dispose()` removes the node and every listener, including the document and window listeners a popup added.
