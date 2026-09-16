@@ -23,7 +23,7 @@ export function SessionAiRenameMenuItem({ sessionID, directory, open, Item }: {
             onClick={run}
             className="w-full"
           >
-            <Icon name={pending ? 'loader-4' : 'ai-generate-2'} className={pending ? 'mr-2 size-4 animate-spin' : 'mr-2 size-4'} />
+            <Icon name={pending ? 'loader-4' : 'ai-generate-2'} className={pending ? 'mr-1 size-4 animate-spin' : 'mr-1 size-4'} />
             {t('sessions.aiRename.action')}
           </Item>
         </span>
