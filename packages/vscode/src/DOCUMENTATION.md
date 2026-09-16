@@ -119,6 +119,8 @@ state. A VS Code webview reload or cross-window move replaces the document
 without disposing its panel; relying only on panel disposal leaked one upstream
 stream per reload, including its ongoing idle heartbeat traffic.
 
+Each host also sends `viewerStateChanged` with `{ windowFocused, surfaceVisible }`: on resolve and on `webview:ready`, when the VS Code window gains or loses focus, and when that view or panel is shown or hidden. The webview parses it at the bridge and hands it to `packages/ui/src/lib/surfaceAttention.ts`, which decides whether a finished turn in the selected session counts as seen. The webview document's own `hasFocus()` is not used for this, because focus in the code editor would otherwise mark a visible chat as unread.
+
 Message and part ordering is owned by [`packages/ui/src/sync/DOCUMENTATION.md`](../../ui/src/sync/DOCUMENTATION.md#session-message-loading). The VS Code webview consumes that shared sync implementation; bridge and proxy runtimes pass OpenCode records through without adding runtime-specific ordering.
 
 The OpenChamber control stream (`/api/openchamber/events`) requires the

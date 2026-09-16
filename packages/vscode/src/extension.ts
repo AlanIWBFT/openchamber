@@ -229,10 +229,10 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.window.onDidChangeWindowState((state) => {
-      chatViewProvider?.notifyWindowFocusChanged(state.focused);
-      sessionEditorProvider?.notifyWindowFocusChanged(state.focused);
-      agentManagerProvider?.notifyWindowFocusChanged(state.focused);
+    vscode.window.onDidChangeWindowState(() => {
+      chatViewProvider?.notifyViewerStateChanged();
+      sessionEditorProvider?.notifyViewerStateChanged();
+      agentManagerProvider?.notifyViewerStateChanged();
     })
   );
 

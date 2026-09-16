@@ -190,6 +190,7 @@ export class SessionEditorPanelProvider {
       if (event.webviewPanel.active) {
         this._lastActivePanelId = panelId;
       }
+      this._postViewerState(state);
     }, null, this._context.subscriptions);
 
     panel.webview.onDidReceiveMessage(async (message: BridgeRequest) => {
@@ -315,14 +316,19 @@ export class SessionEditorPanelProvider {
     }
   }
 
-  public notifyWindowFocusChanged(focused: boolean): void {
+  /** Tells each panel's webview whether the user can see it: VS Code focused and the panel shown. */
+  public notifyViewerStateChanged(): void {
     for (const entry of this._panels.values()) {
-      entry.panel.webview.postMessage({
-        type: 'command',
-        command: 'windowFocusChanged',
-        payload: { focused },
-      });
+      this._postViewerState(entry);
     }
+  }
+
+  private _postViewerState(entry: SessionPanelState): void {
+    entry.panel.webview.postMessage({
+      type: 'command',
+      command: 'viewerStateChanged',
+      payload: { windowFocused: vscode.window.state.focused, surfaceVisible: entry.panel.visible },
+    });
   }
 
   private _getActivePanelEntry(): SessionPanelState | null {
@@ -468,11 +474,7 @@ export class SessionEditorPanelProvider {
       status: this._cachedStatus,
       error: this._cachedError,
     });
-    entry.panel.webview.postMessage({
-      type: 'command',
-      command: 'windowFocusChanged',
-      payload: { focused: vscode.window.state.focused },
-    });
+    this._postViewerState(entry);
   }
 
   private _postCommandToPanels(command: string, payload: unknown): void {

@@ -248,6 +248,10 @@ This keeps cold/global lists responsive without requiring a refetch after every 
 
 Live activity/status indicators must not depend on this cache. They must use the event/snapshot-reconciled global live status index.
 
+### Viewed sessions and surface attention
+
+A `session.idle` or `session.error` for the selected session is recorded as viewed only while the user can see this surface; otherwise it raises an unread marker. `lib/surfaceAttention.ts` owns that answer. Web, desktop, and mobile use document focus; on web and desktop, `App.tsx` also marks the selected session viewed when the window regains focus. A VS Code webview document's focus does not track what the user sees: it loses focus whenever the code editor takes it while the chat stays on screen, and it can keep focus while VS Code is in the background. There the extension host reports window focus and webview visibility (`viewerStateChanged`); once a report arrives it replaces document focus, and `VSCodeApp` marks the selected session viewed whenever a report says the webview is seen again.
+
 ## Session message loading
 
 The event pipeline's reconnect callback carries `replayReset`. A global WS
