@@ -443,6 +443,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       groupKey="managed-chats"
       projectId={null}
       hideGroupLabel
+      sessionBatchSize={undefined}
       visibleSessionCount={visibleSessionCountByGroup.get('managed-chats')}
       scrollContainerRef={undefined}
       openSidebarMenuKey={openSidebarMenuKey}
