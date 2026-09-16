@@ -22,7 +22,6 @@ import { normalizePath } from '../utils';
 import type { SessionGroup } from '../types';
 import { SessionProjectScroller } from '../projects/SessionProjectScroller';
 import { useSessionGrouping } from '../projects/useSessionGrouping';
-import { useStickyProjectHeaders } from '../projects/useStickyProjectHeaders';
 import { SessionBulkActions } from '../folders/SessionBulkActions';
 import { RecentSessionSection } from '../recent/RecentSessionSection';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
@@ -281,13 +280,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     const section = flatSectionsForRender.find((entry) => entry.project.id === projectId);
     return section?.groups.find((group) => !group.isArchivedBucket)?.folderScopes ?? [];
   }, [flatSectionsForRender]);
-  const projectHeaderSentinelRefs = React.useRef<Map<string, HTMLDivElement | null>>(new Map());
-  const stuckProjectHeaders = useStickyProjectHeaders({
-    enabled: view.stickyZoneHeaders,
-    isDesktopShellRuntime: view.isDesktopShellRuntime,
-    projectSections,
-    projectHeaderSentinelRefs,
-  });
   useArchivedAutoFolders({
     enabled: true,
     normalizedProjects: topology.projects,
@@ -535,7 +527,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
   const scrollerModel = React.useMemo(() => ({
     topContent: recentSection,
     topContentHasSearchMatches,
-    hasSharedSessions: Boolean(recentSection),
     sectionsForRender: orderedSectionsForRender,
     projectSections,
     activeProjectId: view.activeProjectId,
@@ -544,8 +535,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     emptyState: view.emptyState,
     searchEmptyState: view.searchEmptyState,
     projectRepoStatus: topology.projectRepoStatus,
-    stuckProjectHeaders,
-    projectHeaderSentinelRefs,
     state: { editingId, openSidebarMenuKey, setOpenSidebarMenuKey, visibleSessionCountByGroup },
     groupProps,
   }), [
@@ -554,7 +543,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     openSidebarMenuKey,
     projectSections,
     orderedSectionsForRender,
-    stuckProjectHeaders,
     topology.projectRepoStatus,
     view.activeProjectId,
     view.emptyState,
@@ -572,7 +560,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     hasSessionSearchQuery: view.hasSessionSearchQuery,
     normalizedSessionSearchQuery: view.normalizedSessionSearchQuery,
     hideDirectoryControls: view.hideDirectoryControls,
-    isDesktopShellRuntime: view.isDesktopShellRuntime,
     stickyZoneHeaders: view.stickyZoneHeaders,
     mobileVariant: view.mobileVariant,
     alwaysShowActions,
@@ -582,7 +569,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     view.homeDirectory,
     view.hasSessionSearchQuery,
     view.hideDirectoryControls,
-    view.isDesktopShellRuntime,
     view.mobileVariant,
     alwaysShowActions,
     view.normalizedSessionSearchQuery,
