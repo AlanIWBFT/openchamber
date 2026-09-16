@@ -628,6 +628,12 @@ html:not(.dark) .chat-scroll {
   scrollbar-gutter: unset !important;
 }
 
+/* Extensions can cross the overflow threshold as cards expand or the catalog loads. */
+.overlay-scrollbar-target:has(> .extensions-settings-page),
+.extensions-settings-page > .overlay-scrollbar-target {
+  scrollbar-gutter: stable !important;
+}
+
 .overlay-scrollbar-target::-webkit-scrollbar {
   width: 0 !important;
   height: 0 !important;

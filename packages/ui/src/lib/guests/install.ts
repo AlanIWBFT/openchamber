@@ -17,6 +17,7 @@ const errorSchema = z.object({
     'missing-build',
     'host-too-old',
     'bundled',
+    'reserved-id',
     'clone-failed',
     'extract-failed',
     'too-large',
@@ -35,6 +36,7 @@ export type InstallGuestErrorCode =
   | 'missing-build'
   | 'host-too-old'
   | 'bundled'
+  | 'reserved-id'
   | 'clone-failed'
   | 'extract-failed'
   | 'too-large'

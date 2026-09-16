@@ -1508,6 +1508,9 @@ const spawnLocalServer = async () => {
     attachSignals: false,
     exitOnShutdown: false,
     apiOnly: false,
+    builtInExtensionsDir: app.isPackaged
+      ? path.join(app.getAppPath().endsWith('.asar') ? `${app.getAppPath()}.unpacked` : app.getAppPath(), 'node_modules/@openchamber/web/server/built-in-extensions')
+      : undefined,
     onDesktopNotification: (payload) => maybeShowNativeNotification(payload),
     getIsWindowFocused: isAnyWindowFocused,
     getDesktopRuntimeConfig: () => ({

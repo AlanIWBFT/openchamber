@@ -99,6 +99,8 @@ bun run lint:electron
 
 ## Packaging
 
+Built-in SDK extensions are built by the web build into `@openchamber/web/server/built-in-extensions`. Electron Builder unpacks that directory from ASAR, and `main.mjs` supplies its physical path to the backend. This keeps both iframe assets and future Node service entries usable. Sources and the registry live in `packages/extensions`; user data remains in the instance data directory.
+
 From the repo root:
 
 ```bash

@@ -12,6 +12,7 @@ import {
 } from './catalog.js';
 import { stopGuestService } from './service.js';
 import { cloneGitRepository, isHttpsZipUrl, isPublicHostname, parseGitInstallUrl, publicAddressesOf } from './clone.js';
+import { isReservedBuiltInId } from './builtins.js';
 import { extractZipBuffer, unwrapGuestRoot } from './extract-zip.js';
 import {
   guestCopiesDir,
@@ -36,6 +37,7 @@ export const parseInstallRequest = (body) => {
 };
 
 const persistGuest = async (guest, root, source, persistPath, { replace = false, origin = null } = {}) => {
+  if (isReservedBuiltInId(guest.id)) return { ok: false, code: 'reserved-id' };
   const stored = await readExtensionStore(persistPath);
   const storedRoots = await Promise.all(stored.paths.map((entry) => resolveGuestPackageRoot(entry)));
   if (storedRoots.some((entry) => entry === root)) {
@@ -97,6 +99,10 @@ const installCopiedGuest = async ({ source, prepare, persistPath, openchamberVer
     if (!inspected.ok) {
       await removeDir(staging);
       return inspected;
+    }
+    if (isReservedBuiltInId(inspected.guest.id)) {
+      await removeDir(staging);
+      return { ok: false, code: 'reserved-id' };
     }
     const dest = path.join(copies, inspected.guest.id);
     const store = await readExtensionStore(persistPath);

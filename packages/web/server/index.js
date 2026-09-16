@@ -1935,6 +1935,7 @@ async function main(options = {}) {
     createFsSearchRuntime: createFsSearchRuntimeFactory,
     openchamberDataDir: OPENCHAMBER_DATA_DIR,
     openchamberVersion: OPENCHAMBER_VERSION,
+    builtInExtensionsDir: options.builtInExtensionsDir,
     openchamberUserConfigRoot: OPENCHAMBER_USER_CONFIG_ROOT,
     managedChatsRoot: OPENCHAMBER_CHATS_DIR,
     normalizeDirectoryPath,

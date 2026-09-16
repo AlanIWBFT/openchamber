@@ -693,6 +693,9 @@ export const registerGuestRoutes = (app, {
       if (!guest) {
         return res.status(404).json({ error: 'not-found' });
       }
+      if (guest.source === 'bundled') {
+        return res.status(400).json({ error: 'bundled' });
+      }
       const parsed = capabilityGrantSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: 'invalid-request' });

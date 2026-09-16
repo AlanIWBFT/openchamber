@@ -39,7 +39,7 @@ host.onReady((ctx) => {
   const intro = mountText(page, {
     text: ctx.surface === 'dialog'
       ? 'Pick a task to attach it to the chat, or start a session from it.'
-      : 'Pick a task, then use the buttons. Decline the approval dialog to see NOT_GRANTED.',
+      : 'Pick a task, then use the buttons. Approve the requested permissions when installing.',
   });
   void intro;
 

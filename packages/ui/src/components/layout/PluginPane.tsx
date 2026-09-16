@@ -329,7 +329,7 @@ export const PluginPane: React.FC<PluginPaneProps> = ({
     const requestingGuestId = guestIdRef.current;
     const currentGuest = () => useGuestsStore.getState().guests.find((entry) => entry.id === requestingGuestId) ?? null;
     const clearSubscriptions = () => { for (const unsubscribe of subscriptions.values()) unsubscribe(); subscriptions.clear(); };
-    const runtimeUnsubscribe = subscribeRuntimeEndpointChanged(() => { disposed = true; clearSubscriptions(); });
+    const runtimeUnsubscribe = subscribeRuntimeEndpointChanged(() => { disposed = true; clearSubscriptions(); stopOauthPoll(); });
     const requireSessions = () => {
       if (!guestMay(currentGuest(), 'sessions')) throw new HostRequestError('NOT_GRANTED', NOT_GRANTED_MESSAGE);
     };
@@ -447,7 +447,7 @@ export const PluginPane: React.FC<PluginPaneProps> = ({
           const id = guestIdRef.current;
           const previous = useGuestOauthStore.getState().byId[id]?.connection ?? EMPTY_GUEST_CONNECTION;
           const authorizationUrl = await startGuestOauth(id);
-          if (!authorizationUrl) {
+          if (!authorizationUrl || disposed || getRuntimeKey() !== runtimeKey) {
             return false;
           }
           void openExternalUrl(authorizationUrl);
@@ -468,11 +468,11 @@ export const PluginPane: React.FC<PluginPaneProps> = ({
           return true;
         },
         oauthDisconnect: async () => {
-          const status = await disconnectGuestOauth(guestIdRef.current);
-          if (!status) {
+          const status = await disconnectGuestOauth(requestingGuestId);
+          if (!status || disposed || getRuntimeKey() !== runtimeKey) {
             return false;
           }
-          setOauthStatus(guestIdRef.current, status);
+          setOauthStatus(requestingGuestId, status);
           return true;
         },
         request: async (request) => {

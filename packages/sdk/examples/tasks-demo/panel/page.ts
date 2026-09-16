@@ -6,6 +6,7 @@ const host = connectHost();
 const root = document.querySelector('#root');
 if (!root) throw new Error('Missing root');
 let mounted = false;
+let disposed = false;
 const cleanup: Array<() => void> = [];
 host.onReady((context) => {
   applyHostReady(context, document.documentElement);
@@ -45,7 +46,8 @@ host.onReady((context) => {
     projectId = id;
     projects.update({ value: id });
     destination = 'root';
-    worktree.update({ value: 'root' });
+    worktree.update({ value: 'root', options: [{ id: 'root', label: 'Project root' }, { id: 'new', label: 'New worktree' }] });
+    sessions.update({ items: [] });
     stopSessions(); stopWorktrees();
     const current = ++generation;
     const releaseSessions = await host.onSessions(id, (snapshot) => { if (current === generation) updateSessions(snapshot); });
@@ -55,7 +57,12 @@ host.onReady((context) => {
       const releaseWorktrees = await host.onWorktrees(id, (snapshot) => {
         if (current !== generation) return;
         worktree.update({ options: [{ id: 'root', label: 'Project root' }, { id: 'new', label: 'New worktree' },
-          ...snapshot.worktrees.map((entry) => ({ id: entry.directory, label: `${entry.name} · ${entry.status}` }))] });
+          ...snapshot.worktrees.map((entry) => ({ id: entry.directory, label: `${entry.name} · ${entry.status}`, disabled: entry.status !== 'ready' }))] });
+        if (snapshot.state === 'ready' && destination !== 'root' && destination !== 'new'
+          && !snapshot.worktrees.some((entry) => entry.directory === destination && entry.status === 'ready')) {
+          destination = 'root';
+          worktree.update({ value: destination });
+        }
       });
       if (current !== generation) { releaseSessions(); releaseWorktrees(); return; }
       stopWorktrees = releaseWorktrees;
@@ -89,17 +96,30 @@ host.onReady((context) => {
   }); } });
   void report(async () => {
     const saved = await host.storage.get('board-notes');
-    if (!noteEdited) { note = String(saved ?? ''); notes.update({ value: note }); }
+    if (!disposed && !noteEdited) { note = String(saved ?? ''); notes.update({ value: note }); }
+  });
+  void report(async () => {
     const stop = await host.onProjects((snapshot) => {
+      if (disposed) return;
+      if (snapshot.state !== 'ready') {
+        notice.update({ tone: snapshot.state === 'error' ? 'error' : 'info', title: `Projects: ${snapshot.state}`,
+          body: 'Keeping the current selection until the project list is available.' });
+        return;
+      }
       projects.update({ options: snapshot.projects.map((project) => ({ id: project.id, label: project.name })) });
       if (!snapshot.projects.some((entry) => entry.id === projectId)) {
         const first = snapshot.projects[0];
         if (first) { projects.update({ value: first.id }); void report(() => selectProject(first.id)); }
-        else { projectId = ''; generation++; stopSessions(); stopWorktrees(); sessions.update({ items: [] }); }
+        else {
+          projectId = ''; destination = 'root'; generation++; stopSessions(); stopWorktrees();
+          projects.update({ value: '' });
+          worktree.update({ value: 'root', options: [{ id: 'root', label: 'Project root' }, { id: 'new', label: 'New worktree' }] });
+          sessions.update({ items: [] });
+        }
       }
     });
-    cleanup.push(stop);
+    if (disposed) stop(); else cleanup.push(stop);
   });
   cleanup.push(() => { generation++; stopSessions(); stopWorktrees(); });
 });
-window.addEventListener('pagehide', () => { for (const dispose of cleanup) dispose(); host.dispose(); });
+window.addEventListener('pagehide', () => { disposed = true; for (const dispose of cleanup) dispose(); host.dispose(); });

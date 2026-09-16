@@ -198,7 +198,9 @@ const renderSessionAction = (item: GuestSessionItem): void => {
   mountSeparator(page);
   for (const message of messages) {
     const line = message.text.replace(/\s+/g, ' ').slice(0, 200);
-    mountText(page, { text: `${message.role}: ${line}${message.text.length > 200 ? '…' : ''}` });
+    const preview = document.createElement('p');
+    preview.textContent = `${message.role}: ${line}${message.text.length > 200 ? '…' : ''}`;
+    page.append(preview);
   }
   const actions = document.createElement('div');
   actions.style.display = 'flex';

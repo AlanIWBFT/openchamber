@@ -94,9 +94,11 @@ host.onReady((ctx) => {
   let raw = '';
   let draft = '';
   let parsed: Json | null = null;
+  let fileExists = false;
   let parseError: string | null = null;
   let tab: 'explore' | 'raw' = 'explore';
   let path: string[] = [];
+  let saving = false;
 
   const load = async (): Promise<void> => {
     clear(header, headerMounted);
@@ -104,8 +106,10 @@ host.onReady((ctx) => {
     const spinner = mountSpinner(body, { label: 'Reading opencode.json' });
     try {
       const stat = await host.stat(CONFIG_PATH);
+      fileExists = stat.kind === 'file';
       raw = stat.kind === 'file' ? (await host.readFile(CONFIG_PATH)).content : '';
       draft = raw;
+      path = [];
       parsed = null;
       parseError = null;
       if (stat.kind === 'file') {
@@ -125,21 +129,31 @@ host.onReady((ctx) => {
     }
   };
 
-  const save = async (button: { update: (next: { loading?: boolean }) => void }): Promise<void> => {
+  const save = async (): Promise<void> => {
+    if (saving) return;
+    const written = draft;
     try {
-      JSON.parse(draft);
+      JSON.parse(written);
     } catch (error) {
       void host.toast({ kind: 'error', message: `Not valid JSON: ${error instanceof Error ? error.message : String(error)}` });
       return;
     }
-    button.update({ loading: true });
+    saving = true;
+    paint();
     try {
-      await host.writeFile(CONFIG_PATH, draft);
+      await host.writeFile(CONFIG_PATH, written);
+      raw = written;
+      // SAFETY: JSON.parse validates the saved JSON; every JSON value fits Json.
+      parsed = JSON.parse(written) as Json;
+      fileExists = true;
+      parseError = null;
+      path = [];
       await host.toast({ kind: 'success', message: 'Saved opencode.json' });
-      await load();
     } catch (error) {
-      button.update({ loading: false });
       void host.toast({ kind: 'error', message: errorText(error) });
+    } finally {
+      saving = false;
+      paint();
     }
   };
 
@@ -168,7 +182,7 @@ host.onReady((ctx) => {
     if (parsed !== null && isRecord(parsed) && typeof parsed.$schema === 'string') {
       headerMounted.push(mountBadge(header, { label: 'schema', tone: 'info' }));
     }
-    headerMounted.push(mountButton(header, { label: 'Reload', variant: 'ghost', size: 'xs', onClick: () => void load() }));
+    headerMounted.push(mountButton(header, { label: 'Reload', variant: 'ghost', size: 'xs', disabled: saving, onClick: () => void load() }));
   };
 
   const paintExplore = (): void => {
@@ -181,7 +195,7 @@ host.onReady((ctx) => {
       }));
       return;
     }
-    if (parsed === null) {
+    if (!fileExists) {
       mounted.push(mountEmpty(body, {
         title: 'No config yet',
         body: `${CONFIG_PATH} does not exist. Create it on the Raw tab.`,
@@ -247,7 +261,7 @@ host.onReady((ctx) => {
   };
 
   const paintRaw = (): void => {
-    mounted.push(mountTextField(body, {
+    const editor = mountTextField(body, {
       label: CONFIG_PATH,
       value: draft,
       multiline: true,
@@ -255,13 +269,15 @@ host.onReady((ctx) => {
       rows: 18,
       placeholder: '{\n  "$schema": "https://opencode.ai/config.json"\n}',
       helper: parseError ?? undefined,
-      onChange: (next) => { draft = next; },
-    }));
+      onChange: (next) => { draft = next; editor.update({ value: next }); },
+    });
+    mounted.push(editor);
     const actions = row(body);
-    const button = mountButton(actions, { label: 'Save', size: 'sm', onClick: () => void save(button) });
+    const button = mountButton(actions, { label: 'Save', size: 'sm', loading: saving, onClick: () => void save() });
     mounted.push(button);
     mounted.push(mountButton(actions, {
       label: 'Discard changes',
+      disabled: saving,
       variant: 'ghost',
       size: 'sm',
       onClick: () => { draft = raw; paint(); },

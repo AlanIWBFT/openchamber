@@ -8,6 +8,21 @@ import { listRelativeGuestScriptHrefs, resolveGuestHtmlRelativePath } from './ht
 import { effectiveGrants, guestGrantScope } from './grant-scope.js';
 import { onExtensionStoreWrite, readExtensionStore } from './persist.js';
 import { buildPublicSocketBindings } from './sockets.js';
+import { isReservedBuiltInId, readBuiltInRegistry } from './builtins.js';
+
+const builtInsByStore = new Map();
+
+/** Registers the app-shipped catalog for one server instance, never a user install directory. */
+export const registerBuiltInGuests = async ({ persistPath, root }) => {
+  const registry = await readBuiltInRegistry(root);
+  builtInsByStore.set(persistPath, registry);
+  invalidateGuestCatalog(persistPath);
+  return () => {
+    if (builtInsByStore.get(persistPath) !== registry) return;
+    builtInsByStore.delete(persistPath);
+    invalidateGuestCatalog(persistPath);
+  };
+};
 
 const PANEL_ID = /^[a-z][a-z0-9-]*$/;
 
@@ -375,6 +390,32 @@ const listInstalledGuestsUncached = async ({ persistPath } = {}) => {
   const seen = new Set();
 
   const stored = await readExtensionStore(persistPath);
+  const builtIns = builtInsByStore.get(persistPath);
+  if (builtIns) {
+    for (const entry of builtIns.extensions) {
+      // Reserve the ID even when this individual package is broken.
+      seen.add(entry.id);
+      const root = await fs.realpath(path.join(builtIns.root, entry.directory)).catch(() => null);
+      if (!root || !root.startsWith(builtIns.root + path.sep)) {
+        console.warn(`Built-in extension is unavailable: ${entry.id}`);
+        continue;
+      }
+      const guest = await loadGuestFromPackageRoot(root, { skipEngineCheck: true }).catch(() => null);
+      if (!guest || guest.id !== entry.id) {
+        console.warn(`Built-in extension is invalid: ${entry.id}`);
+        continue;
+      }
+      const socketBindings = guest.service?.permissions?.sockets?.length
+        ? await buildPublicSocketBindings(guest.service.permissions.sockets, stored.serviceSocketOverrides?.[guest.id] ?? {})
+        : undefined;
+      guests.push({
+        ...withSource(guest, 'bundled', null),
+        capabilityGrants: requestedGuestCapabilities(guest),
+        enabled: !stored.disabledGuests?.[guest.id],
+        socketBindings,
+      });
+    }
+  }
   for (const storedPath of stored.paths) {
     const root = await resolveGuestPackageRoot(storedPath);
     if (!root) {
@@ -383,7 +424,7 @@ const listInstalledGuestsUncached = async ({ persistPath } = {}) => {
     // Already-installed packages stay listed even if engines.openchamber is newer
     // than this host. Install is the gate.
     const guest = await loadGuestFromPackageRoot(root, { skipEngineCheck: true });
-    if (!guest || seen.has(guest.id)) {
+    if (!guest || seen.has(guest.id) || isReservedBuiltInId(guest.id)) {
       continue;
     }
     seen.add(guest.id);
