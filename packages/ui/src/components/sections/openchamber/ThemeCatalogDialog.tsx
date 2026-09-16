@@ -1,6 +1,7 @@
 import React from 'react';
 import { toast } from 'sonner';
-import { DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Icon } from '@/components/icon/Icon';
@@ -9,6 +10,8 @@ import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { searchThemeCatalog, readThemePackage, type ThemeExtension } from '@/lib/theme/vscode/catalog';
 import { SettingsCheckboxRow } from '../shared/SettingsSection';
 import { subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import { useDeviceInfo } from '@/lib/device';
+import { useUIStore } from '@/stores/useUIStore';
 
 type Variants = Awaited<ReturnType<typeof readThemePackage>>;
 type CatalogState =
@@ -23,8 +26,11 @@ function ExtensionIcon({ extension }: { extension: ThemeExtension }) {
     : <Icon name="palette" className="size-9 shrink-0 text-muted-foreground" />;
 }
 
-export function ThemeCatalogDialog({ pickFile, fileBusy }: { pickFile: () => void; fileBusy: boolean }) {
+export function ThemeCatalogDialog({ pickFile, fileBusy, onClose }: { pickFile: () => void; fileBusy: boolean; onClose: () => void }) {
   const { t } = useI18n();
+  const mobileLayout = useUIStore((state) => state.isMobile);
+  const { isMobile: mobileDevice } = useDeviceInfo();
+  const isMobile = mobileLayout || mobileDevice;
   const { importTheme } = useThemeSystem();
   const [query, setQuery] = React.useState('');
   const [state, setState] = React.useState<CatalogState>({ step: 'search', status: 'idle', results: [] });
@@ -102,15 +108,15 @@ export function ThemeCatalogDialog({ pickFile, fileBusy }: { pickFile: () => voi
     : [];
   const allSelected = selectable.length > 0 && selectable.every((variant) => selected.has(variant.key));
 
-  return (
-    <DialogContent className="max-w-lg" backdropProps={{ forceRender: true }}>
-      <DialogHeader>
-        <DialogTitle>{t('settings.themeImport.catalogTitle')}</DialogTitle>
-        <DialogDescription>{t('settings.themeImport.catalogHint')}</DialogDescription>
-      </DialogHeader>
+  const actions = <>
+    {state.step === 'variants' && <Button disabled={!selected.size || saving || fileBusy} onClick={() => void install()}>{t(saving ? 'settings.themeImport.busy' : 'settings.themeImport.importSelected')}</Button>}
+    <Button variant="outline" className="self-start" disabled={saving || fileBusy} onClick={pickFile}>{t('settings.themeImport.chooseFile')}</Button>
+  </>;
+
+  const content = <>
       {state.step === 'search' ? <>
         <Input autoFocus aria-label={t('settings.themeImport.search')} placeholder={t('settings.themeImport.search')} value={query} maxLength={160} onChange={(event) => setQuery(event.target.value)} />
-        <div className="max-h-[45dvh] overflow-y-auto space-y-1" aria-live="polite">
+        <div className={isMobile ? 'space-y-1' : 'max-h-[45dvh] overflow-y-auto space-y-1'} aria-live="polite">
           {state.status === 'loading' && <p className="text-muted-foreground">{t('common.loading')}</p>}
           {state.status === 'error' && <p role="alert" className="text-[var(--status-error-text)]">{t('settings.themeImport.catalogError')}</p>}
           {state.status === 'ready' && !state.results.length && <p className="text-muted-foreground">{t('settings.themeImport.empty')}</p>}
@@ -133,7 +139,7 @@ export function ThemeCatalogDialog({ pickFile, fileBusy }: { pickFile: () => voi
               onClick={() => setSelected(allSelected ? new Set() : new Set(selectable.map((variant) => variant.key)))}>
               {t(allSelected ? 'settings.themeImport.deselectAll' : 'settings.themeImport.selectAll')}
             </Button>}
-            <div className="max-h-[45dvh] overflow-y-auto space-y-2">
+            <div className={isMobile ? 'space-y-2' : 'max-h-[45dvh] overflow-y-auto space-y-2'}>
               {state.variants.map((variant) => <div key={variant.key} className="flex items-center gap-3">
                 {variant.status === 'ready' && <div aria-hidden="true" className="flex w-20 shrink-0 items-center gap-2 rounded px-2 py-3" style={{ backgroundColor: variant.theme.colors.surface.background, color: variant.theme.colors.surface.foreground }}>
                   <span>Aa</span><span className="space-y-1">{[variant.theme.colors.syntax.base.keyword, variant.theme.colors.syntax.base.string, variant.theme.colors.syntax.base.function].map((color, index) => <span key={index} className="block h-1 w-5 rounded" style={{ backgroundColor: color }} />)}</span>
@@ -147,10 +153,28 @@ export function ThemeCatalogDialog({ pickFile, fileBusy }: { pickFile: () => voi
                 </div>
               </div>)}
             </div>
-            <Button disabled={!selected.size || saving || fileBusy} onClick={() => void install()}>{t(saving ? 'settings.themeImport.busy' : 'settings.themeImport.importSelected')}</Button>
           </>}
       </>}
-      <Button variant="outline" className="self-start" disabled={saving || fileBusy} onClick={pickFile}>{t('settings.themeImport.chooseFile')}</Button>
+  </>;
+
+  if (isMobile) {
+    return <MobileOverlayPanel open title={t('settings.themeImport.catalogTitle')} onClose={onClose}
+      footer={<div className="flex flex-col gap-2">{actions}</div>}>
+      <div className="flex flex-col gap-4 px-1">
+        <p className="typography-meta text-muted-foreground">{t('settings.themeImport.catalogHint')}</p>
+        {content}
+      </div>
+    </MobileOverlayPanel>;
+  }
+
+  return <Dialog open onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+    <DialogContent className="max-w-lg" backdropProps={{ forceRender: true }}>
+      <DialogHeader>
+        <DialogTitle>{t('settings.themeImport.catalogTitle')}</DialogTitle>
+        <DialogDescription>{t('settings.themeImport.catalogHint')}</DialogDescription>
+      </DialogHeader>
+      {content}
+      {actions}
     </DialogContent>
-  );
+  </Dialog>;
 }

@@ -8,7 +8,6 @@ import { getRuntimeKey, subscribeRuntimeEndpointChanged } from '@/lib/runtime-sw
 import { importVSCodeTheme } from '@/lib/theme/vscode/import';
 import { MAX_THEME_IMPORT_BYTES, ThemeImportError } from '@/lib/theme/importErrors';
 import { SettingsInfoHint } from '../shared/SettingsInfoHint';
-import { Dialog } from '@/components/ui/dialog';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { ThemeCatalogDialog } from './ThemeCatalogDialog';
 
@@ -17,6 +16,7 @@ export function ThemeImportButton() {
   const { importTheme, customThemesLoading } = useThemeSystem();
   const apis = useRuntimeAPIs();
   const [open, setOpen] = React.useState(false);
+  const close = React.useCallback(() => setOpen(false), []);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const runtimeGenerationRef = React.useRef(0);
   const pickerRuntimeRef = React.useRef<{ key: string; generation: number } | null>(null);
@@ -74,9 +74,7 @@ export function ThemeImportButton() {
       </Button>
       <SettingsInfoHint>{t('settings.themeImport.catalogHint')}</SettingsInfoHint>
       <input ref={inputRef} type="file" accept=".json,.jsonc" className="hidden" aria-label={t('settings.themeImport.action')} onChange={handleFile} />
-      <Dialog open={open} onOpenChange={setOpen}>
-        {open && <ThemeCatalogDialog pickFile={() => void pickFile()} fileBusy={busy} />}
-      </Dialog>
+      {open && <ThemeCatalogDialog pickFile={() => void pickFile()} fileBusy={busy} onClose={close} />}
     </div>
   );
 }

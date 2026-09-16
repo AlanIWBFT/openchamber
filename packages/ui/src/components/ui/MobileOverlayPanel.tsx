@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { ScrollableOverlay } from './ScrollableOverlay';
 import { Icon } from "@/components/icon/Icon";
+import { useI18n } from '@/lib/i18n';
 
 interface MobileOverlayPanelProps {
   open: boolean;
@@ -41,6 +42,7 @@ export const MobileOverlayPanel: React.FC<MobileOverlayPanelProps> = ({
   contentMaxHeightClassName,
   renderHeader,
 }) => {
+  const { t } = useI18n();
   const overlayRootRef = React.useRef<HTMLElement | null>(null);
   const [entered, setEntered] = React.useState(false);
   // True once the enter transition has finished. While entering, the panel's
@@ -146,6 +148,7 @@ export const MobileOverlayPanel: React.FC<MobileOverlayPanelProps> = ({
           const closeButton = (
             <button
               type="button"
+              aria-label={t('dialog.common.actions.close')}
               onClick={onClose}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-interactive-hover"
             >

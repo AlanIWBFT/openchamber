@@ -104,7 +104,14 @@ prevent old mutations applying even after switching away and back.
 it only to trusted desktop pages; browser/hosted-mobile/Capacitor use file inputs.
 VS Code returns 501 for theme management routes and exposes no import controls.
 
-The import dialog explicitly renders its backdrop when nested inside Settings.
+On mobile, theme import uses `MobileOverlayPanel`, with actions in its footer and
+the catalog body in its single shared scroller. The panel owns keyboard insets and
+safe-area sizing; avoid nested viewport-height lists inside it. Search, variant
+selection and pending imports stay in the same controller across layout changes.
+Theme pickers use the shared Select's safe-area-aware collision padding so long
+lists can scroll without reaching under the native status bar or home indicator.
+
+The desktop import dialog explicitly renders its backdrop when nested inside Settings.
 Base UI omits nested backdrops by default, so a click on the parent's backdrop
 does not dismiss the child modal. Keep dismissal with the dialog primitive.
 
