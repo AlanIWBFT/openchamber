@@ -258,6 +258,9 @@ and the send path reading the same grammar.
   them after loading that identity's draft. Selection alone is not enough:
   the deferred chat column can still show the source composer. Ordinary
   pending text insertions keep their existing path in `ChatInput`.
+  The hook also selects the attachment draft before paint. `input-store.ts`
+  owns its in-memory files and scoped send recovery, documented in
+  `packages/ui/src/sync/DOCUMENTATION.md`.
 - `state/useDraftTarget.ts` — the draft can target a directory that does not
   exist yet (a worktree being created). It must survive not appearing in the
   branch list, or the selector snaps back to the project root mid-creation. It
