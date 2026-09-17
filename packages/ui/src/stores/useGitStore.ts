@@ -457,18 +457,22 @@ const haveDiffStatsChanged = (
   if (!previous && !next) return false;
   if (!previous || !next) return true;
 
-  const paths = new Set([...Object.keys(previous), ...Object.keys(next)]);
-  for (const path of paths) {
-    const prevEntry = previous[path];
-    const nextEntry = next[path];
+  for (const scope of ['staged', 'working'] as const) {
+    const previousScope = previous[scope] ?? {};
+    const nextScope = next[scope] ?? {};
+    const paths = new Set([...Object.keys(previousScope), ...Object.keys(nextScope)]);
+    for (const path of paths) {
+      const prevEntry = previousScope[path];
+      const nextEntry = nextScope[path];
 
-    if (!prevEntry && !nextEntry) continue;
-    if (!prevEntry || !nextEntry) return true;
-    if (
-      prevEntry.insertions !== nextEntry.insertions ||
-      prevEntry.deletions !== nextEntry.deletions
-    ) {
-      return true;
+      if (!prevEntry && !nextEntry) continue;
+      if (!prevEntry || !nextEntry) return true;
+      if (
+        prevEntry.insertions !== nextEntry.insertions ||
+        prevEntry.deletions !== nextEntry.deletions
+      ) {
+        return true;
+      }
     }
   }
 
@@ -553,21 +557,26 @@ const getChangedFilePaths = (oldStatus: GitStatus | null, newStatus: GitStatus |
 
   // Only compare diffStats when light mode provides them (non-undefined)
   if (newStatus.diffStats !== undefined) {
-    const oldStats = oldStatus?.diffStats ?? {};
-    const newStats = newStatus.diffStats ?? {};
-    const allStatPaths = new Set<string>([...Object.keys(oldStats), ...Object.keys(newStats)]);
+    const oldStats = oldStatus?.diffStats;
+    const newStats = newStatus.diffStats;
 
-    for (const filePath of allStatPaths) {
-      const oldEntry = oldStats[filePath];
-      const newEntry = newStats[filePath];
+    for (const scope of ['staged', 'working'] as const) {
+      const oldScope = oldStats?.[scope] ?? {};
+      const newScope = newStats[scope] ?? {};
+      const allStatPaths = new Set<string>([...Object.keys(oldScope), ...Object.keys(newScope)]);
 
-      if (!oldEntry || !newEntry) {
-        changed.add(filePath);
-        continue;
-      }
+      for (const filePath of allStatPaths) {
+        const oldEntry = oldScope[filePath];
+        const newEntry = newScope[filePath];
 
-      if (oldEntry.insertions !== newEntry.insertions || oldEntry.deletions !== newEntry.deletions) {
-        changed.add(filePath);
+        if (!oldEntry || !newEntry) {
+          changed.add(filePath);
+          continue;
+        }
+
+        if (oldEntry.insertions !== newEntry.insertions || oldEntry.deletions !== newEntry.deletions) {
+          changed.add(filePath);
+        }
       }
     }
   }
@@ -1174,8 +1183,12 @@ export const useGitStore = create<GitStore>()(
             continue;
           }
           // Skip large files during prefetch — they'll be fetched on-demand when user clicks
-          const stats = diffStats?.[filePath];
-          if (stats && (stats.insertions + stats.deletions) > DIFF_PREFETCH_LARGE_FILE_THRESHOLD) {
+          const stagedStats = diffStats?.staged?.[filePath];
+          const workingStats = diffStats?.working?.[filePath];
+          const changedLineCount =
+            (stagedStats?.insertions ?? 0) + (stagedStats?.deletions ?? 0)
+            + (workingStats?.insertions ?? 0) + (workingStats?.deletions ?? 0);
+          if (changedLineCount > DIFF_PREFETCH_LARGE_FILE_THRESHOLD) {
             continue;
           }
           dedupedPaths.push(filePath);

@@ -1351,21 +1351,39 @@ export const DiffView: React.FC<DiffViewProps> = ({
         }
 
         if (!status?.files) return [];
-        const diffStats = status.diffStats ?? {};
+        const diffStats = status.diffStats;
         const includeFile = activeDiffScope === 'staged'
             ? isStagedStatusFile
             : activeDiffScope === 'working'
                 ? isWorkingStatusFile
                 : () => true;
 
+        const statsForFile = (filePath: string): { insertions: number; deletions: number } => {
+            const staged = diffStats?.staged?.[filePath];
+            const working = diffStats?.working?.[filePath];
+            if (activeDiffScope === 'staged') {
+                return { insertions: staged?.insertions ?? 0, deletions: staged?.deletions ?? 0 };
+            }
+            if (activeDiffScope === 'working') {
+                return { insertions: working?.insertions ?? 0, deletions: working?.deletions ?? 0 };
+            }
+            return {
+                insertions: (staged?.insertions ?? 0) + (working?.insertions ?? 0),
+                deletions: (staged?.deletions ?? 0) + (working?.deletions ?? 0),
+            };
+        };
+
         return status.files
             .filter(includeFile)
-            .map((file) => ({
-                ...file,
-                insertions: diffStats[file.path]?.insertions ?? 0,
-                deletions: diffStats[file.path]?.deletions ?? 0,
-                isNew: isNewStatusFile(file),
-            }))
+            .map((file) => {
+                const stats = statsForFile(file.path);
+                return {
+                    ...file,
+                    insertions: stats.insertions,
+                    deletions: stats.deletions,
+                    isNew: isNewStatusFile(file),
+                };
+            })
             .sort((a, b) => a.path.localeCompare(b.path));
     }, [activeDiffScope, branchFiles, comparison.files, lastTurnDiffs, status]);
 

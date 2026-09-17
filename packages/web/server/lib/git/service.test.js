@@ -731,6 +731,52 @@ describe('getStatus', () => {
       process.chdir(previousCwd);
     }
   });
+
+  it('scopes diff stats by staged and working instead of combining a partially staged file', async () => {
+    if (!canRunGit()) return;
+
+    const repo = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    const file = 'test.txt';
+    const filePath = path.join(repo, file);
+    fs.writeFileSync(filePath, 'one\ntwo\nthree\n');
+    runGit(repo, ['add', file]);
+    runGit(repo, ['commit', '-m', 'initial']);
+
+    // Stage one new line, then keep editing without staging another.
+    fs.writeFileSync(filePath, 'one\ntwo\nthree\nstaged\n');
+    runGit(repo, ['add', file]);
+    fs.writeFileSync(filePath, 'one\ntwo\nthree\nstaged\nworking\n');
+
+    const status = await getStatus(repo);
+
+    expect(status.diffStats.staged[file]).toEqual({ insertions: 1, deletions: 0 });
+    expect(status.diffStats.working[file]).toEqual({ insertions: 1, deletions: 0 });
+  });
+
+  it('scopes untracked files to working stats and staged additions to staged stats', async () => {
+    if (!canRunGit()) return;
+
+    const repo = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'tracked.txt'), 'tracked\n');
+    runGit(repo, ['add', 'tracked.txt']);
+    runGit(repo, ['commit', '-m', 'initial']);
+
+    fs.writeFileSync(path.join(repo, 'untracked.txt'), 'a\nb\n');
+    fs.writeFileSync(path.join(repo, 'staged.txt'), 'c\nd\ne\n');
+    runGit(repo, ['add', 'staged.txt']);
+
+    const status = await getStatus(repo);
+
+    expect(status.diffStats.working['untracked.txt']).toEqual({ insertions: 2, deletions: 0 });
+    expect(status.diffStats.staged['staged.txt']).toEqual({ insertions: 3, deletions: 0 });
+    expect(status.diffStats.working['staged.txt']).toBeUndefined();
+  });
 });
 
 describe('push', () => {

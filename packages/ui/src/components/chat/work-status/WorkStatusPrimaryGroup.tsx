@@ -220,7 +220,7 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
     let additions = 0;
     let deletions = 0;
     if (stats) {
-      for (const entry of Object.values(stats)) {
+      for (const entry of [...Object.values(stats.staged ?? {}), ...Object.values(stats.working ?? {})]) {
         additions += entry?.insertions ?? 0;
         deletions += entry?.deletions ?? 0;
       }

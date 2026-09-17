@@ -93,7 +93,7 @@ describe('useGitStore', () => {
 
   test('keeps timed-out diff requests inside the concurrency limit until they settle', async () => {
     const paths = ['one.ts', 'two.ts', 'three.ts', 'four.ts'];
-    setDirectoryStatus(createStatus({}, paths.map((path) => ({ path, index: ' ', working_dir: 'M' }))));
+    setDirectoryStatus(createStatus({ staged: {}, working: {} }, paths.map((path) => ({ path, index: ' ', working_dir: 'M' }))));
     const pending: Array<{ path: string; request: Deferred<Awaited<ReturnType<GitAPI['getGitFileDiff']>>> }> = [];
     const git = createGitApi(async () => createStatus());
     git.getGitFileDiff = (_directory, { path }) => {
@@ -125,7 +125,7 @@ describe('useGitStore', () => {
 
   test('limits overlapping diff batches per directory and retains capacity across a cache reset', async () => {
     const paths = ['one.ts', 'two.ts', 'three.ts'];
-    const status = createStatus({}, paths.map((path) => ({ path, index: ' ', working_dir: 'M' })));
+    const status = createStatus({ staged: {}, working: {} }, paths.map((path) => ({ path, index: ' ', working_dir: 'M' })));
     const directories = ['/repo-a', '/repo-b', '/repo-c'];
     const populate = () => useGitStore.setState({
       directories: new Map(directories.map((directory) => [directory, createDirectoryState(status)])),
@@ -178,7 +178,7 @@ describe('useGitStore', () => {
 
   test('a duplicate diff demand does not discard the first batch or leave failure slots occupied', async () => {
     const paths = ['one.ts', 'two.ts', 'three.ts'];
-    setDirectoryStatus(createStatus({}, paths.map((path) => ({ path, index: ' ', working_dir: 'M' }))));
+    setDirectoryStatus(createStatus({ staged: {}, working: {} }, paths.map((path) => ({ path, index: ' ', working_dir: 'M' }))));
     const request = createDeferred<Awaited<ReturnType<GitAPI['getGitFileDiff']>>>();
     const git = createGitApi(async () => createStatus());
     let calls = 0;
@@ -219,13 +219,14 @@ describe('useGitStore', () => {
       { directory: '/repo', options: undefined },
     ]);
 
-    requests[1].resolve(createStatus({ 'src/index.ts': { insertions: 1, deletions: 0 } }));
+    requests[1].resolve(createStatus({ staged: {}, working: { 'src/index.ts': { insertions: 1, deletions: 0 } } }));
     await fullPromise;
     requests[0].resolve(createStatus());
     await lightPromise;
 
     expect(useGitStore.getState().getDirectoryState('/repo')?.status?.diffStats).toEqual({
-      'src/index.ts': { insertions: 1, deletions: 0 },
+      staged: {},
+      working: { 'src/index.ts': { insertions: 1, deletions: 0 } },
     });
   });
 
@@ -246,7 +247,7 @@ describe('useGitStore', () => {
 
     expect(statusCalls).toEqual([{ directory: '/repo', options: undefined }]);
 
-    requests[0].resolve(createStatus({ 'src/index.ts': { insertions: 1, deletions: 0 } }));
+    requests[0].resolve(createStatus({ staged: {}, working: { 'src/index.ts': { insertions: 1, deletions: 0 } } }));
     const [fullResult, lightResult] = await Promise.all([fullPromise, lightPromise]);
     expect(lightResult).toBe(fullResult);
   });
@@ -420,7 +421,7 @@ describe('useGitStore', () => {
 
   test('clears cached file contents when a git refresh hint invalidates diffs', () => {
     setDirectoryStatus(createStatus(
-      { 'src/index.ts': { insertions: 1, deletions: 1 } },
+      { staged: {}, working: { 'src/index.ts': { insertions: 1, deletions: 1 } } },
       [{ path: 'src/index.ts', index: ' ', working_dir: 'M' }],
     ));
     useGitStore.getState().setDiff('/repo', 'src/index.ts', { original: 'old', modified: 'stale', submodule: null });
@@ -532,7 +533,7 @@ describe('useGitStore', () => {
   });
 
   test('preserves diff stats during optimistic moves', () => {
-    const diffStats = { 'src/index.ts': { insertions: 2, deletions: 1 } };
+    const diffStats = { staged: {}, working: { 'src/index.ts': { insertions: 2, deletions: 1 } } };
     setDirectoryStatus(createStatus(diffStats, [
       { path: 'src/index.ts', index: ' ', working_dir: 'M' },
     ]));

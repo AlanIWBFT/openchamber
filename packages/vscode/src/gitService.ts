@@ -394,7 +394,10 @@ export interface GitStatusResult {
   behind: number;
   files: GitStatusFile[];
   isClean: boolean;
-  diffStats?: Record<string, { insertions: number; deletions: number }>;
+  diffStats?: {
+    staged: Record<string, { insertions: number; deletions: number }>;
+    working: Record<string, { insertions: number; deletions: number }>;
+  };
   /** Present when a merge is in progress with conflicts */
   mergeInProgress?: GitMergeInProgress | null;
   /** Present when a rebase is in progress */
