@@ -172,8 +172,10 @@ export const getServiceStatus = (guestId) => {
  * @type {Map<string, number>}
  */
 const stopEpochs = new Map();
+let stopAllEpoch = 0;
+let hostShuttingDown = false;
 
-const stopEpochOf = (guestId) => stopEpochs.get(guestId) ?? 0;
+const stopEpochOf = (guestId) => `${stopAllEpoch}:${stopEpochs.get(guestId) ?? 0}`;
 
 /**
  * A user-facing stop (Pause, Remove, withdrawn approval, socket change,
@@ -181,7 +183,7 @@ const stopEpochOf = (guestId) => stopEpochs.get(guestId) ?? 0;
  * @param {string} guestId
  */
 export const stopGuestService = async (guestId) => {
-  stopEpochs.set(guestId, stopEpochOf(guestId) + 1);
+  stopEpochs.set(guestId, (stopEpochs.get(guestId) ?? 0) + 1);
   await discardRuntime(guestId);
 };
 
@@ -218,7 +220,10 @@ const discardRuntime = async (guestId) => {
 /** Test seam: the pid of a guest's running service, or `null`. */
 export const readServicePid = (guestId) => runtimes.get(guestId)?.child.pid ?? null;
 
-export const stopAllGuestServices = async () => {
+export const stopAllGuestServices = async ({ shutdown = false } = {}) => {
+  if (shutdown) hostShuttingDown = true;
+  // Invalidate requests still reading configuration, before a runtime exists.
+  stopAllEpoch += 1;
   const ids = [...runtimes.keys()];
   await Promise.all(ids.map((id) => stopGuestService(id)));
 };
@@ -442,6 +447,9 @@ export const proxyGuestServiceRequest = async ({
   query,
   body,
 }) => {
+  if (hostShuttingDown) {
+    throw new GuestServiceError('The host is shutting down.', 'NO_SERVICE');
+  }
   if (!METHODS.has(method)) {
     throw new GuestServiceError('Unsupported request method.', 'BAD_METHOD');
   }

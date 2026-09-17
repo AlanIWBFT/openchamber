@@ -468,7 +468,10 @@ const shutdownBackgroundServices = () => {
   shellEnvironmentAbort.abort();
   state.backgroundShutdownPromise = Promise.resolve(state.quitPageReadyPromise)
     .then(closeAllDevTunnels)
-    .then(() => Promise.all([loadShellEnv().catch(() => {}), killSidecar()]))
+    .then(() => Promise.all([
+      process.platform === 'win32' ? Promise.resolve() : loadShellEnv().catch(() => {}),
+      stopSidecar(),
+    ]))
     .catch((error) => {
       log.warn('[electron] background shutdown failed:', error);
     })
@@ -1462,6 +1465,7 @@ const shellEnvironmentAbort = new AbortController();
 const loadShellEnv = createShellEnvironmentLoader({
   loadWindowsEnv: async () => {
     const snapshot = await windowsShellEnvProbePromise;
+    shellEnvironmentAbort.signal.throwIfAborted();
     preloadLoginShellEnvSnapshot(snapshot);
     return snapshot;
   },
@@ -1661,88 +1665,7 @@ const startLocalServer = async () => {
 
 const spawnLocalServer = createStartupSingleFlight(startLocalServer);
 
-const launchDetachedOpenCodeKiller = (processInfo) => {
-  if (!processInfo?.managed) return;
-  const pid = Number(processInfo.pid);
-  const port = Number(processInfo.port);
-  const hasPid = Number.isFinite(pid) && pid > 0;
-  const hasPort = Number.isFinite(port) && port > 0;
-  if (!hasPid && !hasPort) return;
-  const normalizedPid = hasPid ? String(Math.trunc(pid)) : '0';
-  const normalizedPort = Number.isFinite(port) && port > 0 ? String(Math.trunc(port)) : '0';
-
-  if (process.platform === 'win32') {
-    if (!hasPid) return;
-    const script = `
-$ErrorActionPreference = 'SilentlyContinue'
-$targetPid = ${normalizedPid}
-$graceMs = ${Math.max(0, Math.trunc(OPENCODE_SHUTDOWN_GRACE_MS))}
-function Stop-ProcessTree([int]$processId, [bool]$force) {
-  if ($processId -le 0) { return }
-  $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$processId"
-  foreach ($child in $children) {
-    Stop-ProcessTree ([int]$child.ProcessId) $force
-  }
-  if ($force) {
-    Stop-Process -Id $processId -Force
-  } else {
-    Stop-Process -Id $processId
-  }
-}
-Stop-ProcessTree $targetPid $false
-Start-Sleep -Milliseconds $graceMs
-Stop-ProcessTree $targetPid $true
-`;
-    const encodedScript = Buffer.from(script, 'utf16le').toString('base64');
-    const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-    const child = spawn(powershell, [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-WindowStyle',
-      'Hidden',
-      '-EncodedCommand',
-      encodedScript,
-    ], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    child.unref();
-    return;
-  }
-
-  if (hasPid) {
-    try {
-      process.kill(-pid, 'SIGTERM');
-    } catch {
-    }
-    try {
-      process.kill(pid, 'SIGTERM');
-    } catch {
-    }
-  }
-
-  const script = [
-    'pid="$1"',
-    'port="$2"',
-    'grace="$3"',
-    'if [ "$pid" -gt 0 ] 2>/dev/null; then kill -TERM "$pid" 2>/dev/null; kill -TERM "-$pid" 2>/dev/null; fi',
-    'sleep "$grace"',
-    'if [ "$pid" -gt 0 ] 2>/dev/null; then kill -KILL "-$pid" 2>/dev/null; kill -KILL "$pid" 2>/dev/null; fi',
-    'if [ "$port" -gt 0 ] 2>/dev/null && command -v lsof >/dev/null 2>&1; then for target in $(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null; lsof -ti ":$port" 2>/dev/null); do [ "$target" = "$$" ] || kill -KILL "$target" 2>/dev/null; done; fi',
-  ].join('; ');
-  const child = spawn('/bin/sh', ['-c', script, 'openchamber-opencode-killer', normalizedPid, normalizedPort, String(OPENCODE_SHUTDOWN_GRACE_MS / 1000)], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  });
-  child.unref();
-};
-
-const killSidecar = async () => {
+const stopSidecar = async () => {
   const handle = state.serverHandle;
   state.openCodeStartupUnsubscribe?.();
   state.openCodeStartupUnsubscribe = null;
@@ -1753,12 +1676,11 @@ const killSidecar = async () => {
     log.warn('[electron] failed to stop SSH processes:', error);
   }
   if (!handle) {
-    serverModule?.stopDesktopBackgroundResources?.();
-    await serverModule?.stopManagedOpenCode?.({ deadline: Date.now() + OPENCHAMBER_SHUTDOWN_TIMEOUT_MS });
+    await serverModule?.gracefulShutdown?.({ exitProcess: false, deadline: Date.now() + OPENCHAMBER_SHUTDOWN_TIMEOUT_MS });
     return;
   }
   await stopEmbeddedServer(handle, {
-    launchFallback: launchDetachedOpenCodeKiller,
+    deadline: Date.now() + OPENCHAMBER_SHUTDOWN_TIMEOUT_MS,
     warn: (error) => log.warn('[electron] embedded server shutdown failed:', error),
   });
 };

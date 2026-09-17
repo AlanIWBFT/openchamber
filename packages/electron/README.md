@@ -10,6 +10,8 @@ Desktop starts the OpenChamber web server in the same Electron main process. The
 
 On Windows, Desktop starts login-shell environment discovery in a one-shot Node Worker Thread immediately after acquiring the single-instance lock. PowerShell profile evaluation and any registry fallback therefore overlap Electron initialization without blocking the main thread; the completed snapshot is still applied before startup reads environment-controlled server settings.
 
+Quit does not wait for the Windows profile probe. A late snapshot is rejected once shutdown starts and cannot restart the backend. The probe's child process retains its existing independent lifetime. POSIX probes use the upstream asynchronous loader and are cancelled and awaited during quit.
+
 After the startup window is visible and has produced two renderer frames, Desktop preloads the environment-independent part of the server dependency graph while the login-shell probe continues. `server-preload-env.test.mjs` evaluates the exact preload graph in an isolated process behind a `process.env` access guard. `bundle:main` runs this audit before every bundle, so a direct or transitive import-time environment read fails Candidate and release builds instead of silently caching the pre-probe environment. The packaged runtime keeps the guard active for the preload's asynchronous context until the login-shell snapshot is applied. It records the variable and source frame in `main.log` before failing local startup if build-time and packaged resolution differ or a delayed preload callback reads the environment before that point.
 
 On Windows, latency-sensitive Git status, PR-context, and per-file diff reads are dispatched to a fixed pool of four persistent Node Worker Threads owned by that in-process server. The workers share one persistent `OpenCode.ProcessBroker.exe`, staged with the local OpenCode CLI. The self-contained .NET 10 NativeAOT broker creates each Git process detached from a console and atomically assigns its complete process tree to a per-command Job Object. Worker Threads remain in-process; the broker owns only process creation, pipes, cancellation, and cleanup.
@@ -128,8 +130,10 @@ Closing the last Electron window exits the development launcher and its Vite pro
 
 Desktop quit requests reuse the native confirmation dialog when a conversation is still running, an active tunnel exists, or scheduled-task work could be interrupted.
 
-Desktop quit asks a managed local fork CLI staged with the
-`openchamber-shutdown-protocol.capability` marker to shut down over its private
+Desktop quit calls the server handle's unified `stop()` entry to release background resources and guest services. The same entry owns managed OpenCode termination, so Electron does not launch a second fallback killer. Before the handle is available, it calls the module's shutdown entry to cancel startup.
+
+The managed local fork CLI staged with the
+`openchamber-shutdown-protocol.capability` marker receives a shutdown request over its private
 stdin protocol. OpenCode stops its listener and disposes its application runtime,
 allowing SQLite to checkpoint WAL as its final connection closes. Electron waits
 for a roughly five-second grace window, then dispatches one best-effort force termination for the

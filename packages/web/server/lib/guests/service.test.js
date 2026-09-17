@@ -225,6 +225,28 @@ describe('pause during startup', () => {
 });
 
 describe('pause before the request reads the store', () => {
+  test('stopping all services cancels a request before it registers a service', async () => {
+    const { dir, persistPath, packageRoot } = await writeFixture();
+    try {
+      const pending = proxyGuestServiceRequest({
+        guestId: 'shutdown-before-start',
+        packageRoot,
+        service: { entry: 'service/main.js' },
+        granted: ['service'],
+        persistPath,
+        method: 'GET',
+        path: '/ping',
+      });
+      void pending.catch(() => {});
+      await stopAllGuestServices();
+      await expect(pending).rejects.toMatchObject({ code: 'NO_SERVICE' });
+      expect(readServicePid('shutdown-before-start')).toBeNull();
+      expect(getServiceStatus('shutdown-before-start')).toBe('stopped');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test('a stop that lands before the first read still wins', async () => {
     const { dir, persistPath, packageRoot } = await writeFixture();
     try {
