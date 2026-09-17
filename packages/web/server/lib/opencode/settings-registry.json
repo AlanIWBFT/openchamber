@@ -624,6 +624,10 @@
       "scope": "device",
       "local": true
     },
+    "messageQueueExpanded": {
+      "scope": "device",
+      "local": true
+    },
     "workStatusScrollTop": {
       "scope": "device",
       "local": true

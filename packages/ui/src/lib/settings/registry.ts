@@ -535,6 +535,7 @@ export const LOCAL_DEVICE_KEYS = [
   'contextEditorTreeWidth',
   'notesPanelHeight',
   'workStatusExpandedSections',
+  'messageQueueExpanded',
   'workStatusScrollTop',
   'isSessionSwitcherOpen',
   'sidebarSection',
