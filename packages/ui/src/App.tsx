@@ -8,7 +8,7 @@ import { FireworksProvider } from '@/contexts/FireworksContext';
 import { Toaster } from '@/components/ui/sonner';
 import { Button } from '@/components/ui/button';
 import { MemoryDebugPanel } from '@/components/ui/MemoryDebugPanel';
-import { setStreamPerfEnabled } from '@/stores/utils/streamDebug';
+import { setStreamPerfMemoryDebugEnabled } from '@/stores/utils/streamDebug';
 import { setRequestsInFlightTrackingEnabled } from '@/stores/utils/requestsInFlight';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 // useEventStream removed — replaced by SyncProvider + SyncBridge
@@ -279,15 +279,10 @@ function App({ apis }: AppProps) {
   const isMcpOAuthCallback = React.useMemo(() => isMcpOAuthCallbackPath(), []);
 
   React.useEffect(() => {
-    setStreamPerfEnabled(showMemoryDebug);
-    return () => {
-      setStreamPerfEnabled(false);
-    };
-  }, [showMemoryDebug]);
-
-  React.useEffect(() => {
+    setStreamPerfMemoryDebugEnabled(showMemoryDebug);
     setRequestsInFlightTrackingEnabled(showMemoryDebug);
     return () => {
+      setStreamPerfMemoryDebugEnabled(false);
       setRequestsInFlightTrackingEnabled(false);
     };
   }, [showMemoryDebug]);
