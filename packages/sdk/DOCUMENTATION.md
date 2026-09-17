@@ -20,6 +20,8 @@ Public author pages live in `packages/docs/content/docs/sdk.mdx`, `sdk/host.mdx`
 
 ## Invariants
 
+- `scripts/bump-version.mjs` refreshes `bun.lock` after bumping package versions; include both in the release commit. Bun resolves `workspace:*` in published archives from lockfile versions, and a frozen install can succeed with stale versions. `scripts/bump-version.test.mjs` covers the bump, frozen install, and packed dependency versions together.
+
 - Extension activity uses `useConfigStore.isConnected` plus live status records and directory `sessionStatusReady` authority. `useUIStore.eventStreamStatus` is an unmaintained diagnostic field, not a connection gate; its default `idle` must not hide known running or idle sessions as `unknown`.
 
 - `contributes.page` is `true` or `{ entry, title? }`, requires `panel.entry`, and adds a user-opened full-screen page. `resolvePageEntry` resolves shorthand; the server validates its HTML/scripts and exposes `pageEntry`/`pageTitle`. `PluginPane surface="page"` uses the same sandbox. `useUIStore.openGuestPageId` is transient and mutually exclusive with other main pages. The sidebar menu opens it; `close()` or explicit session navigation closes it. Pages are not context-rail surfaces.
