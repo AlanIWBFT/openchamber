@@ -153,7 +153,8 @@ A client that reads the catalog while a build has emptied its output would lose 
 their host lifecycle across store reads and startup awaits, so a late completion
 cannot spawn a process during shutdown or enter a later host lifecycle.
 `stopAllGuestServices` cancels and drains pending starts as well as running and
-already-stopping children. Per-guest Pause and ordinary cleanup do not close host
+already-stopping children. Its global stop epoch also cancels requests still
+reading configuration before a start is registered. Per-guest Pause and ordinary cleanup do not close host
 admission. `beginGuestServiceHost` opens a new lifecycle only after that drain.
 The common graceful-shutdown runtime stops surface viewers before the services.
 
