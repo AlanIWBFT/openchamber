@@ -1627,6 +1627,8 @@ export const dict = {
   'diffView.unavailable.missingDescription': 'It was removed after the list of changes loaded. The list is refreshing.',
   'diffView.unavailable.nestedRepositoryTitle': 'Separate Git repository',
   'diffView.unavailable.nestedRepositoryDescription': 'This folder has its own Git history. Open it as a project to see its changes.',
+  'diffView.unavailable.untrackedDirectoryTitle': 'Folder of new files',
+  'diffView.unavailable.untrackedDirectoryDescription': 'This folder holds too many new files to list one by one. Stage it, or add it to .gitignore if it does not belong in the repository.',
   'diffView.submodule.title': 'Submodule',
   'diffView.submodule.commitChanged': 'Commit {from} → {to}',
   'diffView.submodule.commitUnchanged': 'Still on commit {commit}',

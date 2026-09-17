@@ -1,8 +1,9 @@
 import simpleGit from 'simple-git';
+import { createSerialRefresh } from './serial-refresh.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { createRequire } from 'module';
 
@@ -349,6 +350,12 @@ const buildGitEnv = async () => {
       env.SSH_AUTH_SOCK = resolved;
     }
   }
+  // The server has no terminal a user could answer. Without this, Git asks
+  // for a username or password on its (hidden, on Windows) console and waits
+  // forever; credential helpers and GUI prompts still run before this point.
+  if (env.GIT_TERMINAL_PROMPT === undefined) {
+    env.GIT_TERMINAL_PROMPT = '0';
+  }
   return env;
 };
 
@@ -517,13 +524,15 @@ const GITLINK_MODE = '160000';
 // tell these apart by `code`, and diff routes send the code to clients as is.
 const GIT_PATH_NOT_FOUND = 'path_not_found';
 const GIT_PATH_IS_NESTED_REPOSITORY = 'nested_repository';
+const GIT_PATH_IS_UNTRACKED_DIRECTORY = 'untracked_directory';
 
-const createGitPathError = (code, filePath) => {
-  const message = code === GIT_PATH_IS_NESTED_REPOSITORY
-    ? `Path is a separate Git repository: ${filePath}`
-    : `Path not found in working tree, index, or HEAD: ${filePath}`;
-  return Object.assign(new Error(message), { code });
+const GIT_PATH_ERROR_MESSAGES = {
+  [GIT_PATH_IS_NESTED_REPOSITORY]: (filePath) => `Path is a separate Git repository: ${filePath}`,
+  [GIT_PATH_IS_UNTRACKED_DIRECTORY]: (filePath) => `Path is a directory of untracked files: ${filePath}`,
+  [GIT_PATH_NOT_FOUND]: (filePath) => `Path not found in working tree, index, or HEAD: ${filePath}`,
 };
+
+const createGitPathError = (code, filePath) => Object.assign(new Error(GIT_PATH_ERROR_MESSAGES[code](filePath)), { code });
 
 // Mode of the exact entry at `repoPath`, or null. `cat-file -e` cannot answer
 // this: a gitlink's commit lives in the submodule's object store, so git exits 1
@@ -547,6 +556,7 @@ const resolveGitFileContext = async (directoryPath, git, filePath, repoRootOverr
     path.resolve(directoryPath, filePath),
   ]));
   let nestedRepository = false;
+  let untrackedDirectory = false;
 
   for (const absolutePath of candidates) {
     if (!isInsideOrSameDirectory(repoRoot, absolutePath)) {
@@ -570,12 +580,20 @@ const resolveGitFileContext = async (directoryPath, git, filePath, repoRootOverr
       };
     }
 
-    if (worktreeEntry?.isDirectory() && await fsp.lstat(path.join(absolutePath, '.git')).then(() => true, () => false)) {
-      nestedRepository = true;
+    if (worktreeEntry?.isDirectory()) {
+      if (await fsp.lstat(path.join(absolutePath, '.git')).then(() => true, () => false)) {
+        nestedRepository = true;
+      } else {
+        // Status lists a directory whose untracked files were not expanded
+        // (see readStatus) as `dir/`; there is no single patch for it.
+        untrackedDirectory = true;
+      }
     }
   }
 
-  throw createGitPathError(nestedRepository ? GIT_PATH_IS_NESTED_REPOSITORY : GIT_PATH_NOT_FOUND, filePath);
+  if (nestedRepository) throw createGitPathError(GIT_PATH_IS_NESTED_REPOSITORY, filePath);
+  if (untrackedDirectory) throw createGitPathError(GIT_PATH_IS_UNTRACKED_DIRECTORY, filePath);
+  throw createGitPathError(GIT_PATH_NOT_FOUND, filePath);
 };
 
 /**
@@ -2258,13 +2276,149 @@ export async function setLocalIdentity(directory, profile) {
   }
 }
 
+// Beyond this many untracked files, a directory stays one `dir/` entry in
+// status. Every file would otherwise become a row, a diff request, and a stat
+// on the server, and the only directories that large are ones that belong in
+// .gitignore.
+const UNTRACKED_DIRECTORY_EXPANSION_LIMIT = 1000;
+
+// Untracked files under `dirPath` (repository-relative, trailing slash), read
+// from a streamed `ls-files` that is stopped once the bound is exceeded so a
+// huge directory is never listed in full. `paths` is complete when
+// `truncated` is false.
+const listUntrackedFilesBounded = async (repoRoot, dirPath, limit) => {
+  const env = await buildGitEnv();
+  return new Promise((resolve, reject) => {
+    const child = spawn(getGitBinary(), ['ls-files', '--others', '--exclude-standard', '-z', '--', dirPath], {
+      cwd: repoRoot,
+      env,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const paths = [];
+    let pending = '';
+    let truncated = false;
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve({ paths, truncated });
+    };
+    child.stdout.on('data', (chunk) => {
+      if (truncated) return;
+      pending += chunk.toString('utf8');
+      const records = pending.split('\0');
+      pending = records.pop() ?? '';
+      for (const record of records) {
+        if (!record) continue;
+        paths.push(record);
+        if (paths.length > limit) {
+          truncated = true;
+          child.kill();
+          finish();
+          return;
+        }
+      }
+    });
+    child.on('error', (error) => finish(error));
+    child.on('close', (code) => {
+      if (truncated) {
+        finish();
+        return;
+      }
+      if (code !== 0) {
+        finish(new Error(`git ls-files exited with code ${code} for ${dirPath}`));
+        return;
+      }
+      if (pending) paths.push(pending);
+      finish();
+    });
+  });
+};
+
+// Replaces each untracked `dir/` entry from `-unormal` with one entry per file
+// inside it, the listing `-uall` would have produced, unless the directory
+// holds more than the bound; then the `dir/` entry stays. A nested repository
+// lists as itself and stays a `dir/` entry too, which is what the diff routes
+// expect. A listing failure keeps the `dir/` entry rather than dropping the
+// change from the status.
+const expandUntrackedDirectories = async (repoRoot, files) => {
+  const expanded = [];
+  for (const file of files) {
+    const isUntrackedDirectory = file.path.endsWith('/')
+      && (file.working_dir || '').trim() === '?'
+      && (file.index || '').trim() === '?';
+    if (!isUntrackedDirectory) {
+      expanded.push(file);
+      continue;
+    }
+    const listing = await listUntrackedFilesBounded(repoRoot, file.path, UNTRACKED_DIRECTORY_EXPANSION_LIMIT)
+      .catch((error) => {
+        console.warn(`[GitService] Could not expand untracked directory ${file.path}:`, error?.message || error);
+        return null;
+      });
+    if (!listing || listing.truncated || listing.paths.some((entry) => entry === file.path)) {
+      expanded.push(file);
+      continue;
+    }
+    for (const entryPath of listing.paths) {
+      expanded.push({ ...file, path: entryPath });
+    }
+  }
+  return expanded;
+};
+
+// A status read walks the working tree and runs a dozen Git processes; on a
+// large repository it takes seconds. Clients ask for it after every completed
+// agent tool call, from several surfaces, and from PR polling, so without a
+// bound one slow repository ends up with many identical `git status` processes
+// side by side. Runs are serialized per directory and capped across
+// directories; a caller that asks during a run gets a run started after it
+// asked, so results are never older than the request.
+const MAX_CONCURRENT_STATUS_READS = 4;
+const statusRefresh = createSerialRefresh({ maxConcurrent: MAX_CONCURRENT_STATUS_READS });
+
 export async function getStatus(directory, options = {}) {
-  const lightMode = options.mode === 'light';
   const normalizedDirectory = normalizeDirectoryPath(directory);
   if (typeof normalizedDirectory !== 'string' || !normalizedDirectory.trim()) {
     throw new Error('directory is required');
   }
+  const lightMode = options.mode === 'light';
+  // A full read satisfies light callers too, so one run serves whichever
+  // callers it answers, at the widest mode any of them asked for.
+  return statusRefresh.run(
+    normalizedDirectory,
+    { lightMode },
+    (requests) => readStatus(normalizedDirectory, requests.every((request) => request.lightMode)),
+  );
+}
 
+/**
+ * Upstream of the checked-out branch as `remote/branch`, or `null` when HEAD
+ * is detached, unborn, or the branch has no upstream configured. Reads refs
+ * and config only, never the working tree: callers that only need the
+ * tracking name must not pay for a status read.
+ */
+export async function getTrackingBranch(directory) {
+  const normalizedDirectory = normalizeDirectoryPath(directory);
+  if (!normalizedDirectory) {
+    return null;
+  }
+  const head = await runGitCommand(normalizedDirectory, ['symbolic-ref', '--quiet', 'HEAD']);
+  const headRef = head.success ? head.stdout.trim() : '';
+  if (!headRef.startsWith('refs/heads/')) {
+    return null;
+  }
+  const upstream = await runGitCommand(normalizedDirectory, ['for-each-ref', '--format=%(upstream:short)', headRef]);
+  const tracking = upstream.success ? upstream.stdout.trim() : '';
+  return tracking || null;
+}
+
+async function readStatus(normalizedDirectory, lightMode) {
   try {
     // Prefer an explicit non-repo check before simple-git status so a missing
     // repository never depends on process.cwd() or an opaque GitError shape.
@@ -2274,8 +2428,13 @@ export async function getStatus(directory, options = {}) {
 
     const { directoryPath, repoRoot, git } = await createRepositoryGitContext(normalizedDirectory);
 
-    // Use -uall to show all untracked files individually, not just directories
-    const status = await git.status(['-uall']);
+    // `-unormal` lists a directory with no tracked files as one `dir/` entry
+    // and stops walking it at its first file. `-uall` would walk every file
+    // in it: on a forgotten build or dependency directory that is a scan of
+    // tens of thousands of files and hundreds of megabytes per status read.
+    // Directories are expanded to their files afterwards, up to a bound.
+    const status = await git.status(['-unormal']);
+    status.files = await expandUntrackedDirectories(repoRoot, status.files);
 
     // Light mode: skip numstat + new-file line counting for faster response.
     // Staged (`--cached`: HEAD -> index) and working (`--numstat`: index -> worktree)
@@ -5172,7 +5331,7 @@ export async function canonicalizeWorktreeState(directory) {
 
   // Detect attention reasons from getStatus side-effects
   try {
-    const status = await git.status(['-uall']);
+    const status = await git.status(['-unormal']);
     if (status.current && (await git.raw(['rev-parse', '--verify', 'MERGE_HEAD']).then(() => true).catch(() => false))) {
       attentionReason = 'merge';
     } else {

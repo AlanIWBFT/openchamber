@@ -1390,6 +1390,8 @@ export const dict = {
   'diffView.unavailable.missingDescription': 'Il a été supprimé après le chargement de la liste des modifications. La liste est en cours d’actualisation.',
   'diffView.unavailable.nestedRepositoryTitle': 'Dépôt Git distinct',
   'diffView.unavailable.nestedRepositoryDescription': 'Ce dossier a son propre historique Git. Ouvrez-le comme projet pour voir ses modifications.',
+  'diffView.unavailable.untrackedDirectoryTitle': 'Dossier de nouveaux fichiers',
+  'diffView.unavailable.untrackedDirectoryDescription': 'Ce dossier contient trop de nouveaux fichiers pour les lister un par un. Indexez-le ou ajoutez-le à .gitignore s’il n’a pas sa place dans le dépôt.',
   'diffView.submodule.title': 'Sous-module',
   'diffView.submodule.commitChanged': 'Commit {from} → {to}',
   'diffView.submodule.commitUnchanged': 'Toujours sur le commit {commit}',

@@ -1928,6 +1928,8 @@ export const dict: Record<I18nKey, string> = {
   'diffView.unavailable.missingDescription': 'Został usunięty po wczytaniu listy zmian. Lista jest odświeżana.',
   'diffView.unavailable.nestedRepositoryTitle': 'Osobne repozytorium Git',
   'diffView.unavailable.nestedRepositoryDescription': 'Ten folder ma własną historię Git. Otwórz go jako projekt, aby zobaczyć jego zmiany.',
+  'diffView.unavailable.untrackedDirectoryTitle': 'Folder z nowymi plikami',
+  'diffView.unavailable.untrackedDirectoryDescription': 'Ten folder zawiera zbyt wiele nowych plików, aby wyświetlić je pojedynczo. Dodaj go do indeksu (stage) albo wpisz do .gitignore, jeśli nie należy do repozytorium.',
   'diffView.submodule.title': 'Submoduł',
   'diffView.submodule.commitChanged': 'Commit {from} → {to}',
   'diffView.submodule.commitUnchanged': 'Nadal na commicie {commit}',

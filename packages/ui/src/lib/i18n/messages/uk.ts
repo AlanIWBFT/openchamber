@@ -1593,6 +1593,8 @@ export const dict: Record<I18nKey, string> = {
   "diffView.unavailable.missingDescription": "Його видалили після того, як завантажився список змін. Список оновлюється.",
   "diffView.unavailable.nestedRepositoryTitle": "Окремий Git-репозиторій",
   "diffView.unavailable.nestedRepositoryDescription": "Ця тека має власну історію Git. Відкрийте її як проєкт, щоб побачити її зміни.",
+  "diffView.unavailable.untrackedDirectoryTitle": "Тека з новими файлами",
+  "diffView.unavailable.untrackedDirectoryDescription": "У цій теці забагато нових файлів, щоб показувати їх окремо. Застейджте її або додайте в .gitignore, якщо їй не місце в репозиторії.",
   "diffView.submodule.title": "Субмодуль",
   "diffView.submodule.commitChanged": "Коміт {from} → {to}",
   "diffView.submodule.commitUnchanged": "Досі на коміті {commit}",

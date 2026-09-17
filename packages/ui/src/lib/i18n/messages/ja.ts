@@ -1623,6 +1623,8 @@ export const dict: Record<I18nKey, string> = {
   'diffView.unavailable.missingDescription': '変更一覧の読み込み後に削除されました。一覧を更新しています。',
   'diffView.unavailable.nestedRepositoryTitle': '別の Git リポジトリ',
   'diffView.unavailable.nestedRepositoryDescription': 'このフォルダーには独自の Git 履歴があります。変更を見るにはプロジェクトとして開いてください。',
+  'diffView.unavailable.untrackedDirectoryTitle': '新規ファイルのフォルダー',
+  'diffView.unavailable.untrackedDirectoryDescription': 'このフォルダーには新規ファイルが多すぎるため、個別に一覧表示できません。ステージするか、リポジトリに不要であれば .gitignore に追加してください。',
   'diffView.submodule.title': 'サブモジュール',
   'diffView.submodule.commitChanged': 'コミット {from} → {to}',
   'diffView.submodule.commitUnchanged': 'コミット {commit} のまま',

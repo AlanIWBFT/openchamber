@@ -937,12 +937,16 @@ export const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
                             <div className="typography-ui-label font-semibold text-foreground">
                                 {diffLoadFailure.reason === 'nested_repository'
                                     ? t('diffView.unavailable.nestedRepositoryTitle')
-                                    : t('diffView.unavailable.missingTitle')}
+                                    : diffLoadFailure.reason === 'untracked_directory'
+                                        ? t('diffView.unavailable.untrackedDirectoryTitle')
+                                        : t('diffView.unavailable.missingTitle')}
                             </div>
                             <div className="typography-meta text-muted-foreground max-w-[32rem] text-center">
                                 {diffLoadFailure.reason === 'nested_repository'
                                     ? t('diffView.unavailable.nestedRepositoryDescription')
-                                    : t('diffView.unavailable.missingDescription')}
+                                    : diffLoadFailure.reason === 'untracked_directory'
+                                        ? t('diffView.unavailable.untrackedDirectoryDescription')
+                                        : t('diffView.unavailable.missingDescription')}
                             </div>
                             {diffLoadFailure.reason === 'path_not_found' ? (
                                 <button

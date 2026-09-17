@@ -1423,6 +1423,8 @@ export const dict = {
   'diffView.unavailable.missingDescription': 'Sie wurde entfernt, nachdem die Liste der Änderungen geladen wurde. Die Liste wird aktualisiert.',
   'diffView.unavailable.nestedRepositoryTitle': 'Separates Git-Repository',
   'diffView.unavailable.nestedRepositoryDescription': 'Dieser Ordner hat eine eigene Git-Historie. Öffne ihn als Projekt, um seine Änderungen zu sehen.',
+  'diffView.unavailable.untrackedDirectoryTitle': 'Ordner mit neuen Dateien',
+  'diffView.unavailable.untrackedDirectoryDescription': 'Dieser Ordner enthält zu viele neue Dateien, um sie einzeln aufzulisten. Stelle ihn bereit oder trage ihn in .gitignore ein, wenn er nicht ins Repository gehört.',
   'diffView.submodule.title': 'Submodul',
   'diffView.submodule.commitChanged': 'Commit {from} → {to}',
   'diffView.submodule.commitUnchanged': 'Weiterhin auf Commit {commit}',
