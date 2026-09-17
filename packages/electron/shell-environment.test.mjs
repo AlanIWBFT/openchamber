@@ -125,6 +125,23 @@ const withShell = async (t, script) => {
   return shell;
 };
 
+test('a Windows probe completing after quit cannot resume startup', async () => {
+  const controller = new AbortController();
+  const probe = Promise.withResolvers();
+  let calls = 0;
+  const load = createShellEnvironmentLoader({
+    platform: 'win32', signal: controller.signal,
+    loadWindowsEnv: () => { calls++; return probe.promise; },
+  });
+  const pending = load();
+  const rejected = assert.rejects(pending, { name: 'AbortError' });
+  controller.abort();
+  probe.resolve({ PATH: 'C:\\tools' });
+  await rejected;
+  await assert.rejects(load(), { name: 'AbortError' });
+  assert.equal(calls, 1);
+});
+
 // macOS validates a freshly written executable on its first exec, which costs
 // hundreds of milliseconds. A probe deadline in that range then expires on
 // process startup instead of on the behavior under test, so run a cheap branch

@@ -222,8 +222,9 @@ export const getServiceStatus = (guestId) => {
  * @type {Map<string, number>}
  */
 const stopEpochs = new Map();
+let stopAllEpoch = 0;
 
-const stopEpochOf = (guestId) => stopEpochs.get(guestId) ?? 0;
+const stopEpochOf = (guestId) => `${stopAllEpoch}:${stopEpochs.get(guestId) ?? 0}`;
 
 /**
  * Services the host starts on its own (a provider role) have no panel whose
@@ -297,7 +298,7 @@ const trackInflight = (guestId, delta) => {
  * @param {string} guestId
  */
 export const stopGuestService = async (guestId) => {
-  stopEpochs.set(guestId, stopEpochOf(guestId) + 1);
+  stopEpochs.set(guestId, (stopEpochs.get(guestId) ?? 0) + 1);
   clearIdleStop(guestId);
   await discardRuntime(guestId);
 };
@@ -347,6 +348,8 @@ const discardRuntime = async (guestId) => {
 export const readServicePid = (guestId) => runtimes.get(guestId)?.child.pid ?? null;
 
 export const stopAllGuestServices = async () => {
+  // Also cancel requests reading configuration before their runtime is registered.
+  stopAllEpoch += 1;
   const starts = [...startingByGuest.values()];
   const ids = new Set([...runtimes.keys(), ...startingByGuest.keys(), ...stoppingByGuest.keys()]);
   const stops = [...ids].map((id) => stopGuestService(id));
