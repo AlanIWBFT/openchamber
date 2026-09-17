@@ -1,18 +1,14 @@
 /**
  * Session cookie naming that is stable per host:port.
  *
- * Browsers do not isolate cookies by port (RFC 6265 — the cookie jar is keyed
- * on the host only). Two OpenChamber instances reached via the same LAN address
- * but different ports (`http://192.168.0.1:3000` and `:3001`) therefore share
- * one `oc_ui_session` cookie, and the instance logged into last silently
- * overwrites the other, logging both tabs out and breaking CSRF (issue #2377).
+ * Browsers do not isolate cookies by port (RFC 6265). Instances on the same
+ * hostname overwrite one another's session cookies without distinct names.
+ * This applies to LAN addresses and same-host loopback instances alike.
  *
  * We fold the request port into the cookie name so each port owns its own
- * cookie. The port is read from the request Host on BOTH the set side
- * (`ui-auth.js`) and the CSRF read side (`request-security.js`) through this one
- * function, so the names can never drift apart. Loopback URLs are unaffected:
- * a browser keeps separate jars for `localhost` vs `127.0.0.1`, and a host with
- * no explicit port keeps the bare `oc_ui_session` name for back-compat.
+ * cookie. Password/passkey session issuance and validation (`ui-auth.js`) and
+ * notification identity extraction (`request-security.js`) share this resolver.
+ * A host with no explicit port keeps the bare `oc_ui_session` name.
  */
 export const SESSION_COOKIE_BASE = 'oc_ui_session';
 

@@ -20,10 +20,9 @@ export const createRequestSecurityRuntime = (deps) => {
       return null;
     }
     // Match the exact slot for the host:port this request arrived on. A browser
-    // shares one jar across ports on a host, so reading by the request's own
-    // port is what keeps two LAN instances (issue #2377) from consuming each
-    // other's session. This mirrors ui-auth's per-request cookie resolution,
-    // so the set side, this CSRF read, and ui-auth never diverge.
+    // shares cookies across ports on LAN and loopback hosts. This extracts
+    // notification/session identity, not a CSRF token, using the same name
+    // as ui-auth's session issuance and validation.
     const expected = sessionCookieNameForRequest(req);
     for (const segment of cookieHeader.split(';')) {
       const [rawName, ...rest] = segment.split('=');

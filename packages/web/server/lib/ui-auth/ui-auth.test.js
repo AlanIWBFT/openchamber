@@ -374,7 +374,7 @@ describe('ui auth port-scoped session cookies (issue #2377)', () => {
     const auth = createUiAuth({ password: 'secret' });
 
     const issued = await loginHost(auth, '192.168.0.1:3000');
-    expect(issued).toStartWith('oc_ui_session_3000=');
+    expect(issued).toMatch(/^oc_ui_session_3000=/);
     expect(issued.length).toBeGreaterThan('oc_ui_session_3000='.length);
   });
 
@@ -382,7 +382,7 @@ describe('ui auth port-scoped session cookies (issue #2377)', () => {
     const createUiAuth = await loadCreateUiAuth();
     const auth = createUiAuth({ password: 'secret' });
 
-    expect(await loginHost(auth, '192.168.0.1')).toStartWith('oc_ui_session=');
+    expect(await loginHost(auth, '192.168.0.1')).toMatch(/^oc_ui_session=/);
   });
 
   it('reads the slot for the request port and ignores another port cookie', async () => {
