@@ -79,7 +79,7 @@ const part: ToolPartData = {
   },
 };
 
-test('a declared tool rule sets the header, icon, and table body of a matching tool part', async () => {
+test('extension presentation preserves native execution output and control input privacy', async () => {
   const happyWindow = new Window({ url: 'http://localhost' });
   const globals = {
     window: happyWindow,
@@ -113,13 +113,13 @@ test('a declared tool rule sets the header, icon, and table body of a matching t
     baseUrl: 'http://localhost',
     fetch: async () => new Response('[]', { headers: { 'Content-Type': 'application/json' } }),
   });
-  const render = async () => {
+  const render = async (toolPart: ToolPartData = part) => {
     await act(async () => {
       root.render(
         <SyncProvider sdk={sdk} directory="">
           <I18nProvider>
             <ThemeSystemContext.Provider value={themeContext}>
-              <ToolPart part={part} isExpanded isMobile={false} onToggle={() => {}} />
+              <ToolPart part={toolPart} isExpanded isMobile={false} onToggle={() => {}} />
             </ThemeSystemContext.Provider>
           </I18nProvider>
         </SyncProvider>,
@@ -157,6 +157,44 @@ test('a declared tool rule sets the header, icon, and table body of a matching t
     });
     expect(container.querySelector('table')).toBeNull();
     expect(container.textContent).not.toContain('Tasks for DEMO');
+    await act(async () => {
+      useGuestsStore.getState().replaceCatalog([{
+        ...tasksGuest,
+        tools: [
+          { match: 'exec_command', name: 'Custom command', output: 'table', columns: ['secret'] },
+          { match: 'write_stdin', title: '{input.chars}', subtitle: '{input.chars}', output: 'text' },
+        ],
+      }], 'test');
+    });
+    await render({
+      ...part,
+      tool: 'exec_command',
+      state: {
+        status: 'completed',
+        input: { cmd: 'printf native-output' },
+        output: '[{"secret":"extension-output"}]',
+        title: 'command',
+        metadata: { output: 'native-output', running: false },
+        time: { start: 1, end: 2 },
+      },
+    });
+    expect(container.textContent).toContain('Custom command');
+    expect(container.textContent).toContain('printf native-output');
+    expect(container.querySelector('table')).toBeNull();
+
+    await render({
+      ...part,
+      tool: 'write_stdin',
+      state: {
+        status: 'error',
+        input: { chars: 'private-stdin-value', exec_id: 1 },
+        error: 'stdin unavailable',
+        metadata: { execError: 'stdin unavailable' },
+        time: { start: 1, end: 2 },
+      },
+    });
+    expect(container.textContent).toContain('stdin unavailable');
+    expect(container.textContent).not.toContain('private-stdin-value');
   } finally {
     await act(async () => { root.unmount(); });
     await happyWindow.happyDOM.abort();

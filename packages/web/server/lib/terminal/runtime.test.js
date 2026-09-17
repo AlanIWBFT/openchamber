@@ -211,7 +211,7 @@ describe('terminal runtime', () => {
     } finally { await harness.runtime.shutdown(); }
   });
 
-  it('reaps a pending create during shutdown and rejects later creates', async () => {
+  it('cancels a pending create before spawn during shutdown and rejects later creates', async () => {
     const gate = deferred();
     const harness = createHarness({ spawnDeferred: gate });
     const create = harness.routes.post.get('/api/terminal/create');
@@ -220,13 +220,12 @@ describe('terminal runtime', () => {
     const closing = harness.runtime.shutdown();
     gate.resolve();
     await Promise.all([creation, closing]);
-    expect(harness.processes).toHaveLength(1);
-    expect(harness.processes[0].killed).toBe(true);
+    expect(harness.processes).toHaveLength(0);
     expect(response.statusCode).toBe(400);
     const later = createResponse();
     await create({ body: { sessionId: 'later', cwd: '/repo' } }, later);
     expect(later.statusCode).toBe(400);
-    expect(harness.processes).toHaveLength(1);
+    expect(harness.processes).toHaveLength(0);
     await harness.runtime.shutdown();
   });
 

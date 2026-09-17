@@ -1510,8 +1510,6 @@ const bootstrapOpenCodeAtStartup = async (...args) => {
   scheduleOpenCodeApiDetection();
   return result;
 };
-const killProcessOnPort = (...args) => openCodeLifecycleRuntime.killProcessOnPort(...args);
-const waitForPortRelease = (...args) => openCodeLifecycleRuntime.waitForPortRelease(...args);
 
 const fetchAgentsSnapshot = (...args) => serverUtilsRuntime.fetchAgentsSnapshot(...args);
 const fetchProvidersSnapshot = (...args) => serverUtilsRuntime.fetchProvidersSnapshot(...args);
@@ -1521,46 +1519,19 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   process,
   shutdownTimeoutMs: SHUTDOWN_TIMEOUT,
   getExitOnShutdown: () => exitOnShutdown,
-  getIsShuttingDown: () => isShuttingDown,
   setIsShuttingDown: (value) => {
     isShuttingDown = value;
   },
   syncToHmrState,
-  openCodeWatcherRuntime,
-  sessionAssistRuntime,
-  sessionGoalRuntime,
-  contextObligatoryRuntime,
-  messageQueueRuntime,
-  sessionRuntime,
-  getHealthCheckInterval: () => healthCheckInterval,
-  clearHealthCheckInterval: (value) => clearInterval(value),
-  getTerminalRuntime: () => terminalRuntime,
-  setTerminalRuntime: (value) => {
-    terminalRuntime = value;
-  },
-  getMessageStreamRuntime: () => messageStreamRuntime,
-  setMessageStreamRuntime: (value) => {
-    messageStreamRuntime = value;
-  },
-  shouldSkipOpenCodeStop: () => ENV_SKIP_OPENCODE_START || isExternalOpenCode,
-  getOpenCodePort: () => openCodePort,
-  getOpenCodeProcess: () => openCodeProcess,
-  setOpenCodeProcess: (value) => {
-    openCodeProcess = value;
-  },
-  killProcessOnPort,
-  waitForPortRelease,
+  stopBackgroundResources: () => stopDesktopBackgroundResources(),
+  stopManagedOpenCode,
+  stopGuestServices: stopAllGuestServices,
   getServer: () => server,
   getUiAuthController: () => uiAuthController,
   setUiAuthController: (value) => {
     uiAuthController = value;
   },
-  getActiveTunnelController: () => activeTunnelController,
-  setActiveTunnelController: (value) => {
-    activeTunnelController = value;
-  },
   tunnelAuthController,
-  scheduledTasksRuntime,
 });
 
 const gracefulShutdown = (...args) => gracefulShutdownRuntime.gracefulShutdown(...args);
@@ -2194,41 +2165,8 @@ async function main(options = {}) {
     onOpenCodeStartupState: (listener) => openCodeLifecycleRuntime.onOpenCodeStartupState(listener),
     waitForOpenCodeStartup: () => startupPipelineResult.openCodeStartup,
     restartOpenCode: () => restartOpenCode(),
-    getOpenCodeProcessInfo: () => {
-      const managed = Boolean((openCodeProcess || openCodePort) && !ENV_SKIP_OPENCODE_START && !isExternalOpenCode);
-      // Only ever expose pid/port for a server WE manage. The Electron-side
-      // killer kills by port (lsof + kill -KILL), so returning a port we don't
-      // own — e.g. an external/desktop OpenCode on 4096 we attached to — would
-      // let a single miscomputed `managed` flag take down the user's separate
-      // server. Structurally withhold what isn't ours so the killer has no
-      // target, instead of relying on the flag check alone.
-      return {
-        managed,
-        pid: managed && typeof openCodeProcess?.pid === 'number' ? openCodeProcess.pid : null,
-        port: managed ? openCodePort : null,
-      };
-    },
+    getOpenCodeProcessInfo: getManagedOpenCodeProcessInfo,
     stop: async (shutdownOptions = {}) => {
-      realtimeProxyRuntime?.stop?.();
-      if (relayReconcileTimer) {
-        clearInterval(relayReconcileTimer);
-        relayReconcileTimer = null;
-      }
-      try {
-        relayService?.stop?.();
-      } catch {
-        // best-effort teardown of the relay host client
-      }
-      try {
-        dictationRuntime?.stop?.();
-      } catch {
-        // best-effort shutdown of the dictation worker
-      }
-      // Guest services are child processes; leaving before SIGTERM lands
-      // (and the SIGKILL fallback fires) orphans them on the user's machine.
-      await stopAllGuestServices().catch(() => {
-        // best-effort teardown of guest service processes
-      });
       return gracefulShutdown({
         ...shutdownOptions,
         exitProcess: shutdownOptions.exitProcess ?? false,

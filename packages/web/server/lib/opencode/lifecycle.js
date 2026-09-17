@@ -374,13 +374,13 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }
 
     if (process.platform === 'win32') {
-      try { child.kill(); } catch {}
-    } else {
-      signalProcessTree('SIGTERM');
+      // Terminate the tree while its parent still exists, so /T can find it.
+      forceProcessTree();
+      return await waitForChildProcessClose(child, remaining());
     }
-    if (await waitForChildProcessClose(child, Math.min(process.platform === 'win32' ? 800 : 2500, remaining()))) {
-      return true;
-    }
+    signalProcessTree('SIGTERM');
+    await waitForChildProcessClose(child, Math.min(2500, remaining()));
+    // Parent exit does not prove that its process group has exited.
     forceProcessTree();
     return await waitForChildProcessClose(child, remaining());
   };
