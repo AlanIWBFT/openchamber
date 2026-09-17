@@ -797,6 +797,12 @@ interface UIStore {
   notesPanelHeight: number;
   /** Expanded collapsible sections of the in-chat work-status panel, by id. */
   workStatusExpandedSections: Record<string, boolean>;
+  /**
+   * Whether the queued-messages panel above the composer shows its list. One
+   * preference for every session: the user opens or closes it once and it
+   * stays that way across session switches and reloads.
+   */
+  messageQueueExpanded: boolean;
   /** Scroll offset of that panel, so it survives being unmounted. */
   workStatusScrollTop: number;
   /** Whether the in-chat work-status panel may render at all. */
@@ -1032,6 +1038,7 @@ interface UIStore {
   setContextPanelWidth: (directory: string, mode: ContextPanelMode, width: number, availableWidth?: number) => void;
   setNotesPanelHeight: (height: number) => void;
   setWorkStatusSectionExpanded: (sectionId: string, expanded: boolean) => void;
+  setMessageQueueExpanded: (expanded: boolean) => void;
   setWorkStatusScrollTop: (scrollTop: number) => void;
   setWorkStatusPanelEnabled: (enabled: boolean) => void;
   setWorkStatusPanelVisible: (visible: boolean) => void;
@@ -1224,6 +1231,7 @@ export const useUIStore = create<UIStore>()(
         contextEditorTreeWidth: 240,
         notesPanelHeight: 112,
         workStatusExpandedSections: {},
+        messageQueueExpanded: true,
         workStatusScrollTop: 0,
         workStatusPanelEnabled: true,
         workStatusPanelVisible: false,
@@ -1835,6 +1843,10 @@ export const useUIStore = create<UIStore>()(
                 },
               }
           ));
+        },
+
+        setMessageQueueExpanded: (expanded) => {
+          set((state) => (state.messageQueueExpanded === expanded ? state : { messageQueueExpanded: expanded }));
         },
 
         setWorkStatusScrollTop: (scrollTop) => {
@@ -3049,6 +3061,7 @@ export const useUIStore = create<UIStore>()(
           contextRailHiddenSurfaces: state.contextRailHiddenSurfaces,
           contextEditorTreeVisible: state.contextEditorTreeVisible,
           contextEditorVisible: state.contextEditorVisible,
+          messageQueueExpanded: state.messageQueueExpanded,
           contextEditorTreeWidth: state.contextEditorTreeWidth,
           notesPanelHeight: state.notesPanelHeight,
           workStatusExpandedSections: state.workStatusExpandedSections,

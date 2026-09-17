@@ -34,8 +34,9 @@ new-session drafts hide both queue and suggestion. Hiding the queue does not
 pause its delivery.
 
 The queue header toggles an `aria-expanded` disclosure with the current count.
-Its collapse state is local to the mounted runtime/directory/session queue key
-and survives temporary hiding behind BTW. Switching queue identity resets it.
+Its open/closed state is one persisted preference in `useUIStore`
+(`messageQueueExpanded`, open by default), shared by every session and
+surviving session switches and reloads.
 The expanded list retains its drag sensors, ordering, edit, send, and remove
 actions, and clamps to available space above the composer. It receives the
 composer's main-session queue target instead of resolving the global selection,
@@ -43,11 +44,11 @@ so embedded chat columns address their own queue.
 
 The shared frame measures its height and gap into the chat column's
 `--chat-floating-panel-clearance`. The floating status row and
-`ScrollToBottomButton` translate upward by that amount, and the column
+`ScrollToBottomButton` translate upward by that amount, the transcript's tail
+spacer grows by it (so the frame never covers the last rows), and the column
 carries `data-floating-panel` while any frame is mounted so the recap hint
-hides instead of landing over the transcript. Transcript height, insets, and
-scroll position remain unchanged. Unmounting clears the offset and the
-marker; resizing or collapsing the frame updates it.
+hides instead of landing over the transcript. Unmounting clears the offset
+and the marker; resizing or collapsing the frame updates it.
 
 ## Floating composer
 
@@ -317,8 +318,12 @@ including in memory when persistence is disabled.
 Both modes reuse `ComposerEditor` and `ModelControls`; BTW transitions put the
 caret at the end. BTW copies the main model/effort once, including explicit
 Default, and uses `plan` or the first selectable agent. Its controlled model
-path only writes BTW selections. Attachments, goals, expansion, shell, and
-agent selection and file/agent mention autocomplete are unavailable. Auto-accept is applied before the first send.
+path only writes BTW selections. Files attach as in the normal composer
+(picker, paste, drop) and live in the BTW draft identity's attachment slot,
+so they never mix with the main draft's files; the attach control offers
+only local files. Goals, expansion, shell, linked context (issues, PRs,
+guests), agent selection and file/agent mention autocomplete are
+unavailable. Auto-accept is applied before the first send.
 On mobile, model and effort controls sit in the input's upper-left row; the
 footer only contains auto-accept and send/stop controls.
 
