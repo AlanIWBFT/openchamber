@@ -100,6 +100,11 @@ export const execFileWithProcessBroker = (command, args, options = {}) => {
 
     child.stdout.on('data', (chunk) => collect(stdout, chunk, 'stdout'));
     child.stderr.on('data', (chunk) => collect(stderr, chunk, 'stderr'));
+    child.stdin.once('error', (error) => {
+      if (failure || settled) return;
+      failure = error;
+      child.kill();
+    });
     child.once('error', (error) => finish(failure ?? error));
     child.once('close', (code) => {
       if (failure) {
