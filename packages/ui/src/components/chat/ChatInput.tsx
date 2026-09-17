@@ -215,7 +215,6 @@ const MAX_MOBILE_COMPOSER_LINES = 16;
  */
 const MOBILE_COMPOSER_BOUND_GAP_PX = 4;
 const EMPTY_QUEUE: QueuedMessage[] = [];
-const EMPTY_ATTACHMENTS: AttachedFile[] = [];
 const COMPACT_CHAT_PLACEHOLDER_MAX_WIDTH = 560;
 const renameFileForAttachmentCitation = (file: File, filename: string): File => {
     if (file.name === filename) {
@@ -489,7 +488,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const prepareChatDraftDirectory = useSessionUIStore((s) => s.prepareChatDraftDirectory);
     const abortPromptSessionId = useSessionUIStore((s) => s.abortPromptSessionId);
     const clearAbortPrompt = useSessionUIStore((s) => s.clearAbortPrompt);
-    const attachedFiles = useInputStore((s) => isBtwActive ? EMPTY_ATTACHMENTS : s.attachedFiles);
+    const attachedFiles = useInputStore((s) => s.attachedFiles);
     const addAttachedFile = useInputStore((s) => s.addAttachedFile);
     const clearAttachedFiles = useInputStore((s) => s.clearAttachedFiles);
     const saveSessionAgentSelection = useSelectionStore((s) => s.saveSessionAgentSelection);
@@ -619,7 +618,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     });
 
     React.useEffect(() => {
-        if (isBtwActive) return;
         const modelKey = `${currentProviderId ?? ''}/${currentModelId ?? ''}`;
         const inputModalities = currentModelMetadata?.modalities?.input;
         const modalitySignature = inputModalities?.slice().sort().join(',') ?? null;
@@ -659,7 +657,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             modalities: unsupportedModalities.map((modality) => modalityLabels[modality]).join(', '),
             files: fileSummary,
         }), { id: `attachment-modalities:${modelKey}` });
-    }, [attachedFiles, currentModelId, currentModelMetadata, currentProviderId, isBtwActive, t]);
+    }, [attachedFiles, currentModelId, currentModelMetadata, currentProviderId, t]);
 
     const handleShowAttachmentPreview = React.useCallback((content: ToolPopupContent) => {
         if (!content.image) return;
@@ -2257,7 +2255,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             const recalled = messageHistory.older({ text: message, attachments: attachedFiles });
             if (recalled !== null) {
                 setMessage(recalled.text);
-                if (!isBtwActive) useInputStore.getState().setAttachedFiles([...recalled.attachments]);
+                useInputStore.getState().setAttachedFiles([...recalled.attachments]);
                 // Caret to the start, so the recalled message reads from its
                 // beginning rather than from wherever the draft's caret was.
                 requestAnimationFrame(() => composerRef.current?.setSelection(0, 0));
@@ -2270,7 +2268,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             const recalled = messageHistory.newer({ text: message, attachments: attachedFiles });
             if (recalled !== null) {
                 setMessage(recalled.text);
-                if (!isBtwActive) useInputStore.getState().setAttachedFiles([...recalled.attachments]);
+                useInputStore.getState().setAttachedFiles([...recalled.attachments]);
                 requestAnimationFrame(() => composerRef.current?.setSelection(recalled.text.length, recalled.text.length));
             }
             return;
@@ -2567,10 +2565,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     }, [addAttachedFile, insertTextAtSelection, t]);
 
     const handlePaste = React.useCallback(async (event: ClipboardEvent) => {
-        if (isBtwActive && event.clipboardData?.files.length) {
-            event.preventDefault();
-            return;
-        }
         const clipboardData = event.clipboardData;
         if (!clipboardData) return;
         // Narrowed alias so the rest of the handler reads as it did when this
@@ -2633,7 +2627,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             const behavior: LargeTextPasteBehavior = largeTextPasteBehavior;
             const shouldOfferLargePaste = sessionReady
                 && inputMode === 'normal'
-                && !isBtwActive
                 && behavior !== 'inline'
                 && isLargePlainTextPaste(pastedText);
 
@@ -2761,7 +2754,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
 
         e.preventDefault();
         await attachFilesWithCitation([...imageFiles, ...otherFiles], pastedText);
-    }, [addAttachedFile, attachFilesWithCitation, currentSessionId, inputMode, isBtwActive, largeTextPasteBehavior, markFileMentionPasteSuppression, message, newSessionDraftOpen, insertTextAtSelection, setMessage, t, updateAutocompleteState]);
+    }, [addAttachedFile, attachFilesWithCitation, currentSessionId, inputMode, largeTextPasteBehavior, markFileMentionPasteSuppression, message, newSessionDraftOpen, insertTextAtSelection, setMessage, t, updateAutocompleteState]);
 
     const handleFileSelect = (file: { name: string; path: string; relativePath?: string }) => {
 
@@ -3027,10 +3020,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     };
 
     const handleDrop = async (e: React.DragEvent) => {
-        if (isBtwActive) {
-            e.preventDefault();
-            return;
-        }
         dragEnterCountRef.current = 0;
         const draggedFiles = hasDraggedFiles(e.dataTransfer);
         if (!draggedFiles) {
@@ -3108,7 +3097,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const attachFiles = React.useCallback(async (files: FileList | File[]) => {
-        if (isBtwActive) return;
         const attachmentDraftKey = useInputStore.getState().attachmentDraftKey;
         const list = Array.isArray(files) ? files : Array.from(files);
         let attached = false;
@@ -3124,10 +3112,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         if (list.length > 0 && !attached) {
             toast.error(t('chat.chatInput.toast.attachFileFailed'));
         }
-    }, [addAttachedFile, isBtwActive, t]);
+    }, [addAttachedFile, t]);
 
     const handleVSCodePickFiles = React.useCallback(async () => {
-        if (isBtwActive) return;
         try {
             const data = (await vscodeApi?.pickFiles?.({ extensions: ACCEPTED_ATTACHMENT_EXTENSIONS })) as {
                 files?: Array<{ name: string; mimeType?: string; dataUrl?: string }>;
@@ -3171,27 +3158,22 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             console.error('VS Code file pick failed', error);
             toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.vscodePickFailed'));
         }
-    }, [attachFiles, isBtwActive, t, vscodeApi]);
+    }, [attachFiles, t, vscodeApi]);
 
     const handlePickLocalFiles = React.useCallback(() => {
-        if (isBtwActive) return;
         if (isVSCodeRuntime()) {
             void handleVSCodePickFiles();
             return;
         }
         fileInputRef.current?.click();
-    }, [handleVSCodePickFiles, isBtwActive]);
+    }, [handleVSCodePickFiles]);
 
     const handleLocalFileSelect = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (isBtwActive) {
-            event.target.value = '';
-            return;
-        }
         const files = event.target.files;
         if (!files) return;
         await attachFiles(files);
         event.target.value = '';
-    }, [attachFiles, isBtwActive]);
+    }, [attachFiles]);
 
     const footerGapClass = 'gap-x-1.5 gap-y-0';
     const isVSCode = isVSCodeRuntime();
@@ -3750,9 +3732,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                             </div>
                         ) : null}
                         <div className="flex items-center gap-1 px-3 pt-1 flex-wrap relative z-10">
-                            {!isBtwActive ? <AttachedFilesList onShowPopup={handleShowAttachmentPreview} className="pt-2" /> : null}
+                            <AttachedFilesList onShowPopup={handleShowAttachmentPreview} className="pt-2" />
                             {!isBtwActive ? linkedReferenceChips : null}
-                            {!isBtwActive ? <AttachedVSCodeFileChips onShowPopup={handleShowAttachmentPreview} /> : null}
+                            <AttachedVSCodeFileChips onShowPopup={handleShowAttachmentPreview} />
                             {!isBtwActive ? <ActiveEditorFileSuggestion /> : null}
                         </div>
                         <div
