@@ -977,6 +977,11 @@ interface UIStore {
    */
   agentMemoryFeatureAvailable: boolean;
   /**
+   * Whether this build has Jev model routing. Server-owned and not persisted,
+   * for the same reason as the memory flag.
+   */
+  routingFeatureAvailable: boolean;
+  /**
    * When the user last looked at each memory scope, keyed by scope. Drives the
    * new/changed badges; there is no stored review state.
    */
@@ -1175,6 +1180,7 @@ interface UIStore {
   setAgentWebToolEnabled: (value: boolean) => void;
   setAgentMemoryToolEnabled: (value: boolean) => void;
   setAgentMemoryFeatureAvailable: (value: boolean) => void;
+  setRoutingFeatureAvailable: (value: boolean) => void;
   markAgentMemoryViewed: (key: string, viewedAt: number) => void;
   setProjectContextSidebarWidth: (width: number) => void;
   setProjectContextTab: (value: string) => void;
@@ -1353,6 +1359,7 @@ export const useUIStore = create<UIStore>()(
         agentWebToolEnabled: true,
         agentMemoryToolEnabled: false,
         agentMemoryFeatureAvailable: false,
+        routingFeatureAvailable: false,
         agentMemoryViewedAt: {},
         projectContextSidebarWidth: 168,
         projectContextTab: 'notes',
@@ -2679,6 +2686,9 @@ export const useUIStore = create<UIStore>()(
         setAgentMemoryFeatureAvailable: (value) => {
           set({ agentMemoryFeatureAvailable: value });
         },
+        setRoutingFeatureAvailable: (value) => {
+          set({ routingFeatureAvailable: value });
+        },
         setProjectContextSidebarWidth: (width) => {
           set({ projectContextSidebarWidth: width });
         },
@@ -3061,10 +3071,10 @@ export const useUIStore = create<UIStore>()(
           contextRailHiddenSurfaces: state.contextRailHiddenSurfaces,
           contextEditorTreeVisible: state.contextEditorTreeVisible,
           contextEditorVisible: state.contextEditorVisible,
-          messageQueueExpanded: state.messageQueueExpanded,
           contextEditorTreeWidth: state.contextEditorTreeWidth,
           notesPanelHeight: state.notesPanelHeight,
           workStatusExpandedSections: state.workStatusExpandedSections,
+          messageQueueExpanded: state.messageQueueExpanded,
           workStatusScrollTop: state.workStatusScrollTop,
           workStatusPanelEnabled: state.workStatusPanelEnabled,
           workStatusHiddenSections: state.workStatusHiddenSections,

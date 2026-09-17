@@ -23,6 +23,7 @@ import { useRouter } from '@/hooks/useRouter';
 import { useTerminalSessionKeepalive } from '@/hooks/useTerminalSessionKeepalive';
 import { useUpdatePolling } from '@/hooks/useUpdatePolling';
 import { useWindowTitle } from '@/hooks/useWindowTitle';
+import { useRoutingSync } from '@/hooks/useRoutingSync';
 import { opencodeClient } from '@/lib/opencode/client';
 import type { RuntimeAPIs } from '@/lib/api/types';
 import type { ProjectRef } from '@/lib/projectContextApi';
@@ -85,6 +86,7 @@ const MOBILE_SETTINGS_PAGES = [
   'chat',
   'notifications',
   'sessions',
+  'routing',
   'git',
   'magic-prompts',
   'snippets',
@@ -1181,6 +1183,7 @@ export function MobileApp({ apis }: MobileAppProps) {
   usePushVisibilityBeacon({ enabled: true });
   useUpdatePolling();
   useWindowTitle();
+  useRoutingSync();
   useRouter();
   // APNs is the only notification channel on the native app (background-capable,
   // focus-suppressed server-side via the visibility beacon). Local notifications are

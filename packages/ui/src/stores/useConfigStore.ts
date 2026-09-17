@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { AUTO_MODEL_ID, AUTO_PROVIDER_ID, isAutoModel } from '@/lib/routing/autoModel';
+import { selectAutoReady, useRoutingStore } from '@/stores/useRoutingStore';
 import type { StoreApi, UseBoundStore } from "zustand";
 import { devtools, persist } from "zustand/middleware";
 import type { Provider, Agent, Config } from "@opencode-ai/sdk/v2";
@@ -194,6 +196,11 @@ const hasProviderModel = (
     providerId: string,
     modelId: string
 ): boolean => {
+    // Auto is not a provider OpenCode reports; it is a valid selection exactly
+    // while the server says routing can honour it.
+    if (isAutoModel(providerId, modelId)) {
+        return selectAutoReady(useRoutingStore.getState());
+    }
     const provider = providers.find((item) => item.id === providerId);
     if (!provider) {
         return false;
@@ -1932,13 +1939,14 @@ export const useConfigStore = create<ConfigStore>()(
                 setProvider: (providerId: string) => {
                     const { providers } = get();
                     const provider = providers.find((p) => p.id === providerId);
+                    const isAuto = providerId === AUTO_PROVIDER_ID && hasProviderModel(providers, AUTO_PROVIDER_ID, AUTO_MODEL_ID);
  
-                    if (!provider) {
+                    if (!provider && !isAuto) {
                         return;
                     }
  
-                    const firstModel = provider.models[0];
-                    const newModelId = firstModel?.id || "";
+                    const firstModel = provider?.models[0];
+                    const newModelId = isAuto ? AUTO_MODEL_ID : (firstModel?.id || "");
  
                     set((state) => {
                         const directoryKey = state.activeDirectoryKey;
