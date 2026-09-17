@@ -3450,26 +3450,45 @@ export async function push(directory, options = {}) {
     );
   };
 
-  const normalizePushResult = (result) => {
+  const remote = String(options.remote || '').trim();
+  const status = await git.status();
+  const config = await git.listConfig();
+  const remotes = await git.getRemotes(true);
+  const remoteName = remote
+    || config.all[`branch.${status.current}.pushremote`]
+    || config.all['remote.pushdefault']
+    || config.all[`branch.${status.current}.remote`]
+    || (remotes.length === 1 ? remotes[0].name : 'origin');
+
+  const pushTo = async (target, branch, pushOptions) => {
+    // simple-git drops forced updates and puts no-ops in `pushed`. Read Git's
+    // porcelain status flags so feedback reflects actual remote ref changes.
+    let output = '';
+    git.outputHandler((_command, stdout) => {
+      stdout.on('data', (chunk) => { output += chunk.toString(); });
+    });
+    const result = await git.push(target, branch, pushOptions);
+    const pushed = [];
+    for (const line of output.split(/\r?\n/)) {
+      const match = /^([ *+\-])\t([^:]*):([^\t]+)\t/.exec(line);
+      if (match) {
+        pushed.push({ local: match[2], remote: remoteName });
+      }
+    }
     return {
       success: true,
-      pushed: result.pushed,
-      repo: result.repo,
-      ref: result.ref,
+      pushed,
+      repo: result.repo || directory,
+      ref: result.ref || null,
     };
   };
 
-  const remote = String(options.remote || '').trim();
-
   if (!remote && !options.branch) {
     try {
-      await git.push();
-      return {
-        success: true,
-        pushed: [],
-        repo: directory,
-        ref: null,
-      };
+      const pushOptions = status.current && !status.tracking
+        ? buildUpstreamOptions(options.options)
+        : options.options || {};
+      return await pushTo(undefined, undefined, pushOptions);
     } catch (error) {
       if (!looksLikeMissingUpstream(error)) {
         const message = describePushError(error);
@@ -3478,17 +3497,13 @@ export async function push(directory, options = {}) {
       }
 
       try {
-        const status = await git.status();
         const branch = status.current;
-        const remotes = await git.getRemotes(true);
-        const fallbackRemote = remotes.find((entry) => entry.name === 'origin')?.name || remotes[0]?.name;
-        if (!branch || !fallbackRemote) {
+        if (!branch || !remoteName) {
           const message = describePushError(error);
           throw new Error(message);
         }
 
-        const result = await git.push(fallbackRemote, branch, buildUpstreamOptions(options.options));
-        return normalizePushResult(result);
+        return await pushTo(remoteName, branch, buildUpstreamOptions(options.options));
       } catch (fallbackError) {
         const message = describePushError(fallbackError);
         console.error('Failed to push (including upstream fallback):', fallbackError);
@@ -3497,26 +3512,14 @@ export async function push(directory, options = {}) {
     }
   }
 
-  const remoteName = remote || 'origin';
-
   // If caller didn't specify a branch, this is the common "Push"/"Commit & Push" path.
   // When there's no upstream yet (typical for freshly-created worktree branches), publish it on first push.
-  if (!options.branch) {
-    try {
-      const status = await git.status();
-      if (status.current && !status.tracking) {
-        const result = await git.push(remoteName, status.current, buildUpstreamOptions(options.options));
-        return normalizePushResult(result);
-      }
-    } catch (error) {
-      // If we can't read status, fall back to the regular push path below.
-      console.warn('Failed to read git status before push:', error);
-    }
+  if (!options.branch && status.current && !status.tracking) {
+    return pushTo(remoteName, status.current, buildUpstreamOptions(options.options));
   }
 
   try {
-    const result = await git.push(remoteName, options.branch, options.options || {});
-    return normalizePushResult(result);
+    return await pushTo(remoteName, options.branch, options.options || {});
   } catch (error) {
     // Last-resort fallback: retry with upstream if the error suggests it's missing.
     if (!looksLikeMissingUpstream(error)) {
@@ -3526,15 +3529,13 @@ export async function push(directory, options = {}) {
     }
 
     try {
-      const status = await git.status();
       const branch = options.branch || status.current;
       if (!branch) {
         console.error('Failed to push: missing branch name for upstream setup:', error);
         throw error;
       }
 
-      const result = await git.push(remoteName, branch, buildUpstreamOptions(options.options));
-      return normalizePushResult(result);
+      return await pushTo(remoteName, branch, buildUpstreamOptions(options.options));
     } catch (fallbackError) {
       const message = describePushError(fallbackError);
       console.error('Failed to push (including upstream fallback):', fallbackError);

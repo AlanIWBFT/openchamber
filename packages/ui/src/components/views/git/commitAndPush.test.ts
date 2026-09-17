@@ -16,7 +16,7 @@ const status = (overrides: Partial<GitStatus> = {}): GitStatus => ({
 
 test('publishes a new branch even though status has no upstream ahead count', async () => {
   const pushes: Array<{ directory: string; remote?: string }> = [];
-  const git = {
+  const git: Pick<GitAPI, 'gitFetch' | 'getGitStatus' | 'gitPull' | 'gitPush'> = {
     gitFetch: async () => ({ success: true }),
     getGitStatus: async () => status(),
     gitPull: async () => { throw new Error('unexpected pull'); },
@@ -24,17 +24,16 @@ test('publishes a new branch even though status has no upstream ahead count', as
       pushes.push({ directory, remote: options?.remote });
       return { success: true, pushed: [{ local: 'feature', remote: 'fork' }], repo: directory, ref: null };
     },
-  } as Pick<GitAPI, 'gitFetch' | 'getGitStatus' | 'gitPull' | 'gitPush'>;
+  };
 
   await pushCommittedChanges({
     git,
     directory: '/repo',
     remote: remote('fork'),
-    status: status(),
     dirtyWorktreeError: 'dirty',
   });
 
-  expect(pushes).toEqual([{ directory: '/repo', remote: 'fork' }]);
+  expect(pushes).toEqual([{ directory: '/repo', remote: undefined }]);
 });
 
 for (const [name, remoteStatus, expectedCalls] of [
@@ -44,7 +43,7 @@ for (const [name, remoteStatus, expectedCalls] of [
 ] as const) {
   test(`pushes an existing ${name} branch after reconciling remote changes`, async () => {
     const calls: string[] = [];
-    const git = {
+    const git: Pick<GitAPI, 'gitFetch' | 'getGitStatus' | 'gitPull' | 'gitPush'> = {
       gitFetch: async () => { calls.push('fetch'); return { success: true }; },
       getGitStatus: async () => remoteStatus,
       gitPull: async () => {
@@ -55,13 +54,12 @@ for (const [name, remoteStatus, expectedCalls] of [
         calls.push('push');
         return { success: true, pushed: [{ local: 'feature', remote: 'origin' }], repo: directory, ref: null };
       },
-    } as Pick<GitAPI, 'gitFetch' | 'getGitStatus' | 'gitPull' | 'gitPush'>;
+    };
 
     await pushCommittedChanges({
       git,
       directory: '/repo',
       remote: remote(),
-      status: status({ tracking: 'origin/feature' }),
       dirtyWorktreeError: 'dirty',
     });
 
@@ -71,40 +69,92 @@ for (const [name, remoteStatus, expectedCalls] of [
 
 describe('pushCommittedChanges failures', () => {
   test('does not pull or push a behind branch with uncommitted changes', async () => {
-    const git = {
+    const git: Pick<GitAPI, 'gitFetch' | 'getGitStatus' | 'gitPull' | 'gitPush'> = {
       gitFetch: async () => ({ success: true }),
       getGitStatus: async () => status({ behind: 1, files: [{ path: 'local.ts', index: ' ', working_dir: 'M' }] }),
       gitPull: async () => { throw new Error('unexpected pull'); },
       gitPush: async () => { throw new Error('unexpected push'); },
-    } as Pick<GitAPI, 'gitFetch' | 'getGitStatus' | 'gitPull' | 'gitPush'>;
+    };
 
     await expect(pushCommittedChanges({
       git,
       directory: '/repo',
       remote: remote(),
-      status: status({ tracking: 'origin/feature' }),
       dirtyWorktreeError: 'commit or stash first',
     })).rejects.toThrow('commit or stash first');
   });
 
   test('does not report a push result when publishing fails', async () => {
     let reportedSuccess = false;
-    const git = {
+    const git: Pick<GitAPI, 'gitFetch' | 'getGitStatus' | 'gitPull' | 'gitPush'> = {
       gitFetch: async () => ({ success: true }),
       getGitStatus: async () => status({ ahead: 1 }),
       gitPull: async () => { throw new Error('unexpected pull'); },
       gitPush: async () => { throw new Error('remote rejected'); },
-    } as Pick<GitAPI, 'gitFetch' | 'getGitStatus' | 'gitPull' | 'gitPush'>;
+    };
 
     await expect(pushCommittedChanges({
       git,
       directory: '/repo',
       remote: remote(),
-      status: status({ tracking: 'origin/feature' }),
       dirtyWorktreeError: 'dirty',
       onPushed: () => { reportedSuccess = true; },
     })).rejects.toThrow('remote rejected');
 
     expect(reportedSuccess).toBe(false);
   });
+});
+
+test('only reports changed refs after first publication, a no-op, and a later push', async () => {
+  const reported: string[] = [];
+  const outcomes = [
+    [{ local: 'refs/heads/feature', remote: 'fork' }],
+    [],
+    [{ local: 'refs/heads/feature', remote: 'fork' }],
+  ];
+  const git: Pick<GitAPI, 'gitFetch' | 'getGitStatus' | 'gitPull' | 'gitPush'> = {
+    gitFetch: async () => ({ success: true }),
+    getGitStatus: async () => status(),
+    gitPull: async () => { throw new Error('unexpected pull'); },
+    gitPush: async () => ({ success: true, pushed: outcomes.shift() ?? [], repo: '/repo', ref: null }),
+  };
+  for (const expectedCount of [1, 1, 2]) {
+    await pushCommittedChanges({
+      git,
+      directory: '/repo',
+      remote: remote(),
+      dirtyWorktreeError: 'dirty',
+      onPushed: (result) => { reported.push(result.pushed[0].remote); },
+    });
+    expect(reported).toHaveLength(expectedCount);
+  }
+  expect(reported).toEqual(['fork', 'fork']);
+});
+
+test('pulls the fetched upstream but leaves push routing to Git', async () => {
+  const reported: string[] = [];
+  const git: Pick<GitAPI, 'gitFetch' | 'getGitStatus' | 'gitPull' | 'gitPush'> = {
+    gitFetch: async (_directory, options) => {
+      expect(options).toEqual({ remote: 'upstream' });
+      return { success: true };
+    },
+    getGitStatus: async () => status({ tracking: 'upstream/feature', behind: 1 }),
+    gitPull: async (_directory, options) => {
+      expect(options).toEqual({ remote: 'upstream', branch: 'feature', rebase: true });
+      return { success: true, summary: { changes: 1, insertions: 1, deletions: 0 }, files: ['readme'], insertions: 1, deletions: 0 };
+    },
+    gitPush: async (_directory, options) => {
+      expect(options).toBeUndefined();
+      return { success: true, pushed: [{ local: 'feature', remote: 'fork' }], repo: '/repo', ref: null };
+    },
+  };
+  await pushCommittedChanges({
+    git,
+    directory: '/repo',
+    remote: remote('upstream'),
+    dirtyWorktreeError: 'dirty',
+    onPulled: (result) => { reported.push(...result.files); },
+    onPushed: (result) => { reported.push(result.pushed[0].remote); },
+  });
+  expect(reported).toEqual(['readme', 'fork']);
 });

@@ -1117,46 +1117,41 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
         );
       } else if (action === 'push') {
         const result = await git.gitPush(gitDirectory);
-        toast.success(t('gitView.toast.pushedToUpstream', { name: getPushedRemoteName(result) }));
+        toast.success(result.pushed.length > 0
+          ? t('gitView.toast.pushedToUpstream', { name: getPushedRemoteName(result) })
+          : t('gitView.toast.alreadyUpToDate'));
       } else if (action === 'sync') {
         if (!remote) {
           throw new Error('No remote available for sync');
         }
         let pulledFileCount = 0;
-        let pushedChanges = false;
-        await git.gitFetch(gitDirectory, { remote: remote.name });
-        const afterFetch = await git.getGitStatus(gitDirectory);
-
-        if ((afterFetch.behind ?? 0) > 0) {
-          if ((afterFetch.files?.length ?? 0) > 0) {
-            toast.error(t('gitView.toast.commitOrStashBeforeSync'));
-            return;
-          }
-          const pullResult = await git.gitPull(gitDirectory, getPullOptions(remote));
-          pulledFileCount = pullResult.files.length;
-        }
-
-        const afterPull = await git.getGitStatus(gitDirectory);
-        if ((afterPull.ahead ?? 0) > 0) {
-          await git.gitPush(gitDirectory);
-          pushedChanges = true;
-        }
-        if (pulledFileCount > 0 && pushedChanges) {
+        const result = await pushCommittedChanges({
+          git,
+          directory: gitDirectory,
+          remote,
+          dirtyWorktreeError: t('gitView.toast.commitOrStashBeforeSync'),
+          onPulled: (pullResult) => { pulledFileCount = pullResult.files.length; },
+        });
+        const pushedChanges = result.pushed.length > 0;
+        const pushedRemote = getPushedRemoteName(result);
+        if (pulledFileCount > 0 && pushedChanges && pushedRemote === remote.name) {
           toast.success(
             pulledFileCount === 1
               ? t('gitView.toast.syncedPulledSingleAndPushed', { count: pulledFileCount, name: remote.name })
               : t('gitView.toast.syncedPulledPluralAndPushed', { count: pulledFileCount, name: remote.name })
           );
-        } else if (pulledFileCount > 0) {
-          toast.success(
-            pulledFileCount === 1
-              ? t('gitView.toast.pulledFilesSingle', { count: pulledFileCount, name: remote.name })
-              : t('gitView.toast.pulledFilesPlural', { count: pulledFileCount, name: remote.name })
-          );
-        } else if (pushedChanges) {
-          toast.success(t('gitView.toast.pushedToUpstream', { name: remote.name }));
         } else {
-          toast.success(t('gitView.toast.alreadyUpToDate'));
+          if (pulledFileCount > 0) {
+            toast.success(pulledFileCount === 1
+              ? t('gitView.toast.pulledFilesSingle', { count: pulledFileCount, name: remote.name })
+              : t('gitView.toast.pulledFilesPlural', { count: pulledFileCount, name: remote.name }));
+          }
+          if (pushedChanges) {
+            toast.success(t('gitView.toast.pushedToUpstream', { name: pushedRemote }));
+          }
+          if (pulledFileCount === 0 && !pushedChanges) {
+            toast.success(t('gitView.toast.alreadyUpToDate'));
+          }
         }
       }
 
@@ -1242,10 +1237,8 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
           git,
           directory: gitDirectory,
           remote,
-          status,
           dirtyWorktreeError: t('gitView.toast.commitOrStashBeforeSync'),
           onPushed: (result) => {
-            if (result.pushed.length === 0) return;
             toast.success(t('gitView.toast.pushedToUpstream', { name: getPushedRemoteName(result) }));
             triggerFireworks();
           },

@@ -753,12 +753,73 @@ describe('push', () => {
     runGit(repo, ['add', 'feature.txt']);
     runGit(repo, ['commit', '-m', 'Add feature']);
 
-    await push(repo, { remote: 'fork' });
+    const published = await push(repo, { remote: 'fork' });
+    expect(published.pushed).toEqual([{ local: 'refs/heads/feature', remote: 'fork' }]);
 
     expect(runGit(repo, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).trim()).toBe('fork/feature');
     expect(runGit(remote, ['rev-parse', 'refs/heads/feature']).trim()).toBe(runGit(repo, ['rev-parse', 'HEAD']).trim());
     expect(() => runGit(remote, ['rev-parse', 'refs/heads/unrelated'])).toThrow();
     expect(() => runGit(remote, ['rev-parse', 'refs/heads/main'])).toThrow();
+
+    expect((await push(repo)).pushed).toEqual([]);
+    fs.appendFileSync(path.join(repo, 'feature.txt'), 'next commit\n');
+    runGit(repo, ['commit', '-am', 'Update feature']);
+    expect((await push(repo)).pushed).toEqual([{ local: 'refs/heads/feature', remote: 'fork' }]);
+    expect(runGit(remote, ['rev-parse', 'feature']).trim()).toBe(runGit(repo, ['rev-parse', 'HEAD']).trim());
+
+    runGit(repo, ['reset', '--hard', 'HEAD~1']);
+    await expect(push(repo)).rejects.toThrow();
+    expect((await push(repo, { options: ['--force-with-lease'] })).pushed)
+      .toEqual([{ local: 'refs/heads/feature', remote: 'fork' }]);
+    expect(runGit(remote, ['rev-parse', 'feature']).trim()).toBe(runGit(repo, ['rev-parse', 'HEAD']).trim());
+  });
+
+  it.each(['remote.pushDefault', 'branch.next.pushRemote'])('preserves the %s destination independently of the fetch remote', async (key) => {
+    const { repository, remote: upstream } = createRepositoryWithRemote({ remoteName: 'upstream', defaultBranch: 'next' });
+    const fork = createTempDir();
+    runGit(fork, ['init', '--bare']);
+    runGit(repository, ['remote', 'add', 'fork', fork]);
+    runGit(repository, ['branch', '--set-upstream-to=upstream/next']);
+    if (key === 'branch.next.pushRemote') runGit(repository, ['config', 'remote.pushDefault', 'upstream']);
+    runGit(repository, ['config', key, 'fork']);
+    const upstreamHead = runGit(upstream, ['rev-parse', 'next']).trim();
+    fs.appendFileSync(path.join(repository, 'README.md'), 'fork change\n');
+    runGit(repository, ['commit', '-am', 'Change for fork']);
+
+    expect((await push(repository)).pushed).toEqual([{ local: 'refs/heads/next', remote: 'fork' }]);
+    expect(runGit(fork, ['rev-parse', 'next']).trim()).toBe(runGit(repository, ['rev-parse', 'HEAD']).trim());
+    expect(runGit(upstream, ['rev-parse', 'next']).trim()).toBe(upstreamHead);
+    expect(readBranchConfig(repository, 'next', 'remote')).toBe('upstream');
+    expect((await push(repository)).pushed).toEqual([]);
+  });
+
+  it.each(['remote.pushDefault', 'branch.next.pushRemote'])('uses %s for first publication without an upstream', async (key) => {
+    const { repository, remote: origin } = createRepositoryWithRemote();
+    const fork = createTempDir();
+    runGit(fork, ['init', '--bare']);
+    runGit(repository, ['remote', 'add', 'fork', fork]);
+    runGit(repository, ['config', key, 'fork']);
+    runGit(repository, ['config', 'push.autoSetupRemote', 'false']);
+
+    expect((await push(repository)).pushed).toEqual([{ local: 'refs/heads/next', remote: 'fork' }]);
+    expect(readBranchConfig(repository, 'next', 'remote')).toBe('fork');
+    expect(() => runGit(origin, ['rev-parse', 'refs/heads/next'])).toThrow();
+  });
+
+  it('lets an explicit push remote override configured destinations', async () => {
+    const { repository, remote: origin } = createRepositoryWithRemote({ defaultBranch: 'next' });
+    const fork = createTempDir();
+    runGit(fork, ['init', '--bare']);
+    runGit(repository, ['remote', 'add', 'fork', fork]);
+    runGit(repository, ['branch', '--set-upstream-to=origin/next']);
+    runGit(repository, ['config', 'branch.next.pushRemote', 'fork']);
+    fs.appendFileSync(path.join(repository, 'README.md'), 'origin change\n');
+    runGit(repository, ['commit', '-am', 'Change for origin']);
+
+    expect((await push(repository, { remote: 'origin' })).pushed)
+      .toEqual([{ local: 'refs/heads/next', remote: 'origin' }]);
+    expect(runGit(origin, ['rev-parse', 'next']).trim()).toBe(runGit(repository, ['rev-parse', 'HEAD']).trim());
+    expect(() => runGit(fork, ['rev-parse', 'next'])).toThrow();
   });
 });
 

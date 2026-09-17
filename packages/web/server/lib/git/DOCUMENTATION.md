@@ -83,6 +83,17 @@ bootstrap, tracking is left unset rather than writing `branch.*.remote` /
 - `removeRemote(directory, options)`: Remove a configured remote (except `origin`).
 - `deleteRemoteBranch(directory, options)`: Delete a remote branch.
 
+`push` leaves an unspecified destination to Git, including `branch.<name>.pushRemote`
+and `remote.pushDefault`. Its missing-upstream fallback uses that same destination;
+an explicit remote overrides configuration. `pushed` contains only refs changed by
+the operation, derived from Git's porcelain flags, including first publication,
+fast-forward and forced updates. Each entry's `remote` is the destination remote
+name, not a ref. A successful no-op returns an empty array; rejected pushes throw.
+Commit & Push and Sync share the same fetch/pull/push flow in web, Electron and
+mobile, and never infer publication from an upstream `ahead` count. Fetch follows
+the selected upstream while push routing remains independent. VS Code does not
+mount these Git panels and keeps its separate extension-host Git implementation.
+
 ### Log Operations
 - `getLog(directory, options)`: Get commit history with stats (supports maxCount, from, to, file filters).
 - `getCommitFiles(directory, commitHash)`: Get file changes for a specific commit relative to its first parent, or the empty tree for a root commit. NUL-delimited paths preserve whitespace; renamed files return their destination in `path` and source in `previousPath`.
