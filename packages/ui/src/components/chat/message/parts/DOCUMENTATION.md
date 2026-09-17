@@ -42,6 +42,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Hook points, each falling back to today's code when the rule is `null` or silent on that field: icon (`getToolIcon`), header title (`title` template, else `name`, else `getToolMetadata`), header subtitle (`subtitle` template replaces both the description and the justification text), and the expanded body (`output`: `text` / `code` / `json` / `markdown` / `table`, checked at the top of `renderResultContent` and inside `ToolScrollableTextOutput`; `auto` keeps detection). A `table` whose output is not an array or `{ items: [] }` falls through to detection.
   - `GuestToolTable.tsx` draws the table with the same cell classes the markdown decorator gives assistant tables, capped at 200 rows with a count line.
   - VS Code and mobile mark the guest catalog unsupported, so the registry is empty and nothing changes there.
+  - Unified Exec keeps its native output, activity state, and control filtering. Extensions may customize the root command's header and icon, but control calls do not expose input to extension templates, which could otherwise reveal stdin text.
 
 - `toolRenderUtils.ts`
   - Core classification helpers:

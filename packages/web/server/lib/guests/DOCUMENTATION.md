@@ -46,6 +46,8 @@ A missing folder is omitted from the list. Other guests stay. A corrupt `extensi
 
 ## Invariants
 
+- Host shutdown calls `stopAllGuestServices({ shutdown: true })`, permanently closing service admission for this process before stopping children. Routes still loading the guest catalog are refused when they reach the proxy. The global stop epoch cancels requests already inside the proxy, including those reading configuration before registering a runtime. Ordinary `stopAllGuestServices()` stops current work but permits later starts; it never reopens a host that has shut down.
+
 - Built-in packages come from the app-owned registry bound by `registerBuiltInGuests` at server startup. Source/build/packaging rules are in `packages/extensions/DOCUMENTATION.md`. They receive only their declared grants automatically; ordinary runtime and enabled checks still apply. `openchamber-builtin-` IDs are reserved from user installs, including replacement. DELETE, Git update and grant-edit routes refuse built-ins. Disable preserves account/storage data and stops their services.
 
 - Grants are narrowed on read, never trusted as stored. `listInstalledGuestsUncached` passes each guest's stored list through `effectiveGrants(granted, storedScope, currentScope)`: `filesystem`, `network`, and `service` only count while the scope recorded at approval equals what the package declares now, and never count without a recorded scope. A newer version that widens its patterns, moves its API origin, or asks for more exec names or sockets shows up as needs-approval and is refused by every proxy meanwhile. Routes and `proxyGuestServiceRequest` take the grant list from the catalog row (`guest.capabilityGrants`), not from the store.

@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const spawnMock = vi.fn();
 const spawnSyncMock = vi.fn();
@@ -23,6 +23,23 @@ const { createOpenCodeLifecycleRuntime } = await import('./lifecycle.js');
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
 const originalPath = process.env.PATH;
 const originalFetch = globalThis.fetch;
+
+beforeEach(() => {
+  spawnSyncMock.mockImplementation((command, args) => {
+    if (command === 'taskkill') {
+      const pid = Number(args[args.indexOf('/pid') + 1]);
+      const child = spawnMock.mock.results.findLast((result) => result.value?.pid === pid)?.value;
+      if (child) {
+        child.signalCode = 'SIGKILL';
+        queueMicrotask(() => {
+          child.emit('exit', null, 'SIGKILL');
+          child.emit('close', null, 'SIGKILL');
+        });
+      }
+    }
+    return { status: 0, stdout: '', stderr: '' };
+  });
+});
 
 afterEach(() => {
   vi.useRealTimers();
@@ -168,7 +185,7 @@ describe('OpenCode lifecycle', () => {
     runtime.testState.openCodeProcess = firstServer;
     try {
       await runtime.restartOpenCode();
-      expect(firstServer.signalCode).toBe('SIGTERM');
+      expect(firstServer.signalCode).toBe(process.platform === 'win32' ? 'SIGKILL' : 'SIGTERM');
       expect(spawnMock.mock.calls.map(([binary]) => binary)).toEqual(binaries);
       expect(runtime.testState.lastOpenCodeLaunchDiagnostics.sourceBinary).toBe(binaries[1]);
       expect(process.env.OPENCODE_BINARY).toBeUndefined();
@@ -747,7 +764,12 @@ describe('OpenCode lifecycle', () => {
     const runtime = createRuntime();
     const server = await runtime.startOpenCode();
     await expect(server.close({ deadline: Date.now() + 1500, force: true })).resolves.toBeUndefined();
-    expect(child.kill).toHaveBeenCalledTimes(1);
+    if (process.platform === 'win32') {
+      expect(spawnSyncMock).toHaveBeenCalledWith('taskkill', ['/pid', '12345', '/f', '/t'], expect.any(Object));
+      expect(child.kill).not.toHaveBeenCalled();
+    } else {
+      expect(child.kill).toHaveBeenCalledTimes(1);
+    }
   });
 
   it('forces termination only after the configured graceful shutdown window', async () => {
@@ -949,7 +971,10 @@ describe('OpenCode lifecycle', () => {
     expect(options.stdio).toEqual(['pipe', 'pipe', 'pipe']);
 
     await server.close();
-    expect(server.signalCode).toBe('SIGTERM');
+    expect(server.signalCode).toBe(process.platform === 'win32' ? 'SIGKILL' : 'SIGTERM');
+    if (process.platform === 'win32') {
+      expect(spawnSyncMock).toHaveBeenCalledWith('taskkill', ['/pid', '12345', '/f', '/t'], expect.any(Object));
+    }
   });
 
   it('suspends the startup timeout while OpenCode reports a database migration', async () => {
@@ -1062,7 +1087,12 @@ describe('OpenCode lifecycle', () => {
     await Promise.resolve();
 
     expect((await failure).message).toContain('migration process remained alive');
-    expect(child.kill).toHaveBeenCalledTimes(1);
+    if (process.platform === 'win32') {
+      expect(spawnSyncMock).toHaveBeenCalledWith('taskkill', ['/pid', '12345', '/f', '/t'], expect.any(Object));
+      expect(child.kill).not.toHaveBeenCalled();
+    } else {
+      expect(child.kill).toHaveBeenCalledTimes(1);
+    }
     expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 
@@ -1084,7 +1114,7 @@ describe('OpenCode lifecycle', () => {
     expect(args).toEqual(['serve', '--hostname', '0.0.0.0', '--port', '45678']);
 
     await server.close();
-    expect(server.signalCode).toBe('SIGTERM');
+    expect(server.signalCode).toBe(process.platform === 'win32' ? 'SIGKILL' : 'SIGTERM');
   });
 
   it('strips AppImage ARGV0 from managed OpenCode launch env', async () => {

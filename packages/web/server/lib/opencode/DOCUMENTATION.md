@@ -408,6 +408,7 @@ ConPTY or Console Window Host behavior.
 
 ## Public exports (shutdown-runtime.js)
 - `createGracefulShutdownRuntime(dependencies)`: creates graceful shutdown runtime for managed OpenCode and web server teardown sequencing.
+  The returned server handle, process signals, and pre-handle desktop cancellation share this entry. It fences requests, stops background producers, then joins managed OpenCode and guest-service cleanup concurrently. OpenCode lifecycle owns its private stdin protocol, deadline, and single force dispatch. The shutdown runtime does not launch a second killer or kill a process by port.
 - After stopping owned runtimes and OpenCode, HTTP shutdown closes active connections as well as the listener. A remaining SSE response must not hold Desktop open until its fallback deadline. Upgraded sockets remain the responsibility of their owning runtime.
 - Returned API:
   - `gracefulShutdown(options?)`
