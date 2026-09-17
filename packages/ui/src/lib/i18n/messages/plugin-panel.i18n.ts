@@ -1,6 +1,7 @@
 /** Guest panel strings — merged into each locale's main dictionary. */
 export const pluginPanelI18n = {
   en: {
+    'chat.chatInput.toast.guestHasNoPanel': 'This extension runs without a panel.',
     'header.mainSurface.backToChat': 'Back to chat',
     'sessions.sidebar.header.actions.extensionPages': 'Extension pages',
     'contextRail.surface.plugin': 'Panel',
@@ -42,6 +43,7 @@ export const pluginPanelI18n = {
     'chat.chatInput.toast.guestUnavailableHere': 'This extension is not available here. Open it on OpenChamber web or desktop.',
   },
   de: {
+    'chat.chatInput.toast.guestHasNoPanel': 'Diese Erweiterung läuft ohne Panel.',
     'header.mainSurface.backToChat': 'Zurück zum Chat',
     'sessions.sidebar.header.actions.extensionPages': 'Erweiterungsseiten',
     'contextRail.surface.plugin': 'Panel',
@@ -83,6 +85,7 @@ export const pluginPanelI18n = {
     'chat.chatInput.toast.guestUnavailableHere': 'Diese Erweiterung ist hier nicht verfügbar. Öffne sie in OpenChamber Web oder Desktop.',
   },
   fr: {
+    'chat.chatInput.toast.guestHasNoPanel': 'Cette extension fonctionne sans panneau.',
     'header.mainSurface.backToChat': 'Retour au chat',
     'sessions.sidebar.header.actions.extensionPages': 'Pages des extensions',
     'contextRail.surface.plugin': 'Panneau',
@@ -124,6 +127,7 @@ export const pluginPanelI18n = {
     'chat.chatInput.toast.guestUnavailableHere': 'Cette extension n’est pas disponible ici. Ouvrez-la dans OpenChamber web ou desktop.',
   },
   es: {
+    'chat.chatInput.toast.guestHasNoPanel': 'Esta extensión funciona sin panel.',
     'header.mainSurface.backToChat': 'Volver al chat',
     'sessions.sidebar.header.actions.extensionPages': 'Páginas de extensiones',
     'contextRail.surface.plugin': 'Panel',
@@ -165,6 +169,7 @@ export const pluginPanelI18n = {
     'chat.chatInput.toast.guestUnavailableHere': 'Esta extensión no está disponible aquí. Ábrela en OpenChamber web o escritorio.',
   },
   ja: {
+    'chat.chatInput.toast.guestHasNoPanel': 'この拡張機能はパネルなしで動作します。',
     'header.mainSurface.backToChat': 'チャットに戻る',
     'sessions.sidebar.header.actions.extensionPages': '拡張機能のページ',
     'contextRail.surface.plugin': 'パネル',
@@ -206,6 +211,7 @@ export const pluginPanelI18n = {
     'chat.chatInput.toast.guestUnavailableHere': 'この拡張機能はここでは利用できません。OpenChamber のウェブ版かデスクトップ版で開いてください。',
   },
   ko: {
+    'chat.chatInput.toast.guestHasNoPanel': '이 확장 프로그램은 패널 없이 실행됩니다.',
     'header.mainSurface.backToChat': '채팅으로 돌아가기',
     'sessions.sidebar.header.actions.extensionPages': '확장 프로그램 페이지',
     'contextRail.surface.plugin': '패널',
@@ -247,6 +253,7 @@ export const pluginPanelI18n = {
     'chat.chatInput.toast.guestUnavailableHere': '이 확장은 여기에서 사용할 수 없습니다. OpenChamber 웹 또는 데스크톱에서 여세요.',
   },
   pl: {
+    'chat.chatInput.toast.guestHasNoPanel': 'To rozszerzenie działa bez panelu.',
     'header.mainSurface.backToChat': 'Wróć do czatu',
     'sessions.sidebar.header.actions.extensionPages': 'Strony rozszerzeń',
     'contextRail.surface.plugin': 'Panel',
@@ -288,6 +295,7 @@ export const pluginPanelI18n = {
     'chat.chatInput.toast.guestUnavailableHere': 'To rozszerzenie nie jest tu dostępne. Otwórz je w OpenChamber web lub na desktopie.',
   },
   'pt-BR': {
+    'chat.chatInput.toast.guestHasNoPanel': 'Esta extensão funciona sem painel.',
     'header.mainSurface.backToChat': 'Voltar ao chat',
     'sessions.sidebar.header.actions.extensionPages': 'Páginas de extensões',
     'contextRail.surface.plugin': 'Painel',
@@ -329,6 +337,7 @@ export const pluginPanelI18n = {
     'chat.chatInput.toast.guestUnavailableHere': 'Esta extensão não está disponível aqui. Abra no OpenChamber web ou desktop.',
   },
   uk: {
+    'chat.chatInput.toast.guestHasNoPanel': 'Це розширення працює без панелі.',
     'header.mainSurface.backToChat': 'Назад до чату',
     'sessions.sidebar.header.actions.extensionPages': 'Сторінки розширень',
     'contextRail.surface.plugin': 'Панель',
@@ -370,6 +379,7 @@ export const pluginPanelI18n = {
     'chat.chatInput.toast.guestUnavailableHere': 'Це розширення тут недоступне. Відкрийте його в OpenChamber web або на десктопі.',
   },
   'zh-CN': {
+    'chat.chatInput.toast.guestHasNoPanel': '此扩展无需面板即可运行。',
     'header.mainSurface.backToChat': '返回聊天',
     'sessions.sidebar.header.actions.extensionPages': '扩展页面',
     'contextRail.surface.plugin': '面板',
@@ -411,6 +421,7 @@ export const pluginPanelI18n = {
     'chat.chatInput.toast.guestUnavailableHere': '此扩展在此处不可用。请在 OpenChamber 网页版或桌面版中打开。',
   },
   'zh-TW': {
+    'chat.chatInput.toast.guestHasNoPanel': '此擴充功能無需面板即可執行。',
     'header.mainSurface.backToChat': '返回聊天',
     'sessions.sidebar.header.actions.extensionPages': '擴充功能頁面',
     'contextRail.surface.plugin': '面板',
@@ -452,6 +463,7 @@ export const pluginPanelI18n = {
     'chat.chatInput.toast.guestUnavailableHere': '此擴充功能在此處無法使用。請在 OpenChamber 網頁版或桌面版中開啟。',
   },
   tr: {
+    'chat.chatInput.toast.guestHasNoPanel': 'Bu uzantı panel olmadan çalışır.',
     'header.mainSurface.backToChat': 'Sohbete dön',
     'sessions.sidebar.header.actions.extensionPages': 'Uzantı sayfaları',
     'contextRail.surface.plugin': 'Panel',

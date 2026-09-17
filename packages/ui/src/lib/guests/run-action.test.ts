@@ -89,6 +89,19 @@ describe('guest action execution', () => {
     expect(useGuestActionHostStore.getState().requests).toEqual([]);
   });
 
+  test('a background-only action is invalidated when its execution entry changes', async () => {
+    const background = { ...entry, guest: { ...entry.guest, entry: undefined, attach: undefined, backgroundEntry: 'background.html' } };
+    useGuestsStore.getState().replaceCatalog([background.guest], getRuntimeKey());
+    const pending = runGuestAction(background, item, t);
+    const request = currentRequest();
+    expect(request.isActive()).toBe(true);
+    useGuestsStore.getState().replaceCatalog([{ ...background.guest, backgroundEntry: 'updated.html' }], getRuntimeKey());
+    expect(request.isActive()).toBe(false);
+    expect(request.takeMessage()).toBeNull();
+    await pending;
+    expect(useGuestActionHostStore.getState().requests).toEqual([]);
+  });
+
   test('disabled, unapproved, undeclared and wrong-role actions never mount', async () => {
     for (const guest of [
       { ...entry.guest, enabled: false },

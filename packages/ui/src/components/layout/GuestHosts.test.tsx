@@ -19,11 +19,22 @@ import { useGuestItemStore } from '@/lib/guests/item-store';
 import { useGuestBadgeStore } from '@/lib/guests/badge-store';
 import { SyncProvider } from '@/sync/sync-context';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { useUIStore } from '@/stores/useUIStore';
 import { GuestHosts } from './GuestHosts';
+import { PluginPane } from './PluginPane';
+import { enabledGuestSurfaces } from '@/lib/guests/surfaces';
+import { runGuestCommand } from '@/lib/guests/run-command';
+import { getGuestResolver, type GuestResolveOutcome } from '@/lib/guests/resolve';
 
-test('background host handles hello/load once, pins context, ignores foreign replies and unmounts after completion', async () => {
+for (const variant of [
+  { name: 'panel fallback', entry: 'panel/index.html' },
+  { name: 'background only', backgroundEntry: 'background/index.html' },
+  { name: 'separate panel and background', entry: 'panel/index.html', backgroundEntry: 'background/index.html' },
+]) {
+test(`${variant.name}: actions and commands use the execution entry and clean up their hidden frames`, async () => {
   const dom = new Window({ url: 'http://guest.test', settings: { disableIframePageLoading: true } });
   const guestWindow = new Window();
+  const commandWindow = new Window();
   const originals = new Map<string, PropertyDescriptor | undefined>();
   for (const [key, value] of Object.entries({ window: dom, document: dom.document, navigator: dom.navigator,
     localStorage: dom.localStorage, getComputedStyle: dom.getComputedStyle.bind(dom), Event: dom.Event, MessageEvent: dom.MessageEvent,
@@ -53,12 +64,14 @@ test('background host handles hello/load once, pins context, ignores foreign rep
   };
   const action: GuestActionEntry['action'] = { id: 'count', label: 'Count', where: 'message', mode: 'background' };
   const entry: GuestActionEntry = { action, icon: 'window', guest: {
-    id: 'counter', name: 'Counter', icon: 'window', entry: 'panel/index.html', attach: 'dialog', attachEntry: 'panel/dialog.html',
-    capabilities: { requested: [], granted: [] }, actions: [action],
+    id: 'counter', name: 'Counter', icon: 'window', entry: variant.entry, backgroundEntry: variant.backgroundEntry,
+    attach: variant.entry ? 'dialog' : undefined, attachEntry: variant.entry ? 'panel/dialog.html' : undefined,
+    capabilities: { requested: [], granted: [] }, actions: [action], commands: [{ name: 'count' }],
   } };
   const runtimeKey = getRuntimeKey();
   useGuestsStore.getState().resetForRuntimeSwitch(runtimeKey);
   useGuestsStore.getState().replaceCatalog([entry.guest], runtimeKey);
+  expect(enabledGuestSurfaces([entry.guest], (path) => path).length).toBe(variant.entry ? 1 : 0);
   useGuestBadgeStore.getState().setBadge('counter', 5);
   const parkedItem = { providerId: 'counter', id: 'parked', title: 'Keep', url: 'https://example.com' };
   useGuestItemStore.getState().setPendingItem('counter', parkedItem);
@@ -66,8 +79,10 @@ test('background host handles hello/load once, pins context, ignores foreign rep
   document.body.append(container);
   const root = createRoot(container);
   let done = Promise.resolve();
+  let commandDone = Promise.resolve<GuestResolveOutcome>({ ok: false, reason: 'unavailable' });
   const messages: HostMessage[] = [];
   let restorePost = () => {};
+  let restoreCommandPost = () => {};
   try {
     await act(async () => root.render(<React.StrictMode><I18nProvider><ThemeSystemContext.Provider value={themeContext}>
       <SyncProvider sdk={sdk} directory="/visible"><GuestHosts /></SyncProvider>
@@ -75,10 +90,10 @@ test('background host handles hello/load once, pins context, ignores foreign rep
     await act(async () => {
       done = runGuestAction(entry, { kind: 'message', action: 'count', sessionId: 'target', sessionTitle: 'Target', directory: '/target', messageId: 'm1', role: 'assistant', text: 'Hello' }, (key) => key);
     });
-    for (let attempt = 0; attempt < 100 && !container.querySelector('iframe'); attempt++) {
+    for (let attempt = 0; attempt < 100 && !container.querySelector('[aria-hidden="true"] iframe'); attempt++) {
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
     }
-    const frame = container.querySelector('iframe');
+    const frame = container.querySelector<HTMLIFrameElement>('[aria-hidden="true"] iframe');
     if (!frame) throw new Error('Background iframe did not mount');
     // Frame navigation is disabled in this DOM. Supply a separate guest
     // window to exercise the real host's source checks and postMessage path.
@@ -88,7 +103,7 @@ test('background host handles hello/load once, pins context, ignores foreign rep
     const post = spyOn(frameWindow, 'postMessage').mockImplementation((data) => { messages.push(hostMessageSchema.parse(data)); });
     restorePost = () => post.mockRestore();
     const send = (message: GuestMessage, source = frameWindow) => window.dispatchEvent(new MessageEvent('message', { source, data: message }));
-    expect(frame.src.includes('/panel/index.html')).toBe(true);
+    expect(frame.src.includes(`/${variant.backgroundEntry ?? variant.entry}`)).toBe(true);
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts');
     expect(frame.closest('[aria-hidden="true"]')).not.toBeNull();
     await act(async () => {
@@ -118,15 +133,57 @@ test('background host handles hello/load once, pins context, ignores foreign rep
       send({ channel: 'openchamber.sdk', v: 1, type: 'toast', id: 'late', payload: { kind: 'info', message: 'Too late' } });
       await done;
     });
-    expect(container.querySelector('iframe')).toBeNull();
+    expect(container.querySelector('[aria-hidden="true"] iframe')).toBeNull();
     expect(notice.mock.calls.length).toBe(1);
     expect(error.mock.calls.length).toBe(0);
+    if (variant.entry && variant.backgroundEntry) {
+      await act(async () => root.render(<React.StrictMode><I18nProvider><ThemeSystemContext.Provider value={themeContext}>
+        <SyncProvider sdk={sdk} directory="/visible"><GuestHosts /><PluginPane mode="plugin:counter" /></SyncProvider>
+      </ThemeSystemContext.Provider></I18nProvider></React.StrictMode>));
+      const visibleFrame = container.querySelector('iframe');
+      if (!visibleFrame) throw new Error('Visible panel missing');
+      await act(async () => visibleFrame.dispatchEvent(new Event('load')));
+      // A visible panel must not claim commands assigned to background.entry.
+      expect(getGuestResolver('counter')).toBeNull();
+      await act(async () => {
+        useUIStore.getState().openContextSurface('/visible', 'plugin:counter');
+        useGuestsStore.getState().replaceCatalog([{ ...entry.guest, entry: undefined, attach: undefined, attachEntry: undefined }], runtimeKey);
+      });
+      expect(useUIStore.getState().contextPanelByDirectory['/visible']?.tabs.some((tab) => tab.mode === 'plugin:counter') ?? false).toBe(false);
+      await act(async () => { useGuestsStore.getState().replaceCatalog([entry.guest], runtimeKey); });
+    }
+    await act(async () => {
+      commandDone = runGuestCommand({ entry: { guestId: 'counter', guestName: 'Counter', command: { name: 'count' } }, args: 'hello' });
+    });
+    for (let attempt = 0; attempt < 100 && !container.querySelector('[aria-hidden="true"] iframe'); attempt++) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    }
+    const commandFrame = container.querySelector<HTMLIFrameElement>('[aria-hidden="true"] iframe');
+    if (!commandFrame) throw new Error('Command iframe missing');
+    expect(commandFrame.src.includes(`/${variant.backgroundEntry ?? variant.entry}`)).toBe(true);
+    Object.defineProperty(commandFrame, 'contentWindow', { configurable: true, value: commandWindow });
+    if (!commandFrame.contentWindow) throw new Error('Command window missing');
+    const commandSource = commandFrame.contentWindow;
+    const commandMessages: HostMessage[] = [];
+    const commandPost = spyOn(commandSource, 'postMessage').mockImplementation((data) => { commandMessages.push(hostMessageSchema.parse(data)); });
+    restoreCommandPost = () => commandPost.mockRestore();
+    await act(async () => { window.dispatchEvent(new MessageEvent('message', { source: commandSource, data: { channel: 'openchamber.sdk', v: 1, type: 'hello' } })); });
+    const resolveMessage = commandMessages.find((message) => message.type === 'resolve');
+    if (!resolveMessage || resolveMessage.type !== 'resolve') throw new Error('Command was not delivered');
+    expect(resolveMessage.payload).toEqual({ command: 'count', args: 'hello' });
+    expect(commandMessages.find((message) => message.type === 'ready')).toMatchObject({ payload: { surface: variant.backgroundEntry ? 'background' : 'panel' } });
+    await act(async () => {
+      window.dispatchEvent(new MessageEvent('message', { source: commandSource, data: { channel: 'openchamber.sdk', v: 1, type: 'resolve-result', id: resolveMessage.id, payload: { item: null } } }));
+      expect(await commandDone).toEqual({ ok: true, item: null });
+    });
+    expect(container.querySelector('[aria-hidden="true"] iframe')).toBeNull();
     await act(async () => {
       done = runGuestAction(entry, { kind: 'message', action: 'count', sessionId: 'target', sessionTitle: 'Target', directory: '/target', messageId: 'm2', role: 'assistant', text: 'Next' }, (key) => key);
     });
     expect(useGuestActionHostStore.getState().requests.length).toBe(1);
     await act(async () => { root.render(null); });
     await done;
+    await commandDone;
     expect(useGuestActionHostStore.getState().requests.length).toBe(0);
     const toastOptions = notice.mock.calls[0]?.[1];
     const buttons = toastOptions?.action;
@@ -146,13 +203,16 @@ test('background host handles hello/load once, pins context, ignores foreign rep
     await act(async () => root.unmount());
     await done;
     restorePost(); fetch.mockRestore(); notice.mockRestore(); error.mockRestore();
+    restoreCommandPost();
     clipboard.mockRestore(); dismiss.mockRestore();
     useSessionUIStore.setState({ currentSessionId: null });
     await dom.happyDOM.close();
     await guestWindow.happyDOM.close();
+    await commandWindow.happyDOM.close();
     for (const [key, descriptor] of originals) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else Reflect.deleteProperty(globalThis, key);
     }
   }
 });
+}

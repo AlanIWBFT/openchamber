@@ -25,8 +25,8 @@ Two entrypoints:
 | Must exist                                                                       | When                                            | Failure code       |
 | -------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------ |
 | Semver `version` on `package.json` (`1.0.0`)                                     | Always on install                               | `invalid-manifest` |
-| `panel.entry` HTML file                                                          | When `panel.entry` is set (a tools-only package may omit it) | `invalid-manifest` |
-| Every relative `<script src="…">` `.js` from that HTML (usually `panel/main.js`) | When `panel.entry` is set                       | `missing-build`    |
+| `panel.entry` or `background.entry` HTML file | Every declared entry | `invalid-manifest` |
+| Every relative `<script src="…">` `.js` from that HTML | Every declared entry | `missing-build` |
 | File named by `panel.icon`                                                       | Only when icon ends in `.svg` (e.g. `icon.svg`) | `invalid-manifest` |
 | File named by `service.entry` (e.g. `service/main.js`)                               | When `contributes.service` is set                 | `missing-build`    |
 
@@ -227,7 +227,11 @@ Copy leaves the toast open, reports success on the button, and shows a retryable
 
 ### Background actions
 
-`contributes.actions[].mode` accepts `"open"` or `"background"`. Omitted mode keeps the existing panel/dialog routing and `onItem` delivery. Background actions require `panel.entry` and use that entry even when `attach` declares separate dialog HTML. They run on web and desktop, including connections through the private relay; VS Code and mobile still do not load extensions.
+`contributes.actions[].mode` accepts `"open"` or `"background"`. Omitted mode keeps the existing panel/dialog routing and `onItem` delivery. Background actions load `background.entry` when declared, otherwise `panel.entry`. They never use separate attach-dialog HTML. They run on web and desktop, including connections through the private relay; VS Code and mobile still do not load extensions.
+
+`contributes.background` is `{ entry: "<package-local .html>" }`. It starts on demand for an action or command and adds no visible UI. With a background entry, `panel.entry` may be omitted: there is no rail icon, attach picker, or full-screen page, but background actions, slash commands, storage and granted APIs work. Identity remains in `panel.id/name/icon`. Open-mode actions, `page`, and enabled `attach` require `panel.entry`; invalid combinations fail as `invalid-panel`. Without either entry, the extension remains tools-only. Invalid background paths or a missing entry field fail as `invalid-background`.
+
+When both entries exist, the visible panel cannot register the slash-command resolver: the hidden background entry handles `onResolve` and receives `surface: "background"`. Existing panel-only commands retain their current behavior. Clicking an attached chip from a background-only extension shows a no-panel notice; its browser action remains available.
 
 Every background click mounts a fresh sandboxed iframe and sends one `action` request with an invocation `id` and a `GuestActionItem` payload. `host.onAction` receives that message or session item and sends `action-result` with `{ ok: true }` when the handler finishes, or `{ ok: false, error }` when it throws. The error is limited to `GUEST_RESOLVE_ERROR_MAX` characters. The host validates the reply and accepts only the matching invocation from that frame. It sends no acknowledgement for `action-result`.
 
@@ -422,7 +426,8 @@ Used by the OpenChamber host and by tools that validate packages. Guests rarely 
 | `engines.openchamber` | Optional. Only `1.22.0` or `>=1.22.0`. Older host → `host-too-old`                                                                                                                   |
 | `panel.id`            | kebab-case                                                                                                                                                                           |
 | `panel.icon`          | Remixicon kebab name (`window`) **or** package `.svg` path. Remixicon needs no file. An `.svg` path must exist on disk or install fails (`invalid-manifest`). No URLs/absolute paths |
-| `panel.entry`         | Optional. Path inside package. No `..`, absolute, or URL. HTML must exist; its relative `.js` scripts must exist (`missing-build` if not). Omit it for a page-less extension: then only `tools` (plus `engines` and `version`) may be declared; `attach`, `actions`, `commands`, `service`, `integration`, `capabilities`, or `filesystem` without an entry fail parse as `invalid-panel`. A page-less extension has no rail icon, + menu row, or frame; the Extensions card says "No panel". `hasGuestPage(contributes)` tells the two apart |
+| `panel.entry` | Optional visible-panel HTML path inside the package. No `..`, absolute path, or URL. Its scripts must be built. Omitting it removes the rail icon and visible views; `background.entry` can still run code. With neither entry, only `tools` plus package identity/version/engines are allowed. `hasGuestPage` means a visible panel, not background execution |
+| `background.entry` | Optional package-local `.html` path. Loaded on demand for background actions and slash commands, preferred over `panel.entry` for these calls. Adds no rail icon. The file and its built scripts must exist. Malformed declarations are `invalid-background` |
 | `attach`              | `true` / `"panel"` → + menu opens rail; `"dialog"` → host window; omit/`false` → off menus. Object form `{ "mode": "panel" \| "dialog", "entry"?: "panel/attach.html" }`: `entry` (dialog only, same path rules as `panel.entry`, must exist with built scripts) is the page the dialog loads instead of `panel.entry` |
 | `capabilities`        | Optional list of `prompt`, `sessions`, `files`, `model`. `files` is read **and** write inside the open project; `model` is `generate`. Approved once at install                     |
 | `actions` | Optional, 1–8 entries, unique kebab-case `id`, `label` 1–40 chars, optional `icon` with the `panel.icon` rules, `where: "message" \| "session"`, optional `mode: "open" \| "background"`. Message actions may narrow `roles` to `["user"]` / `["assistant"]`, default both. Session actions may request `payload: ["messages"]`, adding the `conversation` capability. Invalid shape is `invalid-actions`. Default `open` mode opens the guest with `ready.item`, using the attach dialog for `attach: "dialog"` and the rail otherwise. `background` calls `onAction` in a temporary hidden frame; see Background actions above |
@@ -444,7 +449,7 @@ Extra keys are dropped, not forwarded.
 | `parseManifestJson(json)` (`@openchamber/sdk/schemas`) | String → same result                                      |
 | `resolveAttachMode(attach)`                        | Normalize to `'panel'                                     |
 | `resolveAttachEntry(contributes)`                  | Dialog page from the object form, or `null` when the dialog reuses `panel.entry` |
-| `hasGuestPage(contributes)`                        | `true` when `panel.entry` is set; a page-less package may only declare `tools` |
+| `hasGuestPage(contributes)` | `true` when `panel.entry` is set; background-only and tools-only packages return `false` |
 | `resolveIntegrationAuth` / `resolveIntegrationApi` | Auth kind and API origin                                  |
 | `toPublicIntegration` / `toPublicService`            | Catalog-safe public slices                                |
 | `isGuestPackageSvgIcon`                            | Whether icon is a package SVG path                        |

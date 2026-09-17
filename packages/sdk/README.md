@@ -1,6 +1,6 @@
 # @openchamber/sdk
 
-Build extensions for [OpenChamber](https://openchamber.dev). An extension is a small web page that OpenChamber shows on its right-hand rail. It can read the current project and session, show toasts, put text in the chat box, attach a task to a session, and, once the user approves it, start sessions and send prompts. This package is the contract between that page and the app.
+Build extensions for [OpenChamber](https://openchamber.dev). An extension can show a panel on the right-hand rail or run actions in the background without a panel. It can read the current project and session, show toasts, put text in the chat box, attach a task to a session, and, once the user approves it, start sessions and send prompts. This package is the contract between the extension and the app.
 
 Full guide: [Build an extension](https://openchamber.dev/docs/sdk/). Reference: [Host API](https://openchamber.dev/docs/sdk/host/) and [UI kit](https://openchamber.dev/docs/sdk/ui/). Extensions with a local process: [GUEST_SERVICES.md](./GUEST_SERVICES.md).
 
@@ -88,7 +88,8 @@ Git installs also accept SSH addresses such as `git@github.com:owner/extension.g
 - `version` is required semver. Settings → Extensions shows it on the card.
 - `apiVersion` is `1`. Anything else is refused.
 - `engines.openchamber` is optional (`1.24.0` or `>=1.24.0`). Older OpenChamber builds refuse the install.
-- `panel.id` is kebab-case and unique. `icon` is a Remixicon name (`RiWindowLine` becomes `window`) or an SVG inside the folder. `entry` is the HTML file inside the folder. Leave `entry` out for an extension that only declares `tools`: it gets no rail icon or page, just its tool rules in the chat (`examples/tools-only`).
+- `panel.id` is kebab-case and unique. `icon` is a Remixicon name (`RiWindowLine` becomes `window`) or an SVG inside the folder. `entry` is the visible panel's HTML file. Leave `entry` out to have no rail icon or panel. Add `background.entry` for executable actions and commands; with neither entry, the extension can only declare `tools`, as in `examples/tools-only`.
+- `background: { "entry": "background/index.html" }` supplies separate sandboxed HTML for background actions and slash commands. Its scripts must be built. It runs on demand, not continuously or at installation. A panel can coexist with it.
 - `attach` is optional. `"dialog"` opens the page in a window from the + menu next to the chat box; `true` or `"panel"` opens the rail panel instead. `ctx.surface` tells the page which one it is in. The object form `{ "mode": "dialog", "entry": "panel/attach.html" }` gives the window its own page. When the user clicks the attached chip, the page opens again with that item in `ctx.item` (`null` from the + menu), so it can show the item instead of the list.
 - `actions` is optional: menu entries on messages (`where: "message"`, optionally only `roles: ["assistant"]`) and on sessions (`where: "session"`). By default, picking one opens your page with that message or session in `ctx.item` (`kind: "message"` with the text, or `kind: "session"`; add `payload: ["messages"]` to get the conversation too). Set `mode: "background"` to call `onAction` without opening UI, as shown below. Up to 8.
 - `commands` is optional: slash commands for the chat box, up to 8. `/task DEMO-2` calls your `host.onResolve` handler instead of the model; return a chip to attach it, or `null` for nothing. A name the app already has is ignored.
@@ -105,7 +106,7 @@ Set `mode: "background"` on a message or session action to run it without openin
 { "id": "message-length", "label": "Show message length", "where": "message", "mode": "background" }
 ```
 
-Register `onAction` immediately after `connectHost` in your `panel.entry` script:
+Register `onAction` immediately after `connectHost` in your background script, or your panel script when no background entry is declared:
 
 ```ts
 const host = connectHost();
@@ -124,7 +125,21 @@ host.onAction(async (item) => {
 
 Each click runs in a fresh hidden iframe. Await all work inside the handler, including the toast. OpenChamber removes the iframe when the handler finishes and reports thrown errors as toasts. Loading and execution together have a 20-second limit. A runtime switch, disabling the extension, or withdrawing approval also ends the invocation. Completed side effects are not rolled back or retried.
 
-`ctx.surface` is `"background"`; skip drawing your UI in that case. `ctx.item` stays `null`, so the action runs only through `onAction`, without repeated `onItem` snapshots. The session and directory context stay with the clicked target even if the user changes chats. `panel.entry` is still required to load the script. This mode does not remove the rail icon. Omit `mode`, or use `"open"`, to keep the usual panel/dialog behavior. See `examples/hello-kit` for a working example.
+`ctx.surface` is `"background"`; skip drawing your UI in that case. `ctx.item` stays `null`, so the action runs only through `onAction`, without repeated `onItem` snapshots. The session and directory context stay with the clicked target even if the user changes chats. OpenChamber loads `background.entry` when declared and falls back to `panel.entry` for existing extensions. Omit `mode`, or use `"open"`, to open a visible panel or dialog. See `examples/hello-kit` for separate panel and background scripts.
+
+To remove the panel and its rail icon entirely, use this `contributes` block:
+
+```json
+{
+  "panel": { "id": "message-tools", "name": "Message Tools", "icon": "apps" },
+  "background": { "entry": "background/index.html" },
+  "actions": [
+    { "id": "message-length", "label": "Show message length", "where": "message", "mode": "background" }
+  ]
+}
+```
+
+The `panel` object retains the extension's identity for Settings and approval dialogs; only `panel.entry` creates a visible panel. Without it, every action must use `mode: "background"`, and `attach` and `page` cannot open a view. Slash commands call `onResolve` in the background entry, with `ctx.surface` also set to `"background"`. Capabilities, services, integrations, storage, and file access use the same approval checks. An attached chip can still be sent to the model or opened with its browser button; clicking to reopen the extension shows a no-panel notice.
 
 This addition requires a matching OpenChamber build. For unreleased SDK preview builds, use the app built from the same revision.
 

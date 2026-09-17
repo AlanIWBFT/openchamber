@@ -5,6 +5,7 @@ import { pluginPanelI18n } from './plugin-panel.i18n';
 const locales = ['en', 'de', 'fr', 'es', 'ja', 'pt-BR', 'uk', 'ko', 'pl', 'zh-CN', 'zh-TW', 'tr'] as const;
 
 const requiredKeys = [
+  'chat.chatInput.toast.guestHasNoPanel',
   'contextRail.surface.plugin',
   'contextRail.surface.plugin.description',
   'contextPanel.plugin.loadFailed',

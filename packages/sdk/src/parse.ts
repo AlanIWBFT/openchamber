@@ -246,6 +246,9 @@ const toolsSchema = z.array(toolSchema).min(1).max(GUEST_TOOLS_MAX);
 
 const contributesSchema = z.object({
   panel: panelSchema,
+  background: z.object({
+    entry: z.string().trim().refine((value) => isSafeAssetPath(value) && value.toLowerCase().endsWith('.html')),
+  }).optional(),
   attach: attachSchema.optional(),
   page: z.union([z.literal(true), z.object({
     entry: z.string().trim().refine(isSafeAssetPath),
@@ -263,12 +266,9 @@ const contributesSchema = z.object({
 });
 
 /**
- * Everything that only makes sense with an iframe to mount. Without
- * `panel.entry` there is nothing to open from the rail, the + menu, a menu
- * action, or a slash command, and nothing to hand a capability, a service,
- * an integration, or a filesystem grant to; only `tools` stays meaningful.
+ * Contributions that need either the panel or background execution frame.
  */
-const pageOnlyContributions = (contributes: z.output<typeof contributesSchema>): string[] => {
+const runtimeContributions = (contributes: z.output<typeof contributesSchema>): string[] => {
   const declared: string[] = [];
   if (contributes.page !== undefined) declared.push('page');
   if (contributes.attach !== undefined && contributes.attach !== false) declared.push('attach');
@@ -288,12 +288,23 @@ export const openChamberManifestSchema = z.object({
   }).strict().optional(),
   contributes: contributesSchema.superRefine((contributes, ctx) => {
     if (hasGuestPage(contributes)) return;
-    const needsPage = pageOnlyContributions(contributes);
-    if (needsPage.length === 0) return;
+    if (contributes.background) {
+      const needsPanel = [];
+      if (contributes.page !== undefined) needsPanel.push('page');
+      if (contributes.attach !== undefined && contributes.attach !== false) needsPanel.push('attach');
+      if (contributes.actions?.some((action) => action.mode !== 'background')) needsPanel.push('actions with mode "open"');
+      if (needsPanel.length > 0) ctx.addIssue({
+        code: 'custom', path: ['panel'],
+        message: `${needsPanel.join(', ')} needs panel.entry; background-only actions must declare mode "background".`,
+      });
+      return;
+    }
+    const needsRuntime = runtimeContributions(contributes);
+    if (needsRuntime.length === 0) return;
     ctx.addIssue({
       code: 'custom',
       path: ['panel'],
-      message: `${needsPage.map((key) => `contributes.${key}`).join(', ')} needs panel.entry; an extension without a page may only declare tools.`,
+      message: `${needsRuntime.map((key) => `contributes.${key}`).join(', ')} needs panel.entry or background.entry; an extension without either may only declare tools.`,
     });
   }),
 });
@@ -365,6 +376,9 @@ const failureFromIssue = (issue: { path: ReadonlyArray<PropertyKey>; code: strin
   }
   if (path === 'contributes.page' || path.startsWith('contributes.page.')) {
     return fail('invalid-page', 'contributes.page must be true or { entry: "<package HTML>", title?: "Page title" }.');
+  }
+  if (path === 'contributes.background' || path.startsWith('contributes.background.')) {
+    return fail('invalid-background', 'contributes.background needs an entry ending in .html inside the package.');
   }
   if (path === 'contributes.attach' || path.startsWith('contributes.attach.')) {
     return fail(

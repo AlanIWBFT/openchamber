@@ -875,6 +875,42 @@ describe('page-less extensions', () => {
     contributes: { panel: pageless, ...extra },
   });
 
+  test('background entry enables actions, commands and granted APIs without a visible panel', () => {
+    const result = withContributes({
+      background: { entry: 'background/index.html' },
+      actions: [{ id: 'inspect', label: 'Inspect', where: 'message', mode: 'background' }],
+      commands: [{ name: 'task' }], attach: false,
+      capabilities: ['files', 'model', 'sessions', 'prompt'], filesystem: ['~/notes/**'],
+      service: { entry: 'service/main.js', runtime: 'host' },
+      integration: { name: 'Tasks', description: 'Tasks', token: { apiOrigin: 'https://example.com' } },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.message);
+    expect(hasGuestPage(result.manifest.contributes)).toBe(false);
+    expect(result.manifest.contributes.background).toEqual({ entry: 'background/index.html' });
+    expect(requestedGuestCapabilities(result.manifest.contributes)).toEqual(['prompt', 'sessions', 'files', 'model', 'service', 'network', 'filesystem']);
+    expect(parseManifest({ ...validBlock, contributes: { ...validBlock.contributes, background: { entry: 'background/index.html' } } })).toMatchObject({ ok: true });
+  });
+
+  test('background-only packages reject visible surfaces and actions that would open a panel', () => {
+    const visible: Partial<Omit<OpenChamberContributes, 'panel'>>[] = [
+      { page: true }, { page: { entry: 'page.html' } }, { attach: true }, { attach: 'dialog' },
+      { actions: [{ id: 'inspect', label: 'Inspect', where: 'message' }] },
+      { actions: [{ id: 'inspect', label: 'Inspect', where: 'session', mode: 'open' }] },
+    ];
+    for (const extra of visible) {
+      expect(withContributes({ ...extra, background: { entry: 'background/index.html' } })).toMatchObject({ ok: false, code: 'invalid-panel' });
+    }
+  });
+
+  test('background entries must be package-local HTML', () => {
+    for (const background of [{}, { entry: '' }, { entry: '../index.html' }, { entry: '/index.html' },
+      { entry: 'https://example.com/index.html' }, { entry: 'background/main.js' }, { entry: 'a\\b.html' }]) {
+      expect(parseManifestJson(JSON.stringify({ apiVersion: 1, contributes: { panel: pageless, background } })))
+        .toMatchObject({ ok: false, code: 'invalid-background' });
+    }
+  });
+
   test('accepts a panel without entry that only declares tools', () => {
     const result = withContributes({ tools: [{ match: 'mcp.*', output: 'json' }] });
     expect(result).toEqual({

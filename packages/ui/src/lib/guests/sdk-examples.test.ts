@@ -22,7 +22,7 @@ afterEach(async () => {
   for (const window of windows.splice(0)) await window.happyDOM.close();
 });
 
-const load = async (name: string, script = 'main') => {
+const load = async (name: string, script = 'main', folder = 'panel') => {
   const parent = new Window();
   const window = new Window({ settings: { disableJavaScriptEvaluation: false } });
   windows.push(window, parent);
@@ -53,7 +53,7 @@ const load = async (name: string, script = 'main') => {
     reply(subscription);
     send({ channel: 'openchamber.sdk', v: 1, type: 'workspace', payload: { subscriptionId: subscription.payload.subscriptionId, snapshot } });
   };
-  runInNewContext(await readFile(new URL(`${name}/panel/${script}.js`, examples), 'utf8'), {
+  runInNewContext(await readFile(new URL(`${name}/${folder}/${script}.js`, examples), 'utf8'), {
     window, document: window.document, HTMLElement: window.HTMLElement, MessageEvent: window.MessageEvent, console,
     HTMLInputElement: window.HTMLInputElement, HTMLStyleElement: window.HTMLStyleElement, HTMLAnchorElement: window.HTMLAnchorElement,
     TextEncoder, URL, crypto, performance, setTimeout: window.setTimeout.bind(window), clearTimeout: window.clearTimeout.bind(window),
@@ -63,7 +63,7 @@ const load = async (name: string, script = 'main') => {
 
 describe('checked-in SDK examples', () => {
   test('a background message action shows one toast without drawing the panel', async () => {
-    const app = await load('hello-kit');
+    const app = await load('hello-kit', 'main', 'background');
     app.ready({ ...context, surface: 'background' });
     app.send({ channel: 'openchamber.sdk', v: 1, type: 'action', id: 'count', payload: {
       kind: 'message', action: 'message-length', sessionId: 's1', sessionTitle: 'Example', directory: '/repo', messageId: 'm1', role: 'user', text: 'Hello',

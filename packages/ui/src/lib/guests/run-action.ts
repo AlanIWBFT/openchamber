@@ -29,9 +29,11 @@ const isCurrentAction = (entry: GuestActionEntry, item: GuestActionItem, runtime
   const catalog = useGuestsStore.getState();
   if (isVSCodeRuntime() || isMobileSurfaceRuntime() || getRuntimeKey() !== runtimeKey || catalog.runtimeKey !== runtimeKey) return false;
   const guest = catalog.guests.find((candidate) => candidate.id === entry.guest.id);
-  if (!guest?.entry || !isGuestActive(guest) || guest.version !== entry.guest.version || guest.entry !== entry.guest.entry) return false;
+  if (!guest || (!guest.entry && !guest.backgroundEntry) || !isGuestActive(guest)
+    || guest.version !== entry.guest.version || guest.entry !== entry.guest.entry || guest.backgroundEntry !== entry.guest.backgroundEntry) return false;
   const action = guest.actions?.find((candidate) => candidate.id === item.action);
   if (!action || action.where !== item.kind || JSON.stringify(action) !== JSON.stringify(entry.action)) return false;
+  if (action.mode !== 'background' && !guest.entry) return false;
   if (item.kind === 'message') return !action.roles || action.roles.includes(item.role);
   return !item.messages || (action.payload?.includes('messages') === true && guest.capabilities.granted.includes('conversation'));
 };

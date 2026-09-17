@@ -212,19 +212,23 @@ export const PluginPane: React.FC<PluginPaneProps> = ({
     locale,
     directory: directory || null,
     session: sessionSnapshot,
-    surface,
+    surface: headless && guest?.backgroundEntry ? 'background' : surface,
     connection: oauthStatus?.connection ?? EMPTY_GUEST_CONNECTION,
     settings: oauthStatus?.settings ?? {},
     item,
-  }), [currentTheme, readableColors, directory, item, locale, oauthStatus, sessionSnapshot, surface]);
+  }), [currentTheme, readableColors, directory, guest?.backgroundEntry, headless, item, locale, oauthStatus, sessionSnapshot, surface]);
 
-  const frameKey = `${guestId}:${guest?.version ?? ''}:${guestEnabled}:service-${guest?.service?.granted ? '1' : '0'}`;
+  const frameKey = `${guestId}:${guest?.version ?? ''}:${guestEnabled}:service-${guest?.service?.granted ? '1' : '0'}:${guest?.entry ?? ''}:${guest?.backgroundEntry ?? ''}`;
 
   // Scoped auth is minted per mount/version/grant and renewed if an existing
   // iframe navigates after expiry. Healthy documents retain their local state.
-  // The attach dialog may load its own page; the rail always loads panel.entry.
-  // A page-less guest has no entry and never gets a frame.
-  const guestEntry = guest ? (surface === 'page' ? guest.pageEntry ?? null : surface === 'dialog' && guest.attachEntry ? guest.attachEntry : guest.entry ?? null) : null;
+  // Visible surfaces only load panel/page entries. Hidden execution prefers
+  // background.entry and falls back to panel.entry for existing extensions.
+  const guestEntry = guest
+    ? headless ? guest.backgroundEntry ?? guest.entry ?? null
+      : surface === 'page' ? guest.pageEntry ?? null
+        : surface === 'dialog' && guest.attachEntry ? guest.attachEntry : guest.entry ?? null
+    : null;
   const { src, srcDoc, status: frameStatus, recoverExpiredNavigation, acknowledgeHandshake } = useGuestFrameUrl({
     guestId, entry: guestEntry, instanceKey: frameKey, enabled: guestEnabled,
   });
@@ -275,28 +279,38 @@ export const PluginPane: React.FC<PluginPaneProps> = ({
   }, [backgroundAction, postToGuest]);
 
   // Registered once the guest has connected (hello or iframe load), so a
-  // resolve is never posted into a frame that is not listening yet. The rail
-  // pane and a headless pane both register; the composer asks whichever is up.
+  // resolve is never posted into a frame that is not listening yet. An explicit
+  // background entry owns commands; older extensions can use a mounted panel.
   const resolverReadyRef = React.useRef(false);
   const unregisterResolverRef = React.useRef<(() => void) | null>(null);
   const registerResolver = React.useCallback(() => {
-    if (resolverReadyRef.current || surface !== 'panel') return;
+    if (resolverReadyRef.current || surface !== 'panel' || (!headless && guestRef.current?.backgroundEntry)) return;
     resolverReadyRef.current = true;
-    unregisterResolverRef.current = registerGuestResolver(guestIdRef.current, (request) => new Promise((resolve) => {
-      resolveIdsRef.current += 1;
-      const id = `resolve-${resolveIdsRef.current}`;
-      const timer = window.setTimeout(() => {
-        resolveWaitersRef.current.delete(id);
-        resolve({ ok: false, reason: 'timeout' });
-      }, GUEST_REQUEST_TIMEOUT_MS);
-      resolveWaitersRef.current.set(id, (outcome) => {
-        window.clearTimeout(timer);
-        resolveWaitersRef.current.delete(id);
-        resolve(outcome);
+    const registeredGuest = guestRef.current;
+    const runtimeKey = getRuntimeKey();
+    unregisterResolverRef.current = registerGuestResolver(guestIdRef.current, (request) => {
+      const currentGuest = useGuestsStore.getState().guests.find((candidate) => candidate.id === registeredGuest?.id);
+      if (getRuntimeKey() !== runtimeKey || !currentGuest || !isGuestActive(currentGuest)
+        || currentGuest.version !== registeredGuest?.version || currentGuest.entry !== registeredGuest?.entry
+        || currentGuest.backgroundEntry !== registeredGuest?.backgroundEntry) {
+        return Promise.resolve({ ok: false, reason: 'unavailable' });
+      }
+      return new Promise((resolve) => {
+        resolveIdsRef.current += 1;
+        const id = `resolve-${resolveIdsRef.current}`;
+        const timer = window.setTimeout(() => {
+          resolveWaitersRef.current.delete(id);
+          resolve({ ok: false, reason: 'timeout' });
+        }, GUEST_REQUEST_TIMEOUT_MS);
+        resolveWaitersRef.current.set(id, (outcome) => {
+          window.clearTimeout(timer);
+          resolveWaitersRef.current.delete(id);
+          resolve(outcome);
+        });
+        iframeRef.current?.contentWindow?.postMessage(buildResolveMessage(id, request.command, request.args), OPAQUE_FRAME_TARGET_ORIGIN);
       });
-      iframeRef.current?.contentWindow?.postMessage(buildResolveMessage(id, request.command, request.args), OPAQUE_FRAME_TARGET_ORIGIN);
-    }));
-  }, [surface]);
+    });
+  }, [headless, surface]);
   React.useEffect(() => () => {
     unregisterResolverRef.current?.();
     unregisterResolverRef.current = null;
@@ -305,7 +319,7 @@ export const PluginPane: React.FC<PluginPaneProps> = ({
       waiter({ ok: false, reason: 'unavailable' });
     }
     resolveWaitersRef.current.clear();
-  }, [frameKey]);
+  }, [frameKey, src, srcDoc]);
 
   const pushHostState = React.useCallback(() => {
     postToGuest(buildReadyMessage(readyRef.current));
@@ -610,11 +624,12 @@ export const PluginPane: React.FC<PluginPaneProps> = ({
   }, [pushHostState, ready, directory]);
 
   React.useEffect(() => {
-    if (catalogStatus !== 'ready' || guest) {
+    if (headless || catalogStatus !== 'ready' || guest?.entry) {
       return;
     }
     closeGuestTabsEverywhere(mode);
-  }, [catalogStatus, guest, mode]);
+    onDismiss?.();
+  }, [catalogStatus, guest?.entry, headless, mode, onDismiss]);
 
   React.useEffect(() => {
     if (!currentSessionId || !lifecyclePhase) {

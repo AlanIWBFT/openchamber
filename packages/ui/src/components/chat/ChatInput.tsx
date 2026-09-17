@@ -3232,6 +3232,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             toast.info(t('chat.chatInput.toast.guestUnavailableHere'));
             return;
         }
+        if (!installed.entry) {
+            toast.info(t('chat.chatInput.toast.guestHasNoPanel'));
+            return;
+        }
         const guest = guestAttachItems.find((entry) => entry.id === issue.providerId);
         // Only an extension that declared a dialog gets one; everything else
         // (panel mode, no attach declared) opens the rail with the item.

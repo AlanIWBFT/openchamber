@@ -75,6 +75,7 @@ export type {
   OpenChamberEngines,
   OpenChamberManifest,
   PanelContribution,
+  BackgroundContribution,
   PageContribution,
   ParseManifestErrorCode,
   ParseManifestFailure,

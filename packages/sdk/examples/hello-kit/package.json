@@ -12,6 +12,7 @@
         "entry": "panel/index.html"
       },
       "page": true,
+      "background": { "entry": "background/index.html" },
       "actions": [
         { "id": "message-length", "label": "Show message length", "where": "message", "mode": "background" }
       ]
