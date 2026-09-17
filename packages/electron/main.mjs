@@ -403,7 +403,7 @@ const shutdownBackgroundServices = () => {
   shellEnvironmentAbort.abort();
   state.backgroundShutdownPromise = Promise.allSettled([
     Promise.resolve().then(closeAllDevTunnels),
-    Promise.resolve().then(startShellEnvironmentProbe).catch(() => {}),
+    process.platform === 'win32' ? Promise.resolve() : Promise.resolve().then(startShellEnvironmentProbe).catch(() => {}),
     Promise.resolve().then(killSidecar),
   ])
     .then((results) => {
