@@ -1400,6 +1400,7 @@ describe('createWorktree', () => {
         { timeout: 5_000 }
       ).toBe('refs/heads/main');
       expect(readBranchConfig(created.path, 'openchamber/fallback-wt', 'remote')).toBe('origin');
+      await expect.poll(() => getWorktreeBootstrapStatus(created.path).then((status) => status.status), { timeout: 5_000 }).toBe('ready');
     } finally {
       if (previousXdgDataHome === undefined) {
         delete process.env.XDG_DATA_HOME;
@@ -1432,6 +1433,7 @@ describe('createWorktree', () => {
       expect(created.sourceFetchFailed).toBe(true);
       const expectedHead = runGit(repository, ['rev-parse', 'next']).trim();
       expect(runGit(created.path, ['rev-parse', 'HEAD']).trim()).toBe(expectedHead);
+      await expect.poll(() => getWorktreeBootstrapStatus(created.path).then((status) => status.status), { timeout: 5_000 }).toBe('ready');
     } finally {
       if (previousXdgDataHome === undefined) {
         delete process.env.XDG_DATA_HOME;
@@ -1540,6 +1542,7 @@ describe('createWorktree from a forked GitHub PR', () => {
         () => getBranchTrackingRemote(created.path, 'feature/login') === 'pr-alice',
         { timeout: 5_000 }
       ).toBe(true);
+      await expect.poll(() => getWorktreeBootstrapStatus(created.path).then((status) => status.status), { timeout: 5_000 }).toBe('ready');
     });
   }, 30_000);
 

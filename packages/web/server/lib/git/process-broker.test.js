@@ -28,6 +28,18 @@ describe.runIf(available)('Windows process broker', () => {
     )).rejects.toMatchObject({ code: 7, stderr: 'failed' });
   });
 
+  it.each(['executable', 'cwd'])('isolates an unavailable %s from concurrent commands', async (kind) => {
+    const missing = path.join(os.tmpdir(), `openchamber-broker-missing-${process.pid}`, 'missing');
+    const results = await Promise.allSettled([
+      execFileWithProcessBroker(kind === 'executable' ? missing : process.execPath, ['-e', ''], kind === 'cwd' ? { cwd: missing } : {}),
+      execFileWithProcessBroker(process.execPath, ['-e', "setTimeout(()=>process.stdout.write('independent'),100)"]),
+    ]);
+    expect(results[0]).toMatchObject({ status: 'rejected', reason: { stage: 'spawn', code: kind === 'cwd' ? 267 : 3 } });
+    expect(results[1]).toEqual({ status: 'fulfilled', value: { stdout: 'independent', stderr: '' } });
+    await expect(execFileWithProcessBroker(process.execPath, ['-e', "process.stdout.write('next')"]))
+      .resolves.toEqual({ stdout: 'next', stderr: '' });
+  });
+
   it.each(['stdout', 'stderr'])('closes the command before rejecting a %s buffer overflow', async (stream) => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-broker-overflow-'));
     try {
@@ -44,11 +56,17 @@ describe.runIf(available)('Windows process broker', () => {
   });
 
   it.each([
-    ['completed', false],
-    ['unknown', false],
-    ['completed', true],
-    ['unknown', true],
-  ])('handles Cancel for a %s command with malformed payload=%s', async (target, malformed) => {
+    ['completed', false, 11],
+    ['unknown', false, 11],
+    ['completed', true, 11],
+    ['unknown', true, 11],
+    ['completed', false, 5],
+    ['unknown', false, 5],
+    ['completed', false, 6],
+    ['unknown', false, 6],
+    ['completed', true, 6],
+    ['unknown', true, 6],
+  ])('handles a %s command with malformed payload=%s for frame %s', async (target, malformed, type) => {
     const spawn = getProcessBrokerSpawn();
     const completed = spawn(process.execPath, ['-e', 'process.stdin.resume()']);
     const completedClose = new Promise((resolve, reject) => {
@@ -77,9 +95,9 @@ describe.runIf(available)('Windows process broker', () => {
         child.once('error', reject);
       });
       expect(child.client).toBe(completed.client);
-      // Send the wire-level Cancel (type 11): kill() correctly refuses after local close.
+      // Exercise late stdin/close/cancel frames after the command has been removed.
       const id = target === 'completed' ? completed.id : completed.id + 1_000_000n;
-      child.client.write(11, id, malformed ? Buffer.from([1]) : Buffer.alloc(0));
+      child.client.write(type, id, malformed || type === 5 ? Buffer.from([1]) : Buffer.alloc(0));
       child.stdin.end('independent');
       const result = await outcome;
       if (malformed) {
