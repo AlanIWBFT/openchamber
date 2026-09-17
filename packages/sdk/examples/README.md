@@ -16,7 +16,7 @@ Six examples to use, explore, and adapt. The five panel extensions also have ful
 1. Run `bun run dev` from the repository root and open the printed URL.
 2. In **Settings → Extensions**, add an absolute example folder, such as `<repo>/packages/sdk/examples/hello-kit`.
 3. Approve the requested capabilities. Remove uninstalls the extension, so its panel will not run.
-4. Open its context-rail panel or choose its full-screen page from the Extension pages menu above the session list.
+4. Open its context-rail panel or choose its full-screen page from the Extension pages menu above the session list. SDK Playground also adds **Show message length** to chat message actions. It shows a persistent toast with Copy and OK without opening a panel, using `mode: "background"` and `host.onAction`. Copy copies the result and keeps the toast open; OK closes it.
 
 The checked-in JavaScript makes each folder installable without a build step. Provider requests and agent sessions are real when you connect an account or click Start session. Task Board's initial tasks and Repository Explorer's disconnected sample collection are sample data. An idle agent does not mark a task Done.
 

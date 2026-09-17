@@ -210,6 +210,7 @@ const actionSchema = z.object({
   label: z.string().trim().min(1).max(GUEST_ACTION_LABEL_MAX),
   icon: z.string().trim().refine(isPanelIcon).optional(),
   where: z.enum(['message', 'session']),
+  mode: z.enum(['open', 'background']).optional(),
   roles: z.array(z.enum(['user', 'assistant'])).min(1).max(2).optional(),
   payload: z.array(z.enum(['messages'])).max(1).optional(),
 }).refine((value) => value.where === 'message' || value.roles === undefined, { path: ['roles'] })

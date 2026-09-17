@@ -627,6 +627,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
   const handleGuestSessionAction = React.useCallback((entry: GuestActionEntry) => {
     void runGuestSessionAction({
       entry,
+      t,
       session: { id: session.id, title: resolvedSession.title, directory: sessionDirectory },
       loadRecords: () => (sessionDirectory
         ? loadExportRecords({ directory: sessionDirectory, sessionID: session.id }).catch(() => null)

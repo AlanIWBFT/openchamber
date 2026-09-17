@@ -892,6 +892,7 @@ export const Header: React.FC = () => {
     if (!currentSessionId) return;
     void runGuestSessionAction({
       entry,
+      t,
       session: { id: currentSessionId, title: currentSession?.title, directory: sessionDirectory ?? openDirectory },
       loadRecords: async () => {
         if (!openDirectory) return null;

@@ -48,7 +48,7 @@ export const GUEST_COMMAND_DESCRIPTION_MAX = 80;
 export const GUEST_COMMAND_NAME = /^[a-z][a-z0-9-]{0,23}$/;
 
 /**
- * A menu entry on a message or a session. Clicking it opens the guest with
+ * A menu entry on a message or a session. By default it opens the guest with
  * the message or session as `ready.item`. `roles` narrows a message action
  * to user or assistant messages (default both); `payload: ["messages"]` on
  * a session action asks for the conversation and needs the `conversation`
@@ -60,6 +60,8 @@ export type GuestActionContribution = {
   /** Remixicon name or package `.svg` path, same as `panel.icon`. Falls back to the panel icon. */
   icon?: string;
   where: GuestActionWhere;
+  /** `background` calls `host.onAction` in a temporary hidden frame. Default: `open`. */
+  mode?: 'open' | 'background';
   roles?: GuestActionRole[];
   payload?: GuestActionPayload[];
 };

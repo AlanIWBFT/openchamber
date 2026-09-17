@@ -120,6 +120,10 @@ export {
 } from './contract.ts';
 export type {
   BadgeRequest,
+  ActionResultPayload,
+  GuestActionItem,
+  GuestActionResultMessage,
+  HostActionMessage,
   GuestBadgeMessage,
   GuestItem,
   GuestItemRole,

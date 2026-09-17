@@ -17,6 +17,21 @@ const validBlock = {
 };
 
 describe('parseManifest', () => {
+  test('preserves background action mode without changing legacy actions', () => {
+    const actions = [
+      { id: 'toast', label: 'Toast', where: 'message', mode: 'background' },
+      { id: 'inspect', label: 'Inspect', where: 'session' },
+    ];
+    const result = parseManifestJson(JSON.stringify({ ...validBlock, contributes: { ...validBlock.contributes, actions } }));
+    expect(result).toMatchObject({ ok: true, manifest: { contributes: { actions } } });
+    expect(parseManifestJson(JSON.stringify({ ...validBlock, contributes: {
+      ...validBlock.contributes, actions: [{ ...actions[0], mode: 'silent' }],
+    } }))).toMatchObject({ ok: false, code: 'invalid-actions' });
+    expect(parseManifestJson(JSON.stringify({ ...validBlock, contributes: {
+      panel: { id: 'toast', name: 'Toast', icon: 'window' }, actions,
+    } }))).toMatchObject({ ok: false, code: 'invalid-panel' });
+  });
+
   test('reads a bare manifest block', () => {
     const result = parseManifest(validBlock);
     expect(result).toEqual({

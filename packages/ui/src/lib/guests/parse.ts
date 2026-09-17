@@ -50,6 +50,7 @@ const guestActionSchema = z.object({
   label: z.string().trim().min(1),
   icon: z.string().trim().min(1).optional(),
   where: z.enum(['message', 'session']),
+  mode: z.enum(['open', 'background']).optional(),
   roles: z.array(z.enum(['user', 'assistant'])).optional(),
   payload: z.array(z.enum(['messages'])).optional(),
 });

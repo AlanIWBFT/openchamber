@@ -62,6 +62,23 @@ const load = async (name: string, script = 'main') => {
 };
 
 describe('checked-in SDK examples', () => {
+  test('a background message action shows one toast without drawing the panel', async () => {
+    const app = await load('hello-kit');
+    app.ready({ ...context, surface: 'background' });
+    app.send({ channel: 'openchamber.sdk', v: 1, type: 'action', id: 'count', payload: {
+      kind: 'message', action: 'message-length', sessionId: 's1', sessionTitle: 'Example', directory: '/repo', messageId: 'm1', role: 'user', text: 'Hello',
+    } });
+    await tick();
+    expect(app.request('toast')).toMatchObject({ payload: { kind: 'info', message: 'Message length: 5 characters.', copy: true, dismiss: true, persistent: true } });
+    expect(app.messages.some((message) => message.type === 'action-result')).toBe(false);
+    app.ready({ ...context, surface: 'background' });
+    expect(app.messages.filter((message) => message.type === 'toast')).toHaveLength(1);
+    expect(app.window.document.querySelector('button')).toBeNull();
+    app.reply(app.request('toast'));
+    await tick();
+    expect(app.request('action-result')).toMatchObject({ id: 'count', payload: { ok: true } });
+  });
+
   test('hello kit keeps controls and input state across theme snapshots', async () => {
     const app = await load('hello-kit');
     app.ready();
