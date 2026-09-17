@@ -37,7 +37,7 @@ export type SessionSidebarRow =
   | (RowBase & { kind: 'activity-header'; activityKey: 'chats' | 'active-now'; collapsed: boolean; forceExpanded: boolean })
   | (RowBase & { kind: 'project-header'; section: ProjectSection; collapsed: boolean; forceExpanded: boolean })
   | (RowBase & { kind: 'group-header'; group: SessionGroup; groupKey: string; projectId: string | null; collapsed: boolean; forceExpanded: boolean; allSessions: readonly Session[] })
-  | (RowBase & { kind: 'folder-header'; group: SessionGroup; folder: SessionFolder; displayName: string; scopeKey: string; scopeDirectory: string | null; ownerKey: string | null; nodes: readonly SessionNode[]; projectId: string | null; archived: boolean; collapsed: boolean; forceExpanded: boolean; deleteSessions: readonly Session[]; subFolderCount: number; dropEnabled: boolean })
+  | (RowBase & { kind: 'folder-header'; group: SessionGroup; folder: SessionFolder; displayName: string; scopeKey: string; scopeDirectory: string | null; ownerKey: string | null; nodes: readonly SessionNode[]; activityNodes: readonly SessionNode[]; projectId: string | null; archived: boolean; collapsed: boolean; forceExpanded: boolean; deleteSessions: readonly Session[]; subFolderCount: number; dropEnabled: boolean })
   | (RowBase & { kind: 'session'; node: SessionNode; depth: number; projectId: string | null; groupDirectory: string | null; ownerKey: string | null; selectionScopeKey: string | null; archived: boolean; renderContext: 'project' | 'recent'; secondaryMeta: SessionSidebarActivityItem['secondaryMeta'] })
   | (RowBase & { kind: 'empty'; emptyKind: 'sidebar' | 'search' | 'group' | 'archived'; group?: SessionGroup })
   | (RowBase & { kind: 'status'; status: SessionSidebarGroupStatus; group: SessionGroup; groupKey: string })
@@ -94,6 +94,7 @@ export type SessionSidebarRowModelArgs = {
   singleProjectId: string | null;
   showOnlyMainWorkspace: boolean;
   hideDirectoryControls: boolean;
+  sessionBatchSize?: number;
 };
 
 const EMPTY_FOLDERS: readonly SessionFolder[] = [];
@@ -347,6 +348,12 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
       const displayName = parentPath ? `${parentPath} / ${entry.folder.name}` : entry.folder.name;
       const folderKey = `${groupKey}:folder:${identity}`;
       const folderCollapsed = !search && args.collapsedFolders.has(entry.folder.id);
+      const deleteSessions = folderSessionsByIdentity.get(identity) ?? [];
+      // A collapsed parent hides child folders too. Reuse their indexed session
+      // coverage, retaining tree roots so unread-subtask rules remain intact.
+      const activityNodes = folderCollapsed && !group.isArchivedBucket
+        ? selectFolderRootNodes([...new Set(deleteSessions.map((session) => session.id))], indexed.byId)
+        : [];
       const authority = ownerKey ? args.folderAuthorityByOwner.get(ownerKey) : undefined;
       const dropEnabled = Boolean(ownerKey)
         && !group.isArchivedBucket
@@ -356,9 +363,9 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
       push({
         kind: 'folder-header', key: folderKey, estimateSize: HEADER_ESTIMATE, group,
         folder: entry.folder, displayName, scopeKey: entry.scopeKey, scopeDirectory: entry.scopeDirectory,
-        ownerKey, nodes: entry.nodes, projectId, archived: group.isArchivedBucket === true,
+        ownerKey, nodes: entry.nodes, activityNodes, projectId, archived: group.isArchivedBucket === true,
         collapsed: folderCollapsed, forceExpanded: search,
-        deleteSessions: folderSessionsByIdentity.get(identity) ?? [],
+        deleteSessions,
         subFolderCount: childFolders.get(identity)?.length ?? 0, dropEnabled,
       });
       if (ownerKey) folderDropTargets.push(Object.freeze({ rowKey: folderKey, scopeKey: entry.scopeKey, folderId: entry.folder.id, ownerKey, enabled: dropEnabled }));
@@ -368,15 +375,17 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
     };
     for (const folder of roots) appendFolder(folder, '');
 
-    const initialLimit = args.hideDirectoryControls ? 10 : 5;
+    const sessionBatchSize = projectId ? args.sessionBatchSize : undefined;
+    const initialLimit = sessionBatchSize ?? (args.hideDirectoryControls ? 10 : 5);
+    const increment = sessionBatchSize ?? 7;
     const requested = Math.max(initialLimit, args.visibleCountByContainer.get(groupKey) ?? initialLimit);
     const visibleUngrouped = group.isArchivedBucket || search ? ungrouped : ungrouped.slice(0, requested);
     appendSessions({ nodes: visibleUngrouped, containerKey: groupKey, projectId, groupDirectory: group.directory, ownerKey, selectionScopeKey: ownerKey, archived: group.isArchivedBucket === true, renderContext: 'project', indexedNodes: indexed, selectionPoolOffset });
     const remaining = ungrouped.length - visibleUngrouped.length;
     if (!search && !group.isArchivedBucket && remaining > 0) {
-      push({ kind: 'show-control', key: `${groupKey}:more`, estimateSize: STATUS_ESTIMATE, control: 'more', containerKey: groupKey, currentCount: visibleUngrouped.length, increment: 7 });
+      push({ kind: 'show-control', key: `${groupKey}:more`, estimateSize: STATUS_ESTIMATE, control: 'more', containerKey: groupKey, currentCount: visibleUngrouped.length, increment });
     } else if (!search && !group.isArchivedBucket && ungrouped.length > initialLimit && remaining === 0) {
-      push({ kind: 'show-control', key: `${groupKey}:fewer`, estimateSize: STATUS_ESTIMATE, control: 'fewer', containerKey: groupKey, currentCount: visibleUngrouped.length, increment: 7 });
+      push({ kind: 'show-control', key: `${groupKey}:fewer`, estimateSize: STATUS_ESTIMATE, control: 'fewer', containerKey: groupKey, currentCount: visibleUngrouped.length, increment });
     }
 
     const status = args.groupStatusByKey.get(groupKey);

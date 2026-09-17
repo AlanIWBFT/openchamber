@@ -22,7 +22,7 @@ import { useChildStoreManager } from '@/sync/sync-context';
 import type { ProjectSortOrder } from '@/stores/useSessionDisplayStore';
 import { streamPerfCount } from '@/stores/utils/streamDebug';
 import { Icon } from '@/components/icon/Icon';
-import { SessionFolderItem } from '../../SessionFolderItem';
+import { SessionSidebarFolderItem } from '../folders/SessionSidebarFolderItem';
 import { SessionTreeItem } from '../sessions/SessionTreeItem';
 import { computeNodeStructureKey, nodeContainsSessionId } from '../sessions/sessionNodeItemUtils';
 import { DroppableFolderWrapper } from '../folders/sessionFolderDnd';
@@ -302,7 +302,9 @@ function SessionProjectScrollerComponent({ model, view, actions }: Props): React
     if (row.kind === 'folder-header') {
       const renaming = model.groupProps.folderRename?.folderId === row.folder.id && model.groupProps.folderRename.scopeKey === row.scopeKey;
       return <DroppableFolderWrapper folderId={row.folder.id} scopeKey={row.scopeKey} ownerKey={row.ownerKey} disabled={!row.dropEnabled}>
-        {(droppableRef, isDropTarget) => <SessionFolderItem
+        {(droppableRef, isDropTarget) => <SessionSidebarFolderItem
+          notifyOnSubtasks={model.groupProps.notifyOnSubtasks}
+          activityNodes={row.activityNodes}
           folder={row.folder} displayName={row.displayName} sessions={row.nodes}
           isCollapsed={row.collapsed} onToggle={row.forceExpanded ? () => undefined : () => toggleFolderCollapse(row.folder.id)}
           onRename={(name) => renameFolder(row.scopeKey, row.folder.id, name)}

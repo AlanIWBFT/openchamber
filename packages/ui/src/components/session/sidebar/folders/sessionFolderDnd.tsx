@@ -52,7 +52,7 @@ export const DraggableSessionRow: React.FC<{
       {...attributes}
       {...listeners}
       onPointerDown={handlePointerDown}
-      className={`touch-none select-none${isDragging ? ' opacity-30' : ''}`}
+      className={`touch-pan-y select-none${isDragging ? ' opacity-30' : ''}`}
     >
       {children}
     </div>

@@ -31,7 +31,8 @@ import { getChatsRootForHome, getChatsRootFromDirectory } from '@/lib/chatDirect
 import { isCapacitorApp } from '@/lib/platform';
 import { formatDirectoryName } from '@/lib/utils';
 import { deriveRecentActivitySections, type RecentSessionLocation } from '../recent/activitySections';
-import { buildSessionSidebarRowModel, type SessionSidebarGroupStatus } from '../sessionSidebarRowModel';
+import { buildSessionSidebarRowModel } from '../sessionSidebarRowModel';
+import { useSidebarGroupStatus } from './useSidebarGroupStatus';
 import { getSessionFolderOwnerKey, getSessionFolderScopes } from '../sessions/sessionFolderIdentity';
 import { SessionRowOrderProvider } from '../sessions/sessionRowOrder';
 import { canRequestNativeDirectoryAccess } from '@/lib/desktop';
@@ -373,16 +374,12 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     });
   }, [collection.childrenMap, recentSessions, topology.availableWorktreesByProject, topology.gitBranches, topology.projects, view.hasSessionSearchQuery, view.homeDirectory, view.normalizedSessionSearchQuery]);
 
-  const modelDirectories = React.useMemo(() => [...new Set(orderedSectionsForRender.flatMap((section) => (
-    section.groups.flatMap((group) => getSessionFolderScopes(group).map((scope) => normalizePath(scope.directory)).filter((directory): directory is string => Boolean(directory)))
-  )))], [orderedSectionsForRender]);
-  const bootstrapSnapshot = React.useSyncExternalStore(
-    React.useCallback((notify) => modelDirectories.length > 0 ? childStores.subscribeBootstrap(notify) : () => undefined, [childStores, modelDirectories.length]),
-    React.useCallback(() => modelDirectories.map((directory) => (
-      `${directory}\u0000${childStores.getBootstrapState(directory) ?? ''}\u0000${childStores.getBootstrapFailure(directory) ?? ''}\u0000${childStores.getInitializationState(directory) ?? ''}\u0000${childStores.getInitializationFailure(directory) ?? ''}`
-    )).join('\u0001'), [childStores, modelDirectories]),
-    React.useCallback(() => '', []),
-  );
+  const { groupStatusByKey, bootstrapSnapshot } = useSidebarGroupStatus({
+    childStores,
+    sections: orderedSectionsForRender,
+    chatGroup,
+    canGrantAccess: canRequestNativeDirectoryAccess(),
+  });
   let selectedSingleProjectId: string | null = null;
   if (singleProjectMode) {
     if (projectSections.some((section) => section.project.id === singleProjectId)) {
@@ -470,33 +467,9 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     scrollerActions.setActiveProjectIdOnly,
     scrollerActions.setSessionSwitcherOpen,
   ]);
-  const { groupStatusByKey, folderAuthorityByOwner } = React.useMemo(() => {
+  const folderAuthorityByOwner = React.useMemo(() => {
     // The snapshot is the invalidation token; childStores owns the structured state read below.
     void bootstrapSnapshot;
-    const nextGroupStatusByKey = new Map<string, SessionSidebarGroupStatus>();
-    for (const section of orderedSectionsForRender) {
-      for (const group of section.groups) {
-        const directories = getSessionFolderScopes(group).map((scope) => normalizePath(scope.directory)).filter((directory): directory is string => Boolean(directory));
-        const failedDirectory = directories.find((directory) => childStores.getBootstrapState(directory) === 'failed' || childStores.getInitializationState(directory) === 'failed') ?? null;
-        const groupKey = `${section.project.id}:${group.id}`;
-        if (failedDirectory) {
-          const listFailed = childStores.getBootstrapState(failedDirectory) === 'failed';
-          const failure = listFailed ? childStores.getBootstrapFailure(failedDirectory) : childStores.getInitializationFailure(failedDirectory);
-          nextGroupStatusByKey.set(groupKey, {
-            state: failure === 'os-permission' ? 'permission-denied' : listFailed ? 'load-failed' : 'initialization-failed',
-            directory: failedDirectory,
-            canGrantAccess: failure === 'os-permission' && canRequestNativeDirectoryAccess(),
-          });
-        } else if (directories.some((directory) => {
-          const state = childStores.getBootstrapState(directory);
-          return state === 'queued' || state === 'running';
-        })) {
-          nextGroupStatusByKey.set(groupKey, { state: 'loading', directory: directories[0] ?? null, canGrantAccess: false });
-        } else {
-          nextGroupStatusByKey.set(groupKey, { state: 'ready', directory: directories[0] ?? null, canGrantAccess: false });
-        }
-      }
-    }
     const nextFolderAuthorityByOwner = new Map<string, { scopeKeys: readonly string[]; complete: boolean }>();
     for (const section of orderedSectionsForRender) {
       for (const group of section.groups) {
@@ -516,7 +489,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       const ownerKey = getSessionFolderOwnerKey(null, chatGroup.directory);
       if (ownerKey) nextFolderAuthorityByOwner.set(ownerKey, { scopeKeys: getSessionFolderScopes(chatGroup).map((scope) => scope.scopeKey), complete: collection.hasAuthoritativeGlobalSessions });
     }
-    return { groupStatusByKey: nextGroupStatusByKey, folderAuthorityByOwner: nextFolderAuthorityByOwner };
+    return nextFolderAuthorityByOwner;
   }, [bootstrapSnapshot, chatGroup, childStores, collection.hasAuthoritativeGlobalSessions, orderedSectionsForRender]);
   const visibleCountByContainer = React.useMemo(() => new Map([
     ...visibleSessionCountByGroup,
@@ -547,7 +520,8 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     singleProjectId: selectedSingleProjectId,
     showOnlyMainWorkspace: view.showOnlyMainWorkspace,
     hideDirectoryControls: view.hideDirectoryControls,
-  }), [chatGroup, collapsedActivityKeys, collapsedFolderIds, collection.pinnedSessionIds, expandedParents, folderAuthorityByOwner, foldersMap, groupSearchDataByGroup, groupStatusByKey, orderedSectionsForRender, projectSections, projectView.collapsedGroups, projectView.collapsedProjects, recentActivitySections, selectedSingleProjectId, sessionOrderIndex, showRecentSection, singleProjectMode, view.activeProjectId, view.hasSessionSearchQuery, view.hideDirectoryControls, view.normalizedSessionSearchQuery, view.showOnlyMainWorkspace, visibleCountByContainer]);
+    sessionBatchSize: singleProjectMode && !view.useGroupedSections ? 20 : undefined,
+  }), [chatGroup, collapsedActivityKeys, collapsedFolderIds, collection.pinnedSessionIds, expandedParents, folderAuthorityByOwner, foldersMap, groupSearchDataByGroup, groupStatusByKey, orderedSectionsForRender, projectSections, projectView.collapsedGroups, projectView.collapsedProjects, recentActivitySections, selectedSingleProjectId, sessionOrderIndex, showRecentSection, singleProjectMode, view.activeProjectId, view.hasSessionSearchQuery, view.hideDirectoryControls, view.normalizedSessionSearchQuery, view.showOnlyMainWorkspace, view.useGroupedSections, visibleCountByContainer]);
   React.useEffect(() => {
     onSearchMatchCountChange(sidebarRowModel.searchMatchCount);
   }, [onSearchMatchCountChange, sidebarRowModel.searchMatchCount]);

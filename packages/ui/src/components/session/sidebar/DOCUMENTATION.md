@@ -13,9 +13,13 @@ kept at this root in `types.ts` and `utils.tsx`.
 - `folders/` owns folder DnD, bulk actions, archived folders, and folder UI.
 - `sessionSidebarRowModel.ts` owns the ordered, mode-neutral projection for
   Chats, Recent, projects, groups, folders, sessions, status notices, empty
-  states, and reveal controls. `SessionSidebarRows.tsx` is the only desktop and
-  web sidebar row renderer. Normal and committed-search modes use the same
+  states, and reveal controls. `SessionSidebarRows.tsx` is the shared desktop
+  Web, Electron and VS Code sidebar row renderer. Normal and committed-search modes use the same
   model and the same `@tanstack/react-virtual` instance.
+- `list/useSidebarGroupStatus.ts` subscribes to project and standalone Chats
+  directories together. Chats uses the same `activity:chats` identity for status
+  and row projection, including a Chats-only sidebar. A successful list stops
+  loading independently of initialization; failures keep their retry/access actions.
 - Root session right-click and overflow menus expose `Move to worktree`: a submenu
   listing the canonical primary and linked worktree destinations, with the current
   target disabled and a separate `New worktree...` action. Opening the submenu
@@ -53,6 +57,9 @@ display can be all projects or one selected project. The mobile sessions sheet
 project tree, with no Recent projection. VS Code excludes worktrees and managed
 Chats, while retaining its workspace-scoped grouped list and inline archived
 buckets.
+
+Hosted mobile and Capacitor use their separate `MobileSessionsSheet` renderer.
+The shared directory-cache rules apply there, but this sidebar virtualizer does not.
 
 Both project display modes use `projects/CrossfadeZoneHeaders.tsx` for sticky
 zone headers. The live header keeps one portal host as it moves between its
@@ -155,6 +162,16 @@ matching and ordering. Search does not fetch sessions or broaden list membership
   accepted only when the current model marks every owner scope complete and
   the source and target owner match. Archived rows and archived targets never
   accept drops.
+- Session rows allow vertical touch panning before the long-press drag activates.
+  The TouchSensor owns movement only after activation; disabling touch panning on
+  the whole row prevents quick swipes from scrolling even when no drag starts.
+- `folders/SessionSidebarFolderItem.tsx` owns activity subscriptions for mounted
+  collapsed folder headers. It includes descendant activity and respects the
+  unread-subtask preference without mounting those sessions. Expanded and archived
+  folders do not derive hidden activity.
+- Single-project flat mode reveals 20 root sessions initially and 20 per Show
+  more; Show fewer resets to 20. Chats retains its own default reveal size. Reveal
+  controls change the logical list, not the viewport's bounded mounted window.
 - Archiving or deleting a session takes its whole active subtree with it on every surface, because the server does not cascade `time.archived`. Recent and managed Chats build their rows with `buildActiveSessionNode` from `list/sessionCollection.ts`, so the descendants a row collects match the project tree at any depth; the mobile sessions sheet resolves the same lineage with `getDescendantIds` over its full active list rather than the rendered bucket. `sessions/sessionSubtreeActions.ts` owns the single-versus-batch store calls and the outcome toasts for all of them, and `collectSessionSubtreeIds` extends the surface's own descendant list at action time with a walk over the global active-plus-archived cache, so an active subagent below an archived intermediate is still archived (archive skips the archived intermediate; delete includes it). A projection that flattens a tree to one level silently leaves grandchildren active.
 - Folder membership may contain both a parent session and its descendants. Rendering treats only the highest assigned ancestors as folder roots because their normal session trees already include assigned descendants; persisted membership remains unchanged for cleanup and move semantics.
 - Sidebar selection holds the clicked row's viewport position across navigation-driven sidebar updates. Wheel or touch input cancels the hold immediately, so programmatic compensation never fights intentional scrolling.

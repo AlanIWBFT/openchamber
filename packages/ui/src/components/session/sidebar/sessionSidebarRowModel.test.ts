@@ -122,6 +122,57 @@ describe('buildSessionSidebarRowModel', () => {
     expect(model.rows.some((row) => row.kind === 'show-control' && row.control === 'more')).toBe(true);
   });
 
+  test('single-project flat mode reveals twenty at a time and resets without changing Chats', () => {
+    const nodes = Array.from({ length: 45 }, (_, index) => node(`session-${index}`));
+    const input = args([project([group(nodes)])]);
+    input.singleProjectMode = true;
+    input.singleProjectId = 'project-a';
+    input.sessionBatchSize = 20;
+    input.chatGroup = group(nodes, { id: 'managed-chats' });
+    for (const count of [20, 40, 45]) {
+      const model = buildSessionSidebarRowModel(input);
+      expect(model.rows.filter((row) => row.kind === 'session' && row.projectId === 'project-a')).toHaveLength(count);
+      expect(model.rows.filter((row) => row.kind === 'session' && row.projectId === null)).toHaveLength(5);
+      const control = model.rows.find((row) => row.kind === 'show-control' && row.containerKey === 'project-a:main');
+      if (!control || control.kind !== 'show-control') throw new Error('Missing reveal control');
+      expect(control.increment).toBe(20);
+      expect(control.control).toBe(count === 45 ? 'fewer' : 'more');
+      if (control.control === 'more') input.visibleCountByContainer = new Map([[control.containerKey, control.currentCount + control.increment]]);
+      else input.visibleCountByContainer = new Map();
+    }
+    expect(buildSessionSidebarRowModel(input).rows.filter((row) => row.kind === 'session' && row.projectId === 'project-a')).toHaveLength(20);
+  });
+
+  test('Chats failure stays visible beside retained sessions', () => {
+    const input = args([]);
+    input.chatGroup = group([node('retained-chat')], { id: 'managed-chats' });
+    input.groupStatusByKey = new Map([['activity:chats', { state: 'load-failed', directory: '/chats', canGrantAccess: false }]]);
+    const rows = buildSessionSidebarRowModel(input).rows;
+    expect(rows.some((row) => row.kind === 'session' && row.node.session.id === 'retained-chat')).toBe(true);
+    expect(rows.find((row) => row.kind === 'status')).toMatchObject({ groupKey: 'activity:chats', status: { state: 'load-failed' } });
+    expect(rows.some((row) => row.kind === 'empty')).toBe(false);
+  });
+
+  test('a collapsed folder retains activity coverage from nested folders without flattening subtasks', () => {
+    const child = node('child');
+    child.session.parentID = 'parent';
+    const parent = node('parent', [child]);
+    const input = args([project([group([parent])])]);
+    input.foldersMap = { '/repo': [
+      { id: 'outer', name: 'Outer', createdAt: 1, sessionIds: [] },
+      { id: 'inner', name: 'Inner', parentId: 'outer', createdAt: 1, sessionIds: ['parent', 'child'] },
+    ] };
+    input.collapsedFolders = new Set(['outer']);
+    const model = buildSessionSidebarRowModel(input);
+    const folder = model.rows.find((row) => row.kind === 'folder-header');
+    if (!folder || folder.kind !== 'folder-header') throw new Error('Missing outer folder');
+    expect(folder.nodes).toEqual([]);
+    expect(folder.activityNodes).toEqual([parent]);
+    expect(folder.activityNodes[0]?.children).toEqual([child]);
+    expect(model.rows.filter((row) => row.kind === 'folder-header')).toHaveLength(1);
+    expect(model.rows.some((row) => row.kind === 'session')).toBe(false);
+  });
+
   test('builds the folder-heavy 25,000-session projection without duplicating descendant storage', () => {
     const sessions = Array.from({ length: 25_000 }, (_, index) => node(`session-${index}`));
     const input = args([project([group(sessions)])]);
