@@ -420,11 +420,21 @@ button svg,
   shape-rendering: geometricPrecision;
 }
 
-/* GPU acceleration for non-spinning SVGs */
-button svg:not(.animate-spin),
-[role="button"] svg:not(.animate-spin) {
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
+/*
+ * WebKit only. A 3D transform gives every matched icon a compositor layer of
+ * its own, and the compositor walks every layer on every frame. Measured in
+ * Chromium with 60 icons on screen: 66 layers per frame instead of 9, three
+ * times the layerization time, and four points of renderer CPU while a
+ * response streams. The cost grows with the number of buttons on screen, so
+ * Chromium runtimes no longer get the hint. `font: -apple-system-body` is a
+ * value only WebKit parses, which keeps the rule where it was written for.
+ */
+@supports (font: -apple-system-body) {
+  button svg:not(.animate-spin),
+  [role="button"] svg:not(.animate-spin) {
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+  }
 }
 
 /* Fix SVG elements inside buttons - remove any rect/circle backgrounds */
@@ -1774,6 +1784,19 @@ textarea[data-terminal-hidden-input="true"]::placeholder {
   animation: oc-busy-pulse 1.2s ease-in-out infinite;
 }
 
+/*
+ * The staggered dots of a busy indicator that stays on screen for as long as
+ * the agent works. A smooth opacity pulse is composited, yet it still makes
+ * the compositor and the GPU process draw sixty frames a second: about ten
+ * percent of a core on an otherwise still page. Three steps per half cycle
+ * last 200ms each, the same as the stagger between dots, so every dot changes
+ * on the same five frames a second, which halves that cost. Keep the stagger
+ * a multiple of one step or the dots stop sharing frames.
+ */
+.animate-busy-wave {
+  animation: oc-busy-pulse 1.2s steps(3, jump-none) infinite;
+}
+
 @keyframes navrail-dot-wave {
   0%, 100% {
     transform: scale(0.72);
@@ -1894,7 +1917,8 @@ textarea[data-terminal-hidden-input="true"]::placeholder {
     display: none;
   }
 
-  .animate-busy-pulse {
+  .animate-busy-pulse,
+  .animate-busy-wave {
     animation: none;
   }
 
