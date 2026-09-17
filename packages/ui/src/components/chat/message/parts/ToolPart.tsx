@@ -1407,7 +1407,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
             return (
                 <div className="typography-meta rounded-xl border p-2" style={{
                     backgroundColor: 'var(--status-error-background)',
-                    color: 'var(--status-error)',
+                    color: 'var(--status-error-text)',
                     borderColor: 'var(--status-error-border)',
                 }}>
                     {unifiedExecMetadata.execError}
@@ -1771,7 +1771,7 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
     const isTaskTool = isSubagentTool(normalizedPartTool);
     // The registry sees the full name OpenCode reported (`mcp.jira.search`);
     // the built-in switches below keep the normalized one.
-    const presentation = useGuestToolPresentation(part.tool);
+    const presentation = useGuestToolPresentation(isUnifiedExecTool(normalizedPartTool) && !isExecCommandTool(normalizedPartTool) ? null : part.tool);
 
     const time = stateWithData.time;
     const unifiedExecMetadata = getUnifiedExecMetadata(part);
