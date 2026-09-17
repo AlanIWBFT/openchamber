@@ -50,7 +50,8 @@ interactive login, then login-only on failure, with a five-second timeout per
 attempt. Text that shell startup files print to stdout before the environment
 is discarded, so a banner never fuses with the first variable. Failure
 preserves the inherited process environment. Confirmed quit cancels an
-in-flight probe and waits for its process to exit.
+in-flight macOS/Linux probe and waits for its process to exit. Windows quit
+does not wait on the environment read; a late result cannot resume startup.
 
 Packaged builds turn on Node's on-disk V8 code cache in `entry.mjs`, under
 `<userData>/v8-compile-cache`, so later launches compile `main.mjs` and the

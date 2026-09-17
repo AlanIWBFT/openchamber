@@ -199,7 +199,7 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
     );
 
     const renderResultContent = () => {
-        if (exec.execError) return <div className="typography-meta text-[var(--status-error)]">{exec.execError}</div>;
+        if (exec.execError) return <div className="typography-meta text-[var(--status-error-text)]">{exec.execError}</div>;
         if (isExecCommandTool(part.tool)) {
             const text = [getUnifiedExecCommand(input, exec), getUnifiedExecOutput(exec, rawOutputString)].filter(Boolean).join('\n\n');
             return <div className="relative">

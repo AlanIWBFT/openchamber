@@ -59,7 +59,7 @@ type ServiceStart = {
   socketOverrides?: Record<string, string>;
   dataDir: string;
   openCode?: boolean;
-  epoch: number;
+  epoch: string;
   lifecycle: HostLifecycle;
 };
 export type GuestServiceRequest = {
@@ -226,8 +226,8 @@ export const getServiceStatus = (guestId: string): ServiceRuntime['status'] => {
 };
 
 const stopEpochs = new Map<string, number>();
-
-const stopEpochOf = (guestId: string) => stopEpochs.get(guestId) ?? 0;
+let stopAllEpoch = 0;
+const stopEpochOf = (guestId: string) => `${stopAllEpoch}:${stopEpochs.get(guestId) ?? 0}`;
 
 const idleStops = new Map<string, { timer: ReturnType<typeof setTimeout>; inflight: number; idleMs: number }>();
 
@@ -280,7 +280,7 @@ const trackInflight = (guestId: string, delta: number) => {
 };
 
 export const stopGuestService = async (guestId: string) => {
-  stopEpochs.set(guestId, stopEpochOf(guestId) + 1);
+  stopEpochs.set(guestId, (stopEpochs.get(guestId) ?? 0) + 1);
   openCodeProvider?.revokeGuest(guestId);
   clearIdleStop(guestId);
   await discardRuntime(guestId);
@@ -351,6 +351,8 @@ const announceServiceEnded = (guestId: string) => {
 export const readServicePid = (guestId: string) => runtimes.get(guestId)?.child.pid ?? null;
 
 export const stopAllGuestServices = async () => {
+  // Also cancel requests reading configuration before their runtime is registered.
+  stopAllEpoch += 1;
   const starts = [...startingByGuest.values()];
   const ids = new Set([...runtimes.keys(), ...startingByGuest.keys(), ...stoppingByGuest.keys()]);
   const stops = [...ids].map((id) => stopGuestService(id));

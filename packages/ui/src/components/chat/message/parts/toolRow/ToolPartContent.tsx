@@ -16,7 +16,7 @@ import { HoverTooltip } from '@/components/ui/row-tooltip';
 import { useI18n } from '@/lib/i18n';
 import { useChatTranscriptDirectory } from '@/components/chat/chatColumnSession';
 import { dispatchRowExpand } from '@/components/chat/lib/scroll/timelineScrollIntent';
-import { isEditTool, isExecuteTool, isPatchTool, isShellTool, isSubagentTool, subagentAgent, isWriteTool, normalizeToolName, executeNamespace } from '@/lib/opencode/tools';
+import { isEditTool, isExecuteTool, isPatchTool, isShellTool, isSubagentTool, isUnifiedExecTool, subagentAgent, isWriteTool, normalizeToolName, executeNamespace } from '@/lib/opencode/tools';
 import { ApplyPatchFileButtons } from '../ApplyPatchFileButtons';
 import { QuietAction } from '../ToolResultParts';
 import { useToolContentCompletion } from '../useToolContentCompletion';
@@ -62,7 +62,7 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
 
     const normalizedPartTool = normalizeToolName(part.tool);
     const isTaskTool = isSubagentTool(normalizedPartTool);
-    const presentation = useGuestToolPresentation(part.tool);
+    const presentation = useGuestToolPresentation(isUnifiedExecTool(normalizedPartTool) && !isExecCommandTool(normalizedPartTool) ? null : part.tool);
 
     const status = state?.status as string | undefined;
     const exec = getUnifiedExecMetadata(part);
