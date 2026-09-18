@@ -3091,8 +3091,8 @@ const UPDATE_INSTALL_GRACE_MS = 15_000;
 // Releasing terminals, the managed OpenCode child, and SSH sessions must not
 // hold the installer hostage: a stuck session would otherwise keep the app on
 // the old version forever. The backend's own stop() is already bounded; this
-// bounds everything the install path waits on.
-const UPDATE_SHUTDOWN_TIMEOUT_MS = 12_000;
+// bounds everything the install path waits on, beyond the backend's 35s limit.
+const UPDATE_SHUTDOWN_TIMEOUT_MS = 40_000;
 
 /**
  * Hand the downloaded update to the platform installer and keep the IPC call
@@ -3102,6 +3102,7 @@ const UPDATE_SHUTDOWN_TIMEOUT_MS = 12_000;
  */
 const installDownloadedUpdate = () => new Promise((resolve, reject) => {
   let settled = false;
+  let graceTimer;
 
   // Hold the process from here until the installer has control. Every quit
   // path checks this, so closing the last window during shutdown can no longer
@@ -3124,20 +3125,12 @@ const installDownloadedUpdate = () => new Promise((resolve, reject) => {
     reject(error instanceof Error ? error : new Error(String(error)));
   };
 
-  // Still running after the grace period: the install is underway and the app
-  // is shutting down, so release the pending IPC reply.
-  const graceTimer = setTimeout(() => {
-    if (settled) return;
-    settled = true;
-    autoUpdater.off('error', fail);
-    resolve(null);
-  }, UPDATE_INSTALL_GRACE_MS);
-
   autoUpdater.on('error', fail);
 
   // Defer so the renderer's invoke channel is idle before the app starts
   // shutting down.
   setImmediate(async () => {
+    let shutdownTimer;
     try {
       // Stop the backend first, then declare the quit intent, then hand over.
       // The flags exist only to let the installer's own quit through the
@@ -3146,12 +3139,21 @@ const installDownloadedUpdate = () => new Promise((resolve, reject) => {
       await Promise.race([
         shutdownBackgroundServices(),
         new Promise((resolveTimeout) => {
-          setTimeout(() => {
+          shutdownTimer = setTimeout(() => {
             log.warn('[electron] background shutdown timed out before update install; continuing');
             resolveTimeout(null);
           }, UPDATE_SHUTDOWN_TIMEOUT_MS);
         }),
       ]);
+      if (settled) return;
+      // Start the installer error window after terminal cleanup, which can
+      // legitimately take longer than UPDATE_INSTALL_GRACE_MS.
+      graceTimer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        autoUpdater.off('error', fail);
+        resolve(null);
+      }, UPDATE_INSTALL_GRACE_MS);
       state.quitRequested = true;
       state.installingUpdate = true;
       state.quitConfirmationPending = false;
@@ -3161,6 +3163,8 @@ const installDownloadedUpdate = () => new Promise((resolve, reject) => {
       state.updateInstallPending = false;
     } catch (error) {
       fail(error);
+    } finally {
+      clearTimeout(shutdownTimer);
     }
   });
 });
