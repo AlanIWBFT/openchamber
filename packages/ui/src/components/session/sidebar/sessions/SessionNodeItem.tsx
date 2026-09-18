@@ -364,6 +364,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
   const editingIdRef = React.useRef(editingId);
   editingIdRef.current = editingId;
   const pendingRenameRef = React.useRef<{ id: string; title: string } | null>(null);
+  const [closingForRename, setClosingForRename] = React.useState(false);
   const pendingFolderCreateRef = React.useRef(false);
   const handleSaveEditRef = React.useRef(handleSaveEdit);
   handleSaveEditRef.current = handleSaveEdit;
@@ -529,11 +530,11 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
   const sessionTimestamp = resolvedSession.time?.updated || resolvedSession.time?.created || Date.now();
   const sessionUpdatedLabel = formatSessionDateLabel(sessionTimestamp);
   const sessionCompactUpdatedLabel = formatSessionCompactDateLabel(sessionTimestamp);
-  const isMenuOpen = openSidebarMenuKey === menuInstanceKey;
+  const isMenuOpen = !closingForRename && openSidebarMenuKey === menuInstanceKey;
   const [legacyContextMenuOpen, setLegacyContextMenuOpen] = React.useState(false);
-  const isContextMenuOpen = contextMenuInstanceKey
+  const isContextMenuOpen = !closingForRename && (contextMenuInstanceKey
     ? openSidebarMenuKey === contextMenuInstanceKey
-    : legacyContextMenuOpen;
+    : legacyContextMenuOpen);
   const isSessionMenuOpen = isMenuOpen || isContextMenuOpen;
   const isMultiRunLikeSession = React.useMemo(() => parseMultiRunSessionTitle(resolvedSession.title) !== null, [resolvedSession.title]);
   const [fusionDialogOpen, setFusionDialogOpen] = React.useState(false);
@@ -862,6 +863,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
     if (!open && pendingRenameRef.current) {
       const { id, title } = pendingRenameRef.current;
       pendingRenameRef.current = null;
+      setClosingForRename(false);
       setEditingId(id);
       setEditingRowKey(sessionRowKey);
       setEditTitle(title);
@@ -1068,6 +1070,9 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
           // onOpenChangeComplete fires after animation + focus cleanup are done,
           // avoiding focus stealing from Base UI's unmount cleanup.
           pendingRenameRef.current = { id: session.id, title: sessionTitle };
+          // Keep the occurrence pinned by its menu key until close completion,
+          // but let the controlled menu close so that completion can happen.
+          setClosingForRename(true);
         }}
         className="[&>svg]:mr-1"
       >
