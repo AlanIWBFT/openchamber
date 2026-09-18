@@ -2303,6 +2303,25 @@ const GIT_UNTRACKED_LISTING_STALL_TIMEOUT_MS = 60_000;
 const GIT_PROBE_TIMEOUT_MS = 30_000;
 
 // Untracked files under `dirPath` (repository-relative, trailing slash), read
+// Git for Windows runs commands through a launcher: the `git.exe` we spawn is a
+// wrapper whose child is the real `git`. Killing only the wrapper leaves that
+// child alive, still walking the tree on its own (a repository rooted at a
+// drive root sends it through Program Files), and it shows up in Task Manager
+// as a stuck pair until someone ends it by hand. Windows has no process groups
+// to signal, so the tree is ended through taskkill.
+const killProcessTree = (child) => {
+  if (!child.pid) return;
+  if (process.platform === 'win32') {
+    try {
+      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).on('error', () => {});
+    } catch {
+      child.kill('SIGKILL');
+    }
+    return;
+  }
+  child.kill('SIGKILL');
+};
+
 // from a streamed `ls-files` that is stopped once the bound is exceeded so a
 // huge directory is never listed in full. `paths` is complete when
 // `truncated` is false.
@@ -2335,7 +2354,7 @@ const listUntrackedFilesBounded = async (repoRoot, dirPath, limit) => {
     const armStallTimer = () => {
       if (stallTimer) clearTimeout(stallTimer);
       stallTimer = setTimeout(() => {
-        child.kill('SIGKILL');
+        killProcessTree(child);
         finish(new Error(`git ls-files produced no output for ${GIT_UNTRACKED_LISTING_STALL_TIMEOUT_MS}ms in ${dirPath}`));
       }, GIT_UNTRACKED_LISTING_STALL_TIMEOUT_MS);
     };
@@ -2351,7 +2370,7 @@ const listUntrackedFilesBounded = async (repoRoot, dirPath, limit) => {
         paths.push(record);
         if (paths.length > limit) {
           truncated = true;
-          child.kill();
+          killProcessTree(child);
           finish();
           return;
         }
