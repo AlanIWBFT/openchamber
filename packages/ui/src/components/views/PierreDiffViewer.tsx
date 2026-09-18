@@ -80,6 +80,8 @@ interface PierreDiffViewerProps {
   onExpandContextRequest?: (request: ContextExpansionRequest) => void;
   /** Expansion to replay once the diff is no longer partial. Applied once per object. */
   pendingContextExpansion?: ContextExpansionRequest | null;
+  /** The owner is fetching the full file for `pendingContextExpansion`. */
+  contextLoading?: boolean;
 }
 
 /**
@@ -269,6 +271,30 @@ const WEBKIT_SCROLL_FIX_CSS = `
   :host([data-oc-expand-on-demand]) [data-diff-type="single"] [data-gutter] [data-separator-first] [data-separator-wrapper]::before,
   :host([data-oc-expand-on-demand]) [data-diff-type="split"] [data-deletions] [data-gutter] [data-separator-first] [data-separator-wrapper]::before {
     content: '\\2191';
+  }
+
+  /* Full file requested: the glyph becomes a spinner and the separators stop
+     taking clicks until the highlighted full diff replaces this one. */
+  :host([data-oc-expand-loading]) [data-diff-type="single"] [data-gutter] [data-separator-wrapper],
+  :host([data-oc-expand-loading]) [data-diff-type="split"] [data-deletions] [data-gutter] [data-separator-wrapper] {
+    cursor: default;
+    pointer-events: none;
+    opacity: 0.6;
+
+    &::before {
+      content: '';
+      width: 9px;
+      height: 9px;
+      margin-right: 3px;
+      border-radius: 50%;
+      border: 1.5px solid currentColor;
+      border-right-color: transparent;
+      animation: oc-expand-spin 0.8s linear infinite;
+    }
+  }
+
+  @keyframes oc-expand-spin {
+    to { transform: rotate(360deg); }
   }
   `;
 
@@ -652,6 +678,7 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
   hunkActions,
   onExpandContextRequest,
   pendingContextExpansion = null,
+  contextLoading = false,
 }) => {
   const themeContext = useOptionalThemeSystem();
 
@@ -1488,20 +1515,22 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
   // Partial diff + an owner that can load the file: the separators become
   // expand buttons (see the on-demand CSS) and report the gap on click.
   const expandOnDemand = Boolean(onExpandContextRequest) && fileDiff?.isPartial === true;
+  // Loading covers the owner's fetch and the highlight-first swap above.
+  const expandLoading = expandOnDemand && (contextLoading || incomingFileDiff !== fileDiff);
   useEffect(() => {
     const container = diffContainerRef.current;
     if (!container) return;
     return waitForDiffReady(container, () => {
       const host = container.querySelector('diffs-container');
       if (!(host instanceof HTMLElement)) return;
-      if (expandOnDemand) host.setAttribute('data-oc-expand-on-demand', '');
-      else host.removeAttribute('data-oc-expand-on-demand');
+      host.toggleAttribute('data-oc-expand-on-demand', expandOnDemand);
+      host.toggleAttribute('data-oc-expand-loading', expandLoading);
     });
-  }, [expandOnDemand, fileDiff]);
+  }, [expandLoading, expandOnDemand, fileDiff]);
 
   useEffect(() => {
     const container = diffContainerRef.current;
-    if (!container || !expandOnDemand || !fileDiff || !onExpandContextRequest) return;
+    if (!container || !expandOnDemand || expandLoading || !fileDiff || !onExpandContextRequest) return;
 
     const onClick = (event: MouseEvent) => {
       if (event.button !== 0) return;
@@ -1514,7 +1543,7 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
 
     container.addEventListener('click', onClick);
     return () => container.removeEventListener('click', onClick);
-  }, [expandOnDemand, fileDiff, onExpandContextRequest]);
+  }, [expandLoading, expandOnDemand, fileDiff, onExpandContextRequest]);
 
   // Replay the expansion the user asked for on the partial diff once the full
   // diff is rendered. Hunks may merge differently after the reload, so the

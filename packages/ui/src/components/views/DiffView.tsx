@@ -482,6 +482,7 @@ interface InlineDiffViewerProps {
   hunkActions?: DiffHunkActions;
   onExpandContextRequest?: (request: ContextExpansionRequest) => void;
   pendingContextExpansion?: ContextExpansionRequest | null;
+  contextLoading?: boolean;
 }
 
 const InlineDiffViewer = React.memo<InlineDiffViewerProps>(({
@@ -493,6 +494,7 @@ const InlineDiffViewer = React.memo<InlineDiffViewerProps>(({
   hunkActions,
   onExpandContextRequest,
   pendingContextExpansion,
+  contextLoading,
 }) => {
   const language = React.useMemo(
     () => getLanguageFromExtension(filePath) || 'text',
@@ -531,6 +533,7 @@ const InlineDiffViewer = React.memo<InlineDiffViewerProps>(({
         hunkActions={hunkActions}
         onExpandContextRequest={onExpandContextRequest}
         pendingContextExpansion={pendingContextExpansion}
+        contextLoading={contextLoading}
       />
     </div>
   );
@@ -643,6 +646,7 @@ export const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
             if (cancelled) return;
             if (result.status === 'error') {
                 toast.error(result.message);
+                setContextExpansion(null);
                 return;
             }
             setFullComparisonDiff({ source: rangeComparisonDiff, result });
@@ -1063,6 +1067,7 @@ export const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
                                 hunkActions={diffHunkActions}
                                 onExpandContextRequest={canLoadFullFile ? setContextExpansion : undefined}
                                 pendingContextExpansion={contextExpansion}
+                                contextLoading={contextExpansion !== null && diffData.contextMode !== 'full' && !diffLoadFailure}
                             />
                         </>
                     ) : null}
