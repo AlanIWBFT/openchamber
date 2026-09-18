@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -22,6 +24,7 @@ import {
   getCommitFiles,
   getLog,
   getStatus,
+  readStatusNumstat,
   getTrackingBranch,
   getWorktrees,
   isGitRepository,
@@ -52,6 +55,80 @@ import {
 // ---------------------------------------------------------------------------
 // Shared test infrastructure
 // ---------------------------------------------------------------------------
+
+describe('status cancellation cleanup', () => {
+  it.each([0, 1])('waits for both numstat processes to close after cancellation (first: %s)', async (first) => {
+    const controller = new AbortController();
+    const reason = new Error('status timed out');
+    const children = [];
+    const git = simpleGit({
+      baseDir: process.cwd(),
+      abort: controller.signal,
+      completion: { onClose: true, onExit: false },
+      spawn() {
+        const child = new EventEmitter();
+        child.stdout = new PassThrough();
+        child.stderr = new PassThrough();
+        child.kill = vi.fn(() => true);
+        child.finish = () => {
+          if (child.closed) return;
+          child.closed = true;
+          child.stdout.end('1\t0\tfile.txt\n');
+          child.stderr.end();
+          child.emit('exit', 1, null);
+          child.emit('close', 1, null);
+        };
+        children.push(child);
+        return child;
+      },
+    });
+    let settled = false;
+    const result = readStatusNumstat(git, { signal: controller.signal }).then(
+      (value) => { settled = true; return value; },
+      (error) => { settled = true; return error; },
+    );
+    try {
+      await vi.waitFor(() => expect(children).toHaveLength(2));
+      controller.abort(reason);
+      for (const child of children) expect(child.kill).toHaveBeenCalledOnce();
+      children[first].finish();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(settled).toBe(false);
+      children[1 - first].finish();
+      expect(await result).toBe(reason);
+    } finally {
+      for (const child of children) child.finish();
+      await result;
+    }
+  });
+
+  it('preserves the successful numstat scope when the other read fails without cancellation', async () => {
+    const git = { raw: (args) => args.includes('--cached') ? Promise.reject(new Error('diff failed')) : Promise.resolve('2\t1\tfile.txt\n') };
+    expect(await readStatusNumstat(git)).toEqual(['', '2\t1\tfile.txt\n']);
+  });
+
+  it('handles consecutive pre-cancelled status requests without an unhandled follower rejection', async () => {
+    const reason = new Error('already cancelled');
+    const signal = AbortSignal.abort(reason);
+    const unhandled = [];
+    const onUnhandled = (error) => unhandled.push(error);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const results = await Promise.allSettled([
+        getStatus(process.cwd(), { signal }),
+        getStatus(process.cwd(), { signal }),
+      ]);
+      expect(results).toEqual([
+        { status: 'rejected', reason },
+        { status: 'rejected', reason },
+      ]);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+});
 
 const tempDirs = [];
 
