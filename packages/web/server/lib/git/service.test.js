@@ -128,11 +128,26 @@ describe('status cancellation cleanup', () => {
     expect(await readStatusNumstat(git)).toEqual(['', '2\t1\tfile.txt\n']);
   });
 
-  it('rejects consecutive pre-cancelled status requests before scheduling', async () => {
+  it('handles consecutive pre-cancelled status requests without an unhandled follower rejection', async () => {
     const reason = new Error('already cancelled');
     const signal = AbortSignal.abort(reason);
-    const results = await Promise.allSettled([getStatus(process.cwd(), { signal }), getStatus(process.cwd(), { signal })]);
-    expect(results).toEqual([{ status: 'rejected', reason }, { status: 'rejected', reason }]);
+    const unhandled = [];
+    const onUnhandled = (error) => unhandled.push(error);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const results = await Promise.allSettled([
+        getStatus(process.cwd(), { signal }),
+        getStatus(process.cwd(), { signal }),
+      ]);
+      expect(results).toEqual([
+        { status: 'rejected', reason },
+        { status: 'rejected', reason },
+      ]);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 });
 

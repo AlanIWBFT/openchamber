@@ -51,6 +51,6 @@ export const openGuestCommit = async ({ sha, directory, git, currentBranch, supp
 
 /** Branch from the shared git status cache, loading it once when missing. A failed load means "no branch". */
 export const readCurrentBranch = async (git: GitAPI, directory: string): Promise<string | null> => {
-  await useGitStore.getState().ensureStatus(directory, git).catch(() => undefined);
+  await useGitStore.getState().ensurePassiveStatus(directory, git).catch(() => undefined);
   return useGitStore.getState().directories.get(directory)?.status?.current ?? null;
 };
