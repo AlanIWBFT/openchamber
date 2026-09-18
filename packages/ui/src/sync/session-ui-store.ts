@@ -26,8 +26,8 @@ import { fetchSessionKnowledge, reportSessionKnowledgeDelivered } from "@/lib/se
 import { useGlobalSessionsStore, resolveGlobalSessionDirectory } from "@/stores/useGlobalSessionsStore"
 import { useDirectoryStore } from "@/stores/useDirectoryStore"
 import { useSessionFoldersStore } from "@/stores/useSessionFoldersStore"
-import { useCommandsStore } from "@/stores/useCommandsStore"
-import { useSkillsStore } from "@/stores/useSkillsStore"
+import { selectCommandsForDirectory, useCommandsStore } from "@/stores/useCommandsStore"
+import { selectSkillsForDirectory, useSkillsStore } from "@/stores/useSkillsStore"
 import { getDeferredSafeStorage } from "@/stores/utils/safeStorage"
 import { markPendingUserSendAnimation } from "@/lib/userSendAnimation"
 import { normalizePath } from "@/lib/pathNormalization"
@@ -167,26 +167,27 @@ export async function routeMessage(params: {
     const [head, ...tail] = params.content.split(" ")
     const cmdName = head.slice(1)
 
-    const storeCommands = useCommandsStore.getState().commands
+    // Commands and skills are resolved for the session's own directory. A
+    // project root and one of its worktrees can define the same command name
+    // with different templates, and the wrong template would change the
+    // contextual prompt below. OpenCode registers every skill as a command
+    // (source: "skill"), but the commands store filters skills out, so the
+    // skills store is consulted separately to keep a skill's invocation
+    // semantics (#1605).
+    let matchedCommand = selectCommandsForDirectory(useCommandsStore.getState(), requestDirectory)
+      .find((c) => c.name === cmdName)
+    const matchedSkill = selectSkillsForDirectory(useSkillsStore.getState(), requestDirectory)
+      .find((s) => s.name === cmdName)
 
-    // OpenCode registers every skill as a command (source: "skill"), but the
-    // commands store filters skills out. Consult the live skills store so a
-    // skill selected from the slash menu keeps its invocation semantics
-    // (#1605). The command list is no longer pre-warmed at bootstrap (it
-    // initializes the directory's whole MCP fleet), so a name matched by
-    // neither store gets one live lookup before the input falls through to a
-    // plain prompt.
-    let matchedCommand = storeCommands.find((c) => c.name === cmdName)
-    const matchedSkill = useSkillsStore.getState().skills.find((s) => s.name === cmdName)
-
+    // The command list is no longer pre-warmed at bootstrap (listing it
+    // initializes the directory's whole MCP fleet), so a name known to neither
+    // store gets one live, directory-scoped lookup. That lookup decides the
+    // route: a successful no-match is a plain prompt, while a failed lookup is
+    // a send failure, because treating it as a prompt would silently send the
+    // raw "/name" text instead of running the command.
     if (!matchedCommand && !matchedSkill) {
-      try {
-        matchedCommand = (await opencodeClient.listCommandsWithDetails(requestDirectory))
-          .find((c) => c.name === cmdName)
-      } catch {
-        // Command dispatch remains authoritative on the server; treating the
-        // input as a plain prompt is the pre-existing fallthrough.
-      }
+      matchedCommand = (await opencodeClient.listCommandsWithDetails(requestDirectory))
+        .find((c) => c.name === cmdName)
     }
 
     if (matchedCommand || matchedSkill) {
@@ -1692,7 +1693,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const tokenBudget = uiState.sessionGoalDefaultBudgetEnabled ? uiState.sessionGoalDefaultBudget : null
       let objective = goalArm.objectiveOverride?.trim() || content
       if (!goalArm.objectiveOverride && content.startsWith("/")) {
-        const knownCommands = [...useCommandsStore.getState().commands]
+        // Same directory-scoped resolution as routeMessage: the objective must
+        // come from this directory's template, not a same-named one elsewhere.
+        const knownCommands = selectCommandsForDirectory(useCommandsStore.getState(), goalDirectory)
         objective = expandSlashCommandGoalObjective(content, knownCommands)
         if (objective === content) {
           try {
