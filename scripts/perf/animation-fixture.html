@@ -113,6 +113,16 @@
     frames per second instead of one per dot per step.
   */
   .v-busy-dots-steps-aligned .busy-dots span { animation: oc-busy-pulse 1.2s steps(3, jump-none) infinite; }
+  /* Compare the status pill's old dots with one filtered provider-logo image. */
+  .v-status-logo-dots .cell,
+  .v-status-logo-pulse .cell { width: auto; height: 32px; display: flex; align-items: center; padding: 0 12px; border-radius: 9999px; background: #19191980; }
+  .status-logo { width: 14px; height: 14px; margin-right: 6px; filter: brightness(0.9) contrast(1.1) invert(1); }
+  .v-status-logo-dots .busy-dots span { animation: oc-busy-pulse 1.2s steps(3, jump-none) infinite; }
+  @keyframes oc-status-logo { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+  .v-status-logo-pulse .status-logo { animation: oc-status-logo 4s steps(10, jump-none) infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .v-status-logo-pulse .status-logo { animation: none; }
+  }
   /*
     The same stepped wave with no animation object at all: a 200ms timer moves
     a phase attribute and plain rules map phase to opacity. Kept as a recorded
@@ -156,6 +166,7 @@
   const usesButton = variant === 'ctx-button' || variant === 'ctx-sibling-translatez';
   const usesActivity = variant === 'activity-static' || variant === 'activity-collapse';
   const usesBusyDots = variant.startsWith('busy-dots');
+  const usesStatusLogo = variant.startsWith('status-logo-');
   for (let index = 0; index < count; index += 1) {
     const cell = document.createElement('div');
     cell.className = 'cell';
@@ -164,6 +175,19 @@
       cell.innerHTML = Array.from({ length: 80 }, (_, row) =>
         '<div class="activity-row"><span>Read file</span><code>src/module-' + row + '.ts</code><span>Completed</span></div>'
       ).join('');
+    }
+    else if (usesStatusLogo) {
+      const logo = document.createElement('img');
+      logo.className = 'status-logo';
+      logo.alt = '';
+      logo.src = 'data:image/svg+xml,' + encodeURIComponent(SPINNER.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'));
+      cell.append(logo, 'GPT-6 Astra is working');
+      if (variant === 'status-logo-dots') {
+        const dots = document.createElement('span');
+        dots.className = 'busy-dots';
+        dots.innerHTML = [0, 200, 400].map((delay) => '<span style="animation-delay:' + delay + 'ms">.</span>').join('');
+        cell.append('\u00A0', dots);
+      }
     }
     else if (usesBusyDots) {
       cell.style.width = 'auto';
