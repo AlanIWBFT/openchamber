@@ -1,3 +1,22 @@
+## [1.24.1] - 2026-09-18
+
+### New
+
+- Chat: attach files and images to `/btw` messages through the file picker, paste, or drag and drop.
+
+### Improvements
+
+- **Sessions:** large session lists open faster and use less memory, with smoother scrolling across projects (thanks to @deatheros).
+- Chat: lower CPU use while the agent thinks or writes a response (thanks to @deatheros).
+- Interface: clearer checkbox and radio outlines, brighter secondary text, and larger labels make controls easier to read.
+
+### Fixes
+
+- Chat: sending a message no longer briefly flashes "OpenCode did not start a reply".
+- Chat: the queue panel starts expanded, remembers your choice across sessions, and leaves the last messages readable above the queue and `/btw` panels.
+- Chat: inline `$...$` formulas render correctly, and display formulas with apostrophes or ampersands no longer appear as red errors (thanks to @Dawnfz-Lenfeng).
+- Settings/Usage: Gemini 3.x models such as Gemini 3.1 Pro are included in the initial model selection (thanks to @DeryFerd).
+
 ## [1.24.0] - 2026-09-17
 
 ### Improvements
