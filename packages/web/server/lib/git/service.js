@@ -2155,6 +2155,24 @@ const applyUpstreamConfiguration = async (args) => {
   );
 };
 
+/**
+ * A repository whose root is the user's home directory or a filesystem root
+ * (`C:\`, `/`) covers the whole disk. Every status read walks Program Files
+ * or the entire home tree, which is minutes of Git work per refresh and, on
+ * Windows, the process pile-ups users report. Such a repository is nearly
+ * always an accidental `git init` in the wrong place, so OpenChamber treats
+ * it as no repository at all. Returns the reason or null for a normal root.
+ */
+export const unsupportedRepositoryRootReason = (repoRoot, home = os.homedir()) => {
+  if (typeof repoRoot !== 'string' || !repoRoot.trim()) return null;
+  const resolved = path.resolve(repoRoot.trim());
+  if (path.resolve(path.parse(resolved).root) === resolved) return 'filesystem-root';
+  if (typeof home === 'string' && home.trim() && path.resolve(home.trim()) === resolved) return 'home';
+  return null;
+};
+
+const warnedUnsupportedRoots = new Set();
+
 export async function isGitRepository(directory) {
   const directoryPath = normalizeDirectoryPath(directory);
   if (!directoryPath || !fs.existsSync(directoryPath)) {
@@ -2162,7 +2180,20 @@ export async function isGitRepository(directory) {
   }
 
   const result = await runGitCommand(directoryPath, ['rev-parse', '--git-dir'], { timeoutMs: GIT_PROBE_TIMEOUT_MS });
-  return result.success;
+  if (!result.success) return false;
+
+  // `--show-toplevel` has no answer inside a bare repository or a .git
+  // directory; those keep the previous answer rather than being rejected.
+  const topLevel = await runGitCommand(directoryPath, ['rev-parse', '--show-toplevel'], { timeoutMs: GIT_PROBE_TIMEOUT_MS });
+  if (!topLevel.success) return true;
+  const repoRoot = topLevel.stdout.trim();
+  const reason = unsupportedRepositoryRootReason(repoRoot);
+  if (!reason) return true;
+  if (!warnedUnsupportedRoots.has(repoRoot)) {
+    warnedUnsupportedRoots.add(repoRoot);
+    console.warn(`[git] Ignoring repository rooted at ${repoRoot} (${reason}): Git features are disabled for ${directoryPath}`);
+  }
+  return false;
 }
 
 export async function getGlobalIdentity() {

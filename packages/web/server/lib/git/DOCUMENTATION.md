@@ -16,7 +16,7 @@ This module provides Git repository operations for the web server runtime, inclu
 The following functions are exported and used by the web server:
 
 ### Repository Operations
-- `isGitRepository(directory)`: Check if a directory is a Git repository.
+- `isGitRepository(directory)`: Check if a directory is a Git repository. A repository whose root is the home directory or a filesystem root (`C:\`, `/`) answers `false` (`unsupportedRepositoryRootReason`): such a repository covers the whole disk, every status read would walk it, and it is nearly always an accidental `git init`. All Git surfaces then show the non-repository state for that directory.
 - `getGlobalIdentity()`: Get global Git user.name, user.email, and core.sshCommand.
 - `getCurrentIdentity(directory)`: Get local Git identity (fallback to global if not set locally).
 - `hasLocalIdentity(directory)`: Check if local Git identity is configured.
