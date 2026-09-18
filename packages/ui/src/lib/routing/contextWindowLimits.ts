@@ -1,5 +1,3 @@
-import type { ModelMetadata } from '@/types';
-
 export type ContextWindowLimits = {
   /** 0 when unknown; the readouts then fall back to their own default. */
   context: number;
@@ -25,13 +23,24 @@ export const findAnsweringModelKey = (messages: readonly AnsweringMessage[]): st
   return null;
 };
 
-/** Limits of the model behind a key produced by `findAnsweringModelKey`. */
+type ProviderModelLike = { id: string; limit?: { context?: number; output?: number } };
+type ProviderLike = { id: string; models: readonly ProviderModelLike[] };
+
+/**
+ * Limits of the model behind a key produced by `findAnsweringModelKey`, read
+ * from OpenCode's provider list — the same source the composer model and the
+ * context overview use. The models.dev catalog can disagree with it (it lists
+ * a 1M window for a model OpenCode serves with 400K), and the readouts must
+ * not switch catalogs just because Auto is selected.
+ */
 export const limitsForAnsweringModel = (
   answeringModelKey: string | null,
-  getModelMetadata: (providerId: string, modelId: string) => ModelMetadata | undefined,
+  providers: readonly ProviderLike[],
 ): ContextWindowLimits => {
   if (!answeringModelKey) return NO_CONTEXT_WINDOW_LIMITS;
   const separator = answeringModelKey.indexOf('/');
-  const metadata = getModelMetadata(answeringModelKey.slice(0, separator), answeringModelKey.slice(separator + 1));
-  return { context: metadata?.limit?.context ?? 0, output: metadata?.limit?.output ?? 0 };
+  const providerId = answeringModelKey.slice(0, separator);
+  const modelId = answeringModelKey.slice(separator + 1);
+  const model = providers.find((provider) => provider.id === providerId)?.models.find((entry) => entry.id === modelId);
+  return { context: model?.limit?.context ?? 0, output: model?.limit?.output ?? 0 };
 };

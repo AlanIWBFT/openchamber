@@ -1,6 +1,5 @@
 import React from 'react';
 
-import { isAutoModel } from '@/lib/routing/autoModel';
 import {
   findAnsweringModelKey,
   limitsForAnsweringModel,
@@ -12,31 +11,34 @@ import { useDirectorySync } from '@/sync/sync-context';
 /**
  * Which model's window the context readouts measure against.
  *
- * Normally the composer's model: the fill is shown against the window the next
- * message goes into. Under Auto the composer names no real model — the server
- * picks one per turn — so the limits come from the model that produced the
- * newest assistant message, the window the session actually ran in. Without
- * this, Auto reads as "no limit" and every readout divides by the 200k default,
- * which shows a 1M-window session as five times fuller than it is.
+ * The fill itself comes from the newest answer, so the ratio is taken against
+ * the window of the model that produced it — the same rule the context
+ * overview applies, so no two readouts of one session disagree. The composer's
+ * model only stands in before the first answer. Under Auto the composer names
+ * no real model at all (the server picks one per turn), so the answering model
+ * is the only one that can be measured against; without it Auto reads as "no
+ * limit" and the readouts divide by the 200k default.
  */
 export const useContextWindowLimits = (sessionId: string | null, directory?: string): ContextWindowLimits => {
   const currentProviderId = useConfigStore((state) => state.currentProviderId);
   const currentModelId = useConfigStore((state) => state.currentModelId);
   const getCurrentModel = useConfigStore((state) => state.getCurrentModel);
-  const getModelMetadata = useConfigStore((state) => state.getModelMetadata);
-  const auto = isAutoModel(currentProviderId, currentModelId);
+  const providers = useConfigStore((state) => state.providers);
 
+  // A `provider/model` string, so the caller re-renders only when the
+  // answering model changes, not on every streamed part.
   const answeringModelKey = useDirectorySync(
     React.useCallback((state) => (
-      auto && sessionId ? findAnsweringModelKey(state.message[sessionId] ?? []) : null
-    ), [auto, sessionId]),
+      sessionId ? findAnsweringModelKey(state.message[sessionId] ?? []) : null
+    ), [sessionId]),
     directory,
   );
 
   return React.useMemo(() => {
-    if (auto) return limitsForAnsweringModel(answeringModelKey, getModelMetadata);
+    const answering = limitsForAnsweringModel(answeringModelKey, providers);
+    if (answering.context > 0) return answering;
     const limit = getCurrentModel()?.limit;
     return { context: limit?.context ?? 0, output: limit?.output ?? 0 };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the getters' output tracks the selected model ids
-  }, [auto, answeringModelKey, currentProviderId, currentModelId, getCurrentModel, getModelMetadata]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the getter's output tracks the selected model ids
+  }, [answeringModelKey, currentProviderId, currentModelId, getCurrentModel, providers]);
 };

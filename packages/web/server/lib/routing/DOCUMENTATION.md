@@ -37,9 +37,11 @@ Code has no OpenChamber server and never offers Auto.
 
 - The sentinel never reaches OpenCode. `resolvePromptBody` rewrites
   `body.model` in place for `POST /api/session/:id/{prompt_async,prompt,command}`
-  ahead of the generic proxy (which replays a parsed body) and inside the
-  message queue's `sendItem`. Without a fallback model it throws 400 rather than
-  forwarding.
+  ahead of the generic proxy (which replays a parsed body), inside the
+  message queue's `sendItem`, and in the OpenChamber session service's own
+  dispatch (`openchamber-sessions/routes.js`), which posts to OpenCode directly
+  and can pick Auto up from Session Defaults. Without a fallback model it
+  throws 400 rather than forwarding.
 - Every failure keeps the user's own behaviour. A Jev error, timeout, unknown
   category or low confidence routes to the fallback model; the decision carries
   the reason. A safety-net failure accepts the permission exactly as auto-accept

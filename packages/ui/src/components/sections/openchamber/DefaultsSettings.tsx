@@ -21,6 +21,7 @@ import { useSelectionStore } from '@/sync/selection-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useI18n } from '@/lib/i18n';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
+import { isAutoModel } from '@/lib/routing/autoModel';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { isPrimaryMode } from '@/components/chat/mobileControlsUtils';
 
@@ -128,7 +129,8 @@ export const DefaultsSettings: React.FC = () => {
 
         if (providerId && modelId) {
           const provider = providers.find((p) => p.id === providerId);
-          if (provider) {
+          // Auto is not a provider OpenCode lists; the picker only offers it while the server can honour it.
+          if (provider || isAutoModel(providerId, modelId)) {
             setProvider(providerId);
             setModel(modelId);
           }
@@ -319,6 +321,7 @@ export const DefaultsSettings: React.FC = () => {
                 modelId={parsedModel.modelId}
                 onChange={handleModelChange}
                 className={SETTINGS_CUSTOM_TRIGGER_CLASS}
+                offerAuto
               />
             </SettingsFieldRow>
 

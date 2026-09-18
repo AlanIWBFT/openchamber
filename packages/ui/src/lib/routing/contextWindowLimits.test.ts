@@ -19,14 +19,11 @@ describe('findAnsweringModelKey', () => {
 });
 
 describe('limitsForAnsweringModel', () => {
-  test('reads the answering model window, zero when the catalog lacks it', () => {
-    const getModelMetadata = (providerId: string, modelId: string) => (
-      providerId === 'zai' && modelId === 'glm-4'
-        ? { id: modelId, providerId, limit: { context: 1_000_000, output: 128_000 } }
-        : undefined
-    );
-    expect(limitsForAnsweringModel('zai/glm-4', getModelMetadata)).toEqual({ context: 1_000_000, output: 128_000 });
-    expect(limitsForAnsweringModel('other/model', getModelMetadata)).toEqual({ context: 0, output: 0 });
-    expect(limitsForAnsweringModel(null, getModelMetadata)).toEqual({ context: 0, output: 0 });
+  test('reads the answering model window from the provider list, zero when it is missing', () => {
+    const providers = [{ id: 'zai', models: [{ id: 'glm-4', limit: { context: 1_000_000, output: 128_000 } }] }];
+    expect(limitsForAnsweringModel('zai/glm-4', providers)).toEqual({ context: 1_000_000, output: 128_000 });
+    expect(limitsForAnsweringModel('zai/other', providers)).toEqual({ context: 0, output: 0 });
+    expect(limitsForAnsweringModel('other/model', providers)).toEqual({ context: 0, output: 0 });
+    expect(limitsForAnsweringModel(null, providers)).toEqual({ context: 0, output: 0 });
   });
 });
