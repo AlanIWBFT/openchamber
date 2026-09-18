@@ -668,6 +668,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const prevAgentNameRef = React.useRef<string | undefined>(undefined);
     const latestLoadedUserChoiceRestoreRef = React.useRef<string | null>(null);
+    const restoredSessionSelectionRef = React.useRef<string | null>(null);
 
     const currentSessionDirectory = currentSessionId ? getDirectoryForSession(currentSessionId) : undefined;
     const hasRenderableCurrentSessionSnapshot = useSessionRenderable(
@@ -919,6 +920,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 );
             }
             latestLoadedUserChoiceRestoreRef.current = restoreKey;
+            // The saved-selections effect must still get its one-time run so the
+            // persisted session agent is applied via setAgent; only the model
+            // was restored here.
             return;
         }
 
@@ -960,6 +964,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         }
         saveSessionModelSelection(currentSessionId, latestLoadedUserChoice.providerID, latestLoadedUserChoice.modelID);
         latestLoadedUserChoiceRestoreRef.current = restoreKey;
+        restoredSessionSelectionRef.current = currentSessionId;
 
     }, [
         currentSessionId,
@@ -981,6 +986,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     React.useEffect(() => {
         if (!currentSessionId) {
             latestLoadedUserChoiceRestoreRef.current = null;
+            restoredSessionSelectionRef.current = null;
+            return;
+        }
+
+        // Persisted selections hydrate a session once. Live agent changes are
+        // resolved by setAgent and must not be overwritten by session history.
+        if (restoredSessionSelectionRef.current === currentSessionId) {
             return;
         }
 
@@ -1003,14 +1015,22 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         }
                         return 'resolved';
                     }
-                    return 'waiting';
-                } else if (currentAgentName !== savedAgentName) {
-                    setAgent(savedAgentName);
+                    if (result === 'provider-missing') {
+                        return 'waiting';
+                    }
+                } else {
+                    const savedAgent = agents.find((agent) => agent.name === savedAgentName);
+                    if (currentAgentName !== savedAgentName) {
+                        setAgent(savedAgentName);
+                    }
+                    if (savedAgent?.model?.providerID && savedAgent.model.modelID) {
+                        return 'resolved';
+                    }
                 }
             }
 
             if (savedSessionModel) {
-                const result = tryApplyModelSelection(savedSessionModel.providerId, savedSessionModel.modelId, savedAgentName || currentAgentName || undefined);
+                const result = tryApplyModelSelection(savedSessionModel.providerId, savedSessionModel.modelId, savedAgentName ?? undefined);
                 if (result === 'applied') {
                     if (savedAgentName && currentAgentName !== savedAgentName) {
                         setAgent(savedAgentName);
@@ -1085,7 +1105,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         };
 
         const savedOutcome = applySavedSelections();
-        if (savedOutcome === 'resolved' || savedOutcome === 'waiting') {
+        if (savedOutcome === 'resolved') {
+            restoredSessionSelectionRef.current = currentSessionId;
+            return;
+        }
+        if (savedOutcome === 'waiting') {
             return;
         }
 
@@ -1101,6 +1125,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         }
 
         applyFallbackAgent();
+        restoredSessionSelectionRef.current = currentSessionId;
     }, [
         currentSessionId,
         hasRenderableCurrentSessionSnapshot,

@@ -697,7 +697,9 @@ const applyDraftTargetSelectionDefaults = (
       || current.newSessionDraft.draftId !== draft.draftId
       || current.newSessionDraft.target !== draft.target
       || current.newSessionDraft.selectedProjectId !== draft.selectedProjectId
-      || useConfigStore.getState().selectionSource === 'manual') return
+      || useConfigStore.getState().selectionSource === 'manual'
+      || useConfigStore.getState().agentSelectionSource === 'manual'
+      || useConfigStore.getState().currentVariantSelection.override !== undefined) return
     applyDefaults()
   })
 }
@@ -1013,7 +1015,9 @@ export async function materializeOpenDraftSession(selection: {
 
   if (effectiveDraftAgent) {
     useSelectionStore.getState().saveSessionAgentSelection(created.id, effectiveDraftAgent)
-    useSelectionStore.getState().saveAgentModelForSession(created.id, effectiveDraftAgent, selection.providerID, selection.modelID)
+    if (configState.selectionSource === "manual") {
+      useSelectionStore.getState().saveAgentModelForSession(created.id, effectiveDraftAgent, selection.providerID, selection.modelID)
+    }
     useSelectionStore.getState().saveAgentModelVariantForSession(created.id, effectiveDraftAgent, selection.providerID, selection.modelID, variantOverride)
   }
 
@@ -1816,7 +1820,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     if (targetSessionId && effectiveAgent) {
       useSelectionStore.getState().saveSessionAgentSelection(targetSessionId, effectiveAgent)
-      useSelectionStore.getState().saveAgentModelForSession(targetSessionId, effectiveAgent, providerID, modelID)
       useSelectionStore.getState().saveAgentModelVariantForSession(
         targetSessionId,
         effectiveAgent,
