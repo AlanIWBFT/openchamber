@@ -2450,6 +2450,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.someFilesSkipped': '일부 파일을 건너뛰었습니다:\n{summary}',
   'chat.chatInput.toast.vscodePickFailed': 'VS Code에서 파일 선택에 실패했습니다',
   'chat.chatInput.toast.openSessionFirst': '먼저 세션을 여세요',
+  'chat.chatInput.toast.dictationKeptForOriginalSession': '받아쓰기가 시작한 세션의 초안으로 저장되었습니다',
   'chat.chatInput.toast.togglePermissionAutoAcceptFailed': '권한 자동 승인 전환에 실패했습니다',
   'chat.chatInput.reviewComments': '검토 댓글:',
   'chat.chatInput.reviewCommentsRemove': '검토 댓글 제거',

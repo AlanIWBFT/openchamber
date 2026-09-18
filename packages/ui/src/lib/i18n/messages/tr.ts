@@ -2386,6 +2386,7 @@ export const dict = {
   'chat.chatInput.toast.someFilesSkipped': 'Bazı dosyalar atlandı:\\n{summary}',
   'chat.chatInput.toast.vscodePickFailed': 'VS Code\'da dosya seçilemedi',
   'chat.chatInput.toast.openSessionFirst': 'Önce bir session açın',
+  'chat.chatInput.toast.dictationKeptForOriginalSession': 'Dikte, başlattığınız oturumda taslak olarak kaydedildi',
   'chat.chatInput.toast.togglePermissionAutoAcceptFailed': 'İzin otomatik kabulü değiştirilemedi',
   'chat.chatInput.reviewComments': 'İnceleme yorumları:',
   'chat.chatInput.reviewCommentsRemove': 'İnceleme yorumlarını kaldır',

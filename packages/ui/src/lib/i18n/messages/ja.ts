@@ -2449,6 +2449,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.someFilesSkipped': '一部のファイルがスキップされました:\n{summary}',
   'chat.chatInput.toast.vscodePickFailed': 'VS Codeでのファイル選択に失敗しました',
   'chat.chatInput.toast.openSessionFirst': '先にセッションを開いてください',
+  'chat.chatInput.toast.dictationKeptForOriginalSession': '音声入力は、開始したセッションの下書きとして保存されました',
   'chat.chatInput.toast.togglePermissionAutoAcceptFailed': '権限の自動承認の切り替えに失敗しました',
   'chat.chatInput.reviewComments': 'レビューコメント:',
   'chat.chatInput.reviewCommentsRemove': 'レビューコメントを削除',

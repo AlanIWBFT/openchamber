@@ -262,6 +262,13 @@ and the send path reading the same grammar.
   The hook also selects the attachment draft before paint. `input-store.ts`
   owns its in-memory files and scoped send recovery, documented in
   `packages/ui/src/sync/DOCUMENTATION.md`.
+- `state/useDictationOrigin.ts` — a dictation belongs to the draft that was on
+  screen when recording started. The transcript arrives later, after the user
+  may have switched sessions in the one mounted composer. `ChatInput` records
+  the origin from `ComposerDictation`'s `onStart`, and a transcript whose
+  origin is no longer the rendered draft is appended to the origin's draft
+  through `restoreDraft`. It is not inserted or sent in the visible session,
+  including for **Insert and send**, and a toast says where it went.
 - `state/useDraftTarget.ts` — the draft can target a directory that does not
   exist yet (a worktree being created). It must survive not appearing in the
   branch list, or the selector snaps back to the project root mid-creation. It

@@ -2416,6 +2416,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.chatInput.toast.someFilesSkipped": "Деякі файли були пропущені:\n{summary}",
   "chat.chatInput.toast.vscodePickFailed": "Не вдалося вибрати файли в VS Code",
   "chat.chatInput.toast.openSessionFirst": "Спочатку відкрийте сесію",
+  "chat.chatInput.toast.dictationKeptForOriginalSession": "Диктування збережено як чернетку в сесії, де ви його почали",
   "chat.chatInput.toast.togglePermissionAutoAcceptFailed": "Не вдалося ввімкнути автоматичне прийняття дозволів",
   "chat.chatInput.reviewComments": "Коментарі рев’ю:",
   "chat.chatInput.reviewCommentsRemove": "Прибрати коментарі рев’ю",

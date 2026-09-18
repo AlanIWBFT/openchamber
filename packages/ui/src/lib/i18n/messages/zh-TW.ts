@@ -2420,6 +2420,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.someFilesSkipped': '部分檔案被跳過：\n{summary}',
   'chat.chatInput.toast.vscodePickFailed': '在 VS Code 中選擇檔案失敗',
   'chat.chatInput.toast.openSessionFirst': '請先開啟一個會話',
+  'chat.chatInput.toast.dictationKeptForOriginalSession': '語音輸入內容已儲存為草稿，位於你開始語音輸入的工作階段中',
   'chat.chatInput.toast.togglePermissionAutoAcceptFailed': '切換權限自動接受失敗',
   'chat.chatInput.reviewComments': '審查留言：',
   'chat.chatInput.reviewCommentsRemove': '移除審查留言',

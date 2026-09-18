@@ -2158,6 +2158,7 @@ export const dict = {
   'chat.chatInput.toast.someFilesSkipped': 'Certains fichiers ont été ignorés :\n{summary}',
   'chat.chatInput.toast.vscodePickFailed': 'Échec de la sélection des fichiers dans VS Code',
   'chat.chatInput.toast.openSessionFirst': 'Ouvrir d\'abord une session',
+  'chat.chatInput.toast.dictationKeptForOriginalSession': 'Dictée enregistrée comme brouillon dans la session où vous l\'avez démarrée',
   'chat.chatInput.toast.togglePermissionAutoAcceptFailed': 'Échec de l\'activation de l\'acceptation automatique des autorisations',
   'chat.chatInput.reviewComments': 'Commentaires de révision :',
   'chat.chatInput.previewAnnotations': 'Aperçu des annotations :',

@@ -2450,6 +2450,7 @@ export const dict = {
   'chat.chatInput.toast.someFilesSkipped': 'Some files were skipped:\n{summary}',
   'chat.chatInput.toast.vscodePickFailed': 'Failed to pick files in VS Code',
   'chat.chatInput.toast.openSessionFirst': 'Open a session first',
+  'chat.chatInput.toast.dictationKeptForOriginalSession': 'Dictation saved as a draft in the session where you started it',
   'chat.chatInput.toast.togglePermissionAutoAcceptFailed': 'Failed to toggle permission auto-accept',
   'chat.chatInput.reviewComments': 'Review comments:',
   'chat.chatInput.reviewCommentsRemove': 'Remove review comments',

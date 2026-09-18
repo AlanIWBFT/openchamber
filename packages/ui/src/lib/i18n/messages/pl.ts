@@ -1362,6 +1362,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.messageSendFailed': 'Nie udało się wysłać wiadomości. Załączniki zostały przywrócone.',
   'chat.chatInput.toast.noModelSelected': 'Wybierz dostawcę i model przed wysłaniem.',
   'chat.chatInput.toast.openSessionFirst': 'Najpierw otwórz sesję',
+  'chat.chatInput.toast.dictationKeptForOriginalSession': 'Dyktowanie zapisano jako szkic w sesji, w której je rozpoczęto',
   'chat.chatInput.toast.reviewFailed': 'Nie udało się przejrzeć zmian',
   'chat.chatInput.toast.planFeatureFailed': 'Nie udało się rozpocząć planowania funkcji',
   'chat.chatInput.toast.catchUpFailed': 'Nie udało się przywrócić kontekstu',

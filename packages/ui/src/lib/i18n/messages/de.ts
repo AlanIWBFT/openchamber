@@ -2223,6 +2223,7 @@ export const dict = {
   'chat.chatInput.toast.someFilesSkipped': 'Einige Dateien wurden übersprungen:\n{summary}',
   'chat.chatInput.toast.vscodePickFailed': 'Fehler beim Auswählen der Dateien in VS Code',
   'chat.chatInput.toast.openSessionFirst': 'Öffne zuerst eine Sitzung',
+  'chat.chatInput.toast.dictationKeptForOriginalSession': 'Dictation als Entwurf in der Sitzung gespeichert, in der sie gestartet wurde',
   'chat.chatInput.toast.togglePermissionAutoAcceptFailed': 'Fehler beim Umschalten der automatischen Zustimmung zur Berechtigung',
   'chat.chatInput.reviewComments': 'Kommentare zur Überprüfung:',
   'chat.chatInput.reviewCommentsRemove': 'Kommentare zur Überprüfung entfernen',
