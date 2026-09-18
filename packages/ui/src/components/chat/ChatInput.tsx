@@ -3736,9 +3736,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     {/* Positioning context for the dictation overlay: covers the
                         text area + footer exactly. */}
                     <div className={cn('relative flex flex-col', isComposerExpanded && 'flex-1 min-h-0')}>
-                    {/* oc-composer-morph-grow: the block the pill morph unfolds
-                        and fades in above the (stationary) footer. */}
-                    <div className={cn("overflow-hidden", isMobile && 'oc-composer-morph-grow', isComposerExpanded && 'flex flex-1 min-h-0 flex-col')}>
+                    <div className={cn("overflow-hidden", isComposerExpanded && 'flex flex-1 min-h-0 flex-col')}>
                         {suggestionRow}
                         {isMobile && isBtwActive ? (
                             <div className="scrollbar-none relative z-10 flex items-center gap-x-2 overflow-x-auto px-3 pb-0.5 pt-1.5">
@@ -3757,6 +3755,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                         </div>
                         <div
                             className={cn("relative overflow-hidden", isComposerExpanded && 'flex flex-1 min-h-0 flex-col')}
+                            // The mobile pill morph moves this block from the
+                            // pill's text line and unfurls it.
+                            data-composer-morph-prompt={isMobile ? 'true' : undefined}
                             onDragEnter={handleDragEnter}
                             onDragOver={handleDragOver}
                             onDropCapture={handleDropCapture}

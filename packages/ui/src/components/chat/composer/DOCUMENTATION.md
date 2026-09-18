@@ -358,16 +358,33 @@ frame where nothing is open.
 none of them is verifiable outside a real device.** Change them only against
 hardware.
 
-`state/mobileComposerMorph.ts` plays the pill ↔ composer swap as a height
-morph on the glass box (`data-composer-box`) in the native iOS shell only.
-The swap still commits synchronously (`flushSync`); the box is then frozen
-at the outgoing height and transitioned to the incoming one, bottom-anchored
-so the footer and model/agent rows stay put while the editor block
-(`oc-composer-morph-grow`) unfolds and fades in. The growth starts on the
-`oc:keyboard-anim` event for its direction and runs on the shared keyboard
-timing (`lib/mobileKeyboardTiming.ts`), which the keyboard choreography also
-uses to slide the composer and to tween the chat scroller's keyboard inset,
-so keyboard, composer and transcript move as one. Mobile browsers, Android and
+`state/mobileComposerMorph.ts` plays the pill ↔ composer swap as a FLIP morph
+in the native iOS shell only, after t3code's resting-composer transition.
+The swap commits synchronously (`flushSync`); the glass box
+(`data-composer-box`) is then frozen at its old height and animated to the
+new one (WAAPI) with its rows anchored to the bottom edge, so the footer and
+model/agent rows stay where the pill's rows were; the prompt
+(`data-composer-morph-prompt`: the pill's text line or the editor block)
+travels from its old position to its new one, gained editor lines unfurl
+beneath it, and footer controls that exist only expanded fade in over the
+second half. The floating composer slot (`data-composer-slot="floating"`, in
+`ChatContainer`) is pinned for the tween at the height the transcript should
+see — the new one on expand, the old one on collapse — so its
+`ResizeObserver` publishes one final inset instead of chasing frames. The
+status row, recap hint and scroll-to-end button share one zero-height anchor
+on the slot's top edge (`data-composer-riders`, class `oc-composer-riders`):
+the keyboard choreography slides it as a mover and the morph moves it with the
+box's top edge through the individual `translate` property, so nothing above
+the composer jumps when the slot resizes. The
+motion starts on the `oc:keyboard-anim` event for its direction, runs on the
+shared keyboard timing (`lib/mobileKeyboardTiming.ts`) the composer slide
+also uses, and ends on `oc:keyboard-settled`; a fallback timer runs it alone
+without a keyboard. The transcript rides it through
+`lib/scroll/keyboardFollowGlide.ts` (owned by `useChatTimelineScroll`): the
+morph announces `oc:composer-morph` (`hold` with the slot's height delta,
+`glide` and `release` when it runs without a keyboard), the glide holds every
+automatic end write while a transition runs, lets the geometry land in one
+step, and drives scrollTop on the same curve. Mobile browsers, Android and
 reduced motion keep the instant swap.
 
 ## Testing

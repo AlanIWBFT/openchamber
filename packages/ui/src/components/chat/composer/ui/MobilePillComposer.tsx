@@ -122,6 +122,8 @@ export function MobilePillComposer(props: MobilePillComposerProps) {
                 />
                 <button
                     type="button"
+                    // The morph moves the editor block to and from this line.
+                    data-composer-morph-prompt="true"
                     className="flex h-full min-w-0 flex-1 cursor-text items-center px-1.5 text-left"
                     onClick={onExpand}
                 >

@@ -3,9 +3,10 @@
  *
  * With the keyboard closed the composer collapses into a narrow pill; any
  * interaction expands it back. The swap commits synchronously and, in the
- * native iOS shell, plays as a height morph timed to the keyboard
- * (mobileComposerMorph.ts), so the chat compensates keyboard and composer
- * height in a single motion rather than a staircase.
+ * native iOS shell, plays as a FLIP morph timed to the keyboard
+ * (mobileComposerMorph.ts), while the transcript glides on the same curve
+ * (keyboardFollowGlide.ts), so keyboard, composer and chat move as one
+ * motion rather than a staircase.
  *
  * Most of the code here is not the state machine itself but the corrections
  * that keep it from fighting the platform: mobile browsers dismiss the
@@ -99,7 +100,7 @@ export function useMobileComposerShell(
         expandedRef.current = expanded;
     });
 
-    // Plays the pill ↔ composer swap as a height morph on the glass box
+    // Plays the pill ↔ composer swap as a FLIP morph on the glass box
     // (native iOS only; a plain swap elsewhere). One controller per shell so
     // a collapse interrupting an expand cancels it cleanly.
     const morphRef = React.useRef<ComposerMorphController | null>(null);
@@ -388,7 +389,7 @@ export function useMobileComposerShell(
             // that closed the keyboard, a drag) — the fallback path handles it.
             if (busyRef.current) return;
             expandIntentRef.current = null;
-            // Committed inside the morph: the box shrinks from the composer's
+            // Committed inside the morph: the box folds from the composer's
             // height to the pill's over the keyboard's hide leg (the anim
             // event follows this intent in the same task).
             morph.run('collapse', formRef.current, () => {
