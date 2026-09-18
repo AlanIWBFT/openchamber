@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { observeNativeKeyboardHeight, resetHardwareKeyboardDetection, startHardwareKeyboardBridge } from '@/lib/hardwareKeyboard';
+import { KEYBOARD_EASING_CSS, KEYBOARD_HIDE_MS, KEYBOARD_SHOW_MS, keyboardEase } from '@/lib/mobileKeyboardTiming';
 
 /** True when running inside the native Capacitor shell (iOS/Android app). */
 export const isCapacitorMobileApp = (): boolean => {
@@ -159,11 +160,12 @@ export const useNativeMobileChrome = (): void => {
       // height (--oc-kb-layout) snaps exactly once per open/close at the moment the
       // resize is invisible. visualViewport tracking was tried but doesn't shrink
       // under WKWebView's `resize: 'none'`, so these events are the reliable signal.
-      const KB_ANIM_MS = 250;
-      // Dismissal reads faster than the rise — run the hide leg shorter (kept in
-      // sync with the .oc-kb-hide transition-duration override in mobile.css).
-      const KB_HIDE_MS = 200;
-      const KB_ANIM_EASING = 'cubic-bezier(0.38, 0.7, 0.125, 1)';
+      // Durations and curve are shared with the composer morph and the
+      // scroller inset tween (mobileKeyboardTiming.ts); the hide leg is also
+      // mirrored by the .oc-kb-hide transition-duration override in mobile.css.
+      const KB_ANIM_MS = KEYBOARD_SHOW_MS;
+      const KB_HIDE_MS = KEYBOARD_HIDE_MS;
+      const KB_ANIM_EASING = KEYBOARD_EASING_CSS;
       let settleTimer: number | null = null;
       let caretTimer: number | null = null;
       let keyboardHeight = 0;
@@ -182,6 +184,41 @@ export const useNativeMobileChrome = (): void => {
       };
       const dispatchKb = (type: 'oc:keyboard-intent' | 'oc:keyboard-anim' | 'oc:keyboard-settled', detail: Record<string, unknown>) => {
         window.dispatchEvent(new CustomEvent(type, { detail }));
+      };
+      // The chat scroller's keyboard inset (its bottom padding) is tweened on
+      // the keyboard curve instead of snapping to its target. The scroll
+      // hook's pinned-end observer re-pins on every padding write, so a
+      // pinned transcript rides up frame by frame with the composer slide;
+      // a snap made the chat jump at the start of the rise while the composer
+      // was still gliding. On hide the shrinking padding clamps scrollTop the
+      // same way, so the transcript settles down with the keyboard.
+      let scrollInsetFrame: number | null = null;
+      let scrollInsetValue = 0;
+      const tweenScrollInset = (target: number, durationMs: number) => {
+        if (scrollInsetFrame !== null) {
+          window.cancelAnimationFrame(scrollInsetFrame);
+          scrollInsetFrame = null;
+        }
+        const from = scrollInsetValue;
+        if (durationMs <= 0 || Math.abs(target - from) < 0.5) {
+          scrollInsetValue = target;
+          setVar('--oc-kb-scroll-inset', target);
+          return;
+        }
+        const startedAt = performance.now();
+        const step = (now: number) => {
+          const progress = Math.min(1, (now - startedAt) / durationMs);
+          scrollInsetValue = from + (target - from) * keyboardEase(progress);
+          setVar('--oc-kb-scroll-inset', scrollInsetValue);
+          scrollInsetFrame = progress < 1 ? window.requestAnimationFrame(step) : null;
+        };
+        scrollInsetFrame = window.requestAnimationFrame(step);
+      };
+      const cancelScrollInsetTween = () => {
+        if (scrollInsetFrame !== null) {
+          window.cancelAnimationFrame(scrollInsetFrame);
+          scrollInsetFrame = null;
+        }
       };
       // Elements that ride the keyboard slide, with their travel factor. Driven
       // by INLINE styles from here: WebKit does not reliably start a transition
@@ -232,13 +269,15 @@ export const useNativeMobileChrome = (): void => {
             el.style.transition = `transform ${KB_ANIM_MS}ms ${KB_ANIM_EASING}`;
             el.style.transform = `translateY(${-slide * factor}px)`;
         }
-        // Reserve the keyboard strip inside the chat scroller NOW and re-pin
-        // immediately (settled = one cheap scrollTop write over already-mounted
-        // rows), so the chat bottom moves as the keyboard STARTS rising instead
-        // of waiting for it to finish. `slide` (keyboard minus the safe inset
-        // the shell gives up) is exactly the strip the scroller loses at
-        // settle, so pin position and settle stay geometry-neutral.
-        setVar('--oc-kb-scroll-inset', slide);
+        // Reserve the keyboard strip inside the chat scroller over the rise
+        // (the pinned-end observer re-pins on each frame's padding write, so
+        // the chat bottom glides up with the composer instead of jumping).
+        // `slide` (keyboard minus the safe inset the shell gives up) is exactly
+        // the strip the scroller loses at settle, so pin position and settle
+        // stay geometry-neutral once the tween lands.
+        tweenScrollInset(slide, KB_ANIM_MS);
+        // Early settled signal for overlay consumers (autocomplete height,
+        // terminal fit) that size against the target inset, not the tween.
         dispatchKb('oc:keyboard-settled', { open: true });
         dispatchKb('oc:keyboard-anim', { phase: 'show', slide, durationMs: KB_ANIM_MS, easing: KB_ANIM_EASING });
         settleTimer = window.setTimeout(() => {
@@ -281,7 +320,10 @@ export const useNativeMobileChrome = (): void => {
         const slide = Math.max(0, keyboardHeight - safeBottomPx);
         root.classList.remove('oc-keyboard-open');
         setInset(0);
-        setVar('--oc-kb-scroll-inset', 0);
+        // The scroller's padding tweens back over the hide leg: shrinking
+        // scrollHeight clamps scrollTop each frame, so the transcript lands
+        // with the keyboard instead of dropping at frame 0.
+        tweenScrollInset(0, KB_HIDE_MS);
         if (layoutApplied) {
           // Settled-open → restore the full-height layout NOW (still hidden behind
           // the keyboard) and FLIP the movers to their raised position without
@@ -337,6 +379,7 @@ export const useNativeMobileChrome = (): void => {
 
       if (disposed) {
         clearSettle();
+        cancelScrollInsetTween();
         document.removeEventListener('focusout', handleFocusOut, true);
         void showHandle.remove();
         void hideHandle.remove();
@@ -344,6 +387,7 @@ export const useNativeMobileChrome = (): void => {
       }
       cleanup.push(
         clearSettle,
+        cancelScrollInsetTween,
         () => {
           if (caretTimer !== null) {
             window.clearTimeout(caretTimer);

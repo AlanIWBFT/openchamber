@@ -358,6 +358,18 @@ frame where nothing is open.
 none of them is verifiable outside a real device.** Change them only against
 hardware.
 
+`state/mobileComposerMorph.ts` plays the pill ↔ composer swap as a height
+morph on the glass box (`data-composer-box`) in the native iOS shell only.
+The swap still commits synchronously (`flushSync`); the box is then frozen
+at the outgoing height and transitioned to the incoming one, bottom-anchored
+so the footer and model/agent rows stay put while the editor block
+(`oc-composer-morph-grow`) unfolds and fades in. The growth starts on the
+`oc:keyboard-anim` event for its direction and runs on the shared keyboard
+timing (`lib/mobileKeyboardTiming.ts`), which the keyboard choreography also
+uses to slide the composer and to tween the chat scroller's keyboard inset,
+so keyboard, composer and transcript move as one. Mobile browsers, Android and
+reduced motion keep the instant swap.
+
 ## Testing
 
 The package has no DOM test environment, so coverage stops at the state and

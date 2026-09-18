@@ -773,6 +773,26 @@
   to { opacity: 1; }
 }
 
+/* Pill ↔ full-composer height morph (native iOS; see mobileComposerMorph.ts).
+   While the box carries data-composer-morph its height is frozen inline and
+   transitioned, so it must clip instead of overflowing, and its contents are
+   pinned to the bottom edge — the footer icon row and the model/agent row
+   stay where the pill's rows were, and the editor block unfolds above them.
+   flex-shrink: 0 keeps the children at their natural size (a squeezed editor
+   would distort instead of clip). The unfolding block fades in on the same
+   duration; the collapse direction gets no fade (the pill rows land where
+   the footer was, an instant swap tuned earlier). */
+:root.oc-capacitor-app [data-composer-box][data-composer-morph] {
+  overflow: hidden !important;
+  justify-content: flex-end;
+}
+:root.oc-capacitor-app [data-composer-box][data-composer-morph] > * {
+  flex-shrink: 0;
+}
+:root.oc-capacitor-app [data-composer-box][data-composer-morph='expand'] .oc-composer-morph-grow {
+  animation: oc-composer-morph-fade var(--oc-composer-morph-ms, 250ms) ease-out both;
+}
+
 /* Voice overlay variant: the overlay BACKGROUND appears immediately (it rides
    the morphing shape), but its content stays hidden until the shape has mostly
    finished growing, then fades in — no clipped controls mid-morph. Timings
