@@ -50,6 +50,6 @@ export const openGuestCommit = async ({ sha, directory, git, currentBranch, supp
 };
 
 export const readCurrentBranch = async (git: GitAPI, directory: string): Promise<string | null> => {
-  await useGitStore.getState().ensureStatus(directory, git).catch(() => undefined);
+  await useGitStore.getState().ensurePassiveStatus(directory, git).catch(() => undefined);
   return useGitStore.getState().directories.get(directory)?.status?.current ?? null;
 };
