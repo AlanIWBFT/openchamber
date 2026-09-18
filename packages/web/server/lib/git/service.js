@@ -2236,7 +2236,8 @@ const listUntrackedFilesBounded = async (repoRoot, dirPath, limit, options = {})
   throwIfGitReadCancelled(options);
   const env = await buildGitEnv();
   return new Promise((resolve, reject) => {
-    const child = spawn(getGitBinary(), ['ls-files', '--others', '--exclude-standard', '-z', '--', dirPath], {
+    const spawnProcess = getProcessBrokerSpawn() ?? spawn;
+    const child = spawnProcess(getGitBinary(), ['ls-files', '--others', '--exclude-standard', '-z', '--', dirPath], {
       cwd: repoRoot,
       env,
       windowsHide: true,
@@ -2370,6 +2371,17 @@ export async function getTrackingBranch(directory) {
   return tracking || null;
 }
 
+export async function readStatusNumstat(git, options = {}) {
+  // Both commands own cleanup. A cancelled read must not acknowledge completion
+  // to its worker lane while the other command is still closing.
+  const results = await Promise.allSettled([
+    git.raw(['diff', '--cached', '--numstat']),
+    git.raw(['diff', '--numstat']),
+  ]);
+  throwIfGitReadCancelled(options);
+  return results.map((result) => result.status === 'fulfilled' ? result.value : '');
+}
+
 const getStatusDirect = async (directory, options = {}) => {
   const lightMode = options.mode === 'light';
   const normalizedDirectory = normalizeDirectoryPath(directory);
@@ -2400,16 +2412,7 @@ const getStatusDirect = async (directory, options = {}) => {
     let stagedStatsRaw = '';
     let workingStatsRaw = '';
     if (!lightMode) {
-      [stagedStatsRaw, workingStatsRaw] = await Promise.all([
-        git.raw(['diff', '--cached', '--numstat']).catch((error) => {
-          assertActive(error);
-          return '';
-        }),
-        git.raw(['diff', '--numstat']).catch((error) => {
-          assertActive(error);
-          return '';
-        }),
-      ]);
+      [stagedStatsRaw, workingStatsRaw] = await readStatusNumstat(git, options);
       assertActive();
     }
 
@@ -2699,6 +2702,7 @@ const executeStatusRefresh = async (directory, requests) => {
     }
   };
   for (const request of active) request.signal?.addEventListener('abort', abortIfUnused, { once: true });
+  abortIfUnused();
 
   const lightMode = active.every((request) => request.lightMode);
   try {
@@ -2715,6 +2719,7 @@ const executeStatusRefresh = async (directory, requests) => {
 };
 
 export async function getStatus(directory, options = {}) {
+  throwIfGitReadCancelled(options);
   if (!isMainThread) return getStatusDirect(directory, options);
 
   const normalizedDirectory = normalizeDirectoryPath(directory);
