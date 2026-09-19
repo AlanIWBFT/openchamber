@@ -14,6 +14,7 @@ import updaterPkg from 'electron-updater';
 import { z } from 'zod';
 import { ElectronSshManager } from './ssh-manager.mjs';
 import { replaceFileWithRetry } from './windows-file-replace.mjs';
+import { createUpdateInstaller, getUpdateFailureDialogCopy } from './updater-install.mjs';
 import { createTrayController } from './tray.mjs';
 import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { stopEmbeddedServer } from './server-shutdown.mjs';
@@ -3059,91 +3060,16 @@ const setupAutoUpdater = () => {
   });
 };
 
-// quitAndInstall() reports failures (rejected code signature, a Squirrel
-// session already disabled by an earlier failure) asynchronously on the
-// 'error' event, long after the call returns. Give the install that long to
-// either take the app down or report why it did not.
-const UPDATE_INSTALL_GRACE_MS = 15_000;
-
-// Releasing terminals, the managed OpenCode child, and SSH sessions must not
-// hold the installer hostage: a stuck session would otherwise keep the app on
-// the old version forever. The backend's own stop() is already bounded; this
-// bounds everything the install path waits on, beyond the backend's 35s limit.
-const UPDATE_SHUTDOWN_TIMEOUT_MS = 40_000;
-
-/**
- * Hand the downloaded update to the platform installer and keep the IPC call
- * open until the app quits or the updater reports a failure, so a rejected
- * install reaches the renderer instead of dying in the log. Restores the
- * quit/install flags when the install never happens.
- */
-const installDownloadedUpdate = () => new Promise((resolve, reject) => {
-  let settled = false;
-  let graceTimer;
-
-  // Hold the process from here until the installer has control. Every quit
-  // path checks this, so closing the last window during shutdown can no longer
-  // end the app with the install still pending.
-  state.updateInstallPending = true;
-
-  const rollbackQuitState = () => {
-    state.updateInstallPending = false;
-    state.quitRequested = false;
-    state.installingUpdate = false;
-  };
-
-  const fail = (error) => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(graceTimer);
-    autoUpdater.off('error', fail);
-    rollbackQuitState();
-    log.error('[electron] update install failed', error);
-    reject(error instanceof Error ? error : new Error(String(error)));
-  };
-
-  autoUpdater.on('error', fail);
-
-  // Defer so the renderer's invoke channel is idle before the app starts
-  // shutting down.
-  setImmediate(async () => {
-    let shutdownTimer;
-    try {
-      // Stop the backend first, then declare the quit intent, then hand over.
-      // The flags exist only to let the installer's own quit through the
-      // hide-on-close and confirmation guards, so nothing sets them while the
-      // app is still doing work that can fail.
-      await Promise.race([
-        shutdownBackgroundServices(),
-        new Promise((resolveTimeout) => {
-          shutdownTimer = setTimeout(() => {
-            log.warn('[electron] background shutdown timed out before update install; continuing');
-            resolveTimeout(null);
-          }, UPDATE_SHUTDOWN_TIMEOUT_MS);
-        }),
-      ]);
-      if (settled) return;
-      // Start the installer error window after terminal cleanup, which can
-      // legitimately take longer than UPDATE_INSTALL_GRACE_MS.
-      graceTimer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        autoUpdater.off('error', fail);
-        resolve(null);
-      }, UPDATE_INSTALL_GRACE_MS);
-      state.quitRequested = true;
-      state.installingUpdate = true;
-      state.quitConfirmationPending = false;
-      log.info('[electron] handing control to the platform installer');
-      autoUpdater.quitAndInstall();
-      // The installer owns the exit from here; other quit paths may run again.
-      state.updateInstallPending = false;
-    } catch (error) {
-      fail(error);
-    } finally {
-      clearTimeout(shutdownTimer);
-    }
-  });
+const installDownloadedUpdate = createUpdateInstaller({
+  state,
+  autoUpdater,
+  shutdown: shutdownBackgroundServices,
+  showFailure: () => {
+    const copy = getUpdateFailureDialogCopy(app.getLocale());
+    return dialog.showMessageBox({ type: 'error', title: copy.title, message: copy.detail, buttons: [copy.restart], defaultId: 0, cancelId: 0 });
+  },
+  restart: () => { app.relaunch(); app.exit(0); },
+  log,
 });
 
 const parseRelevantChangelogNotes = (fromVersion, toVersion) => fetchUpdateNotes(fromVersion, toVersion, compareSemver);
@@ -4574,16 +4500,15 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
           log.info('[electron] desktop_restart ignored, update install already in flight');
           return null;
         }
-        // The quit/install flags belong to installDownloadedUpdate(), which
-        // sets them once the backend is down and the installer is about to take
-        // over. Setting them here left a window in which closing the last
-        // window quit the app with the install still pending (#3027).
+        // The installer owns exit from the start of cleanup. It permits window
+        // closure only when handing off to the platform installer.
         if (state.mainWindow && !state.mainWindow.isDestroyed()) {
           try {
             debounceWindowStatePersist(state.mainWindow, true);
           } catch {
           }
         }
+        if (state.quitInProgress) return null;
         return await installDownloadedUpdate();
       }
       // Defer so the IPC reply flushes before the app starts shutting down.
