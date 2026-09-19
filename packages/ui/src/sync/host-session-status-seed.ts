@@ -3,8 +3,11 @@ import { opencodeClient } from '@/lib/opencode/client';
 import type { HostSessionStatusSnapshot } from '@/lib/opencode/session-status';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
-import { applyGlobalSessionStatusEvents, useGlobalSessionStatusStore } from './global-session-status';
-import { seedGlobalBlockingRequests } from './global-blocking-requests';
+import { applyGlobalSessionStatusEvents, applyGlobalSessionStatusSnapshot, useGlobalSessionStatusStore } from './global-session-status';
+import { applyGlobalBlockingRequestSnapshot, seedGlobalBlockingRequests, useGlobalBlockingRequestsStore } from './global-blocking-requests';
+import { getOptionalSyncChildStores } from './sync-refs';
+import { beginSessionStatusRequest, readDirectoryStatusSnapshot, readDirectoryFormSnapshot, readDirectoryPermissionSnapshot, type DirectoryRecoverySource } from './directory-recovery-snapshots';
+import { runBackgroundNetworkTask } from '@/lib/background-network';
 
 // Seeds the cross-directory status index from the host's own map.
 //
@@ -15,12 +18,14 @@ import { seedGlobalBlockingRequests } from './global-blocking-requests';
 // single upstream stream the whole time and answers `/api/sessions/status` in
 // one request without creating OpenCode instances.
 //
-// The seed is strictly additive: it only adds busy entries for sessions this
+// For unopened directories the seed is strictly additive: it only adds busy entries for sessions this
 // client has not observed itself. Absence from the host map never clears
 // anything, because the map has no directory and a missing entry proves
 // nothing about a session the client already knows to be running. A live event
 // that arrives before the seed wins, since the event path records every
 // observed session and the seed skips those.
+// Existing child stores instead receive event-reconciled authoritative reads;
+// this recovery never creates a directory store or bootstraps its configuration.
 
 // Nothing on the host reconciles its map against OpenCode after a stream gap,
 // so a missed idle can leave `busy` there for the host's 24-hour retention.
@@ -58,42 +63,129 @@ export const buildHostStatusSeedEvents = (
   return eventsByDirectory;
 };
 
-let inFlight: Promise<void> | null = null;
+let scope: {
+  runtime: string;
+  sdk: ReturnType<typeof opencodeClient.getSdkClient>;
+  stores: ReturnType<typeof getOptionalSyncChildStores>;
+  confirmed: WeakMap<DirectoryRecoverySource, string>;
+  epoch: number;
+  inFlight: Promise<void> | null;
+} | null = null;
 
-/** Fetches the host map once and seeds unobserved busy sessions. Coalesces overlapping calls. */
-export const seedGlobalSessionStatusFromHost = (): Promise<void> => {
-  if (inFlight) return inFlight;
-  const runtimeKey = getRuntimeKey();
-  inFlight = (async () => {
+/** Unopened directories use host hints; only existing child stores receive authoritative recovery. */
+export const seedGlobalSessionStatusFromHost = (force = false): Promise<void> => {
+  const runtime = getRuntimeKey();
+  const sdk = opencodeClient.getSdkClient();
+  const stores = getOptionalSyncChildStores();
+  if (!scope || scope.runtime !== runtime || scope.sdk !== sdk || scope.stores !== stores) {
+    scope = { runtime, sdk, stores, confirmed: new WeakMap(), epoch: 0, inFlight: null };
+  }
+  const owner = scope;
+  if (force) { owner.confirmed = new WeakMap(); owner.epoch += 1; }
+  if (owner.inFlight) return owner.inFlight;
+  const epoch = owner.epoch;
+  const ownsScope = () => scope === owner && getRuntimeKey() === runtime && opencodeClient.getSdkClient() === sdk && getOptionalSyncChildStores() === stores;
+  const isCurrent = () => ownsScope() && owner.epoch === epoch;
+  const task = (async () => {
     const snapshot = await opencodeClient.getHostSessionStatusSnapshot();
-    // A runtime switch between request and response clears the index; the old
-    // host's sessions must not be written into the new one.
-    if (!snapshot || getRuntimeKey() !== runtimeKey) return;
+    if (!snapshot || !isCurrent()) return;
     const status = useGlobalSessionStatusStore.getState();
     const entities = useGlobalSessionsStore.getState().entityById;
     const events = buildHostStatusSeedEvents(snapshot, {
       isKnown: (sessionId) => status.statusById.has(sessionId) || status.observedById.has(sessionId),
       resolveDirectory: (sessionId) => {
         const session = entities.get(sessionId);
-        return session ? resolveGlobalSessionDirectory(session) : null;
+        const directory = session ? resolveGlobalSessionDirectory(session) : null;
+        return directory && !stores?.getChild(directory) ? directory : null;
       },
     });
     for (const [directory, payloads] of events) {
       applyGlobalSessionStatusEvents(directory, payloads);
     }
-    // Pending permission requests and forms ride on the same response. They are
-    // not age-limited: the host drops them on reply, deletion, and OpenCode
-    // restart, so a listed request is one OpenCode is still waiting on.
+    // Retain the upstream additive cache behavior for unopened directories.
+    // Host hints can be stale; they do not authorize clearing live state.
     const pending: Array<Parameters<typeof seedGlobalBlockingRequests>[0][number]> = [];
     for (const [sessionId, entry] of Object.entries(snapshot.pending ?? {})) {
       const session = entities.get(sessionId);
       const directory = session ? resolveGlobalSessionDirectory(session) : null;
-      if (!directory) continue;
+      if (!directory || stores?.getChild(directory)) continue;
       pending.push({ sessionId, directory, permissions: entry.permissions, forms: entry.forms });
     }
     seedGlobalBlockingRequests(pending);
+    if (!stores) return;
+
+    const active = useGlobalSessionStatusStore.getState().statusById;
+    const waiting = useGlobalBlockingRequestsStore.getState().bySession;
+    const candidates = new Map<string, Map<string, string>>();
+    for (const id of new Set([...Object.keys(snapshot.sessions), ...Object.keys(snapshot.pending ?? {}), ...active.keys(), ...waiting.keys()])) {
+      const hint = snapshot.sessions[id];
+      const requests = snapshot.pending?.[id];
+      if (hint?.status !== 'busy' && hint?.status !== 'retry' && !requests?.permissions.length && !requests?.forms.length && !active.has(id) && !waiting.has(id)) continue;
+      const session = entities.get(id);
+      const directory = session ? resolveGlobalSessionDirectory(session) : active.get(id)?.directory ?? waiting.get(id)?.directory;
+      if (!directory || !stores.getChild(directory)) continue;
+      const hints = candidates.get(directory) ?? new Map<string, string>();
+      hints.set(id, JSON.stringify([hint, requests]));
+      candidates.set(directory, hints);
+    }
+    for (const [directory, store] of stores.children) if (!candidates.has(directory)) owner.confirmed.delete(store);
+    let statusRead: ReturnType<typeof opencodeClient.getActiveSessionStatuses> | undefined;
+    const readStatuses = () => (statusRead ??= runBackgroundNetworkTask(() => {
+      if (!isCurrent()) throw new Error('Stale host recovery');
+      return opencodeClient.getActiveSessionStatuses();
+    }, 'active-session'));
+    await Promise.all([...candidates].map(async ([directory, hints]) => {
+      const store = stores.getChild(directory);
+      if (!store) return;
+      const signature = JSON.stringify([...hints].sort(([a], [b]) => a.localeCompare(b)));
+      if (owner.confirmed.get(store) === signature || !isCurrent()) return;
+      stores.pin(directory);
+      const current = () => isCurrent() && stores.getChild(directory) === store;
+      const read = <T,>(load: () => Promise<T>) => runBackgroundNetworkTask(() => {
+        if (!current()) throw new Error('Stale directory recovery');
+        return load();
+      }, 'active-session');
+      try {
+        const acceptStatus = beginSessionStatusRequest(store);
+        const results = await Promise.allSettled([
+          readDirectoryStatusSnapshot(store, readStatuses, (statuses) => {
+            if (!current() || !acceptStatus()) return false;
+            const ids = new Set(hints.keys());
+            const records = new Map(store.getState().session.map((session) => [session.id, session]));
+            for (const session of useGlobalSessionsStore.getState().entityById.values()) records.set(session.id, session);
+            for (const [id, session] of records) {
+              if (resolveGlobalSessionDirectory(session) === directory) ids.add(id);
+              else ids.delete(id);
+            }
+            const scoped = Object.fromEntries(Object.entries(statuses).filter(([id]) => ids.has(id)));
+            store.setState({ session_status: scoped, sessionStatusReady: true });
+            applyGlobalSessionStatusSnapshot(directory, scoped, ids, 'sessions');
+            return true;
+          }).then((statuses) => { if (statuses === null) throw new Error('Status recovery unavailable'); }),
+          readDirectoryFormSnapshot(store, () => read(() => opencodeClient.listPendingForms({ directories: [directory], includeGlobal: false })), {
+            isStale: () => !current(),
+            commit: (form) => {
+              store.setState({ form });
+              applyGlobalBlockingRequestSnapshot(directory, { kind: 'forms', groups: form });
+            },
+          }),
+          readDirectoryPermissionSnapshot(store, () => read(() => opencodeClient.listPendingPermissions({ directories: [directory], includeGlobal: false })), {
+            isStale: () => !current(),
+            commit: (permission) => {
+              store.setState({ permission });
+              applyGlobalBlockingRequestSnapshot(directory, { kind: 'permissions', groups: permission });
+            },
+          }),
+        ]);
+        if (current() && results.every((result) => result.status === 'fulfilled')) owner.confirmed.set(store, signature);
+      } finally {
+        stores.unpin(directory);
+      }
+    }));
   })().finally(() => {
-    inFlight = null;
+    owner.inFlight = null;
+    if (ownsScope() && owner.epoch !== epoch) return seedGlobalSessionStatusFromHost();
   });
-  return inFlight;
+  owner.inFlight = task;
+  return task;
 };

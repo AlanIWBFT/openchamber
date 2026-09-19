@@ -6,6 +6,7 @@ import { runtimeFetch } from "../lib/runtime-fetch"
 import { emitSyncConfigChanged } from "./sync-refs"
 import { warmChatsRootDirectory } from "../lib/chatDirectories"
 import { runBackgroundNetworkTask } from "../lib/background-network"
+import { applyGlobalBlockingRequestSnapshot } from "./global-blocking-requests"
 import {
   beginSessionStatusRequest,
   readDirectoryStatusSnapshot,
@@ -150,16 +151,18 @@ async function initializeDirectory(input: DirectoryBootstrapInput): Promise<Boot
       })
     }),
     read(async () => {
-      const form = await readDirectoryFormSnapshot(store, () => (
+      await readDirectoryFormSnapshot(store, () => (
         opencodeClient.listPendingForms({ directories: [directory], includeGlobal: false })
-      ))
-      commit({ form })
+      ), { isStale: input.isStale, commit: (form) => {
+        if (commit({ form })) applyGlobalBlockingRequestSnapshot(directory, { kind: "forms", groups: form })
+      } })
     }),
     read(async () => {
-      const permission = await readDirectoryPermissionSnapshot(store, () => (
+      await readDirectoryPermissionSnapshot(store, () => (
         opencodeClient.listPendingPermissions({ directories: [directory], includeGlobal: false })
-      ))
-      commit({ permission })
+      ), { isStale: input.isStale, commit: (permission) => {
+        if (commit({ permission })) applyGlobalBlockingRequestSnapshot(directory, { kind: "permissions", groups: permission })
+      } })
     }),
     read(() => opencodeClient.getConfig(directory).then((config) => {
       if (commit({ config })) emitSyncConfigChanged(directory, config)
