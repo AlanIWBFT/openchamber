@@ -23,13 +23,16 @@ test('fusion loads the selected session by ID and uses its current last assistan
     expect(url.searchParams.get('directory')).toBe('/repo');
     if (!url.pathname.endsWith('/message')) return Response.json({ ...session, title: 'renamed again' });
     return Response.json([
-      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'older' }] },
-      { info: { role: 'user' }, parts: [{ type: 'text', text: 'question' }] },
-      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'latest result' }] },
+      { info: { id: 'a', sessionID: 'run', seq: 3, role: 'assistant' }, parts: [
+        { id: 'p_a', messageID: 'a', sessionID: 'run', seq: 4, type: 'text', text: 'result' },
+        { id: 'p_z', messageID: 'a', sessionID: 'run', seq: 3, type: 'text', text: 'latest' },
+      ] },
+      { info: { id: 'm', sessionID: 'run', seq: 2, role: 'user' }, parts: [] },
+      { info: { id: 'z', sessionID: 'run', seq: 1, role: 'assistant' }, parts: [{ id: 'p_old', messageID: 'z', sessionID: 'run', seq: 1, type: 'text', text: 'older' }] },
     ]);
   } });
   const result = await loadFusionOutputs(client, [source], source.identity, () => {});
-  expect(result.map((item) => item.text)).toEqual(['latest result']);
+  expect(result.map((item) => item.text)).toEqual(['latest\n\nresult']);
   expect(result[0].source.session.title).toBe('renamed again');
   expect(paths).toEqual(['/session/run', '/session/run/message']);
 });
