@@ -42,6 +42,33 @@ const createRuntime = (server, overrides = {}) => {
 };
 
 describe('graceful shutdown runtime', () => {
+  it('joins terminal grace alongside managed OpenCode cleanup within the desktop budget', async () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    const completed = [];
+    const runtime = createRuntime(null, {
+      shutdownTimeoutMs: 35000,
+      stopManagedOpenCode: async ({ deadline }) => {
+        expect(deadline).toBe(start + 35000 - 500);
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        completed.push('opencode');
+      },
+      getTerminalRuntime: () => ({ shutdown: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20000));
+        completed.push('terminals');
+      } }),
+    });
+    let finished = false;
+    const shutdown = runtime.gracefulShutdown().then(() => { finished = true; });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(completed).toEqual(['opencode']);
+    expect(finished).toBe(false);
+    await vi.advanceTimersByTimeAsync(15000);
+    await shutdown;
+    expect(completed).toEqual(['opencode', 'terminals']);
+    expect(Date.now() - start).toBe(20000);
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
