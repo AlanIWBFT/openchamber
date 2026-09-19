@@ -2307,7 +2307,8 @@ const listUntrackedFilesBounded = async (repoRoot, dirPath, limit, options = {})
   throwIfGitReadCancelled(options);
   const env = await buildGitEnv();
   return new Promise((resolve, reject) => {
-    const spawnProcess = getProcessBrokerSpawn() ?? spawn;
+    const brokerSpawn = getProcessBrokerSpawn();
+    const spawnProcess = brokerSpawn ?? spawn;
     const child = spawnProcess(getGitBinary(), ['ls-files', '--others', '--exclude-standard', '-z', '--', dirPath], {
       cwd: repoRoot,
       env,
@@ -2321,11 +2322,15 @@ const listUntrackedFilesBounded = async (repoRoot, dirPath, limit, options = {})
     let stallTimer = null;
     let childError = null;
     let cancellationError = null;
+    const terminate = () => {
+      if (brokerSpawn) child.kill();
+      else killProcessTree(child);
+    };
     const onAbort = () => {
       cancellationError = options.signal?.reason instanceof Error
         ? options.signal.reason
         : Object.assign(new Error('Git read cancelled'), { code: 'ABORT_ERR' });
-      child.kill();
+      terminate();
     };
     const finish = (error) => {
       if (settled) return;
@@ -2343,14 +2348,14 @@ const listUntrackedFilesBounded = async (repoRoot, dirPath, limit, options = {})
     const armStallTimer = () => {
       if (stallTimer) clearTimeout(stallTimer);
       stallTimer = setTimeout(() => {
-        killProcessTree(child);
-        finish(new Error(`git ls-files produced no output for ${GIT_UNTRACKED_LISTING_STALL_TIMEOUT_MS}ms in ${dirPath}`));
+        childError = new Error(`git ls-files produced no output for ${GIT_UNTRACKED_LISTING_STALL_TIMEOUT_MS}ms in ${dirPath}`);
+        terminate();
       }, GIT_UNTRACKED_LISTING_STALL_TIMEOUT_MS);
     };
     armStallTimer();
     child.stdout.on('data', (chunk) => {
+      if (truncated || childError || cancellationError) return;
       armStallTimer();
-      if (truncated) return;
       pending += chunk.toString('utf8');
       const records = pending.split('\0');
       pending = records.pop() ?? '';
@@ -2359,7 +2364,8 @@ const listUntrackedFilesBounded = async (repoRoot, dirPath, limit, options = {})
         paths.push(record);
         if (paths.length > limit) {
           truncated = true;
-          killProcessTree(child);
+          clearTimeout(stallTimer);
+          terminate();
           return;
         }
       }
@@ -2478,6 +2484,9 @@ const getStatusDirect = async (directory, options = {}) => {
   try {
     const { directoryPath, repoRoot, gitDir, git } = await createRepositoryGitContext(normalizedDirectory, { signal: options.signal, stallTimeoutMs: GIT_STATUS_STALL_TIMEOUT_MS });
     assertActive();
+    if (unsupportedRepositoryRootReason(repoRoot)) {
+      throw new Error('fatal: not a git repository (unsupported repository root)');
+    }
 
     // `-unormal` lists a directory with no tracked files as one `dir/` entry
     // and stops walking it at its first file. `-uall` would walk every file

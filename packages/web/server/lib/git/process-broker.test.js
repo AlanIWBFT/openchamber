@@ -28,6 +28,20 @@ describe.runIf(available)('Windows process broker', () => {
     )).rejects.toMatchObject({ code: 7, stderr: 'failed' });
   });
 
+  it('waits for process-tree close before rejecting a timed-out probe', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-broker-timeout-'));
+    try {
+      await expect(execFileWithProcessBroker(process.execPath, [
+        '-e', "require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},60000)'],{stdio:'ignore'});setInterval(()=>{},60000)",
+      ], { cwd: directory, timeout: 500 })).rejects.toMatchObject({ code: 'ETIMEDOUT', killed: true });
+      fs.rmdirSync(directory);
+      await expect(execFileWithProcessBroker(process.execPath, ['-e', "process.stdout.write('next')"], { timeout: 5000 }))
+        .resolves.toEqual({ stdout: 'next', stderr: '' });
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it.each(['executable', 'cwd'])('isolates an unavailable %s from concurrent commands', async (kind) => {
     const missing = path.join(os.tmpdir(), `openchamber-broker-missing-${process.pid}`, 'missing');
     const results = await Promise.allSettled([

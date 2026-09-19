@@ -70,10 +70,12 @@ export const execFileWithProcessBroker = (command, args, options = {}) => {
     let stderrBytes = 0;
     let settled = false;
     let failure = null;
+    let timeout;
 
     const finish = (error, result) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeout);
       options.signal?.removeEventListener('abort', onAbort);
       if (error) reject(error);
       else resolve(result);
@@ -125,6 +127,13 @@ export const execFileWithProcessBroker = (command, args, options = {}) => {
       finish(Object.assign(new Error(`Command failed with exit code ${code}`), { code, ...result }));
     });
     child.stdin.end();
+    if (options.timeout > 0) {
+      timeout = setTimeout(() => {
+        if (failure || settled) return;
+        failure = Object.assign(new Error(`Command timed out after ${options.timeout}ms`), { code: 'ETIMEDOUT', killed: true });
+        child.kill();
+      }, options.timeout);
+    }
     if (options.signal?.aborted) onAbort();
     else options.signal?.addEventListener('abort', onAbort, { once: true });
   });
