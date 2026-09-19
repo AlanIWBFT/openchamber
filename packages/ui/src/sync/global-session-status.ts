@@ -308,9 +308,11 @@ export const applyGlobalSessionStatusSnapshot = (
   rawDirectory: string,
   raw: Record<string, SessionStatus>,
   knownSessionIds?: Iterable<string>,
+  coverage: 'directory' | 'sessions' = 'directory',
 ): void => {
   const directory = normalizeDirectory(rawDirectory);
   const known = new Set(knownSessionIds ?? []);
+  const covers = (id: string, owner: string) => known.has(id) || (coverage === 'directory' && owner === directory);
   // Built once as a set and shared by both consumers below; only non-idle
   // sessions land here, so it stays small however long the directory's list is.
   const activeSessionIds = new Set<string>();
@@ -346,7 +348,7 @@ export const applyGlobalSessionStatusSnapshot = (
     };
 
     for (const [sessionId, entry] of state.statusById) {
-      if ((entry.directory === directory || known.has(sessionId)) && !(sessionId in raw)) {
+      if (covers(sessionId, entry.directory) && !(sessionId in raw)) {
         next.delete(sessionId);
         removeActiveSession(sessionId);
         changed = true;
@@ -362,7 +364,7 @@ export const applyGlobalSessionStatusSnapshot = (
       }
       const current = next.get(sessionId);
       if (type === 'idle') {
-        if (current && (current.directory === directory || known.has(sessionId))) {
+        if (current && covers(sessionId, current.directory)) {
           next.delete(sessionId);
           removeActiveSession(sessionId);
           changed = true;
