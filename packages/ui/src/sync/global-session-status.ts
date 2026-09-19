@@ -394,14 +394,16 @@ export const applyGlobalSessionStatusSnapshot = (
   rawDirectory: string,
   raw: Record<string, SessionStatus>,
   knownSessionIds?: Iterable<string>,
+  coverage: 'directory' | 'sessions' = 'directory',
 ): void => {
   const directory = normalizeDirectory(rawDirectory);
   const known = new Set(knownSessionIds ?? []);
+  const covers = (id: string, owner: string) => known.has(id) || (coverage === 'directory' && owner === directory);
   if (statusWriteWatchers.size > 0) {
     for (const sessionId of known) noteStatusWrite(sessionId);
     for (const sessionId of Object.keys(raw)) noteStatusWrite(sessionId);
     for (const [sessionId, entry] of useGlobalSessionStatusStore.getState().statusById) {
-      if (entry.directory === directory) noteStatusWrite(sessionId);
+      if (covers(sessionId, entry.directory)) noteStatusWrite(sessionId);
     }
   }
   const activeSessionIds = new Set<string>();
@@ -439,7 +441,7 @@ export const applyGlobalSessionStatusSnapshot = (
     };
 
     for (const [sessionId, entry] of state.statusById) {
-      if ((entry.directory === directory || known.has(sessionId)) && !(sessionId in raw)) {
+      if (covers(sessionId, entry.directory) && !(sessionId in raw)) {
         next.delete(sessionId);
         removeActiveSession(sessionId);
         changed = true;
@@ -455,7 +457,7 @@ export const applyGlobalSessionStatusSnapshot = (
       }
       const current = next.get(sessionId);
       if (type === 'idle') {
-        if (current && (current.directory === directory || known.has(sessionId))) {
+        if (current && covers(sessionId, current.directory)) {
           next.delete(sessionId);
           removeActiveSession(sessionId);
           changed = true;

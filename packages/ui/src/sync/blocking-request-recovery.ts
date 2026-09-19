@@ -1,5 +1,6 @@
 import type { StoreApi } from "zustand"
-import type { FormRequest, PermissionRequest } from "@/lib/opencode/model"
+import { readDirectoryFormSnapshot, readDirectoryPermissionSnapshot } from "./directory-recovery-snapshots"
+import { applyGlobalBlockingRequestSnapshot } from "./global-blocking-requests"
 import { isVSCodeRuntime } from "@/lib/desktop"
 import { ChildStoreManager, type DirectoryStore } from "./child-store"
 import { noteQuestionFormSnapshot } from "./recoverable-questions"
@@ -11,23 +12,16 @@ import { captureRuntimeInstance } from "@/lib/runtime-switch"
 import { isViewedInCurrentSession } from "./viewed-sessions"
 import { getFormToastKey, pendingFormToastIds, FORM_TOAST_DESCRIPTION, formToastAction, pendingPermissionToastIds, openRequestFromToast } from "./sync-request-notifications"
 
-const requestSignature = (items: Array<{ id: string }> | undefined): string => {
-  if (!items || items.length === 0) return ""
-  return items
-    .map((item) => item.id)
-    .sort(cmp)
-    .join("|")
-}
-
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-
 export async function resyncBlockingRequestsForDirectory(
   directory: string,
   store: StoreApi<DirectoryStore>,
   candidateSessionIds?: string[],
-  options?: { includePermissions?: boolean },
+  options?: { includePermissions?: boolean; isStale?: () => boolean },
 ) {
   const isCurrentRuntime = captureRuntimeInstance()
+  const sdk = opencodeClient.getSdkClient()
+  const isStale = () => !isCurrentRuntime() || sdk !== opencodeClient.getSdkClient() || options?.isStale?.() === true
+  if (isStale()) return false
   const before = store.getState()
   const candidateIds = new Set<string>(candidateSessionIds ?? [
     ...before.session.map((session) => session.id),
@@ -40,26 +34,22 @@ export async function resyncBlockingRequestsForDirectory(
   const candidates = Array.from(candidateIds)
   let succeeded = true
 
+  // Re-fetch pending forms that may have been asked during an SSE gap,
+  // reconnect window, or directory materialization gap.
   try {
-    const beforeSignatures = new Map(
-      candidates.map((sessionId) => [sessionId, requestSignature(before.form[sessionId])]),
-    )
-    const pendingForms = await opencodeClient.listPendingForms({ directories: [directory] })
-    if (!isCurrentRuntime()) return false
-    noteQuestionFormSnapshot(directory, pendingForms)
-    const grouped: Record<string, FormRequest[]> = {}
-    for (const form of pendingForms) {
-      if (!form?.id || !form.sessionID) continue
-      if (!candidateIds.has(form.sessionID)) continue
-      const list = grouped[form.sessionID]
-      if (list) list.push(form)
-      else grouped[form.sessionID] = [form]
-    }
-    for (const sessionId of Object.keys(grouped)) {
-      grouped[sessionId].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    }
+    const grouped = await readDirectoryFormSnapshot(store, () => opencodeClient.listPendingForms({ directories: [directory], includeGlobal: false }), {
+      sessionIDs: candidates,
+      isStale,
+      commit: (form) => {
+        store.setState({ form })
+        applyGlobalBlockingRequestSnapshot(directory, { kind: "forms", groups: form }, candidates)
+        noteQuestionFormSnapshot(directory, Object.values(form).flat())
+      },
+    })
+    if (isStale()) return false
 
     for (const [sessionId, forms] of Object.entries(grouped)) {
+      if (!candidateIds.has(sessionId)) continue
       const knownIds = new Set((before.form[sessionId] ?? []).map((item) => item.id))
       const isViewed = isViewedInCurrentSession(directory, sessionId)
       if (isViewed) continue
@@ -76,65 +66,35 @@ export async function resyncBlockingRequestsForDirectory(
       }
     }
 
-    store.setState((state: DirectoryStore) => {
-      const merged = { ...state.form }
-      for (const [sessionId, forms] of Object.entries(grouped)) {
-        merged[sessionId] = forms
-      }
-      for (const sessionId of candidates) {
-        if (grouped[sessionId]) continue
-        const beforeSignature = beforeSignatures.get(sessionId) ?? ""
-        const currentSignature = requestSignature(state.form[sessionId])
-        if (currentSignature !== beforeSignature) continue
-        delete merged[sessionId]
-      }
-      return { form: merged }
-    })
   } catch {
+    // Non-fatal: form resync best-effort
     succeeded = false
   }
 
+  if (isStale()) return false
   if (options?.includePermissions === false) return succeeded
 
+  // Re-fetch pending permissions — same rationale as forms.
   try {
-    const beforeSignatures = new Map(
-      candidates.map((sessionId) => [sessionId, requestSignature(before.permission[sessionId])]),
-    )
-    const pendingPermissions = await opencodeClient.listPendingPermissions({ directories: [directory] })
-    if (!isCurrentRuntime()) return false
-    const grouped: Record<string, PermissionRequest[]> = {}
-    for (const permission of pendingPermissions) {
-      if (!permission?.id || !permission.sessionID) continue
-      if (!candidateIds.has(permission.sessionID)) continue
-      const list = grouped[permission.sessionID]
-      if (list) list.push(permission)
-      else grouped[permission.sessionID] = [permission]
-    }
-    for (const sessionId of Object.keys(grouped)) {
-      grouped[sessionId].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    }
-
-    if (isVSCodeRuntime()) {
-      const acceptedIdsBySession = new Map<string, Set<string>>()
-      await Promise.all(Object.entries(grouped).flatMap(([sessionId, permissions]) =>
-        permissions.map(async (permission) => {
-          if (!(await processVSCodeReconciledPermissionAutoAccept(permission, directory))) return
-          const accepted = acceptedIdsBySession.get(sessionId) ?? new Set<string>()
-          accepted.add(permission.id)
-          acceptedIdsBySession.set(sessionId, accepted)
-        }),
-      ))
-
-      for (const sessionId of Object.keys(grouped)) {
-        const acceptedIds = acceptedIdsBySession.get(sessionId)
-        if (!acceptedIds) continue
-        const remaining = (grouped[sessionId] ?? []).filter((permission) => !acceptedIds.has(permission.id))
-        if (remaining.length > 0) grouped[sessionId] = remaining
-        else delete grouped[sessionId]
-      }
-    }
+    const grouped = await readDirectoryPermissionSnapshot(store, () => opencodeClient.listPendingPermissions({ directories: [directory], includeGlobal: false }), {
+      sessionIDs: candidates,
+      isStale,
+      settle: isVSCodeRuntime() ? async (permissions) => {
+        const accepted = new Set<string>()
+        await Promise.all(permissions.filter((permission) => candidateIds.has(permission.sessionID)).map(async (permission) => {
+          if (await processVSCodeReconciledPermissionAutoAccept(permission, directory)) accepted.add(permission.id)
+        }))
+        return accepted
+      } : undefined,
+      commit: (permission) => {
+        store.setState({ permission })
+        applyGlobalBlockingRequestSnapshot(directory, { kind: "permissions", groups: permission }, candidates)
+      },
+    })
+    if (isStale()) return false
 
     for (const [sessionId, permissions] of Object.entries(grouped)) {
+      if (!candidateIds.has(sessionId)) continue
       const knownIds = new Set((before.permission[sessionId] ?? []).map((item) => item.id))
       const isViewed = isViewedInCurrentSession(directory, sessionId)
       if (isViewed) continue
@@ -151,21 +111,8 @@ export async function resyncBlockingRequestsForDirectory(
       }
     }
 
-    store.setState((state: DirectoryStore) => {
-      const merged = { ...state.permission }
-      for (const [sessionId, permissions] of Object.entries(grouped)) {
-        merged[sessionId] = permissions
-      }
-      for (const sessionId of candidates) {
-        if (grouped[sessionId]) continue
-        const beforeSignature = beforeSignatures.get(sessionId) ?? ""
-        const currentSignature = requestSignature(state.permission[sessionId])
-        if (currentSignature !== beforeSignature) continue
-        delete merged[sessionId]
-      }
-      return { permission: merged }
-    })
   } catch {
+    // Non-fatal: permission resync best-effort
     succeeded = false
   }
   return succeeded
@@ -177,5 +124,5 @@ export async function resyncBlockingRequestsForActiveDirectory(
 ) {
   const store = childStores.getChild(directory)
   if (!store) return
-  await resyncBlockingRequestsForDirectory(directory, store)
+  await resyncBlockingRequestsForDirectory(directory, store, undefined, { isStale: () => childStores.getChild(directory) !== store })
 }

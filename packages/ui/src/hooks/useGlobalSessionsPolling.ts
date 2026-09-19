@@ -202,7 +202,7 @@ export const useGlobalSessionsPolling = (enabled: boolean): void => {
         if (initial) await ensureGlobalSessionsLoaded(getAllSyncSessions());
         else await refreshGlobalSessions();
         if (!active || getRuntimeKey() !== runtimeKey) return false;
-        void seedGlobalSessionStatusFromHost();
+        void seedGlobalSessionStatusFromHost().catch(() => {});
         return useGlobalSessionsStore.getState().status === 'ready';
       };
       const stop = startGlobalSessionsPolling(

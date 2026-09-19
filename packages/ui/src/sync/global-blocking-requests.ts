@@ -197,6 +197,7 @@ export const applyWaitingPageEvent = (
 export const readHostBlockingRequestsSnapshot = async (
   read: () => Promise<HostSessionStatusSnapshot | null>,
   resolveDirectory: (sessionId: string) => string | null,
+  canSeedRequests: (directory: string) => boolean = () => true,
 ): Promise<HostSessionStatusSnapshot | null> => {
   const changes = new Map<string, Map<string, BlockingPageRequest | null> | null>();
   const observe = (event: WaitingPageEvent): void => {
@@ -232,8 +233,9 @@ export const readHostBlockingRequestsSnapshot = async (
       }
       const pages = [...pagesById.values()];
       if (current && JSON.stringify(current.pages) === JSON.stringify(pages)) continue;
-      const permissions = current?.permissions ?? entry?.permissions ?? EMPTY;
-      const forms = current?.forms ?? entry?.forms ?? EMPTY;
+      const hints = canSeedRequests(directory) ? entry : undefined;
+      const permissions = current?.permissions ?? hints?.permissions ?? EMPTY;
+      const forms = current?.forms ?? hints?.forms ?? EMPTY;
       if (!current && permissions.length === 0 && forms.length === 0 && pages.length === 0) continue;
       reducer.write(sessionId, { directory: normalizeDirectory(directory), permissions, forms, pages });
     }
@@ -242,4 +244,26 @@ export const readHostBlockingRequestsSnapshot = async (
   } finally {
     pageSnapshotObservers.delete(observe);
   }
+};
+
+/** Publish an event-reconciled snapshot, clearing only its directory or explicit session scope. */
+export const applyGlobalBlockingRequestSnapshot = (
+  rawDirectory: string,
+  snapshot: { kind: 'permissions'; groups: Record<string, PermissionRequest[]> } | { kind: 'forms'; groups: Record<string, FormRequest[]> },
+  sessionIDs?: readonly string[],
+): void => {
+  const directory = normalizeDirectory(rawDirectory);
+  const state = useGlobalBlockingRequestsStore.getState();
+  const reducer = new Reducer(state);
+  const ids = new Set(sessionIDs ?? Object.keys(snapshot.groups));
+  if (!sessionIDs) for (const [id, entry] of state.bySession) if (entry.directory === directory) ids.add(id);
+  for (const id of ids) {
+    const existing = reducer.current(id) ?? { directory, permissions: EMPTY, forms: EMPTY, pages: EMPTY };
+    if (snapshot.kind === 'permissions') {
+      reducer.write(id, { ...existing, directory, permissions: snapshot.groups[id]?.map(toBlockingPermission) ?? EMPTY });
+    } else {
+      reducer.write(id, { ...existing, directory, forms: snapshot.groups[id]?.map(toBlockingForm) ?? EMPTY });
+    }
+  }
+  reducer.publish();
 };

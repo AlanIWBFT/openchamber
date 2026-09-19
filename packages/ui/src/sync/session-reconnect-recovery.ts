@@ -70,7 +70,7 @@ export async function resyncDirectoryAfterReconnect(
   }))
 
   if (isStale()) return
-  const blockingRequestsSucceeded = await resyncBlockingRequestsForDirectory(directory, store, candidateSessionIds)
+  const blockingRequestsSucceeded = await resyncBlockingRequestsForDirectory(directory, store, candidateSessionIds, { isStale })
 
   if (isStale()) return
   ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())

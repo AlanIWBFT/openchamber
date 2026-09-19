@@ -43,7 +43,7 @@ import { isDirectoryOfKnownSpace, isSpaceDirectoryStopped, isSpaceStopped, known
 import { toast } from "@/components/ui"
 import { applyGlobalSessionStatusSnapshot, getDirectoryOwnedSessionIds, setSessionParentResolver, useGlobalSessionStatusStore } from "./global-session-status"
 import { settledPageKeys, useGlobalBlockingRequestsStore } from "./global-blocking-requests"
-import { requestHostTurnStarts } from "./host-session-status-seed"
+import { requestHostTurnStarts, seedGlobalSessionStatusFromHost } from "./host-session-status-seed"
 import { setHostTurnStartRequester } from "./session-activity-timing"
 import { refreshBackgroundImages } from "./background-images"
 import { CHAT_LOCATION_RELEASE_DELAY_MS, PROJECT_LOCATION_RELEASE_DELAY_MS, WORKTREE_LOCATION_RELEASE_DELAY_MS, createRealLocationRelease, directoryUse, isWorktreeDirectory, type LocationRelease } from "./location-release"
@@ -546,6 +546,7 @@ export function SyncProvider(props: {
       }
       void reconcileActivityAfterGap(childStores)
       notifyStreamGap(runtimeKey)
+      void seedGlobalSessionStatusFromHost(true).catch(() => {})
     }
     const pipeline = createEventPipeline({
       sdk: props.sdk,
