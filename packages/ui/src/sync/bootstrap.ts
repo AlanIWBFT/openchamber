@@ -7,6 +7,7 @@ import { emitSyncConfigChanged } from "./sync-refs"
 import { warmChatsRootDirectory } from "../lib/chatDirectories"
 import { runBackgroundNetworkTask } from "../lib/background-network"
 import { refreshBackgroundShells } from "./background-shells"
+import { applyGlobalBlockingRequestSnapshot } from "./global-blocking-requests"
 import {
   beginSessionStatusRequest,
   readDirectoryStatusSnapshot,
@@ -159,16 +160,21 @@ async function initializeDirectory(input: DirectoryBootstrapInput, sessions: Pro
       }, "active-session")
     }),
     read(async () => {
-      const form = await readDirectoryFormSnapshot(store, () => (
+      await readDirectoryFormSnapshot(store, () => (
         opencodeClient.listPendingForms({ directories: [directory] })
-      ))
-      if (commit({ form })) noteQuestionFormSnapshot(directory, Object.values(form).flat())
+      ), { isStale: input.isStale, commit: (form) => {
+        if (commit({ form })) {
+          applyGlobalBlockingRequestSnapshot(directory, { kind: "forms", groups: form })
+          noteQuestionFormSnapshot(directory, Object.values(form).flat())
+        }
+      } })
     }),
     read(async () => {
-      const permission = await readDirectoryPermissionSnapshot(store, () => (
+      await readDirectoryPermissionSnapshot(store, () => (
         opencodeClient.listPendingPermissions({ directories: [directory] })
-      ))
-      commit({ permission })
+      ), { isStale: input.isStale, commit: (permission) => {
+        if (commit({ permission })) applyGlobalBlockingRequestSnapshot(directory, { kind: "permissions", groups: permission })
+      } })
     }),
     read(() => opencodeClient.getConfig(directory).then((config) => {
       if (commit({ config })) emitSyncConfigChanged(directory, config)
