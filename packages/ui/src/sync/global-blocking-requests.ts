@@ -12,8 +12,8 @@ import type { QuestionRequest } from '@/types/question';
 //
 // It is fed by the same rare events the directory reducer consumes
 // (`permission.asked`/`permission.replied`, `question.asked`/`question.replied`/
-// `question.rejected`, `session.deleted`) and seeded once from the host. Nothing
-// streams through here, so consumers subscribe per session ID without cost.
+// `question.rejected`, `session.deleted`) and targeted authoritative snapshots.
+// Consumers subscribe per session ID without observing token-stream events.
 
 export type PendingBlockingRequests = {
   directory: string;
@@ -151,24 +151,23 @@ export const applyGlobalBlockingRequestEvents = (rawDirectory: string, payloads:
   reducer.publish();
 };
 
-/**
- * Seeds requests the host still holds for sessions this client has no entry
- * for. Additive by session; absence from the host never clears anything,
- * because a live reply may already have settled a request the host map lags on.
- */
-export const seedGlobalBlockingRequests = (
-  entries: ReadonlyArray<{ sessionId: string; directory: string; permissions: readonly PermissionRequest[]; questions: readonly QuestionRequest[] }>,
+/** Publish an already event-reconciled, authoritative directory snapshot. */
+export const applyGlobalBlockingRequestSnapshot = (
+  rawDirectory: string,
+  snapshot: { kind: 'permissions'; groups: Record<string, PermissionRequest[]> } | { kind: 'questions'; groups: Record<string, QuestionRequest[]> },
 ): void => {
+  const directory = normalizeDirectory(rawDirectory);
   const state = useGlobalBlockingRequestsStore.getState();
   const reducer = new Reducer(state);
-  for (const entry of entries) {
-    if (state.bySession.has(entry.sessionId)) continue;
-    if (entry.permissions.length === 0 && entry.questions.length === 0) continue;
-    reducer.write(entry.sessionId, {
-      directory: normalizeDirectory(entry.directory),
-      permissions: entry.permissions,
-      questions: entry.questions,
-    });
+  const ids = new Set(Object.keys(snapshot.groups));
+  for (const [id, entry] of state.bySession) if (entry.directory === directory) ids.add(id);
+  for (const id of ids) {
+    const existing = reducer.current(id) ?? { directory, permissions: EMPTY, questions: EMPTY };
+    if (snapshot.kind === 'permissions') {
+      reducer.write(id, { ...existing, directory, permissions: snapshot.groups[id] ?? EMPTY });
+    } else {
+      reducer.write(id, { ...existing, directory, questions: snapshot.groups[id] ?? EMPTY });
+    }
   }
   reducer.publish();
 };

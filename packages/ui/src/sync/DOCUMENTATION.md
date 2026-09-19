@@ -112,7 +112,9 @@ message history so a reload cannot undo an unsent picker change.
 
 Bootstrap remains stale-while-revalidate: a directory store may paint persisted sessions immediately, but only a successful authoritative fetch may replace that cached list.
 
-`directory-recovery-snapshots.ts` overlays status and blocking-request events received during initialization reads, including repeated busy events that do not change store references. Replies and session deletion/archive prevent stale responses from resurrecting pending requests or activity. Direct local mutations also survive the merge. These observers exist only for in-flight reads and belong to the exact directory-store identity. Initialization commits retain the bootstrap generation and attempt guard after the list scheduler releases its slot; retry, disposal, and runtime changes reject old completions.
+`directory-recovery-snapshots.ts` overlays status and blocking-request events received during initialization reads, including repeated busy events that do not change store references. Replies and session deletion/archive prevent stale responses from resurrecting pending requests or activity. Direct local mutations also survive the merge. These observers belong to the exact directory-store identity. Blocking-request recovery keeps its observer through asynchronous permission auto-accept and the synchronous commit callback, then releases it. Initialization commits retain the bootstrap generation and attempt guard after the list scheduler releases its slot; retry, disposal, and runtime changes reject old completions.
+
+Blocking-request generations match the actual commit scope: partial recovery grants authority only to its candidate session IDs, while complete directory recovery also establishes authority for absent IDs. A newer partial response cannot suppress another session's full-directory recovery. Failed or stale operations grant no authority. Callers supply the commit callback rather than writing the returned snapshot later; the reader checks scope, overlays intervening events and local mutations, removes only successfully auto-accepted request IDs, and publishes without another asynchronous gap. Concurrent newer commits win for the sessions they cover.
 
 Only archive events accepted by the reducer affect recovery snapshots. A rejected stale archive cannot erase current pending requests. Status snapshots pass through the shared schema in `lib/opencode/session-status.ts`; null, arrays, and malformed entries cannot grant idle authority. The scheduler's scope guard includes the runtime key and SDK identity, so invalidation takes effect before React replaces the provider. Reconfiguration reschedules initialization that outlived an already-complete list rather than leaving it stranded.
 
@@ -214,9 +216,26 @@ Current consumers:
 
 Cross-directory selectors subscribe to the narrow child-store field they aggregate. Session aggregation listens to `state.session`. Live busy/retry state is also maintained in `global-session-status.ts`, where each row subscribes to one session ID instead of scanning every child store. Events update the index incrementally; authoritative per-directory status snapshots seed it, clear sessions omitted as idle, and reconcile missed events. Unrelated streaming events such as `message.part.delta` must not trigger global session/status scans.
 
-Directories that are not bootstrapped get their initial activity from the host instead: `host-session-status-seed.ts` fetches `/api/sessions/status`, the cross-project map the OpenChamber host keeps from its single upstream event stream, after each global session load. One request, no OpenCode instance creation. The seed is additive only. It adds busy entries (retry collapses to busy; the next live event restores details) for sessions the client has not observed itself, resolves each session's directory from the global session cache, skips entries the host last updated more than 30 minutes ago because nothing reconciles the host map after a stream gap, and never clears anything: the host payload carries no directory, so absence proves nothing. A live event that arrived first wins. In VS Code the webview shim answers the same route from the extension host's activity watcher, whose phases collapse busy and retry and settle themselves, so every entry it reports is current. The remaining gap is intentional and runtime-specific: on desktop with an external OpenCode, a turn that started before the OpenChamber host and has not emitted a status event since shows no dot until its next step.
+`host-session-status-seed.ts` reads the host map after global session loads and
+stream reconnects. Busy/retry or pending-request evidence selects directories
+for authoritative status, question and permission reads through the shared
+background network budget. These reads materialize only a directory store, not
+its configuration, MCP, session list or history. Idle project topology creates
+no demand. Old hints still merit a check because a long-running tool may be quiet.
+The host cache never publishes approximate busy or retry state itself. Successful
+OpenCode reads retain full retry metadata and reconcile intervening events.
+Unchanged, confirmed hints are skipped until reconnect; failed fields retain
+their state and leave the hint eligible for the next host refresh.
 
-Pending permissions and questions get the same treatment in `global-blocking-requests.ts`: the dispatcher feeds it `permission.asked`/`permission.replied`, `question.asked`/`question.replied`/`question.rejected`, and `session.deleted` for every directory, and the host seed adds the `pending` map the server keeps from its own stream (`getPendingBlockingRequestsSnapshot` in `session-runtime.js`; dropped on reply, deletion, and OpenCode restart, so it carries no age cutoff). The index is additive from the seed and never cleared by absence. Directory stores stay the source for open directories and for row badges; the index serves the tray's approval list and any surface without a mounted row. In-app permission and question toasts for a directory without a store are shown from `handleEvent` directly, except in VS Code, whose extension host owns the auto-accept path. VS Code's `/api/sessions/status` shim reports no pending requests.
+`global-blocking-requests.ts` receives live request lifecycle events for every
+directory and event-reconciled authoritative snapshots from targeted recovery.
+Host absence alone clears nothing. A successful directory read can clear stale
+requests; a reply during that read prevents resurrection. Host question parsing
+preserves `custom: false`. Directory stores serve open chats, while the global
+index serves collapsed groups and the tray. VS Code's host shim supplies activity
+hints without pending requests; its existing permission auto-accept owner remains
+in the foreground UI. Web, Electron, hosted mobile and Capacitor use the same
+recovery path against their selected server.
 
 Turn-complete and error notifications are recorded before the directory-store lookup in `handleEvent`, so an unopened directory still gets its unread dot. The subtask check reads the directory store when the directory is open and the global session cache otherwise. Event routing likewise consults the global session cache: a session-addressed event with no directory is routed to the directory the cache records for that session before any active-session or single-store fallback, so another project's events cannot land in the one open store.
 

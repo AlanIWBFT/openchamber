@@ -40,6 +40,7 @@ const hostQuestionRequestSchema = z.object({
     header: z.string(),
     options: z.array(z.object({ label: z.string(), description: z.string() })),
     multiple: z.boolean().optional(),
+    custom: z.boolean().optional(),
   })),
   tool: toolReferenceSchema,
 })

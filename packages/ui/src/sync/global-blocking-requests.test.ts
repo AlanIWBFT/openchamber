@@ -3,7 +3,7 @@ import type { Event } from '@opencode-ai/sdk/v2/client';
 import {
   applyGlobalBlockingRequestEvents,
   resetGlobalBlockingRequests,
-  seedGlobalBlockingRequests,
+  applyGlobalBlockingRequestSnapshot,
   useGlobalBlockingRequestsStore,
 } from './global-blocking-requests';
 import type { PermissionRequest } from '@/types/permission';
@@ -62,20 +62,16 @@ describe('global blocking requests index', () => {
     expect(bySession()).toBe(before);
   });
 
-  test('seeding adds only sessions without live entries and never clears', () => {
-    applyGlobalBlockingRequestEvents('/far', [asked(permission('p1', 's1'))]);
-    applyGlobalBlockingRequestEvents('/far', [{ id: 'r', type: 'permission.replied', properties: { sessionID: 's1', requestID: 'p1', reply: 'once' } }]);
-
-    seedGlobalBlockingRequests([
-      { sessionId: 's2', directory: '/other', permissions: [permission('p2', 's2')], questions: [] },
-      { sessionId: 's3', directory: '/other', permissions: [], questions: [] },
-    ]);
-    expect([...bySession().keys()]).toEqual(['s2']);
-
-    // A later seed cannot resurrect a settled request or override a live entry.
-    seedGlobalBlockingRequests([{ sessionId: 's2', directory: '/elsewhere', permissions: [permission('p9', 's2')], questions: [] }]);
-    expect(bySession().get('s2')?.permissions.map((p) => p.id)).toEqual(['p2']);
-    seedGlobalBlockingRequests([]);
-    expect(bySession().has('s2')).toBe(true);
+  test('authoritative recovery replaces only its directory and request kind', () => {
+    applyGlobalBlockingRequestEvents('/far', [asked(permission('p1', 's1')), asked(question('q1', 's1'))]);
+    applyGlobalBlockingRequestEvents('/other', [asked(permission('p2', 's2'))]);
+    const other = bySession().get('s2');
+    applyGlobalBlockingRequestSnapshot('/far', { kind: 'questions', groups: {} });
+    expect(bySession().get('s1')?.questions).toEqual([]);
+    expect(bySession().get('s1')?.permissions.map((p) => p.id)).toEqual(['p1']);
+    expect(bySession().get('s2')).toBe(other);
+    applyGlobalBlockingRequestSnapshot('/far', { kind: 'permissions', groups: {} });
+    expect(bySession().has('s1')).toBe(false);
+    expect(bySession().get('s2')).toBe(other);
   });
 });

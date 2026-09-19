@@ -3,8 +3,8 @@ import { createStore } from "zustand/vanilla"
 import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { INITIAL_STATE, type State } from "./types"
 import {
-  readDirectoryPermissionSnapshot,
-  readDirectoryQuestionSnapshot,
+  readDirectoryPermissionSnapshot as recoverPermissions,
+  readDirectoryQuestionSnapshot as recoverQuestions,
   readDirectoryStatusSnapshot,
   recordDirectoryRecoveryEvent,
 } from "./directory-recovery-snapshots"
@@ -19,6 +19,12 @@ const deferred = <T>() => {
   return { resolve, promise }
 }
 const source = (initial: Partial<State> = {}) => createStore<State>(() => ({ ...INITIAL_STATE, ...initial }))
+const readDirectoryQuestionSnapshot = (store: ReturnType<typeof source>, read: () => Promise<QuestionRequest[]>, options: Omit<Parameters<typeof recoverQuestions>[2], "commit"> = {}) => (
+  recoverQuestions(store, read, { ...options, commit: (question) => store.setState({ question }) })
+)
+const readDirectoryPermissionSnapshot = (store: ReturnType<typeof source>, read: () => Promise<PermissionRequest[]>, options: Omit<Parameters<typeof recoverPermissions>[2], "commit"> = {}) => (
+  recoverPermissions(store, read, { ...options, commit: (permission) => store.setState({ permission }) })
+)
 const permission: PermissionRequest = { id: "permission", sessionID: "session", permission: "read", patterns: ["*"], metadata: {}, always: [] }
 const question: QuestionRequest = { id: "question", sessionID: "session", questions: [] }
 const session: Session = {
@@ -27,6 +33,106 @@ const session: Session = {
 }
 
 describe("directory recovery snapshots", () => {
+  test("a newer partial commit does not suppress full recovery of other sessions", async () => {
+    const store = source()
+    const old = deferred<QuestionRequest[]>()
+    const other = { ...question, id: "other", sessionID: "other" }
+    const full = readDirectoryQuestionSnapshot(store, () => old.promise)
+    await readDirectoryQuestionSnapshot(store, async () => [question], { sessionIDs: ["other"] })
+    old.resolve([question, other])
+    expect(await full).toEqual({ session: [question] })
+    expect(store.getState().question).toEqual({ session: [question] })
+  })
+
+  test("disjoint partial recoveries can commit in reverse order", async () => {
+    const store = source()
+    const old = deferred<QuestionRequest[]>()
+    const other = { ...question, id: "other", sessionID: "other" }
+    const first = readDirectoryQuestionSnapshot(store, () => old.promise, { sessionIDs: ["session"] })
+    await readDirectoryQuestionSnapshot(store, async () => [other], { sessionIDs: ["other"] })
+    old.resolve([question])
+    expect(await first).toEqual({ session: [question], other: [other] })
+  })
+
+  test("a stale newer result grants no authority", async () => {
+    const store = source()
+    const old = deferred<QuestionRequest[]>()
+    const first = readDirectoryQuestionSnapshot(store, () => old.promise)
+    await readDirectoryQuestionSnapshot(store, async () => [], { isStale: () => true })
+    old.resolve([question])
+    expect(await first).toEqual({ session: [question] })
+  })
+
+  test("asks and replies during auto-accept survive the final commit", async () => {
+    const store = source()
+    const started = deferred<void>()
+    const accepted = deferred<ReadonlySet<string>>()
+    const other = { ...permission, id: "other", sessionID: "other" }
+    const replied = { ...permission, id: "replied", sessionID: "replied" }
+    const result = readDirectoryPermissionSnapshot(store, async () => [permission, replied], {
+      sessionIDs: ["session", "other", "replied"],
+      settle: async () => { started.resolve(); return accepted.promise },
+    })
+    await started.promise
+    recordDirectoryRecoveryEvent(store, { id: "ask", type: "permission.asked", properties: other })
+    recordDirectoryRecoveryEvent(store, { id: "reply", type: "permission.replied", properties: { sessionID: "replied", requestID: "replied", reply: "once" } })
+    // Also cover an ask for an accepted ID observed before its reply event arrives.
+    recordDirectoryRecoveryEvent(store, { id: "accepted-ask", type: "permission.asked", properties: permission })
+    accepted.resolve(new Set([permission.id]))
+    expect(await result).toEqual({ other: [other] })
+    expect(store.getState().permission).toEqual({ other: [other] })
+  })
+
+  test("a newer empty commit wins while an older auto-accept is pending", async () => {
+    const store = source()
+    const started = deferred<void>()
+    const accepted = deferred<ReadonlySet<string>>()
+    const first = readDirectoryPermissionSnapshot(store, async () => [permission], {
+      settle: async () => { started.resolve(); return accepted.promise },
+    })
+    await started.promise
+    await readDirectoryPermissionSnapshot(store, async () => [])
+    accepted.resolve(new Set())
+    expect(await first).toEqual({})
+  })
+
+  test("scope invalidation during auto-accept cannot block an earlier valid result", async () => {
+    const store = source()
+    const old = deferred<PermissionRequest[]>()
+    const first = readDirectoryPermissionSnapshot(store, () => old.promise)
+    const started = deferred<void>()
+    const accepted = deferred<ReadonlySet<string>>()
+    let stale = false
+    const newer = readDirectoryPermissionSnapshot(store, async () => [], {
+      isStale: () => stale,
+      settle: async () => { started.resolve(); return accepted.promise },
+    })
+    await started.promise
+    stale = true
+    accepted.resolve(new Set())
+    await newer
+    old.resolve([permission])
+    expect(await first).toEqual({ session: [permission] })
+  })
+
+  test("an older question response cannot undo a newer successful empty snapshot", async () => {
+    const store = source()
+    const old = deferred<QuestionRequest[]>()
+    const first = readDirectoryQuestionSnapshot(store, () => old.promise)
+    store.setState({ question: await readDirectoryQuestionSnapshot(store, async () => []) })
+    old.resolve([question])
+    expect(await first).toEqual({})
+  })
+
+  test("a failed newer permission request leaves an older successful response eligible", async () => {
+    const store = source()
+    const old = deferred<PermissionRequest[]>()
+    const first = readDirectoryPermissionSnapshot(store, () => old.promise)
+    await expect(readDirectoryPermissionSnapshot(store, async () => { throw new Error("offline") })).rejects.toThrow("offline")
+    old.resolve([permission])
+    expect(await first).toEqual({ session: [permission] })
+  })
+
   for (const eventLast of [false, true]) {
     test(`preserves the latest transition when an idle event and optimistic turn overlap (event last: ${eventLast})`, async () => {
       const manager = new ChildStoreManager()

@@ -25,10 +25,9 @@ export const startGlobalSessionsPolling = (
 /**
  * Owns the one global-session polling lifecycle for the main app runtime.
  *
- * Each load is followed by the host status seed: unopened directories are
- * never bootstrapped, so a turn already running there when this client
- * started is only known to the host's cross-project map. The seed resolves
- * directories from the list just loaded, which is why it runs after it.
+ * Each load is followed by host-guided recovery. The host's cross-project map
+ * selects activity-bearing directories for authoritative reads without a full
+ * bootstrap. Directory ownership comes from the global list just loaded.
  */
 export const useGlobalSessionsPolling = (enabled: boolean): void => {
   React.useEffect(() => {

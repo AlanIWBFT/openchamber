@@ -1,139 +1,144 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { opencodeClient } from '@/lib/opencode/client';
+import { hostSessionStatusSnapshotSchema } from '@/lib/opencode/session-status';
+import { createOpencodeClient, type QuestionRequest } from '@opencode-ai/sdk/v2';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
-import {
-  applyGlobalSessionStatusEvent,
-  replaceGlobalSessionStatusById,
-  useGlobalSessionStatusStore,
-} from './global-session-status';
-import {
-  HOST_STATUS_SEED_MAX_AGE_MS,
-  buildHostStatusSeedEvents,
-  seedGlobalSessionStatusFromHost,
-} from './host-session-status-seed';
-import { resetSessionOrdering } from './session-ordering';
-import { resetSessionActivityTiming } from './session-activity-timing';
-
-const NOW = 1_700_000_000_000;
+import { replaceGlobalSessionStatusById, useGlobalSessionStatusStore } from './global-session-status';
+import { resetGlobalBlockingRequests, useGlobalBlockingRequestsStore } from './global-blocking-requests';
+import { seedGlobalSessionStatusFromHost } from './host-session-status-seed';
+import { ChildStoreManager } from './child-store';
+import { setSyncRefs } from './sync-refs';
+import { recordDirectoryRecoveryEvent } from './directory-recovery-snapshots';
 
 const session = (id: string, directory: string) => ({
-  id, slug: id, directory, projectID: 'project', title: id, version: '1',
-  time: { created: 1, updated: 1 },
+  id, slug: id, directory, projectID: 'project', title: id, version: '1', time: { created: 1, updated: 1 },
 });
+const question = { id: 'q1', sessionID: 'active', questions: [{ header: 'Pick', question: 'Pick one', options: [], custom: false }] };
 
-describe('buildHostStatusSeedEvents', () => {
-  test('adds busy and retry entries as busy, grouped by resolved directory', () => {
-    const events = buildHostStatusSeedEvents({
-      serverTime: NOW,
-      sessions: {
-        a: { status: 'busy', lastUpdateAt: NOW - 1_000 },
-        b: { status: 'retry', lastUpdateAt: NOW - 1_000 },
-        c: { status: 'idle', lastUpdateAt: NOW },
-      },
-    }, {
-      isKnown: () => false,
-      resolveDirectory: (id) => (id === 'a' ? '/repo' : id === 'b' ? '/other' : null),
-    });
-
-    expect([...events.keys()]).toEqual(['/repo', '/other']);
-    expect(events.get('/repo')).toEqual([{
-      id: 'host-seed:a',
-      type: 'session.status',
-      properties: { sessionID: 'a', status: { type: 'busy' } },
-    }]);
-    expect(events.get('/other')?.[0]?.properties).toEqual({ sessionID: 'b', status: { type: 'busy' } });
-  });
-
-  test('skips sessions the client already observed, stale entries, and unresolved directories', () => {
-    const events = buildHostStatusSeedEvents({
-      serverTime: NOW,
-      sessions: {
-        known: { status: 'busy', lastUpdateAt: NOW },
-        stale: { status: 'busy', lastUpdateAt: NOW - HOST_STATUS_SEED_MAX_AGE_MS - 1 },
-        fresh: { status: 'busy', lastUpdateAt: NOW - HOST_STATUS_SEED_MAX_AGE_MS },
-        unplaced: { status: 'busy', lastUpdateAt: NOW },
-      },
-    }, {
-      isKnown: (id) => id === 'known',
-      resolveDirectory: (id) => (id === 'unplaced' ? null : '/repo'),
-    });
-
-    expect([...events.keys()]).toEqual(['/repo']);
-    expect(events.get('/repo')).toEqual([{
-      id: 'host-seed:fresh',
-      type: 'session.status',
-      properties: { sessionID: 'fresh', status: { type: 'busy' } },
-    }]);
-  });
-});
-
-describe('seedGlobalSessionStatusFromHost', () => {
-  let originalGetSnapshot: typeof opencodeClient.getHostSessionStatusSnapshot;
-  let snapshot: Awaited<ReturnType<typeof opencodeClient.getHostSessionStatusSnapshot>>;
-  let requests = 0;
+describe('targeted host status recovery', () => {
+  const original = {
+    host: opencodeClient.getHostSessionStatusSnapshot,
+    status: opencodeClient.getSessionStatusForDirectory,
+    sdk: opencodeClient.getSdkClient,
+  };
+  let stores: ChildStoreManager;
+  let statusReads: string[];
+  let hostReads: number;
+  let readQuestions: () => Promise<QuestionRequest[]>;
 
   beforeEach(() => {
+    stores = new ChildStoreManager();
+    readQuestions = async () => [];
+    const sdk = createOpencodeClient({ baseUrl: 'http://host-recovery.test', fetch: async (request) => {
+      const url = new URL(new Request(request).url);
+      expect(url.searchParams.get('directory')).toBe('/unopened');
+      if (url.pathname === '/question') return Response.json(await readQuestions());
+      if (url.pathname === '/permission') return Response.json([]);
+      throw new Error(`Unexpected recovery request: ${url.pathname}`);
+    } });
+    opencodeClient.getSdkClient = () => sdk;
+    setSyncRefs(opencodeClient.getSdkClient(), stores, '/selected');
     replaceGlobalSessionStatusById(new Map());
-    resetSessionOrdering();
-    resetSessionActivityTiming();
-    requests = 0;
-    originalGetSnapshot = opencodeClient.getHostSessionStatusSnapshot;
+    resetGlobalBlockingRequests();
+    statusReads = [];
+    hostReads = 0;
+    useGlobalSessionsStore.getState().applySnapshot([session('active', '/unopened'), session('idle', '/idle')], [], 'ready');
     opencodeClient.getHostSessionStatusSnapshot = async () => {
-      requests += 1;
-      return snapshot;
+      hostReads += 1;
+      return { serverTime: 10_000_000, sessions: { active: { status: 'retry', lastUpdateAt: 1 }, idle: { status: 'idle', lastUpdateAt: 1 } }, pending: {} };
     };
-    useGlobalSessionsStore.getState().applySnapshot([
-      session('busy-elsewhere', '/unopened'),
-      session('settled-here', '/repo'),
-    ], [], 'ready');
+    opencodeClient.getSessionStatusForDirectory = async (directory) => {
+      if (!directory) throw new Error('Recovery must name its directory');
+      statusReads.push(directory);
+      return {};
+    };
   });
-
   afterEach(() => {
-    opencodeClient.getHostSessionStatusSnapshot = originalGetSnapshot;
+    opencodeClient.getHostSessionStatusSnapshot = original.host;
+    opencodeClient.getSessionStatusForDirectory = original.status;
+    opencodeClient.getSdkClient = original.sdk;
+    stores.disposeAll();
     replaceGlobalSessionStatusById(new Map());
+    resetGlobalBlockingRequests();
     useGlobalSessionsStore.getState().resetForRuntimeSwitch();
   });
 
-  test('seeds an unopened directory session and never overrides a live observation', async () => {
-    // A live idle arrived for this session before the host answered: the host
-    // still lists it busy (its map lags), and the seed must not resurrect it.
-    applyGlobalSessionStatusEvent('/repo', {
-      id: 'e1', type: 'session.idle', properties: { sessionID: 'settled-here' },
-    });
-    snapshot = {
-      serverTime: NOW,
-      sessions: {
-        'busy-elsewhere': { status: 'busy', lastUpdateAt: NOW },
-        'settled-here': { status: 'busy', lastUpdateAt: NOW },
-      },
+  test('confirms old activity hints without bootstrapping idle projects or repeating unchanged hints', async () => {
+    await seedGlobalSessionStatusFromHost();
+    expect(statusReads).toEqual(['/unopened']);
+    expect(stores.getChild('/idle')).toBeUndefined();
+    expect(stores.getBootstrapState('/unopened')).toBeUndefined();
+    expect(stores.getChild('/unopened')?.getState().sessionStatusReady).toBe(true);
+    expect(useGlobalSessionStatusStore.getState().statusById.size).toBe(0);
+    await seedGlobalSessionStatusFromHost();
+    expect(statusReads).toHaveLength(1);
+    await seedGlobalSessionStatusFromHost(true);
+    expect(statusReads).toHaveLength(2);
+  });
+
+  test('keeps complete retry metadata and the custom-answer policy from authoritative reads', async () => {
+    const host = hostSessionStatusSnapshotSchema.parse({ sessions: {}, serverTime: 1, pending: { active: { permissions: [], questions: [question] } } });
+    expect(host.pending?.active.questions[0].questions[0].custom).toBe(false);
+    const retry = { type: 'retry' as const, attempt: 2, message: 'Retry', next: 123, resolution: { kind: 'network' as const, retry: 'automatic' as const, action: 'check_network' as const } };
+    opencodeClient.getSessionStatusForDirectory = async () => ({ active: retry });
+    readQuestions = async () => [question];
+    await seedGlobalSessionStatusFromHost();
+    expect(useGlobalSessionStatusStore.getState().statusById.get('active')?.status).toEqual(retry);
+    expect(useGlobalBlockingRequestsStore.getState().bySession.get('active')?.questions).toEqual([question]);
+  });
+
+  test('does not turn failed reads into idle and retries an unconfirmed hint', async () => {
+    replaceGlobalSessionStatusById(new Map([['active', { directory: '/unopened', status: { type: 'busy' } }]]));
+    opencodeClient.getSessionStatusForDirectory = async () => null;
+    await seedGlobalSessionStatusFromHost();
+    expect(useGlobalSessionStatusStore.getState().statusById.has('active')).toBe(true);
+    expect(stores.getChild('/unopened')?.getState().sessionStatusReady).toBe(false);
+    opencodeClient.getSessionStatusForDirectory = async () => ({});
+    await seedGlobalSessionStatusFromHost();
+    expect(useGlobalSessionStatusStore.getState().statusById.has('active')).toBe(false);
+  });
+
+  test('a reply during recovery prevents a stale question from being restored globally', async () => {
+    readQuestions = async () => {
+      const store = stores.getChild('/unopened')!;
+      recordDirectoryRecoveryEvent(store, { id: 'reply', type: 'question.replied', properties: { sessionID: 'active', requestID: 'q1', answers: [] } });
+      return [question];
     };
-
     await seedGlobalSessionStatusFromHost();
-
-    const state = useGlobalSessionStatusStore.getState();
-    expect(state.statusById.get('busy-elsewhere')).toEqual({ status: { type: 'busy' }, directory: '/unopened' });
-    expect(state.statusById.has('settled-here')).toBe(false);
-    expect([...state.activeSessionIds]).toEqual(['busy-elsewhere']);
+    expect(useGlobalBlockingRequestsStore.getState().bySession.has('active')).toBe(false);
+    expect(stores.getChild('/unopened')?.getState().question).toEqual({});
   });
 
-  test('a failed fetch and an absent entry leave existing activity untouched', async () => {
-    applyGlobalSessionStatusEvent('/repo', {
-      id: 'e1', type: 'session.status', properties: { sessionID: 'settled-here', status: { type: 'busy' } },
-    });
-    snapshot = null;
+  test('rejects completions after the owning sync runtime is replaced', async () => {
+    const replacement = new ChildStoreManager();
+    opencodeClient.getSessionStatusForDirectory = async () => {
+      setSyncRefs(opencodeClient.getSdkClient(), replacement, '/other');
+      return { active: { type: 'busy' } };
+    };
     await seedGlobalSessionStatusFromHost();
-    expect(useGlobalSessionStatusStore.getState().statusById.has('settled-here')).toBe(true);
-
-    snapshot = { serverTime: NOW, sessions: {} };
-    await seedGlobalSessionStatusFromHost();
-    expect(useGlobalSessionStatusStore.getState().statusById.has('settled-here')).toBe(true);
+    expect(useGlobalSessionStatusStore.getState().statusById.size).toBe(0);
+    replacement.disposeAll();
   });
 
-  test('coalesces overlapping calls into one request', async () => {
-    snapshot = { serverTime: NOW, sessions: {} };
+  test('coalesces overlapping host reads', async () => {
     await Promise.all([seedGlobalSessionStatusFromHost(), seedGlobalSessionStatusFromHost()]);
-    expect(requests).toBe(1);
-    await seedGlobalSessionStatusFromHost();
-    expect(requests).toBe(2);
+    expect(hostReads).toBe(1);
+  });
+
+  test('a reconnect during the host read discards it and performs one fresh recovery', async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const load = opencodeClient.getHostSessionStatusSnapshot;
+    opencodeClient.getHostSessionStatusSnapshot = async () => {
+      const snapshot = await load();
+      if (hostReads === 1) await blocked;
+      return snapshot;
+    };
+    const first = seedGlobalSessionStatusFromHost();
+    const reconnect = seedGlobalSessionStatusFromHost(true);
+    release();
+    await Promise.all([first, reconnect]);
+    expect(hostReads).toBe(2);
+    expect(statusReads).toEqual(['/unopened']);
   });
 });

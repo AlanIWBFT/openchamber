@@ -89,6 +89,34 @@ export function readDirectoryStatusSnapshot(
 
 type BlockingRequest = { id: string; sessionID: string }
 type BlockingMutation<T> = { id: string; request: T | null }
+type BlockingRecoveryOptions<T> = {
+  sessionIDs?: readonly string[]
+  isStale?: () => boolean
+  settle?: (requests: T[]) => Promise<ReadonlySet<string>>
+  commit: (groups: Record<string, T[]>) => void
+}
+
+function createBlockingRequestCoordinator() {
+  const owners = new WeakMap<DirectoryRecoverySource, { next: number; full: number; sessions: Map<string, number> }>()
+  return (source: DirectoryRecoverySource) => {
+    const owner = owners.get(source) ?? { next: 0, full: 0, sessions: new Map<string, number>() }
+    owners.set(source, owner)
+    const generation = ++owner.next
+    return {
+      accepts: (id: string) => generation >= Math.max(owner.full, owner.sessions.get(id) ?? 0),
+      applied: (ids: readonly string[] | undefined) => {
+        if (ids) {
+          for (const id of ids) owner.sessions.set(id, Math.max(generation, owner.sessions.get(id) ?? 0))
+        } else {
+          owner.full = Math.max(owner.full, generation)
+          for (const [id, applied] of owner.sessions) if (applied <= owner.full) owner.sessions.delete(id)
+        }
+      },
+    }
+  }
+}
+const beginPermissionRequest = createBlockingRequestCoordinator()
+const beginQuestionRequest = createBlockingRequestCoordinator()
 
 const indexRequests = <T extends BlockingRequest>(groups: Record<string, T[]>) => (
   new Map(Object.values(groups).flatMap((requests) => requests.map((request) => [request.id, request] as const)))
@@ -99,6 +127,8 @@ function readBlockingSnapshot<T extends BlockingRequest>(
   currentGroups: () => Record<string, T[]>,
   read: () => Promise<T[]>,
   mutation: (event: Event) => BlockingMutation<T> | undefined,
+  authority: ReturnType<ReturnType<typeof createBlockingRequestCoordinator>>,
+  options: BlockingRecoveryOptions<T>,
 ): Promise<Record<string, T[]>> {
   const before = indexRequests(currentGroups())
   const changes = new Map<string, T | null>()
@@ -110,37 +140,55 @@ function readBlockingSnapshot<T extends BlockingRequest>(
     if (removed) removedSessions.add(removed)
   }, async () => {
     const fetched = await read()
-    const snapshot = new Map(fetched.filter((request) => request.id && request.sessionID).map((request) => [request.id, request]))
-    const current = indexRequests(currentGroups())
-    for (const id of before.keys()) if (!current.has(id)) snapshot.delete(id)
-    for (const [id, request] of current) if (before.get(id) !== request) snapshot.set(id, request)
-    for (const [id, request] of changes) {
-      if (request) snapshot.set(id, request)
-      else snapshot.delete(id)
+    if (options.isStale?.()) return currentGroups()
+    const reconcile = () => {
+      const snapshot = new Map(fetched.filter((request) => request.id && request.sessionID).map((request) => [request.id, request]))
+      const current = indexRequests(currentGroups())
+      for (const id of before.keys()) if (!current.has(id)) snapshot.delete(id)
+      for (const [id, request] of current) if (before.get(id) !== request) snapshot.set(id, request)
+      for (const [id, request] of changes) {
+        if (request) snapshot.set(id, request)
+        else snapshot.delete(id)
+      }
+      return [...snapshot.values()].filter((request) => !removedSessions.has(request.sessionID))
     }
+    const settled = options.settle ? await options.settle(reconcile()) : undefined
+    if (options.isStale?.()) return currentGroups()
     const groups: Record<string, T[]> = {}
-    for (const request of snapshot.values()) {
-      if (removedSessions.has(request.sessionID)) continue
+    for (const request of reconcile()) {
+      if (settled?.has(request.id)) continue
       const group = groups[request.sessionID] ?? (groups[request.sessionID] = [])
       group.push(request)
     }
     for (const group of Object.values(groups)) group.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
-    return groups
+    // A partial recovery grants authority only to the sessions it writes.
+    // Keep observing events through asynchronous preparation and this commit.
+    const currentState = currentGroups()
+    const merged = { ...currentState }
+    const ids = options.sessionIDs ?? [...new Set([...Object.keys(currentState), ...Object.keys(groups)])]
+    for (const id of ids) {
+      if (!authority.accepts(id)) continue
+      if (groups[id]) merged[id] = groups[id]
+      else delete merged[id]
+    }
+    authority.applied(options.sessionIDs)
+    options.commit(merged)
+    return merged
   })
 }
 
-export const readDirectoryPermissionSnapshot = (source: DirectoryRecoverySource, read: () => Promise<PermissionRequest[]>) => (
+export const readDirectoryPermissionSnapshot = (source: DirectoryRecoverySource, read: () => Promise<PermissionRequest[]>, options: BlockingRecoveryOptions<PermissionRequest>) => (
   readBlockingSnapshot(source, () => source.getState().permission, read, (event) => {
     if (event.type === "permission.asked") return { id: event.properties.id, request: event.properties }
     if (event.type === "permission.replied") return { id: event.properties.requestID, request: null }
-  })
+  }, beginPermissionRequest(source), options)
 )
 
-export const readDirectoryQuestionSnapshot = (source: DirectoryRecoverySource, read: () => Promise<QuestionRequest[]>) => (
+export const readDirectoryQuestionSnapshot = (source: DirectoryRecoverySource, read: () => Promise<QuestionRequest[]>, options: BlockingRecoveryOptions<QuestionRequest>) => (
   readBlockingSnapshot(source, () => source.getState().question, read, (event) => {
     if (event.type === "question.asked") return { id: event.properties.id, request: event.properties }
     if (event.type === "question.replied" || event.type === "question.rejected") {
       return { id: event.properties.requestID, request: null }
     }
-  })
+  }, beginQuestionRequest(source), options)
 )

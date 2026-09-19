@@ -174,16 +174,14 @@ async function initializeDirectory(input: DirectoryBootstrapInput): Promise<Boot
       commit({ session_status, sessionStatusReady: true })
     }),
     read(async () => {
-      const question = await readDirectoryQuestionSnapshot(store, async () => (
+      await readDirectoryQuestionSnapshot(store, async () => (
         unwrap(await sdk.question.list({ directory }), "question.list")
-      ))
-      commit({ question })
+      ), { isStale: input.isStale, commit: (question) => { commit({ question }) } })
     }),
     read(async () => {
-      const permission = await readDirectoryPermissionSnapshot(store, async () => (
+      await readDirectoryPermissionSnapshot(store, async () => (
         unwrap(await sdk.permission.list({ directory }), "permission.list")
-      ))
-      commit({ permission })
+      ), { isStale: input.isStale, commit: (permission) => { commit({ permission }) } })
     }),
     seededProject
       ? Promise.resolve()

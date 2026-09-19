@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, mock } from "bun:test"
+import { describe, expect, test, beforeEach, mock, spyOn } from "bun:test"
 import { create, type StoreApi } from "zustand"
 import type { Event, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 
@@ -9,6 +9,7 @@ let pendingQuestionsResponse: QuestionRequest[] = []
 let pendingPermissionsResponse: PermissionRequest[] = []
 let pendingQuestionsShouldThrow = false
 let pendingPermissionsShouldThrow = false
+const sdkEpoch = {}
 
 mock.module("@/lib/opencode/client", () => ({
   opencodeClient: {
@@ -23,6 +24,7 @@ mock.module("@/lib/opencode/client", () => ({
       return pendingPermissionsResponse
     }),
     getDirectory: () => "/repo",
+    getSdkClient: () => sdkEpoch,
     getScopedSdkClient: () => ({}),
     setDirectory: () => undefined,
   },
@@ -68,6 +70,9 @@ import { INITIAL_STATE, type State } from "../types"
 import { ChildStoreManager, type DirectoryStore } from "../child-store"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import { sessionEvents } from "@/lib/sessionEvents"
+import * as desktop from "@/lib/desktop"
+import * as permissionAutoAccept from "../vscode-permission-auto-accept"
+import { readDirectoryQuestionSnapshot, recordDirectoryRecoveryEvent } from "../directory-recovery-snapshots"
 const {
   createEventRoutingIndex,
   handleEvent,
@@ -108,6 +113,51 @@ function createDirectoryStore(initial: Partial<State>): StoreApi<DirectoryStore>
 }
 
 describe("resyncBlockingRequestsForDirectory", () => {
+  test("session-only resync does not suppress an overlapping full-directory question recovery", async () => {
+    const store = createDirectoryStore({})
+    const question = buildQuestion()
+    let release!: (questions: QuestionRequest[]) => void
+    const full = readDirectoryQuestionSnapshot(store, () => new Promise((resolve) => { release = resolve }), {
+      commit: (question) => store.setState({ question }),
+    })
+    pendingQuestionsResponse = [question]
+    await resyncBlockingRequestsForDirectory("/repo", store, ["ses_b"], { includePermissions: false })
+    release([question])
+    await full
+    expect(store.getState().question.ses_a).toEqual([question])
+  })
+
+  test("VS Code auto-accept preserves a new permission in another candidate session", async () => {
+    const store = createDirectoryStore({})
+    const original = buildPermission()
+    const incoming = buildPermission({ id: "perm_new", sessionID: "ses_b" })
+    pendingPermissionsResponse = [original]
+    let started!: () => void
+    const waiting = new Promise<void>((resolve) => { started = resolve })
+    let release!: (accepted: boolean) => void
+    const accepted = new Promise<boolean>((resolve) => { release = resolve })
+    const runtime = spyOn(desktop, "isVSCodeRuntime")
+    runtime.mockReturnValue(true)
+    const approve = spyOn(permissionAutoAccept, "processVSCodeReconciledPermissionAutoAccept")
+    approve.mockImplementation(async () => {
+      started()
+      return accepted
+    })
+    try {
+      const recovery = resyncBlockingRequestsForDirectory("/repo", store, ["ses_a", "ses_b"])
+      await waiting
+      recordDirectoryRecoveryEvent(store, { id: "new-permission", type: "permission.asked", properties: incoming })
+      store.setState({ permission: { ses_b: [incoming] } })
+      release(true)
+      await recovery
+      expect(store.getState().permission).toEqual({ ses_b: [incoming] })
+    } finally {
+      release(false)
+      approve.mockRestore()
+      runtime.mockRestore()
+    }
+  })
+
   beforeEach(() => {
     listPendingQuestionsCalls.length = 0
     listPendingPermissionsCalls.length = 0
