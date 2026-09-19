@@ -3,8 +3,8 @@ import { createStore } from "zustand/vanilla"
 import type { PermissionRequest, FormRequest, Session } from "@/lib/opencode/model"
 import { INITIAL_STATE, type State } from "./types"
 import {
-  readDirectoryPermissionSnapshot,
-  readDirectoryFormSnapshot,
+  readDirectoryPermissionSnapshot as readPermissionSnapshot,
+  readDirectoryFormSnapshot as readFormSnapshot,
   readDirectoryStatusSnapshot,
   recordDirectoryRecoveryEvent,
 } from "./directory-recovery-snapshots"
@@ -19,6 +19,13 @@ const deferred = <T>() => {
   return { resolve, promise }
 }
 const source = (initial: Partial<State> = {}) => createStore<State>(() => ({ ...INITIAL_STATE, ...initial }))
+type TestStore = { getState: () => State; setState: (patch: Partial<State>) => void }
+const readDirectoryPermissionSnapshot = (store: TestStore, read: () => Promise<PermissionRequest[]>, options: Partial<Parameters<typeof readPermissionSnapshot>[2]> = {}) => (
+  readPermissionSnapshot(store, read, { commit: (permission) => store.setState({ permission }), ...options })
+)
+const readDirectoryFormSnapshot = (store: TestStore, read: () => Promise<FormRequest[]>, options: Partial<Parameters<typeof readFormSnapshot>[2]> = {}) => (
+  readFormSnapshot(store, read, { commit: (form) => store.setState({ form }), ...options })
+)
 const permission: PermissionRequest = { id: "permission", sessionID: "session", action: "read", resources: ["*"], metadata: {} }
 const form: FormRequest = { id: "form", sessionID: "session", title: "Pick", fields: [{ key: "answer", type: "boolean" }] }
 const session: Session = {
@@ -28,6 +35,63 @@ const session: Session = {
 }
 
 describe("directory recovery snapshots", () => {
+  test("a newer partial recovery only supersedes the sessions it commits", async () => {
+    const store = source()
+    const response = deferred<FormRequest[]>()
+    const older = readDirectoryFormSnapshot(store, () => response.promise)
+    await readDirectoryFormSnapshot(store, async () => [], { sessionIDs: ["session"] })
+    const other = { ...form, id: "other-form", sessionID: "other" }
+    response.resolve([form, other])
+    expect(await older).toEqual({ other: [other] })
+    expect(store.getState().form).toEqual({ other: [other] })
+  })
+
+  test("a newer complete empty recovery prevents an older partial response from resurrecting a form", async () => {
+    const store = source()
+    const response = deferred<FormRequest[]>()
+    const older = readDirectoryFormSnapshot(store, () => response.promise, { sessionIDs: ["session"] })
+    await readDirectoryFormSnapshot(store, async () => [])
+    response.resolve([form])
+    expect(await older).toEqual({})
+    expect(store.getState().form).toEqual({})
+  })
+
+  test("failed and stale newer reads grant no authority over an older usable response", async () => {
+    const store = source()
+    const response = deferred<FormRequest[]>()
+    const older = readDirectoryFormSnapshot(store, () => response.promise)
+    await expect(readDirectoryFormSnapshot(store, async () => { throw new Error("offline") })).rejects.toThrow("offline")
+    await readDirectoryFormSnapshot(store, async () => [], { isStale: () => true })
+    response.resolve([form])
+    expect(await older).toEqual({ session: [form] })
+  })
+
+  test("permission events remain observed through asynchronous auto-accept and final publication", async () => {
+    const store = source()
+    const entered = deferred<void>()
+    const release = deferred<ReadonlySet<string>>()
+    const recovery = readDirectoryPermissionSnapshot(store, async () => [permission], {
+      settle: async () => { entered.resolve(); return release.promise },
+    })
+    await entered.promise
+    recordDirectoryRecoveryEvent(store, { type: "permission.replied", properties: { sessionID: "session", requestID: permission.id } })
+    const added = { ...permission, id: "new-permission" }
+    recordDirectoryRecoveryEvent(store, { type: "permission.asked", properties: added })
+    release.resolve(new Set())
+    expect(await recovery).toEqual({ session: [added] })
+    expect(store.getState().permission).toEqual({ session: [added] })
+  })
+
+  test("a disposed location cannot publish its older pending requests", async () => {
+    const store = source()
+    const response = deferred<FormRequest[]>()
+    const recovery = readDirectoryFormSnapshot(store, () => response.promise)
+    recordDirectoryRecoveryEvent(store, { type: "location.shutdown", properties: {} })
+    response.resolve([form])
+    await expect(recovery).rejects.toThrow("Location recovery invalidated")
+    expect(store.getState().form).toEqual({})
+  })
+
   test("a stale publication returns no authoritative snapshot and preserves the store", async () => {
     const store = source({ session_status: { session: { type: "busy" } } })
     const before = store.getState()

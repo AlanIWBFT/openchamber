@@ -112,6 +112,23 @@ optimistic transitions. Reconciliation and publication run synchronously within
 the observation window; stale reads never publish. OpenCode v2's active snapshot supplies loop membership;
 retry details remain on the assistant message and recover with message reads.
 
+Blocking-request recovery uses the same observation lifetime through asynchronous
+permission auto-accept and final publication. Its generations are scoped to the
+sessions actually committed: a newer partial read cannot invalidate an older
+read for unrelated sessions. Failure and stale owners grant no authority, and a
+location shutdown invalidates its in-flight pending-request reads. Global request
+indexes receive the same reconciled result, with partial commits covering only
+their specified session IDs.
+
+Host-guided authoritative recovery is limited to directories that already have a
+sync child store. Unopened directories retain the upstream additive host-cache
+hint behavior, including its possible stale activity or pending requests; recovery
+never creates a store for them. Changed hints, or reconnect, trigger status/form/
+permission reads for eligible stores without full bootstrap. One global V2 active
+read is shared per recovery round and partitioned by known session ownership;
+publishing one scope cannot clear unrelated sessions. Successful unchanged hints
+are not reread. Confirmation belongs to the runtime, SDK, manager and store identity.
+
 | Layer / Store | Owns | Scope |
 |---|---|---|
 | `ChildStoreManager` and child directory stores | Priority-scheduled directory bootstrap plus `session`, `message`, `part`, `permission`, `form`, etc. | One runtime and one store per directory |
@@ -561,6 +578,8 @@ Directories that are not bootstrapped get their initial activity from the host i
 Pending permissions and forms get the same treatment in `global-blocking-requests.ts`: the dispatcher feeds it `permission.asked`/`permission.replied`, `form.created`/`form.settled`, and `session.deleted` for every directory, and the host seed adds the `pending` map the server keeps from its own stream (`getPendingBlockingRequestsSnapshot` in `session-runtime.js`; dropped on reply, deletion, and OpenCode restart, so it carries no age cutoff). The index keeps only the fields its consumers render (`id`/`sessionID`/`action`/`resources`/`save` for a permission, `id`/`sessionID`/`title` for a form), which is also everything the host can carry. It is additive from the seed and never cleared by absence. Directory stores stay the source for open directories and for row badges; the index serves the tray's approval list and any surface without a mounted row. A page an agent shows that waits for the user's answer (`render.page` with `awaitAnswer`) is a third kind, `pages` (`id` is the tool call id, plus `sessionID`/`title`). OpenCode never hears of that wait, so no directory store holds it: the server announces both ends as `openchamber:page-waiting` and `openchamber:page-settled` (`applyWaitingPageEvent`, placed by the session's directory when the server does not name one) and lists it in the seed's `pages`. Every surface counts it as a form: collapsed and expanded rows, mobile rows, run overviews and the tray, which only opens the session for either. Pages stay apart from `forms` so the form dock never tries to answer one. While one waits, the composer sends a message at once instead of queueing it, because the turn cannot end until the wait does; the message reaches the agent's plugin, which ends the wait.
 
 A `permission.asked` in a session whose permission mode answers without the user (`auto`, or `safety` while a classification provider can run) is held back in `handleEvent`: no card, no row badge, no toast, and no entry in the cross-directory blocking-request index (which feeds collapsed rows, the tray and run overviews), so a request the server accepts never flashes on screen. The replay for the user applies global effects, which adds it to the index then. The host seed is not filtered this way: a page loaded while the server is still classifying a request can show it until the server answers. The server reports a request it did not answer (the safety net held it, Jev failed, or the reply failed) as `openchamber.permission-left-for-user`; the held-back event is then replayed as an `ask` request, stored and announced, in a directory with or without a store. `permission.replied` drops a held-back request. A report that arrives before its request is remembered (bounded), and that request is shown at once. VS Code never holds back: its extension host answers in the webview. A request held back while the client disconnects reaches the store through reconnect reconciliation, which does not consult the mode.
+
+The additive host-hint rule applies to permissions and forms in unopened directories. Opened directories reconcile those kinds against OpenCode snapshots. Waiting pages instead use `beginWaitingPageSnapshot`: the host is their authority in every directory, so a successful snapshot replaces the page list, including clearing a missed settlement. Per-session page events observed during the read win over that snapshot; a failed host read clears nothing. Form and permission snapshots never clear pages. Web, Electron, hosted mobile and Capacitor share this projection; VS Code's host shim reports no pending pages.
 
 In-app permission and form toasts for a directory without a store are shown from `handleEvent` directly, except in VS Code, whose extension host owns the auto-accept path. VS Code's `/api/sessions/status` shim reports no pending requests.
 

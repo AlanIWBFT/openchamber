@@ -11,10 +11,10 @@ import type { FormRequest, PermissionRequest } from '@/lib/opencode/model';
 //
 // It is fed by the same rare events the directory reducer consumes
 // (`permission.asked`/`permission.replied`, `form.created`/`form.settled`,
-// `session.deleted`) and seeded once from the host. Pages that wait for the
-// user's answer have no OpenCode event and no directory store; the server
-// announces them (`applyWaitingPageEvent`), and this index is their only home. Nothing streams through
-// here, so consumers subscribe per session ID without cost.
+// `session.deleted`), authoritative snapshots for opened directories, and host
+// hints for unopened ones. Token-stream events do not enter this index.
+// Waiting pages have no OpenCode event or directory store; host announcements
+// (`applyWaitingPageEvent`) and host snapshots are their only source.
 //
 // Only the fields the consuming surfaces render are kept. The host seed can
 // carry no more than this, and storing the full requests would make the two
@@ -41,12 +41,17 @@ type GlobalBlockingRequestsState = {
 };
 
 const EMPTY: readonly never[] = [];
+let pageRevision = 0;
+let pageEpoch = 0;
+const pageObservations = new Map<string, number>();
 
 export const useGlobalBlockingRequestsStore = create<GlobalBlockingRequestsState>(() => ({
   bySession: new Map(),
 }));
 
 export const resetGlobalBlockingRequests = (): void => {
+  pageEpoch += 1;
+  pageObservations.clear();
   useGlobalBlockingRequestsStore.setState({ bySession: new Map() });
 };
 
@@ -166,6 +171,7 @@ export const applyGlobalBlockingRequestEvents = (rawDirectory: string, payloads:
       }
       case 'session.deleted': {
         const { sessionID } = payload.properties;
+        pageObservations.set(sessionID, ++pageRevision);
         if (sessionID) reducer.remove(sessionID);
         continue;
       }
@@ -188,6 +194,7 @@ export const applyWaitingPageEvent = (
   event: Extract<SyncEvent, { type: 'openchamber.page-waiting' | 'openchamber.page-settled' }>,
   resolveDirectory: (sessionId: string) => string | null,
 ): void => {
+  pageObservations.set(event.properties.sessionID, ++pageRevision);
   const reducer = new Reducer(useGlobalBlockingRequestsStore.getState());
   if (event.type === 'openchamber.page-settled') {
     reducer.settle('pages', event.properties.sessionID, event.properties.pageID);
@@ -198,6 +205,31 @@ export const applyWaitingPageEvent = (
     reducer.ask(normalizeDirectory(directory), sessionID, { kind: 'page', request: { id: page.id, sessionID, title: page.title } });
   }
   reducer.publish();
+};
+
+/** Host pages are authoritative in every directory; events received during a read win per session. */
+export const beginWaitingPageSnapshot = () => {
+  const revision = pageRevision;
+  const epoch = pageEpoch;
+  return (entries: ReadonlyArray<{ sessionId: string; directory: string; pages: readonly BlockingPageRequest[] }>): void => {
+    if (epoch !== pageEpoch) return;
+    const state = useGlobalBlockingRequestsStore.getState();
+    const reducer = new Reducer(state);
+    const incoming = new Map(entries.map((entry) => [entry.sessionId, entry]));
+    const ids = new Set([...incoming.keys(), ...state.bySession.keys()]);
+    for (const id of ids) {
+      if ((pageObservations.get(id) ?? 0) > revision) continue;
+      const entry = incoming.get(id);
+      const existing = reducer.current(id);
+      if (!entry && !existing?.pages.length) continue;
+      const directory = entry ? normalizeDirectory(entry.directory) : existing?.directory;
+      if (!directory) continue;
+      const pages = entry?.pages ?? EMPTY;
+      if (existing?.directory === directory && JSON.stringify(existing.pages) === JSON.stringify(pages)) continue;
+      reducer.write(id, { directory, permissions: existing?.permissions ?? EMPTY, forms: existing?.forms ?? EMPTY, pages });
+    }
+    reducer.publish();
+  };
 };
 
 /**
@@ -226,6 +258,28 @@ export const seedGlobalBlockingRequests = (
       forms: entry.forms,
       pages,
     });
+  }
+  reducer.publish();
+};
+
+/** Publish an event-reconciled snapshot, clearing only its directory or explicit session scope. */
+export const applyGlobalBlockingRequestSnapshot = (
+  rawDirectory: string,
+  snapshot: { kind: 'permissions'; groups: Record<string, PermissionRequest[]> } | { kind: 'forms'; groups: Record<string, FormRequest[]> },
+  sessionIDs?: readonly string[],
+): void => {
+  const directory = normalizeDirectory(rawDirectory);
+  const state = useGlobalBlockingRequestsStore.getState();
+  const reducer = new Reducer(state);
+  const ids = new Set(sessionIDs ?? Object.keys(snapshot.groups));
+  if (!sessionIDs) for (const [id, entry] of state.bySession) if (entry.directory === directory) ids.add(id);
+  for (const id of ids) {
+    const existing = reducer.current(id) ?? { directory, permissions: EMPTY, forms: EMPTY, pages: EMPTY };
+    if (snapshot.kind === 'permissions') {
+      reducer.write(id, { ...existing, directory, permissions: snapshot.groups[id]?.map(toBlockingPermission) ?? EMPTY });
+    } else {
+      reducer.write(id, { ...existing, directory, forms: snapshot.groups[id]?.map(toBlockingForm) ?? EMPTY });
+    }
   }
   reducer.publish();
 };
