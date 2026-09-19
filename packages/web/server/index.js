@@ -1523,7 +1523,8 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
     isShuttingDown = value;
   },
   syncToHmrState,
-  stopBackgroundResources: () => stopDesktopBackgroundResources(),
+  stopBackgroundResources: () => stopDesktopBackgroundResources({ forceTerminals: false }),
+  stopTerminals: () => terminalRuntime?.shutdown(),
   stopManagedOpenCode,
   stopGuestServices: stopAllGuestServices,
   getServer: () => server,
@@ -1536,7 +1537,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
 
 const gracefulShutdown = (...args) => gracefulShutdownRuntime.gracefulShutdown(...args);
 
-const stopDesktopBackgroundResources = () => {
+const stopDesktopBackgroundResources = ({ forceTerminals = true } = {}) => {
   isShuttingDown = true;
   syncToHmrState();
   try { server?.removeAllListeners?.('upgrade'); } catch {}
@@ -1557,7 +1558,7 @@ const stopDesktopBackgroundResources = () => {
     () => stopPermissionAutoAccept?.(),
     () => permissionAutoAcceptRuntime.shutdown(),
     () => globalMessageStreamHub.stop(),
-    () => terminalRuntime?.forceShutdown?.(),
+    () => { if (forceTerminals) terminalRuntime?.forceShutdown?.(); },
     () => dictationRuntime?.stop?.(),
     () => { void messageStreamRuntime?.close?.(); },
     () => realtimeProxyRuntime?.stop?.(),

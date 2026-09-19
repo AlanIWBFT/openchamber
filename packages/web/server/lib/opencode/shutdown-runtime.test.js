@@ -11,6 +11,7 @@ const createRuntime = (server, overrides = {}) => createGracefulShutdownRuntime(
   syncToHmrState: vi.fn(),
   stopBackgroundResources: vi.fn(),
   stopManagedOpenCode: vi.fn(async () => {}),
+  stopTerminals: vi.fn(async () => {}),
   stopGuestServices: vi.fn(async () => {}),
   getServer: () => server,
   getUiAuthController: () => null,
@@ -20,6 +21,33 @@ const createRuntime = (server, overrides = {}) => createGracefulShutdownRuntime(
 });
 
 describe('graceful shutdown runtime', () => {
+  it('joins terminal grace alongside the independent OpenCode deadline', async () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    const completed = [];
+    const runtime = createRuntime(null, {
+      shutdownTimeoutMs: 5000,
+      stopManagedOpenCode: async ({ deadline }) => {
+        expect(deadline).toBe(start + 5000);
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        completed.push('opencode');
+      },
+      stopTerminals: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20000));
+        completed.push('terminals');
+      },
+    });
+    let finished = false;
+    const shutdown = runtime.gracefulShutdown().then(() => { finished = true; });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(completed).toEqual(['opencode']);
+    expect(finished).toBe(false);
+    await vi.advanceTimersByTimeAsync(15000);
+    await shutdown;
+    expect(completed).toEqual(['opencode', 'terminals']);
+    expect(Date.now() - start).toBe(20000);
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();

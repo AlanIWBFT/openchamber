@@ -29,17 +29,16 @@ HMR keeps its same-origin API proxy. The main-process handshake identifies that
 proxy origin explicitly so local readiness applies to both proxy and direct
 backend requests, without delaying remote requests.
 
-Quit, relaunch, and update installation await the in-process server's `stop()`
-before exiting Electron. This lets the backend release its terminals, managed
-OpenCode process, and guest services. `server-shutdown.mjs` bounds the server
-wait to 35 seconds, allowing the terminal runtime's 20-second grace plus the
-remaining backend cleanup. It uses the detached OpenCode killer only if normal
-shutdown fails or times out. An external OpenCode server remains externally
-owned. Closing to the tray does not stop the backend.
+Quit, relaunch, and update installation await the in-process server's `stop()`.
+The backend joins terminal cleanup, managed OpenCode shutdown and guest cleanup
+concurrently. POSIX terminals have their shared 20-second grace; managed OpenCode
+keeps its independent roughly five-second deadline. Windows uses ConPTY cleanup.
+`server-shutdown.mjs` waits for this owner rather than launching a second killer.
+An external OpenCode server remains externally owned. Closing to the tray keeps
+the backend running.
 
 Update installation bounds the full background-service shutdown, including SSH,
-to 40 seconds. This outer deadline leaves the backend's 35-second wait intact;
-its timer is cleared when shutdown finishes.
+to 40 seconds. Its timer is cleared when shutdown finishes.
 
 See [process ownership and the #3589 investigation](./process-lifecycle.md)
 for the launch paths, controlled reproductions, and Windows validation limits.
@@ -224,7 +223,14 @@ Desktop clears AppImage `ARGV0` from `process.env` before probing the login shel
 
 Linux updates are supported only when the packaged app is running from a writable AppImage. Update checks, downloads, and installation report an actionable error when `APPIMAGE` is missing, invalid, or read-only; a missing release feed (`latest-linux.yml` 404 before the first Linux publish) is treated as “no update available”. Authenticated Web clients connected to the embedded Desktop Host use this same `electron-updater` check, download, and restart flow rather than a package-manager command. macOS and Windows updater behavior is unchanged. Release builds keep `latest-linux.yml` (x64) and `latest-linux-arm64.yml` separate and validate each manifest against its AppImage before upload. Linux AppImages download full updates (no `.blockmap` differential channel yet).
 
-`desktop_restart` does not answer the renderer before the install is decided. On the apply-update path it calls `quitAndInstall()` and keeps the IPC call open until the app quits or `autoUpdater` emits `error`, which the platform installers do asynchronously (a rejected code signature, or a Squirrel session disabled by an earlier failure). A failed install rejects the IPC call so the update dialog can show it, and the quit/install flags are rolled back because the app is staying up. A still-running app after the grace period resolves the call. The installer grace period starts after backend cleanup, so a slow terminal shutdown cannot remove the error listener before installation begins.
+`updater-install.mjs` owns update shutdown from before its first await. Ordinary
+quit requests and window closure cannot take over while cleanup is pending.
+It permits the installer's quit only after cleanup and calls `quitAndInstall()`.
+The IPC call remains open for asynchronous installer errors for 15 seconds after
+handoff. An error rejects that call and opens a native restart notice. Once the
+user acknowledges it, the current version relaunches in a fresh process. Clearing
+flags alone cannot restore the stopped backend. A still-running installer after
+the error grace resolves the IPC call, matching upstream behavior.
 
 ### Updater End-to-End Fixture
 

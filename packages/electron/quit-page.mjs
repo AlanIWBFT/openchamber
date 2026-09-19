@@ -144,6 +144,26 @@ const buildStatusPageHtml = ({ locale, colors, copy }) => {
 
 export const getStartupFailureDialogCopy = (locale) => STARTUP_FAILURE_COPY[normalizeQuitLocale(locale)];
 
+const UPDATE_FAILURE_COPY = {
+  en: { title: 'OpenChamber update failed', detail: 'Background services have stopped. Restart the current version to continue.', restart: 'Restart' },
+  fr: { title: 'La mise à jour d’OpenChamber a échoué', detail: 'Les services en arrière-plan sont arrêtés. Redémarrez la version actuelle pour continuer.', restart: 'Redémarrer' },
+  'zh-CN': { title: 'OpenChamber 更新失败', detail: '后台服务已停止。请重启当前版本以继续使用。', restart: '重启' },
+  'zh-TW': { title: 'OpenChamber 更新失敗', detail: '背景服務已停止。請重新啟動目前版本以繼續使用。', restart: '重新啟動' },
+  uk: { title: 'Не вдалося оновити OpenChamber', detail: 'Фонові служби зупинено. Перезапустіть поточну версію, щоб продовжити.', restart: 'Перезапустити' },
+  es: { title: 'La actualización de OpenChamber falló', detail: 'Los servicios en segundo plano se han detenido. Reinicia la versión actual para continuar.', restart: 'Reiniciar' },
+  'pt-BR': { title: 'Falha ao atualizar o OpenChamber', detail: 'Os serviços em segundo plano foram encerrados. Reinicie a versão atual para continuar.', restart: 'Reiniciar' },
+  ko: { title: 'OpenChamber 업데이트 실패', detail: '백그라운드 서비스가 중지되었습니다. 계속하려면 현재 버전을 다시 시작하세요.', restart: '다시 시작' },
+  pl: { title: 'Aktualizacja OpenChamber nie powiodła się', detail: 'Usługi w tle zostały zatrzymane. Uruchom ponownie bieżącą wersję, aby kontynuować.', restart: 'Uruchom ponownie' },
+  ja: { title: 'OpenChamber の更新に失敗しました', detail: 'バックグラウンドサービスは停止しています。続行するには現在のバージョンを再起動してください。', restart: '再起動' },
+  de: { title: 'OpenChamber-Update fehlgeschlagen', detail: 'Die Hintergrunddienste wurden beendet. Starten Sie die aktuelle Version neu, um fortzufahren.', restart: 'Neu starten' },
+  tr: { title: 'OpenChamber güncellenemedi', detail: 'Arka plan hizmetleri durduruldu. Devam etmek için mevcut sürümü yeniden başlatın.', restart: 'Yeniden başlat' },
+};
+
+export const getUpdateFailureDialogCopy = (locale) => {
+  const language = String(locale || '').toLowerCase().split('-')[0];
+  return UPDATE_FAILURE_COPY[language === 'de' || language === 'tr' ? language : normalizeQuitLocale(locale)];
+};
+
 export const buildQuitPageHtml = ({ locale, colors = {} } = {}) => buildStatusPageHtml({
   locale,
   colors,

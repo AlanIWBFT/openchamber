@@ -16,6 +16,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     syncToHmrState,
     stopBackgroundResources,
     stopManagedOpenCode,
+    stopTerminals,
     stopGuestServices,
     getServer,
     getUiAuthController,
@@ -39,6 +40,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     }
     const results = await Promise.allSettled([
       Promise.resolve().then(() => stopManagedOpenCode({ deadline })),
+      Promise.resolve().then(() => stopTerminals()),
       Promise.resolve().then(() => stopGuestServices({ shutdown: true })),
     ]);
     for (const result of results) {
