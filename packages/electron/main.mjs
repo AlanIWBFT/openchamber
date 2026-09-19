@@ -18,6 +18,7 @@ import { collectLocalFileDiagnostics, collectSshBufferDiagnostics } from '@openc
 import { replaceFileWithRetry } from './windows-file-replace.mjs';
 import { persistMainWindowState } from './window-state.mjs';
 import { attachWindowEvents, isNativeWindowVisible } from './window-events.mjs';
+import { createUpdateInstaller, getUpdateFailureDialogCopy } from './updater-install.mjs';
 import { createTrayController } from './tray.mjs';
 import { buildDockMenuTemplate, buildUnreadJumpList, isJumpListSessionId } from './dock-menu.mjs';
 import { createSessionLinkGate } from './session-link-gate.mjs';
@@ -3402,87 +3403,22 @@ const setupAutoUpdater = () => {
   });
 };
 
-const UPDATE_INSTALL_GRACE_MS = 15_000;
-
-const UPDATE_SHUTDOWN_TIMEOUT_MS = 40_000;
-
-const installDownloadedUpdate = () => new Promise((resolve, reject) => {
-  let settled = false;
-  let graceTimer;
-  let backendStopped = false;
-
-  state.updateInstallPending = true;
-
-  const rollbackQuitState = () => {
-    state.updateInstallPending = false;
-    state.quitRequested = false;
-    state.installingUpdate = false;
-  };
-
-  const fail = (error) => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(graceTimer);
-    autoUpdater.off('error', fail);
-    rollbackQuitState();
-    log.error('[electron] update install failed', error);
-    reject(error instanceof Error ? error : new Error(String(error)));
-    if (backendStopped) {
-      log.info('[electron] relaunching on the current version after the failed install');
-      void performConfirmedQuit({ relaunch: true });
-    }
-  };
-
-  autoUpdater.on('error', fail);
-
-  setImmediate(async () => {
-    let shutdownTimer;
-    try {
-      backendStopped = true;
-      await Promise.race([
-        shutdownBackgroundServices(),
-        new Promise((resolveTimeout) => {
-          shutdownTimer = setTimeout(() => {
-            log.warn('[electron] background shutdown timed out before update install; continuing');
-            resolveTimeout(null);
-          }, UPDATE_SHUTDOWN_TIMEOUT_MS);
-        }),
-      ]);
-      if (settled) return;
-      if (isLinuxPackageInstall()) {
-        log.info('[electron] installing the downloaded package');
-        autoUpdater.off('error', fail);
-        await installLinuxPackage({
-          packageType: readLinuxPackageType(),
-          file: state.pendingUpdate?.downloadedFile,
-          downgrade: state.pendingUpdate?.downgrade === true,
-        });
-        settled = true;
-        autoUpdater.off('error', fail);
-        resolve(null);
-        log.info('[electron] package installed; restarting into the new version');
-        state.updateInstallPending = false;
-        void performConfirmedQuit({ relaunch: true });
-        return;
-      }
-      graceTimer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        autoUpdater.off('error', fail);
-        resolve(null);
-      }, UPDATE_INSTALL_GRACE_MS);
-      state.quitRequested = true;
-      state.installingUpdate = true;
-      state.quitConfirmationPending = false;
-      log.info('[electron] handing control to the platform installer');
-      autoUpdater.quitAndInstall();
-      state.updateInstallPending = false;
-    } catch (error) {
-      fail(error);
-    } finally {
-      clearTimeout(shutdownTimer);
-    }
-  });
+const installDownloadedUpdate = createUpdateInstaller({
+  state,
+  autoUpdater,
+  shutdown: shutdownBackgroundServices,
+  flushStorage: flushRendererStorage,
+  showFailure: () => {
+    const copy = getUpdateFailureDialogCopy(app.getLocale());
+    return dialog.showMessageBox({ type: 'error', title: copy.title, message: copy.detail, buttons: [copy.restart], defaultId: 0, cancelId: 0 });
+  },
+  installPackage: isLinuxPackageInstall() ? () => installLinuxPackage({
+    packageType: readLinuxPackageType(),
+    file: state.pendingUpdate?.downloadedFile,
+    downgrade: state.pendingUpdate?.downgrade === true,
+  }) : undefined,
+  restart: () => { relaunchApp(); app.exit(0); },
+  log,
 });
 
 const parseRelevantChangelogNotes = (fromVersion, toVersion) => fetchUpdateNotes(fromVersion, toVersion, compareVersions);
@@ -4768,12 +4704,15 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
           log.info('[electron] desktop_restart ignored, update install already in flight');
           return null;
         }
+        // The installer owns exit from the start of cleanup. It permits window
+        // closure only when handing off to the platform installer.
         if (state.mainWindow && !state.mainWindow.isDestroyed()) {
           try {
             debounceWindowStatePersist(state.mainWindow, true);
           } catch {
           }
         }
+        if (state.quitInProgress) return null;
         return await installDownloadedUpdate();
       }
       setImmediate(() => {
