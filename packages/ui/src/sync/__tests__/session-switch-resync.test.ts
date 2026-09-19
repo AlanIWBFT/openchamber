@@ -1,4 +1,5 @@
-import { describe, expect, test, beforeEach, mock } from "bun:test"
+import { describe, expect, test, beforeEach, mock, spyOn } from "bun:test"
+import { OpenCode } from "@opencode/client"
 import { create, type StoreApi } from "zustand"
 import type { SyncEvent, ToolTransition } from "@/lib/opencode/events"
 import type { FormRequest, PermissionRequest } from "@/lib/opencode/model"
@@ -9,6 +10,7 @@ let pendingFormsResponse: FormRequest[] = []
 let pendingPermissionsResponse: PermissionRequest[] = []
 let pendingFormsShouldThrow = false
 let pendingPermissionsShouldThrow = false
+const sdkEpoch = OpenCode.make({ baseUrl: "http://recovery.test" })
 
 mock.module("@/lib/opencode/client", () => ({
   opencodeClient: {
@@ -23,6 +25,7 @@ mock.module("@/lib/opencode/client", () => ({
       return pendingPermissionsResponse
     }),
     getDirectory: () => "/repo",
+    getSdkClient: () => sdkEpoch,
     getScopedSdkClient: () => ({}),
     setDirectory: () => undefined,
   },
@@ -85,6 +88,9 @@ import { INITIAL_STATE, type State } from "../types"
 import { ChildStoreManager, type DirectoryStore } from "../child-store"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import { sessionEvents } from "@/lib/sessionEvents"
+import * as desktop from "@/lib/desktop"
+import * as permissionAutoAccept from "../vscode-permission-auto-accept"
+import { readDirectoryFormSnapshot, recordDirectoryRecoveryEvent } from "../directory-recovery-snapshots"
 const {
   createEventRoutingIndex,
   handleEvent,
@@ -125,6 +131,49 @@ function createDirectoryStore(initial: Partial<State>): StoreApi<DirectoryStore>
 }
 
 describe("resyncBlockingRequestsForDirectory", () => {
+  test("session-only recovery does not suppress an overlapping full-directory form recovery", async () => {
+    const store = createDirectoryStore({})
+    const form = buildForm()
+    let release!: (forms: FormRequest[]) => void
+    const full = readDirectoryFormSnapshot(store, () => new Promise((resolve) => { release = resolve }), {
+      commit: (form) => store.setState({ form }),
+    })
+    pendingFormsResponse = [form]
+    await resyncBlockingRequestsForDirectory("/repo", store, ["ses_b"], { includePermissions: false })
+    release([form])
+    await full
+    expect(store.getState().form.ses_a).toEqual([form])
+  })
+
+  test("VS Code auto-accept preserves a new permission in another candidate session", async () => {
+    const store = createDirectoryStore({})
+    const incoming = buildPermission({ id: "perm_new", sessionID: "ses_b" })
+    pendingPermissionsResponse = [buildPermission()]
+    let markEntered!: () => void
+    const entered = new Promise<void>((resolve) => { markEntered = resolve })
+    let release!: (accepted: boolean) => void
+    const approval = new Promise<boolean>((resolve) => { release = resolve })
+    const runtime = spyOn(desktop, "isVSCodeRuntime")
+    runtime.mockReturnValue(true)
+    const approve = spyOn(permissionAutoAccept, "processVSCodeReconciledPermissionAutoAccept").mockImplementation(async () => {
+      markEntered()
+      return approval
+    })
+    try {
+      const recovery = resyncBlockingRequestsForDirectory("/repo", store, ["ses_a", "ses_b"])
+      await entered
+      recordDirectoryRecoveryEvent(store, { type: "permission.asked", properties: incoming })
+      store.setState({ permission: { ses_b: [incoming] } })
+      release(true)
+      await recovery
+      expect(store.getState().permission).toEqual({ ses_b: [incoming] })
+    } finally {
+      release(false)
+      approve.mockRestore()
+      runtime.mockRestore()
+    }
+  })
+
   beforeEach(() => {
     listPendingFormsCalls.length = 0
     listPendingPermissionsCalls.length = 0
@@ -143,9 +192,9 @@ describe("resyncBlockingRequestsForDirectory", () => {
     await resyncBlockingRequestsForDirectory("/repo", store)
 
     expect(listPendingFormsCalls).toHaveLength(1)
-    expect(listPendingFormsCalls[0]).toEqual({ directories: ["/repo"] })
+    expect(listPendingFormsCalls[0]).toEqual({ directories: ["/repo"], includeGlobal: false })
     expect(listPendingPermissionsCalls).toHaveLength(1)
-    expect(listPendingPermissionsCalls[0]).toEqual({ directories: ["/repo"] })
+    expect(listPendingPermissionsCalls[0]).toEqual({ directories: ["/repo"], includeGlobal: false })
   })
 
   test("resume recovery refreshes blocking requests only for the active materialized directory", async () => {
@@ -160,8 +209,8 @@ describe("resyncBlockingRequestsForDirectory", () => {
 
     await resyncBlockingRequestsForActiveDirectory("/resume-active", childStores)
 
-    expect(listPendingFormsCalls).toEqual([{ directories: ["/resume-active"] }])
-    expect(listPendingPermissionsCalls).toEqual([{ directories: ["/resume-active"] }])
+    expect(listPendingFormsCalls).toEqual([{ directories: ["/resume-active"], includeGlobal: false }])
+    expect(listPendingPermissionsCalls).toEqual([{ directories: ["/resume-active"], includeGlobal: false }])
     expect(childStores.getChild("/resume-active")?.getState().form.ses_a?.[0]?.id).toBe("frm_1")
     expect(childStores.getChild("/resume-inactive")?.getState().form.ses_b).toBe(undefined)
   })
@@ -239,7 +288,7 @@ describe("resyncBlockingRequestsForDirectory", () => {
 
     await resyncBlockingRequestsForDirectory("/repo", store, ["ses_a"], { includePermissions: false })
 
-    expect(listPendingFormsCalls).toEqual([{ directories: ["/repo"] }])
+    expect(listPendingFormsCalls).toEqual([{ directories: ["/repo"], includeGlobal: false }])
     expect(listPendingPermissionsCalls).toHaveLength(0)
     expect(store.getState().form.ses_a?.[0]?.id).toBe("frm_1")
   })

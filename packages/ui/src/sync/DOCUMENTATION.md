@@ -99,6 +99,23 @@ optimistic transitions. Reconciliation and publication run synchronously within
 the observation window; stale reads never publish. OpenCode v2's active snapshot supplies loop membership;
 retry details remain on the assistant message and recover with message reads.
 
+Blocking-request recovery uses the same observation lifetime through asynchronous
+permission auto-accept and final publication. Its generations are scoped to the
+sessions actually committed: a newer partial read cannot invalidate an older
+read for unrelated sessions. Failure and stale owners grant no authority, and a
+location shutdown invalidates its in-flight pending-request reads. Global request
+indexes receive the same reconciled result, with partial commits covering only
+their specified session IDs.
+
+Host-guided authoritative recovery is limited to directories that already have a
+sync child store. Unopened directories retain the upstream additive host-cache
+hint behavior, including its possible stale activity or pending requests; recovery
+never creates a store for them. Changed hints, or reconnect, trigger status/form/
+permission reads for eligible stores without full bootstrap. One global V2 active
+read is shared per recovery round and partitioned by known session ownership;
+publishing one scope cannot clear unrelated sessions. Successful unchanged hints
+are not reread. Confirmation belongs to the runtime, SDK, manager and store identity.
+
 | Layer / Store | Owns | Scope |
 |---|---|---|
 | `ChildStoreManager` and child directory stores | Priority-scheduled directory bootstrap plus `session`, `message`, `part`, `permission`, `form`, etc. | One runtime and one store per directory |
