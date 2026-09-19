@@ -148,6 +148,23 @@ optimistic transitions. Reconciliation and publication run synchronously within
 the observation window; stale reads never publish. OpenCode v2's active snapshot supplies loop membership;
 retry details remain on the assistant message and recover with message reads.
 
+Blocking-request recovery uses the same observation lifetime through asynchronous
+permission auto-accept and final publication. Its generations are scoped to the
+sessions actually committed: a newer partial read cannot invalidate an older
+read for unrelated sessions. Failure and stale owners grant no authority, and a
+location shutdown invalidates its in-flight pending-request reads. Global request
+indexes receive the same reconciled result, with partial commits covering only
+their specified session IDs.
+
+Host-guided authoritative recovery is limited to directories that already have a
+sync child store. Unopened directories retain the upstream additive host-cache
+hint behavior, including its possible stale activity or pending requests; recovery
+never creates a store for them. Changed hints, or reconnect, trigger status/form/
+permission reads for eligible stores without full bootstrap. One global V2 active
+read is shared per recovery round and partitioned by known session ownership;
+publishing one scope cannot clear unrelated sessions. Successful unchanged hints
+are not reread. Confirmation belongs to the runtime, SDK, manager and store identity.
+
 | Layer / Store | Owns | Scope |
 |---|---|---|
 | `ChildStoreManager` and child directory stores | Priority-scheduled directory bootstrap plus `session`, `message`, `part`, `permission`, `form`, etc. | One runtime and one store per directory |
@@ -903,6 +920,7 @@ A `permission.asked` in a session whose permission mode answers without the user
 Holding back is only safe while the client hears both the modes and the reports. The main event stream carries them only over the WebSocket; over SSE it is OpenCode's own stream. So the server also sends `openchamber:permission-auto-accept.updated` and `.left-for-user` on the control stream, which every web, desktop and mobile window keeps open, and `subscribePermissionPolicySync` (`permission-mode-sync.ts`) feeds them into `handleEvent`. Over the WebSocket each arrives twice; a second policy of the same revision and a second report for a request already shown change nothing. Each connection of the control stream reads the modes again, the host's (`usePermissionStore.hydrate`) and each known space's (`refreshSpaceModes`): a mode changed in another window while this one was cut off was never announced to it, and a stale `auto` would hide every request of that session for the life of the window. The host's `openchamber:space-permission-stream` announcement re-reads that space's modes from the control stream too.
 
 The other announcements the server sends the same way take the control stream too (`subscribeControlStreamSync` in `control-stream-sync.ts`): a page waiting for an answer (`openchamber:page-waiting`, `page-settled`), a pending recap (`session-assist`), a workflow run (`workflow-run`, `-removed`) and an archive (`session-archived`). The first three kinds have the control stream as their only reader, and `handleEvent` drops the WebSocket copy: each switches something on and off or replaces a run summary without a revision, so two copies interleaved between the streams could put an older state over a newer one, and a waiting page raises a toast. An archive arrives as a `session.patched` the pipeline cannot tell apart, so it is applied from both streams; the same patch twice changes nothing. Each connection of the control stream reads the shown runs again (`reloadLoaded`) and the host's snapshot (`seedGlobalSessionStatusFromHost`), which settles a page whose end fell into the gap. `openchamber:session-metadata` is left to the WebSocket: the server writes metadata into OpenCode, whose own `session.metadata.updated` reaches every transport.
+The additive host-hint rule applies to permissions and forms in unopened directories. Opened directories reconcile those kinds against OpenCode snapshots; `readHostBlockingRequestsSnapshot` accepts a `canSeedRequests` predicate to leave their requests to that owner. Waiting pages use the same in-flight host reader in every host directory. Form and permission snapshots never clear pages. Web, Electron, hosted mobile and Capacitor share this projection; VS Code's host shim reports no pending pages.
 
 In-app permission and form toasts for a directory without a store are shown from `handleEvent` directly, except in VS Code, whose extension host owns the auto-accept path. VS Code's `/api/sessions/status` shim reports no pending requests.
 
