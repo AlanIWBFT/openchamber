@@ -3,6 +3,7 @@ import type { SyncEvent } from '@/lib/opencode/events';
 import {
   applyGlobalBlockingRequestEvents,
   applyWaitingPageEvent,
+  applyGlobalBlockingRequestSnapshot,
   resetGlobalBlockingRequests,
   readHostBlockingRequestsSnapshot,
   useGlobalBlockingRequestsStore,
@@ -29,6 +30,25 @@ const bySession = () => useGlobalBlockingRequestsStore.getState().bySession;
 beforeEach(() => resetGlobalBlockingRequests());
 
 describe('global blocking requests index', () => {
+  test('host page recovery replaces only pages and preserves events received during the read', async () => {
+    const page = { id: 'call_1', sessionID: 's1', title: 'Pick' };
+    applyGlobalBlockingRequestEvents('/repo', [formCreated(form('f1', 's1'))]);
+    const withPage = hostSnapshot({ s1: { permissions: [], forms: [], pages: [page] } });
+    await readHostBlockingRequestsSnapshot(withPage, () => '/repo');
+    applyGlobalBlockingRequestSnapshot('/repo', { kind: 'forms', groups: {} });
+    expect(bySession().get('s1')?.pages).toEqual([page]);
+    const stale = readHostBlockingRequestsSnapshot(withPage, () => '/repo');
+    applyWaitingPageEvent({ type: 'openchamber.page-settled', properties: { sessionID: 's1', pageID: 'call_1' } }, () => '/repo');
+    await stale;
+    expect(bySession().has('s1')).toBe(false);
+    const beforeAsk = readHostBlockingRequestsSnapshot(hostSnapshot({}), () => '/repo');
+    applyWaitingPageEvent({ type: 'openchamber.page-waiting', properties: { sessionID: 's1', directory: '/repo', page } }, () => '/repo');
+    await beforeAsk;
+    expect(bySession().get('s1')?.pages).toEqual([page]);
+    await readHostBlockingRequestsSnapshot(hostSnapshot({}), () => '/repo');
+    expect(bySession().has('s1')).toBe(false);
+  });
+
   test('keeps a waiting page beside the session\'s forms until the server says it stopped waiting', () => {
     const noDirectory = () => null;
     applyGlobalBlockingRequestEvents('/far', [formCreated(form('q1', 's1'))]);
@@ -55,6 +75,27 @@ describe('global blocking requests index', () => {
   test('seeds waiting pages from the host', async () => {
     await readHostBlockingRequestsSnapshot(hostSnapshot({ s1: { permissions: [], forms: [], pages: [{ id: 'call_1', sessionID: 's1', title: 'Pick' }] } }), () => '/other');
     expect(bySession().get('s1')?.pages.map((page) => page.id)).toEqual(['call_1']);
+  });
+
+  test('authoritative snapshots clear only their request kind and directory', () => {
+    applyGlobalBlockingRequestEvents('/repo', [permissionAsked(permission('p1', 's1')), formCreated(form('f1', 's1'))]);
+    applyGlobalBlockingRequestEvents('/other', [formCreated(form('f2', 's2'))]);
+    applyGlobalBlockingRequestSnapshot('/repo', { kind: 'forms', groups: {} });
+    expect(bySession().get('s1')?.forms).toEqual([]);
+    expect(bySession().get('s1')?.permissions).toEqual([permission('p1', 's1')]);
+    expect(bySession().get('s2')?.forms).toEqual([form('f2', 's2')]);
+    applyGlobalBlockingRequestSnapshot('/repo', { kind: 'permissions', groups: {} });
+    expect(bySession().has('s1')).toBe(false);
+    expect(bySession().has('s2')).toBe(true);
+  });
+
+  test('partial recovery cannot clear another session and publishes the lightweight form projection', () => {
+    applyGlobalBlockingRequestEvents('/repo', [formCreated(form('f1', 's1')), formCreated(form('f2', 's2'))]);
+    applyGlobalBlockingRequestSnapshot('/repo', { kind: 'forms', groups: {} }, ['s1']);
+    expect(bySession().has('s1')).toBe(false);
+    expect(bySession().get('s2')?.forms).toEqual([form('f2', 's2')]);
+    applyGlobalBlockingRequestSnapshot('/repo', { kind: 'forms', groups: { s1: [{ ...form('f3', 's1'), fields: [{ key: 'answer', type: 'boolean' }] }] } }, ['s1']);
+    expect(bySession().get('s1')?.forms).toEqual([form('f3', 's1')]);
   });
 
   test('tracks asks per session and settles them by request id', () => {
