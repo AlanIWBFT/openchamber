@@ -51,6 +51,11 @@ export function getSyncChildStores(): ChildStoreManager {
   return _childStores
 }
 
+/** Global polling can run before SyncProvider has registered a directory owner. */
+export function getOptionalSyncChildStores(): ChildStoreManager | null {
+  return _childStores
+}
+
 /** Read current directory's child store state. Returns undefined if not bootstrapped. */
 export function getDirectoryState(directory?: string): State | undefined {
   const stores = _childStores

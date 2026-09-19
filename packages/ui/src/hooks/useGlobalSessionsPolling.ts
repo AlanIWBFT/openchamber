@@ -45,10 +45,9 @@ export const startGlobalSessionsPolling = (
 /**
  * Owns the one global-session polling lifecycle for the main app runtime.
  *
- * Each load is followed by the host status seed: unopened directories are
- * never bootstrapped, so a turn already running there when this client
- * started is only known to the host's cross-project map. The seed resolves
- * directories from the list just loaded, which is why it runs after it.
+ * Each load is followed by host hints for unopened directories and targeted
+ * authoritative recovery for existing sync stores. Ownership comes from the
+ * session list just loaded; recovery never creates another directory store.
  */
 export const useGlobalSessionsPolling = (enabled: boolean): void => {
   React.useEffect(() => {
@@ -61,7 +60,7 @@ export const useGlobalSessionsPolling = (enabled: boolean): void => {
         if (initial) await ensureGlobalSessionsLoaded(getAllSyncSessions());
         else await refreshGlobalSessions();
         if (!active || getRuntimeKey() !== runtimeKey) return false;
-        void seedGlobalSessionStatusFromHost();
+        void seedGlobalSessionStatusFromHost().catch(() => {});
         // The store preserves cached sessions on failure instead of throwing.
         return useGlobalSessionsStore.getState().status === 'ready';
       };

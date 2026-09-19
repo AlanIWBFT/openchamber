@@ -11,8 +11,8 @@ import type { FormRequest, PermissionRequest } from '@/lib/opencode/model';
 //
 // It is fed by the same rare events the directory reducer consumes
 // (`permission.asked`/`permission.replied`, `form.created`/`form.settled`,
-// `session.deleted`) and seeded once from the host. Nothing streams through
-// here, so consumers subscribe per session ID without cost.
+// `session.deleted`), authoritative snapshots for opened directories, and host
+// hints for unopened ones. Token-stream events do not enter this index.
 //
 // Only the fields the consuming surfaces render are kept. The host seed can
 // carry no more than this, and storing the full requests would make the two
@@ -188,6 +188,28 @@ export const seedGlobalBlockingRequests = (
       permissions: entry.permissions,
       forms: entry.forms,
     });
+  }
+  reducer.publish();
+};
+
+/** Publish an event-reconciled snapshot, clearing only its directory or explicit session scope. */
+export const applyGlobalBlockingRequestSnapshot = (
+  rawDirectory: string,
+  snapshot: { kind: 'permissions'; groups: Record<string, PermissionRequest[]> } | { kind: 'forms'; groups: Record<string, FormRequest[]> },
+  sessionIDs?: readonly string[],
+): void => {
+  const directory = normalizeDirectory(rawDirectory);
+  const state = useGlobalBlockingRequestsStore.getState();
+  const reducer = new Reducer(state);
+  const ids = new Set(sessionIDs ?? Object.keys(snapshot.groups));
+  if (!sessionIDs) for (const [id, entry] of state.bySession) if (entry.directory === directory) ids.add(id);
+  for (const id of ids) {
+    const existing = reducer.current(id) ?? { directory, permissions: EMPTY, forms: EMPTY };
+    if (snapshot.kind === 'permissions') {
+      reducer.write(id, { ...existing, directory, permissions: snapshot.groups[id]?.map(toBlockingPermission) ?? EMPTY });
+    } else {
+      reducer.write(id, { ...existing, directory, forms: snapshot.groups[id]?.map(toBlockingForm) ?? EMPTY });
+    }
   }
   reducer.publish();
 };
