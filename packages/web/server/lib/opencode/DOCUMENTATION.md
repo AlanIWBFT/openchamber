@@ -188,8 +188,12 @@ picks them up. OpenChamber never writes session rows itself.
 It runs from `lifecycle.js` immediately before the MANAGED OpenCode is spawned:
 never for an external, user-started OpenCode, and never while a managed one is
 running, because the write would race OpenCode's own loop. Failure is never
-fatal to startup. It opens `<data>/opencode.db` (or `OPENCODE_DB`), resolved
-from the environment the managed process starts with, read-write through `node:sqlite` on Node or `bun:sqlite` on Bun, and skips silently on
+fatal to startup. It opens `<data>/opencode-dev.db` read-write for the local
+dev-channel CLI. `OPENCODE_DISABLE_CHANNEL_DB=1` or `true` selects `opencode.db`.
+`OPENCODE_DB` takes precedence; relative paths resolve under the data directory
+and `:memory:` skips file access. `getOpenCodeDataDir` resolves the directory
+from the environment the managed process starts with. It opens the database
+through `node:sqlite` on Node or `bun:sqlite` on Bun, and skips silently on
 neither. It returns
 `{ status: 'skipped' | 'scheduled' | 'unsafe' | 'unavailable', missing, revisited, reason? }`
 and logs one line; there is no HTTP route and no UI.

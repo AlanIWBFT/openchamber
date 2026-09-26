@@ -49,14 +49,16 @@ import { z } from 'zod';
 import { getOpenCodeDataDir } from './shared.js';
 
 /**
- * Where OpenCode keeps its database: `OPENCODE_DB` when set (absolute or
- * relative to the data dir), else `opencode.db` in the data dir.
+ * Match the local dev-channel CLI, including explicit database and XDG overrides.
  */
-const resolveOpenCodeDbPath = (env) => {
+export const resolveOpenCodeDbPath = (env = process.env) => {
   const dataDir = getOpenCodeDataDir(env);
-  const configured = (env.OPENCODE_DB ?? '').trim();
-  if (configured && configured !== ':memory:') return path.resolve(dataDir, configured);
-  return path.join(dataDir, 'opencode.db');
+  const filename = env.OPENCODE_DB ?? (
+    env.OPENCODE_DISABLE_CHANNEL_DB === '1' || env.OPENCODE_DISABLE_CHANNEL_DB === 'true'
+      ? 'opencode.db'
+      : 'opencode-dev.db'
+  );
+  return filename === ':memory:' ? filename : path.resolve(dataDir, filename);
 };
 
 /** OpenCode's key for the migration state row in `kv`. */
@@ -250,6 +252,7 @@ export const topUpV1Migration = (options = {}) => {
     now = Date.now,
   } = options;
 
+  if (dbPath === ':memory:') return outcome('skipped', 'no-database');
   const open = loadSqlite();
   if (!open) return outcome('unavailable', 'no-sqlite-runtime');
   if (!fileSystem.existsSync(dbPath)) return outcome('skipped', 'no-database');
