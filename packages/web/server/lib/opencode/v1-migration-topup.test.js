@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -110,6 +110,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.resetModules();
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -123,6 +125,38 @@ describe('computeResumeCursor', () => {
 });
 
 describe.skipIf(!sqlite)('topUpV1Migration', () => {
+  it.each([
+    [undefined, undefined, 'opencode-dev.db'],
+    [undefined, '1', 'opencode.db'],
+    ['custom.db', '1', 'custom.db'],
+  ])('updates only the configured database in XDG_DATA_HOME: %s / %s', async (configured, disableChannel, expectedFile) => {
+    vi.stubEnv('XDG_DATA_HOME', dir);
+    vi.stubEnv('OPENCODE_DB', configured);
+    vi.stubEnv('OPENCODE_DISABLE_CHANNEL_DB', disableChannel);
+    fs.mkdirSync(path.join(dir, 'opencode'));
+    const filenames = ['opencode.db', 'opencode-dev.db', 'custom.db'];
+    for (const filename of filenames) {
+      dbPath = path.join(dir, 'opencode', filename);
+      createDatabase();
+      seed({ v1: ['ses_a'] });
+    }
+    vi.resetModules();
+    const migration = await import('./v1-migration-topup.js');
+    expect(migration.topUpV1Migration({ logger: { log: () => {}, warn: () => {} } }))
+      .toEqual({ status: 'scheduled', missing: 1, revisited: 0 });
+    for (const filename of filenames) {
+      dbPath = path.join(dir, 'opencode', filename);
+      expect(readMigrationRow().state).toEqual(filename === expectedFile
+        ? { phase: 'sessions', cursor: computeResumeCursor('ses_a') }
+        : { phase: 'completed' });
+    }
+  });
+
+  it('skips :memory: without looking for a file', () => {
+    expect(topUpV1Migration({ dbPath: ':memory:', fileSystem: { existsSync: () => { throw new Error('unexpected file access'); } } }))
+      .toEqual({ status: 'skipped', missing: 0, revisited: 0, reason: 'no-database' });
+  });
+
   it('skips when the database file does not exist', () => {
     expect(run()).toEqual({ status: 'skipped', missing: 0, revisited: 0, reason: 'no-database' });
   });
