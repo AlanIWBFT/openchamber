@@ -2,7 +2,7 @@
  * READ-ONLY view of the credentials OpenCode 2.x keeps in its SQLite database.
  *
  * OpenCode 2.x imports the legacy `auth.json` once and from then on stores
- * every credential in `<data>/opencode.db`, table `credential`, as plain JSON.
+ * every credential in its database, table `credential`, as plain JSON.
  * There is no HTTP route that hands a key back, so the quota providers and
  * voice keys would only ever see credentials that predate the upgrade. This
  * module reads the table directly and projects each row into the legacy
@@ -20,7 +20,7 @@
 
 import { createRequire } from 'node:module';
 
-const DB_FILE_NAME = 'opencode.db';
+const DB_FILE_NAME = 'opencode-dev.db';
 
 /**
  * A minimal read-only connection: `all(sql)` and `close()`. Node provides it
@@ -60,14 +60,18 @@ const loadSqlite = () => {
 };
 
 /**
- * Where OpenCode keeps its database: `OPENCODE_DB` when set (absolute or
- * relative to the data dir), else `opencode.db` in the data dir.
+ * Match the local dev-channel CLI: OPENCODE_DB takes precedence, otherwise
+ * OPENCODE_DISABLE_CHANNEL_DB=1/true selects opencode.db instead of opencode-dev.db.
+ * Relative paths resolve against the data dir; :memory: has no readable file.
  * @param {{ dataDir: string, env?: NodeJS.ProcessEnv, path: typeof import('node:path') }} options
  */
 export const resolveCredentialDbPath = ({ dataDir, env = process.env, path }) => {
-  const configured = (env.OPENCODE_DB ?? '').trim();
-  if (configured && configured !== ':memory:') return path.resolve(dataDir, configured);
-  return path.join(dataDir, DB_FILE_NAME);
+  const filename = env.OPENCODE_DB ?? (
+    env.OPENCODE_DISABLE_CHANNEL_DB === '1' || env.OPENCODE_DISABLE_CHANNEL_DB === 'true'
+      ? 'opencode.db'
+      : DB_FILE_NAME
+  );
+  return filename === ':memory:' ? filename : path.resolve(dataDir, filename);
 };
 
 /**
@@ -111,6 +115,7 @@ export const projectCredentialValue = (raw) => {
  *   from "could not look".
  */
 export const readCredentialsFromDb = ({ dbPath, fs }) => {
+  if (dbPath === ':memory:') return null;
   const open = loadSqlite();
   if (!open) return null;
   if (!fs.existsSync(dbPath)) return null;

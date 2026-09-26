@@ -237,6 +237,7 @@ export const topUpV1Migration = (options = {}) => {
     now = Date.now,
   } = options;
 
+  if (dbPath === ':memory:') return outcome('skipped', 'no-database');
   const open = loadSqlite();
   if (!open) return outcome('unavailable', 'no-sqlite-runtime');
   if (!fileSystem.existsSync(dbPath)) return outcome('skipped', 'no-database');

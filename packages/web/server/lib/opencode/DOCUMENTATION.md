@@ -120,7 +120,7 @@ write path is gone.
 
 ### credential-db.js
 
-Reads `<data>/opencode.db` (or `OPENCODE_DB`), table `credential`, where
+Reads the local dev-channel CLI database, table `credential`, where
 OpenCode 2.x stores every credential as plain JSON. This is OpenCode's private
 schema, verified against v2.0.x `packages/core/src/credential/sql.ts`; the
 reader opens the file read-only, picks the `active` row per integration (else
@@ -129,7 +129,14 @@ legacy entry shape, and answers `null` for anything it cannot do (no sqlite
 runtime, no file, a changed schema), so the caller can tell "no credentials"
 from "could not look" and fall back to the file. `node:sqlite` on Node 22.13+,
 `bun:sqlite` on Bun; no dependency is added. `packages/vscode/src/opencodeAuth.ts`
-is the extension-host mirror.
+is the separate extension-host implementation.
+
+The web server and Electron use `<data>/opencode-dev.db` by default.
+`OPENCODE_DISABLE_CHANNEL_DB=1` or `true` selects `opencode.db` instead.
+`OPENCODE_DB` takes precedence, with relative paths resolved against the data
+directory and `:memory:` skipping file access. The data directory is
+`$XDG_DATA_HOME/opencode`, falling back to `~/.local/share/opencode`.
+Both credential reads and the managed-start migration top-up use this resolver.
 
 ### v1-migration-topup.js
 
@@ -144,7 +151,7 @@ picks them up. OpenChamber never writes session rows itself.
 It runs from `lifecycle.js` immediately before the MANAGED OpenCode is spawned:
 never for an external, user-started OpenCode, and never while a managed one is
 running, because the write would race OpenCode's own loop. Failure is never
-fatal to startup. It opens `<data>/opencode.db` (or `OPENCODE_DB`) read-write
+fatal to startup. It opens the path resolved by `credential-db.js` read-write
 with the same loader strategy as `credential-db.js` — `node:sqlite` on Node,
 `bun:sqlite` on Bun, skip silently on neither. It returns
 `{ status: 'skipped' | 'scheduled' | 'unsafe' | 'unavailable', missing, revisited, reason? }`

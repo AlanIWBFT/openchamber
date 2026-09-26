@@ -22,7 +22,7 @@ import path from 'path';
 import os from 'os';
 import { readCredentialsFromDb, resolveCredentialDbPath } from './credential-db.js';
 
-const OPENCODE_DATA_DIR = path.join(os.homedir(), '.local', 'share', 'opencode');
+const OPENCODE_DATA_DIR = path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'opencode');
 const AUTH_FILE = path.join(OPENCODE_DATA_DIR, 'auth.json');
 
 function readLegacyAuthFile(authFile, fileSystem) {
