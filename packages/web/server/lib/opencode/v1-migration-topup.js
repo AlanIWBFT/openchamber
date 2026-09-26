@@ -47,16 +47,17 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { z } from 'zod';
 
-const OPENCODE_DATA_DIR = path.join(os.homedir(), '.local', 'share', 'opencode');
-
 /**
- * Where OpenCode keeps its database: `OPENCODE_DB` when set (absolute or
- * relative to the data dir), else `opencode.db` in the data dir.
+ * Match the local dev-channel CLI, including explicit database and XDG overrides.
  */
-const resolveOpenCodeDbPath = (env = process.env) => {
-  const configured = (env.OPENCODE_DB ?? '').trim();
-  if (configured && configured !== ':memory:') return path.resolve(OPENCODE_DATA_DIR, configured);
-  return path.join(OPENCODE_DATA_DIR, 'opencode.db');
+export const resolveOpenCodeDbPath = (env = process.env) => {
+  const dataDir = path.join(env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'opencode');
+  const filename = env.OPENCODE_DB ?? (
+    env.OPENCODE_DISABLE_CHANNEL_DB === '1' || env.OPENCODE_DISABLE_CHANNEL_DB === 'true'
+      ? 'opencode.db'
+      : 'opencode-dev.db'
+  );
+  return filename === ':memory:' ? filename : path.resolve(dataDir, filename);
 };
 
 /** OpenCode's key for the migration state row in `kv`. */
@@ -247,6 +248,7 @@ export const topUpV1Migration = (options = {}) => {
     now = Date.now,
   } = options;
 
+  if (dbPath === ':memory:') return outcome('skipped', 'no-database');
   const open = loadSqlite();
   if (!open) return outcome('unavailable', 'no-sqlite-runtime');
   if (!fileSystem.existsSync(dbPath)) return outcome('skipped', 'no-database');
