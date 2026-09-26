@@ -45,10 +45,30 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.resetModules();
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
 describe.skipIf(!sqlite)('readAuthFile', () => {
+  it.each([
+    [undefined, undefined, 'opencode-dev.db'],
+    [undefined, 'true', 'opencode.db'],
+    ['custom.db', 'true', 'custom.db'],
+  ])('selects only the configured database in XDG_DATA_HOME: %s / %s', async (configured, disableChannel, expectedFile) => {
+    vi.stubEnv('XDG_DATA_HOME', dir);
+    vi.stubEnv('OPENCODE_DB', configured);
+    vi.stubEnv('OPENCODE_DISABLE_CHANNEL_DB', disableChannel);
+    fs.mkdirSync(path.join(dir, 'opencode'));
+    for (const filename of ['opencode.db', 'opencode-dev.db', 'custom.db']) {
+      dbPath = path.join(dir, 'opencode', filename);
+      seedDb([{ integration: 'openai', value: { type: 'key', key: filename } }]);
+    }
+    vi.resetModules();
+    const auth = await import('./auth.js');
+    expect(auth.readAuthFile()).toEqual({ openai: { type: 'api', key: expectedFile } });
+  });
+
   it('answers from the database alone when it can be read, so a credential deleted in OpenCode stays deleted', () => {
     // OpenCode never clears auth.json after importing it; the stale key must not come back.
     fs.writeFileSync(authFile, JSON.stringify({ openai: { type: 'api', key: 'stale' }, deepseek: { type: 'api', key: 'removed' } }));

@@ -59,11 +59,30 @@ describe('projectCredentialValue', () => {
 });
 
 describe('resolveCredentialDbPath', () => {
-  it('defaults to opencode.db in the data dir and honours OPENCODE_DB', () => {
-    expect(resolveCredentialDbPath({ dataDir: '/data', env: {}, path })).toBe(path.join('/data', 'opencode.db'));
+  it('defaults to the local dev database and honours OPENCODE_DB', () => {
+    expect(resolveCredentialDbPath({ dataDir: '/data', env: {}, path })).toBe(path.resolve('/data', 'opencode-dev.db'));
     expect(resolveCredentialDbPath({ dataDir: '/data', env: { OPENCODE_DB: 'other.db' }, path })).toBe(path.resolve('/data', 'other.db'));
     expect(resolveCredentialDbPath({ dataDir: '/data', env: { OPENCODE_DB: '/abs/x.db' }, path })).toBe(path.resolve('/abs/x.db'));
   });
+
+  it.each(['1', 'true'])('honours OPENCODE_DISABLE_CHANNEL_DB=%s without overriding an explicit database', (value) => {
+    const env = { OPENCODE_DISABLE_CHANNEL_DB: value };
+    expect(resolveCredentialDbPath({ dataDir: '/data', env, path })).toBe(path.resolve('/data', 'opencode.db'));
+    expect(resolveCredentialDbPath({ dataDir: '/data', env: { ...env, OPENCODE_DB: 'custom.db' }, path })).toBe(path.resolve('/data', 'custom.db'));
+  });
+
+  it('preserves explicit filename values and the in-memory sentinel like the CLI', () => {
+    for (const filename of ['', ' custom.db ', ':memory:']) {
+      expect(resolveCredentialDbPath({ dataDir: '/data', env: { OPENCODE_DB: filename }, path }))
+        .toBe(filename === ':memory:' ? ':memory:' : path.resolve('/data', filename));
+    }
+    expect(resolveCredentialDbPath({ dataDir: '/data', env: { OPENCODE_DISABLE_CHANNEL_DB: 'false' }, path }))
+      .toBe(path.resolve('/data', 'opencode-dev.db'));
+  });
+});
+
+it('does not treat :memory: as a credentials file', () => {
+  expect(readCredentialsFromDb({ dbPath: ':memory:', fs: { existsSync: () => { throw new Error('unexpected file access'); } } })).toBeNull();
 });
 
 describe.skipIf(!sqlite)('readCredentialsFromDb', () => {
