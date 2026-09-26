@@ -1,10 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
-import { computeResumeCursor, topUpV1Migration } from './v1-migration-topup.js';
+import { computeResumeCursor, resolveOpenCodeDbPath, topUpV1Migration } from './v1-migration-topup.js';
+import { bundledDatabase } from './v1-desktop-notice.js';
+
+it('resolves the local dev database while preserving explicit channel, XDG and memory overrides', () => {
+  const root = path.resolve(os.tmpdir(), 'migration-path-test');
+  expect(resolveOpenCodeDbPath({ XDG_DATA_HOME: root })).toBe(path.join(root, 'opencode', 'opencode-dev.db'));
+  for (const flag of ['1', 'true']) {
+    expect(resolveOpenCodeDbPath({ XDG_DATA_HOME: root, OPENCODE_DISABLE_CHANNEL_DB: flag })).toBe(path.join(root, 'opencode', 'opencode.db'));
+  }
+  expect(resolveOpenCodeDbPath({ XDG_DATA_HOME: root, OPENCODE_DB: 'custom.db' })).toBe(path.join(root, 'opencode', 'custom.db'));
+  expect(resolveOpenCodeDbPath({ OPENCODE_DB: path.join(root, 'absolute.db') })).toBe(path.join(root, 'absolute.db'));
+  expect(resolveOpenCodeDbPath({ OPENCODE_DB: ':memory:' })).toBe(':memory:');
+});
 
 const sqlite = (() => {
   try {
@@ -110,6 +122,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.resetModules();
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -123,6 +137,78 @@ describe('computeResumeCursor', () => {
 });
 
 describe.skipIf(!sqlite)('topUpV1Migration', () => {
+  it('desktop inspects a fresh V1 database without creating migration state or changing events', async () => {
+    const { inspectLegacySessions } = await import('./v1-desktop-inspector.js');
+    expect(inspectLegacySessions(dbPath)).toBeNull();
+    expect(fs.existsSync(dbPath)).toBe(false);
+    createDatabase();
+    seed({ v1: ['old'], migration: null });
+    expect(inspectLegacySessions(dbPath)).toBe('standalone');
+    const db = openDb();
+    db.exec("INSERT INTO event(id,payload) VALUES ('active','{}')");
+    db.close();
+    expect(inspectLegacySessions(dbPath)).toBe('backup');
+    expect(countEvents()).toBe(1);
+    expect(readMigrationRow()).toBeNull();
+  });
+
+  it('desktop leaves a completed cursor alone and stops notifying once the missing chat is present', async () => {
+    const { inspectLegacySessions } = await import('./v1-desktop-inspector.js');
+    createDatabase();
+    seed({ v1: ['old'] });
+    const before = readMigrationRow();
+    expect(inspectLegacySessions(dbPath)).toBe('backup');
+    expect(readMigrationRow()).toEqual(before);
+    const db = openDb();
+    db.exec("INSERT INTO session_v2(id) VALUES ('old')");
+    db.close();
+    expect(inspectLegacySessions(dbPath)).toBeNull();
+  });
+
+  it('uses the bundled manifest channel and honors an exact DB override', () => {
+    const entry = path.join(dir, 'serve.mjs');
+    const assets = path.join(dir, 'assets');
+    fs.mkdirSync(assets);
+    const manifest = path.join(assets, 'manifest.json');
+    const env = { XDG_DATA_HOME: dir };
+    fs.writeFileSync(manifest, '{}');
+    expect(bundledDatabase(entry, env)).toBe(path.join(dir, 'opencode', 'opencode.db'));
+    fs.writeFileSync(manifest, JSON.stringify({ fork: { commit: 'test' } }));
+    expect(bundledDatabase(entry, env)).toBe(path.join(dir, 'opencode', 'opencode-dev.db'));
+    expect(bundledDatabase(entry, { ...env, OPENCODE_DB: ':memory:' })).toBe(':memory:');
+  });
+  it.each([
+    [undefined, undefined, 'opencode-dev.db'],
+    [undefined, '1', 'opencode.db'],
+    ['custom.db', '1', 'custom.db'],
+  ])('updates only the configured database in XDG_DATA_HOME: %s / %s', async (configured, disableChannel, expectedFile) => {
+    vi.stubEnv('XDG_DATA_HOME', dir);
+    vi.stubEnv('OPENCODE_DB', configured);
+    vi.stubEnv('OPENCODE_DISABLE_CHANNEL_DB', disableChannel);
+    fs.mkdirSync(path.join(dir, 'opencode'));
+    const filenames = ['opencode.db', 'opencode-dev.db', 'custom.db'];
+    for (const filename of filenames) {
+      dbPath = path.join(dir, 'opencode', filename);
+      createDatabase();
+      seed({ v1: ['ses_a'] });
+    }
+    vi.resetModules();
+    const migration = await import('./v1-migration-topup.js');
+    expect(migration.topUpV1Migration({ logger: { log: () => {}, warn: () => {} } }))
+      .toEqual({ status: 'scheduled', missing: 1, revisited: 0 });
+    for (const filename of filenames) {
+      dbPath = path.join(dir, 'opencode', filename);
+      expect(readMigrationRow().state).toEqual(filename === expectedFile
+        ? { phase: 'sessions', cursor: computeResumeCursor('ses_a') }
+        : { phase: 'completed' });
+    }
+  });
+
+  it('skips :memory: without looking for a file', () => {
+    expect(topUpV1Migration({ dbPath: ':memory:', fileSystem: { existsSync: () => { throw new Error('unexpected file access'); } } }))
+      .toEqual({ status: 'skipped', missing: 0, revisited: 0, reason: 'no-database' });
+  });
+
   it('skips when the database file does not exist', () => {
     expect(run()).toEqual({ status: 'skipped', missing: 0, revisited: 0, reason: 'no-database' });
   });
@@ -130,7 +216,7 @@ describe.skipIf(!sqlite)('topUpV1Migration', () => {
   it('opens the database under the XDG_DATA_HOME of the given environment', () => {
     const dataDir = path.join(dir, 'opencode');
     fs.mkdirSync(dataDir);
-    dbPath = path.join(dataDir, 'opencode.db');
+    dbPath = path.join(dataDir, 'opencode-dev.db');
     createDatabase();
     seed({ v1: ['ses_a'] });
 

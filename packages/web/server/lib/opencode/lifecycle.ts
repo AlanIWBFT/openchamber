@@ -11,6 +11,7 @@ import { applyProviderEnvAliases } from './provider-env-aliases.js';
 import { overlayEnvironment } from '../environment/variables.js';
 import { recordStartupPerformance } from '../diagnostics/startup-performance.js';
 import { topUpV1Migration } from './v1-migration-topup.js';
+import { bundledDatabase, readLegacySessionAdvice } from './v1-desktop-notice.js';
 import { serverDiagnosticJournal } from '../diagnostics/server-journal.js';
 import type { ChildProcess } from 'node:child_process';
 import type { Application } from '../shared/http-contracts.js';
@@ -938,7 +939,8 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
     await applyOpencodeBinaryFromSettings({ strict: true });
     assertNotShuttingDown();
     const resolvedBinary = ensureOpencodeCliEnv();
-    const preflight = checkOpenCodeBinary(resolveManagedOpenCodeLaunchSpec(resolvedBinary));
+    const launch = resolveManagedOpenCodeLaunchSpec(resolvedBinary);
+    const preflight = checkOpenCodeBinary(launch);
     managedPreflight = preflight.then(() => true, () => false);
     await preflight;
     assertNotShuttingDown();
@@ -970,13 +972,15 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
 
     const inheritedEnv = overlayEnvironment({ ...shellEnv, ...process.env, PATH: envPath }, getUserEnvironment());
 
-    try {
-      const topUp = topUpV1SessionMigration({ env: inheritedEnv });
-      if (topUp && topUp.status !== 'skipped') {
-        console.log('[OpenCode] V1 session migration top-up:', topUp);
+    if (process.env.OPENCHAMBER_RUNTIME !== 'desktop' && launch?.wrapperType !== 'bundled-server') {
+      try {
+        const topUp = topUpV1SessionMigration({ env: inheritedEnv });
+        if (topUp && topUp.status !== 'skipped') {
+          console.log('[OpenCode] V1 session migration top-up:', topUp);
+        }
+      } catch (error) {
+        console.warn('[OpenCode] V1 session migration top-up failed:', error instanceof Error ? error.message : error);
       }
-    } catch (error) {
-      console.warn('[OpenCode] V1 session migration top-up failed:', error instanceof Error ? error.message : error);
     }
 
     const processEnv = stripAppImageLauncherEnv(stripAppImageArgv0Leak(applyProviderEnvAliases(assignInjectedEnv(
@@ -1773,6 +1777,15 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
 
   return {
     getManagedOpenCodeProcessEnv: () => (state.isExternalOpenCode ? null : managedProcessEnv),
+    getDesktopLegacySessionAdvice: async () => {
+      const launch = state.lastOpenCodeLaunchDiagnostics;
+      const child = state.openCodeProcess;
+      if (!child || state.isExternalOpenCode || state.isShuttingDown || !managedProcessEnv
+        || process.env.OPENCHAMBER_RUNTIME !== 'desktop' || launch?.wrapperType !== 'bundled-server') return null;
+      const database = bundledDatabase(launch.sourceBinary, managedProcessEnv);
+      const advice = database && await readLegacySessionAdvice(database);
+      return child === state.openCodeProcess && !state.isExternalOpenCode && !state.isShuttingDown ? advice || null : null;
+    },
     getDefaultOpenCodeDirectory: () => getValidatedDefaultDirectory(),
     noteCurrentDirectory: (directory: string | null) => {
       if (!isUsableDirectory(directory)) return;

@@ -261,6 +261,16 @@ function App({ apis }: AppProps) {
   const { t } = useI18n();
   const sshFallbackNoticeShownRef = React.useRef(false);
   React.useEffect(() => {
+    if (!isInitialized || !isConnected || !isDesktopRuntime || !isDesktopLocalOriginActive()) return;
+    void invokeDesktop('desktop_take_legacy_session_notice').then((advice) => {
+      if (!isDesktopLocalOriginActive() || (advice !== 'backup' && advice !== 'standalone')) return;
+      toast.info(t('desktopLegacySessions.title'), {
+        description: t(advice === 'backup' ? 'desktopLegacySessions.backup' : 'desktopLegacySessions.standalone'),
+        duration: Infinity,
+      });
+    }).catch(() => {});
+  }, [isInitialized, isConnected, isDesktopRuntime, runtimeEndpointEpoch, t]);
+  React.useEffect(() => {
     if (!isInitialized || bootInjectionStatus !== 'valid' || sshFallbackNoticeShownRef.current) return;
     const outcome = getInjectedBootOutcome();
     if (outcome?.target !== 'local' || outcome.status !== 'ok' || !outcome.sshStartupFallbackHostId) return;

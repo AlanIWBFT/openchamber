@@ -1022,6 +1022,7 @@ const detectLanIPv4Address = async () => {
 
 const buildLocalUrl = (port) => `http://127.0.0.1:${port}`;
 
+let desktopLegacySessionNoticeTaken = false;
 const resourceRoot = () => isDev ? path.join(__dirname, 'resources') : process.resourcesPath;
 const resolveWebDistDir = () => path.join(resourceRoot(), 'web-dist');
 const packagedUiOrigin = () => `${UI_PROTOCOL}://app`;
@@ -3834,6 +3835,14 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         localOrigin: state.localOrigin,
         server: state.serverHandle,
       });
+
+    case 'desktop_take_legacy_session_notice': {
+      if (desktopLegacySessionNoticeTaken || !browserWindow || browserWindow !== state.mainWindow) return null;
+      const advice = await state.serverHandle?.getDesktopLegacySessionAdvice();
+      if (!advice || desktopLegacySessionNoticeTaken) return null;
+      desktopLegacySessionNoticeTaken = true;
+      return advice;
+    }
 
     case 'desktop_get_app_version':
       return APP_VERSION;

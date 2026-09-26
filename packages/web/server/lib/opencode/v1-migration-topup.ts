@@ -26,11 +26,11 @@ export interface V1MigrationOutcome {
   reason?: string;
 }
 
-const resolveOpenCodeDbPath = (env: NodeJS.ProcessEnv) => {
+export const resolveOpenCodeDbPath = (env: NodeJS.ProcessEnv = process.env, channel: 'dev' | 'latest' = 'dev') => {
   const dataDir = getOpenCodeDataDir(env);
-  const configured = (env.OPENCODE_DB ?? '').trim();
-  if (configured && configured !== ':memory:') return path.resolve(dataDir, configured);
-  return path.join(dataDir, 'opencode.db');
+  const separated = channel === 'dev' && !['1', 'true'].includes(env.OPENCODE_DISABLE_CHANNEL_DB ?? '');
+  const filename = env.OPENCODE_DB ?? (separated ? 'opencode-dev.db' : 'opencode.db');
+  return filename === ':memory:' ? filename : path.resolve(dataDir, filename);
 };
 
 const MIGRATION_STATE_KEY = 'migration.v1-v2';
@@ -168,6 +168,7 @@ export const topUpV1Migration = (options: V1MigrationOptions = {}) => {
     now = Date.now,
   } = options;
 
+  if (dbPath === ':memory:') return outcome('skipped', 'no-database');
   const open = loadSqlite();
   if (!open) return outcome('unavailable', 'no-sqlite-runtime');
   if (!fileSystem.existsSync(dbPath)) return outcome('skipped', 'no-database');

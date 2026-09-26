@@ -325,11 +325,24 @@ OpenCode never looks at them again — they are simply missing from the session
 list. `topUpV1Migration()` hands OpenCode a resume cursor so its own migration
 picks them up. OpenChamber never writes session rows itself.
 
-It runs from `lifecycle.js` immediately before the MANAGED OpenCode is spawned:
+Desktop does not run this top-up. After the UI is usable, the local main window
+can request a one-time notice. A short-lived Worker opens the actual bundled
+service database read-only. A fresh V1 database points to the matching
+standalone Bun CLI; a migration marker, V2 sessions, messages or events calls
+for backing up and working on a copy. After a completed import, only missing
+V1 rows updated since completion qualify (a deliberately deleted V2 chat is
+not a new import). Explicit desktop CLIs own their migration. No renderer
+receives a database path, and remote runtimes cannot take this notice.
+
+The standalone web host retains its CLI top-up. It runs from `lifecycle.js` immediately before the MANAGED CLI is spawned:
 never for an external, user-started OpenCode, and never while a managed one is
 running, because the write would race OpenCode's own loop. Failure is never
-fatal to startup. It opens `<data>/opencode.db` (or `OPENCODE_DB`), resolved
-from the environment the managed process starts with, read-write through `node:sqlite` on Node or `bun:sqlite` on Bun, and skips silently on
+fatal to startup. It opens `<data>/opencode-dev.db` read-write for the local
+dev-channel CLI. `OPENCODE_DISABLE_CHANNEL_DB=1` or `true` selects `opencode.db`.
+`OPENCODE_DB` takes precedence; relative paths resolve under the data directory
+and `:memory:` skips file access. `getOpenCodeDataDir` resolves the directory
+from the environment the managed process starts with. It opens the database
+through `node:sqlite` on Node or `bun:sqlite` on Bun, and skips silently on
 neither. It returns
 `{ status: 'skipped' | 'scheduled' | 'unsafe' | 'unavailable', missing, revisited, reason? }`
 and logs one line; there is no HTTP route and no UI.

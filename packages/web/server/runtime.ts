@@ -3175,6 +3175,7 @@ async function main(options: WebUiServerOptions = {}) {
     },
     isReady: () => isOpenCodeReady,
     getManagedOpenCodePreflight: () => openCodeLifecycleRuntime.getManagedOpenCodePreflight(),
+    getDesktopLegacySessionAdvice: () => openCodeLifecycleRuntime.getDesktopLegacySessionAdvice(),
     restartOpenCode: () => restartOpenCode(),
     getOpenCodeProcessInfo: getManagedOpenCodeProcessInfo,
     stop: (shutdownOptions: { exitProcess?: boolean; deadline?: number } = {}) => gracefulShutdown({ ...shutdownOptions, exitProcess: shutdownOptions.exitProcess ?? false }),

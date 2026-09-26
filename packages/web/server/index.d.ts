@@ -21,6 +21,7 @@ export interface WebUiServerController {
   };
   isReady: () => boolean;
   getManagedOpenCodePreflight: () => Promise<boolean>;
+  getDesktopLegacySessionAdvice: () => Promise<'standalone' | 'backup' | null>;
   restartOpenCode: () => Promise<void>;
   stop: (options?: { exitProcess?: boolean; deadline?: number }) => Promise<void>;
 }
