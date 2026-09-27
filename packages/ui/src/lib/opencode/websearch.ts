@@ -10,8 +10,10 @@
  *   the user gave its chat consent form (kept in its own store as
  *   `websearch:provider`, which no route reads or clears), and asks only when
  *   there is no answer yet.
- * - The `websearch` tool's text result: one `## [title](url)` block per hit,
- *   an optional `Published: <ISO>` line, then the snippet
+ * - The `websearch` tool's text result: an optional `Search provider: <id>`
+ *   preamble, then one `## [title](url)` block per hit, an optional
+ *   `Published: <ISO>` line, and the snippet. Excerpt-kind labels remain in the
+ *   snippet so the card does not present extracted highlights as a full page
  *   (`packages/core/src/tool/plugin/websearch.ts`).
  * - The consent form the tool raises on first use, tagged
  *   `metadata.kind === "websearch.provider"`.
@@ -168,7 +170,7 @@ const hostOf = (url: string): string | null => {
  * follow OpenCode's format, so the caller can show the raw text instead.
  */
 export function parseWebSearchOutput(content: string): WebSearchOutput | null {
-  const text = content.trim()
+  const text = content.trim().replace(/^Search provider: [^\r\n]+\r?\n\r?\n/, "")
   if (text.startsWith(NO_RESULTS_PREFIX)) return { kind: "empty" }
   const lines = text.split("\n")
   if (!HEADING.test(lines[0] ?? "")) return null
