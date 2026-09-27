@@ -208,7 +208,7 @@ const hostOf = (url: string): string | null => {
 }
 
 export function parseWebSearchOutput(content: string): WebSearchOutput | null {
-  const text = content.trim()
+  const text = content.trim().replace(/^Search provider: [^\r\n]+\r?\n\r?\n/, "")
   if (text.startsWith(NO_RESULTS_PREFIX)) return { kind: "empty" }
   const lines = text.split("\n")
   if (!HEADING.test(lines[0] ?? "")) return null

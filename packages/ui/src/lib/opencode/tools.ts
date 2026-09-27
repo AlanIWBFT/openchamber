@@ -79,9 +79,10 @@ const inputSchema = z
     pattern: optionalText,
     query: optionalText,
     url: optionalText,
+    action: optionalText,
+    ref: optionalText,
     code: optionalText,
     questions: z.array(z.unknown()).optional().catch(undefined),
-    action: optionalText,
     parameters: z
       .object({
         title: optionalText,
@@ -130,6 +131,7 @@ const metadataSchema = z
     toolCalls: z.array(executeToolCallSchema.nullable().catch(null)).optional().catch(undefined),
     truncated: z.boolean().optional().catch(undefined),
     outputPath: optionalText,
+    url: optionalText,
   })
   .catch({})
 
@@ -786,7 +788,10 @@ export function toolDescription(
       return text(parsed.pattern)
 
     case OPENCODE_TOOLS.webfetch:
-      return text(parsed.url)
+      return (parsed.action === "find" ? text(parsed.pattern) : null)
+        ?? text(parsed.url)
+        ?? text(metadataSchema.parse(metadata ?? {}).url)
+        ?? text(parsed.ref)
 
     case OPENCODE_TOOLS.websearch:
       return text(parsed.query)
