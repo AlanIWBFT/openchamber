@@ -24,6 +24,16 @@ const TWO_RESULTS = [
 ].join("\n")
 
 describe("parseWebSearchOutput", () => {
+  test("reads Exa research output and preserves excerpt provenance", () => {
+    const content = "Search provider: exa\n\n## [Docs](https://example.com/docs)\nPublished: 2026-09-01T00:00:00.000Z\nContent: highlights (excerpt, not the complete page)\n\nRelevant evidence."
+    expect(parseWebSearchOutput(content)).toEqual({ kind: "results", results: [{
+      url: "https://example.com/docs", host: "example.com", title: "Docs", published: "2026-09-01T00:00:00.000Z",
+      snippet: "Content: highlights (excerpt, not the complete page)\n\nRelevant evidence.",
+    }] })
+    expect(parseWebSearchOutput("Search provider: exa\n\nNo search results found. Please try a different query.")).toEqual({ kind: "empty" })
+    expect(parseWebSearchOutput("Search provider: exa\n\nUnexpected failure text")).toBeNull()
+  })
+
   test("reads one card per result with host, date and snippet", () => {
     expect(parseWebSearchOutput(TWO_RESULTS)).toEqual({
       kind: "results",
