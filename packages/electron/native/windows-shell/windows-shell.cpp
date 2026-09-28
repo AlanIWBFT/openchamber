@@ -4,6 +4,8 @@
 #include <napi.h>
 #include <memory>
 #include <string>
+#include <stdexcept>
+#include <vector>
 
 struct ShellComApartment {
   HRESULT result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
@@ -93,8 +95,35 @@ Napi::Value OpenDirectory(const Napi::CallbackInfo& info) {
   return promise;
 }
 
+std::u16string ReadRegistryPath(HKEY root, const wchar_t* key) {
+  DWORD bytes = 0;
+  const DWORD flags = RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND;
+  auto result = RegGetValueW(root, key, L"Path", flags, nullptr, nullptr, &bytes);
+  if (result == ERROR_FILE_NOT_FOUND) return {};
+  if (result != ERROR_SUCCESS) throw std::runtime_error("Failed to read registry PATH: Windows error " + std::to_string(result));
+  std::vector<wchar_t> value(bytes / sizeof(wchar_t) + 1, L'\0');
+  result = RegGetValueW(root, key, L"Path", flags, nullptr, value.data(), &bytes);
+  if (result != ERROR_SUCCESS) throw std::runtime_error("Failed to read registry PATH: Windows error " + std::to_string(result));
+  const std::wstring text(value.data());
+  return std::u16string(text.begin(), text.end());
+}
+
+Napi::Value ReadEnvironmentPaths(const Napi::CallbackInfo& info) {
+  const auto env = info.Env();
+  try {
+    auto paths = Napi::Object::New(env);
+    paths.Set("machine", Napi::String::New(env, ReadRegistryPath(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")));
+    paths.Set("user", Napi::String::New(env, ReadRegistryPath(HKEY_CURRENT_USER, L"Environment")));
+    return paths;
+  } catch (const std::exception& error) {
+    Napi::Error::New(env, error.what()).ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+}
+
 Napi::Object InitializeWindowsShell(Napi::Env env, Napi::Object exports) {
   exports.Set("openDirectory", Napi::Function::New(env, OpenDirectory));
+  exports.Set("readEnvironmentPaths", Napi::Function::New(env, ReadEnvironmentPaths));
   return exports;
 }
 
