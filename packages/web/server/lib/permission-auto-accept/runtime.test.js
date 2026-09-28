@@ -350,4 +350,21 @@ describe('permission auto-accept runtime', () => {
     await expect(runtime.processPermission({ id: 'later', sessionID: 'root' }, '/project')).resolves.toBe(false);
     expect(fetchImpl).toHaveBeenCalledTimes(requestsBeforeShutdown);
   });
+
+  it('does not reply when a safety verdict completes after shutdown', async () => {
+    let finish;
+    const fetchImpl = vi.fn(async () => Response.json([]));
+    const evaluatePermission = vi.fn(() => new Promise((resolve) => { finish = resolve; }));
+    const { runtime } = createRuntime({
+      stored: { permissionAutoAccept: { sessions: { root: 'safety' } } }, fetchImpl, evaluatePermission,
+    });
+    await runtime.load();
+    const pending = runtime.processPermission({ id: 'late', sessionID: 'root' }, '/project');
+    await flush();
+    expect(evaluatePermission).toHaveBeenCalledTimes(1);
+    runtime.shutdown();
+    finish({ action: 'accept' });
+    await expect(pending).resolves.toBe(false);
+    expect(fetchImpl.mock.calls.some(([url]) => String(url).includes('/reply'))).toBe(false);
+  });
 });
