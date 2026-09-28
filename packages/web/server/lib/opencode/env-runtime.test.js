@@ -1,13 +1,8 @@
-import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  createOpenCodeEnvRuntime,
-  probeWindowsShellEnvSnapshot,
-  probeWindowsShellEnvSnapshotInWorker,
-} from './env-runtime.js';
+import { createOpenCodeEnvRuntime } from './env-runtime.js';
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
 const originalComSpec = process.env.ComSpec;
@@ -219,70 +214,26 @@ describe('OpenCode env runtime', () => {
       PATH: 'C:\\Shell',
     });
     expect(calls.map((call) => call.command)).toEqual(['pwsh.exe']);
-    expect(calls[0].args[0]).toBe('-Command');
-    expect(calls[0].args).not.toContain('-NonInteractive');
-    expect(calls[0].options).toMatchObject({ windowsHide: true });
-    expect(calls[0].options.timeout).toBeUndefined();
+    expect(calls[0].args).toContain('-NoProfile');
+    expect(calls[0].options).toMatchObject({ windowsHide: true, timeout: 10_000 });
   });
 
-  it('queries registry paths only after all Windows PowerShell probes fail', () => {
+  it('bounds standalone Windows fallback probes after PowerShell fails', () => {
     setPlatform('win32');
-    const probeEnv = {
-      Path: 'C:\\Process',
-      SystemRoot: 'C:\\Windows',
-    };
     const calls = [];
-    const snapshot = probeWindowsShellEnvSnapshot({
-      env: probeEnv,
-      spawnSync: (command, args) => {
-        calls.push({ command, args });
-        if (command !== 'reg.exe') return { status: 1, stdout: '' };
-        const value = args[1] === 'HKCU\\Environment' ? '%SystemRoot%\\UserBin' : 'C:\\Machine';
-        return { status: 0, stdout: `    Path    REG_EXPAND_SZ    ${value}\r\n` };
+    const { runtime, state } = createRuntime({}, {
+      spawnSync: (command, args, options) => {
+        calls.push({ command, args, options });
+        if (args[0] !== '/d') return { status: 1, stdout: '' };
+        return { status: 0, stdout: 'Path=C:\\Process\r\n' };
       },
     });
-
-    expect(snapshot).toEqual({
-      PATH: 'C:\\Machine;C:\\Windows\\UserBin;C:\\Process',
-    });
-    expect(calls).toHaveLength(5);
+    state.cachedLoginShellEnvSnapshot = undefined;
+    expect(runtime.getLoginShellEnvSnapshot()).toMatchObject({ PATH: 'C:\\Process' });
+    expect(calls).toHaveLength(4);
     expect(calls.slice(0, 2).map((call) => call.command)).toEqual(['pwsh.exe', 'powershell.exe']);
     expect(calls[2].command).toMatch(/powershell\.exe$/i);
-    expect(calls.slice(3).map((call) => call.command)).toEqual(['reg.exe', 'reg.exe']);
-  });
-
-  it('starts the Windows environment worker immediately with the explicit probe environment', async () => {
-    const probeEnv = {
-      Path: 'C:\\Process',
-      SystemRoot: 'C:\\Windows',
-    };
-    const worker = new EventEmitter();
-    let receivedEnv;
-    const probing = probeWindowsShellEnvSnapshotInWorker({
-      env: probeEnv,
-      createWorker: (env) => {
-        receivedEnv = env;
-        return worker;
-      },
-    });
-
-    expect(receivedEnv).toBe(probeEnv);
-    const snapshot = {
-      OPENCHAMBER_PROFILE_TEST: 'value',
-      PATH: 'C:\\Shell',
-    };
-    worker.emit('message', snapshot);
-    await expect(probing).resolves.toBe(snapshot);
-  });
-
-  it('rejects when the Windows environment worker exits before returning a snapshot', async () => {
-    const worker = new EventEmitter();
-    const probing = probeWindowsShellEnvSnapshotInWorker({
-      createWorker: () => worker,
-    });
-
-    worker.emit('exit', 1);
-    await expect(probing).rejects.toThrow('exited before returning a snapshot (code 1)');
+    expect(calls.every((call) => call.options.timeout === 10_000)).toBe(true);
   });
 
   it('searches an explicit PATH without mutating the process environment', () => {
