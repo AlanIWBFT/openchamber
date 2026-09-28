@@ -161,9 +161,10 @@ describe('session work runtime: a message was sent', () => {
     expect(learning.isChild('ses_1')).toBe(true);
   });
 
-  it('opens nothing with In work off, or in a child, review, /btw, scheduled, or chat session', async () => {
+  it('opens nothing with In work off, or in an archived, child, review, /btw, scheduled, or chat session', async () => {
     for (const setup of [
       { runtime: { settings: { enabled: false } } },
+      { session: { time: { archived: 123 } } },
       { session: { parentID: 'ses_parent' } },
       { session: { metadata: { openchamber: { kind: 'review', originalSessionID: 'ses_0' } } } },
       { session: { metadata: { openchamber: { kind: 'btw', originalSessionID: 'ses_0' } } } },
