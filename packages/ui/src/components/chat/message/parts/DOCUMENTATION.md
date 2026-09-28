@@ -27,8 +27,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 
 - `taskToolModel.ts`
   - Owns subagent metadata parsing and child-session summary projection.
-  - `part.state.metadata.sessionID` is the only live identity contract between a `subagent` call and its child session.
-  - A running subagent may briefly have no session id; render it as waiting until the authoritative part update arrives. Never match parallel children by order, title, timestamp, or status.
+  - `part.state.metadata.sessionID` is the authoritative identity between a `subagent` call and its child session.
+  - A running call loaded through REST can lack the ephemeral progress metadata. The existing `resolveRunningTaskChildSessionId` fallback filters children by parent, start time and requested agent, excludes IDs already claimed by sibling calls, and uses the call description/child title only to narrow multiple candidates. It returns an ID only for one candidate and is replaced by authoritative metadata when available; ambiguity stays waiting. This fallback is presentation-only, never a lifecycle or recovery authority.
   - Part-level metadata and output parsing exist only for older persisted records and never override state metadata.
 
 - `toolPresentation.tsx`
