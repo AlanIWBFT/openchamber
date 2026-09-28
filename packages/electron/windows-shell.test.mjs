@@ -6,10 +6,38 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import afterPack from './scripts/after-pack.cjs';
-import { loadWindowsShell } from './windows-shell.mjs';
+import { loadWindowsShell, readWindowsEnvironmentSnapshot } from './windows-shell.mjs';
 
 const appPath = path.dirname(fileURLToPath(import.meta.url));
 const windowsOnly = { skip: process.platform !== 'win32' };
+
+test('Windows environment preserves inherited values and expands registry PATH case-insensitively', () => {
+  const env = { Path: 'C:\\Inherited', SystemRoot: 'C:\\Windows', CUSTOM: 'kept' };
+  const snapshot = readWindowsEnvironmentSnapshot({
+    env, commonPaths: ['C:\\Tools'],
+    readPaths: () => ({ machine: '%SYSTEMROOT%\\System32', user: 'C:\\User' }),
+  });
+  assert.deepEqual(snapshot, { SystemRoot: 'C:\\Windows', CUSTOM: 'kept', PATH: 'C:\\Windows\\System32;C:\\User;C:\\Inherited;C:\\Tools' });
+  assert.equal(env.Path, 'C:\\Inherited');
+});
+
+test('Windows environment falls back without a probe process when the addon cannot be loaded', () => {
+  const snapshot = readWindowsEnvironmentSnapshot({
+    isPackaged: false, appPath: path.join(appPath, 'missing-addon'),
+    env: { Path: 'C:\\Inherited', CUSTOM: 'kept' }, commonPaths: ['C:\\Tools'],
+  });
+  assert.deepEqual(snapshot, { CUSTOM: 'kept', PATH: 'C:\\Inherited;C:\\Tools' });
+});
+
+test('Windows native environment reader exposes raw registry paths', windowsOnly, () => {
+  const shell = loadWindowsShell({ isPackaged: false, appPath });
+  const paths = shell.readEnvironmentPaths();
+  assert.equal(typeof paths.machine, 'string');
+  assert.equal(typeof paths.user, 'string');
+  const snapshot = readWindowsEnvironmentSnapshot({ isPackaged: false, appPath });
+  assert.equal(typeof snapshot.PATH, 'string');
+  assert.ok(snapshot.PATH.length > 0);
+});
 
 test('Windows shell rejects malformed paths before dispatch', windowsOnly, () => {
   const shell = loadWindowsShell({ isPackaged: false, appPath });
