@@ -268,6 +268,24 @@ describe('OpenCode env runtime', () => {
     expect(calls[0].options).toMatchObject({ windowsHide: true, timeout: 10_000 });
   });
 
+  it('bounds standalone Windows fallback probes after PowerShell fails', () => {
+    setPlatform('win32');
+    const calls = [];
+    const { runtime, state } = createRuntime({}, {
+      spawnSync: (command, args, options) => {
+        calls.push({ command, args, options });
+        if (args[0] !== '/d') return { status: 1, stdout: '' };
+        return { status: 0, stdout: 'Path=C:\\Process\r\n' };
+      },
+    });
+    state.cachedLoginShellEnvSnapshot = undefined;
+    expect(runtime.getLoginShellEnvSnapshot()).toMatchObject({ PATH: 'C:\\Process' });
+    expect(calls).toHaveLength(4);
+    expect(calls.slice(0, 2).map((call) => call.command)).toEqual(['pwsh.exe', 'powershell.exe']);
+    expect(calls[2].command).toMatch(/powershell\.exe$/i);
+    expect(calls.every((call) => call.options.timeout === 10_000)).toBe(true);
+  });
+
   it('uses a login-shell snapshot provided by the host instead of probing the shell', () => {
     let probes = 0;
     const spawnSyncSpy = () => { probes += 1; return { status: 0, stdout: 'PATH=/from/probe\0' }; };
