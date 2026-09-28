@@ -26,6 +26,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createShellEnvironmentLoader } from './shell-environment.mjs';
 import { isSplashColor } from './remote-page-policy.mjs';
+import { readWindowsEnvironmentSnapshot } from './windows-shell.mjs';
 import { clearAppImageArgv0FromProcessEnv } from '@openchamber/web/server/lib/inherited-env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -588,10 +589,7 @@ export const takeDeferredAppEvents = () => {
   return deferredAppEvents.splice(0);
 };
 
-const expandWindowsEnvRefs = (value) => String(value || '').replace(/%([^%]+)%/g, (_match, key) => process.env[key] || '');
-
 const loadWindowsEnv = async () => {
-  const { probeWindowsShellEnvSnapshotInWorker } = await import('@openchamber/web/server/lib/opencode/env-runtime.js');
   const homeDir = os.homedir();
   const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
   const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
@@ -603,23 +601,19 @@ const loadWindowsEnv = async () => {
     path.join(localAppData, 'Programs', 'Cursor', 'resources', 'app', 'bin'),
     path.join(appData, 'npm'),
   ];
-  const windowsPath = [process.env.PATH, ...commonPaths]
-    .map(expandWindowsEnvRefs)
-    .filter(Boolean)
-    .join(path.delimiter);
-  const probeEnv = { ...process.env };
-  for (const key of Object.keys(probeEnv)) {
-    if (key.toLowerCase() === 'path') delete probeEnv[key];
-  }
-  probeEnv.Path = windowsPath;
-  return (await probeWindowsShellEnvSnapshotInWorker({ env: probeEnv })) || { PATH: windowsPath };
+  return readWindowsEnvironmentSnapshot({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+    commonPaths,
+  });
 };
 
 // Finder-launched apps on macOS inherit a minimal PATH (no /opt/homebrew, mise, asdf, etc.).
 // One shared probe that the backend awaits before it starts. The entry module
 // starts it as early as it can so the user's shell startup files run while
-// the window comes up instead of on the critical path. Windows process creation
-// runs in a Worker so it cannot block the main thread's first paint.
+// the window comes up instead of on the critical path. Windows reads PATH
+// directly through the native registry API without creating probe processes.
 export const shellEnvironmentAbort = new AbortController();
 const loadShellEnv = createShellEnvironmentLoader({ loadWindowsEnv, signal: shellEnvironmentAbort.signal });
 

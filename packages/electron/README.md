@@ -39,10 +39,12 @@ shell-provided server flags or importing the backend. On macOS/Linux it tries
 interactive login, then login-only on failure, with a five-second timeout per
 attempt. Failure preserves the inherited process environment. Confirmed quit
 cancels an in-flight macOS/Linux probe and waits for its process to exit.
-Windows runs profile discovery and registry fallback in a Worker, preserving
-the existing no-timeout probe behavior while keeping process creation off the
-main thread. Quit does not wait for the Windows probe, and its late result is
-rejected after cancellation so startup cannot resume. The server receives the result through the upstream in-memory
+Windows reads Machine/User PATH directly through the `windows-shell` native
+registry API, merges inherited PATH and common tool directories, and keeps the
+other inherited variables. It starts no environment-probe processes and does
+not import PowerShell profile variables. If the addon or registry is unavailable,
+inherited environment and common directories remain usable. Cancellation still
+rejects a late result so startup cannot resume. The server receives the result through the upstream in-memory
 snapshot handoff. Local server startup shares one promise, including failures.
 
 Text that shell startup files print to stdout before the environment is
