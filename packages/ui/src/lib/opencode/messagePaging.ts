@@ -33,7 +33,8 @@ export async function findMessagePageItem(
       cursor ? { cursor } : { limit: options.limit, order: options.order },
       directory,
     );
-    const found = page.items.find(matches);
+    const ordered = [...page.items].sort((a, b) => options.order === 'asc' ? a.info.seq - b.info.seq : b.info.seq - a.info.seq);
+    const found = ordered.find(matches);
     if (found) return found;
     const next = page.cursor.next;
     if (!next || seenCursors.has(next)) return null;
