@@ -34,6 +34,11 @@ const user = (id: string, text: string): MessagePageItem => ({
   parts: [{ id: `${id}_text`, sessionID: 'ses_1', messageID: id, type: 'text', text } satisfies Part],
 });
 
+const assistant = (id: string, seq: number, created: number, texts: string[]): MessagePageItem => ({
+  info: { id, seq, sessionID: 'ses_1', role: 'assistant', time: { created }, agent: 'build', providerID: 'test', modelID: 'test' },
+  parts: texts.map((text, index) => ({ id: `${id}_${index}`, sessionID: 'ses_1', messageID: id, type: 'text', text })),
+});
+
 describe('loadLaneFirstPrompt', () => {
   beforeEach(() => {
     pages = [];
@@ -59,5 +64,17 @@ describe('loadLaneFirstPrompt', () => {
     pages = [{ items: [plumbing('p1')], cursor: {} }];
 
     expect(await loadLaneFirstPrompt('ses_1', '/repo')).toBeNull();
+  });
+  test('lane readers use sequence order while retaining empty-step skipping and part order', async () => {
+    const { loadLaneFirstPrompt, loadLaneLastTurn } = await import('./laneData');
+    const first = user('first-prompt', 'first prompt');
+    first.info.seq = 2;
+    first.info.time.created = 800;
+    const later = user('later-prompt', 'later prompt');
+    later.info.seq = 4;
+    later.info.time.created = 200;
+    pages = [{ items: [assistant('z', 1, 900, ['old reply']), later, assistant('a', 5, 100, ['latest', 'reply']), first, assistant('tool-only', 6, 50, [])], cursor: {} }];
+    expect(await loadLaneFirstPrompt('ses_1', '/repo')).toEqual({ messageId: 'first-prompt', text: 'first prompt', files: [] });
+    expect(await loadLaneLastTurn('ses_1', '/repo')).toEqual({ text: 'latest\n\nreply', error: null });
   });
 });
