@@ -47,6 +47,24 @@ inherited environment and common directories remain usable. Cancellation still
 rejects a late result so startup cannot resume. The server receives the result through the upstream in-memory
 snapshot handoff. Local server startup shares one promise, including failures.
 
+Windows also reads the current user's manual system proxy through the native
+`WinHttpGetIEProxyConfigForCurrentUser` API during this snapshot. No helper process
+is started. If any `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `WS_PROXY`, or
+`WSS_PROXY` variable is present, including an empty value and any letter case,
+the inherited proxy configuration wins. Otherwise a single proxy or separate
+`http=`/`https=` entries supply the HTTP/HTTPS environment inherited by the backend
+and its OpenCode child, covering OAuth, provider HTTP, and WebSocket requests.
+An explicit `NO_PROXY` is preserved. Otherwise exact hosts and leading `*.` domain
+exclusions become `NO_PROXY`, along with `localhost`, `127.0.0.1`, and `::1`.
+PAC/WPAD, SOCKS-only settings, `<local>`, and other wildcard exclusions are not
+translated. Disabled or unavailable manual settings keep the inherited environment.
+Restart Desktop to pick up changed Windows proxy settings. External OpenCode
+servers and standalone OpenCode installations use their own environment.
+Desktop records proxy variables it injects into the main process. Before relaunch
+or installer handoff, it removes only those whose values have not changed, so the
+next process reads Windows settings again. Inherited and subsequently changed
+proxy variables remain user overrides. This record stays in memory.
+
 Text that shell startup files print to stdout before the environment is
 discarded, so a banner never fuses with the first variable.
 
