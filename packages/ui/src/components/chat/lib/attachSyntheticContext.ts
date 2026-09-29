@@ -124,7 +124,7 @@ export const attachSyntheticContext = (messages: ChatMessageEntry[]): ChatMessag
                 part = contextPartFromSyntheticMessage(message);
                 contextPartBySyntheticEntry.set(message, part);
             }
-            if (openUser && message.info.id < openUser.source.info.id) {
+            if (openUser && openUser.source.info.seq === undefined && message.info.id < openUser.source.info.id) {
                 openUser.contextParts = [...openUser.contextParts, part]
                     .sort((left, right) => (left.messageID < right.messageID ? -1 : 1));
                 result[openUser.index] = withContextParts(openUser.source, openUser.contextParts);
