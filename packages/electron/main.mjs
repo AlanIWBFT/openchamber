@@ -115,7 +115,7 @@ import {
   shouldAllowBrowserPanelPermission,
 } from './browser-panel-security.mjs';
 import { isSpaceId, spaceIdOfPreviewPartition, spacePreviewPartition, spacePreviewProxyConfig } from './space-preview.mjs';
-import { loadWindowsShell } from './windows-shell.mjs';
+import { createInjectedProxyEnvironment, loadWindowsShell } from './windows-shell.mjs';
 import { shouldBlockGuestFrameNavigation } from './guest-frame-navigation.mjs';
 import { createRelayDevTunnelBridge } from './relay-dev-tunnel.mjs';
 import { parsePairingDeepLink } from './pairing-deep-link.mjs';
@@ -555,6 +555,8 @@ const isLinuxPackageInstall = () => process.platform === 'linux'
   && app.isPackaged
   && ['deb', 'rpm'].includes(readLinuxPackageType());
 
+const injectedProxyEnvironment = createInjectedProxyEnvironment(process.env);
+
 // `electron:dev` owns the HMR server and tears it down when Electron exits, and
 // app.relaunch() would rerun the relative `./entry.mjs` from the home directory
 // this process chdirs to. Under that script a relaunch exits with the code it
@@ -563,6 +565,7 @@ const devRelaunchExitCode = Number(process.env.OPENCHAMBER_ELECTRON_DEV_RELAUNCH
 
 /** Arranges the next launch and returns the exit code to quit with. */
 const relaunchApp = () => {
+  injectedProxyEnvironment.clear();
   if (devRelaunchExitCode) return devRelaunchExitCode;
   if (isLinuxPackageInstall()) relaunchAfterExit();
   else app.relaunch();
@@ -1629,6 +1632,7 @@ const inheritUserShellEnv = async () => {
     if (key === 'PATH' || key === 'ARGV0') continue;
     if (typeof process.env[key] === 'undefined') {
       process.env[key] = value;
+      if (process.platform === 'win32') injectedProxyEnvironment.remember(key, value);
     }
   }
 
@@ -3729,6 +3733,7 @@ const installDownloadedUpdate = createUpdateInstaller({
   autoUpdater,
   shutdown: shutdownBackgroundServices,
   flushStorage: flushRendererStorage,
+  beforeInstall: () => injectedProxyEnvironment.clear(),
   showFailure: () => {
     const copy = getUpdateFailureDialogCopy(app.getLocale());
     return dialog.showMessageBox({ type: 'error', title: copy.title, message: copy.detail, buttons: [copy.restart], defaultId: 0, cancelId: 0 });
