@@ -43,7 +43,6 @@ const stripShellStartupOutput = (text) => {
   return markerIndex === -1 ? text : text.slice(markerIndex + markerLine.length);
 };
 
-
 export const createOpenCodeEnvRuntime = (deps) => {
   const {
     state,
