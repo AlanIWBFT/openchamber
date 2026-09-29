@@ -3505,9 +3505,6 @@ const buildWindowsInstalledApps = async (apps) => {
 };
 
 const buildWindowsOpenProjectSpecs = ({ projectPath, appId, appName }) => {
-  if (appId === 'finder') {
-    return [{ program: 'explorer.exe', args: [projectPath] }];
-  }
   if (appId === 'terminal') {
     const specs = [];
     const terminal = findWindowsExecutable('terminal');
@@ -3544,9 +3541,6 @@ const buildWindowsOpenProjectSpecs = ({ projectPath, appId, appName }) => {
 };
 
 const buildWindowsOpenFileSpecs = ({ filePath, appId, appName }) => {
-  if (appId === 'finder') {
-    return [{ program: 'explorer.exe', args: ['/select,', filePath] }];
-  }
   if (appId === 'terminal') {
     return buildWindowsOpenProjectSpecs({ projectPath: path.dirname(filePath), appId, appName });
   }
@@ -4199,6 +4193,14 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       }
       const validated = await validateLocalPath(filePath, 'File path');
       if (process.platform === 'win32') {
+        if (appId === 'finder') {
+          if (validated.stats.isDirectory()) {
+            await openValidatedPath(validated);
+          } else {
+            shell.showItemInFolder(validated.path);
+          }
+          return null;
+        }
         runSpecChain(buildWindowsOpenFileSpecs({ filePath: validated.path, appId, appName }), appName);
         return null;
       }
