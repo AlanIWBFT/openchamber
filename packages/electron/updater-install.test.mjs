@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
 import { createUpdateInstaller } from './updater-install.mjs';
+import { createInjectedProxyEnvironment } from './windows-shell.mjs';
 
 const deferred = () => {
   let resolve;
@@ -88,4 +89,45 @@ test('retains the upstream outer shutdown bound before handing off', async () =>
   await f.install();
   assert.deepEqual(f.calls, ['shutdown', 'install']);
   f.cleanup.resolve();
+});
+
+test('installer inherits a cleaned proxy environment after shutdown or its timeout', async () => {
+  for (const timedOut of [false, true]) {
+    const env = { HTTPS_PROXY: 'http://system.test', NO_PROXY: 'localhost' };
+    const injected = createInjectedProxyEnvironment(env);
+    for (const [key, value] of Object.entries(env)) injected.remember(key, value);
+    const f = fixture({ beforeInstall: () => injected.clear(), shutdownTimeoutMs: 10 });
+    f.autoUpdater.quitAndInstall = () => {
+      assert.deepEqual(env, {});
+      f.calls.push('install');
+    };
+    const result = f.install();
+    await tick();
+    assert.equal(env.HTTPS_PROXY, 'http://system.test');
+    if (!timedOut) f.cleanup.resolve();
+    await result;
+    assert.deepEqual(f.calls, ['shutdown', 'install']);
+    f.cleanup.resolve();
+  }
+});
+
+test('failure before installer handoff leaves proxy cleanup to the recovery restart', async () => {
+  const env = { HTTPS_PROXY: 'http://system.test' };
+  const injected = createInjectedProxyEnvironment(env);
+  injected.remember('HTTPS_PROXY', env.HTTPS_PROXY);
+  const restarted = deferred();
+  let handoffs = 0;
+  const f = fixture({
+    beforeInstall: () => { handoffs++; injected.clear(); },
+    restart: () => { injected.clear(); restarted.resolve(); },
+  });
+  const rejected = assert.rejects(f.install(), /failed/);
+  f.autoUpdater.emit('error', new Error('update failed'));
+  await rejected;
+  assert.equal(env.HTTPS_PROXY, 'http://system.test');
+  f.cleanup.resolve();
+  f.acknowledged.resolve();
+  await restarted.promise;
+  assert.equal(handoffs, 0);
+  assert.deepEqual(env, {});
 });
