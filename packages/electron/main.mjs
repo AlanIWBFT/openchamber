@@ -3888,9 +3888,6 @@ const buildWindowsInstalledApps = async (apps) => {
 };
 
 const buildWindowsOpenProjectSpecs = ({ projectPath, appId, appName }) => {
-  if (appId === 'finder') {
-    return [{ program: 'explorer.exe', args: [projectPath] }];
-  }
   if (appId === 'terminal') {
     const specs = [];
     const terminal = findWindowsExecutable('terminal');
@@ -4714,9 +4711,12 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       }
       const validated = await validateLocalPath(filePath, 'File path');
       if (process.platform === 'win32') {
-        // The shell's own reveal, so a replacement file manager handles it too.
         if (appId === 'finder') {
-          shell.showItemInFolder(validated.path);
+          if (validated.stats.isDirectory()) {
+            await openValidatedPath(validated);
+          } else {
+            shell.showItemInFolder(validated.path);
+          }
           return null;
         }
         runSpecChain(buildWindowsOpenFileSpecs({ filePath: validated.path, appId, appName }), appName);
