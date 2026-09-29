@@ -34,7 +34,7 @@ export const getUpdateFailureDialogCopy = (locale) => {
 
 // Cleanup and the platform installer share one exit owner. A stopped backend
 // cannot be rolled back by clearing flags; failure recovers in a fresh process.
-export const createUpdateInstaller = ({ state, autoUpdater, shutdown, flushStorage, showFailure, restart, log, installPackage, shutdownTimeoutMs = 40_000, installGraceMs = 15_000 }) => {
+export const createUpdateInstaller = ({ state, autoUpdater, shutdown, flushStorage, showFailure, restart, log, installPackage, beforeInstall = () => {}, shutdownTimeoutMs = 40_000, installGraceMs = 15_000 }) => {
   let installation;
   const flushBeforeExit = async () => {
     try {
@@ -113,6 +113,7 @@ export const createUpdateInstaller = ({ state, autoUpdater, shutdown, flushStora
         state.quitConfirmationPending = false;
         state.allowWindowClose = true;
         log.info('[electron] handing control to the platform installer');
+        beforeInstall();
         autoUpdater.quitAndInstall();
         state.updateInstallPending = false;
       }).catch(fail);
