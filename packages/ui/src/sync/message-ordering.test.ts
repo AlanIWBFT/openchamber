@@ -23,6 +23,13 @@ const context = (id: string, created: number): Message => ({
 })
 
 describe("message chronology", () => {
+  test("stored sequence overrides synthetic rank and context ID after rollover", () => {
+    const prompt = { ...message("msg_ffff", 52), seq: 8 }
+    const nextContext = { ...context("msg_0000", 52), seq: 9 }
+    const nextPrompt = { ...message("msg_0001", 52), seq: 10 }
+    expect(sortMessagesChronologically([nextPrompt, nextContext, prompt])).toEqual([prompt, nextContext, nextPrompt])
+  })
+
   test("persisted sequence wins over clock reversal and ID rollover, without requiring contiguous values", () => {
     const first = { ...message("msg_ffffffff", 200), seq: 0 }
     const second = { ...message("msg_00000000", 100), seq: 17 }
