@@ -9,8 +9,9 @@
  * prompt plumbing the user never wrote.
  *
  * So: the contiguous run of synthetic messages immediately before a user
- * message belongs to that message, and so does context right after it whose id
- * was minted before the prompt's (see the loop). The ones carrying context metadata come
+ * message belongs to that message. A provisional prompt can also claim context
+ * right after it whose id was minted before its own (see the loop). Persisted
+ * messages follow creation sequence instead. The ones carrying context metadata come
  * back as text parts on the user message, which is exactly where v1 kept them,
  * so they render as context chips inside the user bubble. A background report
  * stays as its own entry. Everything else the timeline never shows is dropped
@@ -89,14 +90,13 @@ export const attachSyntheticContext = (messages: ChatMessageEntry[]): ChatMessag
                     part = contextPartFromSyntheticMessage(message);
                     contextPartBySyntheticEntry.set(message, part);
                 }
-                // A send mints its context ids before the prompt's. While the
-                // prompt is still optimistic it carries the client's clock and
-                // the server's context records can land just after it; an id
-                // below the prompt's still names that prompt as the owner.
-                // Echoes arrive one by one, so the records already echoed sit
-                // after the prompt while the rest still sit before it: the ids,
-                // minted in send order, restore the order the user attached.
-                if (openUser && message.info.id < openUser.source.info.id) {
+                // A send mints its context ids before the prompt's. The ID
+                // fallback applies only while the prompt is provisional;
+                // delivered records use creation sequence, not client clocks.
+                // A persisted prompt cannot claim newer context by lexical ID,
+                // including while that context still awaits its delivery event.
+                const provisional = openUser?.source.info.seq === undefined;
+                if (openUser && provisional && message.info.id < openUser.source.info.id) {
                     openUser.contextParts = [...openUser.contextParts, part]
                         .sort((left, right) => (left.messageID < right.messageID ? -1 : 1));
                     result[openUser.index] = withContextParts(openUser.source, openUser.contextParts);
