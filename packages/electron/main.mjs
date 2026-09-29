@@ -74,7 +74,7 @@ import {
   setLinuxAutostartEnabled,
 } from './linux-autostart.mjs';
 import { unsupportedAppSpecificOpenError, validateLocalPath } from './path-open-utils.mjs';
-import { loadWindowsShell } from './windows-shell.mjs';
+import { createInjectedProxyEnvironment, loadWindowsShell } from './windows-shell.mjs';
 import { shouldAllowBrowserPanelCertificateError } from './browser-panel-security.mjs';
 import { shouldBlockGuestFrameNavigation } from './guest-frame-navigation.mjs';
 import { createRelayDevTunnelBridge } from './relay-dev-tunnel.mjs';
@@ -436,6 +436,12 @@ const prepareForQuit = ({ installingUpdate = false } = {}) => {
   return shutdownBackgroundServices();
 };
 
+const injectedProxyEnvironment = createInjectedProxyEnvironment(process.env);
+const relaunchApp = () => {
+  injectedProxyEnvironment.clear();
+  app.relaunch();
+};
+
 const performConfirmedQuit = async ({ relaunch = false } = {}) => {
   if (state.updateInstallPending) {
     log.info('[electron] quit suppressed: update install owns the exit');
@@ -449,7 +455,7 @@ const performConfirmedQuit = async ({ relaunch = false } = {}) => {
   } catch (error) {
     log.warn('[electron] background shutdown failed:', error);
   } finally {
-    if (relaunch) app.relaunch();
+    if (relaunch) relaunchApp();
     state.allowWindowClose = true;
     app.exit(0);
   }
@@ -1294,6 +1300,7 @@ const inheritUserShellEnv = async () => {
     if (key === 'PATH' || key === 'ARGV0') continue;
     if (typeof process.env[key] === 'undefined') {
       process.env[key] = value;
+      if (process.platform === 'win32') injectedProxyEnvironment.remember(key, value);
     }
   }
 
@@ -2862,11 +2869,12 @@ const installDownloadedUpdate = createUpdateInstaller({
   state,
   autoUpdater,
   shutdown: shutdownBackgroundServices,
+  beforeInstall: () => injectedProxyEnvironment.clear(),
   showFailure: () => {
     const copy = getUpdateFailureDialogCopy(app.getLocale());
     return dialog.showMessageBox({ type: 'error', title: copy.title, message: copy.detail, buttons: [copy.restart], defaultId: 0, cancelId: 0 });
   },
-  restart: () => { app.relaunch(); app.exit(0); },
+  restart: () => { relaunchApp(); app.exit(0); },
   log,
 });
 
