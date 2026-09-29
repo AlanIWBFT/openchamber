@@ -229,6 +229,10 @@ That runs, in order:
 
 Build output goes to `packages/electron/dist`.
 
+The local Windows fork coordinator schedules asset builds, CLI preparation, main bundling, native rebuild, and checks in parallel after SDK preparation. It waits for all branches before calling `package.mjs`. Candidate uses `--dir`; release builds still generate the NSIS installer.
+
+For coordinator builds, `OPENCHAMBER_NATIVE_REBUILD_PATH` supplies a build path or drive mapping owned by the coordinator. `rebuild-native.mjs` leaves that mapping to its owner. After cancelling and draining the complete build process tree, the coordinator runs `node scripts/rebuild-native.mjs --cleanup` to remove temporary node-addon-api header packages before releasing the mapping. This cleanup command does not compile native modules.
+
 macOS builds produce `dmg` and `zip` artifacts. Windows builds produce an NSIS installer. Linux builds produce an AppImage for the native x64 or arm64 host.
 
 ## Platform Notes
