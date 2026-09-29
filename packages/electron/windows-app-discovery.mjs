@@ -246,9 +246,6 @@ export const createWindowsAppDiscovery = ({ run = execFileAsync, getFileIcon, en
   };
 
   const buildWindowsOpenProjectSpecs = async ({ projectPath, appId, appName }) => {
-    if (appId === 'finder') {
-      return [{ program: 'explorer.exe', args: [projectPath] }];
-    }
     if (appId === 'terminal') {
       const specs = [];
       const terminal = await findWindowsExecutable('terminal');
