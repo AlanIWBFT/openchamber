@@ -49,6 +49,13 @@ const getWindowsShortPath = (target) => {
 };
 
 const createWindowsRebuildPath = (target) => {
+  const managedPath = process.env.OPENCHAMBER_NATIVE_REBUILD_PATH;
+  if (process.platform === 'win32' && managedPath) {
+    if (!path.isAbsolute(managedPath) || !existsSync(managedPath)) {
+      throw new Error(`Invalid coordinator native rebuild path: ${managedPath}`);
+    }
+    return { buildPath: managedPath, cleanup: () => {} };
+  }
   if (process.platform !== 'win32') {
     return { buildPath: target, cleanup: () => {} };
   }
@@ -107,7 +114,7 @@ module.exports = {
 };
 
 const ensureWindowsNodeAddonApiForNodePty = async (rebuildRootPath) => {
-  if (process.platform !== 'win32') return async () => {};
+  if (process.platform !== 'win32') return;
 
   const nodePtyPackagePath = require.resolve('node-pty/package.json');
   const nodePtyDir = path.dirname(nodePtyPackagePath);
@@ -124,37 +131,44 @@ const ensureWindowsNodeAddonApiForNodePty = async (rebuildRootPath) => {
   await copyDirectory(rootNodeAddonApiDir, localNodeAddonApiDir);
   await writeWindowsNodeAddonApiIndex(localNodeAddonApiDir, exportedTempNodeAddonApiDir);
   await fsp.access(path.join(localNodeAddonApiDir, 'package.json'));
-
-  return async () => {
-    await fsp.rm(localNodeAddonApiDir, { recursive: true, force: true });
-    await fsp.rm(tempNodeAddonApiDir, { recursive: true, force: true });
-  };
 };
 
-console.log(`[electron] rebuilding native modules against Electron ${electronVersion}...`);
+const cleanupWindowsNodeAddonApi = async () => {
+  if (process.platform !== 'win32') return;
+  const nodePtyDir = path.dirname(require.resolve('node-pty/package.json'));
+  await fsp.rm(path.join(nodePtyDir, 'node_modules', 'node-addon-api'), { recursive: true, force: true });
+  await fsp.rm(path.join(repoRoot, 'node_modules', '.openchamber-node-addon-api-7.1.1'), { recursive: true, force: true });
+};
 
-// Rebuild against the hoisted root node_modules (bun workspace layout).
-// force=true re-links regardless of cached state; prebuild-install lookup is
-// bypassed by @electron/rebuild in favor of direct node-gyp builds.
-const rebuildPath = createWindowsRebuildPath(repoRoot);
-let cleanupNodeAddonApi = async () => {};
-try {
-  cleanupNodeAddonApi = await ensureWindowsNodeAddonApiForNodePty(rebuildPath.buildPath);
-  await rebuild({
-    buildPath: rebuildPath.buildPath,
-    electronVersion,
-    force: true,
-    arch: targetArchitecture.electronBuilder,
-    onlyModules: ['node-pty', 'bun-pty'],
-  });
-} finally {
+if (process.argv.includes('--cleanup')) {
+  // The coordinator calls this only after the complete build job has exited.
+  // Forced process termination cannot run this script's normal finally block.
+  await cleanupWindowsNodeAddonApi();
+} else {
+  console.log(`[electron] rebuilding native modules against Electron ${electronVersion}...`);
+
+  // Rebuild against the hoisted root node_modules (bun workspace layout).
+  // force=true re-links regardless of cached state; prebuild-install lookup is
+  // bypassed by @electron/rebuild in favor of direct node-gyp builds.
+  const rebuildPath = createWindowsRebuildPath(repoRoot);
   try {
-    await cleanupNodeAddonApi();
+    await ensureWindowsNodeAddonApiForNodePty(rebuildPath.buildPath);
+    await rebuild({
+      buildPath: rebuildPath.buildPath,
+      electronVersion,
+      force: true,
+      arch: targetArchitecture.electronBuilder,
+      onlyModules: ['node-pty', 'bun-pty'],
+    });
   } finally {
-    rebuildPath.cleanup();
+    try {
+      await cleanupWindowsNodeAddonApi();
+    } finally {
+      rebuildPath.cleanup();
+    }
   }
+
+  execFileSync(process.execPath, [path.join(__dirname, 'build-windows-shell.mjs')], { stdio: 'inherit', windowsHide: true });
+
+  console.log('[electron] native modules rebuilt successfully');
 }
-
-execFileSync(process.execPath, [path.join(__dirname, 'build-windows-shell.mjs')], { stdio: 'inherit', windowsHide: true });
-
-console.log('[electron] native modules rebuilt successfully');
