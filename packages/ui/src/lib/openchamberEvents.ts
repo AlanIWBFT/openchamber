@@ -382,7 +382,7 @@ const dispatchFromEnvelope = (envelope: { type: string; properties: unknown }) =
     return;
   }
 
-  if (envelope.type === 'openchamber:agent-memory-changed') {
+  if (envelope.type === 'openchamber:agent-memory-changed') { // Local: paired with emitAgentMemoryChangedEvent in packages/web/server/index.js; reconcile both ends when merging.
     const properties = getEventProperties(envelope.properties);
     const scope = properties?.scope === 'project' ? 'project' : 'global';
     const nextEvent: AgentMemoryChangedEvent = {
