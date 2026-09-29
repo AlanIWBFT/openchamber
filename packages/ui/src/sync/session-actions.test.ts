@@ -1927,6 +1927,36 @@ describe("optimisticSend target directory", () => {
     expect(removed).toEqual(ids)
   })
 
+  for (const includesContext of [true, false]) test(`confirms only observed context shadows after an ambiguous send (context in page: ${includesContext})`, async () => {
+    const targetStore = createStore({})
+    const childStores = createChildStores([["/target/project", targetStore]])
+    const added: Message[] = []
+    const confirmed: string[] = []
+    const removed: string[] = []
+    const { optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    setActionRefs(childStores, () => "/target/project")
+    setOptimisticRefs(
+      (input) => { added.push(input.message) },
+      (input) => { removed.push(input.messageID) },
+      (input) => { confirmed.push(input.messageID) },
+    )
+    await optimisticSend({
+      sessionId: "session-context-confirmed",
+      directory: "/target/project",
+      content: "hello",
+      context: [{ text: "context" }],
+      send: async () => {
+        sessionMessageRecords.set("session-context-confirmed", added.flatMap((info, seq) => (
+          !includesContext && info.role === "synthetic" ? [] : [{ info: { ...info, seq }, parts: [] }]
+        )))
+        throw Object.assign(new Error("gateway timeout"), { status: 504 })
+      },
+    })
+    expect(removed).toEqual([])
+    expect(confirmed).toEqual(added.filter((info) => includesContext || info.role === "user").map((info) => info.id))
+    expect(targetStore.getState().message["session-context-confirmed"]?.map((info) => info.seq)).toEqual(includesContext ? [0, 1] : [1])
+  })
+
   test("runs appendSubmissions once for an ambiguous confirmation", async () => {
     const targetStore = createStore({})
     const childStores = createChildStores([["/target/project", targetStore]])
