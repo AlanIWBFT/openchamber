@@ -53,6 +53,25 @@ preserves the inherited process environment. Confirmed quit cancels an
 in-flight macOS/Linux probe and waits for its process to exit. Windows quit
 does not wait on the environment read; a late result cannot resume startup. Machine and user PATH come from the native registry API, without starting a probe process. The snapshot preserves inherited variables and common tool directories.
 
+Windows also reads the current user's manual system proxy through the native
+`WinHttpGetIEProxyConfigForCurrentUser` API during this snapshot. No helper process
+is started. If any `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `WS_PROXY`, or
+`WSS_PROXY` variable is present, including an empty value and any letter case,
+the inherited proxy configuration wins. Otherwise a single proxy or separate
+`http=`/`https=` entries supply the HTTP/HTTPS environment inherited by the backend
+and its OpenCode child, covering OAuth, provider HTTP, and WebSocket requests.
+An explicit `NO_PROXY` is preserved. Otherwise exact hosts and leading `*.` domain
+exclusions become `NO_PROXY`, along with `localhost`, `127.0.0.1`, and `::1`.
+PAC/WPAD, SOCKS-only settings, `<local>`, and other wildcard exclusions are not
+translated. Disabled or unavailable manual settings keep the inherited environment.
+Restart Desktop to pick up changed Windows proxy settings. External OpenCode
+servers and standalone OpenCode installations use their own environment.
+Desktop records proxy variables it injects into the main process. Before relaunch
+or installer handoff, it removes only those whose values have not changed, so the
+next process reads Windows settings again. Inherited and subsequently changed
+proxy variables remain user overrides. This record stays in memory.
+The bundled Node service opts into environment proxy handling with a process argument. The desktop does not export a new Node proxy switch to terminals or agent shells.
+
 Packaged builds turn on Node's on-disk V8 code cache in `entry.mjs`, under
 `<userData>/v8-compile-cache`, so later launches compile `main.mjs` and the
 server's module graph from cached bytecode (`compile-cache.mjs`). The entry's

@@ -3,6 +3,11 @@ import path from 'node:path';
 
 const ENTRY = 'serve.mjs';
 
+export const bundledNodeProxyArgs = (env: NodeJS.ProcessEnv): string[] => {
+  if (env.NODE_USE_ENV_PROXY !== undefined || /(?:^|\s)--(?:no-)?use-env-proxy(?:\s|$)/.test(env.NODE_OPTIONS ?? '')) return [];
+  return env.http_proxy || env.HTTP_PROXY || env.https_proxy || env.HTTPS_PROXY ? ['--use-env-proxy'] : [];
+};
+
 export type BundledOpenCodeServerLaunch = {
   binary: string;
   args: string[];

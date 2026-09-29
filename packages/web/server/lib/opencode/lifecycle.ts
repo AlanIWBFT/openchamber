@@ -11,6 +11,7 @@ import { applyProviderEnvAliases } from './provider-env-aliases.js';
 import { overlayEnvironment } from '../environment/variables.js';
 import { recordStartupPerformance } from '../diagnostics/startup-performance.js';
 import { topUpV1Migration } from './v1-migration-topup.js';
+import { bundledNodeProxyArgs } from './bundled-opencode-server.js';
 import { bundledDatabase, readLegacySessionAdvice } from './v1-desktop-notice.js';
 import { serverDiagnosticJournal } from '../diagnostics/server-journal.js';
 import type { ChildProcess } from 'node:child_process';
@@ -598,6 +599,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
       launchWrapperType = launchSpec.wrapperType || null;
       binary = launchSpec.binary;
       args = [...(Array.isArray(launchSpec.args) ? launchSpec.args : []), ...args];
+      if (launchWrapperType === 'bundled-server') args.unshift(...bundledNodeProxyArgs(processEnv));
     }
 
     const pathValue = processEnv?.PATH ?? '';

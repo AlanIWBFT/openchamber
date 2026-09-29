@@ -145,7 +145,7 @@ import {
 } from './browser-panel-security.mjs';
 import { browserPanelKeyAction, browserPanelMouseAction, runBrowserPanelAction } from './browser-panel-navigation.mjs';
 import { isSpaceId, spaceIdOfPreviewPartition, spacePreviewPartition, spacePreviewProxyConfig } from './space-preview.mjs';
-import { loadWindowsShell } from './windows-shell.mjs';
+import { createInjectedProxyEnvironment, loadWindowsShell } from './windows-shell.mjs';
 import { shouldBlockGuestFrameNavigation } from './guest-frame-navigation.mjs';
 import { createRelayDevTunnelBridge } from './relay-dev-tunnel.mjs';
 import { parsePairingDeepLink } from './pairing-deep-link.mjs';
@@ -549,9 +549,12 @@ const isLinuxPackageInstall = () => process.platform === 'linux'
   && app.isPackaged
   && ['deb', 'rpm'].includes(readLinuxPackageType());
 
+const injectedProxyEnvironment = createInjectedProxyEnvironment(process.env);
+
 const devRelaunchExitCode = Number(process.env.OPENCHAMBER_ELECTRON_DEV_RELAUNCH_EXIT_CODE) || null;
 
 const relaunchApp = () => {
+  injectedProxyEnvironment.clear();
   if (devRelaunchExitCode) return devRelaunchExitCode;
   if (isLinuxPackageInstall()) relaunchAfterExit();
   else app.relaunch();
@@ -1454,6 +1457,7 @@ const inheritUserShellEnv = async () => {
     if (key === 'PATH' || key === 'ARGV0') continue;
     if (typeof process.env[key] === 'undefined') {
       process.env[key] = value;
+      if (process.platform === 'win32') injectedProxyEnvironment.remember(key, value);
     }
   }
 
@@ -1538,8 +1542,8 @@ const startLocalServer = async () => {
     OPENCHAMBER_DESKTOP_NOTIFY: 'true',
     OPENCHAMBER_UI_PASSWORD: desktopUiPassword || undefined,
     OPENCHAMBER_SKIP_API_COMPRESSION: process.env.OPENCHAMBER_SKIP_API_COMPRESSION || 'true',
-    NO_PROXY: process.env.NO_PROXY || 'localhost,127.0.0.1',
-    no_proxy: process.env.no_proxy || 'localhost,127.0.0.1',
+    NO_PROXY: process.env.NO_PROXY ?? process.env.no_proxy ?? 'localhost,127.0.0.1,::1',
+    no_proxy: process.env.no_proxy ?? process.env.NO_PROXY ?? 'localhost,127.0.0.1,::1',
   });
 
   await serverDependencyPreload.wait();
@@ -3409,6 +3413,7 @@ const installDownloadedUpdate = createUpdateInstaller({
   autoUpdater,
   shutdown: shutdownBackgroundServices,
   flushStorage: flushRendererStorage,
+  beforeInstall: () => injectedProxyEnvironment.clear(),
   showFailure: () => {
     const copy = getUpdateFailureDialogCopy(app.getLocale());
     return dialog.showMessageBox({ type: 'error', title: copy.title, message: copy.detail, buttons: [copy.restart], defaultId: 0, cancelId: 0 });
