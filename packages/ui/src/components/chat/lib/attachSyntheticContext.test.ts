@@ -78,6 +78,20 @@ const subagentReport = (id: string): ChatMessageEntry => entry({
 });
 
 describe('attachSyntheticContext', () => {
+    for (const delivered of [false, true]) test(`keeps context with the next prompt across ID rollover (delivered: ${delivered})`, () => {
+        const previous = userMessage('msg_ffff', 'first');
+        const context = contextMessage('msg_0000');
+        const next = userMessage('msg_0001', 'second');
+        previous.info.seq = 8;
+        if (delivered) {
+            context.info.seq = 9;
+            next.info.seq = 10;
+        }
+        const result = attachSyntheticContext([previous, context, next]);
+        expect(result.map((message) => message.parts.length)).toEqual([1, 2]);
+        expect(result[1]?.parts[0]?.id).toBe('ctx:msg_0000');
+    });
+
     test('attaches the context run to the user message it was sent with', () => {
         const user = userMessage('u1', 'fix this');
         const result = attachSyntheticContext([contextMessage('s1'), user]);
