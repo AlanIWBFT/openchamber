@@ -4768,9 +4768,12 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       }
       const validated = await validateLocalPath(filePath, 'File path');
       if (process.platform === 'win32') {
-        // The shell's own reveal, so a replacement file manager handles it too.
         if (appId === 'finder') {
-          shell.showItemInFolder(validated.path);
+          if (validated.stats.isDirectory()) {
+            await openValidatedPath(validated);
+          } else {
+            shell.showItemInFolder(validated.path);
+          }
           return null;
         }
         await runSpecChain(await buildWindowsOpenFileSpecs({ filePath: validated.path, appId, appName }), appName);
