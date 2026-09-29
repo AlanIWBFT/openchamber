@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <winhttp.h>
 #include <napi.h>
 #include <memory>
 #include <string>
@@ -121,9 +122,34 @@ Napi::Value ReadEnvironmentPaths(const Napi::CallbackInfo& info) {
   }
 }
 
+struct UserProxyConfig {
+  WINHTTP_CURRENT_USER_IE_PROXY_CONFIG value{};
+  ~UserProxyConfig() {
+    GlobalFree(value.lpszAutoConfigUrl);
+    GlobalFree(value.lpszProxy);
+    GlobalFree(value.lpszProxyBypass);
+  }
+};
+
+Napi::Value ReadSystemProxy(const Napi::CallbackInfo& info) {
+  const auto env = info.Env();
+  UserProxyConfig config;
+  if (!WinHttpGetIEProxyConfigForCurrentUser(&config.value)) {
+    Napi::Error::New(env, "Failed to read system proxy: Windows error " + std::to_string(GetLastError())).ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  auto result = Napi::Object::New(env);
+  const std::wstring server(config.value.lpszProxy ? config.value.lpszProxy : L"");
+  const std::wstring bypass(config.value.lpszProxyBypass ? config.value.lpszProxyBypass : L"");
+  result.Set("server", Napi::String::New(env, std::u16string(server.begin(), server.end())));
+  result.Set("bypass", Napi::String::New(env, std::u16string(bypass.begin(), bypass.end())));
+  return result;
+}
+
 Napi::Object InitializeWindowsShell(Napi::Env env, Napi::Object exports) {
   exports.Set("openDirectory", Napi::Function::New(env, OpenDirectory));
   exports.Set("readEnvironmentPaths", Napi::Function::New(env, ReadEnvironmentPaths));
+  exports.Set("readSystemProxy", Napi::Function::New(env, ReadSystemProxy));
   return exports;
 }
 
