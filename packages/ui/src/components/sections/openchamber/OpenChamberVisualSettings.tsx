@@ -201,6 +201,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setCustomUiFont = useUIStore(state => state.setCustomUiFont);
     const setCustomMonoFont = useUIStore(state => state.setCustomMonoFont);
     const webFontsBlocked = useEnterpriseMode();
+    const fontPixelAlignment = useUIStore(state => state.fontPixelAlignment);
+    const setFontPixelAlignment = useUIStore(state => state.setFontPixelAlignment);
     const [fontPickerOpen, setFontPickerOpen] = React.useState(false);
     const [systemFonts, setSystemFonts] = React.useState<LocalMonoFont[]>([]);
     React.useEffect(() => {
@@ -911,7 +913,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                             <p className={SETTINGS_HELPER_CLASS}>{t('settings.openchamber.visual.field.webFontsEnterprise')}</p>
                         ) : null}
 
-                        {(shouldShow('fontSize') && !isMobile) || shouldShow('terminalFontSize') || shouldShow('editorFontSize') ? (
+                        {shouldShow('fontSize') || shouldShow('terminalFontSize') || shouldShow('editorFontSize') ? (
                             <SettingsTwoColumn>
                                 {shouldShow('fontSize') && !isMobile && (
                                     <SettingsStackedField
@@ -1002,6 +1004,17 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             </Button>
                                         </div>
                                     </SettingsStackedField>
+                                )}
+                                {shouldShow('fontSize') && (
+                                    <SettingsCheckboxRow
+                                        checked={fontPixelAlignment}
+                                        onChange={setFontPixelAlignment}
+                                        label={t('settings.openchamber.visual.field.fontPixelAlignment')}
+                                        ariaLabel={t('settings.openchamber.visual.field.fontPixelAlignment')}
+                                        info={t('settings.openchamber.visual.field.fontPixelAlignmentHint')}
+                                        settingsItem="appearance.font-pixel-alignment"
+                                        className="self-start"
+                                    />
                                 )}
                             </SettingsTwoColumn>
                         ) : null}
