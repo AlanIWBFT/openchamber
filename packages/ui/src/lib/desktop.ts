@@ -46,6 +46,7 @@ export type DesktopWindowControlsStyle = 'classic' | 'traffic-lights';
 export type { DesktopSettings } from '@/lib/settings/registry';
 
 type DesktopBridgeGlobal = {
+  listMonospaceFonts?: NonNullable<RuntimeAPIs['localFonts']>['listMonospace'];
   pickThemeFile?: () => Promise<unknown>;
   invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
   openDialog?: (options: Record<string, unknown>) => Promise<unknown>;
@@ -132,6 +133,30 @@ export const hasDesktopInvoke = (): boolean => {
 };
 
 export const canUseElectronDesktopIPC = (): boolean => isElectronShell() && hasDesktopInvoke();
+
+export const createDesktopLocalFontsAPI = (): RuntimeAPIs['localFonts'] => {
+  if (!getDesktopBridge()?.listMonospaceFonts) return undefined;
+  const schema = z.array(z.object({
+    family: z.string().trim().min(1).regex(/^[^\r\n]+$/),
+    label: z.string().min(1),
+  }));
+  let pending: ReturnType<NonNullable<RuntimeAPIs['localFonts']>['listMonospace']> | undefined;
+  return {
+    listMonospace() {
+      if (!pending) {
+        pending = (async () => {
+          const list = getDesktopBridge()?.listMonospaceFonts;
+          if (!list) throw new Error('Local font discovery is unavailable');
+          return schema.parse(await list());
+        })().catch((error) => {
+          pending = undefined;
+          throw error;
+        });
+      }
+      return pending;
+    },
+  };
+};
 
 export const createDesktopThemeFileAPI = (): RuntimeAPIs['themeFiles'] => {
   // Preload exposes this capability only to trusted local UI pages. Unlike the
