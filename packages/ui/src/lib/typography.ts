@@ -42,6 +42,13 @@ export function getScaledTypographyStyle(
   return Object.fromEntries(entries.map(([key, size]) => [getTypographyVariable(key), `calc(${size} * ${scale})`]));
 }
 
+/** Runtime styles bypass PostCSS; round their final size by the same physical-pixel rule. */
+export function pixelFontSize(size: string): string {
+  // A rem calculation such as 0.8 * 20 can exceed 16 by floating-point noise.
+  // This physical-pixel tolerance keeps an integer size from gaining a pixel.
+  return `calc(round(up, (${size}) * var(--font-pixel-ratio, 1) - 0.0001px, 1px) / var(--font-pixel-ratio, 1) * var(--font-pixel-align, 1) + (${size}) * (1 - var(--font-pixel-align, 1)))`;
+}
+
 export const typography = {
 
   semanticMarkdown: {
@@ -221,6 +228,12 @@ export const typography = {
     },
   },
 };
+
+// Keep source tokens unrounded: consumers may scale them before the final font size.
+for (const group of Object.values(typography)) {
+  if ('fontSize' in group) group.fontSize = pixelFontSize(group.fontSize);
+  else for (const style of Object.values(group)) style.fontSize = pixelFontSize(style.fontSize);
+}
 
 export const toolDisplayStyles = {
 

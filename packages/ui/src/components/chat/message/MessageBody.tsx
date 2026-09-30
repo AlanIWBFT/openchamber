@@ -1,6 +1,7 @@
 import React from 'react';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import type { FilePart, Part } from '@/lib/opencode/model';
+import { pixelFontSize } from '@/lib/typography';
 import { isExecuteTool } from '@/lib/opencode/tools';
 import { shouldHideExecFollowUp } from './unifiedExec';
 
@@ -118,7 +119,7 @@ const TurnChangedFileChipContent = React.memo(({ file, interactive = false }: { 
         <FileTypeIcon filePath={file.file} className="h-3.5 w-3.5 flex-shrink-0" />
         <span className="max-w-52 truncate text-foreground/80" title={file.file}>{getDisplayFileName(file.file)}</span>
         {file.additions !== undefined && file.deletions !== undefined ? (
-            <DiffCount added={file.additions} removed={file.deletions} className="typography-meta" />
+            <DiffCount added={file.additions} removed={file.deletions} className="typography-meta" style={{ fontSize: pixelFontSize('0.8rem'), lineHeight: '1' }} />
         ) : null}
     </span>
 ));

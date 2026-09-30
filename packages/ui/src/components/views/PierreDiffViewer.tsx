@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useCallback, useEffect } from 'react';
+import { pixelFontSize } from '@/lib/typography';
 import { createPortal } from 'react-dom';
 import {
   areFilesEqual,
@@ -176,12 +177,12 @@ const FIND_MARK_CSS = `
 const PIERRE_RUNTIME_BASE_CSS = `
   :host {
     font-family: var(--font-mono);
-    font-size: var(--text-code);
+    font-size: ${pixelFontSize('var(--text-code)')};
   }
 
   pre, [data-code] {
     font-family: var(--font-mono);
-    font-size: var(--text-code);
+    font-size: ${pixelFontSize('var(--text-code)')};
   }
 
   /* Mobile touch selection support */

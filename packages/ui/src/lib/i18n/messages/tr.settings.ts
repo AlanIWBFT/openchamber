@@ -9,6 +9,8 @@ export const settingsDict = {
   'settings.openchamber.sessionRetention.field.archivedDescription': 'Saklama süresi arşivleme anından itibaren sayılır. Süresi dolan oturumlar silinir.',
   'settings.openchamber.sessionRetention.field.unarchivedArchiveDescription': 'Saklama süresi oturumun son etkinliğinden itibaren sayılır. Süresi dolan oturumlar arşivlenir.',
   'settings.openchamber.sessionRetention.field.unarchivedDeleteDescription': 'Saklama süresi oturumun son etkinliğinden itibaren sayılır. Süresi dolan oturumlar silinir.',
+  'settings.openchamber.visual.field.fontPixelAlignment': 'Ekran piksellerine hizala',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': 'Görüntülenen yazı boyutlarını geçerli ekran ölçeğinde tam ekran pikseline yukarı yuvarlar. Bazı metinler biraz büyüyebilir. Ayarlanan yazı boyutları değişmez.',
   'settings.themeImport.selectAll': 'Tümünü seç',
   'settings.themeImport.deselectAll': 'Tümünün seçimini kaldır',
   'settings.themeImport.complete': 'İçe aktarma tamamlandı',

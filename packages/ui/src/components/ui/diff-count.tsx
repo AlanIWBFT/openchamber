@@ -11,11 +11,12 @@ const MINUS = '−';
  * for rows where width is short; with both sides zero it renders nothing.
  * Size and placement come from the caller's `className`.
  */
-export function DiffCount({ added, removed, hideZero = false, className }: {
+export function DiffCount({ added, removed, hideZero = false, className, style }: {
   added: number;
   removed: number;
   hideZero?: boolean;
   className?: string;
+  style?: React.CSSProperties;
 }): React.ReactNode {
   const showAdded = !hideZero || added > 0;
   const showRemoved = !hideZero || removed > 0;
@@ -23,7 +24,7 @@ export function DiffCount({ added, removed, hideZero = false, className }: {
   return (
     // The gap draws the space; the space itself, which a flex box leaves out
     // of layout, stays in the text, so copying and screen readers get "+12 −2".
-    <span className={cn('inline-flex shrink-0 items-baseline gap-1 whitespace-nowrap tabular-nums', className)}>
+    <span className={cn('inline-flex shrink-0 items-baseline gap-1 whitespace-nowrap tabular-nums', className)} style={style}>
       {showAdded ? <span className="text-[var(--status-success)]">+{added}</span> : null}
       {showAdded && showRemoved ? ' ' : null}
       {showRemoved ? <span className="text-[var(--status-error)]">{MINUS}{removed}</span> : null}

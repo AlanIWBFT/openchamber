@@ -1,3 +1,5 @@
+import { pixelFontSize } from '@/lib/typography';
+
 // Pierre mixes the theme's add/remove color into changed rows at 20% (dark)
 // and 12% (light), with gutters and changed words on top. Vivid theme greens
 // and reds turned whole hunks into colored blocks whose code was hard to read,
@@ -86,7 +88,7 @@ export const PIERRE_SEPARATOR_CSS = `
       background: transparent;
       color: var(--diffs-fg-number);
       font-family: var(--diffs-header-font-family, var(--font-sans));
-      font-size: 0.75rem;
+      font-size: ${pixelFontSize('0.75rem')};
       line-height: 1;
       /* The label starts where the code text does: past the gutter by the
          code line's 1ch of padding, a monospace ch at the code size. */

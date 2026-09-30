@@ -9,7 +9,7 @@ import { FormMarkdown } from '../../FormMarkdown';
 import { MessageFilesDisplay } from '../../FileAttachment';
 import { getToolMetadata, isImageFile } from '@/lib/toolHelpers';
 import type { FilePart, Metadata, Part, ToolInput, ToolPart as ToolPartType, ToolState as ToolStateUnion } from '@/lib/opencode/model';
-import { toolDisplayStyles } from '@/lib/typography';
+import { pixelFontSize, toolDisplayStyles } from '@/lib/typography';
 import { HighlightedCode } from '@/components/code/HighlightedCode';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -2555,10 +2555,10 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
                                 </>
                             ) : null}
                             {diffStats && (
-                                <DiffCount added={diffStats.added} removed={diffStats.removed} className="typography-meta" />
+                                <DiffCount added={diffStats.added} removed={diffStats.removed} className="typography-meta" style={{ fontSize: pixelFontSize('0.8rem'), lineHeight: '1' }} />
                             )}
                             {writeLineCount && (
-                                <DiffCount added={writeLineCount} removed={0} hideZero className="typography-meta" />
+                                <DiffCount added={writeLineCount} removed={0} hideZero className="typography-meta" style={{ fontSize: pixelFontSize('0.8rem'), lineHeight: '1' }} />
                             )}
                         </div>
                         {header?.stop ? (
