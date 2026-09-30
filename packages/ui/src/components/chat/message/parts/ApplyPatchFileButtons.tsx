@@ -1,4 +1,5 @@
 import React from 'react';
+import { pixelFontSize } from '@/lib/typography';
 
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { Button } from '@/components/ui/button';
@@ -108,7 +109,7 @@ export const ApplyPatchFileButtons = ({
                             {entry.name}
                         </Text>
                         {hasPerFileDiff ? (
-                            <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: '0.8rem', lineHeight: '1' }}>
+                            <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: pixelFontSize('0.8rem'), lineHeight: '1' }}>
                                 <span style={{ color: 'var(--status-success)' }}>+{entry.added ?? 0}</span>
                                 <span style={{ color: 'var(--tools-description)' }}>/</span>
                                 <span style={{ color: 'var(--status-error)' }}>-{entry.removed ?? 0}</span>

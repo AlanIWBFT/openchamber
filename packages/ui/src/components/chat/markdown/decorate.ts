@@ -4,6 +4,7 @@ import { dropdownMenuItemClass, dropdownMenuPopupClass } from '@/components/ui/d
 import type { IconName } from '@/components/icon/icons';
 import { MESSAGE_IMAGE_EXPORT_EXCLUDE_ATTRIBUTE } from '../message/imageExport';
 import { getMermaidViewerController } from './mermaidViewer';
+import { applyCodeCellSpacing } from './codeCellSpacing';
 
 // ---------------------------------------------------------------------------
 // Shared decoration context
@@ -145,8 +146,8 @@ const applyCodeBlockWrapState = (wrapper: HTMLElement, enabled: boolean, labels:
 };
 
 const layoutCodeLines = (pre: HTMLPreElement): void => {
-  const code = pre.querySelector<HTMLElement>(':scope > code');
-  if (!code || code.hasAttribute('data-md-code-lines')) return;
+  const code = Array.from(pre.children).find((child) => child.localName === 'code');
+  if (!(code instanceof HTMLElement) || code.hasAttribute('data-md-code-lines')) return;
 
   // The real gutter takes over the reserved footprint.
   pre.removeAttribute('data-md-gutter-reserved');
@@ -195,6 +196,7 @@ const layoutCodeLines = (pre: HTMLPreElement): void => {
   code.replaceChildren(fragment);
   code.setAttribute('data-md-code-lines', '');
   code.toggleAttribute('data-md-code-trailing-newline', hasTrailingNewline);
+  applyCodeCellSpacing(code);
 };
 
 export const getMarkdownCodeText = (code: HTMLElement): string => {
@@ -293,6 +295,8 @@ const decorateCodeBlocks = (root: HTMLElement, ctx: DecorateContext): void => {
       // end-of-stream decorate pass shifts every code line right by the
       // gutter column and the finished message visibly jumps.
       pre.setAttribute('data-md-gutter-reserved', '');
+      const code = Array.from(pre.children).find((child) => child.localName === 'code');
+      if (code instanceof HTMLElement) applyCodeCellSpacing(code);
     }
     body.appendChild(pre);
     wrapper.appendChild(header);

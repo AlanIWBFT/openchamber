@@ -4,6 +4,8 @@ import { linearIntegrationI18n } from './linear-integration.i18n';
 import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 import { extensionCatalogI18n } from './extension-catalog.i18n';
 export const settingsDict = {
+  'settings.openchamber.visual.field.fontPixelAlignment': 'Alinear con los píxeles de pantalla',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': 'Redondea hacia arriba los tamaños de letra mostrados a píxeles enteros según la escala de pantalla actual. Algunos textos pueden verse ligeramente más grandes. Los tamaños configurados no cambian.',
   'settings.themeImport.selectAll': 'Seleccionar todo',
   'settings.themeImport.deselectAll': 'Deseleccionar todo',
   'settings.themeImport.complete': 'Importación completada',

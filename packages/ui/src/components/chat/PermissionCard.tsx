@@ -1,4 +1,5 @@
 import React from 'react';
+import { pixelFontSize } from '@/lib/typography';
 import { cn, formatPathForDisplay } from '@/lib/utils';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import type { PermissionReply, PermissionRequest } from '@/types/permission';
@@ -20,7 +21,7 @@ import { usePermissionFromSubagent, usePermissionResponse } from './usePermissio
 const PERMISSION_BASH_CUSTOM_STYLE: React.CSSProperties = {
   margin: 0,
   padding: '0.5rem',
-  fontSize: 'var(--text-meta)',
+  fontSize: pixelFontSize('var(--text-meta)'),
   lineHeight: '1.25rem',
   background: 'rgb(var(--muted) / 0.3)',
   borderRadius: '0.25rem',
@@ -41,7 +42,7 @@ const PERMISSION_BASH_CODE_TAG_PROPS = {
 const PERMISSION_JSON_CUSTOM_STYLE: React.CSSProperties = {
   margin: 0,
   padding: '0.5rem',
-  fontSize: 'var(--text-meta)',
+  fontSize: pixelFontSize('var(--text-meta)'),
   lineHeight: '1.25rem',
   background: 'rgb(var(--muted) / 0.3)',
   borderRadius: '0.25rem',

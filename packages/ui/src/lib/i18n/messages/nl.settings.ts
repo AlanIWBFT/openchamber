@@ -4,6 +4,8 @@ import { linearIntegrationI18n } from './linear-integration.i18n';
 import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 import { extensionCatalogI18n } from './extension-catalog.i18n';
 export const settingsDict = {
+  'settings.openchamber.visual.field.fontPixelAlignment': 'Uitlijnen op schermpixels',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': 'Rondt weergegeven lettergroottes naar boven af op hele schermpixels bij de huidige schermschaal. Sommige tekst kan iets groter worden. De ingestelde lettergroottes blijven ongewijzigd.',
   'settings.openchamber.tunnel.enterpriseMode': 'Externe tunnels zijn niet beschikbaar in enterprise-modus, omdat de tunneldienst het verkeer zou kunnen lezen. Koppel andere apparaten via uw netwerk of de relay van uw organisatie om deze server te bereiken.',
   'settings.voice.page.enterpriseMode': 'In enterprise-modus blijft voorlezen op deze computer. Gebruik een lokale stem of een aangepaste server die hier draait.',
   'settings.themeImport.selectAll': 'Alles selecteren',

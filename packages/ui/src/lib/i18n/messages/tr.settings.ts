@@ -4,6 +4,8 @@ import { linearIntegrationI18n } from './linear-integration.i18n';
 import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 import { extensionCatalogI18n } from './extension-catalog.i18n';
 export const settingsDict = {
+  'settings.openchamber.visual.field.fontPixelAlignment': 'Ekran piksellerine hizala',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': 'Görüntülenen yazı boyutlarını geçerli ekran ölçeğinde tam ekran pikseline yukarı yuvarlar. Bazı metinler biraz büyüyebilir. Ayarlanan yazı boyutları değişmez.',
   'settings.themeImport.selectAll': 'Tümünü seç',
   'settings.themeImport.deselectAll': 'Tümünün seçimini kaldır',
   'settings.themeImport.complete': 'İçe aktarma tamamlandı',
