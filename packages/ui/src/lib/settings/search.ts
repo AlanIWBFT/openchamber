@@ -134,6 +134,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     isAvailable: (ctx) => !ctx.isMobile,
   },
   {
+    id: 'appearance.font-pixel-alignment',
+    page: 'appearance',
+    titleKey: 'settings.openchamber.visual.field.fontPixelAlignment',
+    descriptionKey: 'settings.openchamber.visual.field.fontPixelAlignmentHint',
+    keywords: ['font', 'pixel', 'dpi', 'fractional', 'scaling', 'rounding'],
+  },
+  {
     id: 'appearance.terminal-font-size',
     page: 'appearance',
     titleKey: 'settings.openchamber.visual.field.terminalFontSize',

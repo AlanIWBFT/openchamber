@@ -24,6 +24,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': 'Esta chave não está mais lá. Procure chaves de novo.',
   'settings.sourceControl.ssh.inventoryFull': 'Há chaves demais adicionadas. Remova primeiro uma que você não usa.',
   'settings.sourceControl.ssh.operationFailed': 'Algo deu errado com as chaves SSH. Tente de novo.',
+  'settings.openchamber.visual.field.fontPixelAlignment': 'Alinhar aos pixels da tela',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': 'Arredonda os tamanhos de fonte exibidos para cima até pixels inteiros na escala atual da tela. Alguns textos podem ficar um pouco maiores. Os tamanhos configurados não mudam.',
   'settings.themeImport.selectAll': 'Selecionar tudo',
   'settings.themeImport.deselectAll': 'Desmarcar tudo',
   'settings.themeImport.complete': 'Importação concluída',

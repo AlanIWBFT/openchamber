@@ -54,6 +54,24 @@ describe('settings registry', () => {
     expect(parseSettingsDocument({ locale: 3 })).toEqual({});
   });
 
+  test('font pixel alignment defaults on and preserves an explicit false across settings round-trips', () => {
+    const original = useUIStore.getState().fontPixelAlignment;
+    try {
+      expect(useUIStore.getInitialState().fontPixelAlignment).toBe(true);
+      useUIStore.getState().setFontPixelAlignment(false);
+      const parsed = parseSettingsDocument(JSON.parse(JSON.stringify({ fontPixelAlignment: readAutoSaveSnapshot().fontPixelAlignment })));
+      expect(parsed).toEqual({ fontPixelAlignment: false });
+      useUIStore.getState().setFontPixelAlignment(true);
+      applySettingsToStores(parsed ?? {});
+      expect(useUIStore.getState().fontPixelAlignment).toBe(false);
+      applySettingsToStores({});
+      expect(useUIStore.getState().fontPixelAlignment).toBe(false);
+      expect(parseSettingsDocument({ fontPixelAlignment: 'false' })).toEqual({});
+      expect(useUIStore.persist.getOptions().partialize?.(useUIStore.getState())).toMatchObject({ fontPixelAlignment: false });
+    } finally {
+      useUIStore.getState().setFontPixelAlignment(original);
+    }
+  });
   test('local font selections round-trip and restore without requiring a discovery result', () => {
     const original = useUIStore.getState();
     try {

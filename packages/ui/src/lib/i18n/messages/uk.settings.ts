@@ -24,6 +24,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': 'Цього ключа більше немає. Пошукайте ключі ще раз.',
   'settings.sourceControl.ssh.inventoryFull': 'Додано забагато ключів. Спершу видаліть той, яким не користуєтеся.',
   'settings.sourceControl.ssh.operationFailed': 'Щось пішло не так із SSH-ключами. Спробуйте ще раз.',
+  'settings.openchamber.visual.field.fontPixelAlignment': 'Вирівнювати за пікселями екрана',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': 'Округлює відображувані розміри шрифту вгору до цілих пікселів за поточного масштабу екрана. Деякі тексти можуть стати трохи більшими. Задані розміри шрифту не змінюються.',
   'settings.themeImport.selectAll': 'Вибрати всі',
   'settings.themeImport.deselectAll': 'Зняти вибір',
   'settings.themeImport.complete': 'Імпорт завершено',
