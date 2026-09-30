@@ -1,6 +1,14 @@
+import { z } from 'zod';
+
 export type UiFontOption = 'inter' | 'fixel' | 'geist-sans' | 'atkinson-hyperlegible' | 'source-sans-3' | 'roboto' | 'noto-sans' | 'dm-sans' | 'manrope' | 'system';
 
-export type MonoFontOption = 'jetbrains-mono' | 'fira-code' | 'geist-mono' | 'commit-mono' | 'source-code-pro' | 'cascadia-code' | 'roboto-mono' | 'iosevka' | 'system-mono';
+type BuiltinMonoFontOption = 'jetbrains-mono' | 'fira-code' | 'geist-mono' | 'commit-mono' | 'source-code-pro' | 'cascadia-code' | 'roboto-mono' | 'iosevka' | 'system-mono';
+export type MonoFontOption = z.infer<typeof monoFontSchema>;
+
+export interface LocalMonoFont {
+    family: string;
+    label: string;
+}
 
 interface FontFaceSourceBase {
     family: string;
@@ -107,7 +115,7 @@ export const UI_FONT_OPTIONS: FontOptionDefinition<UiFontOption>[] = [
     }
 ];
 
-export const CODE_FONT_OPTIONS: FontOptionDefinition<MonoFontOption>[] = [
+const CODE_FONT_OPTIONS: FontOptionDefinition<BuiltinMonoFontOption>[] = [
     {
         id: 'jetbrains-mono',
         label: 'JetBrains Mono',
@@ -168,7 +176,9 @@ export const CODE_FONT_OPTIONS: FontOptionDefinition<MonoFontOption>[] = [
         id: 'system-mono',
         label: 'System Mono',
         description: 'Native operating system monospace font.',
-        stack: 'ui-monospace, "SFMono-Regular", "Menlo", "Cascadia Mono", "Segoe UI Mono", monospace'
+        // Android registers its system mono face under this named alias, not its font-file family name.
+        // A named family leaves missing CJK glyphs to the UI stack instead of generic monospace fallback.
+        stack: '"SFMono-Regular", "Menlo", "Cascadia Mono", "Consolas", "Segoe UI Mono", "Liberation Mono", "DejaVu Sans Mono", "sans-serif-monospace", monospace'
     }
 ];
 
@@ -176,13 +186,53 @@ const buildFontMap = <T extends string>(options: FontOptionDefinition<T>[]) =>
     Object.fromEntries(options.map((option) => [option.id, option])) as Record<T, FontOptionDefinition<T>>;
 
 export const UI_FONT_OPTION_MAP = buildFontMap(UI_FONT_OPTIONS);
-export const CODE_FONT_OPTION_MAP = buildFontMap(CODE_FONT_OPTIONS);
+const CODE_FONT_OPTION_MAP = buildFontMap(CODE_FONT_OPTIONS);
 
 export const DEFAULT_UI_FONT: UiFontOption = 'system';
-export const DEFAULT_MONO_FONT: MonoFontOption = 'system-mono';
+export const DEFAULT_MONO_FONT: BuiltinMonoFontOption = 'system-mono';
 
 export const isUiFontOption = (value: unknown): value is UiFontOption =>
     typeof value === 'string' && value in UI_FONT_OPTION_MAP;
 
-export const isMonoFontOption = (value: unknown): value is MonoFontOption =>
-    typeof value === 'string' && value in CODE_FONT_OPTION_MAP;
+const isBuiltinMonoFont = (value: string): value is BuiltinMonoFontOption => Object.hasOwn(CODE_FONT_OPTION_MAP, value);
+
+const localMonoFontSchema = z.templateLiteral(['local:', z.string()]).refine((value) => {
+    const family = value.slice(6);
+    return family.length > 0 && family.length <= 256 && family.trim() === family && !/[\p{Cc}]/u.test(family);
+});
+
+export const monoFontSchema = z.union([z.enum(CODE_FONT_OPTIONS.map((option) => option.id)), localMonoFontSchema]);
+
+export const isMonoFontOption = (value: string): value is MonoFontOption => monoFontSchema.safeParse(value).success;
+
+export const getMonoFontDefinition = (font: MonoFontOption): FontOptionDefinition<MonoFontOption> => {
+    if (isBuiltinMonoFont(font)) return CODE_FONT_OPTION_MAP[font];
+    if (!isMonoFontOption(font)) return CODE_FONT_OPTION_MAP[DEFAULT_MONO_FONT];
+    const family = font.slice(6);
+    // Escape commas as well: terminal canvas normalization splits the family list on commas.
+    const quoted = `"${family.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll(',', '\\2c ')}"`;
+    return { id: font, label: family, description: '', stack: quoted };
+};
+
+export const resolveMonoFontStack = (font: MonoFontOption, uiFont: UiFontOption): string => {
+    const definition = getMonoFontDefinition(font);
+    const systemStack = CODE_FONT_OPTION_MAP[DEFAULT_MONO_FONT].stack.replace(/, monospace$/, '');
+    const primary = definition.source ? `"${definition.source.family}"` : definition.stack;
+    const monoStack = definition.id === DEFAULT_MONO_FONT ? systemStack : `${primary}, ${systemStack}`;
+    // A generic monospace before the UI stack would consume missing CJK glyphs first.
+    return `${monoStack}, ${UI_FONT_OPTION_MAP[uiFont]?.stack ?? UI_FONT_OPTION_MAP[DEFAULT_UI_FONT].stack}`;
+};
+
+export const getCodeFontOptions = (fonts: readonly LocalMonoFont[], selected: MonoFontOption): FontOptionDefinition<MonoFontOption>[] => {
+    const options: FontOptionDefinition<MonoFontOption>[] = [...CODE_FONT_OPTIONS];
+    const families = new Set(CODE_FONT_OPTIONS.flatMap((option) => option.source ? [option.source.family.toLowerCase()] : []));
+    for (const font of [...fonts].sort((a, b) => a.label.localeCompare(b.label))) {
+        const id = `local:${font.family}`;
+        if (!isMonoFontOption(id) || families.has(font.family.toLowerCase())) continue;
+        families.add(font.family.toLowerCase());
+        options.push({ ...getMonoFontDefinition(id), label: font.label });
+    }
+    // Keep a saved local choice visible even before discovery or on another device.
+    if (!options.some((option) => option.id === selected) && isMonoFontOption(selected)) options.push(getMonoFontDefinition(selected));
+    return options;
+};

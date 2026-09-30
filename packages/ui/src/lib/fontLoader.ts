@@ -1,4 +1,4 @@
-import { CODE_FONT_OPTION_MAP, UI_FONT_OPTION_MAP, type FontFaceSource, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
+import { getMonoFontDefinition, UI_FONT_OPTION_MAP, type FontFaceSource, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 
 const loadedFaces = new Set<string>();
 const pendingFaces = new Map<string, Promise<void>>();
@@ -60,4 +60,4 @@ const loadSource = (source: FontFaceSource | undefined) => {
 
 export const loadUiFont = (font: UiFontOption) => loadSource(UI_FONT_OPTION_MAP[font]?.source);
 
-export const loadMonoFont = (font: MonoFontOption) => loadSource(CODE_FONT_OPTION_MAP[font]?.source);
+export const loadMonoFont = (font: MonoFontOption) => loadSource(getMonoFontDefinition(font).source);

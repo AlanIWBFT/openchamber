@@ -2071,6 +2071,7 @@ export const settingsDict = {
   "settings.openchamber.visual.option.terminalShell.auto": "Automático",
   "settings.openchamber.visual.field.editorFontSize": "Tamaño de fuente del editor",
   "settings.openchamber.visual.field.codeFont": "Fuente de código",
+  "settings.openchamber.visual.fontDiscoveryFailed": "No se pudieron cargar las fuentes del sistema. Vuelve a abrir la lista de fuentes para reintentarlo.",
   "settings.openchamber.visual.field.selectCodeFontAria": "Seleccionar fuente de código",
   "settings.openchamber.visual.actions.resetCodeFontAria": "Restablecer fuente de código",
   "settings.openchamber.visual.actions.resetTerminalFontSizeAria": "Restablecer tamaño de fuente del terminal",

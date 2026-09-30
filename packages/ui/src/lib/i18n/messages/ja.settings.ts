@@ -2104,6 +2104,7 @@ export const settingsDict = {
   'settings.openchamber.visual.option.terminalShell.auto': '自動',
   'settings.openchamber.visual.field.editorFontSize': 'エディターフォントサイズ',
   'settings.openchamber.visual.field.codeFont': 'コードフォント',
+  'settings.openchamber.visual.fontDiscoveryFailed': 'システムフォントを読み込めませんでした。フォント一覧を開き直して再試行してください。',
   'settings.openchamber.visual.field.selectCodeFontAria': 'コードフォントを選択',
   'settings.openchamber.visual.actions.resetCodeFontAria': 'コードフォントをリセット',
   'settings.openchamber.visual.actions.resetTerminalFontSizeAria': 'ターミナルフォントサイズをリセット',

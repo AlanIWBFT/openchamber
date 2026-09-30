@@ -1,5 +1,6 @@
 import type { WorktreeMetadata } from '@/types/worktree';
 import type { DesktopSettings } from '@/lib/settings/registry';
+import type { LocalMonoFont } from '@/lib/fontOptions';
 
 type RuntimePlatform = 'web' | 'desktop' | 'vscode';
 
@@ -1490,6 +1491,10 @@ export interface ClientAuthAPI {
 }
 
 export interface RuntimeAPIs {
+  /** Local Windows desktop fonts. Absent on web, other desktop OSes, VS Code and mobile. */
+  localFonts?: {
+    listMonospace(): Promise<LocalMonoFont[]>;
+  };
   /** Native local picker. Web/mobile fall back to their browser file input; VS Code does not import themes. */
   themeFiles?: {
     pick(): Promise<{ status: 'unsupported' } | { status: 'picked'; file: { name: string; size: number; text: string } | null }>;
