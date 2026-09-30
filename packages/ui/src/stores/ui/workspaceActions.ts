@@ -99,7 +99,10 @@ export const createWorkspaceActions: UIStoreSlice<
 
       const byDirectory = {
         ...state.contextPanelByDirectory,
-        [normalizedDirectory]: withZoneView(touchContextPanelState(prev, state.contextSurfaceZones), zone, { isOpen: false }),
+        [normalizedDirectory]: withZoneView({
+          ...touchContextPanelState(prev, state.contextSurfaceZones),
+          autoCloseFileTabId: zoneOfMode(state.contextSurfaceZones, 'file') === zone ? undefined : prev.autoCloseFileTabId,
+        }, zone, { isOpen: false }),
       };
 
       return { contextPanelByDirectory: clampContextPanelRoots(byDirectory, 20) };
@@ -154,7 +157,12 @@ export const createWorkspaceActions: UIStoreSlice<
 
       const byDirectory: Record<string, ContextPanelDirectoryState> = {};
       for (const [directory, panel] of Object.entries(state.contextPanelByDirectory)) {
-        byDirectory[directory] = carrySurfaceToZone(panel, mode, from, zone, placement);
+        const next = carrySurfaceToZone(panel, mode, from, zone, placement);
+        const fileView = getZoneView(next, zoneOfMode(placement, 'file'));
+        byDirectory[directory] = {
+          ...next,
+          autoCloseFileTabId: mode === 'file' || fileView.activeTabId !== panel.autoCloseFileTabId ? undefined : panel.autoCloseFileTabId,
+        };
       }
 
       return { contextSurfaceZones: placement, contextPanelByDirectory: byDirectory };

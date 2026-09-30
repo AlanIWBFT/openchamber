@@ -72,6 +72,7 @@ export type ContextPanelTabDescriptor = {
 };
 
 export type ContextPanelDirectoryState = {
+  autoCloseFileTabId?: string | undefined;
   isOpen: boolean;
   expanded: boolean;
   tabs: ContextPanelTab[];

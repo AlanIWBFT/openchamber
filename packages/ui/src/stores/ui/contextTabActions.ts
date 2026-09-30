@@ -381,6 +381,8 @@ export const createContextTabActions: UIStoreSlice<
         ...state.contextPanelByDirectory,
         [normalizedDirectory]: withZoneView({
           ...current,
+          autoCloseFileTabId: zone === zoneOfMode(state.contextSurfaceZones, 'file') && current.autoCloseFileTabId !== normalizedTabID
+            ? undefined : current.autoCloseFileTabId,
           touchedAt: Date.now(),
           tabs: current.tabs.map((tab) => (tab.id === normalizedTabID
             ? { ...tab, touchedAt: Date.now() }

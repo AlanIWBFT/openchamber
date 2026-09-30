@@ -103,9 +103,21 @@ export const upsertContextPanelTab = (
     : resolveZoneActiveTabId(current.tabs, placement, zone, view.activeTabId) ?? nextTab.id;
   const clampedTabs = clampContextPanelTabs(tabs, CONTEXT_PANEL_MAX_TABS, activeTabId);
 
+  let autoCloseFileTabId = current.autoCloseFileTabId;
+  if (nextTab.mode === 'file' && nextTab.targetPath) {
+    if (reveal && !view.isOpen && !current.tabs.some((tab) => tab.mode === 'file' && tab.targetPath)) {
+      autoCloseFileTabId = nextTab.id;
+    } else if (autoCloseFileTabId !== nextTab.id) {
+      autoCloseFileTabId = undefined;
+    }
+  } else if (reveal && zone === zoneOfMode(placement, 'file')) {
+    autoCloseFileTabId = undefined;
+  }
+
   return settleZones(withZoneView({
     ...current,
     tabs: clampedTabs,
+    autoCloseFileTabId,
     touchedAt: Date.now(),
   }, zone, {
     isOpen: reveal ? true : view.isOpen,
@@ -131,6 +143,11 @@ export const closeContextPanelTabs = (
     const activeClosed = view.activeTabId ? closed.has(view.activeTabId) : false;
     if (!activeClosed) continue;
 
+    if (current.autoCloseFileTabId === view.activeTabId) {
+      views[zone] = { activeTabId: null, isOpen: false, expanded: false };
+      continue;
+    }
+
     const activeMode = closedTabs.find((tab) => tab.id === view.activeTabId)?.mode ?? null;
     const sameModeTabs = activeMode ? nextTabs.filter((tab) => tab.mode === activeMode) : [];
     const nextSameModeTab = sameModeTabs.length > 0
@@ -149,7 +166,10 @@ export const closeContextPanelTabs = (
       : { activeTabId: null, isOpen: false, expanded: false };
   }
 
-  let next: ContextPanelDirectoryState = { ...current, tabs: nextTabs, touchedAt: Date.now() };
+  let next: ContextPanelDirectoryState = {
+    ...current, tabs: nextTabs, touchedAt: Date.now(),
+    autoCloseFileTabId: current.autoCloseFileTabId && closed.has(current.autoCloseFileTabId) ? undefined : current.autoCloseFileTabId,
+  };
   for (const zone of CONTEXT_ZONES) {
     const patch = views[zone];
     if (patch) next = withZoneView(next, zone, patch);
@@ -221,6 +241,7 @@ export const moveContextPanelFileTabs = (
   let next: ContextPanelDirectoryState = {
     ...current,
     tabs: tabs.filter((tab, index) => tab !== current.tabs[index] || !movedIds.has(tab.id)),
+    autoCloseFileTabId: current.autoCloseFileTabId ? renamed.get(current.autoCloseFileTabId) ?? current.autoCloseFileTabId : undefined,
     touchedAt: Date.now(),
   };
   for (const zone of CONTEXT_ZONES) {

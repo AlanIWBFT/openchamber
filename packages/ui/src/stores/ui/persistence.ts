@@ -265,7 +265,9 @@ export const uiStorePersistOptions = {
     isSidebarOpen: state.isSidebarOpen,
     sidebarFoldedForExpandedZone: state.sidebarFoldedForExpandedZone,
     sidebarWidth: state.sidebarWidth,
-    contextPanelByDirectory: withoutForeignComparisons(state.contextPanelByDirectory),
+    contextPanelByDirectory: withoutForeignComparisons(Object.fromEntries(
+      Object.entries(state.contextPanelByDirectory).map(([directory, panel]) => [directory, { ...panel, autoCloseFileTabId: undefined }]),
+    )),
     contextRailOrder: state.contextRailOrder,
     contextRailHiddenSurfaces: state.contextRailHiddenSurfaces,
     mobileWorkspaceTabOrder: state.mobileWorkspaceTabOrder,
