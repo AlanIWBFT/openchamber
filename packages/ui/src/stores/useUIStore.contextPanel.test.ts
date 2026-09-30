@@ -16,7 +16,7 @@ const getTerminalTab = (directory: string) => getContextPanelTabs(directory).fin
 const originalPersistOptions = useUIStore.persist.getOptions();
 
 beforeEach(() => {
-  useUIStore.setState({ contextPanelByDirectory: {}, contextRailOrder: [], contextZoneSizes: {} });
+  useUIStore.setState({ contextPanelByDirectory: {}, contextRailOrder: [], contextZoneSizes: {}, contextSurfaceZones: {} });
   useTerminalStore.getState().clearAll();
 });
 
@@ -840,6 +840,210 @@ describe('useUIStore file editor visibility', () => {
 describe('useUIStore closeContextPanelTab surface stability', () => {
   const directory = '/repo';
 
+  const closeFile = (path: string) => {
+    const tab = getContextPanelTabs(directory).find((item) => item.targetPath === path);
+    if (!tab) throw new Error('expected a file tab');
+    useUIStore.getState().closeContextPanelTab(directory, tab.id);
+  };
+
+  test('closing the first file opened from an empty closed panel leaves no file tree', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv');
+    closeFile('/repo/result.csv');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(false);
+    expect(panel.tabs).toEqual([]);
+    expect(panel.autoCloseFileTabId).toBeUndefined();
+  });
+
+  test('a first file opened at a line also closes its empty panel', () => {
+    useUIStore.getState().openContextFileAtLine(directory, '/repo/result.csv', 12, 3);
+    expect(useUIStore.getState().pendingFileNavigation).toEqual({ path: '/repo/result.csv', line: 12, column: 3 });
+    useUIStore.getState().closeContextFile(directory, '/repo/result.csv');
+    expect(useUIStore.getState().contextPanelByDirectory[directory].isOpen).toBe(false);
+  });
+
+  test('an existing file in a closed panel prevents automatic collapse', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts');
+    useUIStore.getState().closeContextPanel(directory);
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts');
+    closeFile('/repo/existing.ts');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(true);
+    expect(panel.tabs).toHaveLength(1);
+    expect(panel.tabs[0].targetPath).toBeNull();
+  });
+
+  test('reopening the same file and navigating to another line do not count as a second file', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts', { preview: true });
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts');
+    useUIStore.getState().openContextFileAtLine(directory, '/repo/existing.ts', 20);
+    closeFile('/repo/existing.ts');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(false);
+    expect(panel.tabs).toEqual([]);
+  });
+
+  test('reopening Files from the rail cancels automatic collapse', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv');
+    useUIStore.getState().closeContextPanel(directory);
+    useUIStore.getState().openContextSurface(directory, 'file');
+    closeFile('/repo/result.csv');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(true);
+    expect(panel.tabs).toHaveLength(1);
+    expect(panel.tabs[0].targetPath).toBeNull();
+  });
+
+  test('closing a second file keeps the editor visible for the remaining file', () => {
+    useUIStore.setState({ contextEditorVisible: true, contextEditorTreeVisible: true });
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts');
+    useUIStore.getState().toggleContextEditor();
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv');
+    expect(useUIStore.getState().contextEditorVisible).toBe(true);
+    closeFile('/repo/result.csv');
+    expect(useUIStore.getState().contextEditorVisible).toBe(true);
+    expect(useUIStore.getState().contextEditorTreeVisible).toBe(true);
+  });
+
+  test('closing a file preserves explicit editor visibility changes', () => {
+    useUIStore.setState({ contextEditorVisible: true, contextEditorTreeVisible: true });
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts');
+    useUIStore.getState().toggleContextEditor();
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv');
+    useUIStore.getState().toggleContextEditor();
+    closeFile('/repo/result.csv');
+    expect(useUIStore.getState().contextEditorVisible).toBe(false);
+  });
+
+  test('closing a file preserves a hidden tree and visible editor', () => {
+    useUIStore.setState({ contextEditorVisible: true, contextEditorTreeVisible: true });
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts');
+    useUIStore.getState().toggleContextEditor();
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv');
+    useUIStore.getState().toggleContextEditorTree();
+    closeFile('/repo/result.csv');
+    expect(useUIStore.getState().contextEditorVisible).toBe(true);
+    expect(useUIStore.getState().contextEditorTreeVisible).toBe(false);
+  });
+
+  for (const [first, last] of [
+    ['/repo/a.csv', '/repo/b.csv'],
+    ['/repo/b.csv', '/repo/a.csv'],
+  ]) {
+    test(`a second file cancels collapse when closing ${first} then ${last}`, () => {
+      useUIStore.getState().openContextFile(directory, '/repo/a.csv');
+      useUIStore.getState().openContextFile(directory, '/repo/b.csv');
+      closeFile(first);
+      useUIStore.getState().openContextFile(directory, last);
+      expect(useUIStore.getState().contextPanelByDirectory[directory].isOpen).toBe(true);
+      closeFile(last);
+      const panel = useUIStore.getState().contextPanelByDirectory[directory];
+      expect(panel.isOpen).toBe(true);
+      expect(panel.tabs).toHaveLength(1);
+      expect(panel.tabs[0].targetPath).toBeNull();
+    });
+  }
+
+  test('replacing the first preview with another file cancels collapse', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/a.csv', { preview: true });
+    useUIStore.getState().openContextFile(directory, '/repo/b.csv', { preview: true });
+    expect(getContextPanelTabs(directory)).toHaveLength(1);
+    closeFile('/repo/b.csv');
+    expect(useUIStore.getState().contextPanelByDirectory[directory].isOpen).toBe(true);
+  });
+
+  test('clearing the files and collapsing the panel allows a new single-file round', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/a.csv');
+    useUIStore.getState().openContextFile(directory, '/repo/b.csv');
+    closeFile('/repo/b.csv');
+    closeFile('/repo/a.csv');
+    useUIStore.getState().closeContextPanel(directory);
+    useUIStore.getState().openContextFile(directory, '/repo/c.csv');
+    closeFile('/repo/c.csv');
+    expect(useUIStore.getState().contextPanelByDirectory[directory].isOpen).toBe(false);
+    expect(getContextPanelTabs(directory)).toEqual([]);
+
+    useUIStore.getState().openContextFile(directory, '/repo/d.csv');
+    closeFile('/repo/d.csv');
+    expect(useUIStore.getState().contextPanelByDirectory[directory].isOpen).toBe(false);
+  });
+
+  test('renaming the sole file keeps its automatic collapse', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/a.csv');
+    useUIStore.getState().moveContextFilePaths(directory, '/repo/a.csv', '/repo/renamed.csv');
+    closeFile('/repo/renamed.csv');
+    expect(useUIStore.getState().contextPanelByDirectory[directory].isOpen).toBe(false);
+  });
+
+  test('a file returns to a file tree the user already opened', () => {
+    useUIStore.getState().openContextSurface(directory, 'file');
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv');
+    closeFile('/repo/result.csv');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(true);
+    expect(panel.tabs).toHaveLength(1);
+    expect(panel.tabs[0].targetPath).toBeNull();
+  });
+
+  test('switching to another surface cancels collapse even after returning to the file', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv');
+    useUIStore.getState().openContextPanelTab(directory, { mode: 'terminal' });
+    useUIStore.getState().setActiveContextPanelTab(directory, 'file:/repo/result.csv');
+    closeFile('/repo/result.csv');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(true);
+    expect(panel.tabs.find((tab) => tab.id === panel.activeTabId)?.targetPath).toBeNull();
+  });
+
+  test('a second file opened in the background cancels collapse', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv');
+    useUIStore.getState().openContextPanelTab(directory, { mode: 'file', targetPath: '/repo/background.ts' }, { reveal: false });
+    closeFile('/repo/background.ts');
+    closeFile('/repo/result.csv');
+    expect(useUIStore.getState().contextPanelByDirectory[directory].isOpen).toBe(true);
+  });
+
+  test('bulk closing new files keeps a retained existing file visible', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/previous.ts');
+    useUIStore.getState().closeContextPanel(directory);
+    useUIStore.getState().openContextFile(directory, '/repo/a.csv');
+    useUIStore.getState().openContextFile(directory, '/repo/b.csv');
+    const ids = getContextPanelTabs(directory).filter((tab) => tab.targetPath?.endsWith('.csv')).map((tab) => tab.id);
+    useUIStore.getState().closeContextPanelTabs(directory, ids);
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(true);
+    expect(panel.tabs.map((tab) => tab.targetPath)).toEqual(['/repo/previous.ts']);
+  });
+
+  test('automatic collapse is scoped to each directory', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/a.csv');
+    useUIStore.getState().openContextFile('/other', '/other/a.csv');
+    useUIStore.getState().openContextFile('/other', '/other/b.csv');
+    closeFile('/repo/a.csv');
+    expect(useUIStore.getState().contextPanelByDirectory[directory].isOpen).toBe(false);
+    expect(useUIStore.getState().contextPanelByDirectory['/other'].isOpen).toBe(true);
+  });
+
+  test('restored file tabs do not retain a previous session\'s automatic collapse', async () => {
+    useUIStore.getState().openContextFile(directory, '/repo/a.csv');
+    const persisted = originalPersistOptions.partialize?.(useUIStore.getState());
+    if (!persisted) throw new Error('expected persisted UI state');
+    expect(JSON.stringify(persisted)).not.toContain('autoCloseFileTabId');
+    useUIStore.persist.setOptions({ storage: {
+      getItem: () => ({ version: originalPersistOptions.version, state: persisted }),
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    } });
+    try {
+      useUIStore.setState(useUIStore.getInitialState(), true);
+      await useUIStore.persist.rehydrate();
+      closeFile('/repo/a.csv');
+      expect(useUIStore.getState().contextPanelByDirectory[directory].isOpen).toBe(true);
+    } finally {
+      useUIStore.persist.setOptions(originalPersistOptions);
+    }
+  });
+
   test('closing an active file tab activates another file tab, not another surface', () => {
     useUIStore.getState().openContextPanelTab(directory, { mode: 'terminal' });
     useUIStore.getState().openContextFile(directory, '/repo/a.ts');
@@ -1251,6 +1455,7 @@ describe('useUIStore closeContextFile (the editor\'s Cmd/Ctrl+W)', () => {
 
   test('closing the last file leaves the file surface on its tree, panel open', () => {
     const store = useUIStore.getState();
+    store.openContextSurface('/repo', 'file');
     store.openContextFile('/repo', '/repo/a.ts');
 
     store.closeContextFile('/repo', '/repo/a.ts');
@@ -1349,6 +1554,7 @@ describe('useUIStore workspace zones', () => {
   test('closing the last file in a moved zone falls back to the file tree there', () => {
     const store = useUIStore.getState();
     store.moveContextSurfaceToZone('file', 'left');
+    store.openContextSurface('/repo', 'file');
     store.openContextFile('/repo', '/repo/a.ts');
     const fileTab = panel()?.tabs.find((tab) => tab.targetPath === '/repo/a.ts');
     store.closeContextPanelTab('/repo', fileTab?.id ?? '');
@@ -1380,6 +1586,69 @@ describe('useUIStore workspace zones', () => {
     store.openContextFile('/repo', '/repo/c.png', { expanded: true });
     expect(panel()?.zones.left).toMatchObject({ isOpen: true, expanded: true });
     expect(panel()?.expanded).toBe(false);
+  });
+
+  test('the first file collapses only its previously empty closed zone', () => {
+    const store = useUIStore.getState();
+    store.moveContextSurfaceToZone('file', 'left');
+    store.moveContextSurfaceToZone('terminal', 'left');
+    store.openContextSurface('/repo', 'terminal');
+    store.closeContextZone('/repo', 'left');
+    store.openContextSurface('/repo', 'git');
+    store.openContextFile('/repo', '/repo/result.csv');
+    store.openContextSurface('/repo', 'notes');
+    const right = { activeTabId: panel().activeTabId, isOpen: panel().isOpen };
+
+    store.closeContextFile('/repo', '/repo/result.csv');
+
+    expect(panel().zones.left.isOpen).toBe(false);
+    expect(panel()).toMatchObject(right);
+    expect(panel().tabs.some((tab) => tab.mode === 'file')).toBe(false);
+  });
+
+  test('a second file keeps its bottom zone open after both files close', () => {
+    const store = useUIStore.getState();
+    store.moveContextSurfaceToZone('file', 'bottom');
+    store.openContextSurface('/repo', 'git');
+    store.openContextFile('/repo', '/repo/a.csv');
+    store.openContextFile('/repo', '/repo/b.csv');
+    store.closeContextFile('/repo', '/repo/a.csv');
+    expect(panel().zones.bottom.isOpen).toBe(true);
+    store.closeContextFile('/repo', '/repo/b.csv');
+    expect(panel().zones.bottom.isOpen).toBe(true);
+    expect(panel()).toMatchObject({ activeTabId: 'git', isOpen: true });
+  });
+
+  test('moving Files cancels automatic collapse even if Files moves back', () => {
+    const store = useUIStore.getState();
+    store.openContextFile('/repo', '/repo/result.csv');
+    store.moveContextSurfaceToZone('file', 'left');
+    store.moveContextSurfaceToZone('file', 'right');
+    expect(panel().autoCloseFileTabId).toBeUndefined();
+    store.closeContextFile('/repo', '/repo/result.csv');
+    expect(panel().tabs.find((tab) => tab.id === panel().activeTabId)?.mode).toBe('file');
+  });
+
+  test('opening a second file at a line cancels automatic collapse', () => {
+    const store = useUIStore.getState();
+    store.moveContextSurfaceToZone('file', 'left');
+    store.openContextFile('/repo', '/repo/result.csv');
+    store.openContextFileAtLine('/repo', '/repo/own.ts', 5);
+    expect(panel().autoCloseFileTabId).toBeUndefined();
+    store.closeContextFile('/repo', '/repo/result.csv');
+    expect(panel().tabs.find((tab) => tab.id === panel().zones.left.activeTabId)?.targetPath).toBe('/repo/own.ts');
+  });
+
+  test('moving another visible surface over Files cancels automatic collapse', () => {
+    const store = useUIStore.getState();
+    store.moveContextSurfaceToZone('terminal', 'bottom');
+    store.openContextSurface('/repo', 'terminal');
+    store.openContextFile('/repo', '/repo/result.csv');
+    store.moveContextSurfaceToZone('terminal', 'right');
+    store.setActiveContextPanelTab('/repo', 'file:/repo/result.csv');
+    store.closeContextFile('/repo', '/repo/result.csv');
+    expect(panel().isOpen).toBe(true);
+    expect(panel().tabs.find((tab) => tab.id === panel().activeTabId)?.targetPath).toBeNull();
   });
 
   test('state saved before zones loads with every surface on the right', async () => {

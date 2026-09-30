@@ -156,6 +156,20 @@ Examples:
 
 These stores coordinate visible app state, navigation, selected context-panel tabs, dialogs, and lightweight feature flags. Context surfaces open in zones around the chat (`lib/surfaces/DOCUMENTATION.md`, Zones): `contextSurfaceZones` is the per-device placement, and each `contextPanelByDirectory` entry keeps the right zone in its top-level `isOpen`/`expanded`/`activeTabId` and the left and bottom zones in `zones`. Store version 24 added them; older state loads with everything on the right. `useUIStore.activeSurface` selects the primary mobile view and the few desktop views that are promoted out of the context panel. It is not a desktop tab selection. A browser tab opened by an agent (`openAgentBrowserTab`) is created in the calling session's directory and persists that session as `ownerSessionId`; tabs the user opens, and tabs saved before owners existed, have none. Agent browser actions use it to keep sessions out of each other's tabs (`packages/web/server/lib/browser-control/DOCUMENTATION.md`). Opening a new browser tab with an address (`openContextPreview`, `openContextBrowser`, `openAgentBrowserTab`) notes it, keyed by directory and tab id, in the session-only set in `lib/browser/devServerWait.ts`; the tab's first mount reads and forgets it. Only a noted tab waits for its dev server on the first load. A tab restored from saved state, or remounted later, loads once and shows the failure. A waiting tab retries after a pause that grows from 0.5 s to 4 s within its 40 s wait. While it is out of sight (another tab in front, the panel closed, another project on screen, the window hidden) it holds the retry and retries when shown again; a tab the agent opened or has acted on keeps retrying out of sight. When those openers hit a tab that already exists, they send it a session-only load request instead. A mounted tab that shows a failure, or has not shown a page yet, loads the address the way a typed one loads, wait included, so a failure from launch does not stay up once a project action starts the server; a tab showing a working page ignores the request and is only focused, keeping what the person had on it.
 
+Opening the first real file in a directory with no open file tabs and a closed
+Files zone arms session-only `autoCloseFileTabId`. Agent `file.open`, manual
+links, line navigation, and previews use the same rule. Closing that file closes
+its zone without leaving an empty file-tree tab. Reopening the same file or
+renaming it keeps this behavior; opening a second distinct file cancels it for
+the round, including when that file replaces a preview or opens in the
+background. Closing the second file does not re-arm it. Once all files are
+closed and the zone is collapsed, opening a file can start a new round.
+An already open zone or retained file tabs use the normal empty-tree fallback.
+Switching to another surface in the Files zone, explicitly closing the zone,
+or moving Files cancels automatic collapse. Other zones remain independent.
+The marker is not persisted, and closing files does not restore an older
+surface or editor-visibility snapshot.
+
 Context-panel session chats render in this app as a chat column pinned to
 their session (`ChatView` `pinnedSession`, see the sync documentation's
 *Pinned chat columns*). Only the active chat tab is mounted while the panel is
@@ -232,6 +246,12 @@ host switcher, a mobile instance switch). Four rules hold that:
   Leaving a host records its directory unless it is unknown; a key that names
   no host (disconnected) records none. A host whose home lookup failed still
   has a directory, and it is recorded.
+
+#### Why single-file collapse remembers the opening round instead of counting remaining tabs
+
+Once a second file has opened, the panel stays open even after only one file
+remains. A transient first-file marker records that distinction for both agent
+and manual opens, without reviving an earlier surface or visibility snapshot.
 
 ### Session / project coordination stores
 
