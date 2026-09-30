@@ -85,20 +85,29 @@ const memoryTitleLines = (entries) => entries
  * a third of them copies of module docs, and the rules in it never reached the
  * teammates' agents.
  */
-const MEMORY_SAVE_GUIDANCE = 'The openchamber_memory tool keeps memory across sessions. Save to it in the'
-  + ' moment, without asking, when the user corrects how you work or states a'
-  + ' preference, or confirms a non-obvious approach worked. Project knowledge (a'
-  + ' decision and its reason, a rule, a recipe, a gotcha that took real effort to find)'
-  + ' goes where the project keeps agent instructions, when it has such a place'
+const MEMORY_SAVE_GUIDANCE = 'You have memory that persists across sessions, through the'
+  + ' openchamber_memory tool. First decide whether information should outlive the'
+  + ' current task; if future applicability is unclear, keep it in the conversation.'
+  + ' Durable project knowledge goes where the project keeps agent instructions'
   + ' (AGENTS.md, skills, module docs): add it to the matching file as part of your work'
-  + ' and say so, since every agent and teammate reads those and memory reaches only this'
-  + ' user. Memory takes project knowledge only when the project has no such place or it'
-  + ' must stay out of the repository: people, business, private setups. What the code,'
-  + ' docs, skills or the current commit already hold needs no entry, and unfinished'
-  + ' work goes to the project\'s todos and plans. A decision is saved once it is made,'
-  + ' never while it is still being discussed. Save before your final reply and'
-  + ' mention the save there briefly: the app shows only the text after a turn\'s last'
-  + ' tool call as the reply.';
+  + ' and say so, since those reach every agent and teammate. Memory takes it only'
+  + ' when the project has no suitable place or it must stay out of the repository:'
+  + ' people, business, private setups. Then choose global or project scope. Keep task directions,'
+  + ' scope changes, progress, and experiment results in the conversation. A user'
+  + ' correction or confirmation alone does not establish a lasting preference.'
+  + ' Save to it in the moment, without asking first, when the conversation establishes'
+  + ' a lasting preference, a reusable decision and its reason, or a hard-won fact'
+  + ' or pointer not available in the code or docs. Global is for user preferences or circumstances'
+  + ' that apply across projects; project is for durable knowledge specific to this'
+  + ' project. Save one fact per entry, with its conditions rather than the task'
+  + ' transcript, and mention it briefly. Honor explicit requests to remember across'
+  + ' sessions; never store secrets, credentials, or anything the user asked you not'
+  + ' to keep. The user can review and remove saved memories. Before saving a project'
+  + ' fact, check whether the relevant code, docs and skills already state all of it,'
+  + ' including why and whether it may change. If so, skip it; otherwise save only'
+  + ' the part they do not state. Save before writing your final reply and mention'
+  + ' the save briefly in that reply: the app shows only text after the last tool'
+  + ' call as the reply and folds earlier text into the activity log.';
 
 /**
  * When to link, stated in every session that has the `openchamber` tool, and

@@ -78,7 +78,10 @@ store. The tool description alone is read only when the agent already means to
 call it, so agents told nothing here saved only when the user said "remember".
 The session hears "nothing is stored yet" only when both scopes loaded.
 
-Memory holds what is personal to the user. Project knowledge (decisions,
+The save rule first asks whether a fact should outlive the current task. A
+correction or confirmation alone establishes no lasting preference; task
+directions, progress and experiment results stay in the conversation. After that
+durability check, memory holds what is personal to the user. Project knowledge (decisions,
 rules, recipes, gotchas) goes to the project's own agent docs when it has them
 (`AGENTS.md`, skills, module docs), and to memory only when it has none or the
 fact must stay out of the repository. Told only to skip what the docs already
