@@ -1995,6 +1995,7 @@ export const settingsDict = {
   'settings.openchamber.visual.option.terminalShell.auto': '自動',
   'settings.openchamber.visual.field.editorFontSize': '編輯器字體大小',
   'settings.openchamber.visual.field.codeFont': '程式碼字體',
+  'settings.openchamber.visual.fontDiscoveryFailed': '無法載入系統字型。請重新開啟字型清單以重試。',
   'settings.openchamber.visual.field.selectCodeFontAria': '選擇程式碼字體',
   'settings.openchamber.visual.actions.resetCodeFontAria': '重設程式碼字體',
   'settings.openchamber.visual.actions.resetTerminalFontSizeAria': '重設終端機字體大小',

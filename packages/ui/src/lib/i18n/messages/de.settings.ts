@@ -2041,6 +2041,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.terminalFontSize': 'Schriftgröße des Terminals',
   'settings.openchamber.visual.field.editorFontSize': 'Schriftgröße des Editors',
   'settings.openchamber.visual.field.codeFont': 'Schriftart für Code',
+  'settings.openchamber.visual.fontDiscoveryFailed': 'Systemschriftarten konnten nicht geladen werden. Öffne die Schriftartenliste erneut, um es noch einmal zu versuchen.',
   'settings.openchamber.visual.field.selectCodeFontAria': 'Schriftart für Code auswählen',
   'settings.openchamber.visual.actions.resetCodeFontAria': 'Schriftart für Code zurücksetzen',
   'settings.openchamber.visual.actions.resetTerminalFontSizeAria': 'Schriftgröße des Terminals zurücksetzen',

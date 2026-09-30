@@ -1147,6 +1147,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.activityDefaultModeAria': 'Domyślny tryb aktywności: {option}',
   'settings.openchamber.visual.field.bash': 'Bash',
   'settings.openchamber.visual.field.codeFont': 'Czcionka kodu',
+  'settings.openchamber.visual.fontDiscoveryFailed': 'Nie udało się wczytać czcionek systemowych. Otwórz ponownie listę czcionek, aby spróbować jeszcze raz.',
   'settings.openchamber.visual.field.darkTheme': 'Ciemny motyw',
   'settings.openchamber.visual.field.diffLayoutAria': 'Układ diffa: {option}',
   'settings.openchamber.visual.field.editTools': 'Narzędzia edycji',

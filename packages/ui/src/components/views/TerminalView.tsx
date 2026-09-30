@@ -6,7 +6,7 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { type TerminalStreamEvent } from '@/lib/api/types';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useFontPreferences } from '@/hooks/useFontPreferences';
-import { CODE_FONT_OPTION_MAP, DEFAULT_MONO_FONT } from '@/lib/fontOptions';
+import { resolveMonoFontStack } from '@/lib/fontOptions';
 import { convertThemeToXterm } from '@/lib/terminalTheme';
 import { TerminalViewport, type TerminalController } from '@/components/terminal/TerminalViewport';
 import { focusChatInput } from '@/components/chat/composer/editor/dom';
@@ -105,7 +105,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ visible, directory, 
     const { currentTheme } = useThemeSystem();
     const terminalAppearanceRef = React.useRef<{ themeMode: 'light' | 'dark'; terminalBackground: string; terminalForeground: string }>({ themeMode: 'dark', terminalBackground: '', terminalForeground: '' });
     terminalAppearanceRef.current = { themeMode: currentTheme.metadata.variant === 'light' ? 'light' : 'dark', terminalBackground: currentTheme.colors.surface.background, terminalForeground: currentTheme.colors.syntax.base.foreground };
-    const { monoFont } = useFontPreferences();
+    const { monoFont, uiFont } = useFontPreferences();
     const terminalFontSize = useUIStore(state => state.terminalFontSize);
     const terminalShell = useUIStore(state => state.terminalShell);
     const terminalLoginShell = useUIStore(state => state.terminalLoginShells.includes(state.terminalShell));
@@ -1012,24 +1012,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ visible, directory, 
         return () => window.removeEventListener('keydown', handleQuickKeyDown);
     }, [activeModifier, handleQuickKeyDown, showQuickKeys, terminalSessionId]);
 
-    const resolvedFontStack = React.useMemo(() => {
-        const defaultStack = CODE_FONT_OPTION_MAP[DEFAULT_MONO_FONT].stack;
-        if (typeof window === 'undefined') {
-            const fallbackDefinition =
-                CODE_FONT_OPTION_MAP[monoFont] ?? CODE_FONT_OPTION_MAP[DEFAULT_MONO_FONT];
-            return fallbackDefinition.stack;
-        }
-
-        const root = window.getComputedStyle(document.documentElement);
-        const cssStack = root.getPropertyValue('--font-family-mono');
-        if (cssStack && cssStack.trim().length > 0) {
-            return cssStack.trim();
-        }
-
-        const definition =
-            CODE_FONT_OPTION_MAP[monoFont] ?? CODE_FONT_OPTION_MAP[DEFAULT_MONO_FONT];
-        return definition.stack ?? defaultStack;
-    }, [monoFont]);
+    const resolvedFontStack = React.useMemo(() => resolveMonoFontStack(monoFont, uiFont), [monoFont, uiFont]);
 
     const xtermTheme = React.useMemo(() => convertThemeToXterm(currentTheme), [currentTheme]);
 

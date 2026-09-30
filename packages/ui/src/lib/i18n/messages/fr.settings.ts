@@ -2000,6 +2000,7 @@ export const settingsDict = {
   'settings.openchamber.visual.option.terminalShell.auto': 'Automatique',
   'settings.openchamber.visual.field.editorFontSize': 'Taille de la police de l\'éditeur',
   'settings.openchamber.visual.field.codeFont': 'Police de code',
+  'settings.openchamber.visual.fontDiscoveryFailed': 'Impossible de charger les polices système. Rouvrez la liste des polices pour réessayer.',
   'settings.openchamber.visual.field.selectCodeFontAria': 'Sélectionnez la police du code',
   'settings.openchamber.visual.actions.resetCodeFontAria': 'Réinitialiser la police du code',
   'settings.openchamber.visual.actions.resetTerminalFontSizeAria': 'Réinitialiser la taille de la police du terminal',
