@@ -132,8 +132,15 @@ when the theme changes.
 
 An agent can ask for a file to be shown (`file.open` on the managed
 `openchamber` tool). The server broadcasts `openchamber:file-open-request`;
-`ContextPanel` answers it with `openContextFile`, `MobileApp` additionally
-opens the files drawer. VS Code has no shared file viewer and no managed
+`ContextPanel` answers it with `openContextFile` and marks the source as the
+agent. The store remembers the previous panel visibility, active tab and editor
+visibility, including when the requested file already has a tab. Closing the last of those files returns to that
+panel, including a file tree the user had already opened. A file opened by
+the user meanwhile stays visible. Closing an inactive agent file leaves the
+current tab alone. Reopening Files from the rail transfers ownership to the
+user and clears the tool's return state. Editor/tree toggles supersede the
+saved editor visibility. This return state lasts only for the current UI session.
+`MobileApp` opens its independent files drawer. VS Code has no shared file viewer and no managed
 tool, so the event never reaches it.
 
 ## Canvas editors
