@@ -177,6 +177,9 @@ const desktopBridge = {
 };
 
 if (isLocalPage) {
+  if (process.platform === 'win32') {
+    desktopBridge.listMonospaceFonts = () => ipcRenderer.invoke('openchamber:invoke', 'desktop_list_monospace_fonts', {});
+  }
   desktopBridge.pickThemeFile = () => ipcRenderer.invoke('openchamber:invoke', 'desktop_pick_theme_file', {});
   if (process.platform === 'linux') {
     desktopBridge.clipboard = {

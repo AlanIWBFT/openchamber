@@ -78,6 +78,7 @@ export type {
   GitIdentitySummary,
   GitIdentityTransport,
 } from './git-identity';
+import type { LocalMonoFont } from '@/lib/fontOptions';
 
 type RuntimePlatform = 'web' | 'desktop' | 'vscode';
 
@@ -1854,6 +1855,9 @@ export interface ClipboardAPI {
 }
 
 export interface RuntimeAPIs {
+  localFonts?: {
+    listMonospace(): Promise<LocalMonoFont[]>;
+  };
   themeFiles?: {
     pick(): Promise<{ status: 'unsupported' } | { status: 'picked'; file: { name: string; size: number; text: string } | null }>;
   };
