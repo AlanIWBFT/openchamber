@@ -1,4 +1,5 @@
 import React from 'react';
+import { pixelFontSize } from '@/lib/typography';
 import type { Message, Part } from '@/lib/opencode/model';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 
@@ -422,7 +423,7 @@ const RawMessageRow = React.memo(function RawMessageRow({
                 margin: 0,
                 padding: '0.75rem',
                 background: 'transparent',
-                fontSize: 'var(--text-micro)',
+                fontSize: pixelFontSize('var(--text-micro)'),
                 lineHeight: '1.35',
               }}
               wrap

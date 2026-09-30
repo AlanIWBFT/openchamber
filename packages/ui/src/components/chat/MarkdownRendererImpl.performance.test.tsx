@@ -79,10 +79,15 @@ test('warm code is highlighted at the first layout commit and source changes nev
   await act(() => root.render(<Capture code={source} language="typescript" />));
   expect(commits[0]).toEqual({ text: source, colored: true });
   const firstRow = host.querySelector('[data-streamdown="code-block-body"] code > span');
+  const wide = firstRow?.querySelector('[data-md-code-wide]');
+  expect(wide?.textContent).toBe('中文');
+  expect(host.querySelector('[data-oc-code-source]')?.getAttribute('data-oc-code-source')).toBe(source);
   const appended = source + '\nconst appended = 2;';
   await streamdownCodeWorker.highlight(appended, 'typescript', false);
   await act(() => root.render(<Capture code={appended} language="typescript" />));
   expect(host.querySelector('[data-streamdown="code-block-body"] code > span')).toBe(firstRow);
+  expect(firstRow?.querySelector('[data-md-code-wide]')).toBe(wide);
+  expect(host.querySelector('[data-oc-code-source]')?.getAttribute('data-oc-code-source')).toBe(appended);
   await act(() => root.render(<Capture code="replacement" language="unknown-language" />));
   expect(commits.at(-1)?.text).toBe('replacement');
 });

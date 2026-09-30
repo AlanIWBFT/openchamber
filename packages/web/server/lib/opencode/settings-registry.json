@@ -642,6 +642,10 @@
     "uiFontWeight": {
       "scope": "profile"
     },
+    "fontPixelAlignment": {
+      "scope": "profile",
+      "perSurface": true
+    },
     "padding": {
       "scope": "profile",
       "perSurface": true
