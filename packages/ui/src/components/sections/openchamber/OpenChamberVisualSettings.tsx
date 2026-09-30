@@ -1,4 +1,5 @@
 import React from 'react';
+import { toast } from 'sonner';
 import { ThemeImportButton } from './ThemeImportButton';
 import { ThemePicker } from './ThemePicker';
 
@@ -29,8 +30,9 @@ import {
 import { useDeviceInfo } from '@/lib/device';
 import { usePwaDetection } from '@/hooks/usePwaDetection';
 import { loadDesktopSettings, updateDesktopSettings } from '@/lib/persistence';
-import { CODE_FONT_OPTIONS, CUSTOM_FONT_ID, DEFAULT_MONO_FONT, DEFAULT_UI_FONT, UI_FONT_OPTIONS, UI_FONT_WEIGHT_OPTIONS, type MonoFontOption, type UiFontOption, type UiFontWeight } from '@/lib/fontOptions';
+import { getCodeFontOptions, isMonoFontOption, CUSTOM_FONT_ID, DEFAULT_MONO_FONT, DEFAULT_UI_FONT, UI_FONT_OPTIONS, UI_FONT_WEIGHT_OPTIONS, type LocalMonoFont, type UiFontOption, type UiFontWeight } from '@/lib/fontOptions';
 import { useI18n } from '@/lib/i18n';
+import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEnterpriseMode } from '@/stores/useEnterprisePolicyStore';
 import { useFontPreferences } from '@/hooks/useFontPreferences';
 import { normalizeMobileKeyboardMode, supportsMobileKeyboardResizeContent, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
@@ -184,6 +186,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const { locale, locales, setLocale, label, t } = useI18n();
     const tUnsafe = React.useCallback((key: string) => t(key as Parameters<typeof t>[0]), [t]);
     const { isMobile } = useDeviceInfo();
+    const { localFonts } = useRuntimeAPIs();
     const { browserTab } = usePwaDetection();
     const animatedActivityIndicators = useSessionDisplayStore((s) => s.animatedActivityIndicators);
     const setAnimatedActivityIndicators = useSessionDisplayStore((s) => s.setAnimatedActivityIndicators);
@@ -206,6 +209,20 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const uiFontWeight = useUIStore(state => state.uiFontWeight);
     const setUiFontWeight = useUIStore(state => state.setUiFontWeight);
     const webFontsBlocked = useEnterpriseMode();
+    const [fontPickerOpen, setFontPickerOpen] = React.useState(false);
+    const [systemFonts, setSystemFonts] = React.useState<LocalMonoFont[]>([]);
+    React.useEffect(() => {
+        if (!fontPickerOpen || !localFonts) return;
+        let active = true;
+        void localFonts.listMonospace().then((fonts) => {
+            if (active) setSystemFonts(fonts);
+        }).catch(() => {
+            if (active) toast.error(t('settings.openchamber.visual.fontDiscoveryFailed'));
+        });
+        return () => { active = false; };
+    }, [fontPickerOpen, localFonts, t]);
+    const codeFontOptions = React.useMemo(() => getCodeFontOptions(systemFonts, customMonoFont), [systemFonts, customMonoFont]);
+    const selectedCodeFont = monoFont === CUSTOM_FONT_ID ? codeFontOptions.find((option) => option.family === customMonoFont) : codeFontOptions.find((option) => option.id === monoFont);
     const padding = useUIStore(state => state.padding);
     const setPadding = useUIStore(state => state.setPadding);
     const inputBarOffset = useUIStore(state => state.inputBarOffset);
@@ -853,12 +870,18 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         label={t('settings.openchamber.visual.field.codeFont')}
                                         controlClassName="w-full flex-wrap"
                                     >
-                                        <Select value={monoFont} onValueChange={(value) => setMonoFont(value as MonoFontOption)}>
+                                        <Select value={selectedCodeFont?.id ?? monoFont} onOpenChange={setFontPickerOpen} onValueChange={(value) => {
+                                            const option = codeFontOptions.find((entry) => entry.id === value);
+                                            if (option?.family) {
+                                                setCustomMonoFont(option.family);
+                                                setMonoFont(CUSTOM_FONT_ID);
+                                            } else if (isMonoFontOption(value)) setMonoFont(value);
+                                        }}>
                                             <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectCodeFontAria')} className={SETTINGS_SELECT_TRIGGER_CLASS}>
-                                                <SelectValue>{monoFont === CUSTOM_FONT_ID ? t('settings.openchamber.visual.field.customFont') : CODE_FONT_OPTIONS.find((option) => option.id === monoFont)?.label}</SelectValue>
+                                                <SelectValue>{selectedCodeFont?.label ?? t('settings.openchamber.visual.field.customFont')}</SelectValue>
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {CODE_FONT_OPTIONS.map((option) => (
+                                                {codeFontOptions.map((option) => (
                                                     <SelectItem key={option.id} value={option.id} disabled={webFontsBlocked && Boolean(option.source)}>
                                                         <span style={{ fontFamily: option.stack }}>{option.label}</span>
                                                     </SelectItem>
