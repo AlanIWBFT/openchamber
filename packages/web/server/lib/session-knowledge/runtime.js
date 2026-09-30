@@ -62,17 +62,24 @@ const renderMemorySection = (entries) => entries
  * agents told nothing here saved only when the user said "remember".
  */
 const MEMORY_SAVE_GUIDANCE = 'You have memory that persists across sessions, through the'
-  + ' openchamber_memory tool. Save to it in the moment, without asking first, when:'
-  + ' the user corrects how you work or states a preference; the user confirms that'
-  + ' a non-obvious approach worked; or you learn a project fact that took real'
-  + ' effort to find and is not in the code or docs. Before saving a project fact,'
-  + ' check: would an agent reading the relevant code, docs and skills learn it,'
-  + ' including why and whether it may change? Then skip it; otherwise save only'
-  + ' the part they do not state. One fact per entry. The user'
-  + ' can review and remove what you save, so save when it fits and mention it'
-  + ' briefly. Save before you write your final reply and mention the save in it:'
-  + ' the app shows only the text after a turn\'s last tool call as the reply and'
-  + ' folds everything earlier into its activity log.';
+  + ' openchamber_memory tool. First decide whether information should outlive the'
+  + ' current task; only then choose global or project scope. Keep task directions,'
+  + ' scope changes, progress, and experiment results in the conversation. A user'
+  + ' correction or confirmation alone does not establish a lasting preference.'
+  + ' Save to it in the moment, without asking first, when the conversation establishes'
+  + ' a lasting preference, a reusable decision and its reason, or a hard-won fact'
+  + ' or pointer not available in the code or docs. If future applicability is unclear,'
+  + ' keep it in the conversation. Global is for user preferences or circumstances'
+  + ' that apply across projects; project is for durable knowledge specific to this'
+  + ' project. Save one fact per entry, with its conditions rather than the task'
+  + ' transcript, and mention it briefly. Honor explicit requests to remember across'
+  + ' sessions; never store secrets, credentials, or anything the user asked you not'
+  + ' to keep. The user can review and remove saved memories. Before saving a project'
+  + ' fact, check whether the relevant code, docs and skills already state all of it,'
+  + ' including why and whether it may change. If so, skip it; otherwise save only'
+  + ' the part they do not state. Save before writing your final reply and mention'
+  + ' the save briefly in that reply: the app shows only text after the last tool'
+  + ' call as the reply and folds earlier text into the activity log.';
 
 /**
  * When to link, stated in every session that has the `openchamber` tool. The
