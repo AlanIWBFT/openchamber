@@ -20,6 +20,8 @@
 // line and the empty one the trailing line break draws. Otherwise only the
 // empty one is open. The caller knows the source, so it says which.
 
+import { applyCodeCellSpacing } from './codeCellSpacing';
+
 export type OpenFencePatch = {
   /** Line elements the painted `<code>` has, as a check before patching. */
   expectLines: number;
@@ -204,7 +206,10 @@ export const applyOpenFencePatch = (block: HTMLElement, patch: OpenFencePatch): 
   while (code.lastChild && code.lastChild !== first) code.lastChild.remove();
   first.remove();
   // `patch.html` is sanitized; see createOpenFenceRenderer.
-  code.insertAdjacentHTML('beforeend', patch.html);
+  const tail = code.ownerDocument.createElement('template');
+  tail.innerHTML = patch.html;
+  applyCodeCellSpacing(tail.content);
+  code.appendChild(tail.content);
   emptyTrailingCodeLine(code);
   return true;
 };
