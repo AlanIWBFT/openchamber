@@ -2183,6 +2183,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.editorFontSize': 'Editor Font Size',
   'settings.openchamber.visual.field.codeFont': 'Code Font',
   'settings.openchamber.visual.field.webFontsEnterprise': 'Enterprise mode uses system fonts: the others load from a public CDN.',
+  'settings.openchamber.visual.fontDiscoveryFailed': 'Could not load system fonts. Reopen the font list to retry.',
   'settings.openchamber.visual.field.selectCodeFontAria': 'Select code font',
   'settings.openchamber.visual.actions.resetCodeFontAria': 'Reset code font',
   'settings.openchamber.visual.actions.resetTerminalFontSizeAria': 'Reset terminal font size',

@@ -2160,6 +2160,7 @@ export const settingsDict = {
   "settings.openchamber.visual.field.editorFontSize": "Розмір шрифту редактора",
   "settings.openchamber.visual.field.codeFont": "Шрифт коду",
   "settings.openchamber.visual.field.webFontsEnterprise": "У режимі enterprise використовуються системні шрифти: інші завантажуються з публічного CDN.",
+  "settings.openchamber.visual.fontDiscoveryFailed": "Не вдалося завантажити системні шрифти. Відкрийте список шрифтів знову, щоб повторити спробу.",
   "settings.openchamber.visual.field.selectCodeFontAria": "Вибрати шрифт коду",
   "settings.openchamber.visual.actions.resetCodeFontAria": "Скинути шрифт коду",
   "settings.openchamber.visual.actions.resetTerminalFontSizeAria": "Скинути розмір шрифту терміналу",

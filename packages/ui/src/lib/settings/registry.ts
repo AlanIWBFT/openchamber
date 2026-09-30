@@ -23,7 +23,7 @@ import { getDirectoryShowHidden, setDirectoryShowHidden } from '@/lib/directoryS
 import type { DraftStarterRef } from '@/lib/draftStarters';
 import { sanitizeStarterRefs } from '@/lib/draftStarters';
 import { getFilesViewShowGitignored, setFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
-import { isMonoFontOption, isUiFontOption, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
+import { monoFontSchema, isUiFontOption, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 import { isInputHistoryLimit, isInputHistoryScope, type InputHistoryScope } from '@/lib/inputHistoryScope';
 import { normalizeMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { isTerminalShell } from '@/lib/terminalShell';
@@ -179,7 +179,7 @@ const RESPONSE_STYLE_PRESETS = ['concise', 'detailed', 'mentor', 'pushback', 'no
 
 const parseTerminalShell: SettingsParser<TerminalShell> = parseGuarded(isTerminalShell);
 const parseUiFont: SettingsParser<UiFontOption> = parseGuarded(isUiFontOption);
-const parseMonoFont: SettingsParser<MonoFontOption> = parseGuarded(isMonoFontOption);
+const parseMonoFont: SettingsParser<MonoFontOption> = fromSchema(monoFontSchema);
 const parseInputHistoryScope: SettingsParser<InputHistoryScope> = fromSchema(z.string().refine(isInputHistoryScope));
 const parseInputHistoryLimit: SettingsParser<number> = fromSchema(z.number().refine(isInputHistoryLimit));
 const parseMobileKeyboardModeValue = mapParser(parseTrimmedString, (value) => normalizeMobileKeyboardMode(value, undefined));

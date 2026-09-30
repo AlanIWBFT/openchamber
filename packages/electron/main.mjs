@@ -3730,6 +3730,10 @@ const closeAllDevTunnels = async () => {
 
 const handleInvoke = async (browserWindow, command, args = {}) => {
   switch (command) {
+    case 'desktop_list_monospace_fonts': {
+      if (process.platform !== 'win32') throw new Error('Local font discovery is unavailable');
+      return loadWindowsShell({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }).listMonospaceFonts();
+    }
     case 'desktop_pick_theme_file': {
       const { pickThemeFile } = await import('./theme-file-picker.mjs');
       return pickThemeFile({ showDialog: (options) => dialog.showOpenDialog(browserWindow || undefined, options) });

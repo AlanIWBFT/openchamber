@@ -2160,6 +2160,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.editorFontSize': '编辑器字体大小',
   'settings.openchamber.visual.field.codeFont': '代码字体',
   'settings.openchamber.visual.field.webFontsEnterprise': '企业模式使用系统字体：其他字体需从公共 CDN 加载。',
+  'settings.openchamber.visual.fontDiscoveryFailed': '无法加载系统字体。请重新打开字体列表以重试。',
   'settings.openchamber.visual.field.selectCodeFontAria': '选择代码字体',
   'settings.openchamber.visual.actions.resetCodeFontAria': '重置代码字体',
   'settings.openchamber.visual.actions.resetTerminalFontSizeAria': '重置终端字体大小',
