@@ -435,6 +435,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (UI_FONT_WEIGHT_VALUES.has(candidate.uiFontWeight)) {
       result.uiFontWeight = candidate.uiFontWeight;
     }
+    if (typeof candidate.fontPixelAlignment === 'boolean') {
+      result.fontPixelAlignment = candidate.fontPixelAlignment;
+    }
     if (typeof candidate.githubClientId === 'string') {
       const trimmed = candidate.githubClientId.trim();
       if (trimmed.length > 0) {

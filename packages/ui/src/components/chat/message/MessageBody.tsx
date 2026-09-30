@@ -1,5 +1,6 @@
 import React from 'react';
 import type { FilePart, Part } from '@/lib/opencode/model';
+import { pixelFontSize } from '@/lib/typography';
 import { isExecuteTool } from '@/lib/opencode/tools';
 import { shouldHideExecFollowUp } from './unifiedExec';
 
@@ -105,7 +106,7 @@ const TurnChangedFileChipContent = React.memo(({ file, interactive = false }: { 
         <FileTypeIcon filePath={file.file} className="h-3.5 w-3.5 flex-shrink-0" />
         <span className="max-w-52 truncate text-foreground/80" title={file.file}>{getDisplayFileName(file.file)}</span>
         {file.additions !== undefined && file.deletions !== undefined ? (
-            <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: '0.8rem', lineHeight: '1' }}>
+            <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: pixelFontSize('0.8rem'), lineHeight: '1' }}>
                 <span style={{ color: 'var(--status-success)' }}>+{file.additions}</span>
                 <span className="text-muted-foreground/70">/</span>
                 <span style={{ color: 'var(--status-error)' }}>-{file.deletions}</span>
