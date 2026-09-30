@@ -24,6 +24,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': 'Tego klucza już nie ma. Poszukaj kluczy ponownie.',
   'settings.sourceControl.ssh.inventoryFull': 'Dodano zbyt wiele kluczy. Najpierw usuń nieużywany.',
   'settings.sourceControl.ssh.operationFailed': 'Coś poszło nie tak z kluczami SSH. Spróbuj ponownie.',
+  'settings.openchamber.visual.field.fontPixelAlignment': 'Wyrównaj do pikseli ekranu',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': 'Zaokrągla wyświetlane rozmiary czcionek w górę do pełnych pikseli przy bieżącej skali ekranu. Niektóre teksty mogą być nieco większe. Ustawione rozmiary czcionek pozostają bez zmian.',
   'settings.themeImport.selectAll': 'Zaznacz wszystkie',
   'settings.themeImport.deselectAll': 'Odznacz wszystkie',
   'settings.themeImport.complete': 'Import zakończony',

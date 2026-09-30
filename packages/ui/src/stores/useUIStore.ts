@@ -1004,6 +1004,7 @@ interface UIStore {
   editorFontSize: number;
   uiFont: UiFontOption;
   monoFont: MonoFontOption;
+  fontPixelAlignment: boolean;
   padding: number;
   cornerRadius: number;
   inputBarOffset: number;
@@ -1255,6 +1256,7 @@ interface UIStore {
   setEditorFontSize: (size: number) => void;
   setUiFont: (font: UiFontOption) => void;
   setMonoFont: (font: MonoFontOption) => void;
+  setFontPixelAlignment: (enabled: boolean) => void;
   setPadding: (size: number) => void;
   setCornerRadius: (radius: number) => void;
   setInputBarOffset: (offset: number) => void;
@@ -1467,6 +1469,7 @@ export const useUIStore = create<UIStore>()(
         editorFontSize: 13,
         uiFont: DEFAULT_UI_FONT,
         monoFont: DEFAULT_MONO_FONT,
+        fontPixelAlignment: true,
         padding: 100,
         cornerRadius: 18,
         inputBarOffset: 0,
@@ -2526,6 +2529,9 @@ export const useUIStore = create<UIStore>()(
         setMonoFont: (font) => {
           set({ monoFont: font });
         },
+        setFontPixelAlignment: (enabled) => {
+          set({ fontPixelAlignment: enabled });
+        },
 
         setPadding: (size) => {
           // Clamp between 50% and 200%
@@ -3469,6 +3475,7 @@ export const useUIStore = create<UIStore>()(
           editorFontSize: state.editorFontSize,
           uiFont: state.uiFont,
           monoFont: state.monoFont,
+          fontPixelAlignment: state.fontPixelAlignment,
           padding: state.padding,
           cornerRadius: state.cornerRadius,
           favoriteModels: state.favoriteModels,

@@ -9,7 +9,7 @@ import { FormMarkdown } from '../../FormMarkdown';
 import { MessageFilesDisplay } from '../../FileAttachment';
 import { getToolMetadata } from '@/lib/toolHelpers';
 import type { FilePart, Metadata, Part, ToolInput, ToolPart as ToolPartType, ToolState as ToolStateUnion } from '@/lib/opencode/model';
-import { toolDisplayStyles } from '@/lib/typography';
+import { pixelFontSize, toolDisplayStyles } from '@/lib/typography';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -2589,14 +2589,14 @@ const ToolPartContent: React.FC<ToolPartProps & { background?: BackgroundShellHe
                                 )
                             )}
                             {diffStats && (
-                                <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: '0.8rem', lineHeight: '1' }}>
+                                <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: pixelFontSize('0.8rem'), lineHeight: '1' }}>
                                     <span style={{ color: 'var(--status-success)' }}>+{diffStats.added}</span>
                                     <span style={{ color: 'var(--tools-description)' }}>/</span>
                                     <span style={{ color: 'var(--status-error)' }}>-{diffStats.removed}</span>
                                 </span>
                             )}
                             {writeLineCount && (
-                                <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: '0.8rem', lineHeight: '1' }}>
+                                <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: pixelFontSize('0.8rem'), lineHeight: '1' }}>
                                     <span style={{ color: 'var(--status-success)' }}>+{writeLineCount}</span>
                                 </span>
                             )}

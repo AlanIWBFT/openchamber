@@ -1358,6 +1358,22 @@ html:not(.dark) .chat-scroll {
   font-size: var(--text-code);
 }
 
+/* Match a terminal's physical-pixel cell advance without scaling glyph outlines.
+   The 9.5pt base follows interface scaling through the existing 12px code token. */
+.markdown-content [data-component="markdown-code"] pre {
+  font-size: calc(var(--text-code) * 19 / 18);
+  --code-cell-tracking: calc(round(1ch, var(--code-grid-pixel, 1px)) - 1ch);
+  letter-spacing: var(--code-cell-tracking);
+}
+
+.markdown-content [data-component="markdown-code"] pre code {
+  font-size: inherit;
+}
+
+.markdown-content [data-md-code-wide] {
+  letter-spacing: calc(2 * var(--code-cell-tracking));
+}
+
 /* Inline code sits inside a sentence: the theme's code colour over its own
    quiet chip. The colour keeps the theme's value with a touch of transparency,
    and the chip fades into the background further, so neither shouts like the

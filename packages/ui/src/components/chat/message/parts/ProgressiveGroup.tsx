@@ -1,5 +1,6 @@
 import { isExecuteTool, isSkillTool, normalizeToolName, toolDescription } from '@/lib/opencode/tools';
 import React from 'react';
+import { pixelFontSize } from '@/lib/typography';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { cn } from '@/lib/utils';
 import type { TurnActivityRecord as TurnActivityPart, TurnExplorationGroup } from '../../lib/turns/types';
@@ -853,7 +854,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         className="leading-5 font-semibold inline-flex h-5 items-center flex-shrink-0"
                         style={{
                             color: 'var(--tools-title)',
-                            fontSize: '0.9rem',
+                            fontSize: pixelFontSize('0.9rem'),
                             letterSpacing: '0.005em',
                         }}
                     >

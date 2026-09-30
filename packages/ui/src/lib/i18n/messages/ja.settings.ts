@@ -24,6 +24,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': 'このキーはもうありません。もう一度キーを探してください。',
   'settings.sourceControl.ssh.inventoryFull': '追加したキーが多すぎます。先に使っていないキーを削除してください。',
   'settings.sourceControl.ssh.operationFailed': 'SSH キーで問題が起きました。もう一度お試しください。',
+  'settings.openchamber.visual.field.fontPixelAlignment': '画面のピクセルに合わせる',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': '現在の表示倍率に応じて、実際に表示される文字サイズを画面のピクセル単位で切り上げます。一部の文字が少し大きくなる場合があります。設定した文字サイズは変わりません。',
   'settings.themeImport.selectAll': 'すべて選択',
   'settings.themeImport.deselectAll': 'すべて選択解除',
   'settings.themeImport.complete': 'インポート完了',
