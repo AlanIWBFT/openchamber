@@ -397,7 +397,7 @@ export const ContextSurfacePanes: React.FC = () => {
     if (event.type !== 'file-open-request') return;
     const directory = event.directory ?? effectiveDirectory;
     if (!directory) return;
-    openContextFile(directory, event.path);
+    openContextFile(directory, event.path, { source: 'agent' });
   }), [effectiveDirectory, openContextFile]);
   // The agent asked for a saved plan to be shown: it opens in place in the
   // Project knowledge panel, as a click in its Plans list does, in the strip
