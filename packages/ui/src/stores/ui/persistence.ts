@@ -341,6 +341,7 @@ export const uiStorePersistOptions = {
     customUiFont: state.customUiFont,
     customMonoFont: state.customMonoFont,
     uiFontWeight: state.uiFontWeight,
+    fontPixelAlignment: state.fontPixelAlignment,
     padding: state.padding,
     cornerRadius: state.cornerRadius,
     favoriteModels: state.favoriteModels,

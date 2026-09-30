@@ -213,6 +213,7 @@ const sanitizeCustomProviderLogos = (value: SettingsDocument[string]) => {
 };
 
 type BooleanSettingsKey =
+  | 'fontPixelAlignment'
   | 'useSystemTheme' | 'workStatusPanelEnabled' | 'workStatusHiddenSectionsExplicit' | 'workStatusSectionOrderExplicit'
   | 'desktopLanAccessEnabled' | 'desktopKeepAwakeEnabled' | 'desktopMinimizeToTrayEnabled' | 'desktopMacMenuBarEnabled'
   | 'desktopLinuxNativeFrame' | 'messageSearchEnabled' | 'messageSearchReasoningEnabled'
@@ -744,6 +745,7 @@ export const createSettingsHelpers = (dependencies: SettingsHelpersDependencies)
     if (isSetMember(UI_FONT_WEIGHT_VALUES, candidate.uiFontWeight)) {
       result.uiFontWeight = candidate.uiFontWeight;
     }
+    if (typeof candidate.fontPixelAlignment === 'boolean') result.fontPixelAlignment = candidate.fontPixelAlignment;
     if (isString(candidate.githubClientId)) {
       const trimmed = candidate.githubClientId.trim();
       if (trimmed.length > 0) {

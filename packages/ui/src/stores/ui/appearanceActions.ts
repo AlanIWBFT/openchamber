@@ -13,6 +13,7 @@ export const createAppearanceActions: UIStoreSlice<
   | 'setCustomUiFont'
   | 'setCustomMonoFont'
   | 'setUiFontWeight'
+  | 'setFontPixelAlignment'
   | 'setPadding'
   | 'setCornerRadius'
   | 'applyTypography'
@@ -65,6 +66,7 @@ export const createAppearanceActions: UIStoreSlice<
   setUiFontWeight: (weight) => {
     set({ uiFontWeight: weight });
   },
+  setFontPixelAlignment: (enabled) => set({ fontPixelAlignment: enabled }),
 
   setPadding: (size) => {
     const clampedSize = Math.max(50, Math.min(200, size));

@@ -1,5 +1,6 @@
 import { HoverTooltip } from '@/components/ui/row-tooltip';
 import React from 'react';
+import { pixelFontSize } from '@/lib/typography';
 
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { Button } from '@/components/ui/button';
@@ -105,7 +106,7 @@ export const ApplyPatchFileButtons = ({
                             {entry.name}
                         </Text>
                         {hasPerFileDiff ? (
-                            <DiffCount added={entry.added ?? 0} removed={entry.removed ?? 0} className="typography-meta" />
+                            <DiffCount added={entry.added ?? 0} removed={entry.removed ?? 0} className="typography-meta" style={{ fontSize: pixelFontSize('0.8rem'), lineHeight: '1' }} />
                         ) : null}
                     </>
                 );

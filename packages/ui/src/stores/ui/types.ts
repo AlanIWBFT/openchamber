@@ -219,6 +219,7 @@ export interface UIStore {
   customUiFont: string;
   customMonoFont: string;
   uiFontWeight: UiFontWeight;
+  fontPixelAlignment: boolean;
   padding: number;
   cornerRadius: number;
   inputBarOffset: number;
@@ -479,6 +480,7 @@ export interface UIStore {
   setCustomUiFont: (family: string) => void;
   setCustomMonoFont: (family: string) => void;
   setUiFontWeight: (weight: UiFontWeight) => void;
+  setFontPixelAlignment: (enabled: boolean) => void;
   setPadding: (size: number) => void;
   setCornerRadius: (radius: number) => void;
   setInputBarOffset: (offset: number) => void;

@@ -25,6 +25,7 @@ import { useChatSurfaceMode } from '../useChatSurfaceMode';
 import { isRunnableLanguage } from '@/lib/opencode/reply-command';
 import { onDemand } from '../uiBlocks/useUiBlockComponent';
 import type { RenderedCommand } from './ReplyCommand';
+import { splitCodeCellRuns } from './codeCellSpacing';
 
 const CodeLine = React.memo(function CodeLine({ tokens }: { tokens: HighlightToken[] }) {
   const empty = tokens.length === 0 || (tokens.length === 1 && tokens[0].content === '');
@@ -36,7 +37,10 @@ const CodeLine = React.memo(function CodeLine({ tokens }: { tokens: HighlightTok
           color: token.color,
           backgroundColor: token.bgColor,
         };
-        return <span key={index} style={style} {...token.htmlAttrs}>{token.content}</span>;
+        const runs = splitCodeCellRuns(token.content);
+        return <span key={index} style={style} {...token.htmlAttrs}>{typeof runs === 'string' ? runs : runs.map((run, runIndex) => (
+          run.wide ? <span key={runIndex} data-md-code-wide="">{run.text}</span> : run.text
+        ))}</span>;
       })}
     </span>
   );

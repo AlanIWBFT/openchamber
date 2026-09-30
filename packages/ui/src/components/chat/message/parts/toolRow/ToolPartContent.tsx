@@ -1,4 +1,5 @@
 import React from 'react';
+import { pixelFontSize } from '@/lib/typography';
 import { formatDirectoryDisplayPath, getReadToolDisplayType } from '../toolRenderUtils';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { cn } from '@/lib/utils';
@@ -353,10 +354,10 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
                                 </>
                             ) : null}
                             {diffStats && (
-                                <DiffCount added={diffStats.added} removed={diffStats.removed} className="typography-meta" />
+                                <DiffCount added={diffStats.added} removed={diffStats.removed} className="typography-meta" style={{ fontSize: pixelFontSize('0.8rem'), lineHeight: '1' }} />
                             )}
                             {writeLineCount && (
-                                <DiffCount added={writeLineCount} removed={0} hideZero className="typography-meta" />
+                                <DiffCount added={writeLineCount} removed={0} hideZero className="typography-meta" style={{ fontSize: pixelFontSize('0.8rem'), lineHeight: '1' }} />
                             )}
                         </div>
                         {header?.stop ? (

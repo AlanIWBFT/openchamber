@@ -1,4 +1,5 @@
 import { PIERRE_DIFF_TINT_CSS, PIERRE_SEPARATOR_CSS } from '@/lib/shiki/pierreDiffTint';
+import { pixelFontSize } from '@/lib/typography';
 
 export const HUNK_ACTION_OVERLAY_CSS = `
   [data-gutter-buffer="annotation"] { min-height: 0; }
@@ -13,12 +14,12 @@ export const HIDE_COLUMN_SCROLLBAR_CSS = `
 const PIERRE_RUNTIME_BASE_CSS = `
   :host {
     font-family: var(--font-mono);
-    font-size: var(--text-code);
+    font-size: ${pixelFontSize('var(--text-code)')};
   }
 
   pre, [data-code] {
     font-family: var(--font-mono);
-    font-size: var(--text-code);
+    font-size: ${pixelFontSize('var(--text-code)')};
   }
 
   /* Mobile touch selection support */

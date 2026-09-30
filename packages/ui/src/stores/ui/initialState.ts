@@ -127,6 +127,7 @@ export const createInitialUIState = (): Pick<UIStore,
   | 'customUiFont'
   | 'customMonoFont'
   | 'uiFontWeight'
+  | 'fontPixelAlignment'
   | 'padding'
   | 'cornerRadius'
   | 'inputBarOffset'
@@ -352,6 +353,7 @@ export const createInitialUIState = (): Pick<UIStore,
   customUiFont: '',
   customMonoFont: '',
   uiFontWeight: DEFAULT_UI_FONT_WEIGHT,
+  fontPixelAlignment: true,
   padding: 100,
   cornerRadius: 18,
   inputBarOffset: 0,

@@ -1,3 +1,5 @@
+import { pixelFontSize } from '@/lib/typography';
+
 export const PIERRE_DIFF_TINT_CSS = `
   /* How much of the theme's added or removed colour a changed row mixes into
      the background (100% minus the value). Set per kind and theme so the two
@@ -76,7 +78,7 @@ export const PIERRE_SEPARATOR_CSS = `
       background: transparent;
       color: var(--diffs-fg-number);
       font-family: var(--diffs-header-font-family, var(--font-sans));
-      font-size: 0.75rem;
+      font-size: ${pixelFontSize('0.75rem')};
       line-height: 1;
       /* The label starts where the code text does: past the gutter by the
          code line's 1ch of padding, a monospace ch at the code size. */
