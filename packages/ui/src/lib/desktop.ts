@@ -52,6 +52,7 @@ type DesktopClipboardBridge = {
 };
 
 type DesktopBridgeGlobal = {
+  listMonospaceFonts?: NonNullable<RuntimeAPIs['localFonts']>['listMonospace'];
   pickThemeFile?: () => Promise<unknown>;
   clipboard?: DesktopClipboardBridge;
   invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -151,6 +152,30 @@ export const createDesktopClipboardAPI = (): RuntimeAPIs['clipboard'] => {
       writeText: async (text) => {
         z.literal(true).parse(await writeSelection(text));
       },
+    },
+  };
+};
+
+export const createDesktopLocalFontsAPI = (): RuntimeAPIs['localFonts'] => {
+  if (!getDesktopBridge()?.listMonospaceFonts) return undefined;
+  const schema = z.array(z.object({
+    family: z.string().trim().min(1).regex(/^[^\r\n]+$/),
+    label: z.string().min(1),
+  }));
+  let pending: ReturnType<NonNullable<RuntimeAPIs['localFonts']>['listMonospace']> | undefined;
+  return {
+    listMonospace() {
+      if (!pending) {
+        pending = (async () => {
+          const list = getDesktopBridge()?.listMonospaceFonts;
+          if (!list) throw new Error('Local font discovery is unavailable');
+          return schema.parse(await list());
+        })().catch((error) => {
+          pending = undefined;
+          throw error;
+        });
+      }
+      return pending;
     },
   };
 };
