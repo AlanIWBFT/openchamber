@@ -302,8 +302,12 @@ React and could publish an old document's assets after a preview switch.
 
 An agent can ask for a file to be shown (`file.open` on the managed
 `openchamber` tool). The server broadcasts `openchamber:file-open-request`;
-`ContextPanel` answers it with `openContextFile`, `MobileApp` additionally
-opens the files drawer. VS Code has no shared file viewer and no managed
+`ContextSurfacePanes` answers it with `openContextFile`, the same entry point as
+manual file links. When no file tabs are open and the Files zone is closed,
+closing the first file also closes its zone; opening a second distinct file
+cancels automatic collapse for that round. The store owns this session-only
+rule and its cancellation conditions (`stores/DOCUMENTATION.md`, UI state stores).
+`MobileApp` opens its independent files drawer. VS Code has no shared file viewer and no managed
 tool, so the event never reaches it.
 
 ## Editor aids

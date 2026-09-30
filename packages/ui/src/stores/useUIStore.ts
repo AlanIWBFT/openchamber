@@ -123,6 +123,8 @@ type ContextPanelTabDescriptor = {
 };
 
 type ContextPanelDirectoryState = {
+  // Session-only: the first file opened from an empty, closed Files zone.
+  autoCloseFileTabId?: string;
   // The right zone, kept top-level (see lib/workspace/zones.ts).
   isOpen: boolean;
   expanded: boolean;
@@ -588,9 +590,22 @@ const upsertContextPanelTab = (
     : resolveZoneActiveTabId(current.tabs, placement, zone, view.activeTabId) ?? nextTab.id;
   const clampedTabs = clampContextPanelTabs(tabs, CONTEXT_PANEL_MAX_TABS, activeTabId);
 
+  let autoCloseFileTabId = current.autoCloseFileTabId;
+  if (nextTab.mode === 'file' && nextTab.targetPath) {
+    if (reveal && !view.isOpen && !current.tabs.some((tab) => tab.mode === 'file' && tab.targetPath)) {
+      autoCloseFileTabId = nextTab.id;
+    } else if (autoCloseFileTabId !== nextTab.id) {
+      // A second file cancels this round, even when it replaces a preview.
+      autoCloseFileTabId = undefined;
+    }
+  } else if (reveal && zone === zoneOfMode(placement, 'file')) {
+    autoCloseFileTabId = undefined;
+  }
+
   return settleZones(withZoneView({
     ...current,
     tabs: clampedTabs,
+    autoCloseFileTabId,
     touchedAt: Date.now(),
   }, zone, {
     isOpen: reveal ? true : view.isOpen,
@@ -618,6 +633,11 @@ const closeContextPanelTabs = (
     const activeClosed = view.activeTabId ? closed.has(view.activeTabId) : false;
     if (!activeClosed) continue;
 
+    if (current.autoCloseFileTabId === view.activeTabId) {
+      views[zone] = { activeTabId: null, isOpen: false, expanded: false };
+      continue;
+    }
+
     // Closing the active tab stays inside its surface: activate the most
     // recent remaining tab of the same mode, and when none remain just close
     // the zone instead of jumping to another surface.
@@ -643,7 +663,12 @@ const closeContextPanelTabs = (
       : { activeTabId: null, isOpen: false, expanded: false };
   }
 
-  let next: ContextPanelDirectoryState = { ...current, tabs: nextTabs, touchedAt: Date.now() };
+  let next: ContextPanelDirectoryState = {
+    ...current,
+    tabs: nextTabs,
+    autoCloseFileTabId: current.autoCloseFileTabId && closed.has(current.autoCloseFileTabId) ? undefined : current.autoCloseFileTabId,
+    touchedAt: Date.now(),
+  };
   for (const zone of CONTEXT_ZONES) {
     const patch = views[zone];
     if (patch) next = withZoneView(next, zone, patch);
@@ -718,6 +743,7 @@ const moveContextPanelFileTabs = (
   let next: ContextPanelDirectoryState = {
     ...current,
     tabs: tabs.filter((tab, index) => tab !== current.tabs[index] || !movedIds.has(tab.id)),
+    autoCloseFileTabId: current.autoCloseFileTabId ? renamed.get(current.autoCloseFileTabId) ?? current.autoCloseFileTabId : undefined,
     touchedAt: Date.now(),
   };
   for (const zone of CONTEXT_ZONES) {
@@ -2101,6 +2127,8 @@ export const useUIStore = create<UIStore>()(
               ...state.contextPanelByDirectory,
               [normalizedDirectory]: withZoneView({
                 ...current,
+                autoCloseFileTabId: zone === zoneOfMode(state.contextSurfaceZones, 'file') && current.autoCloseFileTabId !== normalizedTabID
+                  ? undefined : current.autoCloseFileTabId,
                 touchedAt: Date.now(),
                 tabs: current.tabs.map((tab) => (tab.id === normalizedTabID
                   ? { ...tab, touchedAt: Date.now() }
@@ -2250,7 +2278,10 @@ export const useUIStore = create<UIStore>()(
 
             const byDirectory = {
               ...state.contextPanelByDirectory,
-              [normalizedDirectory]: withZoneView(touchContextPanelState(prev, state.contextSurfaceZones), zone, { isOpen: false }),
+              [normalizedDirectory]: withZoneView({
+                ...touchContextPanelState(prev, state.contextSurfaceZones),
+                autoCloseFileTabId: zoneOfMode(state.contextSurfaceZones, 'file') === zone ? undefined : prev.autoCloseFileTabId,
+              }, zone, { isOpen: false }),
             };
 
             return { contextPanelByDirectory: clampContextPanelRoots(byDirectory, 20) };
@@ -2302,7 +2333,12 @@ export const useUIStore = create<UIStore>()(
             // put it whichever project they switch to.
             const byDirectory: Record<string, ContextPanelDirectoryState> = {};
             for (const [directory, panel] of Object.entries(state.contextPanelByDirectory)) {
-              byDirectory[directory] = carrySurfaceToZone(panel, mode, from, zone, placement);
+              const next = carrySurfaceToZone(panel, mode, from, zone, placement);
+              const fileView = getZoneView(next, zoneOfMode(placement, 'file'));
+              byDirectory[directory] = {
+                ...next,
+                autoCloseFileTabId: mode === 'file' || fileView.activeTabId !== panel.autoCloseFileTabId ? undefined : panel.autoCloseFileTabId,
+              };
             }
 
             return { contextSurfaceZones: placement, contextPanelByDirectory: byDirectory };
@@ -3751,7 +3787,7 @@ export const useUIStore = create<UIStore>()(
           isSidebarOpen: state.isSidebarOpen,
           sidebarFoldedForExpandedZone: state.sidebarFoldedForExpandedZone,
           sidebarWidth: state.sidebarWidth,
-          contextPanelByDirectory: withoutForeignComparisons(state.contextPanelByDirectory),
+          contextPanelByDirectory: withoutForeignComparisons(Object.fromEntries(Object.entries(state.contextPanelByDirectory).map(([directory, panel]) => [directory, { ...panel, autoCloseFileTabId: undefined }]))),
           contextRailOrder: state.contextRailOrder,
           contextRailHiddenSurfaces: state.contextRailHiddenSurfaces,
           mobileWorkspaceTabOrder: state.mobileWorkspaceTabOrder,
