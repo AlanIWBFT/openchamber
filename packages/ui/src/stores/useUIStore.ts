@@ -116,6 +116,15 @@ type ContextPanelTabDescriptor = {
 
 type ContextPanelDirectoryState = {
   // The right zone, kept top-level (see lib/workspace/zones.ts).
+  agentFileReturn?: {
+    zone: ContextZone;
+    tabIds: string[];
+    activeTabId: string | null;
+    isOpen: boolean;
+    placeholder: ContextPanelTab | null;
+    editorVisible: boolean;
+    editorVisibilityRevision: number;
+  };
   isOpen: boolean;
   expanded: boolean;
   tabs: ContextPanelTab[];
@@ -594,6 +603,10 @@ const closeContextPanelTabs = (
     return current;
   }
 
+  const agentReturn = current.agentFileReturn;
+  const remainingAgentIds = agentReturn?.tabIds.filter((id) => nextTabs.some((tab) => tab.id === id)) ?? [];
+  if (agentReturn) current = { ...current, agentFileReturn: remainingAgentIds.length ? { ...agentReturn, tabIds: remainingAgentIds } : undefined };
+
   // Each zone settles on its own: closing a tab never changes what another
   // zone shows.
   const views: Partial<Record<ContextZone, Partial<ContextZoneView>>> = {};
@@ -601,6 +614,13 @@ const closeContextPanelTabs = (
     const view = getZoneView(current, zone);
     const activeClosed = view.activeTabId ? closed.has(view.activeTabId) : false;
     if (!activeClosed) continue;
+
+    if (agentReturn?.zone === zone && remainingAgentIds.length === 0 && agentReturn.tabIds.includes(view.activeTabId ?? '')) {
+      if (agentReturn.placeholder && !nextTabs.some((tab) => tab.mode === 'file')) nextTabs = [...nextTabs, agentReturn.placeholder];
+      const activeTabId = resolveZoneActiveTabId(nextTabs, placement, zone, agentReturn.activeTabId);
+      views[zone] = { activeTabId, isOpen: Boolean(activeTabId) && agentReturn.isOpen };
+      continue;
+    }
 
     // Closing the active tab stays inside its surface: activate the most
     // recent remaining tab of the same mode, and when none remain just close
@@ -826,6 +846,7 @@ interface UIStore {
   isSidebarOpen: boolean;
   sidebarWidth: number;
   contextPanelByDirectory: Record<string, ContextPanelDirectoryState>;
+  contextEditorVisibilityRevision: number;
   contextRailOrder: string[];
   /** Surface ids the user hid from the context rail; stored as the hidden set
       so surfaces added later appear for everyone. */
@@ -1134,7 +1155,7 @@ interface UIStore {
   openContextPanelTab: (directory: string, tab: ContextPanelTabDescriptor, options?: { reveal?: boolean }) => void;
   openContextDiff: (directory: string, filePath: string, staged?: boolean, scope?: PendingDiffScope | null) => void;
   /** `preview` opens it as the replaceable preview tab (a files-tree click). */
-  openContextFile: (directory: string, filePath: string, options?: { preview?: boolean }) => void;
+  openContextFile: (directory: string, filePath: string, options?: { preview?: boolean; source?: 'agent' }) => void;
   /** Turns a preview file tab into a regular one. */
   pinContextPanelTab: (directory: string, tabID: string) => void;
   openContextFileAtLine: (directory: string, filePath: string, line: number, column?: number) => void;
@@ -1384,6 +1405,7 @@ export const useUIStore = create<UIStore>()(
         isSidebarOpen: true,
         sidebarWidth: LEFT_SIDEBAR_DEFAULT_WIDTH,
         contextPanelByDirectory: {},
+        contextEditorVisibilityRevision: 0,
         contextRailOrder: [],
         contextRailHiddenSurfaces: [],
         contextSurfaceZones: {},
@@ -1601,15 +1623,15 @@ export const useUIStore = create<UIStore>()(
         // The editor and the tree can each be hidden, never both at once:
         // hiding one while the other is hidden brings the other back.
         toggleContextEditorTree: () => {
-          set((state) => (state.contextEditorTreeVisible && !state.contextEditorVisible
+          set((state) => ({ contextEditorVisibilityRevision: state.contextEditorVisibilityRevision + 1, ...(state.contextEditorTreeVisible && !state.contextEditorVisible
             ? { contextEditorTreeVisible: false, contextEditorVisible: true }
-            : { contextEditorTreeVisible: !state.contextEditorTreeVisible }));
+            : { contextEditorTreeVisible: !state.contextEditorTreeVisible }) }));
         },
 
         toggleContextEditor: () => {
-          set((state) => (state.contextEditorVisible && !state.contextEditorTreeVisible
+          set((state) => ({ contextEditorVisibilityRevision: state.contextEditorVisibilityRevision + 1, ...(state.contextEditorVisible && !state.contextEditorTreeVisible
             ? { contextEditorVisible: false, contextEditorTreeVisible: true }
-            : { contextEditorVisible: !state.contextEditorVisible }));
+            : { contextEditorVisible: !state.contextEditorVisible }) }));
         },
 
         setContextEditorTreeWidth: (width) => {
@@ -1658,6 +1680,15 @@ export const useUIStore = create<UIStore>()(
 
           // The file surface's entry point is its file tree: reopening it
           // always lands on the tree even when it was last left toggled off.
+          // This is now a user-owned surface, not the tool's temporary reveal.
+          if (mode === 'file' && panelState?.agentFileReturn) {
+            set((current) => ({
+              contextPanelByDirectory: {
+                ...current.contextPanelByDirectory,
+                [normalizedDirectory]: { ...panelState, agentFileReturn: undefined },
+              },
+            }));
+          }
           if (mode === 'file' && !state.contextEditorTreeVisible) {
             set({ contextEditorTreeVisible: true });
           }
@@ -1705,7 +1736,11 @@ export const useUIStore = create<UIStore>()(
             const current = touchContextPanelState(prev, state.contextSurfaceZones);
             const byDirectory = {
               ...state.contextPanelByDirectory,
-              [normalizedDirectory]: upsertContextPanelTab(current, nextTab, state.contextSurfaceZones, options),
+              [normalizedDirectory]: upsertContextPanelTab({
+                ...current,
+                agentFileReturn: options?.reveal !== false && (nextTab.mode === 'file' || current.agentFileReturn?.zone === zoneOfMode(state.contextSurfaceZones, nextTab.mode))
+                  ? undefined : current.agentFileReturn,
+              }, nextTab, state.contextSurfaceZones, options),
             };
 
             return {
@@ -1739,6 +1774,10 @@ export const useUIStore = create<UIStore>()(
             return;
           }
 
+          const before = get();
+          const previous = before.contextPanelByDirectory[normalizedDirectory];
+          const zone = zoneOfMode(before.contextSurfaceZones, 'file');
+          const previousView = previous ? getZoneView(previous, zone) : CLOSED_ZONE_VIEW;
           const preview = options?.preview === true;
           // The preview this open replaces leaves the editor's open files too,
           // like any closed tab.
@@ -1751,6 +1790,30 @@ export const useUIStore = create<UIStore>()(
           get().openContextPanelTab(normalizedDirectory, { mode: 'file', targetPath: normalizedFilePath, preview });
           if (replacedPreviewPath && !alreadyOpen) {
             useFilesViewTabsStore.getState().removeOpenPath(normalizedDirectory, replacedPreviewPath);
+          }
+          if (options?.source === 'agent') {
+            set((state) => {
+              const current = state.contextPanelByDirectory[normalizedDirectory];
+              const openedTab = current.tabs.find((tab) => tab.mode === 'file' && tab.targetPath === normalizedFilePath);
+              if (!openedTab) return state;
+              const origin = previous?.agentFileReturn ?? {
+                zone,
+                tabIds: [],
+                activeTabId: previousView.activeTabId,
+                isOpen: previousView.isOpen,
+                placeholder: previous?.tabs.find((tab) => tab.mode === 'file' && !tab.targetPath)
+                  ?? (previousView.isOpen && previous?.tabs.some((tab) => tab.id === previousView.activeTabId && tab.mode === 'file')
+                    ? createContextPanelTab({ mode: 'file' }) : null),
+                editorVisible: before.contextEditorVisible,
+                editorVisibilityRevision: before.contextEditorVisibilityRevision,
+              };
+              return {
+                contextPanelByDirectory: {
+                  ...state.contextPanelByDirectory,
+                  [normalizedDirectory]: { ...current, agentFileReturn: { ...origin, tabIds: [...new Set([...origin.tabIds, openedTab.id])] } },
+                },
+              };
+            });
           }
           get().setPendingFileFocusPath(normalizedFilePath);
           get().setPendingFileNavigation(null);
@@ -1908,6 +1971,8 @@ export const useUIStore = create<UIStore>()(
               ...state.contextPanelByDirectory,
               [normalizedDirectory]: withZoneView({
                 ...current,
+                agentFileReturn: current.agentFileReturn?.zone === zone && !current.agentFileReturn.tabIds.includes(normalizedTabID)
+                  ? undefined : current.agentFileReturn,
                 touchedAt: Date.now(),
                 tabs: current.tabs.map((tab) => (tab.id === normalizedTabID
                   ? { ...tab, touchedAt: Date.now() }
@@ -2013,6 +2078,11 @@ export const useUIStore = create<UIStore>()(
 
             const next = closeContextPanelTabs(current, normalizedTabIds, placement);
             const fileView = getZoneView(next, zoneOfMode(placement, 'file'));
+            const origin = current.agentFileReturn;
+            const previousActive = origin ? getZoneView(current, origin.zone).activeTabId : null;
+            const restoreEditor = origin && !next.agentFileReturn
+              && normalizedTabIds.includes(previousActive ?? '') && origin.tabIds.includes(previousActive ?? '')
+              && state.contextEditorVisibilityRevision === origin.editorVisibilityRevision;
             const activeTab = next.tabs.find((tab) => tab.id === fileView.activeTabId);
             const returnedToTree = fileView.isOpen && activeTab?.mode === 'file' && !activeTab.targetPath;
             const byDirectory = {
@@ -2023,6 +2093,7 @@ export const useUIStore = create<UIStore>()(
             return {
               contextPanelByDirectory: clampContextPanelRoots(byDirectory, 20),
               contextEditorTreeVisible: returnedToTree || state.contextEditorTreeVisible,
+              contextEditorVisible: restoreEditor ? origin.editorVisible : state.contextEditorVisible,
             };
           });
 
@@ -2053,7 +2124,10 @@ export const useUIStore = create<UIStore>()(
 
             const byDirectory = {
               ...state.contextPanelByDirectory,
-              [normalizedDirectory]: withZoneView(touchContextPanelState(prev, state.contextSurfaceZones), zone, { isOpen: false }),
+              [normalizedDirectory]: withZoneView({
+                ...touchContextPanelState(prev, state.contextSurfaceZones),
+                agentFileReturn: prev.agentFileReturn?.zone === zone ? undefined : prev.agentFileReturn,
+              }, zone, { isOpen: false }),
             };
 
             return { contextPanelByDirectory: clampContextPanelRoots(byDirectory, 20) };
@@ -2150,7 +2224,7 @@ export const useUIStore = create<UIStore>()(
             // put it whichever project they switch to.
             const byDirectory: Record<string, ContextPanelDirectoryState> = {};
             for (const [directory, panel] of Object.entries(state.contextPanelByDirectory)) {
-              byDirectory[directory] = carrySurfaceToZone(panel, mode, from, zone, placement);
+              byDirectory[directory] = carrySurfaceToZone(mode === 'file' ? { ...panel, agentFileReturn: undefined } : panel, mode, from, zone, placement);
             }
 
             return { contextSurfaceZones: placement, contextPanelByDirectory: byDirectory };
@@ -3491,7 +3565,7 @@ export const useUIStore = create<UIStore>()(
           theme: state.theme,
           isSidebarOpen: state.isSidebarOpen,
           sidebarWidth: state.sidebarWidth,
-          contextPanelByDirectory: state.contextPanelByDirectory,
+          contextPanelByDirectory: Object.fromEntries(Object.entries(state.contextPanelByDirectory).map(([directory, panel]) => [directory, { ...panel, agentFileReturn: undefined }])),
           contextRailOrder: state.contextRailOrder,
           contextRailHiddenSurfaces: state.contextRailHiddenSurfaces,
           contextSurfaceZones: state.contextSurfaceZones,
