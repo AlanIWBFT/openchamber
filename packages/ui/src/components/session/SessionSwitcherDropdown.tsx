@@ -1,6 +1,7 @@
 import React from 'react';
 import { useSessionTurnActivity } from '@/sync/global-session-status';
 import { getSessionActivityTime } from '@/sync/session-ordering';
+import { pixelFontSize } from '@/lib/typography';
 import { Menu as BaseMenu } from '@base-ui/react/menu';
 import type { Session } from '@/lib/opencode/model';
 
@@ -304,7 +305,7 @@ function SwitcherRow({ session, depth, variant, secondaryMeta, hasChildren, isEx
         {variant === 'default' ? (
           <div
             className="flex min-w-0 items-center gap-1.5 truncate text-muted-foreground/70 leading-tight"
-            style={{ fontSize: 'calc(var(--text-ui-label) * 0.85)' }}
+            style={{ fontSize: pixelFontSize('calc(var(--text-ui-label) * 0.85)') }}
           >
             {hasChildren ? (
               <span
