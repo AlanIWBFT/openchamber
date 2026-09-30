@@ -2244,6 +2244,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.editorFontSize': 'エディターフォントサイズ',
   'settings.openchamber.visual.field.codeFont': 'コードフォント',
   'settings.openchamber.visual.field.webFontsEnterprise': 'エンタープライズモードではシステムフォントを使います。その他のフォントは公開 CDN から読み込まれるためです。',
+  'settings.openchamber.visual.fontDiscoveryFailed': 'システムフォントを読み込めませんでした。フォント一覧を開き直して再試行してください。',
   'settings.openchamber.visual.field.selectCodeFontAria': 'コードフォントを選択',
   'settings.openchamber.visual.actions.resetCodeFontAria': 'コードフォントをリセット',
   'settings.openchamber.visual.actions.resetTerminalFontSizeAria': 'ターミナルフォントサイズをリセット',

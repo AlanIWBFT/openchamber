@@ -2211,6 +2211,7 @@ export const settingsDict = {
   "settings.openchamber.visual.field.editorFontSize": "Tamanho base do editor",
   "settings.openchamber.visual.field.codeFont": "Fonte do código",
   "settings.openchamber.visual.field.webFontsEnterprise": "O modo enterprise usa as fontes do sistema: as outras são carregadas de uma CDN pública.",
+  "settings.openchamber.visual.fontDiscoveryFailed": "Não foi possível carregar as fontes do sistema. Reabra a lista de fontes para tentar novamente.",
   "settings.openchamber.visual.field.selectCodeFontAria": "Selecionar fonte do código",
   "settings.openchamber.visual.actions.resetCodeFontAria": "Redefinir fonte do código",
   "settings.openchamber.visual.actions.resetTerminalFontSizeAria": "Redefinir tamanho base do terminal",

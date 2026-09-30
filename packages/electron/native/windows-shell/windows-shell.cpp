@@ -2,6 +2,8 @@
 #include <shlobj.h>
 #include <shellapi.h>
 #include <winhttp.h>
+#include <dwrite_1.h>
+#include <wrl/client.h>
 #include <napi.h>
 #include <memory>
 #include <string>
@@ -146,7 +148,84 @@ Napi::Value ReadSystemProxy(const Napi::CallbackInfo& info) {
   return result;
 }
 
+void CheckFontResult(HRESULT result) {
+  if (FAILED(result)) throw std::runtime_error("Failed to enumerate system fonts: HRESULT " + std::to_string(static_cast<unsigned long>(result)));
+}
+
+std::wstring ReadFontFamilyName(IDWriteLocalizedStrings* names, const wchar_t* locale) {
+  UINT32 index = 0;
+  BOOL exists = FALSE;
+  CheckFontResult(names->FindLocaleName(locale, &index, &exists));
+  if (!exists) index = 0;
+  UINT32 length = 0;
+  CheckFontResult(names->GetStringLength(index, &length));
+  std::wstring name(length + 1, L'\0');
+  CheckFontResult(names->GetString(index, name.data(), length + 1));
+  name.resize(length);
+  return name;
+}
+
+class ListMonospaceFontsWorker : public Napi::AsyncWorker {
+public:
+  explicit ListMonospaceFontsWorker(Napi::Env env)
+      : Napi::AsyncWorker(env, "OpenChamber:listMonospaceFonts"), deferred(Napi::Promise::Deferred::New(env)) {}
+
+  Napi::Promise Promise() { return deferred.Promise(); }
+
+  void Execute() override {
+    try {
+      Microsoft::WRL::ComPtr<IDWriteFactory> factory;
+      CheckFontResult(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(factory.GetAddressOf())));
+      Microsoft::WRL::ComPtr<IDWriteFontCollection> collection;
+      CheckFontResult(factory->GetSystemFontCollection(collection.GetAddressOf(), TRUE));
+      wchar_t locale[LOCALE_NAME_MAX_LENGTH] = L"en-US";
+      if (!GetUserDefaultLocaleName(locale, LOCALE_NAME_MAX_LENGTH)) wcscpy_s(locale, L"en-US");
+      for (UINT32 i = 0; i < collection->GetFontFamilyCount(); ++i) {
+        Microsoft::WRL::ComPtr<IDWriteFontFamily> family;
+        CheckFontResult(collection->GetFontFamily(i, family.GetAddressOf()));
+        Microsoft::WRL::ComPtr<IDWriteFont> font;
+        CheckFontResult(family->GetFirstMatchingFont(DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, font.GetAddressOf()));
+        Microsoft::WRL::ComPtr<IDWriteFont1> font1;
+        CheckFontResult(font.As(&font1));
+        if (!font1->IsMonospacedFont()) continue;
+        Microsoft::WRL::ComPtr<IDWriteLocalizedStrings> names;
+        CheckFontResult(family->GetFamilyNames(names.GetAddressOf()));
+        fonts.push_back({ ReadFontFamilyName(names.Get(), L"en-US"), ReadFontFamilyName(names.Get(), locale) });
+      }
+    } catch (const std::exception& error) {
+      SetError(error.what());
+    }
+  }
+
+  void OnOK() override {
+    auto result = Napi::Array::New(Env(), fonts.size());
+    for (size_t i = 0; i < fonts.size(); ++i) {
+      auto entry = Napi::Object::New(Env());
+      entry.Set("family", Napi::String::New(Env(), std::u16string(fonts[i].family.begin(), fonts[i].family.end())));
+      entry.Set("label", Napi::String::New(Env(), std::u16string(fonts[i].label.begin(), fonts[i].label.end())));
+      result.Set(static_cast<uint32_t>(i), entry);
+    }
+    deferred.Resolve(result);
+  }
+
+  void OnError(const Napi::Error& error) override { deferred.Reject(error.Value()); }
+
+private:
+  struct FontFamily { std::wstring family; std::wstring label; };
+  Napi::Promise::Deferred deferred;
+  std::vector<FontFamily> fonts;
+};
+
+Napi::Value ListMonospaceFonts(const Napi::CallbackInfo& info) {
+  auto worker = std::make_unique<ListMonospaceFontsWorker>(info.Env());
+  const auto promise = worker->Promise();
+  worker->Queue();
+  worker.release();
+  return promise;
+}
+
 Napi::Object InitializeWindowsShell(Napi::Env env, Napi::Object exports) {
+  exports.Set("listMonospaceFonts", Napi::Function::New(env, ListMonospaceFonts));
   exports.Set("openDirectory", Napi::Function::New(env, OpenDirectory));
   exports.Set("readEnvironmentPaths", Napi::Function::New(env, ReadEnvironmentPaths));
   exports.Set("readSystemProxy", Napi::Function::New(env, ReadSystemProxy));

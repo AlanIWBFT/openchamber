@@ -53,6 +53,25 @@ describe('settings registry', () => {
     expect(parseSettingsDocument({ locale: 'xx' })).toEqual({});
     expect(parseSettingsDocument({ locale: 3 })).toEqual({});
   });
+
+  test('local font selections round-trip and restore without requiring a discovery result', () => {
+    const original = useUIStore.getState();
+    try {
+      useUIStore.getState().setCustomMonoFont('更纱等宽 SC');
+      useUIStore.getState().setMonoFont('custom');
+      const { monoFont, customMonoFont } = readAutoSaveSnapshot();
+      const parsed = parseSettingsDocument(JSON.parse(JSON.stringify({ monoFont, customMonoFont })));
+      expect(parsed).toEqual({ monoFont: 'custom', customMonoFont: '更纱等宽 SC' });
+      useUIStore.getState().setMonoFont('system-mono');
+      applySettingsToStores(parsed ?? {});
+      expect(useUIStore.getState().monoFont).toBe('custom');
+      expect(useUIStore.getState().customMonoFont).toBe('更纱等宽 SC');
+      expect(parseSettingsDocument({ monoFont: 'local:更纱等宽 SC' })).toEqual({});
+      expect(parseSettingsDocument({ monoFont: 'jetbrains-mono' })?.monoFont).toBe('jetbrains-mono');
+    } finally {
+      useUIStore.setState(original, true);
+    }
+  });
   test('project paths retain absolute Windows roots across parsing and serialization', () => {
     const parsed = parseSettingsDocument({ projects: [
       { path: 'c:\\', label: 'Drive' },

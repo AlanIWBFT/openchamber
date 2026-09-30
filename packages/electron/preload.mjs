@@ -197,6 +197,9 @@ const desktopBridge = {
 };
 
 if (isLocalPage) {
+  if (process.platform === 'win32') {
+    desktopBridge.listMonospaceFonts = () => ipcRenderer.invoke('openchamber:invoke', 'desktop_list_monospace_fonts', {});
+  }
   desktopBridge.pickThemeFile = () => ipcRenderer.invoke('openchamber:invoke', 'desktop_pick_theme_file', {});
   desktopBridge.relayDevTunnelListen = (handler) => {
     relayDevTunnelHandler = typeof handler === 'function' ? handler : null;

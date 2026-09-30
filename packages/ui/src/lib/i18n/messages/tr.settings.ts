@@ -2126,6 +2126,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.editorFontSize': 'Editör Yazı Boyutu',
   'settings.openchamber.visual.field.codeFont': 'Kod Yazı Tipi',
   'settings.openchamber.visual.field.webFontsEnterprise': 'Kurumsal mod sistem yazı tiplerini kullanır: diğerleri herkese açık bir CDN\'den yüklenir.',
+  'settings.openchamber.visual.fontDiscoveryFailed': 'Sistem yazı tipleri yüklenemedi. Yeniden denemek için yazı tipi listesini tekrar açın.',
   'settings.openchamber.visual.field.selectCodeFontAria': 'Kod yazı tipi seç',
   'settings.openchamber.visual.actions.resetCodeFontAria': 'Kod yazı tipini sıfırla',
   'settings.openchamber.visual.actions.resetTerminalFontSizeAria': 'Terminal yazı boyutunu sıfırla',

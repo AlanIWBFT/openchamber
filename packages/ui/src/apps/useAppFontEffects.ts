@@ -1,6 +1,6 @@
 import React from 'react';
 import { useFontPreferences } from '@/hooks/useFontPreferences';
-import { CODE_FONT_OPTION_MAP, CUSTOM_FONT_ID, DEFAULT_MONO_FONT, DEFAULT_UI_FONT, UI_FONT_OPTION_MAP, customFontStack } from '@/lib/fontOptions';
+import { CUSTOM_FONT_ID, DEFAULT_UI_FONT, UI_FONT_OPTION_MAP, customFontStack, resolveMonoFontStack } from '@/lib/fontOptions';
 import { loadMonoFont, loadUiFont } from '@/lib/fontLoader';
 
 export function useAppFontEffects() {
@@ -13,13 +13,10 @@ export function useAppFontEffects() {
 
     const root = document.documentElement;
     const defaultUiStack = UI_FONT_OPTION_MAP[DEFAULT_UI_FONT].stack;
-    const defaultMonoStack = CODE_FONT_OPTION_MAP[DEFAULT_MONO_FONT].stack;
     const uiStack = uiFont === CUSTOM_FONT_ID
       ? customFontStack(customUiFont, defaultUiStack)
       : UI_FONT_OPTION_MAP[uiFont]?.stack ?? defaultUiStack;
-    const monoStack = monoFont === CUSTOM_FONT_ID
-      ? customFontStack(customMonoFont, defaultMonoStack)
-      : CODE_FONT_OPTION_MAP[monoFont]?.stack ?? defaultMonoStack;
+    const monoStack = resolveMonoFontStack(monoFont, uiFont, customMonoFont, customUiFont);
     void loadUiFont(uiFont);
     void loadMonoFont(monoFont);
 

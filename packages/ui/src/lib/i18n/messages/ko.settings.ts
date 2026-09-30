@@ -2211,6 +2211,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.editorFontSize': '에디터 폰트 크기',
   'settings.openchamber.visual.field.codeFont': '코드 폰트',
   'settings.openchamber.visual.field.webFontsEnterprise': '엔터프라이즈 모드에서는 시스템 글꼴을 사용합니다. 다른 글꼴은 공개 CDN에서 불러오기 때문입니다.',
+  'settings.openchamber.visual.fontDiscoveryFailed': '시스템 글꼴을 불러오지 못했습니다. 글꼴 목록을 다시 열어 재시도하세요.',
   'settings.openchamber.visual.field.selectCodeFontAria': '코드 폰트 선택',
   'settings.openchamber.visual.actions.resetCodeFontAria': '코드 폰트 초기화',
   'settings.openchamber.visual.actions.resetTerminalFontSizeAria': '터미널 폰트 크기 초기화',

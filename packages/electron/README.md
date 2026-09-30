@@ -406,7 +406,19 @@ Use an explicit override when testing a different OpenCode CLI build or when a u
   pages may use an untrusted certificate authority; certificate failures for
   external hosts and all other certificate errors remain blocked.
 
-## Windows directory actions
+## Windows fonts and directory actions
+
+The code-font picker discovers local Windows monospace families through DirectWrite
+in `native/windows-shell`, using `IDWriteFont1::IsMonospacedFont`. The async worker
+returns stable English family names and localized display names. Only trusted local
+pages receive the preload capability; connecting that UI to a remote backend still
+uses fonts on the desktop machine. Results are cached for the lifetime of the runtime
+API adapter. Restart Desktop after installing fonts to refresh the list.
+
+Code fonts end with the selected UI font stack as their missing-glyph fallback.
+Local selections persist as `local:<family>` and survive an absent font, using concrete
+system monospace fallbacks before the UI stack. Web, VS Code, mobile and non-Windows
+desktop apply the same stack but do not enumerate local fonts.
 
 The local `native/windows-shell` N-API module calls `ShellExecuteExW` with the default verb on a COM STA worker.
 Registered file managers such as Directory Opus receive the request. The promise settles after dispatch, without waiting for the file manager to close.
