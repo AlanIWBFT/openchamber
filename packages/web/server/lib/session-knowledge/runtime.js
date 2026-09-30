@@ -57,12 +57,19 @@ const renderMemorySection = (entries) => entries
  * agents told nothing here saved only when the user said "remember".
  */
 const MEMORY_SAVE_GUIDANCE = 'You have memory that persists across sessions, through the'
-  + ' openchamber_memory tool. Save to it in the moment, without asking first, when:'
-  + ' the user corrects how you work or states a preference; the user confirms that'
-  + ' a non-obvious approach worked; or you learn a project fact that took real'
-  + ' effort to find and is not in the code or docs. One fact per entry. The user'
-  + ' can review and remove what you save, so save when it fits and mention it'
-  + ' briefly.';
+  + ' openchamber_memory tool. First decide whether information should outlive the'
+  + ' current task; only then choose global or project scope. Keep task directions,'
+  + ' scope changes, progress, and experiment results in the conversation. A user'
+  + ' correction or confirmation alone does not establish a lasting preference.'
+  + ' Save to it in the moment, without asking first, when the conversation establishes'
+  + ' a lasting preference, a reusable decision and its reason, or a hard-won fact'
+  + ' or pointer not available in the code or docs. If future applicability is unclear,'
+  + ' keep it in the conversation. Global is for user preferences or circumstances'
+  + ' that apply across projects; project is for durable knowledge specific to this'
+  + ' project. Save one fact per entry, with its conditions rather than the task'
+  + ' transcript, and mention it briefly. Honor explicit requests to remember across'
+  + ' sessions; never store secrets, credentials, or anything the user asked you not'
+  + ' to keep. The user can review and remove saved memories.';
 
 /**
  * When to link, stated in every session that has the `openchamber` tool. The
