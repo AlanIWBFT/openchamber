@@ -490,6 +490,7 @@ export const SETTINGS_REGISTRY = {
   monoFont: field({ scope: 'profile', parse: parseMonoFont, ui: uiStore('monoFont', (v) => useUIStore.getState().setMonoFont(v)) }),
   customUiFont: field({ scope: 'profile', parse: parseTextUpTo(100), ui: uiStore('customUiFont', (v) => useUIStore.getState().setCustomUiFont(v)) }),
   customMonoFont: field({ scope: 'profile', parse: parseTextUpTo(100), ui: uiStore('customMonoFont', (v) => useUIStore.getState().setCustomMonoFont(v)) }),
+  fontPixelAlignment: field({ scope: 'profile', perSurface: true, parse: parseBoolean, ui: uiStore('fontPixelAlignment', (v) => useUIStore.getState().setFontPixelAlignment(v)) }),
   padding: field({ scope: 'profile', perSurface: true, parse: parseFiniteNumber, ui: uiStore('padding', (v) => useUIStore.getState().setPadding(v)) }),
   cornerRadius: field({ scope: 'profile', perSurface: true, parse: parseFiniteNumber, ui: uiStore('cornerRadius', (v) => useUIStore.getState().setCornerRadius(v)) }),
   shortcutOverrides: field({

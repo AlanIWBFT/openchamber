@@ -407,6 +407,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.customMonoFont === 'string') {
       result.customMonoFont = candidate.customMonoFont.slice(0, 100);
     }
+    if (typeof candidate.fontPixelAlignment === 'boolean') {
+      result.fontPixelAlignment = candidate.fontPixelAlignment;
+    }
     if (typeof candidate.githubClientId === 'string') {
       const trimmed = candidate.githubClientId.trim();
       if (trimmed.length > 0) {

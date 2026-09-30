@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useCallback, useEffect } from 'react';
+import { pixelFontSize } from '@/lib/typography';
 import { createPortal } from 'react-dom';
 import {
   areFilesEqual,
@@ -105,12 +106,12 @@ interface PierreDiffViewerProps {
 const PIERRE_RUNTIME_BASE_CSS = `
   :host {
     font-family: var(--font-mono);
-    font-size: var(--text-code);
+    font-size: ${pixelFontSize('var(--text-code)')};
   }
 
   pre, [data-code] {
     font-family: var(--font-mono);
-    font-size: var(--text-code);
+    font-size: ${pixelFontSize('var(--text-code)')};
   }
 
   /* Mobile touch selection support */
@@ -199,7 +200,7 @@ const WEBKIT_SCROLL_FIX_CSS = `
       background: transparent;
       color: var(--diffs-fg-number);
       font-family: var(--diffs-header-font-family, var(--font-sans));
-      font-size: 0.75rem;
+      font-size: ${pixelFontSize('0.75rem')};
       line-height: 1;
       margin-left: calc(-2ch - 2px);
     }

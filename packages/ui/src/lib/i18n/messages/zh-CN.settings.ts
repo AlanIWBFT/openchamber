@@ -24,6 +24,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': '此密钥已不存在。请重新查找密钥。',
   'settings.sourceControl.ssh.inventoryFull': '添加的密钥太多。请先删除一个不用的。',
   'settings.sourceControl.ssh.operationFailed': 'SSH 密钥出了问题。请重试。',
+  'settings.openchamber.visual.field.fontPixelAlignment': '对齐屏幕像素',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': '按显示缩放比例，将文字实际显示的字号向上取整到完整屏幕像素，部分文字可能略微变大。设置中的字号保持不变。',
   'settings.themeImport.selectAll': '全选',
   'settings.themeImport.deselectAll': '取消全选',
   'settings.themeImport.complete': '导入完成',

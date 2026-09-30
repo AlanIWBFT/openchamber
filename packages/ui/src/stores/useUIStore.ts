@@ -956,6 +956,7 @@ interface UIStore {
   /** Family names used when `uiFont` / `monoFont` is `custom`. */
   customUiFont: string;
   customMonoFont: string;
+  fontPixelAlignment: boolean;
   padding: number;
   cornerRadius: number;
   inputBarOffset: number;
@@ -1204,6 +1205,7 @@ interface UIStore {
   setMonoFont: (font: MonoFontOption) => void;
   setCustomUiFont: (family: string) => void;
   setCustomMonoFont: (family: string) => void;
+  setFontPixelAlignment: (enabled: boolean) => void;
   setPadding: (size: number) => void;
   setCornerRadius: (radius: number) => void;
   setInputBarOffset: (offset: number) => void;
@@ -1417,6 +1419,7 @@ export const useUIStore = create<UIStore>()(
         monoFont: DEFAULT_MONO_FONT,
         customUiFont: '',
         customMonoFont: '',
+        fontPixelAlignment: true,
         padding: 100,
         cornerRadius: 18,
         inputBarOffset: 0,
@@ -2489,6 +2492,9 @@ export const useUIStore = create<UIStore>()(
         setMonoFont: (font) => {
           set({ monoFont: font });
         },
+        setFontPixelAlignment: (enabled) => {
+          set({ fontPixelAlignment: enabled });
+        },
 
         setCustomUiFont: (family) => {
           set({ customUiFont: family.slice(0, 100) });
@@ -3428,6 +3434,7 @@ export const useUIStore = create<UIStore>()(
           monoFont: state.monoFont,
           customUiFont: state.customUiFont,
           customMonoFont: state.customMonoFont,
+          fontPixelAlignment: state.fontPixelAlignment,
           padding: state.padding,
           cornerRadius: state.cornerRadius,
           favoriteModels: state.favoriteModels,
