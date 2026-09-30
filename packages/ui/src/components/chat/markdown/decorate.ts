@@ -7,6 +7,7 @@ import { MESSAGE_IMAGE_EXPORT_EXCLUDE_ATTRIBUTE } from '../message/imageExport';
 import { getMermaidViewerController } from './mermaidViewer';
 import { emptyTrailingCodeLine } from './openFenceIncremental';
 import { getMarkdownSelectionText, type RenderedCopyFormat } from './selectionMarkdown';
+import { applyCodeCellSpacing } from './codeCellSpacing';
 
 // ---------------------------------------------------------------------------
 // Shared decoration context
@@ -190,6 +191,7 @@ const markCodeLines = (pre: HTMLPreElement): void => {
   code.setAttribute(CODE_LINES_ATTR, '');
   if (Array.from(code.children).some((child) => child.classList.contains('line'))) {
     emptyTrailingCodeLine(code);
+    applyCodeCellSpacing(code);
     return;
   }
 
@@ -203,6 +205,7 @@ const markCodeLines = (pre: HTMLPreElement): void => {
     fragment.appendChild(line);
   });
   code.replaceChildren(fragment);
+  applyCodeCellSpacing(code);
 };
 
 export const applyMarkdownCodeBlockWrapState = (root: HTMLElement, enabled: boolean, labels: DecorateLabels): void => {

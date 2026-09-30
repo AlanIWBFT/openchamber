@@ -2,6 +2,28 @@
 
 `definition.ts` parses authored JSON into the complete runtime `Theme`. Built-ins and custom-file responses use this same boundary. Embedded windows receive an already resolved theme. The server checks required authored roles and file limits; the UI validates all supported overrides before rendering. An invalid sibling is skipped, while an invalid response shape leaves the previous custom library intact. Theme values are written into a `<style>` element, so the boundary also guards CSS: a colour must be a hex value, a keyword or a colour function (`rgb()`, `hsl()`, `oklch()`, `color-mix()` and kin), and fonts and transitions may not contain `; { } < > \` or load anything (`url()`, `image-set()`, `@import`). A theme that fails is skipped like any other invalid sibling.
 
+## Physical-pixel font sizes
+
+The UI rounds final font sizes upward to whole device pixels by default. The
+Density & type setting `fontPixelAlignment` can disable rounding immediately,
+without changing the configured sizes. It is saved per surface. The shared CSS
+variable `--font-pixel-align` selects rounded or original sizes for both stylesheet
+and runtime declarations; code-cell tracking remains independent. `useAppFontEffects`
+updates `--font-pixel-ratio` on display-scale and browser-zoom changes. Integer
+physical sizes stay unchanged. The root rem size and semantic tokens stay raw so
+interface scaling and expressions such as a label's `0.85` multiplier round only
+once, at the final font-size declaration.
+
+`scripts/postcss-pixel-fonts.mjs` runs after Tailwind on the shared UI `index.css`
+entry, covering generated utilities as well as authored rules. Runtime React and
+CodeMirror styles, and Pierre's shadow styles, use `pixelFontSize` from
+`lib/typography.ts`. CSS inheritance keywords and zero/near-zero hidden text keep
+their original behavior. Separate third-party layout stylesheets such as KaTeX,
+embedded external pages and canvas renderers own their own metrics.
+
+## Theme definitions
+
+
 Keep authored definitions separate from runtime colors. Optional values are meaningful defaults, not missing rendering data. `compactTheme` removes semantic defaults; the maintainer script checks resolved-color equality before replacing JSON files. Existing custom files are read without rewriting them.
 
 `syntax.ts` owns syntax inheritance. Chat's static worker theme and the file/diff TextMate theme use `buildSyntaxTokenRules`; CodeMirror uses the same resolved palette. Changes to inheritance must preserve explicit overrides and pass compact round-trip tests. The worker theme contains CSS variables so switching palettes does not require tokenizing code again.

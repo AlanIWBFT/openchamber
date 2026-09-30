@@ -24,6 +24,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': '이 키는 더 이상 없습니다. 키를 다시 찾으세요.',
   'settings.sourceControl.ssh.inventoryFull': '추가한 키가 너무 많습니다. 먼저 쓰지 않는 키를 지우세요.',
   'settings.sourceControl.ssh.operationFailed': 'SSH 키에 문제가 생겼습니다. 다시 시도하세요.',
+  'settings.openchamber.visual.field.fontPixelAlignment': '화면 픽셀에 맞추기',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': '현재 화면 배율에 따라 실제 표시되는 글자 크기를 정수 화면 픽셀로 올림합니다. 일부 글자가 약간 커질 수 있습니다. 설정된 글자 크기는 바뀌지 않습니다.',
   'settings.themeImport.selectAll': '모두 선택',
   'settings.themeImport.deselectAll': '모두 선택 해제',
   'settings.themeImport.complete': '가져오기 완료',
