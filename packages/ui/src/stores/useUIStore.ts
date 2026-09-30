@@ -100,6 +100,15 @@ type ContextPanelTabDescriptor = {
 };
 
 type ContextPanelDirectoryState = {
+  agentFileReturn?: {
+    tabIds: string[];
+    previousTabIds: string[];
+    activeTabId: string | null;
+    isOpen: boolean;
+    placeholder: ContextPanelTab | null;
+    editorVisible: boolean;
+    editorVisibilityRevision: number;
+  };
   isOpen: boolean;
   expanded: boolean;
   tabs: ContextPanelTab[];
@@ -584,6 +593,27 @@ const closeContextPanelTabs = (
   }
 
   const activeClosed = current.activeTabId ? closed.has(current.activeTabId) : false;
+  const agentReturn = current.agentFileReturn;
+  if (agentReturn) {
+    const remainingIds = agentReturn.tabIds.filter((id) => nextTabs.some((tab) => tab.id === id));
+    current = { ...current, agentFileReturn: remainingIds.length ? { ...agentReturn, tabIds: remainingIds } : undefined };
+    if (remainingIds.length === 0 && activeClosed && closedTabs.some((tab) => agentReturn.tabIds.includes(tab.id))) {
+      // A file the user opened meanwhile remains theirs; otherwise return to
+      // the surface the tool interrupted, without manufacturing a file tree.
+      const userFile = nextTabs.filter((tab) => tab.mode === 'file' && !agentReturn.previousTabIds.includes(tab.id)).at(-1);
+      const restoredTabs = agentReturn.placeholder && !nextTabs.some((tab) => tab.mode === 'file')
+        ? [...nextTabs, agentReturn.placeholder]
+        : nextTabs;
+      const activeTabId = userFile?.id ?? resolveActiveContextPanelTabID(restoredTabs, agentReturn.activeTabId);
+      return {
+        ...current,
+        tabs: restoredTabs,
+        activeTabId,
+        isOpen: Boolean(activeTabId) && (Boolean(userFile) || agentReturn.isOpen),
+        touchedAt: Date.now(),
+      };
+    }
+  }
   if (!activeClosed) {
     return {
       ...current,
@@ -774,6 +804,7 @@ interface UIStore {
   isSidebarOpen: boolean;
   sidebarWidth: number;
   contextPanelByDirectory: Record<string, ContextPanelDirectoryState>;
+  contextEditorVisibilityRevision: number;
   contextRailOrder: string[];
   /** Surface ids the user hid from the context rail; stored as the hidden set
       so surfaces added later appear for everyone. */
@@ -1065,7 +1096,7 @@ interface UIStore {
   openContextPanelTab: (directory: string, tab: ContextPanelTabDescriptor, options?: { reveal?: boolean }) => void;
   openContextDiff: (directory: string, filePath: string, staged?: boolean, scope?: PendingDiffScope | null) => void;
   /** `preview` opens it as the replaceable preview tab (a files-tree click). */
-  openContextFile: (directory: string, filePath: string, options?: { preview?: boolean }) => void;
+  openContextFile: (directory: string, filePath: string, options?: { preview?: boolean; source?: 'agent' }) => void;
   /** Turns a preview file tab into a regular one. */
   pinContextPanelTab: (directory: string, tabID: string) => void;
   openContextFileAtLine: (directory: string, filePath: string, line: number, column?: number) => void;
@@ -1297,6 +1328,7 @@ export const useUIStore = create<UIStore>()(
         isSidebarOpen: true,
         sidebarWidth: LEFT_SIDEBAR_DEFAULT_WIDTH,
         contextPanelByDirectory: {},
+        contextEditorVisibilityRevision: 0,
         contextRailOrder: [],
         contextRailHiddenSurfaces: [],
         contextEditorTreeVisible: true,
@@ -1510,15 +1542,15 @@ export const useUIStore = create<UIStore>()(
         // The editor and the tree can each be hidden, never both at once:
         // hiding one while the other is hidden brings the other back.
         toggleContextEditorTree: () => {
-          set((state) => (state.contextEditorTreeVisible && !state.contextEditorVisible
+          set((state) => ({ contextEditorVisibilityRevision: state.contextEditorVisibilityRevision + 1, ...(state.contextEditorTreeVisible && !state.contextEditorVisible
             ? { contextEditorTreeVisible: false, contextEditorVisible: true }
-            : { contextEditorTreeVisible: !state.contextEditorTreeVisible }));
+            : { contextEditorTreeVisible: !state.contextEditorTreeVisible }) }));
         },
 
         toggleContextEditor: () => {
-          set((state) => (state.contextEditorVisible && !state.contextEditorTreeVisible
+          set((state) => ({ contextEditorVisibilityRevision: state.contextEditorVisibilityRevision + 1, ...(state.contextEditorVisible && !state.contextEditorTreeVisible
             ? { contextEditorVisible: false, contextEditorTreeVisible: true }
-            : { contextEditorVisible: !state.contextEditorVisible }));
+            : { contextEditorVisible: !state.contextEditorVisible }) }));
         },
 
         setContextEditorTreeWidth: (width) => {
@@ -1563,6 +1595,15 @@ export const useUIStore = create<UIStore>()(
 
           // The file surface's entry point is its file tree: reopening it
           // always lands on the tree even when it was last left toggled off.
+          // This is now a user-owned surface, not the tool's temporary reveal.
+          if (mode === 'file' && panelState?.agentFileReturn) {
+            set((current) => ({
+              contextPanelByDirectory: {
+                ...current.contextPanelByDirectory,
+                [normalizedDirectory]: { ...panelState, agentFileReturn: undefined },
+              },
+            }));
+          }
           if (mode === 'file' && !state.contextEditorTreeVisible) {
             set({ contextEditorTreeVisible: true });
           }
@@ -1644,6 +1685,8 @@ export const useUIStore = create<UIStore>()(
             return;
           }
 
+          const before = get();
+          const previous = before.contextPanelByDirectory[normalizedDirectory];
           const preview = options?.preview === true;
           // The preview this open replaces leaves the editor's open files too,
           // like any closed tab.
@@ -1656,6 +1699,30 @@ export const useUIStore = create<UIStore>()(
           get().openContextPanelTab(normalizedDirectory, { mode: 'file', targetPath: normalizedFilePath, preview });
           if (replacedPreviewPath && !alreadyOpen) {
             useFilesViewTabsStore.getState().removeOpenPath(normalizedDirectory, replacedPreviewPath);
+          }
+          if (options?.source === 'agent') {
+            set((state) => {
+              const current = state.contextPanelByDirectory[normalizedDirectory];
+              const openedTab = current.tabs.find((tab) => tab.mode === 'file' && tab.targetPath === normalizedFilePath);
+              if (!openedTab) return state;
+              const origin = previous?.agentFileReturn ?? {
+                tabIds: [],
+                previousTabIds: previous?.tabs.map((tab) => tab.id) ?? [],
+                activeTabId: previous?.activeTabId ?? null,
+                isOpen: previous?.isOpen ?? false,
+                placeholder: previous?.tabs.find((tab) => tab.mode === 'file' && !tab.targetPath)
+                  ?? (previous?.isOpen && previous.tabs.some((tab) => tab.id === previous.activeTabId && tab.mode === 'file')
+                    ? createContextPanelTab({ mode: 'file' }) : null),
+                editorVisible: before.contextEditorVisible,
+                editorVisibilityRevision: before.contextEditorVisibilityRevision,
+              };
+              return {
+                contextPanelByDirectory: {
+                  ...state.contextPanelByDirectory,
+                  [normalizedDirectory]: { ...current, agentFileReturn: { ...origin, tabIds: [...new Set([...origin.tabIds, openedTab.id])] } },
+                },
+              };
+            });
           }
           get().setPendingFileFocusPath(normalizedFilePath);
           get().setPendingFileNavigation(null);
@@ -1878,6 +1945,11 @@ export const useUIStore = create<UIStore>()(
             }
 
             const next = closeContextPanelTabs(current, normalizedTabIds);
+            const origin = current.agentFileReturn;
+            const restoreEditor = origin && !next.agentFileReturn
+              && normalizedTabIds.includes(current.activeTabId ?? '') && origin.tabIds.includes(current.activeTabId ?? '')
+              && !next.tabs.some((tab) => tab.mode === 'file' && tab.targetPath && !origin.previousTabIds.includes(tab.id))
+              && state.contextEditorVisibilityRevision === origin.editorVisibilityRevision;
             const activeTab = next.tabs.find((tab) => tab.id === next.activeTabId);
             const returnedToTree = next.isOpen && activeTab?.mode === 'file' && !activeTab.targetPath;
             const byDirectory = {
@@ -1888,6 +1960,7 @@ export const useUIStore = create<UIStore>()(
             return {
               contextPanelByDirectory: clampContextPanelRoots(byDirectory, 20),
               contextEditorTreeVisible: returnedToTree || state.contextEditorTreeVisible,
+              contextEditorVisible: restoreEditor ? origin.editorVisible : state.contextEditorVisible,
             };
           });
 
@@ -3297,7 +3370,7 @@ export const useUIStore = create<UIStore>()(
           theme: state.theme,
           isSidebarOpen: state.isSidebarOpen,
           sidebarWidth: state.sidebarWidth,
-          contextPanelByDirectory: state.contextPanelByDirectory,
+          contextPanelByDirectory: Object.fromEntries(Object.entries(state.contextPanelByDirectory).map(([directory, panel]) => [directory, { ...panel, agentFileReturn: undefined }])),
           contextRailOrder: state.contextRailOrder,
           contextRailHiddenSurfaces: state.contextRailHiddenSurfaces,
           contextEditorTreeVisible: state.contextEditorTreeVisible,

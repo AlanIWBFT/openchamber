@@ -829,6 +829,144 @@ describe('useUIStore file editor visibility', () => {
 describe('useUIStore closeContextPanelTab surface stability', () => {
   const directory = '/repo';
 
+  const closeFile = (path: string) => {
+    const tab = getContextPanelTabs(directory).find((item) => item.targetPath === path);
+    if (!tab) throw new Error('expected a file tab');
+    useUIStore.getState().closeContextPanelTab(directory, tab.id);
+  };
+
+  test('closing an agent file opened from a closed panel leaves no file tree', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv', { source: 'agent' });
+    closeFile('/repo/result.csv');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(false);
+    expect(panel.tabs).toEqual([]);
+    expect(panel.agentFileReturn).toBeUndefined();
+  });
+
+  test('an agent reveal of an existing file restores a previously closed panel', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts');
+    useUIStore.getState().closeContextPanel(directory);
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts', { source: 'agent' });
+    closeFile('/repo/existing.ts');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(false);
+    expect(panel.tabs).toEqual([]);
+  });
+
+  test('an agent reveal of the last existing file preserves a user-owned file surface', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts');
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts', { source: 'agent' });
+    closeFile('/repo/existing.ts');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(true);
+    expect(panel.tabs).toHaveLength(1);
+    expect(panel.tabs[0].targetPath).toBeNull();
+  });
+
+  test('reopening Files from the rail takes ownership from the agent reveal', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv', { source: 'agent' });
+    useUIStore.getState().closeContextPanel(directory);
+    useUIStore.getState().openContextSurface(directory, 'file');
+    expect(useUIStore.getState().contextPanelByDirectory[directory].agentFileReturn).toBeUndefined();
+    closeFile('/repo/result.csv');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(true);
+    expect(panel.tabs).toHaveLength(1);
+    expect(panel.tabs[0].targetPath).toBeNull();
+  });
+
+  test('closing an agent file restores the hidden editor of the previous file', () => {
+    useUIStore.setState({ contextEditorVisible: true, contextEditorTreeVisible: true });
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts');
+    useUIStore.getState().toggleContextEditor();
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv', { source: 'agent' });
+    expect(useUIStore.getState().contextEditorVisible).toBe(true);
+    closeFile('/repo/result.csv');
+    expect(useUIStore.getState().contextEditorVisible).toBe(false);
+    expect(useUIStore.getState().contextEditorTreeVisible).toBe(true);
+  });
+
+  test('editor toggles during an agent reveal supersede its visibility snapshot', () => {
+    useUIStore.setState({ contextEditorVisible: true, contextEditorTreeVisible: true });
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts');
+    useUIStore.getState().toggleContextEditor();
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv', { source: 'agent' });
+    useUIStore.getState().toggleContextEditor();
+    useUIStore.getState().toggleContextEditor();
+    closeFile('/repo/result.csv');
+    expect(useUIStore.getState().contextEditorVisible).toBe(true);
+  });
+
+  test('hiding the tree during an agent reveal keeps the editor visible on return', () => {
+    useUIStore.setState({ contextEditorVisible: true, contextEditorTreeVisible: true });
+    useUIStore.getState().openContextFile(directory, '/repo/existing.ts');
+    useUIStore.getState().toggleContextEditor();
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv', { source: 'agent' });
+    useUIStore.getState().toggleContextEditorTree();
+    closeFile('/repo/result.csv');
+    expect(useUIStore.getState().contextEditorVisible).toBe(true);
+    expect(useUIStore.getState().contextEditorTreeVisible).toBe(false);
+  });
+
+  test('multiple agent files restore the previous surface after the last closes', () => {
+    useUIStore.getState().openContextPanelTab(directory, { mode: 'terminal' });
+    useUIStore.getState().openContextFile(directory, '/repo/a.csv', { source: 'agent' });
+    useUIStore.getState().openContextFile(directory, '/repo/b.csv', { source: 'agent' });
+    useUIStore.getState().openContextFile(directory, '/repo/b.csv', { source: 'agent' });
+    closeFile('/repo/a.csv');
+    expect(useUIStore.getState().contextPanelByDirectory[directory].isOpen).toBe(true);
+    closeFile('/repo/b.csv');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(true);
+    expect(panel.activeTabId).toBe('terminal');
+    expect(panel.tabs.map((tab) => tab.mode)).toEqual(['terminal']);
+  });
+
+  test('an agent file returns to a file tree the user already opened', () => {
+    useUIStore.getState().openContextSurface(directory, 'file');
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv', { source: 'agent' });
+    closeFile('/repo/result.csv');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(true);
+    expect(panel.tabs).toHaveLength(1);
+    expect(panel.tabs[0].targetPath).toBeNull();
+  });
+
+  test('closing a background agent file does not switch the active surface', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv', { source: 'agent' });
+    useUIStore.getState().openContextPanelTab(directory, { mode: 'terminal' });
+    closeFile('/repo/result.csv');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(true);
+    expect(panel.activeTabId).toBe('terminal');
+    expect(panel.agentFileReturn).toBeUndefined();
+  });
+
+  test('a manually opened file survives closing the agent file', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv', { source: 'agent' });
+    useUIStore.getState().openContextFile(directory, '/repo/manual.ts');
+    useUIStore.getState().openContextFile(directory, '/repo/result.csv', { source: 'agent' });
+    closeFile('/repo/result.csv');
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(true);
+    expect(panel.tabs.find((tab) => tab.id === panel.activeTabId)?.targetPath).toBe('/repo/manual.ts');
+    closeFile('/repo/manual.ts');
+    expect(useUIStore.getState().contextPanelByDirectory[directory].isOpen).toBe(true);
+  });
+
+  test('bulk closing agent files preserves a previously closed panel with retained tabs', () => {
+    useUIStore.getState().openContextFile(directory, '/repo/previous.ts');
+    useUIStore.getState().closeContextPanel(directory);
+    useUIStore.getState().openContextFile(directory, '/repo/a.csv', { source: 'agent' });
+    useUIStore.getState().openContextFile(directory, '/repo/b.csv', { source: 'agent' });
+    const ids = getContextPanelTabs(directory).filter((tab) => tab.targetPath?.endsWith('.csv')).map((tab) => tab.id);
+    useUIStore.getState().closeContextPanelTabs(directory, ids);
+    const panel = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(panel.isOpen).toBe(false);
+    expect(panel.tabs.map((tab) => tab.targetPath)).toEqual(['/repo/previous.ts']);
+  });
+
   test('closing an active file tab activates another file tab, not another surface', () => {
     useUIStore.getState().openContextPanelTab(directory, { mode: 'terminal' });
     useUIStore.getState().openContextFile(directory, '/repo/a.ts');

@@ -537,7 +537,7 @@ export const ContextPanel: React.FC = () => {
     if (event.type !== 'file-open-request') return;
     const directory = event.directory ?? effectiveDirectory;
     if (!directory) return;
-    openContextFile(directory, event.path);
+    openContextFile(directory, event.path, { source: 'agent' });
   }), [effectiveDirectory, openContextFile]);
   const reorderContextPanelTabs = useUIStore((state) => state.reorderContextPanelTabs);
   const setSelectedFilePath = useFilesViewTabsStore((state) => state.setSelectedPath);
