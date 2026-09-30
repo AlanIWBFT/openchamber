@@ -234,6 +234,9 @@ const desktopBridge = {
 };
 
 if (isLocalPage) {
+  if (process.platform === 'win32') {
+    desktopBridge.listMonospaceFonts = () => ipcRenderer.invoke('openchamber:invoke', 'desktop_list_monospace_fonts', {});
+  }
   desktopBridge.pickThemeFile = () => ipcRenderer.invoke('openchamber:invoke', 'desktop_pick_theme_file', {});
   // PRIMARY is not reachable from the web Clipboard API; expose it only to the
   // local Linux page. Remote pages never receive this bridge.
