@@ -16,6 +16,7 @@ import { useI18n } from '@/lib/i18n';
 import { useMarkdownPresentation } from './MarkdownPresentationContext';
 import { activateMarkdownFile, useOpenMarkdownFile } from './markdownFileReferences';
 import type { MarkdownCodePlugin } from './streamdownCode';
+import { splitCodeCellRuns } from './codeCellSpacing';
 
 // Complete prefix rows keep their identity in the worker client, so appending
 // code only renders changed rows. React owns every node; no HTML patching.
@@ -29,7 +30,10 @@ const CodeLine = React.memo(function CodeLine({ tokens }: { tokens: HighlightTok
           color: token.color,
           backgroundColor: token.bgColor,
         };
-        return <span key={index} style={style} {...token.htmlAttrs}>{token.content}</span>;
+        const runs = splitCodeCellRuns(token.content);
+        return <span key={index} style={style} {...token.htmlAttrs}>{typeof runs === 'string' ? runs : runs.map((run, runIndex) => (
+          run.wide ? <span key={runIndex} data-md-code-wide="">{run.text}</span> : run.text
+        ))}</span>;
       })}
     </span>
   );
