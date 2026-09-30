@@ -4,6 +4,8 @@ import { linearIntegrationI18n } from './linear-integration.i18n';
 import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 import { extensionCatalogI18n } from './extension-catalog.i18n';
 export const settingsDict = {
+  'settings.openchamber.visual.field.fontPixelAlignment': '화면 픽셀에 맞추기',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': '현재 화면 배율에 따라 실제 표시되는 글자 크기를 정수 화면 픽셀로 올림합니다. 일부 글자가 약간 커질 수 있습니다. 설정된 글자 크기는 바뀌지 않습니다.',
   'settings.themeImport.selectAll': '모두 선택',
   'settings.themeImport.deselectAll': '모두 선택 해제',
   'settings.themeImport.complete': '가져오기 완료',

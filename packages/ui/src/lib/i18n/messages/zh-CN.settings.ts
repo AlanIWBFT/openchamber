@@ -4,6 +4,8 @@ import { linearIntegrationI18n } from './linear-integration.i18n';
 import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 import { extensionCatalogI18n } from './extension-catalog.i18n';
 export const settingsDict = {
+  'settings.openchamber.visual.field.fontPixelAlignment': '对齐屏幕像素',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': '按显示缩放比例，将文字实际显示的字号向上取整到完整屏幕像素，部分文字可能略微变大。设置中的字号保持不变。',
   'settings.themeImport.selectAll': '全选',
   'settings.themeImport.deselectAll': '取消全选',
   'settings.themeImport.complete': '导入完成',

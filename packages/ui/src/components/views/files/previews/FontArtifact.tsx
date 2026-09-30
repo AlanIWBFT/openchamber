@@ -1,4 +1,5 @@
 import React from 'react';
+import { pixelFontSize } from '@/lib/typography';
 
 import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
@@ -63,12 +64,12 @@ export const FontArtifact: React.FC<{
             {SAMPLE_SIZES.map((size) => (
               <div key={size} className="flex items-baseline gap-3">
                 <span className="w-8 shrink-0 text-right font-sans typography-meta text-muted-foreground">{size}</span>
-                <span className="min-w-0 break-words leading-tight text-foreground" style={{ fontSize: `${size}px` }}>
+                <span className="min-w-0 break-words leading-tight text-foreground" style={{ fontSize: pixelFontSize(`${size}px`) }}>
                   {t('filesView.artifact.font.sample')}
                 </span>
               </div>
             ))}
-            <div className="mt-2 flex flex-col gap-1 border-t border-border/40 pt-4 text-foreground" style={{ fontSize: '20px' }}>
+            <div className="mt-2 flex flex-col gap-1 border-t border-border/40 pt-4 text-foreground" style={{ fontSize: pixelFontSize('20px') }}>
               {GLYPH_ROWS.map((row) => <div key={row} className="break-all leading-relaxed">{row}</div>)}
             </div>
           </div>

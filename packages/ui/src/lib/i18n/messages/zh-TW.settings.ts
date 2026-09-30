@@ -4,6 +4,8 @@ import { linearIntegrationI18n } from './linear-integration.i18n';
 import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 import { extensionCatalogI18n } from './extension-catalog.i18n';
 export const settingsDict = {
+  'settings.openchamber.visual.field.fontPixelAlignment': '對齊螢幕像素',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': '依顯示縮放比例，將文字實際顯示的字級向上取整至完整螢幕像素，部分文字可能略微變大。設定中的字級保持不變。',
   'settings.themeImport.selectAll': '全選',
   'settings.themeImport.deselectAll': '取消全選',
   'settings.themeImport.complete': '匯入完成',

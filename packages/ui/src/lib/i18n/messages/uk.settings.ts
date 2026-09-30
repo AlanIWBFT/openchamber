@@ -4,6 +4,8 @@ import { linearIntegrationI18n } from './linear-integration.i18n';
 import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 import { extensionCatalogI18n } from './extension-catalog.i18n';
 export const settingsDict = {
+  'settings.openchamber.visual.field.fontPixelAlignment': 'Вирівнювати за пікселями екрана',
+  'settings.openchamber.visual.field.fontPixelAlignmentHint': 'Округлює відображувані розміри шрифту вгору до цілих пікселів за поточного масштабу екрана. Деякі тексти можуть стати трохи більшими. Задані розміри шрифту не змінюються.',
   'settings.themeImport.selectAll': 'Вибрати всі',
   'settings.themeImport.deselectAll': 'Зняти вибір',
   'settings.themeImport.complete': 'Імпорт завершено',

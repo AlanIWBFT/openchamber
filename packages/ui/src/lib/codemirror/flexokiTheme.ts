@@ -6,6 +6,7 @@ import { classHighlighter, tags as t } from '@lezer/highlight';
 
 import type { Theme } from '@/types/theme';
 import { resolveSyntaxTokens } from '../theme/syntax';
+import { pixelFontSize } from '../typography';
 
 export function createFlexokiCodeMirrorTheme(
   theme: Theme,
@@ -23,7 +24,7 @@ export function createFlexokiCodeMirrorTheme(
   const contentFontSize = options?.fontSize ? `${options.fontSize}px` : 'var(--text-code)';
   const backgroundColor = theme.colors.syntax.base.background;
 
-  const ui = EditorView.theme({
+  const styles = {
     '&': {
       backgroundColor,
       color: theme.colors.syntax.base.foreground,
@@ -515,7 +516,11 @@ export function createFlexokiCodeMirrorTheme(
     '&.cm-focused': {
       outline: 'none',
     },
-  }, { dark: isDark });
+  };
+  for (const style of Object.values(styles)) {
+    if ('fontSize' in style && style.fontSize !== '1px') style.fontSize = pixelFontSize(style.fontSize);
+  }
+  const ui = EditorView.theme(styles, { dark: isDark });
 
   const syntax = HighlightStyle.define([
     { tag: [t.comment, t.docComment, t.meta, t.documentMeta], class: 'cm-comment' },
