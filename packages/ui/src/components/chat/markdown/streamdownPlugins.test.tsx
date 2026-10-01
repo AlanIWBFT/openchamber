@@ -6,9 +6,9 @@ import { Streamdown } from 'streamdown';
 import { getMarkdownProcessingOptions, markdownCjk, markdownMath } from './streamdownPlugins';
 
 const dom = new Window();
-function render(source: string, raw = false, vscode = false) {
+function render(source: string, raw = false, vscode = false, streaming = false) {
   const html = renderToStaticMarkup(<Streamdown
-    mode="static" parseIncompleteMarkdown={false} controls={false}
+    mode={streaming ? 'streaming' : 'static'} parseIncompleteMarkdown={streaming} isAnimating={streaming} controls={false}
     plugins={{ math: markdownMath, cjk: markdownCjk }}
     {...getMarkdownProcessingOptions(raw, vscode)}
     urlTransform={(value) => value}
@@ -129,6 +129,47 @@ describe('Streamdown processing policy', () => {
 });
 
 describe('Streamdown math and CJK compatibility', () => {
+  test('renders punctuation-adjacent CJK emphasis without changing spacing', () => {
+    for (const punctuation of ['。', '，', '！']) {
+      const source = `前文**你好${punctuation}**后文`;
+      for (const streaming of [false, true]) {
+        const result = render(source, false, false, streaming);
+        expect(result.querySelector('strong')?.textContent).toBe(`你好${punctuation}`);
+        expect(result.textContent).toBe(`前文你好${punctuation}后文`);
+      }
+    }
+    expect(render('前文*（你好）*后文').querySelector('em')?.textContent).toBe('（你好）');
+  });
+
+  test('keeps bold while its closing markers and following CJK text stream in', () => {
+    for (const punctuation of ['。', '，', '！']) {
+      const source = `前文**你好${punctuation}**后文\n\n下一段`;
+      const opening = '前文**'.length;
+      for (let end = opening + 1; end <= source.length; end += 1) {
+        const result = render(source.slice(0, end), false, false, true);
+        expect(result.querySelector('strong')).not.toBeNull();
+        expect(result.textContent).not.toContain('**');
+        if (end >= opening + 3) expect(result.querySelector('strong')?.textContent).toBe(`你好${punctuation}`);
+      }
+      // Streaming owns one React block per paragraph; static HTML may put a
+      // formatting newline between blocks. Their paragraph text stays equal.
+      for (const streaming of [false, true]) {
+        expect(Array.from(render(source, false, false, streaming).querySelectorAll('p'), (paragraph) => paragraph.textContent))
+          .toEqual([`前文你好${punctuation}后文`, '下一段']);
+      }
+    }
+  });
+
+  test('keeps emphasis markers literal in code and composes with CJK linkification', () => {
+    const literal = '前文**你好。**后文';
+    expect(render('`' + literal + '`').querySelector('code')?.textContent).toBe(literal);
+    expect(render('```text\n' + literal + '\n```').querySelector('strong')).toBeNull();
+    const result = render(literal + ' https://example.com。下一句');
+    expect(result.querySelector('strong')?.textContent).toBe('你好。');
+    expect(result.querySelector('a')?.getAttribute('href')).toBe('https://example.com');
+    expect(result.textContent).toContain('https://example.com。下一句');
+  });
+
   test('renders comparisons and interval brackets as ordinary formulas', () => {
     const result = render('$n > p$ and $x < y$ and $x \\in [0,1]$');
     expect(result.querySelectorAll('.katex')).toHaveLength(3);

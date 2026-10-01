@@ -1,4 +1,14 @@
-# Markdown code spacing
+# Markdown rendering
+
+## CJK emphasis
+
+`streamdownPlugins.ts` supplies the upstream `@streamdown/cjk` plugin so emphasis
+such as `前文**你好。**后文` renders without adding spaces or invisible characters.
+Streaming, settled, clipboard and image rendering share that plugin. Regression
+coverage includes punctuation-adjacent emphasis, incremental closing markers,
+literal code, and CJK URL boundaries.
+
+## Code spacing
 
 `codeCellSpacing.ts` splits syntax-token text into continuous runs of narrow and
 wide graphemes. `MarkdownCode.tsx` renders `data-md-code-wide` spans around the
