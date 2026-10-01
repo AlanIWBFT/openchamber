@@ -1314,17 +1314,41 @@ export class GhosttyTerminalSurface {
     }, 100);
   };
 
+  private encodeInputEdit(inputType: string): string {
+    const key = inputType === 'insertLineBreak' || inputType === 'insertParagraph'
+      ? 'Enter'
+      : inputType === 'deleteContentBackward' ? 'Backspace' : null;
+    if (!key) return '';
+    // Soft keyboards may provide only an editing intent (keydown has code 229
+    // or no physical code). Use the same terminal-mode-aware encoder as keys.
+    const event = new KeyboardEvent('keydown', { key, code: key });
+    // An edit has no physical keyup; Kitty report-all programs need its release.
+    return this.core.encodeKey(event, navigator.platform)
+      + this.core.encodeKey(event, navigator.platform, 'release');
+  }
+
+  private readonly onBeforeInput = (event: InputEvent) => {
+    if (this.composing || event.isComposing || !event.cancelable) return;
+    // Android can ignore cancellation of deletion edits. Its resting space
+    // guarantees an input event, so only that finished edit sends Backspace.
+    if (this.restingInputValue.length > 0 && event.inputType === 'deleteContentBackward') return;
+    const data = this.encodeInputEdit(event.inputType);
+    if (!data) return;
+    // Handle deletion even when the empty textarea cannot produce an input
+    // event. Canceling also prevents a second send through onInput.
+    event.preventDefault();
+    this.clearPrimedCopy();
+    this.clearCompositionInputSuppression();
+    this.options.onData(data);
+    this.resetInput();
+  };
+
   private readonly onInput = (event: Event) => {
     // SAFETY: registered for the textarea's "input" event, which is dispatched as an InputEvent.
     const inputEvent = event as InputEvent;
     if (this.composing || inputEvent.isComposing) return;
-    if (this.restingInputValue.length > 0 && inputEvent.inputType === 'deleteContentBackward') {
-      this.clearCompositionInputSuppression();
-      this.resetInput();
-      this.sendBackspace();
-      return;
-    }
-    const data = this.typedInput() || inputEvent.data || '';
+    // Non-cancelable edits (or input without beforeinput) arrive here instead.
+    const data = this.encodeInputEdit(inputEvent.inputType) || this.typedInput() || inputEvent.data || '';
     if (data === this.compositionInputToSuppress && isTerminalCompositionCommitInput(inputEvent)) {
       this.clearCompositionInputSuppression();
       this.resetInput();
@@ -1334,13 +1358,6 @@ export class GhosttyTerminalSurface {
     if (data.length > 0) this.options.onData(data);
     this.resetInput();
   };
-
-  private sendBackspace(): void {
-    const key = new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace' });
-    const data = this.core.encodeKey(key, navigator.platform)
-      + this.core.encodeKey(key, navigator.platform, 'release');
-    if (data.length > 0) this.options.onData(data);
-  }
 
   private clearCompositionInputSuppression(): void {
     if (this.compositionSuppressionTimer !== null) {
@@ -1719,6 +1736,7 @@ export class GhosttyTerminalSurface {
     this.input.addEventListener('keyup', this.onKeyUp);
     this.input.addEventListener('focus', this.onFocus);
     this.input.addEventListener('blur', this.onBlur);
+    this.input.addEventListener('beforeinput', this.onBeforeInput);
     this.input.addEventListener('input', this.onInput);
     this.input.addEventListener('paste', this.onPaste);
     this.input.addEventListener('copy', this.onCopyEvent);
@@ -1745,6 +1763,7 @@ export class GhosttyTerminalSurface {
     this.input.removeEventListener('keyup', this.onKeyUp);
     this.input.removeEventListener('focus', this.onFocus);
     this.input.removeEventListener('blur', this.onBlur);
+    this.input.removeEventListener('beforeinput', this.onBeforeInput);
     this.input.removeEventListener('input', this.onInput);
     this.input.removeEventListener('paste', this.onPaste);
     this.input.removeEventListener('copy', this.onCopyEvent);
