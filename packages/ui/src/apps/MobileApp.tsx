@@ -157,6 +157,8 @@ type MobileSurface = 'archive' | 'board' | 'overview' | 'instances' | 'scheduled
 
 const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onActiveConnectionDeleted }) => {
   const { t, direction } = useI18n();
+  const memoryDirectory = useDirectoryStore((state) => state.currentDirectory);
+  useAgentMemorySync(memoryDirectory || null);
   useTerminalSessionKeepalive();
   const [sessionsSheetOpen, setSessionsSheetOpen] = React.useState(false);
   React.useEffect(() => useSessionUIStore.subscribe((state, prev) => {
@@ -1197,7 +1199,6 @@ function MobileAppContent({ apis }: MobileAppProps) {
   useGuestCatalogSync();
   useGuestMarksSync();
   useBrowserProviderSync();
-  useAgentMemorySync(currentDirectory || null);
   useRouter();
   useNativePushRegistration({ enabled: isNativeMobileApp && isConnected });
   useKeepScreenAwake(isConnected);
