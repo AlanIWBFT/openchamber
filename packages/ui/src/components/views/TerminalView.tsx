@@ -1272,7 +1272,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ visible, directory, 
                     onClick={() => handleMobileKeyPress('tab')}
                     disabled={quickKeysDisabled}
                 >
-                    <Icon name="arrow-right" className="h-4 w-4" />
+                    <span className="text-xs font-medium">{formatShortcutForDisplay('tab')}</span>
                     <span className="sr-only">{t('terminalView.quickKeys.tabAria')}</span>
                 </Button>
             ))}
