@@ -25,6 +25,7 @@ import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
 import { usePushVisibilityBeacon } from '@/hooks/usePushVisibilityBeacon';
+import { useAgentMemorySync } from '@/hooks/useAgentMemorySync';
 import { useRouter } from '@/hooks/useRouter';
 import { useTerminalSessionKeepalive } from '@/hooks/useTerminalSessionKeepalive';
 import { useUpdatePolling } from '@/hooks/useUpdatePolling';
@@ -133,6 +134,8 @@ type MobileSurface = 'archive' | 'board' | 'instances' | 'scheduled' | 'settings
 
 const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onActiveConnectionDeleted }) => {
   const { t } = useI18n();
+  const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
+  useAgentMemorySync(currentDirectory || null);
   // The mobile root does not mount MainLayout, so it owns its own terminal
   // keepalive: without it, background PTYs (running project actions included)
   // are idle-reaped by the server while the workspace drawer is closed.
