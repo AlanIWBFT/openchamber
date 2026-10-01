@@ -24,6 +24,7 @@ export interface GhosttyRenderContext extends BoxDrawingContext {
   rect(x: number, y: number, w: number, h: number): void;
   clip(): void;
   resetTransform(): void;
+  getTransform(): { readonly a: number };
 }
 
 export interface GhosttyMeasureContext {
@@ -156,6 +157,13 @@ export function renderGhosttySnapshot(options: {
   const selectionBackground = options.selectionBackground ?? DEFAULT_SELECTION_BACKGROUND;
   const hoveredLinkRange = options.hoveredLinkRange ?? null;
   const originY = options.originY ?? padding;
+  // The surface installs a uniform DPR scale. Row ownership must be in whole
+  // backing pixels: antialiased clears at fractional edges leave old pixels
+  // behind, and rounding only the clear would erase a neighbour's text.
+  const pixelRatio = context.getTransform().a;
+  const snap = (value: number): number => Math.round(value * pixelRatio) / pixelRatio;
+  const gridLeft = snap(padding);
+  const gridWidth = snap(padding + snapshot.cols * metrics.width) - gridLeft;
   const rowsToDraw = forceFull
     ? Array.from({ length: snapshot.rows }, (_, index) => index)
     : [...snapshot.dirtyRows];
@@ -184,9 +192,15 @@ export function renderGhosttySnapshot(options: {
     const row = snapshot.rowData[rowIndex];
     if (!row) continue;
     const top = originY + rowIndex * metrics.height;
+    const rowTop = snap(top);
+    const rowHeight = snap(top + metrics.height) - rowTop;
 
+    context.save();
+    context.beginPath();
+    context.rect(gridLeft, rowTop, gridWidth, rowHeight);
+    context.clip();
     context.fillStyle = cssColor(snapshot.background);
-    context.fillRect(padding, top, snapshot.cols * metrics.width, metrics.height);
+    context.fillRect(gridLeft, rowTop, gridWidth, rowHeight);
 
     let backgroundStart = 0;
     while (backgroundStart < row.cells.length) {
@@ -294,11 +308,16 @@ export function renderGhosttySnapshot(options: {
       }
       if (cell.overline) context.fillRect(left, top + 1, metrics.width, 1);
     }
+    context.restore();
   }
 
   if (cursorOn && snapshot.cursorVisible && snapshot.cursorX >= 0 && snapshot.cursorY >= 0) {
     const left = padding + snapshot.cursorX * metrics.width;
     const top = originY + snapshot.cursorY * metrics.height;
+    context.save();
+    context.beginPath();
+    context.rect(snap(left), snap(top), snap(left + metrics.width) - snap(left), snap(top + metrics.height) - snap(top));
+    context.clip();
     context.fillStyle = cssColor(snapshot.cursor);
     if (!focused) {
       // An unfocused terminal draws a hollow cursor so the active pane is obvious.
@@ -327,5 +346,6 @@ export function renderGhosttySnapshot(options: {
         context.fillText(cell.text, left, top + metrics.baseline, metrics.width);
       }
     }
+    context.restore();
   }
 }

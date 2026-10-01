@@ -80,6 +80,7 @@ describe('renderGhosttySnapshot', () => {
       fillText: () => {},
       rect: () => {},
       resetTransform: () => {},
+      getTransform: () => ({ a: 1 }),
       restore: () => {},
       save: () => {},
       fillStyle: '',
@@ -138,16 +139,23 @@ describe('renderGhosttySnapshot', () => {
 
   test('constrains text runs and cursor glyphs to their terminal cells', () => {
     const fillTextCalls: unknown[][] = [];
+    const textClipDepths: number[] = [];
+    const savedClipDepths: number[] = [];
+    let clipDepth = 0;
     const context = {
       canvas: { width: 200, height: 40 },
       beginPath: () => {},
-      clip: () => {},
+      clip: () => { clipDepth += 1; },
       fillRect: () => {},
-      fillText: (...args: unknown[]) => fillTextCalls.push(args),
+      fillText: (...args: unknown[]) => {
+        fillTextCalls.push(args);
+        textClipDepths.push(clipDepth);
+      },
       rect: () => {},
       resetTransform: () => {},
-      restore: () => {},
-      save: () => {},
+      getTransform: () => ({ a: 1 }),
+      restore: () => { clipDepth = savedClipDepths.pop() ?? 0; },
+      save: () => { savedClipDepths.push(clipDepth); },
       fillStyle: '',
       strokeStyle: '',
       font: '',
@@ -193,6 +201,8 @@ describe('renderGhosttySnapshot', () => {
       ['abx', 4, 15, 21.6],
       ['x', 18.4, 15, 7.2],
     ]);
+    expect(textClipDepths.every((depth) => depth > 0)).toBe(true);
+    expect(clipDepth).toBe(0);
   });
 
   test('repaints the cell without an overlay during the blink off phase', () => {
@@ -205,6 +215,7 @@ describe('renderGhosttySnapshot', () => {
       fillText: (...args: unknown[]) => fillTextCalls.push(args),
       rect: () => {},
       resetTransform: () => {},
+      getTransform: () => ({ a: 1 }),
       restore: () => {},
       save: () => {},
       fillStyle: '',
@@ -271,6 +282,7 @@ describe('renderGhosttySnapshot', () => {
       fillText: () => {},
       rect: () => {},
       resetTransform: () => {},
+      getTransform: () => ({ a: 1 }),
       restore: () => {},
       save: () => {},
       fillStyle: '',
@@ -320,5 +332,75 @@ describe('renderGhosttySnapshot', () => {
     });
 
     expect(clearedRows).toEqual([4, 36, 36]);
+  });
+
+  test('partial redraws clear and clip the same disjoint whole-pixel row bands at fractional DPR', () => {
+    for (const ratio of [1, 1.25, 1.5, 1.75, 2, 2.625, 3]) {
+      const clears: number[][] = [];
+      const clips: number[][] = [];
+      const context = {
+        canvas: { width: 500, height: 500 },
+        getTransform: () => ({ a: ratio }),
+        fillRect: (...rect: number[]) => { clears.push(rect.map((value) => value * ratio)); },
+        rect: (...rect: number[]) => { clips.push(rect.map((value) => value * ratio)); },
+        beginPath: () => {},
+        clip: () => {},
+        fillText: () => {},
+        resetTransform: () => {},
+        restore: () => {},
+        save: () => {},
+        fillStyle: '',
+        strokeStyle: '',
+        font: '',
+        textBaseline: 'alphabetic' as const,
+        strokeRect: () => {},
+        lineWidth: 1,
+        lineCap: 'butt' as const,
+        moveTo: () => {},
+        lineTo: () => {},
+        quadraticCurveTo: () => {},
+        closePath: () => {},
+        fill: () => {},
+        stroke: () => {},
+      };
+      const snapshot: GhosttySnapshot = {
+        cols: 3,
+        rows: 4,
+        foreground: { r: 255, g: 255, b: 255 },
+        background: { r: 0, g: 0, b: 0 },
+        cursor: { r: 255, g: 255, b: 255 },
+        cursorX: -1,
+        cursorY: -1,
+        cursorVisible: false,
+        cursorBlinking: false,
+        cursorStyle: 1,
+        dirtyRows: new Set([0, 1]),
+        rowData: Array.from({ length: 4 }, () => ({
+          cells: [cell(''), cell(''), cell('')],
+          text: '',
+          isWrapContinuation: false,
+          wrapsToNext: false,
+        })),
+      };
+      renderGhosttySnapshot({
+        context,
+        snapshot,
+        metrics: { width: 7.2, height: 19, baseline: 14 },
+        fontSize: 14,
+        fontFamily: 'monospace',
+        padding: 4,
+        originY: 5,
+        forceFull: false,
+        cursorOn: false,
+      });
+
+      // No full-canvas clear or repaint of the two unchanged rows.
+      expect(clears).toHaveLength(2);
+      expect(clips).toEqual(clears);
+      for (const rect of clears) {
+        for (const coordinate of rect) expect(Math.abs(coordinate - Math.round(coordinate))).toBeLessThan(1e-10);
+      }
+      expect(Math.abs(clears[0][1] + clears[0][3] - clears[1][1])).toBeLessThan(1e-10);
+    }
   });
 });
