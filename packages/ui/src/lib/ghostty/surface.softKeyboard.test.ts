@@ -137,7 +137,7 @@ describe('soft keyboard Backspace on Android', () => {
     key('keyup', IME_KEY);
     key('keydown', { key: 'Enter', code: '', keyCode: 13 });
     edited(' \n', { inputType: 'insertLineBreak', data: null });
-    expect(sent).toEqual(['l', 's', 'ach ', '\n']);
+    expect(sent).toEqual(['l', 's', 'ach ', '\r']);
     expect(field.value).toBe(' ');
   });
 
@@ -199,12 +199,11 @@ describe('Backspace elsewhere', () => {
     expect(sent).toEqual([DEL]);
   });
 
-  test('desktop leaves deletion edits alone, as before', async () => {
-    // Desktop IMEs delete inside their own composition; only Android rests on a space.
+  test('a non-composing deletion edit without a physical code uses the key encoder', async () => {
     const { sent, field, key, edited } = await createSurface(MAC_UA);
     key('keydown', { key: 'Process', code: '', keyCode: 229 });
     edited('', { inputType: 'deleteContentBackward', data: null });
-    expect(sent).toEqual([]);
+    expect(sent).toEqual([DEL]);
     expect(field.value).toBe('');
   });
 
