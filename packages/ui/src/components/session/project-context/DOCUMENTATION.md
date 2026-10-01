@@ -112,7 +112,8 @@ badge would clear the instant the tab appeared — the one moment the user is
 trying to read them. Each project keeps its own mark, so opening one project
 cannot silently clear another's badges.
 
-The store is loaded by `useAgentMemorySync` in `App.tsx` and reloads on
+The store is loaded by `useAgentMemorySync` in `App.tsx` and the connected
+`MobileShell` in `MobileApp.tsx`, independently of whether the panel is open. It reloads on
 `openchamber:agent-memory-changed`, because the agent writes mid-turn through
 its own tool. It feeds this panel only — what a session is told about memory is
 decided server-side by `packages/web/server/lib/session-knowledge`, so it
