@@ -1,4 +1,5 @@
 import { Marked, type MarkedExtension, type Tokens, type TokenizerAndRendererExtension } from 'marked';
+import markedCjkFriendly from 'marked-cjk-friendly';
 import markedLinkifyIt from 'marked-linkify-it';
 import remend from 'remend';
 import katex from 'katex';
@@ -722,6 +723,7 @@ const createParser = (imageMode: MarkdownImageMode, rawHtml: MarkdownRawHtmlMode
   const renderMath = rawHtml === 'sanitize' ? renderMathPlaceholder : renderKatex;
   return new Marked().use(
     boundedLinkify(),
+    markedCjkFriendly(),
     {
       gfm: true,
       breaks: false,
