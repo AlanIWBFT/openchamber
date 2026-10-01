@@ -1,4 +1,17 @@
-# Markdown code spacing
+# Markdown rendering
+
+## CJK emphasis
+
+`markdownCore.ts` enables `marked-cjk-friendly` on the shared parsers so emphasis
+such as `前文**你好。**后文` renders without adding spaces or invisible characters.
+Streaming and settled rendering use the same delimiter rules.
+
+Known streaming limitation: `remend` can append an extra `*` to a complete inline
+italic span followed by CJK text, such as `前文*你好。*后文`. The extra marker remains
+visible until the message settles. This limitation is accepted for the initial
+integration; the CJK plugin does not change the streaming repair step.
+
+## Code spacing
 
 `codeCellSpacing.ts` adds `data-md-code-wide` spans around continuous runs of
 CJK/fullwidth graphemes and emoji inside code blocks. It preserves the source text,
