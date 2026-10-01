@@ -241,7 +241,7 @@ export const dict = {
   'mobile.sessions.dateGroup.older': 'Älter',
   'mobile.sessions.section.worktrees': 'Worktrees',
   'mobile.sessions.section.otherProjects': 'Projekt wechseln',
-  'mobile.sessions.section.projects': 'Projekte',
+  'mobile.sessions.section.projects': 'Projektsitzungen',
   'mobile.sessions.viewMode.label': 'Ansicht',
   'mobile.sessions.viewMode.projects': 'Gruppiert',
   'mobile.sessions.viewMode.timeline': 'Zeitleiste',

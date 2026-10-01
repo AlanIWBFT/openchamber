@@ -281,7 +281,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.sessions.dateGroup.older': '以前',
   'mobile.sessions.section.worktrees': 'ワークツリー',
   'mobile.sessions.section.otherProjects': 'プロジェクトを切り替え',
-  'mobile.sessions.section.projects': 'プロジェクト',
+  'mobile.sessions.section.projects': 'プロジェクトのセッション',
   'mobile.sessions.viewMode.label': '表示',
   'mobile.sessions.viewMode.projects': 'グループ表示',
   'mobile.sessions.viewMode.timeline': 'タイムライン',

@@ -3163,7 +3163,7 @@ export const dict = {
   'mobile.sessions.dateGroup.older': 'Plus ancien',
   'mobile.sessions.section.worktrees': 'Worktrees',
   'mobile.sessions.section.otherProjects': 'Changer de projet',
-  'mobile.sessions.section.projects': 'Projets',
+  'mobile.sessions.section.projects': 'Sessions de projet',
   'mobile.sessions.viewMode.label': 'Affichage',
   'mobile.sessions.viewMode.projects': 'Groupé',
   'mobile.sessions.viewMode.timeline': 'Chronologie',

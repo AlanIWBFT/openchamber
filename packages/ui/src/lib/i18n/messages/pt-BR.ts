@@ -291,7 +291,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.sessions.dateGroup.older": "Mais antigos",
   "mobile.sessions.section.worktrees": "Worktrees",
   "mobile.sessions.section.otherProjects": "Trocar de projeto",
-  "mobile.sessions.section.projects": "Projetos",
+  "mobile.sessions.section.projects": "Sessões de projetos",
   "mobile.sessions.viewMode.label": "Visualização",
   "mobile.sessions.viewMode.projects": "Agrupado",
   "mobile.sessions.viewMode.timeline": "Linha do tempo",
