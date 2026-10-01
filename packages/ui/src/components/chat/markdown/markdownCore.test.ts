@@ -135,6 +135,44 @@ describe('markdown sanitization', () => {
 
 });
 
+describe('CJK Markdown emphasis', () => {
+  test('renders punctuation-adjacent emphasis without changing source spacing', () => {
+    for (const punctuation of ['。', '，', '！']) {
+      const source = `前文**你好${punctuation}**后文`;
+      const expected = `<p>前文<strong>你好${punctuation}</strong>后文</p>\n`;
+      expect(renderMarkdownSync(source, 'inline')).toBe(expected);
+      expect(renderMarkdownSync(source, 'label')).toBe(expected);
+    }
+    expect(renderMarkdownSync('前文*（你好）*后文')).toContain('<em>（你好）</em>');
+  });
+
+  test('keeps bold as closing markers and subsequent text stream in', async () => {
+    for (const punctuation of ['。', '，', '！']) {
+      const source = `前文**你好${punctuation}**后文\n\n下一段`;
+      const opening = '前文**'.length;
+      for (let end = opening + 1; end <= source.length; end += 1) {
+        const blocks = await renderMarkdownBlocks(source.slice(0, end), true);
+        const html = blocks.map((block) => block.html).join('');
+        expect(html).toContain('<strong>');
+        expect(html).not.toContain('**');
+        if (end >= opening + 3) expect(html).toContain(`<strong>你好${punctuation}</strong>`);
+      }
+      const live = await renderMarkdownBlocks(source, true);
+      const settled = await renderMarkdownBlocks(source, false);
+      expect(live.map((block) => block.html).join('')).toBe(settled.map((block) => block.html).join(''));
+    }
+  });
+
+  test('preserves code and composes with linkification', () => {
+    expect(renderMarkdownSync('`前文**你好。**后文`')).toContain('<code>前文**你好。**后文</code>');
+    expect(renderMarkdownSync('```text\n前文**你好。**后文\n```')).not.toContain('<strong>');
+    const html = renderMarkdownSync('前文**你好。**后文 https://example.com。下一句');
+    expect(html).toContain('<strong>你好。</strong>后文');
+    expect(html).toContain('href="https://example.com"');
+    expect(html).toContain('</a>。下一句');
+  });
+});
+
 describe('Markdown parser failures', () => {
   // Real parser recursion overflow, rather than a mocked parse failure. Each
   // quote level re-lexes the rest of the line, so the cost grows with the square
