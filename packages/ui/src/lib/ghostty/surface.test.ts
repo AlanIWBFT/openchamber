@@ -1,10 +1,12 @@
 // Adapted from T3 Code's libghostty-vt browser adapter tests (MIT, T3 Tools Inc.).
 // See LICENSE-T3CODE in this directory.
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { Window } from 'happy-dom';
 
 import type { GhosttyCell, GhosttyRow } from './core';
 import {
   DEFAULT_TERMINAL_FONT_FAMILY,
+  GhosttyTerminalSurface,
   advanceTerminalSelectionClickSequence,
   isTerminalCopyShortcut,
   isTerminalLinkPointerGesture,
@@ -41,6 +43,113 @@ const row = (text: string, cols: number, flags: Partial<Pick<GhosttyRow, 'isWrap
   text: text.trimEnd(),
   isWrapContinuation: flags.isWrapContinuation ?? false,
   wrapsToNext: flags.wrapsToNext ?? false,
+});
+
+describe('terminal soft keyboard editing', () => {
+  let dom: Window;
+  let surface: GhosttyTerminalSurface;
+  let sent: string[];
+  const globals = ['window', 'document', 'navigator', 'ResizeObserver', 'KeyboardEvent', 'InputEvent', 'Event', 'EventTarget'] as const;
+  let originals: PropertyDescriptorMap;
+
+  beforeEach(async () => {
+    originals = Object.getOwnPropertyDescriptors(globalThis);
+    dom = new Window();
+    for (const name of globals) {
+      Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: dom[name] });
+    }
+    // Happy DOM has no font loading or canvas implementation. Only these
+    // layout services are doubled; input handlers and the WASM encoder are real.
+    Object.defineProperty(document, 'fonts', {
+      value: Object.assign(new EventTarget(), { load: async () => [] }),
+    });
+    Object.defineProperty(dom.HTMLCanvasElement.prototype, 'getContext', {
+      value: () => ({
+        fillRect() {},
+        measureText: () => ({ width: 8, actualBoundingBoxAscent: 12, actualBoundingBoxDescent: 4 }),
+      }),
+    });
+    sent = [];
+    surface = await GhosttyTerminalSurface.create(document.createElement('div'), {
+      visible: false,
+      theme: { foreground: { r: 255, g: 255, b: 255 }, background: { r: 0, g: 0, b: 0 }, cursor: { r: 255, g: 255, b: 255 } },
+      labels: { input: 'Terminal', scrollbar: 'History' },
+      onData: (data) => sent.push(data),
+      onResize() {},
+    });
+  });
+
+  afterEach(async () => {
+    surface?.dispose();
+    await dom.happyDOM.close();
+    for (const name of globals) {
+      const descriptor = originals[name];
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else Reflect.deleteProperty(globalThis, name);
+    }
+  });
+
+  function edit(inputType: string, value = '', cancelable = true) {
+    const before = new InputEvent('beforeinput', { inputType, bubbles: true, cancelable });
+    surface.input.dispatchEvent(before);
+    if (!before.defaultPrevented) {
+      surface.input.value = value;
+      surface.input.dispatchEvent(new InputEvent('input', { inputType, bubbles: true }));
+    }
+    return before;
+  }
+
+  test('IME keydown followed by text and Enter sends a command with CR, not LF', () => {
+    surface.input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Process', keyCode: 229, cancelable: true }));
+    edit('insertText', 'cd ..');
+    expect(edit('insertLineBreak', '\n').defaultPrevented).toBe(true);
+    expect(sent).toEqual(['cd ..', '\r']);
+    expect(surface.input.value).toBe('');
+  });
+
+  test('backspace works on an empty textarea and once per repeated edit', () => {
+    edit('insertText', 'abc');
+    expect(surface.input.value).toBe('');
+    expect(edit('deleteContentBackward').defaultPrevented).toBe(true);
+    edit('deleteContentBackward');
+    expect(sent).toEqual(['abc', '\x7f', '\x7f']);
+  });
+
+  test('non-cancelable and input-only edits use the input fallback once', () => {
+    edit('insertParagraph', '\n', false);
+    edit('deleteContentBackward', '', false);
+    surface.input.value = '\n';
+    surface.input.dispatchEvent(new InputEvent('input', { inputType: 'insertLineBreak' }));
+    expect(sent).toEqual(['\r', '\x7f', '\r']);
+  });
+
+  test('ordinary keyboard keys cancel browser editing and send once', () => {
+    for (const key of ['Enter', 'Backspace']) {
+      const event = new KeyboardEvent('keydown', { key, code: key, cancelable: true });
+      surface.input.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
+    expect(sent).toEqual(['\r', '\x7f']);
+  });
+
+  test('composition owns candidate deletion and confirmation, then Enter submits', () => {
+    surface.input.dispatchEvent(new Event('compositionstart'));
+    surface.input.value = '中文';
+    expect(edit('deleteContentBackward', '中').defaultPrevented).toBe(false);
+    surface.input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', isComposing: true }));
+    expect(sent).toEqual([]);
+    surface.input.dispatchEvent(new Event('compositionend'));
+    edit('insertCompositionText', '中');
+    edit('insertLineBreak', '\n');
+    expect(sent).toEqual(['中', '\r']);
+  });
+
+  test('soft edits follow the active terminal keyboard protocol', () => {
+    surface.write('\x1b[>9u');
+    edit('insertLineBreak', '\n');
+    edit('deleteContentBackward');
+    expect(sent).toEqual(['\x1b[13u', '\x1b[127u']);
+  });
 });
 
 describe('terminalLinkAtPositionWithRange', () => {
