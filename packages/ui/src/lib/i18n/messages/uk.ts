@@ -286,7 +286,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.sessions.dateGroup.older": "Давніше",
   "mobile.sessions.section.worktrees": "Worktrees",
   "mobile.sessions.section.otherProjects": "Інші проєкти",
-  "mobile.sessions.section.projects": "Проєкти",
+  "mobile.sessions.section.projects": "Сесії проєктів",
   "mobile.sessions.viewMode.label": "Вигляд",
   "mobile.sessions.viewMode.projects": "Згруповано",
   "mobile.sessions.viewMode.timeline": "Хронологія",

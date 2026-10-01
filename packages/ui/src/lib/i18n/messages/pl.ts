@@ -277,7 +277,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.sessions.dateGroup.older': 'Starsze',
   'mobile.sessions.section.worktrees': 'Worktrees',
   'mobile.sessions.section.otherProjects': 'Zmień projekt',
-  'mobile.sessions.section.projects': 'Projekty',
+  'mobile.sessions.section.projects': 'Sesje projektów',
   'mobile.sessions.viewMode.label': 'Widok',
   'mobile.sessions.viewMode.projects': 'Pogrupowane',
   'mobile.sessions.viewMode.timeline': 'Oś czasu',

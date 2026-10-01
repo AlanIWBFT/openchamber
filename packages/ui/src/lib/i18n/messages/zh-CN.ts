@@ -276,7 +276,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.sessions.dateGroup.older': '更早',
   'mobile.sessions.section.worktrees': '工作树',
   'mobile.sessions.section.otherProjects': '切换项目',
-  'mobile.sessions.section.projects': '项目',
+  'mobile.sessions.section.projects': '项目会话',
   'mobile.sessions.viewMode.label': '视图',
   'mobile.sessions.viewMode.projects': '分组',
   'mobile.sessions.viewMode.timeline': '时间线',

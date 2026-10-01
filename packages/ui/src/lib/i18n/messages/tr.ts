@@ -235,7 +235,7 @@ export const dict = {
   'mobile.sessions.dateGroup.older': 'Daha eski',
   'mobile.sessions.section.worktrees': 'Worktree\'ler',
   'mobile.sessions.section.otherProjects': 'Proje değiştir',
-  'mobile.sessions.section.projects': 'Projeler',
+  'mobile.sessions.section.projects': 'Proje oturumları',
   'mobile.sessions.viewMode.label': 'Görünüm',
   'mobile.sessions.viewMode.projects': 'Gruplu',
   'mobile.sessions.viewMode.timeline': 'Zaman çizelgesi',

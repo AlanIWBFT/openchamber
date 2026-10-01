@@ -275,7 +275,7 @@ export const dict = {
   'mobile.sessions.dateGroup.older': 'Older',
   'mobile.sessions.section.worktrees': 'Worktrees',
   'mobile.sessions.section.otherProjects': 'Switch project',
-  'mobile.sessions.section.projects': 'Projects',
+  'mobile.sessions.section.projects': 'Project sessions',
   'mobile.sessions.section.chats': 'Chats',
   'mobile.sessions.section.recent': 'Recent',
   'mobile.sessions.viewMode.label': 'View',
