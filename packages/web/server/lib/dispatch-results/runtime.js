@@ -83,6 +83,7 @@ const textContentSchema = z.object({ type: z.literal('text'), text: z.string() }
 const recordTypeSchema = z.object({ type: z.string() });
 const recordIdSchema = z.object({ id: z.string() });
 const sessionRecordSchema = z.object({ title: z.string().optional() });
+const sessionArchiveSchema = z.object({ time: z.object({ archived: timeSchema.optional() }) });
 const messagePageSchema = z.object({ data: z.array(z.unknown()) });
 
 const statusEventSchema = z.object({
@@ -203,7 +204,7 @@ export function createDispatchResultsRuntime({
   getOpenCodeAuthHeaders,
   dataDir,
   // Archive is OpenChamber's: an archived parent records the answer but is not woken.
-  isSessionArchived = async () => false,
+  isSessionArchived = null,
   fetchImpl = fetch,
   now = Date.now,
   quietMs = QUIET_MS,
@@ -333,12 +334,13 @@ export function createDispatchResultsRuntime({
 
   /** Admits the result into the parent. Resolves true when it is there (now or before). */
   const deliver = async (entry, message) => {
-    // The archive store answers asynchronously; reading its Promise as a
-    // value made every parent look archived, so none was ever woken. A failed
-    // lookup wakes: the agent asked for this result.
-    const archived = await Promise.resolve(isSessionArchived(entry.parentSessionId)).catch(() => false);
-    const resume = archived !== true;
     try {
+      // Backend archive state decides whether delivery may wake the parent.
+      // A failed read leaves the entry pending for the existing retry loop.
+      const archived = isSessionArchived
+        ? await isSessionArchived(entry.parentSessionId)
+        : sessionArchiveSchema.parse(await openCodeRequest(`/api/session/${encodeURIComponent(entry.parentSessionId)}`)).time.archived !== undefined;
+      const resume = archived !== true;
       await openCodeRequest(`/api/session/${encodeURIComponent(entry.parentSessionId)}/synthetic`, {
         method: 'POST',
         body: { id: entry.messageId, ...message, delivery: 'steer', resume },
