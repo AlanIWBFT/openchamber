@@ -1405,9 +1405,10 @@ moved to the session through `openchamber:open-session`), otherwise
 instance switcher always opens a fresh one. A link to any other address
 keeps the external path. A session
 deep link that launches the desktop app arrives before the renderer listens:
-`main.mjs` keeps it pending and the main window takes it on mount through
-`desktop_take_pending_session_links` (`takePendingDesktopSessionLinks`); a
-late flush still emits it to a renderer that never asks. A desktop session
+`main.mjs` queues it until the main window's top frame reports
+`desktop_navigation_ready` after installing its navigation listener. Navigation,
+renderer loss and shutdown clear readiness. Older remote pages retain the
+ten-second delivery fallback; local pages wait for their receiver. A desktop session
 link can name the saved instance that owns the session (`?host=<id>`, `local`
 for the app's own server). Main passes it on as the runtime key a
 notification click carries, and the receiving window routes both the same
