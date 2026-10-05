@@ -78,6 +78,11 @@ describe("tool input and metadata", () => {
 describe("tool row description", () => {
   test("OpenChamber tools show their action and the detail that tells calls apart", () => {
     expect(toolDescription("openchamber", {
+      action: "session.send",
+      parameters: { title: "Old title" },
+      request: { action: "session.create", title: "Review migration", prompt: "Inspect the changes", returnResult: true },
+    }, undefined)).toEqual({ kind: "text", value: "session.create · Review migration" })
+    expect(toolDescription("openchamber", {
       action: "session.link",
       parameters: { sessionId: "ses_1", link: { identifier: "#3998", title: "Keep PR badges after rebases", url: "https://x", kind: "change" } },
     }, undefined)).toEqual({ kind: "text", value: "session.link · #3998 Keep PR badges after rebases" })
@@ -259,6 +264,17 @@ describe("execute call details", () => {
 
 describe("renderedPage", () => {
   const accepted = { openchamber: { ok: true } }
+
+  test("reads the request wrapper with the plugin's precedence over legacy inputs", () => {
+    expect(renderedPage("openchamber_render", {
+      html: "<p>flat</p>", title: "Flat",
+      parameters: { html: "<p>legacy</p>", title: "Legacy" },
+      request: { action: "render.page", html: "<p>request</p>", title: "Request" },
+    }, accepted)).toEqual({ html: "<p>request</p>", title: "Request" })
+    expect(renderedPage("openchamber_render", {
+      request: { action: "render.page", html: "<p>page</p>", title: "Page" },
+    }, accepted)).toEqual({ html: "<p>page</p>", title: "Page" })
+  })
 
   test("reads the page from parameters, or beside the action, once OpenChamber accepted it", () => {
     expect(renderedPage("openchamber_render", { action: "render.page", parameters: { html: "<p>a</p>", title: "Chart" } }, accepted))
