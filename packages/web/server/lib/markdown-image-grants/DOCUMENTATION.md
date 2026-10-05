@@ -23,6 +23,9 @@ the UI is on a different machine.
   input, which OpenCode stores with the message. The chat reads them as data
   URLs and puts them in the page
   (`packages/ui/src/components/chat/message/parts/renderPageImages.ts`).
+  HTML is selected with the renderer's precedence: `request.html`, then legacy
+  `parameters.html`, then flat `html`. Images named only by a lower-priority
+  HTML field are not authorized; an explicitly empty HTML field does not fall back.
 - Relative and workspace-contained absolute paths resolve against the active
   directory and must stay inside it after `realpath` resolution, so a symlink
   in the workspace cannot point out of it. A path outside the workspace may be
