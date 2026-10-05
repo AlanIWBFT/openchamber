@@ -24,7 +24,7 @@ const PROJECT_DELAY = 900_000
 
 type ManualTimer = { run: () => void; ms: number; cleared: boolean }
 
-function harness(options: { busy?: Set<string>; unknown?: Set<string>; failRelease?: boolean } = {}) {
+function harness(options: { busy?: Set<string>; unknown?: Set<string>; failRelease?: boolean; execBusy?: boolean } = {}) {
   const timers: ManualTimer[] = []
   const released: string[] = []
   const busy = options.busy ?? new Set<string>()
@@ -43,6 +43,7 @@ function harness(options: { busy?: Set<string>; unknown?: Set<string>; failRelea
     release: async (directory) => {
       released.push(directory)
       if (options.failRelease) throw new Error("404")
+      return !options.execBusy
     },
     timers: {
       set: (run, ms) => {
@@ -68,6 +69,24 @@ function harness(options: { busy?: Set<string>; unknown?: Set<string>; failRelea
 }
 
 describe("location release", () => {
+  test("backend exec protection retries at the directory delay and stops on return or disposal", async () => {
+    const h = harness({ execBusy: true })
+    h.move(CHAT)
+    h.move(PROJECT)
+    h.fire()
+    await Promise.resolve()
+    expect(h.timers.map((timer) => timer.ms)).toEqual([CHAT_DELAY])
+    h.fire()
+    h.move(CHAT)
+    await Promise.resolve()
+    // Returning cancels the chat retry; the project just left has its own delay.
+    expect(h.live()).toEqual([PROJECT_DELAY])
+    h.move(PROJECT)
+    h.fire()
+    h.release.dispose()
+    await Promise.resolve()
+    expect(h.timers).toEqual([])
+  })
   test("leaving an idle chat releases its location after the chat delay", () => {
     const h = harness()
     h.move(CHAT)
