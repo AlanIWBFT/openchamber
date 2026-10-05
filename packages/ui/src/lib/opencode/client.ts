@@ -739,10 +739,16 @@ class OpencodeService {
    * serves this among its debug routes. Asked without a directory it would
    * drop its own working directory, so one is required.
    */
-  async releaseLocation(directory: string): Promise<void> {
+  async releaseLocation(directory: string): Promise<boolean> {
     const normalized = this.normalizeCandidatePath(directory)
     if (!normalized) throw new Error("releaseLocation needs a directory")
-    await call("debug.location.evict", () => this.getScopedSdkClient(normalized).debug.location.evict())
+    try {
+      await call("debug.location.evict", () => this.getScopedSdkClient(normalized).debug.location.evict({ preserveExec: true }))
+      return true
+    } catch (error) {
+      if (error instanceof OpencodeApiError && error.status === 409) return false
+      throw error
+    }
   }
 
   /**
