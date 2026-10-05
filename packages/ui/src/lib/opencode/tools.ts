@@ -208,6 +208,20 @@ export function shouldHideExecFollowUpState(tool: ToolName, status: string | und
   return isExecFollowUpTool(tool) && status !== "error" && !metadata.execError
 }
 
+const openChamberParametersSchema = z.object({
+  action: optionalText,
+  title: optionalText,
+  name: optionalText,
+  prompt: optionalText,
+  path: optionalText,
+  url: optionalText,
+  query: optionalText,
+  text: optionalText,
+  selector: optionalText,
+  taskId: optionalText,
+  link: z.object({ identifier: optionalText, title: optionalText }).optional().catch(undefined),
+}).optional().catch(undefined)
+
 const inputSchema = z
   .object({
     // v2 file tools use `path`; the other two keep MCP and plugin tools that
@@ -235,23 +249,9 @@ const inputSchema = z
     ref: optionalText,
     code: optionalText,
     questions: z.array(z.unknown()).optional().catch(undefined),
-    // OpenChamber's own tools: one `action` plus its `parameters`.
-    action: optionalText,
-    parameters: z
-      .object({
-        title: optionalText,
-        name: optionalText,
-        prompt: optionalText,
-        path: optionalText,
-        url: optionalText,
-        query: optionalText,
-        text: optionalText,
-        selector: optionalText,
-        taskId: optionalText,
-        link: z.object({ identifier: optionalText, title: optionalText }).optional().catch(undefined),
-      })
-      .optional()
-      .catch(undefined),
+    // Current request wrapper and older persisted action/parameters calls.
+    request: openChamberParametersSchema,
+    parameters: openChamberParametersSchema,
   })
   .catch({})
 
@@ -303,10 +303,12 @@ const renderPageFields = z.object({
   awaitAnswer: booleanish,
 })
 
-// The plugin accepts the inputs inside `parameters` or beside `action`, and an
-// explicit `parameters` object wins, so the page is read the same way.
+// Match the plugin's request wrapper, retaining persisted legacy inputs.
 const renderPageInputSchema = renderPageFields
-  .extend({ parameters: renderPageFields.optional().catch(undefined) })
+  .extend({
+    parameters: renderPageFields.optional().catch(undefined),
+    request: renderPageFields.optional().catch(undefined),
+  })
   .catch({})
 
 // What the user answered on a page that waited (render.page with
@@ -483,16 +485,16 @@ export function renderedPage(
 ): { html: string; ui?: string; title: string; ask: RenderedPageAsk } | null {
   if (!isRenderTool(toolName)) return null
   const parsed = renderPageInputSchema.parse(state.input ?? {})
-  const html = parsed.parameters?.html ?? parsed.html ?? ""
+  const html = parsed.request?.html ?? parsed.parameters?.html ?? parsed.html ?? ""
   // A ui page (the UI block language) is drawn by the chat's own components.
-  const ui = parsed.parameters?.ui ?? parsed.ui
+  const ui = parsed.request?.ui ?? parsed.parameters?.ui ?? parsed.ui
   const page = ui?.trim() ? { html: "", ui } : html.trim() ? { html } : null
   if (!page) return null
   // Empty when neither the call nor the page names it; the chat shows its own word then.
-  const title = (parsed.parameters?.title ?? parsed.title)?.trim() || pageTitleFromHtml(html)
+  const title = (parsed.request?.title ?? parsed.parameters?.title ?? parsed.title)?.trim() || pageTitleFromHtml(html)
   // A page that waited stays in the chat when its call ends without an
   // answer (the user stopped the turn), so the question it asked is still there.
-  if ((parsed.parameters?.awaitAnswer ?? parsed.awaitAnswer) === true) {
+  if ((parsed.request?.awaitAnswer ?? parsed.parameters?.awaitAnswer ?? parsed.awaitAnswer) === true) {
     if (state.status === "running") return { ...page, title, ask: { kind: "waiting" } }
     if (state.status === "error") return { ...page, title, ask: { kind: "unanswered" } }
   }
@@ -736,7 +738,7 @@ export function openChamberToolCall(toolName: ToolName, input: JsonValue | undef
  * no action, so their title stands alone.
  */
 function describeOpenChamberTool(parsed: ParsedInput): ToolDescription | null {
-  const parameters = parsed.parameters
+  const parameters = parsed.request ?? parsed.parameters
   const link = parameters?.link
   const linked = link ? [link.identifier, link.title].filter(Boolean).join(" ") : undefined
   const detail = linked
@@ -750,7 +752,7 @@ function describeOpenChamberTool(parsed: ParsedInput): ToolDescription | null {
     || parameters?.prompt?.split("\n")[0]
     || parameters?.taskId
     || parsed.title
-  const label = [parsed.action, detail].filter(Boolean).join(" · ")
+  const label = [parsed.request?.action ?? parsed.action, detail].filter(Boolean).join(" · ")
   return label ? { kind: "text", value: label.slice(0, MAX_COMMAND_LENGTH) } : null
 }
 
