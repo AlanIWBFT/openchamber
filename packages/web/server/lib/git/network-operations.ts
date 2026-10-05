@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import { createGitCredentialBroker, GIT_CREDENTIAL_NONCE_ENV } from './credential-broker.js';
+import { isProcessBrokerChild } from './process-broker.js';
 import { helperShellCommand } from './helper-launch.js';
 import { gitLfsCredentialEndpointAliases, normalizeGitRemoteEndpoint, parseGitCredentialReference } from './credential-resolver.js';
 import { createNetworkOperationPlanner, isChangeReviewRemote } from './network-operation-plan.js';
@@ -17,7 +18,7 @@ import { createLfsFileScanner, discoverLfs, scanLfsPushObjects, resolveLfsPushCo
 import { resolveGitRelativeEndpoint } from './discovery-endpoint.js';
 import { fingerprintRemoteUrl, redactRemoteUrl } from '../source-control/url-redaction.js';
 import { birthtimeHoldsStill } from './directory-birthtime.js';
-import type { ChildProcess } from 'node:child_process';
+import type { NetworkChild, NetworkSpawn } from './network-execution-contracts.js';
 import type { Stats } from 'node:fs';
 import type { BinaryLike } from 'node:crypto';
 import type { LfsEndpoint, LfsObjectEntry } from './lfs-discovery.js';
@@ -301,7 +302,7 @@ export const createTrustedDirectoriesConfig = ({
 }: TrustedDirectoriesOptions = {}) => {
   let directory: string | null = null;
   const readValues = () => new Promise<string[]>((resolve) => {
-    let child: ReturnType<typeof spawn> & { stdout: NonNullable<ChildProcess['stdout']> };
+    let child: NetworkChild;
     try {
       child = spawnImpl(gitBinary, ['config', '--null', '--includes', '--get-all', 'safe.directory'], {
         cwd: tmpdir(), env: { ...inheritedEnv }, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'],
@@ -313,7 +314,7 @@ export const createTrustedDirectoriesConfig = ({
     const chunks: Buffer[] = [];
     const timer = setTimeout(() => child.kill(), TRUSTED_DIRECTORIES_READ_TIMEOUT_MS);
     timer.unref?.();
-    child.stdout.on('data', (chunk) => chunks.push(chunk));
+    child.stdout?.on('data', (chunk) => chunks.push(chunk));
     child.once('error', () => {
       clearTimeout(timer);
       resolve([]);
@@ -322,6 +323,11 @@ export const createTrustedDirectoriesConfig = ({
       clearTimeout(timer);
       resolve(code === 0 ? Buffer.concat(chunks).toString('utf8').split('\0').slice(0, -1) : []);
     });
+    if (isProcessBrokerChild(child)) {
+      child.stderr.resume();
+      child.stdin.on('error', () => child.kill());
+      child.stdin.end();
+    }
   });
   const write = async (content: string) => {
     directory ??= await fsImpl.mkdtemp(pathImpl.join(tmpdir(), 'openchamber-git-trust-'));
@@ -379,9 +385,13 @@ const configResetValue = (key: string) => {
   return undefined;
 };
 
-const terminateProcessTree = (child: ChildProcess, { platform, spawnImpl, escalationMs }: {
-  platform: NodeJS.Platform; spawnImpl: typeof spawn; escalationMs: number;
+const terminateProcessTree = (child: NetworkChild, { platform, spawnImpl, escalationMs }: {
+  platform: NodeJS.Platform; spawnImpl: NetworkSpawn; escalationMs: number;
 }) => {
+  if (isProcessBrokerChild(child)) {
+    child.kill();
+    return;
+  }
   if (!child || child.exitCode !== null || child.signalCode) return;
   try {
     if (platform === 'win32' && Number.isInteger(child.pid)) {
@@ -537,7 +547,7 @@ export function createNetworkOperations({
     return env;
   };
 
-  const cancelChild = (child: ChildProcess) => terminateProcessTree(child, { platform, spawnImpl, escalationMs });
+  const cancelChild = (child: NetworkChild) => terminateProcessTree(child, { platform, spawnImpl, escalationMs });
   const registryOptions = { cancelChild, store: operationStore };
   const operationRegistry = registry ?? createNetworkOperationRegistry(registryOptions);
   if (auditStore && (!(auditStore.plan instanceof Function)
@@ -662,10 +672,11 @@ export function createNetworkOperations({
       controls?.attachChild(child, { allowAfterCancellation });
     } catch (error) {
       cancelChild(child);
-      settle(error, null, null);
+      if (isProcessBrokerChild(child)) inputError = error;
+      else settle(error, null, null);
       return;
     }
-    if (input !== undefined) {
+    if (input !== undefined || isProcessBrokerChild(child)) {
       child.stdin?.on('error', (error) => {
         inputError = error;
         cancelChild(child);

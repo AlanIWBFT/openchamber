@@ -1,5 +1,6 @@
 import type { ResolvedChangeRequestSource } from '../source-control/provider-contract.js';
-import type { spawn, ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
+import type { getProcessBrokerSpawn } from './process-broker.js';
 import type fs from 'node:fs/promises';
 import type path from 'node:path';
 import type { Stats } from 'node:fs';
@@ -22,6 +23,10 @@ import type { StoredNetworkSnapshot } from './network-storage-contracts.js';
 import type { RegistrySnapshot } from './network-operation-registry.js';
 
 export type PlannedNetworkOperation = Awaited<ReturnType<ReturnType<typeof createNetworkOperationPlanner>['planNetworkOperation']>>;
+export type NetworkChild = ChildProcess | ReturnType<NonNullable<ReturnType<typeof getProcessBrokerSpawn>>>;
+export type NetworkSpawn = (command: string, args: string[], options: {
+  cwd?: string | undefined; env?: NodeJS.ProcessEnv; shell: false; windowsHide: true; detached?: boolean; stdio: 'ignore' | ('pipe' | 'ignore')[];
+}) => NetworkChild;
 export type PlannerInternal = PlannedNetworkOperation['internalPlan'];
 export type ExistingPlan = import('./network-plan-contracts.js').ExistingInternal & {
   operationId: string;
@@ -36,8 +41,8 @@ export type PhaseControls = {
   onCancellationRequested(listener: () => void): () => void;
 };
 export type ExecutionControls = PhaseControls & {
-  attachChild(child: ChildProcess, options?: { allowAfterCancellation?: boolean }): void;
-  detachChild(child: ChildProcess): void;
+  attachChild(child: NetworkChild, options?: { allowAfterCancellation?: boolean }): void;
+  detachChild(child: NetworkChild): void;
   markTransferStarted(role?: string | undefined): PromiseLike<StoredNetworkSnapshot | RegistrySnapshot | void> | void;
   hasTransferStarted(role?: string): boolean;
   markIntegrationStarted(): PromiseLike<StoredNetworkSnapshot | RegistrySnapshot | void> | void;
@@ -208,7 +213,7 @@ export type NetworkOperationsOptions = Omit<PlannerOptions, 'resolveRef' | 'reso
   credentialResolver?: ReturnType<typeof createGitCredentialResolver>;
   credentialBroker?: ReturnType<typeof createGitCredentialBroker>;
   registry?: ReturnType<typeof createNetworkOperationRegistry>;
-  spawnImpl?: typeof spawn;
+  spawnImpl?: NetworkSpawn;
   gitBinary?: string;
   inheritedEnv?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
@@ -232,7 +237,7 @@ export type PhaseOptions = { controls?: ExecutionControls | undefined; deadline?
 export type TrustedDirectoriesOptions = {
   gitBinary?: string;
   inheritedEnv?: NodeJS.ProcessEnv;
-  spawnImpl?: typeof spawn;
+  spawnImpl?: NetworkSpawn;
   fsImpl?: typeof fs;
   pathImpl?: typeof path;
   tmpdir?: () => string;

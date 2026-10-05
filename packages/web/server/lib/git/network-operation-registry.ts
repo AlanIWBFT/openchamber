@@ -1,7 +1,7 @@
 import { isPlainObject } from '../shared/guards.js';
 import { isGitString as isString } from './input-guards.js';
 import { isProviderId } from '../source-control/provider-id.js';
-import type { ChildProcess } from 'node:child_process';
+import type { NetworkChild } from './network-execution-contracts.js';
 import type { Completion, ExecutionControls, ExecutionPlan, PublicTarget } from './network-execution-contracts.js';
 import type { JsonObject, JsonValue } from '../shared/json-values.js';
 import type { createGitNetworkOperationStore } from './network-operation-storage.js';
@@ -32,7 +32,7 @@ export interface RegistryOptions {
   terminalRetentionMs?: number;
   plannedRetentionMs?: number;
   now?: () => number;
-  cancelChild?: (child: ChildProcess) => void;
+  cancelChild?: (child: NetworkChild) => void;
   store?: ReturnType<typeof createGitNetworkOperationStore> | undefined;
 }
 interface RegistryEntry {
@@ -48,7 +48,7 @@ interface RegistryEntry {
   completedSteps: string[];
   finishedAt: number | undefined;
   completion: Omit<RegistryCompletion, 'state'> | undefined;
-  children: Set<ChildProcess>;
+  children: Set<NetworkChild>;
   executionPromise: Promise<RegistrySnapshot> | undefined;
   cancellationListeners: Set<() => void>;
   recovered?: boolean;
@@ -507,7 +507,7 @@ export function createNetworkOperationRegistry({
       throw registryError('GIT_NETWORK_OPERATION_DURABILITY_FAILED', 'Git operation progress could not be saved', { cause: error });
     });
   };
-  const attachChild = (operationId: string, child: ChildProcess, { allowAfterCancellation = false } = {}) => {
+  const attachChild = (operationId: string, child: NetworkChild, { allowAfterCancellation = false } = {}) => {
     const entry = getEntry(operationId);
     if (entry.state !== 'running' || !child || !(child.kill instanceof Function)) {
       throw registryError('INVALID_GIT_NETWORK_OPERATION_CHILD', 'Git network operation child is invalid');
@@ -519,7 +519,7 @@ export function createNetworkOperationRegistry({
     }
     return entry.cancellationRequested;
   };
-  const detachChild = (operationId: string, child: ChildProcess) => {
+  const detachChild = (operationId: string, child: NetworkChild) => {
     const entry = getEntry(operationId);
     entry.children.delete(child);
   };
@@ -636,8 +636,8 @@ export function createNetworkOperationRegistry({
       return role;
     };
     const controls: RegistryControls = Object.freeze({
-      attachChild: (child: ChildProcess, options?: { allowAfterCancellation?: boolean }) => attachChild(operationId, child, options),
-      detachChild: (child: ChildProcess) => detachChild(operationId, child),
+      attachChild: (child: NetworkChild, options?: { allowAfterCancellation?: boolean }) => attachChild(operationId, child, options),
+      detachChild: (child: NetworkChild) => detachChild(operationId, child),
       isCancellationRequested: () => entry.cancellationRequested,
       markTransferStarted: (role = 'operation') => {
         const marker = transferMarker(role);

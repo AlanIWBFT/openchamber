@@ -31,7 +31,7 @@ const frameType = {
 };
 
 export interface BrokerOptions {
-  cwd?: string; env?: NodeJS.ProcessEnv; windowsHide?: boolean; stdio?: readonly string[];
+  cwd?: string | undefined; env?: NodeJS.ProcessEnv; windowsHide?: boolean; stdio?: 'ignore' | readonly string[];
   encoding?: BufferEncoding | 'buffer'; timeout?: number; signal?: AbortSignal | undefined; maxBuffer?: number; killSignal?: NodeJS.Signals;
 }
 type Callback = (error?: Error | null) => void;
@@ -50,6 +50,8 @@ export const getProcessBrokerWorkerData = () => {
   const pipe = getPipe();
   return pipe ? { processBrokerPipe: pipe } : undefined;
 };
+
+export const isProcessBrokerChild = (child: unknown): child is ManagedProcess => child instanceof ManagedProcess;
 
 export const getProcessBrokerSpawn = () => {
   const pipe = getPipe();
@@ -407,7 +409,11 @@ class Client {
     const id = this.nextId;
     this.nextId += 1n;
     const env = options.env || globalThis.process.env;
-    const environment = Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined);
+    // Match child_process.spawn, including simple-git's inherited environment keys.
+    const environment: [string, string][] = [];
+    for (const key in env) {
+      if (env[key] !== undefined) environment.push([key, String(env[key])]);
+    }
     const parts = [u32(1), text(executable), text(options.cwd || globalThis.process.cwd()), u32(args.length)];
     for (const argument of args) parts.push(text(String(argument)));
     parts.push(u32(environment.length));
