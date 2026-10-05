@@ -215,15 +215,15 @@ const markdownImageSources = (message) => {
 /**
  * The local images the message's openchamber_render pages name. The page's
  * HTML is the call's input, which OpenCode stores with the message, so it
- * authorizes its paths the way assistant text does. The input is either the
- * page itself or, for a call made through the action form, its `parameters`.
+ * authorizes its paths the way assistant text does. Match the renderer's
+ * input precedence: `request`, then legacy `parameters`, then flat fields.
  */
 const renderPageSources = (message) => {
   const sources = new Set();
   for (const part of messageContent(message)) {
     if (part?.type !== 'tool' || part.name !== 'openchamber_render') continue;
     const input = part.state?.input;
-    const html = input?.parameters?.html ?? input?.html;
+    const html = input?.request?.html ?? input?.parameters?.html ?? input?.html;
     if (!isString(html)) continue;
     for (const source of renderPageImageSources(html)) sources.add(source);
   }
