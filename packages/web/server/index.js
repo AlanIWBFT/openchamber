@@ -1085,8 +1085,6 @@ const dispatchResultsRuntime = createDispatchResultsRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   dataDir: OPENCHAMBER_DATA_DIR,
-  // Declared further down; only ever called after startup.
-  isSessionArchived: (sessionID) => openChamberSessionService.archiveStore.isArchived(sessionID),
 });
 dispatchResultsRuntime.start();
 
@@ -1746,7 +1744,6 @@ const openChamberControlService = createOpenChamberControlService({
     createError: (message, status) => new OpenChamberControlError(message, status),
   }),
   dispatchResults: dispatchResultsRuntime,
-  archiveStore: openChamberSessionService.archiveStore,
 });
 
 const ensureGlobalWatcherStarted = async () => {
