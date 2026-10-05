@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import { createGitCredentialBroker, GIT_CREDENTIAL_NONCE_ENV } from './credential-broker.js';
+import { isProcessBrokerChild } from './process-broker.js';
 import { helperShellCommand } from './helper-launch.js';
 import { gitLfsCredentialEndpointAliases, normalizeGitRemoteEndpoint, parseGitCredentialReference } from './credential-resolver.js';
 import { createNetworkOperationPlanner } from './network-operation-plan.js';
@@ -148,6 +149,10 @@ const configResetValue = (key) => {
 };
 
 const terminateProcessTree = (child, { platform, spawnImpl, escalationMs }) => {
+  if (isProcessBrokerChild(child)) {
+    child.kill();
+    return;
+  }
   if (!child || child.exitCode !== null || child.signalCode) return;
   try {
     if (platform === 'win32' && Number.isInteger(child.pid)) {
@@ -376,10 +381,11 @@ export function createNetworkOperations({
       controls?.attachChild(child, { allowAfterCancellation });
     } catch (error) {
       cancelChild(child);
-      settle(error, null, null);
+      if (isProcessBrokerChild(child)) inputError = error;
+      else settle(error, null, null);
       return;
     }
-    if (input !== undefined) {
+    if (input !== undefined || isProcessBrokerChild(child)) {
       child.stdin?.on('error', (error) => {
         inputError = error;
         cancelChild(child);
