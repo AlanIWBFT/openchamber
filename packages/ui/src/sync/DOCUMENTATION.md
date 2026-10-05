@@ -285,6 +285,10 @@ server announces both ends of that wait (`openchamber.session-assist`,
 or dropped by a new turn; the end re-checks the waiting directory at once. A
 wait whose end this client never hears stops holding the directory after five
 minutes. With the recap and the suggestion off nothing waits. A directory
+is also retained when the backend finds a live or starting persistent exec slot,
+including an idle shell. Automatic release passes `preserveExec: true`; a 409
+reschedules the check at the same delay. The backend checks and closes launch
+admission before invalidating the location. Explicit cleanup keeps its existing semantics. A directory
 without a store is left to OpenCode's own sweep. The directory the user is in
 is never released, and the server's reads without a directory of their own go
 to that same directory (`noteCurrentDirectory` in the server lifecycle), so a
