@@ -44,6 +44,7 @@ const fakeAgentSessions = ({ answer = (prompt) => `done: ${prompt}`, hang = [], 
     allowed: [],
     followUps: [],
     interrupted: [],
+    readParentArchive: async () => 'active',
     maxRunning: 0,
     reports: [],
     start: async ({ text, allowTools, signal, onSession }) => {
@@ -884,6 +885,26 @@ describe('workflow runtime', () => {
     await runtime.approve({ runId });
     await runtime.stop({ runId });
     expect((await finished(runId)).state).toBe('stopped');
+  });
+
+  it.each([['archived', false], ['active', true]])('retries the same saved report when its parent becomes readable (%s)', async (state, resume) => {
+    const agents = fakeAgentSessions();
+    const read = vi.fn(async () => { throw new Error('backend offline'); });
+    agents.readParentArchive = read;
+    const { runtime, store, act } = await setup(agents);
+    const { runId } = await act('workflow.run', { script: script("return 'ok'") });
+    await runtime.approve({ runId });
+    await waitFor(() => read.mock.calls.length > 0);
+    await runtime.deliverPending();
+    const { report } = await store.get(runId);
+    expect(report.delivered).toBe(false);
+    expect(agents.reports).toEqual([]);
+    agents.readParentArchive = async () => state;
+    await runtime.deliverPending();
+    await runtime.deliverPending();
+    expect(agents.reports).toHaveLength(1);
+    expect(agents.reports[0]).toMatchObject({ sessionId: 'ses_parent', body: { id: report.messageId, resume } });
+    await store.flush();
   });
 
   it('resumes only a failed or stopped run', async () => {

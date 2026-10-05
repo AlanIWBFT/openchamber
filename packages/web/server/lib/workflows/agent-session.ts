@@ -17,6 +17,8 @@ const statusEventSchema = z.object({
   properties: z.object({ sessionID: z.string().min(1), status: z.object({ type: z.string().min(1) }) }),
 });
 const recordSchema = z.object({ id: z.string().min(1), type: z.string() });
+const archiveTimeSchema = z.object({ time: z.object({ archived: z.number().nonnegative().optional() }) });
+const missingSessionSchema = z.object({ _tag: z.literal('SessionNotFoundError') });
 const permissionRuleSchema = z.object({ action: z.string(), resource: z.string(), effect: z.enum(['allow', 'deny', 'ask']) });
 const sessionSchema = z.object({
   id: z.string().min(1),
@@ -171,6 +173,17 @@ export const createWorkflowAgentSessions = ({
     }
   };
 
+  const readParentArchive: AgentSessions['readParentArchive'] = async (directory, sessionID) => {
+    const { session } = await getClient(directory);
+    try {
+      const parent = await session.get({ sessionID }, { signal: AbortSignal.timeout(5000) });
+      return archiveTimeSchema.parse(parent).time.archived === undefined ? 'active' : 'archived';
+    } catch (error) {
+      if (missingSessionSchema.safeParse(error).success) return 'missing';
+      throw error;
+    }
+  };
+
   const start: AgentSessions['start'] = async ({ directory, parentSessionId, title, agent, model, allowTools = [], text, signal, onSession }) => {
     const client = await getClient(directory);
     let modelRef = model ? parseModelRef(model) : null;
@@ -217,5 +230,5 @@ export const createWorkflowAgentSessions = ({
     };
   };
 
-  return { start, createSession, followUp, interrupt, readUsage, postSynthetic, stop: unsubscribe };
+  return { start, createSession, followUp, interrupt, readParentArchive, readUsage, postSynthetic, stop: unsubscribe };
 };

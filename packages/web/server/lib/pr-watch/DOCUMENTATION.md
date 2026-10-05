@@ -107,6 +107,9 @@ reads both, at worst in one turn. The message id is minted and saved before the 
 and OpenCode answering 409 to a second admission counts as delivered, so a
 crash or a lost response never wakes twice. A 404 ends the watch; other
 failures retry with backoff and are given up after eight attempts.
+Archive-state read failures re-arm the watch without consuming a delivery
+attempt. Unknown never authorizes a wake. A confirmed archived session ends
+its watch immediately; a busy child does not delay an idle recipient.
 
 The message is a `synthetic` admitted with `delivery: steer` and `resume: true`:
 an `<openchamber-pull-request url number>` envelope naming what changed and

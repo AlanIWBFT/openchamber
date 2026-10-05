@@ -1363,7 +1363,6 @@ const dispatchResultsRuntime = createDispatchResultsRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   dataDir: OPENCHAMBER_DATA_DIR,
-  isSessionArchived: (sessionID) => openChamberSessionService.sessionArchive.isArchived(sessionID),
 });
 dispatchResultsRuntime.start();
 
@@ -1420,7 +1419,7 @@ const workflowRuntime = createWorkflowRuntime({
   fsPromises,
   path,
 });
-void workflowRuntime.start().catch((error) => {
+void workflowRuntime.start().then(() => workflowRuntime.deliverPending()).catch((error) => {
   console.warn('[workflows] failed to restore runs:', error?.message ?? error);
 });
 const sharePagesRuntime = createSharePagesRuntime({

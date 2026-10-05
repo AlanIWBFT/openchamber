@@ -56,6 +56,7 @@ const textContentSchema = z.object({ type: z.literal('text'), text: z.string() }
 const recordTypeSchema = z.object({ type: z.string() });
 const recordIdSchema = z.object({ id: z.string() });
 const sessionRecordSchema = z.object({ title: z.string().optional() });
+const sessionArchiveSchema = z.object({ time: z.object({ archived: timeSchema.optional() }) });
 const messagePageSchema = z.object({ data: z.array(z.unknown()) });
 
 const statusEventSchema = z.object({
@@ -219,7 +220,7 @@ export function createDispatchResultsRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   dataDir,
-  isSessionArchived = async () => false,
+  isSessionArchived,
   fetchImpl = fetch,
   now = Date.now,
   quietMs = QUIET_MS,
@@ -332,16 +333,21 @@ export function createDispatchResultsRuntime({
   };
 
   const deliver = async (entry: DispatchEntry, message: DispatchResultMessage) => {
-    const archived = await Promise.resolve(isSessionArchived(entry.parentSessionId)).catch(() => false);
-    const resume = archived !== true;
+    let posting = false;
     try {
-      await openCodeRequest(`/api/session/${encodeURIComponent(entry.parentSessionId)}/synthetic`, z.unknown().transform(() => undefined), {
+      const path = `/api/session/${encodeURIComponent(entry.parentSessionId)}`;
+      const archived = isSessionArchived ? z.boolean().parse(await isSessionArchived(entry.parentSessionId))
+        : await openCodeRequest(path, sessionArchiveSchema.transform((session) => session.time.archived !== undefined));
+      if (archived === null) throw new Error('Parent archive state is unavailable');
+      const resume = !archived;
+      posting = true;
+      await openCodeRequest(`${path}/synthetic`, z.unknown().transform(() => undefined), {
         method: 'POST',
         body: { id: entry.messageId, ...message, delivery: 'steer', resume },
       });
       return true;
     } catch (error) {
-      if (hasStatus(error) && error.status === 409) return true;
+      if (posting && hasStatus(error) && error.status === 409) return true;
       if (hasStatus(error) && error.status === 404) {
         console.log(`[dispatch-results] dropping the result of ${entry.sessionId}: session ${entry.parentSessionId} no longer exists`);
         return true;

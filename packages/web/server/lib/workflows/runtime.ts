@@ -4,7 +4,8 @@ import { createMessageId, escapeAttribute } from '../dispatch-results/runtime.js
 import { WORKFLOW_ANSWER_TOOL } from '../openchamber-control/actions.js';
 import { OpenChamberControlError } from '../openchamber-control/error.js';
 import { WorkflowAgentStopped } from './agent-session.js';
-import { hasErrorCode, hasErrorMessage, hasErrorStatus, isAgentOptions, isAnswerWrapper, isWorkflowSchema, isWorkflowText } from './contracts.js';
+import { hasErrorCode, hasErrorMessage, isAgentOptions, isAnswerWrapper, isWorkflowSchema, isWorkflowText } from './contracts.js';
+import { createReportDelivery } from './report-delivery.js';
 import { findSchemaContradiction, parseJsonAnswer, validateJsonSchema } from './json-schema.js';
 import { createLimiter } from './limiter.js';
 import { readWorkflowProcessStart } from './process-owner.js';
@@ -18,15 +19,13 @@ export const MAX_CONCURRENT_AGENTS = 8;
 export const MAX_AGENTS_PER_RUN = 200;
 const SCHEMA_ATTEMPTS = 3;
 const MAX_LOGS = 200;
+const SHUTDOWN_REASON = 'OpenChamber shut down while the workflow ran.';
 const MAX_ARGS_LENGTH = 50_000;
 const RESULT_CHAR_LIMIT = 50_000;
 const PREVIEW_CHAR_LIMIT = 400;
 const STORED_PROMPT_LIMIT = 20_000;
 const BROADCAST_THROTTLE_MS = 250;
-const DELIVERY_ATTEMPTS = 4;
-const DELIVERY_BASE_DELAY_MS = 2_000;
 const SAVED_DIRECTORY = ['.openchamber', 'workflows'];
-const WORKFLOW_RESULT_SOURCE = 'openchamber-workflow';
 
 const truncate = <T extends WorkflowText>(text: T, limit: number) => (text.length > limit ? `${text.slice(0, limit)}…` : text);
 const asText = (value: WorkflowAgent['result']) => (isWorkflowText(value) ? value : JSON.stringify(value ?? null, null, 2));
@@ -162,6 +161,7 @@ export const createWorkflowRuntime = ({
   readProcessStart = readWorkflowProcessStart,
 }: WorkflowRuntimeOptions) => {
   const active = new Map<string, Execution>();
+  const drains = new Set<Promise<void>>();
   const answerSlots = new Map<string, AnswerSlot>();
   const broadcastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -268,38 +268,10 @@ export const createWorkflowRuntime = ({
     return JSON.parse(serialized);
   };
 
-  const uncommittedReports = new WeakSet<NonNullable<WorkflowRun['report']>>();
-
-  const deliverReport = async (run: WorkflowRun) => {
-    const report = run.report;
-    if (!report || report.delivered || uncommittedReports.has(report)) return;
-    const message = {
-      id: report.messageId,
-      text: reportText(run),
-      description: run.name,
-      metadata: { source: WORKFLOW_RESULT_SOURCE, runId: run.id, name: run.name, state: run.state },
-      delivery: 'steer',
-      resume: report.resume,
-    };
-    for (let attempt = 1; attempt <= DELIVERY_ATTEMPTS; attempt += 1) {
-      if (run.report !== report) return;
-      try {
-        await postSynthetic(run.parentSessionId, message);
-      } catch (error) {
-        if (!hasErrorStatus(error) || (error.status !== 409 && error.status !== 404)) {
-          console.warn(`[workflows] delivering the report of ${run.id} failed:`, (hasErrorMessage(error) ? error.message : undefined) ?? error);
-          await sleep(DELIVERY_BASE_DELAY_MS * 2 ** (attempt - 1));
-          continue;
-        }
-      }
-      if (run.report !== report || report.delivered) return;
-      report.delivered = true;
-      await persist(run, { immediate: true }).catch((error) => {
-        console.warn(`[workflows] report ${report.messageId} of ${run.id} was delivered but its marker was not saved:`, error.message);
-      });
-      return;
-    }
-  };
+  const { deliver: deliverReport, deliverFinal, uncommitted: uncommittedReports, shutdown: stopReportDelivery } = createReportDelivery({
+    postSynthetic, readArchive: (directory, id) => agentSessions.readParentArchive(directory, id),
+    sleep, text: reportText, save: run => persist(run, { immediate: true }),
+  });
 
   const settleRun = async (run: WorkflowRun, state: Ending['state'], { error, result, resume }: Omit<Ending, 'state'>) => {
     run.state = state;
@@ -522,7 +494,8 @@ export const createWorkflowRuntime = ({
     } finally {
       active.delete(run.id);
     }
-    await deliverReport(run);
+    if (execution.stopReason === SHUTDOWN_REASON && ending.state === 'stopped') await deliverFinal(run);
+    else await deliverReport(run);
   };
 
   const startInBackground = async (run: WorkflowRun) => {
@@ -540,6 +513,13 @@ export const createWorkflowRuntime = ({
       sandbox: null,
     };
     active.set(run.id, execution);
+    let resolveDrain = () => {};
+    const drain = new Promise<void>((resolve) => { resolveDrain = resolve; });
+    drains.add(drain);
+    const release = () => {
+      drains.delete(drain);
+      resolveDrain();
+    };
     try {
       await withRollback(run, async () => {
         Object.assign(run, { state: 'running', attempt: run.attempt + 1, startedAt: now(), agents: [], logs: [...run.logs], currentPhase: null, ownerPid: pid });
@@ -558,11 +538,12 @@ export const createWorkflowRuntime = ({
       });
     } catch (error) {
       active.delete(run.id);
+      release();
       throw error;
     }
     void execute(run, execution, body).catch((error) => {
       console.warn(`[workflows] run ${run.id} ended with an internal error:`, error?.message ?? error);
-    });
+    }).finally(release);
   };
 
   const check = async (input: WorkflowInput, { directory }: WorkflowScope = {}) => {
@@ -808,10 +789,12 @@ export const createWorkflowRuntime = ({
   };
 
   const shutdown = () => {
+    stopReportDelivery();
     for (const execution of active.values()) {
-      execution.stopReason ??= 'OpenChamber shut down while the workflow ran.';
+      execution.stopReason ??= SHUTDOWN_REASON;
       execution.sandbox?.terminate();
     }
+    if (drains.size) return Promise.allSettled([...drains]);
   };
 
   const executeAction = async (action: string, input: WorkflowInput, { sessionId, directory }: WorkflowScope) => {

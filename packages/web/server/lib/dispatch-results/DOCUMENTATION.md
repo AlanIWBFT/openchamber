@@ -148,11 +148,9 @@ its workflow ran, though the session had answered in 36 seconds.
   answer, and the chat shows the row only then (`../openchamber-control/`,
   *Why a background message waits behind a page*).
 - `resume: false` for an archived parent: the answer is recorded, nothing
-  runs behind the user's back. A failed archive lookup counts as not archived
-  and wakes the parent: the agent asked for this result. The lookup is awaited
-  before that decision; `isSessionArchived` returns a Promise, and a Promise
-  read as a value is truthy, which would record every answer without waking
-  anyone.
+  runs behind the user's back. A live parent receives the result as soon as
+  the sender itself is idle. Failed or malformed archive reads leave the
+  result pending with its original message ID; a confirmed 404 retires it.
 - `id`: minted in OpenCode's `msg_` format at the first attempt and persisted
   before it; when that write fails the minted ids are dropped from memory and
   the attempt waits for the next retry, because an unsaved id would be minted

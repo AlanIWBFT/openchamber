@@ -46,8 +46,9 @@ const user = (created) => ({ type: 'user', id: `msg_u${created}`, text: 'go', ti
 const createOpenCode = () => {
   const state = {
     active: {},
-    sessions: { ses_child: { id: 'ses_child', title: 'Fix the toolbar' } },
+    sessions: { ses_child: { id: 'ses_child', title: 'Fix the toolbar' }, ses_parent: { id: 'ses_parent', time: {} } },
     records: { ses_child: [] },
+    sessionReadStatus: {},
     synthetic: [],
     syntheticStatus: [],
     seenIds: new Set(),
@@ -74,6 +75,7 @@ const createOpenCode = () => {
     const session = pathname.match(/^\/api\/session\/([^/]+)$/);
     if (session) {
       const id = decodeURIComponent(session[1]);
+      if (state.sessionReadStatus[id]) return json({ error: 'unavailable' }, state.sessionReadStatus[id]);
       return state.sessions[id] ? json(state.sessions[id]) : json({ error: 'not found' }, 404);
     }
     return json({ error: `unexpected ${pathname}` }, 500);
@@ -253,8 +255,8 @@ describe('dispatch results runtime', () => {
   });
 
   it('records the answer in an archived parent without waking it', async () => {
-    // Async like the real archive store.
-    const { runtime, openCode } = await createRuntime({ isSessionArchived: async (id) => id === 'ses_parent' });
+    const { runtime, openCode } = await createRuntime();
+    openCode.state.sessions.ses_parent.time.archived = 100;
     openCode.state.records.ses_child.push(user(11), assistant('Done', 12), idle('succeeded', 13));
     await runtime.register({ parentSessionId: 'ses_parent', sessionId: 'ses_child', dispatchedAt: 10 });
     await vi.waitFor(() => expect(openCode.state.synthetic).toEqual([expect.objectContaining({ resume: false })]));
@@ -268,11 +270,18 @@ describe('dispatch results runtime', () => {
     await vi.waitFor(() => expect(openCode.state.synthetic).toEqual([expect.objectContaining({ resume: true })]));
   });
 
-  it('wakes the parent when the archive lookup fails', async () => {
-    const { runtime, openCode } = await createRuntime({ isSessionArchived: async () => { throw new Error('store down'); } });
+  it('retains a result until backend archive state can be confirmed', async () => {
+    const { runtime, openCode } = await createRuntime();
+    openCode.state.sessionReadStatus.ses_parent = 503;
     openCode.state.records.ses_child.push(user(11), assistant('Done', 12), idle('succeeded', 13));
     await runtime.register({ parentSessionId: 'ses_parent', sessionId: 'ses_child', dispatchedAt: 10 });
-    await vi.waitFor(() => expect(openCode.state.synthetic).toEqual([expect.objectContaining({ resume: true })]));
+    await settle();
+    expect(openCode.state.synthetic).toEqual([]);
+    expect(runtime.pending()).toHaveLength(1);
+    delete openCode.state.sessionReadStatus.ses_parent;
+    openCode.state.sessions.ses_parent.time.archived = 100;
+    await vi.waitFor(() => expect(openCode.state.synthetic).toEqual([expect.objectContaining({ resume: false })]));
+    expect(runtime.pending()).toEqual([]);
   });
 
   it('retries a failed delivery with the same message id, so it lands once', async () => {
@@ -288,6 +297,22 @@ describe('dispatch results runtime', () => {
     expect(posts[0]).toBe(posts[1]);
     expect(openCode.state.synthetic).toHaveLength(1);
     expect(runtime.pending()).toEqual([]);
+  });
+
+  it('treats an id OpenCode already admitted as delivered', async () => {
+    const { runtime, openCode } = await createRuntime();
+    openCode.state.records.ses_child.push(user(11), assistant('Done', 12), idle('succeeded', 13));
+    openCode.state.syntheticStatus.push(409);
+    await runtime.register({ parentSessionId: 'ses_parent', sessionId: 'ses_child', dispatchedAt: 10 });
+    await vi.waitFor(() => expect(runtime.pending()).toEqual([]));
+  });
+
+  it('drops the delivery when the parent no longer exists', async () => {
+    const { runtime, openCode } = await createRuntime();
+    openCode.state.records.ses_child.push(user(11), assistant('Done', 12), idle('succeeded', 13));
+    delete openCode.state.sessions.ses_parent;
+    await runtime.register({ parentSessionId: 'ses_parent', sessionId: 'ses_child', dispatchedAt: 10 });
+    await vi.waitFor(() => expect(runtime.pending()).toEqual([]));
   });
 
   it('forgets results owed to a parent that was deleted', async () => {

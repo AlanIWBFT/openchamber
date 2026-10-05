@@ -3,6 +3,28 @@ import { describe, expect, it } from 'vitest';
 
 import { WorkflowAgentStopped, createWorkflowAgentSessions } from './agent-session.js';
 
+describe('workflow parent archive reads', () => {
+  const reader = (get) => createWorkflowAgentSessions({
+    buildOpenCodeUrl: (route) => `http://localhost:4096${route}`,
+    getOpenCodeAuthHeaders: () => ({}),
+    globalEventHub: { subscribeEvent: () => () => {} },
+    createClient: () => ({ session: { get } }),
+  });
+  it.each([[undefined, 'active'], [0, 'archived'], [123, 'archived']])('recognizes archive time %s', async (archived, expected) => {
+    const sessions = reader(async () => ({ time: { archived } }));
+    await expect(sessions.readParentArchive('/repo', 'parent')).resolves.toBe(expected);
+    sessions.stop();
+  });
+  it('distinguishes a missing parent from an incomplete session record', async () => {
+    const gone = reader(async () => { throw { _tag: 'SessionNotFoundError' }; });
+    await expect(gone.readParentArchive('/repo', 'parent')).resolves.toBe('missing');
+    gone.stop();
+    const malformed = reader(async () => ({}));
+    await expect(malformed.readParentArchive('/repo', 'parent')).rejects.toThrow();
+    malformed.stop();
+  });
+});
+
 /** Creates an agent's session and stops before its prompt, to read the request. */
 const createSessionRequest = async ({ parent, allowTools, model }) => {
   const created = [];

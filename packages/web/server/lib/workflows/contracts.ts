@@ -22,6 +22,7 @@ interface WorkflowAgentSessions {
   }) => Promise<{ sessionId: string; outcome: DispatchOutcome }>;
   followUp: (input: { directory: string; sessionId: string; text: string; signal: AbortSignal }) => Promise<DispatchOutcome>;
   interrupt: (directory: string, sessionId: string) => Promise<void>;
+  readParentArchive: (directory: string, sessionId: string) => Promise<'active' | 'archived' | 'missing'>;
   readUsage: (input: { directory: string; sessionId: string }) => Promise<{
     model: string | null;
     usage: NonNullable<WorkflowAgent['usage']>;
