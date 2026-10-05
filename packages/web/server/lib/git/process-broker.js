@@ -43,6 +43,8 @@ export const getProcessBrokerWorkerData = () => {
   return pipe ? { processBrokerPipe: pipe } : undefined;
 };
 
+export const isProcessBrokerChild = (child) => child instanceof ManagedProcess;
+
 export const getProcessBrokerSpawn = () => {
   const pipe = getPipe();
   if (!pipe) return null;
@@ -368,7 +370,11 @@ class Client {
     const id = this.nextId;
     this.nextId += 1n;
     const env = options.env || globalThis.process.env;
-    const environment = Object.entries(env).filter((entry) => entry[1] !== undefined);
+    // Match child_process.spawn, including simple-git's inherited environment keys.
+    const environment = [];
+    for (const key in env) {
+      if (env[key] !== undefined) environment.push([key, String(env[key])]);
+    }
     const parts = [u32(1), text(executable), text(options.cwd || globalThis.process.cwd()), u32(args.length)];
     for (const argument of args) parts.push(text(String(argument)));
     parts.push(u32(environment.length));

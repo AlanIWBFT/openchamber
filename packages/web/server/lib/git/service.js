@@ -1145,7 +1145,7 @@ const resolveGitCommitFilePath = async (repoRoot, hash, candidates) => {
 // once an instance has an explicit env it also rejects inherited PAGER or
 // GIT_ASKPASS values. Run editor-free continuation commands directly instead.
 const runGitCommandWithoutEditor = async (cwd, args) => {
-  const result = await runGitCommand(cwd, args, { env: { GIT_EDITOR: 'true' } });
+  const result = await runGitCommand(cwd, args, { env: { ...(await buildGitEnv()), GIT_EDITOR: 'true' } });
   if (!result.success) {
     throw new Error(result.message || 'Git command failed');
   }
