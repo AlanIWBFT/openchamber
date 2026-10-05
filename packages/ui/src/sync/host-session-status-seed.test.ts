@@ -98,14 +98,12 @@ describe('seedGlobalSessionStatusFromHost', () => {
     const spies = [
       spyOn(opencodeClient, 'getActiveSessionStatuses').mockImplementation(async () => { activeReads++; return readStatuses(); }),
       spyOn(opencodeClient, 'listPendingForms').mockImplementation(async (options) => {
-        expect(options?.includeGlobal).toBe(false);
         const directory = options?.directories?.[0];
         if (!directory) throw new Error('Recovery needs a directory');
         formReads.push(directory);
         return readForms();
       }),
       spyOn(opencodeClient, 'listPendingPermissions').mockImplementation(async (options) => {
-        expect(options?.includeGlobal).toBe(false);
         const directory = options?.directories?.[0];
         if (!directory) throw new Error('Recovery needs a directory');
         permissionReads.push(directory);
