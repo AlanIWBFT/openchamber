@@ -476,7 +476,9 @@ export const useKeyboardShortcuts = () => {
         resetAbortPriming();
         if (pinnedColumn) {
           event.preventDefault();
-          void sessionActions.abortCurrentOperation(abortSessionId);
+          void stopCurrentOperation(abortSessionId).catch((error) => {
+            toast.error(error instanceof Error ? error.message : 'Failed to stop session');
+          });
         } else if (invokeRegistered('abort_run', event)) {
           event.preventDefault();
         }

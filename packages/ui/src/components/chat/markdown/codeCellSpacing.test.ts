@@ -41,12 +41,14 @@ test('ASCII adds no nodes and a long Chinese run adds only one span', () => {
 const context: Parameters<typeof decorateMarkdown>[1] = {
   labels: {
     copy: 'Copy', copied: 'Copied', enableCodeWrap: 'Wrap', disableCodeWrap: 'Unwrap',
+    enableTableWrap: 'Wrap table', disableTableWrap: 'Unwrap table',
     copyTable: 'Copy table', downloadTable: 'Download table', copyDiagram: 'Copy diagram',
     downloadDiagram: 'Download diagram', zoomInDiagram: 'Zoom in', zoomOutDiagram: 'Zoom out',
     resetDiagramView: 'Reset', previewLabel: 'Preview', previewTitle: 'Preview',
   },
   mermaidControls: { download: false, copy: false, showPanZoomControls: false },
   codeBlockLineWrap: false,
+  tableCellWrap: false,
   renderMermaid: () => ({}),
 };
 
