@@ -67,7 +67,7 @@ const createTracked = (read = async () => ({ status: 'ok', pulls: [pull()] })) =
   };
 };
 
-const createRuntime = async ({ dataDir, openCode = createOpenCode(), cleanupOnMerge = false, archived = false } = {}) => {
+const createRuntime = async ({ dataDir, openCode = createOpenCode(), cleanupOnMerge = false, archived = false, isSessionArchived = async () => archived } = {}) => {
   let eventHandler = () => {};
   const broadcasts = [];
   const runtime = createPrWatchRuntime({
@@ -76,7 +76,7 @@ const createRuntime = async ({ dataDir, openCode = createOpenCode(), cleanupOnMe
     broadcastUiEvent: (event) => broadcasts.push(event),
     dataDir: dataDir ?? await makeDataDir(),
     readCleanupOnMerge: async () => cleanupOnMerge,
-    isSessionArchived: async () => archived,
+    isSessionArchived,
     fetchImpl: openCode.fetchImpl,
     quietMs: 0,
     retryDelayMs: () => 5,
@@ -125,6 +125,38 @@ describe('changesBetween', () => {
 });
 
 describe('createPrWatchRuntime', () => {
+  it('retries unknown archive state without waking, then wakes after a confirmed unarchived read', async () => {
+    const { tracked, readers, move } = createTracked();
+    let unknown = true;
+    let checked = 0;
+    const { runtime, openCode } = await createRuntime({ isSessionArchived: async () => {
+      checked += 1;
+      if (unknown) throw new Error('backend unavailable');
+      return false;
+    } });
+    runtime.attach({ trackedItems: tracked, readers });
+    await runtime.watch({ sessionID: SESSION, directory: DIRECTORY, url: URL_7 });
+    move(pull({ checks: { state: 'failure' } }));
+    expect(await until(() => checked >= 2)).toBe(true);
+    expect(openCode.state.admitted).toEqual([]);
+    unknown = false;
+    expect(await until(() => openCode.state.admitted.length === 1)).toBe(true);
+  });
+
+  it('gives up after the existing eight unknown-state failures without waking', async () => {
+    const { tracked, readers, move } = createTracked();
+    let checked = 0;
+    const { runtime, openCode } = await createRuntime({ isSessionArchived: async () => {
+      checked += 1;
+      throw new Error('backend unavailable');
+    } });
+    runtime.attach({ trackedItems: tracked, readers });
+    await runtime.watch({ sessionID: SESSION, directory: DIRECTORY, url: URL_7 });
+    move(pull({ checks: { state: 'failure' } }));
+    expect(await until(() => runtime.snapshot().watches.length === 0)).toBe(true);
+    expect(checked).toBe(8);
+    expect(openCode.state.admitted).toEqual([]);
+  });
   it('follows the pull request and wakes the session once when it changes', async () => {
     const { tracked, readers, move } = createTracked();
     const { runtime, openCode, broadcasts } = await createRuntime();
