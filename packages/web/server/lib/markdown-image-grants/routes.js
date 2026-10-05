@@ -171,15 +171,15 @@ const markdownImageSources = (message) => {
 /**
  * The message's openchamber_render pages, by tool call id. The page's HTML is
  * the call's input, which OpenCode stores with the message, so it authorizes
- * its paths the way assistant text does. The input is either the page itself
- * or, for a call made through the action form, its `parameters`.
+ * its paths the way assistant text does. Match the renderer's
+ * input precedence: `request`, then legacy `parameters`, then flat fields.
  */
 const renderPages = (message) => {
   const pages = new Map();
   for (const part of messageContent(message)) {
     if (part?.type !== 'tool' || part.name !== 'openchamber_render') continue;
     const input = part.state?.input;
-    const html = input?.parameters?.html ?? input?.html;
+    const html = input?.request?.html ?? input?.parameters?.html ?? input?.html;
     // A stored tool item's `id` is its call id: the chat's `callID` is this
     // field (projectToolPart in packages/ui/src/lib/opencode/projection.ts).
     if (isString(html)) pages.set(part.id, html);
