@@ -1217,8 +1217,6 @@ const dispatchResultsRuntime = createDispatchResultsRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   dataDir: OPENCHAMBER_DATA_DIR,
-  // Declared further down; only ever called after startup.
-  isSessionArchived: (sessionID) => openChamberSessionService.sessionArchive.isArchived(sessionID),
 });
 dispatchResultsRuntime.start();
 
