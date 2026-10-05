@@ -15,6 +15,13 @@ const findBrokerPid = () => Number(execFileSync('pwsh', [
 ], { encoding: 'utf8' }).trim());
 
 describe.runIf(available)('Windows process broker', () => {
+  it('inherits enumerable environment keys while retaining explicit overrides', async () => {
+    const env = Object.assign(Object.create({ ...process.env, OC_INHERITED: 'parent', OC_OVERRIDDEN: 'old' }), { OC_OVERRIDDEN: 'new' });
+    const result = await execFileWithProcessBroker(process.execPath, ['-e',
+      "process.stdout.write(process.env.OC_INHERITED + ':' + process.env.OC_OVERRIDDEN)",
+    ], { env });
+    expect(result.stdout).toBe('parent:new');
+  });
   it('captures output and runs four commands concurrently', async () => {
     const run = (value) => execFileWithProcessBroker(process.execPath, ['-e', `process.stdout.write('${value}')`]);
     const results = await Promise.all(Array.from({ length: 4 }, (_, index) => run(index)));
