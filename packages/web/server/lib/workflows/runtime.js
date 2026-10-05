@@ -286,12 +286,13 @@ export const createWorkflowRuntime = ({
       description: run.name,
       metadata: { source: WORKFLOW_RESULT_SOURCE, runId: run.id, name: run.name, state: run.state },
       delivery: 'steer',
-      resume: report.resume,
     };
     for (let attempt = 1; attempt <= DELIVERY_ATTEMPTS; attempt += 1) {
       if (run.report !== report) return;
       try {
-        await postSynthetic(run.parentSessionId, message);
+        const archived = await agentSessions.isArchived(run.parentSessionId);
+        if (run.report !== report) return;
+        await postSynthetic(run.parentSessionId, { ...message, resume: report.resume && !archived });
       } catch (error) {
         // 409: this id was admitted before; 404: the session is gone.
         if (error?.status !== 409 && error?.status !== 404) {

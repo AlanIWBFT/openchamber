@@ -74,8 +74,12 @@ workflow in `../session-knowledge/runtime.js` (`WORKFLOW_GUIDANCE`).
    (`stopped`). Agents still running are interrupted and counted as stopped.
 5. The report, a synthetic message `<openchamber-workflow …>` with metadata
    `{ source: 'openchamber-workflow', runId, name, state }`, goes into the
-   proposing session. A completed or failed run wakes it (`resume: true`); a
-   declined or stopped one does not, because the user is the one who acted.
+   proposing session. A completed or failed run wakes it (`resume: true`) only
+   when the backend confirms it is not archived; a declined or stopped one
+   never wakes it, because the user is the one who acted. Archive lookup failure
+   keeps the report pending for the existing retry path; a confirmed 404 ends
+   delivery because the parent is gone. The stored message id and report identity
+   remain authoritative across these reads and retries.
 
 `workflow.status` and `workflow.result` read a run's progress and any agent's
 full answer by key or session id; the agent can only reach runs its own
@@ -146,6 +150,12 @@ session proposed. `workflow.save` writes a script to
   has not gone out.
 
 ## Decisions
+
+### Why archive lookup failure leaves a report pending
+
+Archive state is owned by OpenCode, not a runtime file or UI cache. Treating a
+failed read as unarchived could restart a session the user archived. The report
+keeps its existing retry and idempotence path instead of guessing.
 
 ### Why the server runs the script and not OpenCode's Code Mode
 
