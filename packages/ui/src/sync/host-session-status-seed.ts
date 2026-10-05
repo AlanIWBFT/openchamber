@@ -162,14 +162,14 @@ export const seedGlobalSessionStatusFromHost = (force = false): Promise<void> =>
             applyGlobalSessionStatusSnapshot(directory, scoped, ids, 'sessions');
             return true;
           }).then((statuses) => { if (statuses === null) throw new Error('Status recovery unavailable'); }),
-          readDirectoryFormSnapshot(store, () => read(() => opencodeClient.listPendingForms({ directories: [directory], includeGlobal: false })), {
+          readDirectoryFormSnapshot(store, () => read(() => opencodeClient.listPendingForms({ directories: [directory] })), {
             isStale: () => !current(),
             commit: (form) => {
               store.setState({ form });
               applyGlobalBlockingRequestSnapshot(directory, { kind: 'forms', groups: form });
             },
           }),
-          readDirectoryPermissionSnapshot(store, () => read(() => opencodeClient.listPendingPermissions({ directories: [directory], includeGlobal: false })), {
+          readDirectoryPermissionSnapshot(store, () => read(() => opencodeClient.listPendingPermissions({ directories: [directory] })), {
             isStale: () => !current(),
             commit: (permission) => {
               store.setState({ permission });
