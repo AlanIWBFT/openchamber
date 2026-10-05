@@ -102,6 +102,7 @@ import { createSshPassphraseStore } from '../git/ssh-passphrases.js';
 import { openCodeCredentialSource } from './auth.js';
 import { createContributorProvenanceStore } from '../git/contributor-provenance-storage.js';
 import { createGitNetworkOperationStore } from '../git/network-operation-storage.js';
+import { getProcessBrokerSpawn } from '../git/process-broker.js';
 import { readEffectiveGitTransportRevision } from '../git/transport-config.js';
 import { completeWorktreeCheckoutHydration, configureRepositoryTransport, deleteBranch as deleteBranchService, isGitRepository as isGitRepositoryService, removeWorktree as removeWorktreeService, resolvePrimaryWorktreeRoot, resolveWorktreeTopLevel } from '../git/service.js';
 import { createPrivateRepositoryIdentityResolver, resolveRepositoryId } from '../source-control/repository-identity.js';
@@ -739,13 +740,16 @@ export const createFeatureRoutesRuntime = (dependencies) => {
         bootstrapStore: worktreeBootstrapStore,
         disposeInstance: createWorktreeInstanceDisposer({ buildOpenCodeUrl, getOpenCodeAuthHeaders }),
       }),
-      spawnImpl: spawn,
+      spawnImpl: (...args) => (getProcessBrokerSpawn() ?? spawn)(...args),
       fsImpl: fsPromises,
       pathImpl: path,
       gitBinary,
       validateGitIdentity,
       resolveGitIdentity,
-      trustedDirectoriesConfig: createTrustedDirectoriesConfig({ gitBinary }),
+      trustedDirectoriesConfig: createTrustedDirectoriesConfig({
+        gitBinary,
+        spawnImpl: (...args) => (getProcessBrokerSpawn() ?? spawn)(...args),
+      }),
     });
     await registerBuiltInGuests({ persistPath: extensionsPersistPath(openchamberDataDir), root: routeDependencies.builtInExtensionsDir });
     // A change every client reads again from the server; the event carries nothing.
