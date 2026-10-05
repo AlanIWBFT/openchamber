@@ -99,8 +99,10 @@ A failed read retries with backoff (2 s doubling to 60 s).
   answer, and the chat shows the row only then (`../openchamber-control/`,
   *Why a background message waits behind a page*).
 - `resume: false` for an archived parent: the answer is recorded, nothing
-  runs behind the user's back. A failed archive lookup counts as not archived
-  and wakes the parent: the agent asked for this result.
+  runs behind the user's back.
+- The backend session's `time.archived` is authoritative. Failed archive reads
+  keep the delivery pending and retry with the existing backoff. A confirmed
+  404 drops it because the parent was deleted.
 - `id`: minted in OpenCode's `msg_` format at the first attempt and persisted
   before it; when that write fails the attempt waits for the next retry. OpenCode refuses a second admission of the same id (409), so a
   retry after a crash or a lost response cannot deliver twice; 409 counts as
