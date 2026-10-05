@@ -1371,7 +1371,7 @@ export async function resyncBlockingRequestsForDirectory(
   // Re-fetch pending forms that may have been asked during an SSE gap,
   // reconnect window, or directory materialization gap.
   try {
-    const grouped = await readDirectoryFormSnapshot(store, () => opencodeClient.listPendingForms({ directories: [directory], includeGlobal: false }), {
+    const grouped = await readDirectoryFormSnapshot(store, () => opencodeClient.listPendingForms({ directories: [directory] }), {
       sessionIDs: candidates,
       isStale,
       commit: (form) => {
@@ -1407,7 +1407,7 @@ export async function resyncBlockingRequestsForDirectory(
 
   // Re-fetch pending permissions — same rationale as forms.
   try {
-    const grouped = await readDirectoryPermissionSnapshot(store, () => opencodeClient.listPendingPermissions({ directories: [directory], includeGlobal: false }), {
+    const grouped = await readDirectoryPermissionSnapshot(store, () => opencodeClient.listPendingPermissions({ directories: [directory] }), {
       sessionIDs: candidates,
       isStale,
       settle: isVSCodeRuntime() ? async (permissions) => {
