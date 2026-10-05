@@ -14,6 +14,7 @@ const statusEventSchema = z.object({
   properties: z.object({ sessionID: z.string().min(1), status: z.object({ type: z.string().min(1) }) }),
 });
 const recordSchema = z.object({ id: z.string().min(1), type: z.string() });
+const sessionArchiveSchema = z.object({ time: z.object({ archived: z.number().optional() }) });
 const permissionRuleSchema = z.object({ action: z.string(), resource: z.string(), effect: z.enum(['allow', 'deny', 'ask']) });
 const sessionSchema = z.object({
   id: z.string().min(1),
@@ -74,6 +75,20 @@ export const createWorkflowAgentSessions = ({
     const headers = { ...getOpenCodeAuthHeaders() };
     if (directory) headers['x-opencode-directory'] = encodeURIComponent(directory);
     return createClient({ baseUrl: new URL(buildOpenCodeUrl('/api/info', '')).origin, headers, fetch: fetchImpl });
+  };
+
+  const isArchived = async (sessionId) => {
+    const client = await getClient();
+    try {
+      return sessionArchiveSchema.parse(await client.session.get({ sessionID: sessionId })).time.archived !== undefined;
+    } catch (error) {
+      // Declared SDK errors retain their tag, not the HTTP status. Keep the
+      // delivery boundary's existing 404 handling for a deleted parent.
+      if (error?._tag === 'SessionNotFoundError') {
+        throw Object.assign(new Error('The workflow parent session no longer exists', { cause: error }), { status: 404 });
+      }
+      throw error;
+    }
   };
 
   /**
@@ -241,5 +256,5 @@ export const createWorkflowAgentSessions = ({
     };
   };
 
-  return { start, createSession, followUp, interrupt, readUsage, postSynthetic, stop: unsubscribe };
+  return { start, createSession, followUp, interrupt, readUsage, isArchived, postSynthetic, stop: unsubscribe };
 };

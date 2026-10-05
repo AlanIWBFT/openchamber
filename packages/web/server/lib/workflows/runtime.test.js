@@ -64,6 +64,7 @@ const fakeAgentSessions = ({ answer = (prompt) => `done: ${prompt}`, hang = [], 
     interrupt: async (_, sessionId) => {
       fake.interrupted.push(sessionId);
     },
+    isArchived: async () => false,
     createSession: async ({ title }) => `ses_new_${title}`,
     readUsage: async ({ sessionId }) => ({
       model: 'openai/gpt-6-luna',
@@ -134,6 +135,65 @@ describe('workflow runtime', () => {
     await finished(runId);
     expect(agents.started).toHaveLength(5);
     expect(agents.maxRunning).toBe(2);
+  });
+
+  it.each(["return agent('work')", "throw new Error('failed')"])('records a finished report without waking an archived parent: %s', async (body) => {
+    const agents = fakeAgentSessions();
+    agents.isArchived = async (sessionId) => {
+      expect(sessionId).toBe('ses_parent');
+      return true;
+    };
+    const { runtime, act, finished } = await setup(agents);
+    const { runId } = await act('workflow.run', { script: script(body) });
+    await runtime.approve({ runId });
+    await finished(runId);
+    expect(agents.reports).toHaveLength(1);
+    expect(agents.reports[0].body.resume).toBe(false);
+  });
+
+  it('keeps an unreadable archive state pending and reuses the persisted message id on retry', async () => {
+    const agents = fakeAgentSessions();
+    let reads = 0;
+    agents.isArchived = async () => { reads += 1; throw new Error('unavailable'); };
+    const { runtime, act, store } = await setup(agents);
+    const { runId } = await act('workflow.run', { script: script('return 1') });
+    await runtime.decline({ runId });
+    expect(reads).toBe(4);
+    expect(agents.reports).toEqual([]);
+    const report = (await store.get(runId)).report;
+    expect(report.delivered).toBe(false);
+    agents.isArchived = async () => false;
+    await runtime.deliverPending();
+    expect(agents.reports).toHaveLength(1);
+    expect(agents.reports[0].body).toMatchObject({ id: report.messageId, resume: false });
+    expect((await store.get(runId)).report.delivered).toBe(true);
+  });
+
+  it('ends delivery without posting when the parent archive read confirms deletion', async () => {
+    const agents = fakeAgentSessions();
+    agents.isArchived = async () => { throw Object.assign(new Error('gone'), { status: 404 }); };
+    const { runtime, act, store } = await setup(agents);
+    const { runId } = await act('workflow.run', { script: script('return 1') });
+    await runtime.decline({ runId });
+    expect(agents.reports).toEqual([]);
+    expect((await store.get(runId)).report.delivered).toBe(true);
+  });
+
+  it('does not post an obsolete report after its archive read finishes', async () => {
+    const agents = fakeAgentSessions();
+    let release;
+    let entered;
+    const reading = new Promise((resolve) => { entered = resolve; });
+    agents.isArchived = () => new Promise((resolve) => { release = resolve; entered(); });
+    const { runtime, act, store } = await setup(agents);
+    const { runId } = await act('workflow.run', { script: script('return 1') });
+    const declining = runtime.decline({ runId });
+    await reading;
+    await runtime.remove({ runId });
+    release(false);
+    await declining;
+    expect(agents.reports).toEqual([]);
+    expect(await store.get(runId)).toBeNull();
   });
 
   it('asks again in the same session until the answer matches the schema', async () => {
