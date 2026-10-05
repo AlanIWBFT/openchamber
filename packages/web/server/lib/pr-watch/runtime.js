@@ -438,9 +438,16 @@ export function createPrWatchRuntime({
     if (!isCurrent(watch)) return undefined;
     if (subagents === null) return retry(watch, 'OpenCode could not be asked');
     if (subagents) return arm(sessionID, subagentRecheckMs);
-    const archived = await Promise.resolve(isSessionArchived(sessionID)).catch(() => false) === true;
+    let archived;
+    try {
+      archived = await isSessionArchived(sessionID);
+    } catch (error) {
+      return retry(watch, `Session archive state is unknown: ${error?.message ?? error}`);
+    }
     if (!isCurrent(watch)) return undefined;
-    if (archived) return drop(watch);
+    const archiveState = z.boolean().safeParse(archived);
+    if (!archiveState.success) return retry(watch, 'Session archive state is unknown');
+    if (archiveState.data) return drop(watch);
     if (!watch.wake.messageID) {
       watch.wake.messageID = createMessageId(now());
       await persist();
