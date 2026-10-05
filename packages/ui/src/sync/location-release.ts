@@ -43,7 +43,8 @@ type LocationReleaseDeps<T> = {
   releaseDelayMs: (directory: string) => number | null
   isCurrentDirectory: (directory: string) => boolean
   directoryUse: (directory: string) => DirectoryUse
-  release: (directory: string) => Promise<void>
+  /** False means backend-owned persistent command slots still need the location. */
+  release: (directory: string) => Promise<boolean>
   timers: Timers<T>
 }
 
@@ -81,7 +82,9 @@ export function createLocationRelease<T>(deps: LocationReleaseDeps<T>): Location
       schedule(directory, delayMs)
       return
     }
-    void deps.release(directory).catch(() => {
+    void deps.release(directory).then((released) => {
+      if (!released && !disposed && !deps.isCurrentDirectory(directory)) schedule(directory, delayMs)
+    }).catch(() => {
       // Nothing to undo: OpenCode's own inactivity sweep still drops it.
     })
   }

@@ -2492,8 +2492,8 @@ export function SyncProvider(props: {
         ? "busy"
         : directoryUse(directory, childStores.getChild(directory)?.getState()),
       release: async (directory) => {
-        if (getRuntimeKey() !== expectedRuntimeKey || opencodeClient.getSdkClient() !== sdkEpoch) return
-        await opencodeClient.releaseLocation(directory)
+        if (getRuntimeKey() !== expectedRuntimeKey || opencodeClient.getSdkClient() !== sdkEpoch) return true
+        return opencodeClient.releaseLocation(directory)
       },
     })
     locationReleaseRef.current = release

@@ -231,6 +231,10 @@ checks again at that moment and keeps the location while the directory is
 selected again, shown in a side panel, has a busy or retrying session, a
 pending permission or form, or a running background command; a busy directory
 is re-checked at its own delay until it settles or is selected. A directory
+is also retained when the backend finds a live or starting persistent exec slot,
+including an idle shell. Automatic release passes `preserveExec: true`; a 409
+reschedules the check at the same delay. The backend checks and closes launch
+admission before invalidating the location. Explicit cleanup keeps its existing semantics. A directory
 without a store is left to OpenCode's own sweep. Project roots are never
 released this way: the user returns to them most, and the server's default
 scope reads the last-used one. Another client still showing the directory gets

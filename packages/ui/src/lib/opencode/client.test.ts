@@ -186,13 +186,21 @@ describe("request fidelity", () => {
   test("releasing a location names its directory, never OpenCode's own", async () => {
     opencodeClient.setDirectory("/repo/current")
     responses.push(noContent())
-    await opencodeClient.releaseLocation("/chats/2026-10-03/session-a b")
+    expect(await opencodeClient.releaseLocation("/chats/2026-10-03/session-a b")).toBe(true)
     expect(requests[0].url.pathname).toBe("/api/debug/location")
     expect(requests[0].method).toBe("DELETE")
+    expect(requests[0].url.searchParams.get("preserveExec")).toBe("true")
     expect(requests[0].headers.get("x-opencode-directory")).toBe(encodeURIComponent("/chats/2026-10-03/session-a b"))
 
     await expect(opencodeClient.releaseLocation("")).rejects.toThrow()
     expect(requests).toHaveLength(1)
+  })
+
+  test("backend exec protection defers release without swallowing other failures", async () => {
+    responses.push(json({ _tag: "ConflictError", message: "Persistent command slots still use this location", resource: "exec" }, 409))
+    expect(await opencodeClient.releaseLocation("/repo/retained")).toBe(false)
+    responses.push(json({ error: "unavailable" }, 503))
+    await expect(opencodeClient.releaseLocation("/repo/retained")).rejects.toThrow()
   })
 
   test("a global list sends no directory scope at all", async () => {
