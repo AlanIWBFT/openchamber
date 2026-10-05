@@ -1,5 +1,5 @@
 import {
-    CODE_FONT_OPTION_MAP,
+    getMonoFontDefinition,
     DEFAULT_MONO_FONT,
     DEFAULT_UI_FONT,
     UI_FONT_OPTION_MAP,
@@ -31,7 +31,7 @@ export const useFontPreferences = (): FontPreferences => {
 
     return {
         uiFont: enterpriseMode && UI_FONT_OPTION_MAP[uiFont]?.source ? DEFAULT_UI_FONT : uiFont,
-        monoFont: enterpriseMode && CODE_FONT_OPTION_MAP[monoFont]?.source ? DEFAULT_MONO_FONT : monoFont,
+        monoFont: enterpriseMode && getMonoFontDefinition(monoFont).source ? DEFAULT_MONO_FONT : monoFont,
         customUiFont,
         customMonoFont,
     };
