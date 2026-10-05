@@ -1362,6 +1362,7 @@ html:not(.dark) .chat-scroll {
    The 9.5pt base follows interface scaling through the existing 12px code token. */
 .markdown-content [data-component="markdown-code"] pre {
   font-size: calc(var(--text-code) * 19 / 18);
+  line-height: round(1.5em, 1px);
   --code-cell-tracking: calc(round(1ch, var(--code-grid-pixel, 1px)) - 1ch);
   letter-spacing: var(--code-cell-tracking);
 }
