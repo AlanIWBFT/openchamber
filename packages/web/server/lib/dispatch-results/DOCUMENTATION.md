@@ -88,6 +88,9 @@ A failed read retries with backoff (2 s doubling to 60 s).
   way OpenCode delivers a subagent report; an idle one is woken by `resume`.
 - `resume: false` for an archived parent: the answer is recorded, nothing
   runs behind the user's back.
+- The backend session's `time.archived` is authoritative. Failed archive reads
+  keep the delivery pending and retry with the existing backoff. A confirmed
+  404 drops it because the parent was deleted.
 - `id`: minted in OpenCode's `msg_` format at the first attempt and persisted
   before it. OpenCode refuses a second admission of the same id (409), so a
   retry after a crash or a lost response cannot deliver twice; 409 counts as
