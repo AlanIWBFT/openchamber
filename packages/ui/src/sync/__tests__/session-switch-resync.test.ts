@@ -206,9 +206,9 @@ describe("resyncBlockingRequestsForDirectory", () => {
     await resyncBlockingRequestsForDirectory("/repo", store)
 
     expect(listPendingFormsCalls).toHaveLength(1)
-    expect(listPendingFormsCalls[0]).toEqual({ directories: ["/repo"], includeGlobal: false })
+    expect(listPendingFormsCalls[0]).toEqual({ directories: ["/repo"] })
     expect(listPendingPermissionsCalls).toHaveLength(1)
-    expect(listPendingPermissionsCalls[0]).toEqual({ directories: ["/repo"], includeGlobal: false })
+    expect(listPendingPermissionsCalls[0]).toEqual({ directories: ["/repo"] })
   })
 
   test("resume recovery refreshes blocking requests only for the active materialized directory", async () => {
@@ -223,8 +223,8 @@ describe("resyncBlockingRequestsForDirectory", () => {
 
     await resyncBlockingRequestsForActiveDirectory("/resume-active", childStores)
 
-    expect(listPendingFormsCalls).toEqual([{ directories: ["/resume-active"], includeGlobal: false }])
-    expect(listPendingPermissionsCalls).toEqual([{ directories: ["/resume-active"], includeGlobal: false }])
+    expect(listPendingFormsCalls).toEqual([{ directories: ["/resume-active"] }])
+    expect(listPendingPermissionsCalls).toEqual([{ directories: ["/resume-active"] }])
     expect(childStores.getChild("/resume-active")?.getState().form.ses_a?.[0]?.id).toBe("frm_1")
     expect(childStores.getChild("/resume-inactive")?.getState().form.ses_b).toBe(undefined)
   })
@@ -302,7 +302,7 @@ describe("resyncBlockingRequestsForDirectory", () => {
 
     await resyncBlockingRequestsForDirectory("/repo", store, ["ses_a"], { includePermissions: false })
 
-    expect(listPendingFormsCalls).toEqual([{ directories: ["/repo"], includeGlobal: false }])
+    expect(listPendingFormsCalls).toEqual([{ directories: ["/repo"] }])
     expect(listPendingPermissionsCalls).toHaveLength(0)
     expect(store.getState().form.ses_a?.[0]?.id).toBe("frm_1")
   })
