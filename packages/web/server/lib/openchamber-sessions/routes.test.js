@@ -1346,7 +1346,6 @@ describe('openchamber session service directory resolution', () => {
   const createService = async (overrides = {}) => {
     const { createOpenChamberSessionService } = await import('./routes.js');
     return createOpenChamberSessionService({
-      archiveStore: createMemoryArchiveStore(),
       sessionMetadataStore: createMemorySessionMetadataStore(),
       readSettingsFromDiskMigrated: async () => ({ projects: [{ id: 'proj_1', path: '/repo/app' }] }),
       sanitizeProjects: (projects) => projects,
