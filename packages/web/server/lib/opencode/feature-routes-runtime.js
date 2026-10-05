@@ -77,6 +77,7 @@ import { createManagedSshCredentialStore } from '../git/ssh-credential-storage.j
 import { createManagedSshInventory } from '../git/credentials.js';
 import { createContributorProvenanceStore } from '../git/contributor-provenance-storage.js';
 import { createGitNetworkOperationStore } from '../git/network-operation-storage.js';
+import { getProcessBrokerSpawn } from '../git/process-broker.js';
 import { readEffectiveGitTransportRevision } from '../git/transport-config.js';
 import { completeWorktreeCheckoutHydration, configureRepositoryTransport } from '../git/service.js';
 import { createPrivateRepositoryIdentityResolver } from '../source-control/repository-identity.js';
@@ -642,13 +643,16 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       onCheckoutHydrated: (directory) => completeWorktreeCheckoutHydration(directory, {
         bootstrapStore: worktreeBootstrapStore,
       }),
-      spawnImpl: spawn,
+      spawnImpl: (...args) => (getProcessBrokerSpawn() ?? spawn)(...args),
       fsImpl: fsPromises,
       pathImpl: path,
       gitBinary,
       validateGitIdentity,
       resolveGitIdentity,
-      trustedDirectoriesConfig: createTrustedDirectoriesConfig({ gitBinary }),
+      trustedDirectoriesConfig: createTrustedDirectoriesConfig({
+        gitBinary,
+        spawnImpl: (...args) => (getProcessBrokerSpawn() ?? spawn)(...args),
+      }),
     });
     await registerBuiltInGuests({ persistPath: extensionsPersistPath(openchamberDataDir), root: routeDependencies.builtInExtensionsDir });
     registerGuestRoutes(app, { openchamberDataDir, openchamberVersion, resolveGitBinaryForSpawn, resolveOptionalProjectDirectory, getSmallModelService, onGuestDeactivated, surfaceViewerHeaders });
