@@ -400,7 +400,7 @@ describe('managed agent tool runtime', () => {
     const scheduleRequest = tool.openchamber_schedule.input.properties.request;
     expect(scheduleRequest.properties.action.oneOf).toContainEqual({
       const: 'schedule.create',
-      description: 'Requires name, prompt, one schedule selector, and model unless targetSessionId is set, which keeps that session\'s model',
+      description: 'Requires name, prompt, one schedule selector, and model unless targetSessionId is set. That session keeps its model and agent unless the task names others, which then become the session\'s. A named model is checked against the catalog when the task is written. runInWorktree (git only) runs each run in a fresh worktree on baseBranch (default HEAD); cleanupWorktree false keeps it',
     });
     expect(request.properties.sessionId).toEqual({ type: 'string' });
     expect(scheduleRequest.properties.daily).toEqual({ type: 'string', description: 'HH:mm' });
@@ -720,7 +720,9 @@ describe('managed agent tool runtime', () => {
     const tool = await loadTools(dataDir, 'usage', {}, [], namespaces);
 
     expect(Object.keys(tool)).toEqual(['openchamber_usage']);
-    expect(Object.keys(tool.openchamber_usage.input.properties.parameters.properties)).toEqual(['providerId']);
+    expect(Object.keys(tool.openchamber_usage.input.properties.request.properties)).toEqual(['action', 'providerId']);
+    expect(tool.openchamber_usage.input.required).toEqual(['request']);
+    expect(tool.openchamber_usage.input.additionalProperties).toBe(false);
     expect(tool.openchamber_usage.options).toEqual({ codemode: true });
     // Its catalog line names when to read it, so agents do not check limits before every task.
     expect(namespaces).toEqual([expect.objectContaining({ name: 'openchamber_usage', description: expect.stringContaining('when the user asks about limits') })]);
@@ -800,7 +802,7 @@ describe('managed agent tool runtime', () => {
     expect(scheduleParameters.disabled.type).toBe('boolean');
     for (const field of ['runInWorktree', 'baseBranch', 'cleanupWorktree']) {
       expect(scheduleParameters).toHaveProperty(field);
-      expect(tools.openchamber.input.properties.parameters.properties).not.toHaveProperty(field);
+      expect(tools.openchamber.input.properties.request.properties).not.toHaveProperty(field);
     }
     expect(scheduleParameters.runInWorktree.type).toBe('boolean');
     expect(scheduleParameters.cleanupWorktree.type).toBe('boolean');
