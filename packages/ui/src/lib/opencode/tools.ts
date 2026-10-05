@@ -193,6 +193,20 @@ export function shouldHideExecFollowUpState(tool: ToolName, status: string | und
   return isExecFollowUpTool(tool) && status !== "error" && !metadata.execError
 }
 
+const openChamberParametersSchema = z.object({
+  action: optionalText,
+  title: optionalText,
+  name: optionalText,
+  prompt: optionalText,
+  path: optionalText,
+  url: optionalText,
+  query: optionalText,
+  text: optionalText,
+  selector: optionalText,
+  taskId: optionalText,
+  link: z.object({ identifier: optionalText, title: optionalText }).optional().catch(undefined),
+}).optional().catch(undefined)
+
 const inputSchema = z
   .object({
     // v2 file tools use `path`; the other two keep MCP and plugin tools that
@@ -220,23 +234,9 @@ const inputSchema = z
     ref: optionalText,
     code: optionalText,
     questions: z.array(z.unknown()).optional().catch(undefined),
-    // OpenChamber's own tools: one `action` plus its `parameters`.
-    action: optionalText,
-    parameters: z
-      .object({
-        title: optionalText,
-        name: optionalText,
-        prompt: optionalText,
-        path: optionalText,
-        url: optionalText,
-        query: optionalText,
-        text: optionalText,
-        selector: optionalText,
-        taskId: optionalText,
-        link: z.object({ identifier: optionalText, title: optionalText }).optional().catch(undefined),
-      })
-      .optional()
-      .catch(undefined),
+    // Current request wrapper and older persisted action/parameters calls.
+    request: openChamberParametersSchema,
+    parameters: openChamberParametersSchema,
   })
   .catch({})
 
@@ -407,7 +407,7 @@ const OPENCHAMBER_TOOLS = new Set(["openchamber", "openchamber_web", "openchambe
  * no action, so their title stands alone.
  */
 function describeOpenChamberTool(parsed: ParsedInput): ToolDescription | null {
-  const parameters = parsed.parameters
+  const parameters = parsed.request ?? parsed.parameters
   const link = parameters?.link
   const linked = link ? [link.identifier, link.title].filter(Boolean).join(" ") : undefined
   const detail = linked
@@ -421,7 +421,7 @@ function describeOpenChamberTool(parsed: ParsedInput): ToolDescription | null {
     || parameters?.prompt?.split("\n")[0]
     || parameters?.taskId
     || parsed.title
-  const label = [parsed.action, detail].filter(Boolean).join(" · ")
+  const label = [parsed.request?.action ?? parsed.action, detail].filter(Boolean).join(" · ")
   return label ? { kind: "text", value: label.slice(0, MAX_COMMAND_LENGTH) } : null
 }
 
