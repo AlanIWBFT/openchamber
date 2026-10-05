@@ -220,19 +220,23 @@ describe('session image assets', () => {
     ]);
   });
 
-  it('authorizes the local images an openchamber_render page names, and only that tool\'s pages', async () => {
+  it.each(['flat', 'parameters', 'request'])('authorizes local images in %s page inputs, and only that tool\'s pages', async (wrapper) => {
     const fixture = await createFixture({ sources: [] });
     const shotPath = path.join(fixture.directory, 'Screen Shot.png');
     const backgroundPath = path.join(fixture.directory, 'bg.png');
     const otherPath = path.join(fixture.directory, 'other.png');
     await Promise.all([shotPath, backgroundPath, otherPath].map((file) => fs.writeFile(file, PNG)));
+    const pageInput = (html, title) => {
+      const page = { action: 'render.page', html, title };
+      return wrapper === 'flat' ? page : { [wrapper]: page };
+    };
     fixture.fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
       id: 'msg_1',
       type: 'assistant',
       content: [
-        { type: 'tool', name: 'openchamber_render', id: 'call_1', state: { status: 'completed', input: { html: `<img src="${shotPath}">`, title: 'Now' } } },
-        { type: 'tool', name: 'openchamber_render', id: 'call_2', state: { status: 'running', input: { parameters: { html: `<div style="background:url(${backgroundPath})"></div>`, title: 'Next' } } } },
-        { type: 'tool', name: 'shell', id: 'call_3', state: { status: 'completed', input: { html: `<img src="${otherPath}">` } } },
+        { type: 'tool', name: 'openchamber_render', id: 'call_1', state: { status: 'completed', input: pageInput(`<img src="${shotPath}">`, 'Now') } },
+        { type: 'tool', name: 'openchamber_render', id: 'call_2', state: { status: 'running', input: pageInput(`<div style="background:url(${backgroundPath})"></div>`, 'Next') } },
+        { type: 'tool', name: 'shell', id: 'call_3', state: { status: 'completed', input: pageInput(`<img src="${otherPath}">`, 'Other tool') } },
       ],
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
@@ -343,6 +347,34 @@ describe('session image assets', () => {
       .post('/api/openchamber/sessions/ses_1/markdown-image-grants')
       .send({ directory: fixture.directory, messageId: 'msg_1', callId: 'call_9', sources: [onPage] })
       .expect(404);
+  });
+
+  it.each(['request', 'parameters', 'empty-request'])('authorizes only the selected HTML when %s takes precedence', async (selection) => {
+    const fixture = await createFixture({ sources: [] });
+    const requestPath = path.join(fixture.outsideRoot, 'request.png');
+    const parametersPath = path.join(fixture.directory, 'parameters.png');
+    const flatPath = path.join(fixture.directory, 'flat.png');
+    const sources = [requestPath, parametersPath, flatPath];
+    await Promise.all(sources.map((file) => fs.writeFile(file, PNG)));
+    const input = {
+      html: `<img src="${flatPath}">`, title: 'Flat',
+      parameters: { html: `<img src="${parametersPath}">`, title: 'Legacy' },
+    };
+    if (selection !== 'parameters') {
+      input.request = { action: 'render.page', html: selection === 'empty-request' ? '' : `<img src="${requestPath}">`, title: 'Current' };
+    }
+    fixture.fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      id: 'msg_1',
+      type: 'assistant',
+      content: [{ type: 'tool', name: 'openchamber_render', id: 'call_1', state: { status: 'completed', input } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const response = await prepare(fixture.app, fixture.directory, sources);
+    const selected = selection === 'request' ? requestPath : selection === 'parameters' ? parametersPath : null;
+    expect(response.body.results).toEqual(sources.map((source) => source === selected
+      ? expect.objectContaining({ source, status: 'ready', path: source })
+      : { source, status: 'error' }));
+    if (selection === 'request') expect(response.body.results[0].outsideFileGrant).toEqual(expect.any(String));
   });
 
   it('rejects a source that the message does not reference', async () => {
