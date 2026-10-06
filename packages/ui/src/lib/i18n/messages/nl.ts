@@ -3786,3 +3786,4 @@ export const dict = {
   'sessions.moveChatToProject.failed': 'Chat kon niet worden verplaatst',
   'chat.worktreeSetup.running': 'Worktree wordt ingericht: de setupopdrachten van het project lopen…',
 } as const;
+  'desktopHostSwitcher.startup.fellBackToLocal': 'De verbinding kwam niet tot stand, dus OpenChamber is op Local gestart. Verbind haar via de instantiekiezer zodra ze bereikbaar is.',

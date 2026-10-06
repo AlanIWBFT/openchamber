@@ -52,6 +52,7 @@ import {
 } from './early-startup.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { isSplashColor, redactHostsConfigForRemote } from './remote-page-policy.mjs';
+import { connectDefaultSshInstanceAtStartup, resolveDefaultSshInstanceId } from './startup-ssh.mjs';
 import { isPackagedUiRuntimeRequest } from './packaged-ui-routing.mjs';
 import { probeDirectHostWithRetry } from './host-probe-policy.mjs';
 import { probeElectronHostWithDeadline } from './electron-host-probe.mjs';
@@ -3003,13 +3004,28 @@ const resolveInitialUrl = async () => {
   let remoteProbe = null;
 
   const envTarget = normalizeHostUrl(process.env.OPENCHAMBER_SERVER_URL || '');
-  const config = readDesktopHostsConfig();
+  let config = readDesktopHostsConfig();
+  // A default SSH instance is reachable only through its tunnel: open it
+  // before the probe, and boot Local when it cannot be opened.
+  let sshStartupFallbackHostId = null;
+  const defaultSshInstanceId = envTarget
+    ? null
+    : resolveDefaultSshInstanceId(config.defaultHostId, sshManager.readInstances().instances);
+  if (defaultSshInstanceId) {
+    const connected = await connectDefaultSshInstanceAtStartup({ sshManager, instanceId: defaultSshInstanceId });
+    if (connected.ok) {
+      config = readDesktopHostsConfig();
+    } else if (localAvailable) {
+      console.warn(`[startup] default SSH instance did not connect (${connected.reason}); opening Local`);
+      sshStartupFallbackHostId = defaultSshInstanceId;
+    }
+  }
   if (envTarget) {
     apiBaseUrl = envTarget;
     clientToken = '';
     requestHeaders = {};
     initialUrl = usePackagedUi ? localUiUrl : envTarget;
-  } else if (config.defaultHostId && config.defaultHostId !== LOCAL_HOST_ID) {
+  } else if (config.defaultHostId && config.defaultHostId !== LOCAL_HOST_ID && !sshStartupFallbackHostId) {
     const host = config.hosts.find((entry) => entry.id === config.defaultHostId);
     if (host?.url) {
       apiBaseUrl = host.apiUrl || host.url;
@@ -3054,12 +3070,14 @@ const resolveInitialUrl = async () => {
     );
   }
 
-  const bootOutcome = computeBootOutcome({
-    envTargetUrl: envTarget || null,
-    probe: remoteProbe,
-    config,
-    localAvailable,
-  });
+  const bootOutcome = sshStartupFallbackHostId
+    ? { target: 'local', status: 'ok', localAvailable, sshStartupFallbackHostId }
+    : computeBootOutcome({
+      envTargetUrl: envTarget || null,
+      probe: remoteProbe,
+      config,
+      localAvailable,
+    });
 
   return { initialUrl, localOrigin, localUiUrl, bootOutcome, apiBaseUrl, clientToken, requestHeaders };
 };

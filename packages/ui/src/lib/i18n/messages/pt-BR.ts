@@ -3787,3 +3787,4 @@ export const dict: Record<I18nKey, string> = {
   'sessions.moveChatToProject.failed': 'Não foi possível mover o chat',
   'chat.worktreeSetup.running': 'Preparando o worktree: executando os comandos de configuração do projeto…',
 };
+  'desktopHostSwitcher.startup.fellBackToLocal': 'A conexão não abriu, então o OpenChamber iniciou no Local. Conecte-a pelo seletor de instâncias quando estiver acessível.',

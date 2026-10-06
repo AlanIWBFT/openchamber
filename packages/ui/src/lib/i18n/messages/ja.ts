@@ -3786,3 +3786,4 @@ export const dict: Record<I18nKey, string> = {
   'sessions.moveChatToProject.failed': 'チャットを移動できませんでした',
   'chat.worktreeSetup.running': 'worktree を準備中: プロジェクトのセットアップコマンドを実行しています…',
 };
+  'desktopHostSwitcher.startup.fellBackToLocal': '接続を開けなかったため、OpenChamber は Local で起動しました。到達できるようになったら、インスタンス切り替えから接続してください。',

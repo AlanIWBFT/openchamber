@@ -3788,3 +3788,4 @@ export const dict = {
 } as const;
 
 export type I18nKey = keyof typeof dict;
+  'desktopHostSwitcher.startup.fellBackToLocal': 'Its connection didn\'t open, so OpenChamber started on Local. Connect it from the instance switcher once it\'s reachable.',
