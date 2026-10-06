@@ -1,5 +1,5 @@
 import React, { act } from 'react';
-import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, setDefaultTimeout, test } from 'bun:test';
 import { plugin } from 'bun';
 import { pathToFileURL } from 'node:url';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -17,6 +17,7 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { projectTurnRecords } from '../lib/turns/projectTurnRecords';
 import type { ChatMessageEntry, TurnChangedFile, TurnRecord } from '../lib/turns/types';
 import { LiveTurnActivity } from './LiveTurnActivity';
+import { createTurnMessageWindowStore, TurnMessageWindowContext } from '../lib/turns/turnMessageWindow';
 
 plugin({
     name: 'live-activity-worker-url',
@@ -75,26 +76,36 @@ function turn(messages: ChatMessageEntry[]): TurnRecord {
     }, ...messages]).turns[0];
 }
 
-function Harness({ record, retired = false, changedFiles, isLatestTurn = true }: {
+function Harness({ record, retired = false, changedFiles, isLatestTurn = true, isWorking = true, showReasoning = true, defaultExpanded = false }: {
     record: TurnRecord;
     retired?: boolean;
     changedFiles?: TurnChangedFile[];
     isLatestTurn?: boolean;
+    isWorking?: boolean;
+    showReasoning?: boolean;
+    defaultExpanded?: boolean;
 }) {
-    const [expanded, setExpanded] = React.useState(false);
+    const [expanded, setExpanded] = React.useState(defaultExpanded);
+    const [expandedTools, setExpandedTools] = React.useState(new Set<string>());
     const renderMessage = (message: ChatMessageEntry) => (
         <div key={message.info.id} data-fixture-message={message.info.id}>
             <MessageBody
                 messageId={message.info.id} parts={message.parts} isUser={false}
                 isMessageCompleted={message.info.role === 'assistant' && Boolean(message.info.finish)}
                 messageFinish={message.info.role === 'assistant' ? message.info.finish : undefined}
-                isMobile={false} copiedCode={null} onCopyCode={() => undefined} expandedTools={new Set()}
-                onToggleTool={() => undefined} onShowPopup={() => undefined} streamPhase="completed" allowAnimation={false}
-                hasTextContent={message.parts.some((part) => part.type === 'text')} showReasoningTraces
+                isMobile={false} copiedCode={null} onCopyCode={() => undefined} expandedTools={expandedTools}
+                onToggleTool={(id) => setExpandedTools((current) => {
+                    const next = new Set(current);
+                    if (next.has(id)) next.delete(id); else next.add(id);
+                    return next;
+                })} onShowPopup={() => undefined} streamPhase="completed" allowAnimation={false}
+                hasTextContent={message.parts.some((part) => part.type === 'text')} showReasoningTraces={showReasoning}
                 turnGroupingContext={{
-                    turnId: 'user', isFirstAssistantInTurn: message === record.assistantMessages[0],
-                    isLastAssistantInTurn: message === record.assistantMessages.at(-1),
+                    turnId: 'user', isFirstAssistantInTurn: message.info.id === record.assistantMessages[0]?.info.id,
+                    isLastAssistantInTurn: message.info.id === record.assistantMessages.at(-1)?.info.id,
                     isLatestTurn, changedFiles, isWorking: false, hasTools: record.hasTools, hasReasoning: record.hasReasoning,
+                    explorationGroups: record.explorationGroups.filter((group) => group.anchorMessageId === message.info.id),
+                    explorationPartIds: record.explorationGroups.flatMap((group) => group.parts.filter((part) => part.messageId === message.info.id).map((part) => part.id)),
                 }}
             />
         </div>
@@ -102,7 +113,8 @@ function Harness({ record, retired = false, changedFiles, isLatestTurn = true }:
     return <RuntimeAPIContext.Provider value={runtimeApis}>
         <SyncProvider sdk={sdk} directory="/project">
             <I18nProvider>
-                <LiveTurnActivity turn={record} hasLaterAssistant={retired} expanded={expanded}
+                <LiveTurnActivity turn={record} expanded={expanded}
+                    isWorking={isWorking && !retired} showReasoning={showReasoning} streamPhase="completed"
                     onToggle={() => setExpanded((value) => !value)} renderMessage={renderMessage} />
             </I18nProvider>
         </SyncProvider>
@@ -114,7 +126,7 @@ function Harness({ record, retired = false, changedFiles, isLatestTurn = true }:
 // Windows; later tests take well under a second.
 setDefaultTimeout(30_000);
 
-describe('live Activity with the real message body', () => {
+describe('Activity with the real message body', () => {
     let root: Root;
     let container: HTMLDivElement;
     let restore: () => void;
@@ -131,8 +143,7 @@ describe('live Activity with the real message body', () => {
         };
         const previous = Object.keys(globals).map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
         for (const [name, value] of Object.entries(globals)) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
-        // Reduced motion makes the disclosure lifecycle deterministic without
-        // replacing the real component or animation module.
+        // Reduced motion keeps tool reveal effects deterministic.
         restore = () => {
             for (const [name, descriptor] of previous) {
                 if (descriptor) Object.defineProperty(globalThis, name, descriptor);
@@ -149,31 +160,191 @@ describe('live Activity with the real message body', () => {
     });
     afterEach(async () => {
         await act(async () => root.unmount());
+        jest.useRealTimers();
         restore();
     });
 
-    test('keeps active prose and tools visible; stop folds history but leaves the answer', async () => {
+    test('touch toggles briefly reveal the new view, repeated taps restart the hint, and mouse clicks do not latch it', async () => {
+        jest.useFakeTimers();
+        const record = turn([assistant('progress', Array.from({ length: 9 }, (_, index): Part => ({
+            ...readPart, id: `tool-${index}`, type: 'tool', tool: 'shell', callID: `tool-${index}`,
+        })), 'tool-calls')]);
+        function HintHarness({ working = true }: { working?: boolean }) {
+            const [expanded, setExpanded] = React.useState(false);
+            return <I18nProvider>
+                <LiveTurnActivity turn={record} expanded={expanded} isWorking={working} streamPhase="completed" showReasoning
+                    onToggle={() => setExpanded((value) => !value)} renderMessage={(message) => <div key={message.info.id}>{message.info.id}</div>} />
+            </I18nProvider>;
+        }
+        await act(async () => root.render(<HintHarness />));
+        const hint = () => container.querySelector('[data-live-activity-view-hint]');
+        const activate = async (selector: string, pointerType: string) => {
+            const button = container.querySelector<HTMLButtonElement>(selector);
+            if (!button) throw new Error(`Missing button: ${selector}`);
+            await act(async () => {
+                button.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, pointerType }));
+                button.dispatchEvent(new window.MouseEvent('click', { bubbles: true, detail: 1 }));
+            });
+        };
+        const advance = async (ms: number) => { await act(async () => { jest.advanceTimersByTime(ms); }); };
+        expect(hint()?.classList.contains('opacity-0')).toBe(true);
+        await activate('[data-live-activity-more]', 'touch');
+        expect(hint()?.classList.contains('opacity-100')).toBe(true);
+        expect(hint()?.querySelector('.opacity-100')?.textContent).toBe('All activity');
+        await advance(900);
+        await activate('button[aria-controls]', 'touch');
+        expect(hint()?.querySelector('.opacity-100')?.textContent).toBe('Latest activity');
+        await advance(900);
+        expect(hint()?.classList.contains('opacity-100')).toBe(true);
+        await advance(300);
+        expect(hint()?.classList.contains('opacity-0')).toBe(true);
+        await activate('button[aria-controls]', 'mouse');
+        expect(hint()?.classList.contains('opacity-0')).toBe(true);
+        await activate('button[aria-controls]', 'touch');
+        await act(async () => root.render(<HintHarness working={false} />));
+        expect(hint()).toBeNull();
+    });
+
+    test('opening a running fold away from the timeline end keeps new messages mounted', async () => {
+        const windowStore = createTurnMessageWindowStore();
+        const messages = Array.from({ length: 40 }, (_, index) => assistant(`step-${index}`, [text(`text-${index}`, `Step ${index}`)], 'tool-calls'));
+        const render = (record: TurnRecord) => (
+            <TurnMessageWindowContext.Provider value={windowStore}><Harness record={record} /></TurnMessageWindowContext.Provider>
+        );
+        await act(async () => root.render(render(turn(messages))));
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        expect(container.querySelector('[data-fixture-message="step-39"]')).not.toBeNull();
+        expect(container.querySelector('[data-turn-message-spacer="tail"]')).toBeNull();
+        await act(async () => root.render(render(turn([...messages, assistant('newest', [text('new-text', 'Newly appended')])]))));
+        expect(container.querySelector('[data-fixture-message="newest"]')?.textContent).toContain('Newly appended');
+    });
+
+    test('a settled fold still opens at its head, but resuming it reveals the live tail and keeps it through completion', async () => {
+        const windowStore = createTurnMessageWindowStore();
+        const messages = Array.from({ length: 40 }, (_, index) => assistant(`step-${index}`, [text(`text-${index}`, `Step ${index}`)], 'tool-calls'));
+        const final = assistant('final', [text('answer', 'First answer')], 'stop');
+        const render = (record: TurnRecord) => (
+            <TurnMessageWindowContext.Provider value={windowStore}><Harness record={record} /></TurnMessageWindowContext.Provider>
+        );
+        await act(async () => root.render(render(turn([...messages, final]))));
+        const header = container.querySelector<HTMLButtonElement>('button[aria-controls]');
+        await act(async () => header?.click());
+        expect(container.querySelector('[data-fixture-message="step-0"]')).not.toBeNull();
+        expect(container.querySelector('[data-fixture-message="step-39"]')).toBeNull();
+        expect(container.querySelector('[data-turn-message-spacer="tail"]')).not.toBeNull();
+        const resumed = assistant('resumed', [text('resumed-text', 'Resumed work')], 'tool-calls');
+        await act(async () => root.render(render(turn([...messages, final, resumed]))));
+        expect(header?.getAttribute('aria-expanded')).toBe('true');
+        expect(container.querySelector('[data-fixture-message="resumed"]')?.textContent).toContain('Resumed work');
+        expect(container.querySelector('[data-turn-message-spacer="tail"]')).toBeNull();
+        await act(async () => root.render(render(turn([...messages, final, resumed, assistant('done', [text('done-text', 'Done')], 'stop')]))));
+        expect(container.querySelector('[data-fixture-message="resumed"]')).not.toBeNull();
+        expect(container.querySelector('[data-turn-message-spacer="tail"]')).toBeNull();
+    });
+
+    test('running Activity folds to seven rows and pins text until a newer note or final answer replaces it', async () => {
+        const tools = Array.from({ length: 9 }, (_, index): Part => ({
+            ...readPart, id: `command-${index}`, type: 'tool', tool: 'exec_command', callID: `command-${index}`,
+            state: { status: 'completed', input: { cmd: `echo ${index}` }, output: '', metadata: {}, time: { start: 1, end: 2 } },
+        }));
+        const record = (content: string) => turn([assistant('progress', [text('note', content), ...tools], 'tool-calls')]);
+        await act(async () => root.render(<Harness record={record('Checking source')} defaultExpanded />));
+        const header = container.querySelector<HTMLButtonElement>('button[aria-controls]');
+        expect(header?.getAttribute('aria-expanded')).toBe('true');
+        expect(container.textContent).toContain('echo 0');
+        await act(async () => header?.click());
+        expect(header?.getAttribute('aria-expanded')).toBe('false');
+        expect(container.querySelector('[data-pinned-activity-text]')?.textContent?.trim()).toBe('Checking source');
+        expect(container.textContent?.split('Checking source').length).toBe(2);
+        expect(container.textContent).not.toContain('echo 0');
+        expect(container.textContent).not.toContain('echo 1');
+        for (let index = 2; index < 9; index++) expect(container.textContent).toContain(`echo ${index}`);
+        expect(container.querySelector('[data-live-activity-more]')?.textContent).toBe('+2 more...');
+        await act(async () => root.render(<Harness record={record('Checking source and tests')} />));
+        expect(container.querySelector('[data-pinned-activity-text]')?.textContent?.trim()).toBe('Checking source and tests');
+        await act(async () => container.querySelector<HTMLButtonElement>('[data-live-activity-more]')?.click());
+        expect(container.querySelector('[data-live-activity-more]')).toBeNull();
+        expect(container.querySelector('[data-pinned-activity-text]')).toBeNull();
+        expect(container.textContent).toContain('Checking source and tests');
+        await act(async () => header?.click());
+        expect(container.querySelector('[data-pinned-activity-text]')).not.toBeNull();
+        await act(async () => root.render(<Harness record={record('Checking source and tests')} isWorking={false} />));
+        expect(container.querySelector('[data-pinned-activity-text]')).toBeNull();
+        expect(container.textContent).not.toContain('Checking source and tests');
+        expect(container.querySelector('[data-live-activity-content]')?.textContent).toBe('');
+        expect(container.querySelector('[data-live-activity-more]')).toBeNull();
+        const newer = assistant('newer', [text('new-note', 'Now checking tests')], 'tool-calls');
+        const messages = [...record('Checking source and tests').assistantMessages, newer];
+        await act(async () => root.render(<Harness record={turn(messages)} />));
+        expect(container.querySelector('[data-pinned-activity-text]')?.textContent?.trim()).toBe('Now checking tests');
+        await act(async () => header?.click());
+        expect(header?.getAttribute('aria-expanded')).toBe('true');
+        const final = assistant('final', [text('answer', 'Final answer')], 'stop');
+        await act(async () => root.render(<Harness record={turn([...messages, final])} />));
+        expect(header?.getAttribute('aria-expanded')).toBe('true');
+        expect(container.textContent).toContain('echo 0');
+        expect(container.querySelector('[data-pinned-activity-text]')).toBeNull();
+        expect(container.textContent).toContain('Final answer');
+        await act(async () => header?.click());
+        expect(container.querySelector('[data-live-activity-content]')?.textContent).toBe('');
+        expect(container.textContent).not.toContain('echo 8');
+        expect(container.textContent).toContain('Final answer');
+    });
+
+    test('a pinned note preserves Exploration boundaries and nested expansion through the outer toggle', async () => {
+        const first = assistant('first', [text('old', 'Earlier note'), readPart], 'tool-calls');
+        const second = assistant('second', [text('new', 'Latest note'), { ...readPart, id: 'read-next' }], 'tool-calls');
+        await act(async () => root.render(<Harness record={turn([first])} defaultExpanded />));
+        const header = container.querySelector<HTMLButtonElement>('button[aria-controls]');
+        await act(async () => header?.click());
+        expect(container.querySelector('[data-pinned-activity-text]')?.textContent?.trim()).toBe('Earlier note');
+        await act(async () => root.render(<Harness record={turn([first, second])} />));
+        expect(container.querySelectorAll('[data-pinned-activity-text]').length).toBe(1);
+        expect(container.querySelector('[data-pinned-activity-text]')?.textContent?.trim()).toBe('Latest note');
+        expect(container.textContent?.split('Latest note').length).toBe(2);
+        expect(container.textContent).toContain('Earlier note');
+        expect(container.querySelectorAll('[data-exploration-group]').length).toBe(2);
+        expect(container.querySelector('[data-live-activity-more]')).toBeNull();
+        await act(async () => container.querySelector<HTMLButtonElement>('[data-exploration-group] button')?.click());
+        expect(container.querySelector('[data-exploration-group] button')?.getAttribute('aria-expanded')).toBe('true');
+        await act(async () => header?.click());
+        expect(container.querySelector('[data-exploration-group] button')?.getAttribute('aria-expanded')).toBe('true');
+        await act(async () => header?.click());
+        expect(container.querySelector('[data-exploration-group] button')?.getAttribute('aria-expanded')).toBe('true');
+        const final = assistant('final', [text('answer', 'Final answer')], 'stop');
+        await act(async () => root.render(<Harness record={turn([first, second, final])} />));
+        expect(container.querySelector('[data-pinned-activity-text]')).toBeNull();
+        expect(header?.getAttribute('aria-expanded')).toBe('false');
+        expect(container.querySelector('[data-live-activity-content]')?.textContent).toBe('');
+        expect(container.querySelectorAll('[data-exploration-group]').length).toBe(0);
+        expect(container.textContent).toContain('Final answer');
+        await act(async () => header?.click());
+        expect(container.querySelector('[data-exploration-group] button')?.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    test('an expanded turn stays expanded when its final answer arrives', async () => {
         const progress = assistant('progress', [text('progress-text', 'Checking the source'), readPart], 'tool-calls');
-        await act(async () => root.render(<Harness record={turn([progress])} />));
+        await act(async () => root.render(<Harness record={turn([progress])} defaultExpanded />));
         expect(container.textContent).toContain('Checking the source');
-        expect(container.querySelector('[aria-controls]')).toBeNull();
-        expect(container.textContent).not.toContain('Activity');
+        expect(container.querySelector('button[aria-controls]')?.getAttribute('aria-expanded')).toBe('true');
+        expect(container.textContent).toContain('Activity');
         const final = assistant('final', [text('final-text', 'The final answer')], 'stop');
         await act(async () => root.render(<Harness record={turn([progress, final])} />));
         expect(container.textContent).toContain('The final answer');
-        expect(container.textContent).not.toContain('Checking the source');
+        expect(container.textContent).toContain('Checking the source');
         const header = container.querySelector<HTMLButtonElement>('button[aria-controls]');
-        expect(header?.getAttribute('aria-expanded')).toBe('false');
+        expect(header?.getAttribute('aria-expanded')).toBe('true');
         expect(header?.textContent).toContain('Explored codebase');
         await act(async () => header?.click());
         expect(header?.textContent).toContain('Explored codebase');
-        expect(container.textContent).toContain('Checking the source');
+        expect(container.textContent).not.toContain('Checking the source');
         expect(container.textContent).toContain('The final answer');
+        await act(async () => header?.click());
         await act(async () => root.render(<Harness record={turn([progress, { ...final, parts: [...final.parts] }])} />));
         expect(header?.getAttribute('aria-expanded')).toBe('true');
     });
 
-    test('keeps thinking in the final message inside Activity, not outside with the answer', async () => {
+    test('a fully collapsed final message hides its thinking and preserves its answer', async () => {
         const thinking: Part = { type: 'reasoning', id: 'thinking', messageID: 'final', sessionID: 'session', text: 'Private reasoning content', time: { start: 1, end: 2 } };
         const final = assistant('final', [thinking, text('final-text', 'Public answer')], 'stop');
         await act(async () => root.render(<Harness record={turn([final])} />));
@@ -202,14 +373,21 @@ describe('live Activity with the real message body', () => {
         expect(container.querySelector('button[aria-controls]')?.getAttribute('aria-expanded')).toBe('false');
     });
 
-    test('an interrupted turn folds all prose without fabricating a final answer', async () => {
+    test('a collapsed interrupted turn fully closes and restores its preview on resume', async () => {
         const record = turn([assistant('progress', [text('progress-text', 'Still working'), readPart], 'tool-calls')]);
         await act(async () => root.render(<Harness record={record} />));
         expect(container.textContent).toContain('Still working');
-        expect(container.textContent).not.toContain('Activity');
+        expect(container.querySelector('button[aria-controls]')?.getAttribute('aria-expanded')).toBe('false');
+        await act(async () => root.render(<Harness record={record} isWorking={false} />));
+        expect(container.querySelector('[data-live-activity-content]')?.textContent).toBe('');
+        expect(container.textContent).not.toContain('Still working');
+        await act(async () => root.render(<Harness record={record} />));
+        expect(container.textContent).toContain('Still working');
+        expect(container.querySelector('button[aria-controls]')?.getAttribute('aria-expanded')).toBe('false');
         await act(async () => root.render(<Harness record={record} retired />));
         expect(container.textContent).not.toContain('Still working');
         expect(container.textContent).toContain('Activity');
+        expect(container.querySelector('button[aria-controls]')?.getAttribute('aria-expanded')).toBe('false');
         await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
         expect(container.textContent).toContain('Still working');
     });

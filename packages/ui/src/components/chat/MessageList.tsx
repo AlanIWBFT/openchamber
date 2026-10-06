@@ -625,11 +625,14 @@ const TurnBlock = React.memo(({
             turn={renderableTurn}
             stickyUserHeader={stickyUserHeader && turnHeaderCanStick}
             renderMessage={renderMessage}
-            assistantContent={chatRenderMode === 'live' && !defaultActivityExpanded && hasLiveActivity(turn, showReasoningTraces) ? (
+            assistantContent={chatRenderMode === 'live' && hasLiveActivity(turn, showReasoningTraces) ? (
                 <LiveTurnActivity
                     turn={renderableTurn}
-                    hasLaterAssistant={hasLaterAssistant}
-                    expanded={turnUiState.isLiveExpanded === true}
+                    expanded={turnUiState.isLiveExpanded ?? defaultActivityExpanded}
+                    isWorking={sessionIsWorking && !hasLaterAssistant}
+                    streamingMessageId={activeStreamingMessageId}
+                    streamPhase={activeStreamingPhase ?? 'completed'}
+                    showReasoning={showReasoningTraces}
                     onToggle={handleToggleLiveActivity}
                     renderMessage={renderMessage}
                 />
@@ -1069,7 +1072,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             const next = new Map(previous);
             const current = next.get(turnId) ?? { isExpanded: defaultActivityExpanded };
             const toggled = mode === 'live'
-                ? { ...current, isLiveExpanded: !current.isLiveExpanded }
+                ? { ...current, isLiveExpanded: !(current.isLiveExpanded ?? defaultActivityExpanded) }
                 : { ...current, isExpanded: !current.isExpanded };
             next.set(turnId, toggled);
             writeTurnUiStateCache(turnId, toggled);
@@ -1145,13 +1148,13 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const hasUngroupedStaticEntries = projection.ungroupedMessageIds.size > 0;
     const tailHasAssistant = Boolean(streamingTurn?.assistantMessages.length);
     const turnsWithLaterAssistant = React.useMemo(() => {
-        if (chatRenderMode !== 'live' || defaultActivityExpanded) return new Set<string>();
+        if (chatRenderMode !== 'live') return new Set<string>();
         const retired = getTurnsWithLaterAssistant(staticTurns);
         if (tailHasAssistant) {
             for (const turn of staticTurns) retired.add(turn.turnId);
         }
         return retired;
-    }, [chatRenderMode, defaultActivityExpanded, staticTurns, tailHasAssistant]);
+    }, [chatRenderMode, staticTurns, tailHasAssistant]);
     const staticEntryMessages = hasUngroupedStaticEntries ? displayMessages : EMPTY_STATIC_ENTRY_MESSAGES;
     const staticEntryUngroupedIds = hasUngroupedStaticEntries ? projection.ungroupedMessageIds : EMPTY_UNGROUPED_MESSAGE_IDS;
     const staticRenderEntries = React.useMemo<RenderEntry[]>(() => streamPerfMeasure('ui.message_list.render_entries_ms', () => {
@@ -1393,7 +1396,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             : collapsibleTurnByMessageId.get(messageId);
         if (!turnId) return false;
         const current = turnUiStatesRef.current.get(turnId) ?? { isExpanded: defaultActivityExpanded };
-        if (current.isExpanded && current.isLiveExpanded) return false;
+        if (current.isExpanded && (current.isLiveExpanded ?? defaultActivityExpanded)) return false;
         const opened = { ...current, isExpanded: true, isLiveExpanded: true };
         writeTurnUiStateCache(turnId, opened);
         setTurnUiStates((previous) => new Map(previous).set(turnId, opened));

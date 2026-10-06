@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { AssistantMessage, Part, ToolPart, ToolStateCompleted } from '@/lib/opencode/model';
-import { getLiveFinalMessage, getTurnsWithLaterAssistant, hasLiveActivity } from './liveActivity';
+import { getLiveFinalMessage, getTurnsWithLaterAssistant, hasLiveActivity, projectLiveActivityPreview } from './liveActivity';
 import { projectTurnRecords } from './projectTurnRecords';
 import { summarizeLiveActivity } from './liveActivitySummary';
 import type { ChatMessageEntry } from './types';
@@ -90,13 +90,60 @@ describe('live turn boundaries', () => {
         expect(getLiveFinalMessage([final, synthetic])).toBe(final);
     });
 
-    test('activity eligibility follows visible sorted activity rather than any assistant prose', () => {
+    test('activity requires tools or visible reasoning, never a text-only reply even while it streams', () => {
         const reasoning: Part = { type: 'reasoning', id: 'thinking', messageID: 'a', sessionID: 'session', text: 'Thinking', time: { start: 1, end: 2 } };
         const turn = projectTurnRecords([user(), assistant('a', [reasoning, text('Done')], { finish: 'stop' })]).turns[0];
         expect(hasLiveActivity(turn, false)).toBe(false);
         expect(hasLiveActivity(turn, true)).toBe(true);
         expect(hasLiveActivity(projectTurnRecords([user(), assistant('a', [text('Hello')], { finish: 'stop' })]).turns[0], true)).toBe(false);
+        expect(hasLiveActivity(projectTurnRecords([user(), assistant('a', [text('Checking')])]).turns[0], true)).toBe(false);
+        expect(hasLiveActivity(projectTurnRecords([user(), assistant('a', [text('Checking'), tool('read', 'read')])]).turns[0], true)).toBe(true);
+        expect(hasLiveActivity(projectTurnRecords([user(), assistant('a', [tool('task', 'subagent')])]).turns[0], true)).toBe(true);
     });
+});
+
+describe('live collapsed preview', () => {
+    test('keeps seven most recent rows and one live note without changing source messages', () => {
+        const parts = [text('Latest note'), ...Array.from({ length: 10 }, (_, index) => tool(`cmd-${index}`, 'shell'))];
+        const record = projectTurnRecords([user(), assistant('step', parts)]).turns[0];
+        const preview = projectLiveActivityPreview(record, true);
+        expect(preview.messages.flatMap((message) => message.parts.map((part) => part.id))).toEqual(
+            Array.from({ length: 7 }, (_, index) => `cmd-${index + 3}`),
+        );
+        expect(preview.pinnedText?.part.text).toBe('Latest note');
+        expect(preview.hiddenCount).toBe(3);
+        expect(record.assistantMessages[0].parts).toBe(parts);
+        expect(parts).toHaveLength(11);
+    });
+
+    test('a cross-message Exploration is one complete native row even with many calls', () => {
+        const calls = Array.from({ length: 100 }, (_, index) => assistant(`read-${index}`, [tool(`read-${index}`, 'read')]));
+        const commands = Array.from({ length: 6 }, (_, index) => tool(`cmd-${index}`, 'shell'));
+        const record = projectTurnRecords([user(), ...calls, assistant('commands', commands)]).turns[0];
+        const preview = projectLiveActivityPreview(record, true);
+        expect(preview.messages.map((message) => message.info.id)).toEqual(['read-0', 'commands']);
+        expect(preview.messages.flatMap((message) => message.parts)).toHaveLength(7);
+        expect(preview.hiddenCount).toBe(0);
+        expect(record.explorationGroups[0].parts).toHaveLength(100);
+    });
+
+    test('hidden reasoning, empty text and successful exec controls do not spend the preview budget', () => {
+        const reasoning: Part = { type: 'reasoning', id: 'thinking', sessionID: 'session', messageID: 'a', text: 'Thinking', time: { start: 1, end: 2 } };
+        const commands = Array.from({ length: 8 }, (_, index) => tool(`cmd-${index}`, 'shell'));
+        const record = projectTurnRecords([user(), assistant('a', [...commands, reasoning, text(' '), tool('poll', 'poll_exec', { metadata: { execID: 7 } })])]).turns[0];
+        const preview = projectLiveActivityPreview(record, false);
+        expect(preview.pinnedText).toBeUndefined();
+        expect(preview.messages.flatMap((message) => message.parts.map((part) => part.id))).toEqual(commands.slice(1).map((part) => part.id));
+    });
+
+    test('the latest growing text is pinned without requiring a tool or message completion', () => {
+        const record = projectTurnRecords([user(), assistant('a', [text('Older'), tool('read', 'read')]), assistant('b', [text('Growing')])]).turns[0];
+        const preview = projectLiveActivityPreview(record, true);
+        expect(preview.pinnedText?.message.info.id).toBe('b');
+        expect(preview.pinnedText?.part.text).toBe('Growing');
+        expect(preview.messages.flatMap((message) => message.parts.map((part) => part.id))).toEqual(['Older', 'read']);
+    });
+
 });
 
 describe('live activity report', () => {

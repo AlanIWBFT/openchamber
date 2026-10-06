@@ -60,12 +60,10 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Thinking block UI (`ReasoningTimelineBlock`), summary + optional duration.
 
 - `components/LiveTurnActivity.tsx` (relative to the chat folder)
-  - Owns the optional live-only turn disclosure. `MessageList` enables it when
-    Activity Default is Collapsed and the turn has visible Activity content.
-  - `components/LiveActivityCollapse.tsx` owns the finite height transition;
-    `components/liveActivityContext.ts` scopes the final message's non-text
-    disclosure without changing sorted message context or tool rendering.
-  - `lib/turns/liveActivity.ts` owns final-answer and interruption boundaries.
+  - Owns the live-only turn disclosure. `MessageList` enables it whenever the
+    turn has visible Activity content; Activity Default selects its initial state.
+  - `lib/turns/liveActivity.ts` owns final-answer and interruption boundaries,
+    and projects the seven-row collapsed preview from the native live groups.
   - `lib/turns/liveActivitySummary.ts` derives the report from tool results.
 
 - `JustificationBlock.tsx`
@@ -91,33 +89,56 @@ its logical gutter, allowing adjacent Arabic and English items. Inline code
 and code widgets have explicit LTR attributes so they do not choose the
 containing item's direction. Direction changes preserve source and copy text.
 
-### Optional live history disclosure
+### Live Activity disclosure
 
-Activity Default is shared by the settings UI in both render modes. In live
-mode, Expanded preserves the original timeline without a turn disclosure.
-Collapsed adds one Activity header after completion or interruption while preserving the original live rows,
-their order, and their individual controls. It adds no tool subgroups, side
-line, height cap, or inner scroller. Sorted rendering keeps its existing path
-and its own per-turn expansion state.
+Activity Default is shared by the settings UI in both render modes. Live adds
+an Activity header only after a tool call or visible reasoning appears, including
+standalone subagents. Text-only replies stay inline throughout streaming and
+completion, so their header does not flash before the final answer. Expanded and Collapsed choose the default state
+of the same disclosure, for both running and settled turns. It preserves the
+original live rows, their order, and their individual controls. Sorted rendering
+keeps its own path and per-turn expansion state.
+While running, hovering the header fades in a muted current-view hint: Latest
+activity when folded, All activity when expanded. Both labels share one grid
+cell so switching crossfades without shifting the layout. The hint fades out
+on pointer exit and respects reduced motion. Settled turns keep their report.
+Touch activation of the header or `+N more...` shows the current-view hint for
+1.2 seconds before fading out. Repeated taps restart that duration; mouse and
+keyboard activation do not start the touch timer.
 
-The active turn stays open without an Activity header. A final assistant message with `finish: stop`
-collapses the earlier messages and the final message's non-text parts, keeping
-the answer and its existing footer outside. Intermediate-text summary fallback
-and compaction summaries never become final answers. An older turn without a
-final answer collapses once a later visible turn has an assistant response;
-a queued user message alone is not enough. Hidden user continuations retain
+Each turn starts in the configured default state and keeps one expansion choice
+through completion, interruption, and resumption. A folded running turn shows
+its seven most recent top-level rows, counting an Exploration group as one row.
+Group membership comes from the original turn, so the preview never splits or
+merges groups. The latest nonempty assistant text is pinned below the preview
+with a horizontal divider and excluded from the seven rows. It uses the normal
+live text renderer. New text replaces the pin.
+If earlier rows are hidden, a muted `+N more...` control directly below the Activity header and above the preview
+reports their count and expands Activity when clicked. The pinned text is
+excluded from that count, and each Exploration group still counts as one row.
+
+When live session status becomes idle, a final answer arrives, or a later turn
+has an assistant response, folded Activity becomes fully closed. Expanded
+Activity stays fully expanded. Resuming a folded turn restores its preview.
+A final assistant message with `finish: stop` keeps its text and footer outside
+the fold; its non-text parts are hidden when folded. Intermediate-text summary
+fallback and compaction summaries never become final answers. A queued user
+message alone does not retire the running turn. Hidden user continuations retain
 the visible-turn mapping established by `projectTurnRecords`.
 
-Manual expansion survives later metadata updates and timeline virtualization
-within the session. The disclosure uses a finite 180ms height transition,
-respects reduced motion, and delegates end pinning to the existing timeline.
-It never calls scroll-to-bottom. Collapsed history does not mount its hidden
-message bodies; initial history loads do not animate collapse.
-Layout-effect replay after a Suspense hide/reveal must settle the requested
-height and retained children even when the expanded target did not change.
-Cleanup stops the animation, so a same-target early return can leave a cached
-pre-collapse height on the DOM indefinitely. Failed animations also settle;
-callbacks from cancelled, superseded animations never settle a newer target.
+The expansion choice survives metadata updates and timeline virtualization in
+the existing turn UI cache. Preview selection is computed only while folded and
+running. Its filtered messages use the normal renderMessage
+path and original turn context, preserving nested tool expansion choices.
+Only an Exploration anchor mounts a message body for a selected group; that
+body renders every member through the original context. Expanding restores the
+normal message window. The preview switches directly without a height animation,
+retained hidden bodies, or a second copy of the same message DOM. Scroll anchoring
+stays with the existing timeline.
+Opening a running turn always mounts its newest messages with no hidden tail.
+Settled turns choose the head or tail window from the reader's scroll position.
+If an expanded settled turn resumes, its stored tail limit is cleared before
+paint while preserving its mounted head; completion keeps that revealed range.
 
 The virtualizer also adds temporary end padding while compensating prepended
 history. `@legendapp/list` stores that padding's CSSOM read-back value (built
