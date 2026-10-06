@@ -404,6 +404,8 @@ describe('plans', () => {
     expect(read.title).toBe('My Plan');
     expect(read.body).toBe('step one');
     expect(read.raw).toBe('# My Plan\n\nstep one');
+    // Where the file lives, so a comment on the plan can point an agent at it.
+    expect(read.path).toBe(path.join(plansDir(), plan.file));
   });
 
   test('newest plan is listed first', async () => {
@@ -567,6 +569,7 @@ describe('shared plans', () => {
     const read = await sharedRuntime.readPlan(PROJECT_ID, 'shared:roadmap.md');
     expect(read.title).toBe('Roadmap');
     expect(read.raw).toBe('# Roadmap\n\n- ship it\n');
+    expect(read.path).toBe(path.join(sharedDir, 'roadmap.md'));
     expect(await sharedRuntime.readPlan(PROJECT_ID, 'shared:missing.md')).toBeNull();
     expect(await sharedRuntime.readPlan(PROJECT_ID, 'shared:../escape.md')).toBeNull();
   });

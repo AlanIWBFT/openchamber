@@ -100,7 +100,7 @@ collision gets a numeric suffix. Sharing is refused only when the checkout canno
 | PATCH | `/api/project-context/:projectId/notes/:noteId` | patches `body`; legacy `pinned` input is ignored by session knowledge; `404` when unknown |
 | DELETE | `/api/project-context/:projectId/notes/:noteId` | `404` when unknown |
 | PATCH | `/api/project-context/:projectId/plans/:planId` | legacy project pin state only; session attachment uses session knowledge; `404` when unknown |
-| GET | `/api/project-context/:projectId/plans/:planId` | `404` when the link or its markdown is gone |
+| GET | `/api/project-context/:projectId/plans/:planId` | `404` when the link or its markdown is gone; the answer carries `path`, the markdown's absolute path, so comments on the plan name the file to the agent (reads and writes stay id-addressed) |
 | POST | `/api/project-context/:projectId/plans` | `201`; takes `{title, body}`, never a path |
 | PUT | `/api/project-context/:projectId/plans/:planId` | takes the whole `{raw}` document; `404` when the link or its markdown is gone |
 | DELETE | `/api/project-context/:projectId/plans/:planId` | `404` when unknown |

@@ -586,15 +586,16 @@ export const createProjectContextRuntime = (deps) => {
     if (sharedFile) {
       const dir = await sharedPlansDirFor(projectId);
       if (!dir) return null;
+      const planPath = path.join(dir, sharedFile);
       let raw;
       try {
-        raw = await fsPromises.readFile(path.join(dir, sharedFile), 'utf8');
+        raw = await fsPromises.readFile(planPath, 'utf8');
       } catch (error) {
         if (error && error.code === 'ENOENT') return null;
         throw error;
       }
       const parsed = parsePlanMarkdown(raw);
-      return { id, file: sharedFile, createdAt: 0, title: parsed.title, body: parsed.body, raw, source: 'shared' };
+      return { id, file: sharedFile, path: planPath, createdAt: 0, title: parsed.title, body: parsed.body, raw, source: 'shared' };
     }
     const context = await readStoredContext(projectId);
     const link = context.plans.find((entry) => entry.id === id);
@@ -604,16 +605,17 @@ export const createProjectContextRuntime = (deps) => {
 
     const folder = await folderOfLink(projectId, link);
     if (!folder) return null;
+    const planPath = path.join(folder, link.file);
     let raw;
     try {
-      raw = await fsPromises.readFile(path.join(folder, link.file), 'utf8');
+      raw = await fsPromises.readFile(planPath, 'utf8');
     } catch (error) {
       if (error && error.code === 'ENOENT') return null;
       throw error;
     }
 
     const parsed = parsePlanMarkdown(raw);
-    return { id: link.id, file: link.file, createdAt: link.createdAt, title: parsed.title, body: parsed.body, raw, source: link.shared ? 'shared' : 'personal' };
+    return { id: link.id, file: link.file, path: planPath, createdAt: link.createdAt, title: parsed.title, body: parsed.body, raw, source: link.shared ? 'shared' : 'personal' };
   };
 
   /**
