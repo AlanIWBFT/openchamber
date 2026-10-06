@@ -125,7 +125,8 @@ export const ReferencePickerRow = React.memo(function ReferencePickerRow({
             aria-selected={highlighted}
             className={cn(
                 'group flex cursor-pointer items-start gap-2.5 rounded-lg px-2.5 py-2.5 transition-colors',
-                highlighted ? 'bg-interactive-selection text-interactive-selection-foreground' : 'hover:bg-interactive-hover',
+                // The sidebar's session rows: the same tints for the chosen row and hover.
+                highlighted ? 'bg-interactive-selection/70 text-interactive-selection-foreground' : 'hover:bg-interactive-hover/60',
             )}
             onClick={onHighlight}
             onDoubleClick={onActivate}

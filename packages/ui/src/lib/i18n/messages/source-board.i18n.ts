@@ -34,6 +34,7 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': 'Show or hide issues and PRs',
     'helpDialog.item.toggleSourceBoard': 'Show or hide the issues and PRs board',
     'sourceBoard.linear.statusAria': 'Status: {status}. Change it',
+    'sourceBoard.list.resize': 'Resize the list',
   },
   de: {
     'sourceBoard.title': 'Issues und PRs',
@@ -69,6 +70,7 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': 'Issues und PRs ein- oder ausblenden',
     'helpDialog.item.toggleSourceBoard': 'Board mit Issues und PRs ein- oder ausblenden',
     'sourceBoard.linear.statusAria': 'Status: {status}. Ändern',
+    'sourceBoard.list.resize': 'Listenbreite ändern',
   },
   fr: {
     'sourceBoard.title': 'Issues et PR',
@@ -104,6 +106,7 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': 'Afficher ou masquer issues et PR',
     'helpDialog.item.toggleSourceBoard': 'Afficher ou masquer le tableau des issues et PR',
     'sourceBoard.linear.statusAria': 'Statut : {status}. Le modifier',
+    'sourceBoard.list.resize': 'Redimensionner la liste',
   },
   nl: {
     'sourceBoard.title': 'Issues en PR’s',
@@ -139,6 +142,7 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': 'Issues en PR’s tonen of verbergen',
     'helpDialog.item.toggleSourceBoard': 'Het bord met issues en PR’s tonen of verbergen',
     'sourceBoard.linear.statusAria': 'Status: {status}. Wijzigen',
+    'sourceBoard.list.resize': 'Breedte van de lijst aanpassen',
   },
   es: {
     'sourceBoard.title': 'Issues y PR',
@@ -174,6 +178,7 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': 'Mostrar u ocultar issues y PR',
     'helpDialog.item.toggleSourceBoard': 'Mostrar u ocultar el tablero de issues y PR',
     'sourceBoard.linear.statusAria': 'Estado: {status}. Cambiarlo',
+    'sourceBoard.list.resize': 'Cambiar el ancho de la lista',
   },
   ja: {
     'sourceBoard.title': 'Issue と PR',
@@ -209,6 +214,7 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': 'Issue と PR の表示切替',
     'helpDialog.item.toggleSourceBoard': 'Issue と PR のボードを表示または非表示',
     'sourceBoard.linear.statusAria': '状態: {status}。変更する',
+    'sourceBoard.list.resize': 'リストの幅を変更',
   },
   'pt-BR': {
     'sourceBoard.title': 'Issues e PRs',
@@ -244,6 +250,7 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': 'Mostrar ou ocultar issues e PRs',
     'helpDialog.item.toggleSourceBoard': 'Mostrar ou ocultar o painel de issues e PRs',
     'sourceBoard.linear.statusAria': 'Status: {status}. Alterar',
+    'sourceBoard.list.resize': 'Redimensionar a lista',
   },
   uk: {
     'sourceBoard.title': 'Issues і PR',
@@ -279,6 +286,7 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': 'Показати або сховати issues і PR',
     'helpDialog.item.toggleSourceBoard': 'Показати або сховати дошку issues і PR',
     'sourceBoard.linear.statusAria': 'Статус: {status}. Змінити',
+    'sourceBoard.list.resize': 'Змінити ширину списку',
   },
   ko: {
     'sourceBoard.title': '이슈와 PR',
@@ -314,6 +322,7 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': '이슈와 PR 표시 전환',
     'helpDialog.item.toggleSourceBoard': '이슈와 PR 보드 표시 또는 숨기기',
     'sourceBoard.linear.statusAria': '상태: {status}. 변경',
+    'sourceBoard.list.resize': '목록 너비 조절',
   },
   pl: {
     'sourceBoard.title': 'Issues i PR-y',
@@ -349,6 +358,7 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': 'Pokaż lub ukryj issues i PR-y',
     'helpDialog.item.toggleSourceBoard': 'Pokaż lub ukryj tablicę issues i PR-ów',
     'sourceBoard.linear.statusAria': 'Status: {status}. Zmień',
+    'sourceBoard.list.resize': 'Zmień szerokość listy',
   },
   'zh-CN': {
     'sourceBoard.title': 'Issue 和 PR',
@@ -384,6 +394,7 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': '显示或隐藏 Issue 和 PR',
     'helpDialog.item.toggleSourceBoard': '显示或隐藏 Issue 和 PR 面板',
     'sourceBoard.linear.statusAria': '状态：{status}。更改',
+    'sourceBoard.list.resize': '调整列表宽度',
   },
   'zh-TW': {
     'sourceBoard.title': 'Issue 與 PR',
@@ -419,6 +430,7 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': '顯示或隱藏 Issue 與 PR',
     'helpDialog.item.toggleSourceBoard': '顯示或隱藏 Issue 與 PR 面板',
     'sourceBoard.linear.statusAria': '狀態：{status}。變更',
+    'sourceBoard.list.resize': '調整清單寬度',
   },
   tr: {
     'sourceBoard.title': 'Issue’lar ve PR’lar',
@@ -454,5 +466,6 @@ export const sourceBoardI18n = {
     'settings.openchamber.keyboardShortcuts.action.toggle_source_board.label': 'Issue’ları ve PR’ları göster veya gizle',
     'helpDialog.item.toggleSourceBoard': 'Issue ve PR panosunu göster veya gizle',
     'sourceBoard.linear.statusAria': 'Durum: {status}. Değiştir',
+    'sourceBoard.list.resize': 'Liste genişliğini değiştir',
   },
 } as const;

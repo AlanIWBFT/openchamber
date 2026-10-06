@@ -28,6 +28,9 @@ type SourceBoardState = {
   /** Switches to Linear and searches for `identifier`; the caller opens the board. */
   focusLinearIssue: (identifier: string) => void;
   clearLinearFocus: () => void;
+  /** The list column's width in pixels; null until the user drags it. Not per runtime: it is about the screen. */
+  listWidth: number | null;
+  setListWidth: (width: number) => void;
 };
 
 const persistedChoices = z.object({
@@ -36,6 +39,7 @@ const persistedChoices = z.object({
     tab: z.enum(['repository', 'linear']).catch('repository'),
     linearTeamId: z.string().nullable().catch(null),
   })).catch({}),
+  listWidth: z.number().positive().nullable().catch(null).optional(),
 });
 
 /**
@@ -56,14 +60,18 @@ export const useSourceBoardStore = create<SourceBoardState>()(
         set({ linearFocus: identifier });
       },
       clearLinearFocus: () => set({ linearFocus: null }),
+      listWidth: null,
+      setListWidth: (width) => set({ listWidth: Math.round(width) }),
     }),
     {
       name: SOURCE_BOARD_STORAGE_KEY,
       storage: createDeferredSafeJSONStorage(),
-      partialize: (state) => ({ choices: state.choices }),
+      partialize: (state) => ({ choices: state.choices, listWidth: state.listWidth }),
       merge: (persisted, current) => {
         const parsed = persistedChoices.safeParse(persisted);
-        return { ...current, choices: parsed.success ? parsed.data.choices : {} };
+        return parsed.success
+          ? { ...current, choices: parsed.data.choices, listWidth: parsed.data.listWidth ?? null }
+          : { ...current, choices: {}, listWidth: null };
       },
     },
   ),

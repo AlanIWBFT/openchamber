@@ -25,6 +25,7 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { GitHubReferenceKind, LinearMappingResult, ProjectEntry, SourceControlReadContext } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import { resolveLinearMappedProjectPath } from '@/lib/linearProjectMapping';
 import { normalizeProjectPath, resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { useLinearAuthStore } from '@/stores/useLinearAuthStore';
@@ -36,6 +37,9 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { SourceBoardActions, SourceBoardPullLinks, type SourceBoardProject } from './SourceBoardActions';
 import { SourceBoardLinearStatus } from './SourceBoardLinearStatus';
 import { SourceBoardProjectPicker, SourceBoardTeamPicker } from './SourceBoardPickers';
+
+const LIST_MIN_WIDTH = 280;
+const LIST_MAX_FRACTION = 0.6;
 
 const openIntegrationsSettings = () => {
     const ui = useUIStore.getState();
@@ -63,15 +67,27 @@ export const SourceBoardView: React.FC = () => {
     if (!open) return null;
     return (
         <div className="absolute inset-0 z-10 flex flex-col bg-background">
-            <SourceBoard />
+            <SourceBoard layout="desktop" />
         </div>
     );
 };
 
+/**
+ * The board as the phone shell's page: one column, the preview in place of
+ * the list, and `onLeave` once a session starts so the chat comes back.
+ */
+export const MobileSourceBoard: React.FC<{ onLeave: () => void }> = ({ onLeave }) => (
+    <div className="flex h-full min-h-0 flex-col">
+        <SourceBoard layout="mobile" onLeave={onLeave} />
+    </div>
+);
+
+type SourceBoardLayout = 'desktop' | 'mobile';
+
 /** What the board lists: the repository's issues or change requests, or Linear. */
 type SourceBoardKind = GitHubReferenceKind | 'linear';
 
-const SourceBoard: React.FC = () => {
+const SourceBoard: React.FC<{ layout: SourceBoardLayout; onLeave?: () => void }> = ({ layout, onLeave }) => {
     const { t } = useI18n();
     const { linear } = useRuntimeAPIs();
     const projects = useProjectsStore((state) => state.projects);
@@ -107,6 +123,7 @@ const SourceBoard: React.FC = () => {
             onSelect={(projectId) => updateChoice({ projectId, tab: 'repository' })}
             ariaLabel={t('sourceBoard.project.label')}
             size="toolbar"
+            sheet={layout === 'mobile'}
         />
     ) : null;
     // On Linear the board lists a team, not a project.
@@ -156,6 +173,8 @@ const SourceBoard: React.FC = () => {
             kinds={{ repository: hasRepository ? (hostProvider === 'gitlab' ? 'gitlab' : 'github') : null, linear: hasLinear }}
             initialRepositoryKind={repositoryKind}
             onSelectKind={selectKind}
+            layout={layout}
+            onLeave={onLeave}
         />
     );
 };
@@ -172,13 +191,16 @@ const SourceBoardBody: React.FC<{
     kinds: { repository: 'github' | 'gitlab' | null; linear: boolean };
     initialRepositoryKind?: GitHubReferenceKind;
     onSelectKind: (kind: SourceBoardKind) => void;
-}> = ({ tab, project, directory, linearTeamId, mapping, projects, scopePicker, kinds, initialRepositoryKind, onSelectKind }) => {
+    layout: SourceBoardLayout;
+    onLeave?: () => void;
+}> = ({ tab, project, directory, linearTeamId, mapping, projects, scopePicker, kinds, initialRepositoryKind, onSelectKind, layout, onLeave }) => {
+    const isMobile = layout === 'mobile';
     const { t } = useI18n();
     const source = tab === 'linear' ? 'linear' : 'github';
     const browser = useReferenceBrowser({
         source,
         directory: tab === 'linear' ? null : directory,
-        isMobile: false,
+        isMobile,
         linearTeamId,
         initialGitHubKind: initialRepositoryKind,
     });
@@ -228,6 +250,7 @@ const SourceBoardBody: React.FC<{
                 onSelect={(projectId) => { if (linearIssueId) setLinearProjectChoice({ issueId: linearIssueId, projectId }); }}
                 ariaLabel={t('sourceBoard.linear.startIn')}
                 size="inline"
+                sheet={isMobile}
             />
         </span>
     ) : null;
@@ -240,6 +263,7 @@ const SourceBoardBody: React.FC<{
             onStartWorktree={(target, selection) => setWorktreeRequest({ project: target, selection })}
             onChanged={browser.list.retry}
             startIn={startIn}
+            onLeave={onLeave}
         />
     ) : null;
 
@@ -250,13 +274,14 @@ const SourceBoardBody: React.FC<{
             linearDetail={browser.linearDetail}
             githubDetail={browser.githubDetail}
             purpose="attach"
-            pinned
+            pinned={!isMobile}
             includeDiff={false}
             onIncludeDiffChange={() => undefined}
             now={browser.now}
             footer={actions}
             linearStateControl={previewItem?.source === 'linear' ? <SourceBoardLinearStatus issue={previewItem.issue} onChanged={browser.list.retry} /> : undefined}
-            pullLinks={previewItem?.source === 'github' && previewItem.reference.kind === 'pull' && actionProject && context ? (
+            // The phone shell has no side panel to open a PR's changes in.
+            pullLinks={!isMobile && previewItem?.source === 'github' && previewItem.reference.kind === 'pull' && actionProject && context ? (
                 <SourceBoardPullLinks
                     pull={previewItem.reference}
                     project={actionProject}
@@ -286,6 +311,7 @@ const SourceBoardBody: React.FC<{
             initialSelection={worktreeRequest?.selection}
             onWorktreeCreated={(worktreePath) => {
                 useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: worktreePath, preserveDirectoryOverride: true });
+                onLeave?.();
             }}
         />
     );
@@ -298,7 +324,7 @@ const SourceBoardBody: React.FC<{
         ...(kinds.linear ? [{ id: 'linear', label: 'Linear', icon: <Icon name="linear" className="size-3.5" /> }] : []),
     ];
     const kindSwitch = (
-        <div className="shrink-0">
+        <div className={isMobile ? 'w-full' : 'shrink-0'}>
             <SortableTabsStrip
                 items={kindItems}
                 activeId={tab === 'linear' ? 'linear' : browser.githubKind}
@@ -310,27 +336,107 @@ const SourceBoardBody: React.FC<{
                     browser.selectGitHubKind(id === 'pull' ? 'pull' : 'issue');
                 }}
                 variant="active-pill"
-                // Sized by its labels: `fit` shares out a parent width this row does not give it.
-                layoutMode="scrollable"
-                activePillButtonClassName="h-7 px-3"
+                // Desktop: sized by its labels in a row that gives it no width of its
+                // own. Phone: the full row, shared.
+                layoutMode={isMobile ? 'fit' : 'scrollable'}
+                intrinsicWidth={!isMobile}
+                activePillButtonClassName={isMobile ? undefined : 'h-7 px-3'}
             />
         </div>
     );
 
-    // One row: what is listed (scope and kind), then how it is narrowed.
-    // The scope trigger's icon sits 16 px in, on the line of the rows' icons.
+    // The list column, resized by dragging its edge or with the arrow keys.
+    const listWidth = useSourceBoardStore((state) => state.listWidth);
+    const splitRef = React.useRef<HTMLDivElement>(null);
+    const listRef = React.useRef<HTMLDivElement>(null);
+    const [resizing, setResizing] = React.useState(false);
+    const clampWidth = (width: number) => {
+        const max = Math.max(LIST_MIN_WIDTH, (splitRef.current?.clientWidth ?? 0) * LIST_MAX_FRACTION);
+        return Math.min(max, Math.max(LIST_MIN_WIDTH, width));
+    };
+    const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        const startX = event.clientX;
+        const startWidth = listRef.current?.offsetWidth ?? LIST_MIN_WIDTH;
+        setResizing(true);
+        const onMove = (move: PointerEvent) => useSourceBoardStore.getState().setListWidth(clampWidth(startWidth + move.clientX - startX));
+        const onUp = () => {
+            setResizing(false);
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+    };
+    const resizeWithKeys = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        const step = event.shiftKey ? 40 : 10;
+        const delta = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+        if (delta === 0) return;
+        event.preventDefault();
+        useSourceBoardStore.getState().setListWidth(clampWidth((listRef.current?.offsetWidth ?? LIST_MIN_WIDTH) + delta));
+    };
+
+    if (isMobile) {
+        const inPreview = Boolean(browser.mobilePreviewKey && previewItem);
+        return (
+            <>
+                {inPreview ? (
+                    <div className="flex shrink-0 items-center border-b border-border/60 px-2 py-1.5">
+                        <Button variant="ghost" size="sm" onClick={browser.closeMobilePreview}>
+                            <Icon name="arrow-left-s" className="size-4" />
+                            {t('references.picker.actions.back')}
+                        </Button>
+                    </div>
+                ) : (
+                    <div className="flex shrink-0 flex-col gap-2 border-b border-border/60 px-3 py-2">
+                        <div className="-ml-1.5 flex min-w-0">{scopePicker}</div>
+                        {kindSwitch}
+                        {search}
+                    </div>
+                )}
+                <ScrollableOverlay outerClassName="min-h-0 flex-1" className={inPreview ? 'px-4 py-3' : undefined} disableHorizontal>
+                    {inPreview ? preview : list}
+                </ScrollableOverlay>
+                {worktreeDialog}
+            </>
+        );
+    }
+
+    // One row: what is listed (kind, then scope), then how it is narrowed. The
+    // kind switch comes first: its width is fixed, while the scope picker's
+    // follows the chosen name and would push the switch around.
     return (
         <>
             <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 px-2 py-2.5">
-                {scopePicker}
                 {kindSwitch}
+                {scopePicker}
                 {search}
             </div>
-            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-                <ScrollableOverlay outerClassName="min-h-0 border-r border-border/60" disableHorizontal>
-                    {list}
-                </ScrollableOverlay>
-                <div className="min-h-0">{preview}</div>
+            <div ref={splitRef} className="flex min-h-0 flex-1">
+                {/* CSS keeps a remembered width inside the board: never under
+                    280 px, never over 60 % of it. */}
+                <div className="min-h-0 min-w-[280px] max-w-[60%] shrink-0" style={{ width: listWidth ?? '41.666%' }} ref={listRef}>
+                    <ScrollableOverlay outerClassName="h-full min-h-0" disableHorizontal>
+                        {list}
+                    </ScrollableOverlay>
+                </div>
+                <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label={t('sourceBoard.list.resize')}
+                    tabIndex={0}
+                    onPointerDown={startResize}
+                    onKeyDown={resizeWithKeys}
+                    className={cn(
+                        'relative w-px shrink-0 cursor-col-resize bg-border/60',
+                        "before:absolute before:inset-y-0 before:-left-1.5 before:-right-1.5 before:content-['']",
+                        'hover:bg-interactive-selection focus-visible:bg-interactive-selection focus-visible:outline-none',
+                        resizing && 'bg-interactive-selection',
+                    )}
+                />
+                <div className="min-h-0 min-w-0 flex-1">{preview}</div>
             </div>
             {worktreeDialog}
         </>

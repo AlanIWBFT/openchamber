@@ -54,6 +54,10 @@ type SortableTabsStripProps = {
       (e.g. a sliding mobile drawer): creating a composited layer mid-slide
       flickers in WKWebView. Tab-switch animation stays (layout transition). */
   nonCompositedIndicator?: boolean;
+  /** Size the strip by its labels rather than its parent's width. The track's
+      container query reads the parent, so a parent that sizes itself by its
+      content (a toolbar row) would leave the strip no width at all. */
+  intrinsicWidth?: boolean;
   /** Per-tab right-click context menu. Return the menu items for the given tab,
       or null/undefined to disable the context menu for that tab. */
   tabContextMenu?: (args: {
@@ -123,6 +127,7 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
   animateActivePill,
   activePillLowercase = true,
   nonCompositedIndicator = false,
+  intrinsicWidth = false,
   tabContextMenu,
   className,
 }) => {
@@ -415,7 +420,7 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
         className={cn(
           'relative flex h-full min-w-0 flex-1',
           usesActivePillIndicator ? 'items-center overflow-x-hidden overflow-y-hidden' : 'items-stretch',
-          usesActivePillIndicator && '@container/pill-tabs',
+          usesActivePillIndicator && !intrinsicWidth && '@container/pill-tabs',
           usesActivePillIndicator && 'pill-tabs__track',
           usesActivePillIndicator && (activePillInsetClassName ?? 'gap-0.5 py-0.5'),
           useUnderlineIndicator && 'items-center overflow-y-hidden',

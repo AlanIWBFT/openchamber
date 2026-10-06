@@ -570,7 +570,12 @@ export const ContextPanel: React.FC = () => {
   React.useEffect(() => {
     if (shownBrowserTabId) setShownBrowserTab(shownBrowserTabId);
   }, [shownBrowserTabId]);
-  const isOpen = Boolean(panelState?.isOpen && activeTab);
+  // Beside the issues and PRs board only a pull request's review stays (its
+  // changes or walkthrough); any other panel steps aside and comes back as it
+  // was when the board closes, since nothing here changes its state.
+  const hiddenByBoard = useUIStore((state) => state.isSourceBoardOpen)
+    && activeTab?.mode !== 'diff' && activeTab?.mode !== 'walkthrough';
+  const isOpen = Boolean(panelState?.isOpen && activeTab && !hiddenByBoard);
   const [availablePanelAreaWidth, setAvailablePanelAreaWidth] = React.useState<number | null>(null);
   const hasOpenEditorFile = React.useMemo(
     () => tabs.some((tab) => tab.mode === 'file' && tab.targetPath),

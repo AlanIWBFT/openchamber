@@ -134,6 +134,8 @@ type MobileSessionsSheetProps = {
     onOpenScheduled: () => void;
     onOpenArchive: () => void;
     onOpenUsage: () => void;
+    /** The issues and PRs board. */
+    onOpenSourceBoard: () => void;
     /** Present only while a server update is available (hosted web). */
     onOpenUpdate?: () => void;
   };
@@ -2381,6 +2383,18 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                 style={{ touchAction: 'manipulation' }}
               >
                 <Icon name="calendar-schedule" className="size-5" />
+              </Button>
+              <Button
+                type="button"
+                variant="default"
+                size="lg"
+                className="w-10 px-0"
+                onClick={footer.onOpenSourceBoard}
+                aria-label={t('sourceBoard.title')}
+                title={t('sourceBoard.title')}
+                style={{ touchAction: 'manipulation' }}
+              >
+                <Icon name="git-pull-request" className="size-5" />
               </Button>
               <Button
                 type="button"

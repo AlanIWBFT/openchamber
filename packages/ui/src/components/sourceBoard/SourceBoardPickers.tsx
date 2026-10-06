@@ -6,7 +6,7 @@
 import * as React from 'react';
 import { Popover } from '@base-ui/react/popover';
 
-import { ProjectLabel } from '@/components/chat/composer/ui/DraftTargetSelectors';
+import { ProjectLabel, ProjectPickerSheet } from '@/components/chat/composer/ui/DraftTargetSelectors';
 import { Icon } from '@/components/icon/Icon';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
@@ -47,7 +47,9 @@ export const SourceBoardProjectPicker: React.FC<{
     onSelect: (projectId: string) => void;
     ariaLabel: string;
     size: PickerSize;
-}> = ({ projects, selected, onSelect, ariaLabel, size }) => {
+    /** The phone shell picks from a bottom sheet: a popup there cannot scroll far enough for a long list. */
+    sheet?: boolean;
+}> = ({ projects, selected, onSelect, ariaLabel, size, sheet = false }) => {
     const { t } = useI18n();
     const { currentTheme } = useThemeSystem();
     const [open, setOpen] = React.useState(false);
@@ -64,6 +66,36 @@ export const SourceBoardProjectPicker: React.FC<{
         onSelect(projectId);
         setOpen(false);
     };
+
+    if (sheet) {
+        return (
+            <>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={ariaLabel}
+                    aria-haspopup="dialog"
+                    onClick={() => setOpen(true)}
+                    className={cn('min-w-0 w-fit shrink-0 justify-start gap-1 normal-case', TRIGGER_CLASS[size])}
+                >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                        <ProjectLabel project={selected} theme={currentTheme} />
+                        <Icon name="arrow-down-s" className="size-4 shrink-0 opacity-50" />
+                    </span>
+                </Button>
+                <ProjectPickerSheet
+                    open={open}
+                    onClose={() => setOpen(false)}
+                    projects={projects}
+                    selectedProjectId={selected.id}
+                    onSelectProject={choose}
+                    theme={currentTheme}
+                    title={ariaLabel}
+                    searchPlaceholder={t('chat.chatInput.draftPicker.searchProjects')}
+                />
+            </>
+        );
+    }
 
     return (
         <Popover.Root

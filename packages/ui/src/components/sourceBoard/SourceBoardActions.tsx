@@ -86,7 +86,9 @@ export const SourceBoardActions: React.FC<{
     onChanged: () => void;
     /** Left of the actions: where a Linear issue's session starts, with a way to pick another project. */
     startIn?: React.ReactNode;
-}> = ({ item, project, context, onStartWorktree, onChanged, startIn }) => {
+    /** The phone shell's page closes once a session starts; the desktop page closes on its own. */
+    onLeave?: () => void;
+}> = ({ item, project, context, onStartWorktree, onChanged, startIn, onLeave }) => {
     const { t } = useI18n();
     const { sourceControl, linear } = useRuntimeAPIs();
     const confirmation = useConfirmDialog();
@@ -100,6 +102,7 @@ export const SourceBoardActions: React.FC<{
     const startSession = () => {
         if (!project) return;
         useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: project.id, directoryOverride: project.path });
+        onLeave?.();
         // The draft opens first, so the chip lands on its composer.
         void resolveComposerReferences([selectionOf(item)], {
             sourceControl,
