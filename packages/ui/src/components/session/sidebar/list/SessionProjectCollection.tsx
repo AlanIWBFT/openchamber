@@ -45,7 +45,7 @@ import { SessionBulkActions } from '../folders/SessionBulkActions';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
 import type { useSessionProjectViewState } from '../projects/useSessionProjectViewState';
 import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
-import { rankByLatestActivity } from './projectSort';
+import { holdOrder, rankByLatestActivity } from './projectSort';
 import type { DeleteSessionConfirmState } from '../sessions/useSessionActions';
 import { useExpandedParents } from '../sessions/useExpandedParents';
 import { getChatsRootForHome, getChatsRootFromDirectory, isChatDirectoryPath } from '@/lib/chatDirectories';
@@ -359,6 +359,15 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     () => new Map(collection.orderedSessions.map((session, index) => [session.id, index])),
     [collection.orderedSessions],
   );
+  // While the pointer is over the list, "Recent" keeps the order the user is
+  // looking at: a session finishing elsewhere must not move the row under
+  // the cursor. Leaving the list applies the live order.
+  const [heldProjectOrder, setHeldProjectOrder] = React.useState<readonly string[] | null>(null);
+  const shownProjectOrderRef = React.useRef<readonly string[]>([]);
+  const holdsProjectOrder = view.projectSortOrder === 'recent';
+  React.useEffect(() => {
+    if (!holdsProjectOrder) setHeldProjectOrder(null);
+  }, [holdsProjectOrder]);
   const orderedSectionsForRender = React.useMemo(() => {
     // The saved drag order belongs to the manual worktree sort only.
     const sections = worktreeSortOrder !== 'manual' ? sectionsForSidebarRender : sectionsForSidebarRender.map((section) => {
@@ -366,8 +375,12 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       return groups === section.groups ? section : { ...section, groups };
     });
     // "Recent" needs the sessions, which only exist from here on.
-    return [...rankByLatestActivity(sections, view.projectSortOrder, (section) => section.project.id, ownership.sessionsByProject)];
-  }, [getOrderedGroups, ownership.sessionsByProject, sectionsForSidebarRender, view.projectSortOrder, worktreeSortOrder]);
+    const ranked = rankByLatestActivity(sections, view.projectSortOrder, (section) => section.project.id, ownership.sessionsByProject);
+    return [...(heldProjectOrder && holdsProjectOrder ? holdOrder(ranked, heldProjectOrder, (section) => section.project.id) : ranked)];
+  }, [getOrderedGroups, heldProjectOrder, holdsProjectOrder, ownership.sessionsByProject, sectionsForSidebarRender, view.projectSortOrder, worktreeSortOrder]);
+  React.useEffect(() => {
+    shownProjectOrderRef.current = orderedSectionsForRender.map((section) => section.project.id);
+  }, [orderedSectionsForRender]);
   const recentActivitySections = React.useMemo(() => {
     const nodes = new Map(recentSessions.map((session) => [
       session.id, buildActiveSessionNode(collection.childrenMap, session),
@@ -999,7 +1012,15 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
         isInlineEditing={editingId !== null}
         startFolderRename={startFolderRename}
       />
-      <SessionProjectScroller model={scrollerModel} view={scrollerView} actions={scrollerActionSet} />
+      <div
+        className="contents"
+        onPointerEnter={(event) => {
+          if (holdsProjectOrder && event.pointerType === 'mouse') setHeldProjectOrder(shownProjectOrderRef.current);
+        }}
+        onPointerLeave={() => setHeldProjectOrder(null)}
+      >
+        <SessionProjectScroller model={scrollerModel} view={scrollerView} actions={scrollerActionSet} />
+      </div>
     </SessionRowOrderProvider>
   </>;
 };

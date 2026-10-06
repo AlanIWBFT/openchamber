@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { rankByLatestActivity, sortProjectsByOrder } from './projectSort';
+import { holdOrder, rankByLatestActivity, sortProjectsByOrder } from './projectSort';
 
 const projects = [
   { id: 'beta', label: 'Beta', path: '/repos/beta', addedAt: 300, lastOpenedAt: 100 },
@@ -53,5 +53,12 @@ describe('rankByLatestActivity', () => {
 
   test('leaves every other sort alone', () => {
     expect(rankByLatestActivity(projects, 'a-z', (p) => p.id, sessions)).toBe(projects);
+  });
+});
+
+describe('holdOrder', () => {
+  test('keeps the shown order and appends projects that appeared since', () => {
+    const live = [{ id: 'b' }, { id: 'new' }, { id: 'a' }, { id: 'c' }];
+    expect(holdOrder(live, ['a', 'b', 'c', 'gone'], (p) => p.id).map((p) => p.id)).toEqual(['a', 'b', 'c', 'new']);
   });
 });
