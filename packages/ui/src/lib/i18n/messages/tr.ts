@@ -3785,3 +3785,6 @@ export const dict = {
   'chat.worktreeSetup.running': 'Worktree hazırlanıyor: projenin kurulum komutları çalışıyor…',
 };
   'desktopHostSwitcher.startup.fellBackToLocal': 'Bağlantısı açılamadı, bu yüzden OpenChamber Local ile başladı. Erişilebilir olduğunda örnek değiştiriciden bağlanın.',
+  'chat.chatInput.contextPreview.saveEdit': 'Yorumu kaydet',
+  'chat.chatInput.contextPreview.cancelEdit': 'Düzenlemeyi iptal et',
+};

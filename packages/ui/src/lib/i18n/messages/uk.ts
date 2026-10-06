@@ -3788,3 +3788,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.worktreeSetup.running': 'Налаштовуємо worktree: виконуються команди налаштування проєкту…',
 };
   'desktopHostSwitcher.startup.fellBackToLocal': 'З\'єднання не відкрилося, тож OpenChamber запустився на Local. Підключіть інстанс через перемикач, щойно він стане доступним.',
+  'chat.chatInput.contextPreview.saveEdit': 'Зберегти коментар',
+  'chat.chatInput.contextPreview.cancelEdit': 'Скасувати редагування',
+};

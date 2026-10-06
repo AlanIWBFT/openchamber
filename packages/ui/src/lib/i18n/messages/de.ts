@@ -3785,3 +3785,6 @@ export const dict = {
   'chat.worktreeSetup.running': 'Worktree wird eingerichtet: Setup-Befehle des Projekts laufen…',
 };
   'desktopHostSwitcher.startup.fellBackToLocal': 'Die Verbindung kam nicht zustande, daher wurde OpenChamber mit Local gestartet. Verbinde sie über den Instanzwechsler, sobald sie erreichbar ist.',
+  'chat.chatInput.contextPreview.saveEdit': 'Kommentar speichern',
+  'chat.chatInput.contextPreview.cancelEdit': 'Bearbeitung abbrechen',
+};

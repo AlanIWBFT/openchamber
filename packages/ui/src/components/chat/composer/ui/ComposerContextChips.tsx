@@ -11,6 +11,7 @@
 
 import React from 'react';
 
+import { useCommentSnippetPicker } from '@/components/comments/useCommentSnippetPicker';
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import { useI18n } from '@/lib/i18n';
@@ -93,6 +94,20 @@ const DraftPreviewEntry: React.FC<{
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [editing]);
 
+    // `#` opens the composer's snippet picker; references expand on send.
+    const getEditCaret = React.useCallback(() => editRef.current?.selectionStart ?? 0, []);
+    const replaceEditRange = React.useCallback((from: number, to: number, insert: string) => {
+        const next = `${(editRef.current?.value ?? '').slice(0, from)}${insert}${(editRef.current?.value ?? '').slice(to)}`;
+        setEditText(next);
+        requestAnimationFrame(() => {
+            const element = editRef.current;
+            if (!element) return;
+            element.focus();
+            element.setSelectionRange(from + insert.length, from + insert.length);
+        });
+    }, []);
+    const snippetPicker = useCommentSnippetPicker({ text: editText, getCaret: getEditCaret, replaceRange: replaceEditRange });
+
     const commitEdit = () => {
         if (onSaveComment && editText !== draft.text) {
             onSaveComment(editText);
@@ -135,8 +150,8 @@ const DraftPreviewEntry: React.FC<{
                         style={{ minHeight: 0, minWidth: 0 }}
                         onPointerDown={keepEditorFocus}
                         onClick={editing ? commitEdit : onStartEdit}
-                        aria-label={t('chat.chatInput.contextPreview.edit')}
-                        title={t('chat.chatInput.contextPreview.edit')}
+                        aria-label={editing ? t('chat.chatInput.contextPreview.saveEdit') : t('chat.chatInput.contextPreview.edit')}
+                        title={editing ? t('chat.chatInput.contextPreview.saveEdit') : t('chat.chatInput.contextPreview.edit')}
                     >
                         <Icon name={editing ? 'check' : 'pencil'} className="h-3 w-3" />
                     </button>
@@ -147,10 +162,11 @@ const DraftPreviewEntry: React.FC<{
                     style={{ minHeight: 0, minWidth: 0 }}
                     onPointerDown={keepEditorFocus}
                     onClick={editing ? cancelEdit : onRemove}
-                    aria-label={t('chat.chatInput.contextPreview.remove')}
-                    title={t('chat.chatInput.contextPreview.remove')}
+                    aria-label={editing ? t('chat.chatInput.contextPreview.cancelEdit') : t('chat.chatInput.contextPreview.remove')}
+                    title={editing ? t('chat.chatInput.contextPreview.cancelEdit') : t('chat.chatInput.contextPreview.remove')}
                 >
-                    <Icon name="delete-bin" className="h-3 w-3" />
+                    {/* While editing this button discards the edit, not the quote. */}
+                    <Icon name={editing ? 'close' : 'delete-bin'} className="h-3 w-3" />
                 </button>
             </div>
             <div className="space-y-2 px-3 py-2">
@@ -176,17 +192,24 @@ const DraftPreviewEntry: React.FC<{
                     <div>
                         <div className={ENTRY_LABEL_CLASS}>{t('chat.chatInput.contextPreview.commentLabel')}</div>
                         {editing ? (
+                            <div className="relative">
+                            {snippetPicker.picker}
                             <textarea
                                 ref={editRef}
                                 rows={2}
                                 value={editText}
-                                onChange={(event) => setEditText(event.target.value)}
+                                onChange={(event) => {
+                                    setEditText(event.target.value);
+                                    snippetPicker.sync(event.target.value, event.target.selectionStart);
+                                }}
+                                onSelect={(event) => snippetPicker.sync(event.currentTarget.value, event.currentTarget.selectionStart)}
                                 onBlur={commitEdit}
                                 onKeyDown={(event) => {
                                     // An IME candidate is confirmed with Enter and
                                     // abandoned with Escape; neither keystroke should
                                     // commit or revert the edit.
                                     if (isIMECompositionEvent(event)) return;
+                                    if (snippetPicker.handleKeyDown(event)) return;
                                     if (event.key === 'Enter' && !event.shiftKey) {
                                         event.preventDefault();
                                         commitEdit();
@@ -200,6 +223,7 @@ const DraftPreviewEntry: React.FC<{
                                 className="oc-surface-elevated mt-0.5 w-full resize-none rounded-md border border-border bg-surface-elevated px-2 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
                                 style={{ minHeight: 0 }}
                             />
+                            </div>
                         ) : (
                             <div className="mt-0.5 whitespace-pre-wrap break-words text-sm text-foreground">{draft.text}</div>
                         )}

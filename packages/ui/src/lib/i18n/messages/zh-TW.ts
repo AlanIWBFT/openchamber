@@ -3787,3 +3787,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.worktreeSetup.running': '正在設定 worktree：正在執行專案的設定命令…',
 };
   'desktopHostSwitcher.startup.fellBackToLocal': '未能建立連線，因此 OpenChamber 以 Local 啟動。待其可連線後，請在實例切換器中連線。',
+  'chat.chatInput.contextPreview.saveEdit': '儲存評論',
+  'chat.chatInput.contextPreview.cancelEdit': '取消編輯',
+};
