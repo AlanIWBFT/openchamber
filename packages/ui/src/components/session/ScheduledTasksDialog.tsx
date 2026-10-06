@@ -31,6 +31,10 @@ import {
 import { ScheduledTaskEditorDialog } from './ScheduledTaskEditorDialog';
 import { canonicalizeTimezone } from '@/lib/timezones';
 import { getModelDisplayName } from '@/lib/modelDisplay';
+import { agentLabel } from '@/lib/agentLabel';
+import { useAgentColors } from '@/hooks/useAgentColors';
+import { ProviderLogo } from '@/components/ui/ProviderLogo';
+import { useConfigStore } from '@/stores/useConfigStore';
 import { useFilesViewTabsStore } from '@/stores/useFilesViewTabsStore';
 import { CHAT_DRAFT_PROJECT_ID } from '@/lib/chatDirectories';
 import { isVSCodeRuntime } from '@/lib/desktop';
@@ -43,15 +47,39 @@ const scheduleTimes = (task: ScheduledTask): string[] => {
   return Array.from(new Set(valid)).sort((a, b) => a.localeCompare(b));
 };
 
-// Model, then variant and agent when the task sets them; names stay literal.
-const formatTaskModel = (task: ScheduledTask, t: ReturnType<typeof useI18n>['t']): string => {
+/**
+ * What a task runs with, drawn the way the composer shows it: the provider's
+ * logo before the model name, then the variant, then the agent with the
+ * composer's agent icon in that agent's colour. Tasks that follow the session
+ * defaults say so instead.
+ */
+const TaskModelLine: React.FC<{ task: ScheduledTask }> = ({ task }) => {
+  const { t } = useI18n();
+  const getAgentColor = useAgentColors();
+  const agents = useConfigStore((state) => state.agents);
   const { providerID, modelID, variant, agent, useDefaults } = task.execution;
-  if (useDefaults || !providerID || !modelID) return t('sessions.scheduledTasks.dialog.usesDefaults');
-  return [
-    `${providerID} · ${getModelDisplayName(null, modelID)}`,
-    variant?.trim(),
-    agent?.trim() ? `@${agent.trim()}` : undefined,
-  ].filter(Boolean).join(' · ');
+  if (useDefaults || !providerID || !modelID) {
+    return <span className="truncate">{t('sessions.scheduledTasks.dialog.usesDefaults')}</span>;
+  }
+  const agentName = agent?.trim();
+  const knownAgent = agentName ? agents.find((entry) => entry.name === agentName) : undefined;
+  return (
+    <>
+      <ProviderLogo providerId={providerID} alt={providerID} className="h-3 w-3 shrink-0" />
+      <span className="min-w-0 truncate">
+        {[getModelDisplayName(null, modelID), variant?.trim()].filter(Boolean).join(' · ')}
+      </span>
+      {agentName ? (
+        <>
+          <span aria-hidden="true">·</span>
+          <Icon name="ai-agent" className="h-3 w-3 shrink-0" style={{ color: `var(${getAgentColor(agentName).var})` }} />
+          <span className="shrink-0 truncate" style={{ color: `var(${getAgentColor(agentName).var})` }}>
+            {agentLabel(knownAgent ?? { name: agentName, displayName: '' })}
+          </span>
+        </>
+      ) : null}
+    </>
+  );
 };
 
 const formatSchedule = (task: ScheduledTask, t: ReturnType<typeof useI18n>['t']): string => {
@@ -535,8 +563,8 @@ export function ScheduledTasksView({ layout, onLeave }: {
                   <div className="typography-micro truncate text-muted-foreground">
                     {formatSchedule(task, t)}
                   </div>
-                  <div className="typography-micro truncate text-muted-foreground/70" title={task.execution.useDefaults ? undefined : `${task.execution.providerID ?? ''}/${task.execution.modelID ?? ''}`}>
-                    {formatTaskModel(task, t)}
+                  <div className="typography-micro flex min-w-0 items-center gap-1 text-muted-foreground/70" title={task.execution.useDefaults ? undefined : `${task.execution.providerID ?? ''}/${task.execution.modelID ?? ''}`}>
+                    <TaskModelLine task={task} />
                   </div>
                   {task.loopFile ? (
                     <div
