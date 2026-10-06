@@ -853,6 +853,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (Array.isArray(candidate.recentAgents)) {
       result.recentAgents = normalizeStringArray(candidate.recentAgents);
     }
+    if (Array.isArray(candidate.favoriteAgents)) {
+      result.favoriteAgents = normalizeStringArray(candidate.favoriteAgents);
+    }
 
     const recentEfforts = sanitizeRecentEfforts(candidate.recentEfforts);
     if (recentEfforts) {

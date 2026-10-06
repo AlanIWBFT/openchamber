@@ -3795,4 +3795,5 @@ export const dict = {
   'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': 'Diese Aufgabe läuft bereits, gestartet um {time}',
   'sessions.scheduledTasks.dialog.toast.alreadyRunning': 'Diese Aufgabe läuft bereits',
   'sessions.scheduledTasks.dialog.toast.alreadyQueued': 'Diese Aufgabe wartet bereits in der Warteschlange und läuft, sobald ein Platz frei wird',
+  'chat.modelControls.agentFavoriteAdd': 'Zu Favoriten hinzufügen. Mit Favoriten wechselt Tab nur zwischen diesen',
 };

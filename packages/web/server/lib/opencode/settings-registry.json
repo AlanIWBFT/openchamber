@@ -535,6 +535,9 @@
     "recentAgents": {
       "scope": "profile"
     },
+    "favoriteAgents": {
+      "scope": "profile"
+    },
     "recentEfforts": {
       "scope": "profile"
     },

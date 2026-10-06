@@ -3798,4 +3798,5 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': '此任务已有一次运行在进行中，开始于 {time}',
   'sessions.scheduledTasks.dialog.toast.alreadyRunning': '此任务已有一次运行在进行中',
   'sessions.scheduledTasks.dialog.toast.alreadyQueued': '此任务已在队列中等待，有空位时就会运行',
+  'chat.modelControls.agentFavoriteAdd': '加入收藏。有收藏时，Tab 只在收藏之间切换',
 };

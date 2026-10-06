@@ -3797,4 +3797,5 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': 'このタスクはすでに実行中です（{time} に開始）',
   'sessions.scheduledTasks.dialog.toast.alreadyRunning': 'このタスクはすでに実行中です',
   'sessions.scheduledTasks.dialog.toast.alreadyQueued': 'このタスクはすでにキューで待機中です。空きができ次第実行されます',
+  'chat.modelControls.agentFavoriteAdd': 'お気に入りに追加。お気に入りがあると、Tab はその中だけを切り替えます',
 };

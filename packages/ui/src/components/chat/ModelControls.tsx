@@ -89,6 +89,45 @@ const AgentDescriptionTooltip: React.FC<{
 };
 
 /**
+ * Star on an agent row. Starred agents are what Tab cycles through; the press
+ * is kept from the row so starring never picks the agent.
+ */
+const AgentFavoriteToggle: React.FC<{
+    favorite: boolean;
+    onToggle: () => void;
+    className?: string;
+}> = ({ favorite, onToggle, className }) => {
+    const { t } = useI18n();
+    const label = favorite ? t('chat.modelControls.removeFromFavorites') : t('chat.modelControls.agentFavoriteAdd');
+    const keepFromRow = (event: React.SyntheticEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+    };
+    return (
+        <button
+            type="button"
+            aria-pressed={favorite}
+            aria-label={label}
+            title={label}
+            onPointerDown={keepFromRow}
+            onPointerUp={keepFromRow}
+            onMouseUp={keepFromRow}
+            onClick={(event) => {
+                keepFromRow(event);
+                onToggle();
+            }}
+            className={cn(
+                'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded hover:text-primary/80',
+                favorite ? 'text-primary' : 'text-muted-foreground',
+                className,
+            )}
+        >
+            <Icon name={favorite ? 'star-fill' : 'star'} className="h-3.5 w-3.5" />
+        </button>
+    );
+};
+
+/**
  * Sampling knobs an agent sets.
  *
  * v2 folded them into the provider request body, which is free-form JSON, so
@@ -341,6 +380,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const readinessLabel = isUnavailable ? t('common.unavailable') : t('common.loading');
     const providers = useConfigStore((state) => state.providers);
     const getAgentColor = useAgentColors();
+    const favoriteAgents = useUIStore((state) => state.favoriteAgents);
+    const toggleFavoriteAgent = useUIStore((state) => state.toggleFavoriteAgent);
     const currentProviderId = useConfigStore((state) => selection ? selection.model?.providerId ?? '' : state.currentProviderId);
     const currentModelId = useConfigStore((state) => selection ? selection.model?.modelId ?? '' : state.currentModelId);
     const effectiveCurrentVariant = useConfigStore((state) => state.currentVariant);
@@ -1454,7 +1495,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     ]);
 
     const handleCycleAgentFromModelPicker = React.useCallback((direction: 1 | -1) => {
-        const nextAgentName = getCycledPrimaryAgentName(agents, currentAgentName, direction);
+        const nextAgentName = getCycledPrimaryAgentName(agents, currentAgentName, direction, useUIStore.getState().favoriteAgents);
         if (!nextAgentName) {
             return;
         }
@@ -2297,11 +2338,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         const isSelected = agent.name === uiAgentName;
                         const agentColor = getAgentColor(agent.name);
                         return (
+                            <div key={agent.name} className="relative">
                             <button
-                                key={agent.name}
                                 type="button"
                                 className={cn(
-                                    'flex w-full flex-col gap-1.5 rounded-xl border px-3 py-2.5 text-left',
+                                    'flex w-full flex-col gap-1.5 rounded-xl border py-2.5 pl-3 pr-11 text-left',
                                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                                     'touch-manipulation cursor-pointer transition-colors',
                                     'active:bg-interactive-active',
@@ -2329,6 +2370,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                     </span>
                                 )}
                             </button>
+                            <AgentFavoriteToggle
+                                className="absolute right-2 top-2 h-8 w-8"
+                                favorite={favoriteAgents.includes(agent.name)}
+                                onToggle={() => toggleFavoriteAgent(agent.name)}
+                            />
+                            </div>
                         );
                     })}
                 </div>
@@ -3056,9 +3103,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                                         className="typography-meta"
                                                         onSelect={() => handleAgentChange(agent.name)}
                                                     >
-                                                        <div className="flex items-center gap-1.5">
+                                                        <div className="flex w-full items-center gap-1.5">
                                                             <div className="h-1 w-1 rounded-full" style={{ background: getAgentColor(agent.name).color }} />
                                                             <span className="font-medium">{agentLabel(agent)}</span>
+                                                            <AgentFavoriteToggle
+                                                                className="ml-auto"
+                                                                favorite={favoriteAgents.includes(agent.name)}
+                                                                onToggle={() => toggleFavoriteAgent(agent.name)}
+                                                            />
                                                         </div>
                                                     </DropdownMenuItem>
                                                 </AgentDescriptionTooltip>

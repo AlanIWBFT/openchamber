@@ -3797,6 +3797,7 @@ export const dict = {
   'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': 'This task already has a run in progress, started at {time}',
   'sessions.scheduledTasks.dialog.toast.alreadyRunning': 'This task already has a run in progress',
   'sessions.scheduledTasks.dialog.toast.alreadyQueued': 'This task is already waiting in the queue and will run when a slot frees up',
+  'chat.modelControls.agentFavoriteAdd': 'Add to favorites. With favorites, Tab cycles through them only',
 } as const;
 
 export type I18nKey = keyof typeof dict;

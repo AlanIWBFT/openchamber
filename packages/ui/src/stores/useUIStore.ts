@@ -992,6 +992,8 @@ interface UIStore {
   /** `provider/model` last picked in a chat composer; a new session starts on it when nothing is configured. */
   lastSelectedModel: string | undefined;
   recentAgents: string[];
+  /** Agents starred in the agent menu. While any of them is available, agent cycling (Tab) goes through those only. */
+  favoriteAgents: string[];
   recentEfforts: Record<string, string[]>;
 
   diffLayoutPreference: 'dynamic' | 'inline' | 'side-by-side';
@@ -1261,6 +1263,7 @@ interface UIStore {
   addRecentModel: (providerID: string, modelID: string) => void;
   setLastSelectedModel: (providerID: string, modelID: string) => void;
   addRecentAgent: (agentName: string) => void;
+  toggleFavoriteAgent: (agentName: string) => void;
   addRecentEffort: (providerID: string, modelID: string, variant: string | undefined) => void;
   setDiffLayoutPreference: (mode: 'dynamic' | 'inline' | 'side-by-side') => void;
   setDiffFileLayout: (filePath: string, mode: 'inline' | 'side-by-side') => void;
@@ -1464,6 +1467,7 @@ export const useUIStore = create<UIStore>()(
         recentModels: [],
         lastSelectedModel: undefined,
         recentAgents: [],
+        favoriteAgents: [],
         recentEfforts: {},
         diffLayoutPreference: 'inline',
         diffFileLayout: {},
@@ -2827,6 +2831,16 @@ export const useUIStore = create<UIStore>()(
           set({ lastSelectedModel: next });
         },
 
+        toggleFavoriteAgent: (agentName) => {
+          const normalized = agentName.trim();
+          if (!normalized) return;
+          set((state) => ({
+            favoriteAgents: state.favoriteAgents.includes(normalized)
+              ? state.favoriteAgents.filter((name) => name !== normalized)
+              : [...state.favoriteAgents, normalized],
+          }));
+        },
+
         addRecentAgent: (agentName) => {
           const normalized = typeof agentName === 'string' ? agentName.trim() : '';
           if (!normalized) {
@@ -3453,6 +3467,7 @@ export const useUIStore = create<UIStore>()(
           recentModels: state.recentModels,
           lastSelectedModel: state.lastSelectedModel,
           recentAgents: state.recentAgents,
+          favoriteAgents: state.favoriteAgents,
           recentEfforts: state.recentEfforts,
           diffLayoutPreference: state.diffLayoutPreference,
           diffWrapLines: state.diffWrapLines,

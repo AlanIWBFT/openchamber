@@ -3795,4 +3795,5 @@ export const dict = {
   'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': 'Bu görevin {time} saatinde başlayan bir çalıştırması zaten sürüyor',
   'sessions.scheduledTasks.dialog.toast.alreadyRunning': 'Bu görevin bir çalıştırması zaten sürüyor',
   'sessions.scheduledTasks.dialog.toast.alreadyQueued': 'Bu görev zaten kuyrukta bekliyor; yer açılınca çalışacak',
+  'chat.modelControls.agentFavoriteAdd': 'Favorilere ekle. Favori varsa Tab yalnızca onlar arasında geçiş yapar',
 };

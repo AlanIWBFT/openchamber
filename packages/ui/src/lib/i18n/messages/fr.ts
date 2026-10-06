@@ -3796,4 +3796,5 @@ export const dict = {
   'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': 'Cette tâche a déjà une exécution en cours, lancée à {time}',
   'sessions.scheduledTasks.dialog.toast.alreadyRunning': 'Cette tâche a déjà une exécution en cours',
   'sessions.scheduledTasks.dialog.toast.alreadyQueued': 'Cette tâche attend déjà dans la file et s’exécutera dès qu’une place se libère',
+  'chat.modelControls.agentFavoriteAdd': 'Ajouter aux favoris. Avec des favoris, Tab ne passe que par eux',
 } as const;

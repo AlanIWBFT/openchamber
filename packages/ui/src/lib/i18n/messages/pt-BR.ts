@@ -3798,4 +3798,5 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': 'Esta tarefa já tem uma execução em andamento, iniciada às {time}',
   'sessions.scheduledTasks.dialog.toast.alreadyRunning': 'Esta tarefa já tem uma execução em andamento',
   'sessions.scheduledTasks.dialog.toast.alreadyQueued': 'Esta tarefa já está na fila e será executada quando houver uma vaga',
+  'chat.modelControls.agentFavoriteAdd': 'Adicionar aos favoritos. Com favoritos, o Tab alterna só entre eles',
 };
