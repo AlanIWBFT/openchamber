@@ -777,12 +777,13 @@ export const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
         onSelect(file.path);
     }, [file.path, onSelect]);
 
-    const appliedStatusRef = React.useRef({ fileStatusKey, staged });
+    // Switching between the staged and unstaged side shows a different diff,
+    // so the side being switched to must not show what it held before.
+    const appliedStagedRef = React.useRef(staged);
     React.useEffect(() => {
         if (!visible) return;
-        const previous = appliedStatusRef.current;
-        if (previous.fileStatusKey === fileStatusKey && previous.staged === staged) return;
-        appliedStatusRef.current = { fileStatusKey, staged };
+        if (appliedStagedRef.current === staged) return;
+        appliedStagedRef.current = staged;
         if (!staged) {
             setLocalDiffData(null);
         } else {
@@ -791,12 +792,15 @@ export const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
 
         setDiffLoadFailure(null);
         lastDiffRequestRef.current = null;
-    }, [fileStatusKey, staged, visible]);
+    }, [staged, visible]);
 
-    // Revision the displayed live diff was fetched for. An older diff stays on
-    // screen while its replacement loads instead of collapsing to a spinner.
-    const [loadedRevision, setLoadedRevision] = React.useState(contentRevision);
-    const isDiffCurrent = loadedRevision === contentRevision;
+    // Version the displayed live diff was fetched for: the content revision
+    // and the file's status row, which moves with every edit. An older diff
+    // stays on screen while its replacement loads instead of collapsing to a
+    // spinner, so an agent editing the file does not make it flicker.
+    const diffVersion = `${contentRevision}:${fileStatusKey}`;
+    const [loadedVersion, setLoadedVersion] = React.useState(diffVersion);
+    const isDiffCurrent = loadedVersion === diffVersion;
     React.useEffect(() => {
         if (isDiffCurrent) return;
         setDiffLoadFailure(null);
@@ -869,9 +873,12 @@ export const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
                         setStagedDiffData(nextDiff);
                     } else {
                         setDiff(directory, file.path, nextDiff, runtimeKey);
+                        // Also held locally: a refresh clears the shared cache
+                        // and the entry keeps showing this until it refetches.
+                        setLocalDiffData(nextDiff);
                     }
                 }
-                setLoadedRevision(contentRevision);
+                setLoadedVersion(diffVersion);
                 setIsLoading(false);
             })
             .catch((error) => {
@@ -894,7 +901,7 @@ export const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
                 lastDiffRequestRef.current = null;
             }
         };
-    }, [actionPatch, actionSubmodule, contentRevision, hunkEligible, isDiffCurrent, patchScope, comparisonDiff, desiredContextMode, diffData, diffDataMatchesContextMode, diffRetryNonce, directory, fetchStatus, file.path, fileStatusKey, git, initialDiffData, isExpanded, isMounted, loadFullFiles, localDiffLoadFailure, setDiff, staged, t, visible]);
+    }, [actionPatch, actionSubmodule, contentRevision, diffVersion, hunkEligible, isDiffCurrent, patchScope, comparisonDiff, desiredContextMode, diffData, diffDataMatchesContextMode, diffRetryNonce, directory, fetchStatus, file.path, fileStatusKey, git, initialDiffData, isExpanded, isMounted, loadFullFiles, localDiffLoadFailure, setDiff, staged, t, visible]);
 
     const handleToggle = React.useCallback(() => {
         handleOpenChange(!isExpanded);
@@ -1783,8 +1790,8 @@ export const DiffView: React.FC<DiffViewProps> = ({
         if (!effectiveDirectory) {
             return;
         }
-        // Named paths remount their entries; an unscoped hint refetches every
-        // live diff in place, since it cannot tell which one changed.
+        // Named paths bump their entries' revision and an unscoped hint bumps
+        // every live diff's; either way the entry refetches in place.
         const refresh = (paths: string[], unscoped: boolean) => {
             if (paths.length) {
                 pendingScrollAnchorRestoreRef.current = captureScrollAnchor() ?? lastScrollAnchorRef.current;
@@ -2254,7 +2261,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
         const renderEntry = (file: FileEntry, isSingleFile = false) => (
             <MultiFileDiffEntry
                 visible={visible}
-                key={`${getRuntimeKey()}:${effectiveDirectory}:${file.path}:${fileDiffRefreshNonce.get(file.path) ?? 0}`}
+                key={`${getRuntimeKey()}:${effectiveDirectory}:${file.path}`}
                 directory={effectiveDirectory}
                 file={file}
                 layout={getLayoutForFile(file)}
@@ -2273,7 +2280,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                 staged={getFileStaged(file.path)}
                 readOnlyActions={activeDiffScope === 'branch' || activeDiffScope === 'commit' || activeDiffScope === 'pr'}
                 hunkActionsEnabled={activeDiffScope === 'all' || activeDiffScope === 'working' || activeDiffScope === 'staged'}
-                contentRevision={workingTreeRevision}
+                contentRevision={workingTreeRevision + (fileDiffRefreshNonce.get(file.path) ?? 0)}
                 comparisonDiff={activeDiffScope === 'branch' || activeDiffScope === 'commit' || activeDiffScope === 'pr'
                     ? comparisonDiffData.get(file.path) ?? EMPTY_COMPARISON_DIFF
                     : undefined}
