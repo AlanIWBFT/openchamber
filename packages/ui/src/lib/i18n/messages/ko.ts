@@ -2656,6 +2656,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.statusRow.background.action': '백그라운드로 이동 — 에이전트가 기다리지 않고 계속합니다',
   'chat.statusRow.background.failed': '작업을 백그라운드로 이동하지 못했습니다',
   'chat.toolPart.background.label': '백그라운드',
+  'chat.toolPart.subagent.stop': '하위 에이전트 중지',
+  'chat.toolPart.subagent.stopFailed': '하위 에이전트를 중지하지 못했습니다',
   'chat.toolPart.background.stop': '명령 중지',
   'chat.toolPart.background.stopLabel': '중지',
   'chat.toolPart.background.stopFailed': '명령을 중지하지 못했습니다',

@@ -1,5 +1,5 @@
 import { act } from 'react';
-import { expect, test } from 'bun:test';
+import { expect, spyOn, test } from 'bun:test';
 import { plugin } from 'bun';
 import { pathToFileURL } from 'node:url';
 import { createRoot } from 'react-dom/client';
@@ -12,6 +12,8 @@ import { ThemeSystemContext, type ThemeContextValue } from '@/contexts/theme-sys
 import { getDefaultTheme } from '@/lib/theme/themes';
 import { useGuestsStore } from '@/lib/guests/store';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
+import { opencodeClient } from '@/lib/opencode/client';
+import { subagentCancellationNote } from '@/lib/opencode/subagent-run';
 
 // Bun does not implement Vite's worker asset-query imports.
 plugin({
@@ -51,8 +53,9 @@ const parent: ToolPartData = {
   id: 'parent-call', sessionID: 'parent', messageID: 'parent-message',
   type: 'tool', tool: 'subagent', callID: 'parent-call',
   state: {
-    status: 'completed', input: { description: 'Update files' },
-    output: '', metadata: { sessionID: 'child' }, time: { start: 1, end: 2 },
+    status: 'completed', input: { description: 'Update files', agent: 'explore' },
+    output: '<subagent sessionID="child" state="completed">\nFound two files\n</subagent>',
+    metadata: { sessionID: 'child' }, time: { start: 1_000, end: 63_000 },
   },
 };
 
@@ -70,6 +73,7 @@ const patchPart = (paths: string[]): ToolPartData => ({
 
 const withHarness = async (
   toolPart: ToolPartData,
+  isExpanded: boolean,
   run: (store: ReturnType<ReturnType<typeof useChildStoreManager>['ensureChild']>, container: HTMLElement) => Promise<void>,
 ) => {
   const happyWindow = new Window({ url: 'http://localhost' });
@@ -118,7 +122,7 @@ const withHarness = async (
           <CaptureManager />
           <I18nProvider>
             <ThemeSystemContext.Provider value={themeContext}>
-              <ToolPart part={toolPart} isExpanded isMobile={false} onToggle={() => {}} />
+              <ToolPart part={toolPart} isExpanded={isExpanded} isMobile={false} onToggle={() => {}} />
             </ThemeSystemContext.Provider>
           </I18nProvider>
         </SyncProvider>,
@@ -138,35 +142,31 @@ const withHarness = async (
   }
 };
 
-test('subagent patch summaries show file names and update when the same call changes', async () => {
-  await withHarness(parent, async (store, container) => {
-  const renderPatch = async (paths: string[]) => {
-    await act(async () => store.setState({
-      message: { child: [{
-        id: 'child-message', sessionID: 'child', role: 'assistant',
-        agent: 'build', providerID: 'test', modelID: 'test',
-        time: { created: 1, completed: 2 },
-      }] },
-      part: { 'child-message': [patchPart(paths)] },
-    }));
-  };
+const childSession = (id: string, created: number) => ({
+  id, parentID: 'parent', projectID: 'p', directory: '/workspace', title: id, agent: 'explore',
+  cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  time: { created, updated: created },
+});
 
-  await renderPatch(['src/one.ts', 'src/two.ts']);
-  expect(container.textContent).toContain('Apply Patch');
-  expect(container.textContent).toContain('one.ts, two.ts');
-  expect(container.textContent).not.toContain('src/one.ts');
+const childActivity = (sessionID: string) => ({
+  message: { [sessionID]: [{
+    id: `${sessionID}-message`, sessionID, role: 'assistant' as const,
+    agent: 'explore', providerID: 'test', modelID: 'test',
+    time: { created: 121, completed: 122 },
+  }] },
+  part: { [`${sessionID}-message`]: [{ ...patchPart(['src/child-work.ts']), sessionID, messageID: `${sessionID}-message` }] },
+});
 
-  await renderPatch(['src/new.ts', 'src/second.ts', 'src/third.ts', 'src/fourth.ts', 'src/fifth.ts']);
-  expect(container.textContent).toContain('new.ts, second.ts, third.ts +2');
-  expect(container.textContent).not.toContain('one.ts, two.ts');
-  expect(container.textContent).not.toContain('fourth.ts');
+const openButton = (container: HTMLElement) => container.querySelector('button[aria-label="Open Explore subtask"]');
 
-  await renderPatch(['C:\\repo\\windows.ts', 'C:\\repo\\other.ts']);
-  expect(container.textContent).toContain('windows.ts, other.ts');
-  expect(container.textContent).not.toContain('C:\\repo');
-
-  await renderPatch(['src/single.ts']);
-  expect(container.textContent).toContain('single.ts');
+test('a finished subagent is one row with its duration and an open action, never its child activity', async () => {
+  await withHarness(parent, false, async (store, container) => {
+    await act(async () => store.setState(childActivity('child')));
+    expect(container.textContent).toContain('Update files');
+    expect(container.textContent).toContain('62.0s');
+    expect(openButton(container)).not.toBeNull();
+    expect(container.textContent).not.toContain('child-work.ts');
+    expect(container.textContent).not.toContain('Found two files');
   });
 });
 
@@ -175,27 +175,15 @@ test('a running subagent without the progress join resolves its child session fr
     ...parent,
     state: { status: 'running', input: { description: 'Look around', agent: 'explore', sessionID: '  ' }, time: { start: 100 } },
   };
-  await withHarness(running, async (store, container) => {
-    expect(container.textContent).toContain('Waiting for subagent activity');
-    await act(async () => store.setState({
-      session: [{
-        id: 'child', parentID: 'parent', projectID: 'p', directory: '/workspace', title: 'child', agent: 'explore',
-        cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-        time: { created: 120, updated: 120 },
-      }],
-      message: { child: [{
-        id: 'child-message', sessionID: 'child', role: 'assistant',
-        agent: 'explore', providerID: 'test', modelID: 'test',
-        time: { created: 121, completed: 122 },
-      }] },
-      part: { 'child-message': [patchPart(['src/found.ts'])] },
-    }));
-    expect(container.textContent).not.toContain('Waiting for subagent activity');
-    expect(container.textContent).toContain('found.ts');
+  await withHarness(running, false, async (store, container) => {
+    expect(openButton(container)).toBeNull();
+    await act(async () => store.setState({ session: [childSession('child', 120)], ...childActivity('child') }));
+    expect(openButton(container)).not.toBeNull();
+    expect(container.textContent).not.toContain('child-work.ts');
   });
 });
 
-test('a resumed subagent uses its explicit child id when that child predates the call', async () => {
+test('a resumed subagent opens its explicit child even when that child predates the call', async () => {
   const running: ToolPartData = {
     ...parent,
     state: {
@@ -204,68 +192,46 @@ test('a resumed subagent uses its explicit child id when that child predates the
       time: { start: 100 },
     },
   };
-  await withHarness(running, async (store, container) => {
-    await act(async () => store.setState({
-      session: [{
-        id: 'child', parentID: 'parent', projectID: 'p', directory: '/workspace', title: 'child', agent: 'explore',
-        cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-        time: { created: 50, updated: 120 },
-      }],
-      message: { child: [{
-        id: 'child-message', sessionID: 'child', role: 'assistant',
-        agent: 'explore', providerID: 'test', modelID: 'test',
-        time: { created: 121, completed: 122 },
-      }] },
-      part: { 'child-message': [patchPart(['src/resumed.ts'])] },
-    }));
-
-    expect(container.textContent).not.toContain('Waiting for subagent activity');
-    expect(container.textContent).toContain('resumed.ts');
-    expect(container.textContent).toContain('Open Explore subtask');
+  await withHarness(running, false, async (store, container) => {
+    await act(async () => store.setState({ session: [childSession('child', 50)] }));
+    expect(openButton(container)).not.toBeNull();
   });
 });
 
-test('progress metadata takes precedence over a different explicit child id', async () => {
+test('a running subagent offers a stop that tells the agent before interrupting the child', async () => {
   const running: ToolPartData = {
     ...parent,
+    state: { status: 'running', input: { description: 'Look around', agent: 'explore' }, metadata: { sessionID: 'child' }, time: { start: 100 } },
+  };
+  const stop = spyOn(opencodeClient, 'stopSubagent').mockResolvedValue(undefined);
+  try {
+    await withHarness(running, false, async (_store, container) => {
+      const button = container.querySelector('button[aria-label="Stop subagent"]');
+      if (!(button instanceof HTMLElement)) throw new Error('Stop action is missing');
+      await act(async () => { button.click(); });
+      expect(stop.mock.calls).toEqual([[{ sessionID: 'parent', directory: '/workspace', childSessionID: 'child', description: 'Look around' }]]);
+      expect(container.querySelector('button[aria-label="Stop subagent"]')).toBeNull();
+    });
+  } finally {
+    stop.mockRestore();
+  }
+});
+
+test('a subagent the user stopped reads as stopped, not failed, and offers no stop', async () => {
+  const cancelled: ToolPartData = {
+    ...parent,
+    id: 'stopped-call',
     state: {
-      status: 'running',
-      input: { description: 'Look around', agent: 'explore', sessionID: 'input-child' },
-      metadata: { sessionID: 'metadata-child' },
-      time: { start: 100 },
+      status: 'error', input: { description: 'Look around', agent: 'explore' },
+      error: 'Subagent cancelled (sessionID: stopped-child)', metadata: { sessionID: 'stopped-child' }, time: { start: 100, end: 200 },
     },
   };
-  await withHarness(running, async (store, container) => {
-    const childMessage = (sessionID: string) => ({
-      id: `${sessionID}-message`, sessionID, role: 'assistant' as const,
-      agent: 'explore', providerID: 'test', modelID: 'test',
-      time: { created: 121, completed: 122 },
-    });
-    const childPatch = (sessionID: string, path: string) => ({
-      ...patchPart([path]),
-      id: `${sessionID}-patch`,
-      sessionID,
-      messageID: `${sessionID}-message`,
-    });
-    const childSession = (id: string) => ({
-      id, parentID: 'parent', projectID: 'p', directory: '/workspace', title: id, agent: 'explore',
-      cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-      time: { created: 50, updated: 120 },
-    });
-
+  const note = subagentCancellationNote({ childSessionID: 'stopped-child', description: 'Look around' });
+  await withHarness(cancelled, false, async (store, container) => {
     await act(async () => store.setState({
-      session: [childSession('metadata-child'), childSession('input-child')],
-      message: {
-        'metadata-child': [childMessage('metadata-child')],
-        'input-child': [childMessage('input-child')],
-      },
-      part: {
-        'metadata-child-message': [childPatch('metadata-child', 'src/metadata.ts')],
-        'input-child-message': [childPatch('input-child', 'src/input.ts')],
-      },
+      message: { parent: [{ id: 'note', sessionID: 'parent', role: 'synthetic', time: { created: 150 }, text: note.text, description: note.description, metadata: note.metadata }] },
     }));
-
-    expect(container.textContent).toContain('metadata.ts');
-    expect(container.textContent).not.toContain('input.ts');
+    expect(container.textContent).toContain('stopped');
+    expect(container.querySelector('button[aria-label="Stop subagent"]')).toBeNull();
   });
 });

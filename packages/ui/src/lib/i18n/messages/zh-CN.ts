@@ -2622,6 +2622,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.statusRow.background.action': '移到后台 — 智能体不再等待并继续工作',
   'chat.statusRow.background.failed': '无法将工作移到后台',
   'chat.toolPart.background.label': '后台运行',
+  'chat.toolPart.subagent.stop': '停止子代理',
+  'chat.toolPart.subagent.stopFailed': '无法停止子代理',
   'chat.toolPart.background.stop': '停止命令',
   'chat.toolPart.background.stopLabel': '停止',
   'chat.toolPart.background.stopFailed': '无法停止命令',

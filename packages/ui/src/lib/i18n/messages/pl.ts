@@ -1551,6 +1551,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.statusRow.background.action': 'Przenieś do tła — agent przestaje czekać i działa dalej',
   'chat.statusRow.background.failed': 'Nie udało się przenieść pracy do tła',
   'chat.toolPart.background.label': 'w tle',
+  'chat.toolPart.subagent.stop': 'Zatrzymaj subagenta',
+  'chat.toolPart.subagent.stopFailed': 'Nie udało się zatrzymać subagenta',
   'chat.toolPart.background.stop': 'Zatrzymaj polecenie',
   'chat.toolPart.background.stopLabel': 'Zatrzymaj',
   'chat.toolPart.background.stopFailed': 'Nie udało się zatrzymać polecenia',

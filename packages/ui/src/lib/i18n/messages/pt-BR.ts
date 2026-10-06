@@ -2610,6 +2610,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.statusRow.background.action": "Mover para segundo plano — o agente para de esperar e continua",
   "chat.statusRow.background.failed": "Não foi possível mover o trabalho para segundo plano",
   "chat.toolPart.background.label": "em segundo plano",
+  "chat.toolPart.subagent.stop": "Parar subagente",
+  "chat.toolPart.subagent.stopFailed": "Não foi possível parar o subagente",
   "chat.toolPart.background.stop": "Parar comando",
   "chat.toolPart.background.stopLabel": "Parar",
   "chat.toolPart.background.stopFailed": "Não foi possível parar o comando",

@@ -61,6 +61,7 @@ import {
 } from "./model"
 import { ascendingId } from "./ids"
 import { runningShellFromWire, shellCancellationNote, type RunningShell } from "./background-shell"
+import { subagentCancellationNote } from "./subagent-run"
 import { toJsonRecord } from "./json"
 import { deniesAnyProvider, mergeConfigDocuments, projectAgent, projectMessages, projectProject, projectSession, projectVcs } from "./projection"
 
@@ -1600,6 +1601,33 @@ class OpencodeService {
       }),
     )
     await call("shell.remove", () => this.clientFor(params.shellDirectory).shell.remove({ id: params.shellID }))
+  }
+
+  /**
+   * Stops a subagent the agent started, in the foreground or the background.
+   * The agent is told first, in a note that does not wake it, that the
+   * cancellation OpenCode is about to report is the user's stop (see
+   * `subagentCancellationNote`); the child session is interrupted only once
+   * the note is in. Throws when either step fails, and nothing is stopped
+   * when the note could not be delivered.
+   */
+  async stopSubagent(params: {
+    sessionID: string
+    directory?: string | null
+    childSessionID: string
+    description: string | undefined
+  }): Promise<void> {
+    const note = subagentCancellationNote({ childSessionID: params.childSessionID, description: params.description })
+    await call("session.synthetic", () =>
+      this.clientFor(params.directory).session.synthetic({
+        sessionID: params.sessionID,
+        text: note.text,
+        description: note.description,
+        metadata: note.metadata,
+        resume: false,
+      }),
+    )
+    await this.abortSession(params.childSessionID, params.directory)
   }
 
   /** Global pending items when requested, then each distinct directory. */

@@ -2491,6 +2491,8 @@ export const dict = {
   'chat.statusRow.background.action': 'Arka plana taşı — ajan beklemeyi bırakıp devam eder',
   'chat.statusRow.background.failed': 'İş arka plana taşınamadı',
   'chat.toolPart.background.label': 'arka planda',
+  'chat.toolPart.subagent.stop': 'Alt ajanı durdur',
+  'chat.toolPart.subagent.stopFailed': 'Alt ajan durdurulamadı',
   'chat.toolPart.background.stop': 'Komutu durdur',
   'chat.toolPart.background.stopLabel': 'Durdur',
   'chat.toolPart.background.stopFailed': 'Komut durdurulamadı',

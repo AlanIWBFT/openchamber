@@ -2345,6 +2345,8 @@ export const dict = {
   'chat.statusRow.background.action': 'Passer en arrière-plan : l\'agent cesse d\'attendre et continue',
   'chat.statusRow.background.failed': 'Impossible de passer le travail en arrière-plan',
   'chat.toolPart.background.label': 'en arrière-plan',
+  'chat.toolPart.subagent.stop': 'Arrêter le sous-agent',
+  'chat.toolPart.subagent.stopFailed': 'Impossible d\'arrêter le sous-agent',
   'chat.toolPart.background.stop': 'Arrêter la commande',
   'chat.toolPart.background.stopLabel': 'Arrêter',
   'chat.toolPart.background.stopFailed': 'Impossible d\'arrêter la commande',

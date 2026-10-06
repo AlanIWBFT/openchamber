@@ -75,7 +75,6 @@ export const isExecuteTool = is(OPENCODE_TOOLS.execute)
 export const isSubagentTool = is(OPENCODE_TOOLS.subagent)
 export const isQuestionTool = is(OPENCODE_TOOLS.question)
 export const isSkillTool = is(OPENCODE_TOOLS.skill)
-export const isReadTool = is(OPENCODE_TOOLS.read)
 export const isEditTool = is(OPENCODE_TOOLS.edit)
 export const isWriteTool = is(OPENCODE_TOOLS.write)
 export const isPatchTool = is(OPENCODE_TOOLS.patch)
@@ -280,6 +279,16 @@ export function executeOutputTruncation(metadata: Metadata | undefined): { outpu
 /** The script an `execute` call ran (`input.code`). */
 export function executeScript(input: ToolInput | undefined): string | undefined {
   return readInput(input).code
+}
+
+/** The agent a `subagent` call runs (`input.agent`). */
+export function subagentAgent(input: ToolInput | undefined): string | undefined {
+  return readInput(input).agent
+}
+
+/** The short label a `subagent` call gives its task (`input.description`). */
+export function subagentDescription(input: ToolInput | undefined): string | undefined {
+  return readInput(input).description
 }
 
 /** The child session a `subagent` call runs in (`metadata.sessionID`). */

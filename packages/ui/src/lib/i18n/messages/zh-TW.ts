@@ -2624,6 +2624,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.statusRow.background.action': '移至背景 — 代理程式不再等待並繼續工作',
   'chat.statusRow.background.failed': '無法將工作移至背景',
   'chat.toolPart.background.label': '背景執行',
+  'chat.toolPart.subagent.stop': '停止子代理',
+  'chat.toolPart.subagent.stopFailed': '無法停止子代理',
   'chat.toolPart.background.stop': '停止指令',
   'chat.toolPart.background.stopLabel': '停止',
   'chat.toolPart.background.stopFailed': '無法停止指令',

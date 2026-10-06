@@ -2655,6 +2655,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.statusRow.background.action': 'バックグラウンドに移動 — エージェントは待たずに続行します',
   'chat.statusRow.background.failed': '作業をバックグラウンドに移動できませんでした',
   'chat.toolPart.background.label': 'バックグラウンド',
+  'chat.toolPart.subagent.stop': 'サブエージェントを停止',
+  'chat.toolPart.subagent.stopFailed': 'サブエージェントを停止できませんでした',
   'chat.toolPart.background.stop': 'コマンドを停止',
   'chat.toolPart.background.stopLabel': '停止',
   'chat.toolPart.background.stopFailed': 'コマンドを停止できませんでした',

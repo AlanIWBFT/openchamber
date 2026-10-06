@@ -2391,6 +2391,8 @@ export const dict = {
   'chat.toolPart.background.stopFailed': 'Befehl konnte nicht gestoppt werden',
   'chat.toolPart.background.stoppedLabel': 'gestoppt',
   'chat.toolPart.background.stoppedNotice': 'Von dir gestoppt. Der Agent weiß, dass du abgebrochen hast und kein Fehler vorlag.',
+  'chat.toolPart.subagent.stop': 'Subagent stoppen',
+  'chat.toolPart.subagent.stopFailed': 'Der Subagent konnte nicht gestoppt werden',
   'chat.toolPart.lspErrors': 'LSP-Fehler',
   'chat.toolPart.moreErrors': '+{count} weitere Fehler',
   'chat.toolPart.moreRows': '+{count} weitere Zeilen',

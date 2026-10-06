@@ -2610,6 +2610,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.statusRow.background.action": "Перенести у фон — агент перестане чекати й продовжить",
   "chat.statusRow.background.failed": "Не вдалося перенести роботу у фон",
   "chat.toolPart.background.label": "у фоні",
+  "chat.toolPart.subagent.stop": "Зупинити сабагента",
+  "chat.toolPart.subagent.stopFailed": "Не вдалося зупинити сабагента",
   "chat.toolPart.background.stop": "Зупинити команду",
   "chat.toolPart.background.stopLabel": "Зупинити",
   "chat.toolPart.background.stopFailed": "Не вдалося зупинити команду",

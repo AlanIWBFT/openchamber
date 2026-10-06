@@ -2656,6 +2656,8 @@ export const dict = {
   'chat.statusRow.background.action': 'Naar de achtergrond — de agent wacht niet meer en gaat verder',
   'chat.statusRow.background.failed': 'Kon het werk niet naar de achtergrond verplaatsen',
   'chat.toolPart.background.label': 'op de achtergrond',
+  'chat.toolPart.subagent.stop': 'Subagent stoppen',
+  'chat.toolPart.subagent.stopFailed': 'Kon de subagent niet stoppen',
   'chat.toolPart.background.stop': 'Opdracht stoppen',
   'chat.toolPart.background.stopLabel': 'Stoppen',
   'chat.toolPart.background.stopFailed': 'Kon de opdracht niet stoppen',
