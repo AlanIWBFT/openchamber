@@ -263,7 +263,6 @@ export const ProviderGrid: React.FC<ProviderGridProps> = ({ providers, integrati
               key={provider.id}
               icon={<ProviderLogo providerId={provider.id} className="size-5" />}
               title={provider.name || provider.id}
-              subtitle={provider.id}
               badges={status ? <StatusPill status={status} /> : null}
               footer={(
                 <>
