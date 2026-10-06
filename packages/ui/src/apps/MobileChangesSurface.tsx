@@ -137,7 +137,7 @@ type MobileChangesSurfaceProps = {
 
 export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = (props) => {
   const rootDirectory = normalizePath(useEffectiveDirectory() ?? null) ?? '';
-  const repository = useNestedGitDirectory(rootDirectory || null, { enabled: props.visible ?? true });
+  const repository = useNestedGitDirectory(rootDirectory || null, { enabled: props.visible ?? true, recheckOnOpen: true });
   return <MobileChangesPane {...props} rootDirectory={rootDirectory} repository={repository} />;
 };
 
