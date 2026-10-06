@@ -2142,3 +2142,52 @@ describe('fs html preview grants', () => {
     expect((await mint('/etc/passwd')).statusCode).toBe(400);
   });
 });
+
+describe('GET /api/fs/find-by-name', () => {
+  let repo;
+  beforeEach(async () => {
+    repo = await mkdtemp(path.join(tmpdir(), 'oc-find-by-name-'));
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    await mkdir(path.join(repo, 'src', 'chat'), { recursive: true });
+    await mkdir(path.join(repo, 'lib'), { recursive: true });
+    await nativeFs.writeFile(path.join(repo, 'src', 'chat', 'Renderer.tsx'), 'x');
+    await nativeFs.writeFile(path.join(repo, 'lib', 'util.ts'), 'x');
+    await nativeFs.writeFile(path.join(repo, 'src', 'util.ts'), 'x');
+    await nativeFs.writeFile(path.join(repo, 'README.md'), 'x');
+    execFileSync('git', ['add', 'src/chat/Renderer.tsx', 'lib/util.ts'], { cwd: repo });
+  });
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it('finds tracked and untracked files by name anywhere in the workspace', async () => {
+    const { spawn } = await import('node:child_process');
+    const { app, getRoute } = createRouteRegistry();
+    registerFsRoutes(app, {
+      os: { homedir: () => '/home/user' },
+      path,
+      fsPromises: nativeFs,
+      spawn,
+      crypto: { randomUUID: () => 'job-0' },
+      normalizeDirectoryPath: (p) => p,
+      resolveProjectDirectory: async () => ({ directory: repo }),
+      buildAugmentedPath: () => '/usr/bin',
+      resolveGitBinaryForSpawn: () => 'git',
+      openchamberUserConfigRoot: '/home/user/.config',
+    });
+    const route = getRoute('GET', '/api/fs/find-by-name');
+    const ask = async (name) => {
+      const res = createMockResponse();
+      await route({ query: { name }, headers: {} }, res);
+      return res;
+    };
+
+    expect((await ask('Renderer.tsx')).body).toEqual({ paths: [path.join(repo, 'src/chat/Renderer.tsx')] });
+    expect((await ask('util.ts')).body.paths.sort()).toEqual([path.join(repo, 'lib/util.ts'), path.join(repo, 'src/util.ts')].sort());
+    expect((await ask('README.md')).body).toEqual({ paths: [path.join(repo, 'README.md')] });
+    expect((await ask('Missing.ts')).body).toEqual({ paths: [] });
+    for (const bad of ['src/util.ts', '*.ts', '', '..']) {
+      expect((await ask(bad)).statusCode, bad).toBe(400);
+    }
+  });
+});
