@@ -2960,7 +2960,7 @@ const resolveMiniChatRuntimeConfig = (browserWindow, args = {}) => {
 };
 
 // A line of text under the splash logo, for a startup step the user waits
-// on (the default SSH instance's tunnel). The splash is a plain document
+// on (the default remote or SSH instance). The splash is a plain document
 // owned by main, so the text is added from here; the app replaces the page.
 const showSplashStatus = (text) => {
   const mainWindow = state.mainWindow;
@@ -2985,6 +2985,10 @@ const showSplashStatus = (text) => {
     else show();
   })();`;
   mainWindow.webContents.executeJavaScript(script).catch(() => {});
+};
+
+const showSplashConnecting = (hostLabel) => {
+  showSplashStatus(menuLabel(normalizeMenuLocale(readPreferredLocale()), 'splash.connectingTo').replace('{host}', hostLabel));
 };
 
 const resolveInitialUrl = async () => {
@@ -3044,7 +3048,7 @@ const resolveInitialUrl = async () => {
     const sshHostLabel = config.hosts.find((entry) => entry.id === defaultSshInstanceId)?.label
       || sshManager.readInstances().instances.find((entry) => entry?.id === defaultSshInstanceId)?.nickname
       || defaultSshInstanceId;
-    showSplashStatus(menuLabel(normalizeMenuLocale(readPreferredLocale()), 'splash.connectingTo').replace('{host}', sshHostLabel));
+    showSplashConnecting(sshHostLabel);
     const connected = await connectDefaultSshInstanceAtStartup({ sshManager, instanceId: defaultSshInstanceId });
     if (connected.ok) {
       config = readDesktopHostsConfig();
@@ -3074,6 +3078,17 @@ const resolveInitialUrl = async () => {
     && sanitizeHostRelayForStorage(config.hosts.find((entry) => entry.id === config.defaultHostId)?.relay),
   );
   if (apiBaseUrl && apiBaseUrl !== localUrl) {
+    // The probe can take up to twelve seconds against a slow or absent host.
+    const remoteLabel = envTarget
+      ? null
+      : config.hosts.find((entry) => entry.id === config.defaultHostId)?.label;
+    let remoteHostName = '';
+    try {
+      remoteHostName = new URL(apiBaseUrl).host;
+    } catch {
+      // A malformed stored URL fails the probe below; the label is cosmetic.
+    }
+    showSplashConnecting(remoteLabel || remoteHostName || apiBaseUrl);
     remoteProbe = await probeHostWithTimeout(apiBaseUrl, 2_000, clientToken, requestHeaders);
     if (remoteProbe.status === 'unreachable' && !defaultHostRelayCapable) {
       remoteProbe = await probeHostWithTimeout(apiBaseUrl, 10_000, clientToken, requestHeaders);
