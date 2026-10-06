@@ -35,6 +35,7 @@ import {
   macosMajorVersion,
   readLoginItemSettings,
   readSettingsRoot,
+  readPreferredLocale,
   readThemeSource,
   resolveMainWindowBounds,
   resolvePreloadPath,
@@ -2958,6 +2959,34 @@ const resolveMiniChatRuntimeConfig = (browserWindow, args = {}) => {
   };
 };
 
+// A line of text under the splash logo, for a startup step the user waits
+// on (the default SSH instance's tunnel). The splash is a plain document
+// owned by main, so the text is added from here; the app replaces the page.
+const showSplashStatus = (text) => {
+  const mainWindow = state.mainWindow;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  // Development shows the splash as a data: URL, packaged builds as /__splash.
+  const url = mainWindow.webContents.getURL();
+  if (!url.startsWith('data:') && !url.endsWith('/__splash')) return;
+  const script = `(() => {
+    const show = () => {
+    const stack = document.querySelector('.stack');
+    if (!stack) return;
+    let line = document.getElementById('oc-splash-status');
+    if (!line) {
+      line = document.createElement('div');
+      line.id = 'oc-splash-status';
+      line.style.cssText = 'margin-top:16px;font-size:13px;opacity:0.7;max-width:80vw;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      stack.appendChild(line);
+    }
+    line.textContent = ${JSON.stringify(text)};
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show, { once: true });
+    else show();
+  })();`;
+  mainWindow.webContents.executeJavaScript(script).catch(() => {});
+};
+
 const resolveInitialUrl = async () => {
   const hmrApiPort = process.env.OPENCHAMBER_HMR_API_PORT || '3901';
   const hmrUiPort = process.env.OPENCHAMBER_HMR_UI_PORT || '5173';
@@ -3012,6 +3041,10 @@ const resolveInitialUrl = async () => {
     ? null
     : resolveDefaultSshInstanceId(config.defaultHostId, sshManager.readInstances().instances);
   if (defaultSshInstanceId) {
+    const sshHostLabel = config.hosts.find((entry) => entry.id === defaultSshInstanceId)?.label
+      || sshManager.readInstances().instances.find((entry) => entry?.id === defaultSshInstanceId)?.nickname
+      || defaultSshInstanceId;
+    showSplashStatus(menuLabel(normalizeMenuLocale(readPreferredLocale()), 'splash.connectingTo').replace('{host}', sshHostLabel));
     const connected = await connectDefaultSshInstanceAtStartup({ sshManager, instanceId: defaultSshInstanceId });
     if (connected.ok) {
       config = readDesktopHostsConfig();
