@@ -1310,6 +1310,9 @@ export function registerGitRoutes(app, {
       const result = await renameBranch(directory, oldName, newName);
       res.json(result);
     } catch (error) {
+      if (error.statusCode === 409) {
+        return res.status(409).json({ error: error.message });
+      }
       console.error('Failed to rename branch:', error);
       res.status(500).json({ error: error.message || 'Failed to rename branch' });
     }

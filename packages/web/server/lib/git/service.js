@@ -6400,8 +6400,29 @@ export async function renameBranch(directory, oldName, newName) {
       .then((value) => String(value || '').trim())
       .catch(() => '');
 
-    // Use git branch -m command to rename the branch
+    // git refuses a taken name with a bare "already exists"; say where the
+    // name is in use so a worktree rename that collides is understandable.
+    const worktrees = await listWorktreeEntries(repoRoot).catch(() => []);
+    const takenBy = worktrees.find((entry) => entry.branch === normalizedNewName);
+    if (takenBy) {
+      const error = new Error(`Branch ${normalizedNewName} is already checked out in ${takenBy.worktree}`);
+      error.statusCode = 409;
+      throw error;
+    }
+    const existing = await runGitCommand(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${normalizedNewName}`]);
+    if (existing.success) {
+      const error = new Error(`A branch named ${normalizedNewName} already exists`);
+      error.statusCode = 409;
+      throw error;
+    }
+
     await git.raw(['branch', '-m', oldName, newName]);
+
+    // A worktree's branch lives in a file the topology watcher does not see,
+    // so tell the sidebar directly when the renamed branch is checked out.
+    if (worktrees.some((entry) => entry.branch === normalizedOldName)) {
+      await publishWorktreeTopologyChange(repoRoot);
+    }
 
     if (previousRemote && previousMerge && normalizedNewName) {
       const previousMergeBranch = cleanBranchName(previousMerge);
@@ -6426,7 +6447,7 @@ export async function renameBranch(directory, oldName, newName) {
 
     return { success: true, branch: newName };
   } catch (error) {
-    console.error('Failed to rename branch:', error);
+    if (error.statusCode !== 409) console.error('Failed to rename branch:', error);
     throw error;
   }
 }

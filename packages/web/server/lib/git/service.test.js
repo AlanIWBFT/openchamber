@@ -49,6 +49,7 @@ import {
   getGlobalIdentity,
   stageFiles,
   subscribeWorktreeTopologyChanges,
+  renameBranch,
   unstageFiles,
   applyHunk,
   getDiff,
@@ -1249,6 +1250,37 @@ describe('getWorktrees', () => {
       runGit(repo, ['worktree', 'remove', worktreePath]);
       await observeWorktreeTopology(repo);
       expect(events).toHaveLength(2);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('renames a worktree branch, tells subscribers, and names the worktree that holds a taken name', async () => {
+    if (!canRunGit()) return;
+
+    const repo = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    runGit(repo, ['commit', '--allow-empty', '-m', 'init']);
+    const first = path.join(createTempDir(), 'first');
+    const second = path.join(createTempDir(), 'second');
+    runGit(repo, ['worktree', 'add', first, '-b', 'feature-one']);
+    runGit(repo, ['worktree', 'add', second, '-b', 'feature-two']);
+    runGit(repo, ['branch', 'parked']);
+
+    const events = [];
+    const unsubscribe = subscribeWorktreeTopologyChanges((event) => events.push(event));
+    try {
+      await expect(renameBranch(first, 'feature-one', 'feature-two'))
+        .rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining(second) });
+      await expect(renameBranch(first, 'feature-one', 'parked'))
+        .rejects.toMatchObject({ statusCode: 409, message: 'A branch named parked already exists' });
+      expect(events).toHaveLength(0);
+
+      await renameBranch(first, 'feature-one', 'login-form');
+      expect(runGit(first, ['branch', '--show-current']).trim()).toBe('login-form');
+      expect(events).toHaveLength(1);
     } finally {
       unsubscribe();
     }
