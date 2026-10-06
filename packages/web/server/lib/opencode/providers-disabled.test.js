@@ -1,23 +1,26 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const providersModule = fileURLToPath(new URL('./providers.js', import.meta.url));
 
 // The user config path is fixed when shared.js loads, so the calls run in a
 // child process pointed at a temporary OPENCODE_CONFIG_DIR; the real user
 // config is never touched.
 const run = (configDir, body) => {
   const script = `
-    import { readDisabledProviders, setProviderDisabled } from ${JSON.stringify(path.join(import.meta.dir, 'providers.js'))};
+    import { readDisabledProviders, setProviderDisabled } from ${JSON.stringify(providersModule)};
     ${body}
   `;
-  const result = Bun.spawnSync(['bun', '-e', script], {
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
     env: { ...process.env, OPENCODE_CONFIG_DIR: configDir },
-    stdout: 'pipe',
-    stderr: 'pipe',
+    encoding: 'utf8',
   });
-  if (result.exitCode !== 0) throw new Error(result.stderr.toString());
-  return JSON.parse(result.stdout.toString().trim().split('\n').pop());
+  if (result.status !== 0) throw new Error(result.stderr);
+  return JSON.parse(result.stdout.trim().split('\n').pop());
 };
 
 describe('disabled providers', () => {
