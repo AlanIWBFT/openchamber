@@ -2251,7 +2251,8 @@ const SubagentToolPartContent: React.FC<ToolPartProps> = (props) => {
         ? backgroundPhase.kind === 'finished' && backgroundPhase.run.state === 'cancelled'
         : stoppedByUser;
     const header: ToolRowHeader = {
-        label: stopped ? 'stopped' : backgroundPhase ? 'background' : undefined,
+        // "in background" describes a call still running; a finished one is just finished.
+        label: stopped ? 'stopped' : backgroundPhase?.kind === 'running' ? 'background' : undefined,
         durationUnknown: backgroundPhase?.kind === 'unknown',
         stop: isRunning && childSessionID && !stopping
             ? { onStop: stop, ariaLabel: t('chat.toolPart.subagent.stop') }

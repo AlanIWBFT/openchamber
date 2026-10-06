@@ -235,3 +235,26 @@ test('a subagent the user stopped reads as stopped, not failed, and offers no st
     expect(container.querySelector('button[aria-label="Stop subagent"]')).toBeNull();
   });
 });
+
+test('a background subagent drops the background label once its report arrives', async () => {
+  const backgrounded: ToolPartData = {
+    ...parent,
+    id: 'background-call',
+    state: {
+      status: 'completed', input: { description: 'Look around', agent: 'explore' },
+      output: 'The subagent is working in the background.', metadata: { status: 'running', sessionID: 'bg-child' }, time: { start: 100, end: 110 },
+    },
+  };
+  await withHarness(backgrounded, false, async (store, container) => {
+    await act(async () => store.setState({
+      message: { parent: [{
+        id: 'report', sessionID: 'parent', role: 'synthetic', time: { created: 900 },
+        text: '<subagent sessionID="bg-child" state="completed" description="Look around">\nDone.\n</subagent>',
+        description: 'Look around', metadata: { source: 'subagent', childID: 'bg-child', agent: 'explore', state: 'completed' },
+      }] },
+    }));
+    expect(container.textContent).toContain('Look around');
+    expect(container.textContent).not.toContain('in background');
+    expect(container.querySelector('button[aria-label="Stop subagent"]')).toBeNull();
+  });
+});
