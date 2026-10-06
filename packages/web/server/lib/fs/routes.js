@@ -1,6 +1,7 @@
 import { createRealpathCache } from '../path-realpath-cache.js';
 import { redactGitText } from '../git/redaction.js';
 import { resolveByteRange } from './byte-range.js';
+import { createWorkspaceFileNameIndex } from './workspace-file-names.js';
 import nodeFsPromises from 'node:fs/promises';
 import nodePath from 'node:path';
 
@@ -973,9 +974,9 @@ export const registerFsRoutes = (app, dependencies) => {
   });
 
   // A bare file name an agent wrote without its folder (`Foo.tsx:12`): the
-  // workspace files with that name, from git's index and its untracked list.
-  // One git call per name, no filesystem walk; outside a repository there is
-  // no answer rather than a slow search.
+  // workspace files with that name. One cached git listing per workspace
+  // answers every name (see workspace-file-names.js).
+  const workspaceFileNames = createWorkspaceFileNameIndex({ spawn, resolveGitBinary: resolveGitBinaryForSpawn });
   app.get('/api/fs/find-by-name', async (req, res) => {
     const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
     if (!name || name.length > 255 || name === '.' || name === '..' || /[/\\*?[\]:]/.test(name)) {
@@ -985,28 +986,7 @@ export const registerFsRoutes = (app, dependencies) => {
     if (!project.directory) {
       return res.status(400).json({ error: project.error || 'Active workspace is required' });
     }
-    const output = await new Promise((resolve) => {
-      let child;
-      try {
-        child = spawn(resolveGitBinaryForSpawn(), [
-          'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', `:(glob)**/${name}`,
-        ], { cwd: project.directory, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
-      } catch {
-        resolve(null);
-        return;
-      }
-      let stdout = '';
-      child.stdout.on('data', (data) => {
-        // A name this common is not worth listing; the caller wants one.
-        if (stdout.length < 64_000) stdout += data.toString();
-      });
-      child.on('close', (code) => resolve(code === 0 ? stdout : null));
-      child.on('error', () => resolve(null));
-    });
-    const paths = output === null
-      ? []
-      : [...new Set(output.split('\0').filter(Boolean))].slice(0, 20).map((relative) => path.join(project.directory, relative));
-    return res.json({ paths });
+    return res.json({ paths: await workspaceFileNames.find(project.directory, name) });
   });
 
   app.get('/api/fs/stat', async (req, res) => {
