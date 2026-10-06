@@ -6,6 +6,7 @@ import { useI18n } from '@/lib/i18n';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { formatShortcutForDisplay } from '@/lib/shortcuts';
 import { useCommentImagePaste } from './useCommentImagePaste';
+import { useCommentSnippetPicker } from './useCommentSnippetPicker';
 
 export interface InlineCommentInputProps {
   initialText?: string;
@@ -127,6 +128,16 @@ export function InlineCommentInput({
     textareaRef.current?.setSelectionRange(caret, caret);
   }, [text]);
 
+  // `#` opens the composer's snippet picker; references expand on send.
+  const getCaret = React.useCallback(() => textareaRef.current?.selectionStart ?? 0, []);
+  const replaceRange = (from: number, to: number, insert: string) => {
+    const current = textareaRef.current?.value ?? '';
+    pendingCaretRef.current = from + insert.length;
+    handleTextChange(`${current.slice(0, from)}${insert}${current.slice(to)}`);
+    textareaRef.current?.focus();
+  };
+  const snippetPicker = useCommentSnippetPicker({ text, getCaret, replaceRange });
+
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const pasted = takePastedImages(e);
     if (!pasted) return;
@@ -143,6 +154,7 @@ export function InlineCommentInput({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (isIMECompositionEvent(e)) return;
+    if (snippetPicker.handleKeyDown(e)) return;
 
     // Desktop Enter attaches; Shift+Enter and mobile Enter break the line.
     // Keep Cmd/Ctrl+Enter available for hardware keyboards on mobile.
@@ -186,12 +198,17 @@ export function InlineCommentInput({
             ) : null}
           </div>
         ) : null}
-        <div className="flex items-end gap-2 py-1 pl-3 pr-1">
+        <div className="relative flex items-end gap-2 py-1 pl-3 pr-1">
+        {snippetPicker.picker}
         <textarea
           ref={textareaRef}
           rows={1}
           value={text}
-          onChange={(e) => handleTextChange(e.target.value)}
+          onChange={(e) => {
+            handleTextChange(e.target.value);
+            snippetPicker.sync(e.target.value, e.target.selectionStart);
+          }}
+          onSelect={(e) => snippetPicker.sync(e.currentTarget.value, e.currentTarget.selectionStart)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder={isMobile

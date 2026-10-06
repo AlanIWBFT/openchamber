@@ -764,8 +764,9 @@ The comment editor reuses `ComposerEditor` with `dataChatInput="comment"` so
 the `data-chat-input="true"` helpers (`focusChatInput`, shortcut guards) keep
 meaning "the prompt editor".
 
-Snippets are the one part of the prompt language comments speak. Both the
-desktop floating input and the mobile shell open the snippet picker on `#`
+Snippets are the one part of the prompt language comments speak. The desktop
+floating input, the mobile shell and the diff/editor/file comment input
+(`components/comments/InlineCommentInput.tsx`) open the snippet picker on `#`
 through `components/comments/useCommentSnippetPicker.tsx`, and the mobile editor
 highlights known triggers. Agents, commands and files stay inert. Comments
 become synthetic context, which the send-time snippet expansion skips, so
