@@ -2501,4 +2501,10 @@ export const settingsDict = {
   'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim-Mappings',
   'settings.openchamber.visual.field.fileEditorVimMappingsInfo': 'Ein Mapping pro Zeile, geschrieben wie in einer vimrc. Sie gelten, sobald der Editor im Vim-Modus ist. Unterstützt map, noremap und ihre n-, i-, v-, x- und o-Varianten.',
   'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': 'Nicht angewendet, der Editor kann diese Zeilen nicht lesen: {lines}',
+  'settings.agents.page.field.color': 'Farbe',
+  'settings.agents.page.field.colorTooltip': 'Kennzeichnet den Agenten im Eingabefeld, in Menüs und Nachrichten. Wird in der Agent-Konfiguration gespeichert, OpenCode nutzt sie also auch. Ohne Angabe wird eine Farbe aus dem Theme gewählt.',
+  'settings.agents.page.field.colorAutomatic': 'Automatisch (Theme-Farbe)',
+  'settings.agents.page.field.colorSwatchAria': 'Farbe {color} verwenden',
+  'settings.agents.page.field.colorCustomAria': 'Eigene Farbe wählen',
+  'settings.agents.page.field.colorHexAria': 'Farbe als Hex-Wert, zum Beispiel #ff6b6b',
 };

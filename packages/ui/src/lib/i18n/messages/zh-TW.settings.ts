@@ -2510,4 +2510,10 @@ export const settingsDict = {
   'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim 鍵映射',
   'settings.openchamber.visual.field.fileEditorVimMappingsInfo': '每行一個映射，寫法與 vimrc 相同。編輯器處於 Vim 模式時一律生效。支援 map、noremap 及其 n、i、v、x、o 形式。',
   'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': '未套用，編輯器無法識別這些行：{lines}',
+  'settings.agents.page.field.color': '顏色',
+  'settings.agents.page.field.colorTooltip': '在輸入框、選單和訊息中標示此代理。儲存在代理設定中，因此 OpenCode 也會使用。未設定時會從主題中選取顏色。',
+  'settings.agents.page.field.colorAutomatic': '自動（主題顏色）',
+  'settings.agents.page.field.colorSwatchAria': '使用顏色 {color}',
+  'settings.agents.page.field.colorCustomAria': '選擇自訂顏色',
+  'settings.agents.page.field.colorHexAria': '十六進位顏色，例如 #ff6b6b',
 } as const;

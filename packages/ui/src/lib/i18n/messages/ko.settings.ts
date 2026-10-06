@@ -2510,4 +2510,10 @@ export const settingsDict = {
   'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim 키 매핑',
   'settings.openchamber.visual.field.fileEditorVimMappingsInfo': '한 줄에 하나씩 vimrc와 같은 형식으로 적습니다. 편집기가 Vim 모드일 때 항상 적용됩니다. map, noremap과 n, i, v, x, o 형식을 지원합니다.',
   'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': '편집기가 읽을 수 없어 적용되지 않은 줄: {lines}',
+  'settings.agents.page.field.color': '색상',
+  'settings.agents.page.field.colorTooltip': '입력창, 메뉴, 메시지에서 에이전트를 표시합니다. 에이전트 설정에 저장되므로 OpenCode도 사용합니다. 지정하지 않으면 테마에서 색상을 고릅니다.',
+  'settings.agents.page.field.colorAutomatic': '자동(테마 색상)',
+  'settings.agents.page.field.colorSwatchAria': '{color} 색상 사용',
+  'settings.agents.page.field.colorCustomAria': '사용자 지정 색상 선택',
+  'settings.agents.page.field.colorHexAria': '16진수 색상(예: #ff6b6b)',
 } as const;

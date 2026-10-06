@@ -2511,4 +2511,10 @@ export const settingsDict = {
   'settings.openchamber.visual.field.fileEditorVimMappings': 'Mapowania Vim',
   'settings.openchamber.visual.field.fileEditorVimMappingsInfo': 'Jedno mapowanie w wierszu, zapisane jak w vimrc. Działają zawsze, gdy edytor jest w trybie Vim. Obsługiwane są map, noremap oraz ich odmiany n, i, v, x i o.',
   'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': 'Nie zastosowano, edytor nie rozumie tych wierszy: {lines}',
+  'settings.agents.page.field.color': 'Kolor',
+  'settings.agents.page.field.colorTooltip': 'Oznacza agenta w polu wiadomości, menu i wiadomościach. Zapisywany w konfiguracji agenta, więc OpenCode też go używa. Bez niego kolor jest wybierany z motywu.',
+  'settings.agents.page.field.colorAutomatic': 'Automatycznie (kolor motywu)',
+  'settings.agents.page.field.colorSwatchAria': 'Użyj koloru {color}',
+  'settings.agents.page.field.colorCustomAria': 'Wybierz własny kolor',
+  'settings.agents.page.field.colorHexAria': 'Kolor w zapisie hex, na przykład #ff6b6b',
 };

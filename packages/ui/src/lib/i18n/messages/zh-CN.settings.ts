@@ -2510,4 +2510,10 @@ export const settingsDict = {
   'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim 键映射',
   'settings.openchamber.visual.field.fileEditorVimMappingsInfo': '每行一个映射，写法与 vimrc 相同。编辑器处于 Vim 模式时始终生效。支持 map、noremap 及其 n、i、v、x、o 形式。',
   'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': '未应用，编辑器无法识别这些行：{lines}',
+  'settings.agents.page.field.color': '颜色',
+  'settings.agents.page.field.colorTooltip': '在输入框、菜单和消息中标识该代理。保存在代理配置中，因此 OpenCode 也会使用。未设置时会从主题中选取颜色。',
+  'settings.agents.page.field.colorAutomatic': '自动（主题颜色）',
+  'settings.agents.page.field.colorSwatchAria': '使用颜色 {color}',
+  'settings.agents.page.field.colorCustomAria': '选择自定义颜色',
+  'settings.agents.page.field.colorHexAria': '十六进制颜色，例如 #ff6b6b',
 } as const;

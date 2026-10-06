@@ -968,6 +968,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['primary', 'subagent', 'visibility'],
   },
   {
+    id: 'agents.color',
+    page: 'agents',
+    titleKey: 'settings.agents.page.field.color',
+    descriptionKey: 'settings.agents.page.field.colorTooltip',
+    keywords: ['colour', 'hex', 'accent'],
+  },
+  {
     id: 'agents.model',
     page: 'agents',
     titleKey: 'settings.agents.page.field.overrideModel',

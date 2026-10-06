@@ -2510,4 +2510,10 @@ export const settingsDict = {
   'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim のキーマッピング',
   'settings.openchamber.visual.field.fileEditorVimMappingsInfo': '1 行に 1 つ、vimrc と同じ書き方で記述します。エディタが Vim モードのときに常に適用されます。map、noremap と、その n・i・v・x・o 形式に対応しています。',
   'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': '次の行はエディタが解釈できないため適用されません: {lines}',
+  'settings.agents.page.field.color': '色',
+  'settings.agents.page.field.colorTooltip': '入力欄、メニュー、メッセージでエージェントを示す色です。エージェントの設定に保存されるため、OpenCode でも使われます。未設定の場合はテーマから色が選ばれます。',
+  'settings.agents.page.field.colorAutomatic': '自動（テーマの色）',
+  'settings.agents.page.field.colorSwatchAria': '色 {color} を使う',
+  'settings.agents.page.field.colorCustomAria': 'カスタムカラーを選ぶ',
+  'settings.agents.page.field.colorHexAria': '16進数の色（例: #ff6b6b）',
 } as const;

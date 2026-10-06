@@ -2501,4 +2501,10 @@ export const settingsDict = {
   'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim eşlemeleri',
   'settings.openchamber.visual.field.fileEditorVimMappingsInfo': 'Her satıra bir eşleme, vimrc\'deki gibi yazılır. Düzenleyici Vim modundayken her zaman uygulanır. map, noremap ve bunların n, i, v, x ve o biçimleri desteklenir.',
   'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': 'Uygulanmadı, düzenleyici şu satırları okuyamıyor: {lines}',
+  'settings.agents.page.field.color': 'Renk',
+  'settings.agents.page.field.colorTooltip': 'Ajanı mesaj alanında, menülerde ve mesajlarda belirtir. Ajan yapılandırmasına kaydedilir, bu yüzden OpenCode da kullanır. Renk seçilmezse temadan bir renk atanır.',
+  'settings.agents.page.field.colorAutomatic': 'Otomatik (tema rengi)',
+  'settings.agents.page.field.colorSwatchAria': '{color} rengini kullan',
+  'settings.agents.page.field.colorCustomAria': 'Özel renk seç',
+  'settings.agents.page.field.colorHexAria': 'Onaltılık renk, örneğin #ff6b6b',
 };

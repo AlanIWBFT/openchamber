@@ -2510,4 +2510,10 @@ export const settingsDict = {
   'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim-мапінги',
   'settings.openchamber.visual.field.fileEditorVimMappingsInfo': 'Один мапінг на рядок, як у vimrc. Діють щоразу, коли редактор у режимі Vim. Підтримуються map, noremap і їхні форми n, i, v, x та o.',
   'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': 'Не застосовано, редактор не розуміє цих рядків: {lines}',
+  'settings.agents.page.field.color': 'Колір',
+  'settings.agents.page.field.colorTooltip': 'Позначає агента в полі вводу, меню та повідомленнях. Зберігається в конфігу агента, тож OpenCode теж його використовує. Без нього колір добирається з теми.',
+  'settings.agents.page.field.colorAutomatic': 'Автоматично (колір теми)',
+  'settings.agents.page.field.colorSwatchAria': 'Використати колір {color}',
+  'settings.agents.page.field.colorCustomAria': 'Вибрати власний колір',
+  'settings.agents.page.field.colorHexAria': 'Колір у hex, наприклад #ff6b6b',
 } as const;
