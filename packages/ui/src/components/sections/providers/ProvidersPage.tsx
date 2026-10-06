@@ -27,6 +27,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { opencodeClient } from '@/lib/opencode/client';
 import { listWebSearchProviders } from '@/lib/opencode/websearch';
+import { fetchDisabledProviders, setProviderDisabled as setProviderDisabledRequest } from '@/lib/disabledProviders';
 import type { IntegrationInfo } from '@opencode/client';
 import { requiresProviderAuth, shouldLoadAvailableProviders } from './providerAvailability';
 import {
@@ -203,6 +204,27 @@ export const ProvidersPage: React.FC = () => {
   }, [loadProviders, settingsDirectory]);
 
   const [integrations, setIntegrations] = React.useState<IntegrationInfo[] | null>(null);
+  // Null until read, and where the runtime has no OpenChamber server (VS Code).
+  const [disabledProviders, setDisabledProviders] = React.useState<string[] | null>(null);
+  React.useEffect(() => {
+    let active = true;
+    fetchDisabledProviders()
+      .then((list) => { if (active) setDisabledProviders(list); })
+      .catch((error) => { console.warn('[providers] could not read disabled providers:', error); });
+    return () => { active = false; };
+  }, []);
+  const handleProviderDisabled = React.useCallback(async (providerId: string, disabled: boolean) => {
+    try {
+      setDisabledProviders(await setProviderDisabledRequest(providerId, disabled));
+      if (disabled) setSelectedProvider('');
+      toast.success(disabled
+        ? t('settings.providers.disabled.toast.disabled', { provider: providerId })
+        : t('settings.providers.disabled.toast.enabled', { provider: providerId }));
+      void loadProviders({ directory: settingsDirectory, source: 'settings:providers', fresh: true });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    }
+  }, [loadProviders, setSelectedProvider, settingsDirectory, t]);
   const [authLoading, setAuthLoading] = React.useState(false);
   const [apiKeyInputs, setApiKeyInputs] = React.useState<Record<string, string>>({});
   const [authBusyKey, setAuthBusyKey] = React.useState<string | null>(null);
@@ -915,6 +937,8 @@ export const ProvidersPage: React.FC = () => {
         onSelect={setSelectedProvider}
         onConnect={() => setSelectedProvider(ADD_PROVIDER_ID)}
         onOpenClassification={() => setSelectedProvider(CLASSIFICATION_PAGE_ID)}
+        disabledProviders={disabledProviders}
+        onEnableProvider={(providerId) => void handleProviderDisabled(providerId, false)}
       />
     );
   }
@@ -1039,6 +1063,17 @@ export const ProvidersPage: React.FC = () => {
                 }}
               >
                 {t('settings.providers.page.actions.edit')}
+              </Button>
+            ) : null}
+            {disabledProviders !== null ? (
+              <Button
+                variant="outline"
+                size="xs"
+                className="!font-normal"
+                title={t('settings.providers.disabled.disableHint')}
+                onClick={() => void handleProviderDisabled(selectedProvider.id, true)}
+              >
+                {t('settings.providers.disabled.disable')}
               </Button>
             ) : null}
             {enterpriseLocked ? null : (

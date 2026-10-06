@@ -19,6 +19,7 @@ import {
   isProviderConnectRequest,
 } from '../enterprise-mode.js';
 import { discoverProviderModels } from './model-discovery.js';
+import { readDisabledProviders, setProviderDisabled } from './providers.js';
 import { vcsInitRefusal, vcsInitRefusalBody } from '../git/repository-root.js';
 
 export const registerOpenCodeRoutes = (app, dependencies) => {
@@ -265,6 +266,31 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       console.error('[API:PUT /api/config/settings] Failed to save settings:', error);
       console.error('[API:PUT /api/config/settings] Error stack:', error.stack);
       res.status(500).json({ error: 'Failed to save settings' });
+    }
+  });
+
+  // Providers turned off in the user's OpenCode config. OpenCode leaves them
+  // out of its provider list, so Settings reads them here to offer them back.
+  app.get('/api/provider/disabled', (_req, res) => {
+    try {
+      return res.json({ providers: readDisabledProviders(null) });
+    } catch (error) {
+      console.error('Failed to read disabled providers:', error);
+      return res.status(500).json({ error: 'Failed to read disabled providers' });
+    }
+  });
+
+  app.put('/api/provider/:providerId/disabled', async (req, res) => {
+    if (typeof req.body?.disabled !== 'boolean') {
+      return res.status(400).json({ error: 'disabled must be true or false' });
+    }
+    try {
+      const providers = setProviderDisabled(req.params.providerId, req.body.disabled, null);
+      return res.json({ providers, ...buildAppliedResponse('Provider updated.') });
+    } catch (error) {
+      if (error?.statusCode === 400) return res.status(400).json({ error: error.message });
+      console.error('Failed to update disabled providers:', error);
+      return res.status(500).json({ error: 'Failed to update disabled providers' });
     }
   });
 
