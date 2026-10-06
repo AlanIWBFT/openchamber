@@ -45,6 +45,7 @@ import { SessionBulkActions } from '../folders/SessionBulkActions';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
 import type { useSessionProjectViewState } from '../projects/useSessionProjectViewState';
 import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
+import { rankByLatestActivity } from './projectSort';
 import type { DeleteSessionConfirmState } from '../sessions/useSessionActions';
 import { useExpandedParents } from '../sessions/useExpandedParents';
 import { getChatsRootForHome, getChatsRootFromDirectory, isChatDirectoryPath } from '@/lib/chatDirectories';
@@ -358,14 +359,15 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     () => new Map(collection.orderedSessions.map((session, index) => [session.id, index])),
     [collection.orderedSessions],
   );
-  const orderedSectionsForRender = React.useMemo(
+  const orderedSectionsForRender = React.useMemo(() => {
     // The saved drag order belongs to the manual worktree sort only.
-    () => (worktreeSortOrder !== 'manual' ? sectionsForSidebarRender : sectionsForSidebarRender.map((section) => {
+    const sections = worktreeSortOrder !== 'manual' ? sectionsForSidebarRender : sectionsForSidebarRender.map((section) => {
       const groups = getOrderedGroups(section.project.id, section.groups);
       return groups === section.groups ? section : { ...section, groups };
-    })),
-    [getOrderedGroups, sectionsForSidebarRender, worktreeSortOrder],
-  );
+    });
+    // "Recent" needs the sessions, which only exist from here on.
+    return [...rankByLatestActivity(sections, view.projectSortOrder, (section) => section.project.id, ownership.sessionsByProject)];
+  }, [getOrderedGroups, ownership.sessionsByProject, sectionsForSidebarRender, view.projectSortOrder, worktreeSortOrder]);
   const recentActivitySections = React.useMemo(() => {
     const nodes = new Map(recentSessions.map((session) => [
       session.id, buildActiveSessionNode(collection.childrenMap, session),

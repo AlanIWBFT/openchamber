@@ -47,3 +47,28 @@ export const sortProjectsByOrder = <T extends SortableProject>(
 
   return sorted;
 };
+
+/**
+ * The "recent" order once sessions are known: newest session activity in the
+ * project (its root and worktrees) first. Projects with no session keep their
+ * incoming order after the active ones, so the last-opened order still breaks
+ * ties. Every other sort passes through unchanged.
+ */
+export const rankByLatestActivity = <T>(
+  items: readonly T[],
+  order: ProjectSortOrder,
+  projectIdOf: (item: T) => string,
+  sessionsByProject: ReadonlyMap<string, ReadonlyArray<{ time: { updated: number } }>>,
+): readonly T[] => {
+  if (order !== 'recent') return items;
+  const latest = (item: T): number => {
+    let newest = 0;
+    for (const session of sessionsByProject.get(projectIdOf(item)) ?? []) {
+      if (session.time.updated > newest) newest = session.time.updated;
+    }
+    return newest;
+  };
+  const ranked = items.map((item) => ({ item, at: latest(item) }));
+  ranked.sort((left, right) => right.at - left.at);
+  return ranked.map((entry) => entry.item);
+};
