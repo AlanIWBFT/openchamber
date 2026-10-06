@@ -93,20 +93,36 @@ const hasTooltipMetadata = (metadata?: ModelMetadata) => {
   );
 };
 
+// Card width (max-w-xs) plus its offset from the row. Narrower room on both
+// sides means the card would land on top of the list it describes.
+const ROW_TOOLTIP_ROOM = 320 + 8;
+
+/** The side with room for the details card, or null when neither side has it. */
+const pickRowTooltipSide = (row: Element | null): 'right' | 'left' | null => {
+  if (!row) return null;
+  const rect = row.getBoundingClientRect();
+  if (window.innerWidth - rect.right >= ROW_TOOLTIP_ROOM) return 'right';
+  if (rect.left >= ROW_TOOLTIP_ROOM) return 'left';
+  return null;
+};
+
 const ModelPickerRowTooltip: React.FC<{
   metadata?: ModelMetadata;
   active: boolean;
   labels: ModelPickerListProps['labels'];
   children: React.ReactElement;
 }> = ({ metadata, active, labels, children }) => {
-  const [delayedActive, setDelayedActive] = React.useState(false);
+  const triggerRef = React.useRef<Element | null>(null);
+  const setTriggerRef = React.useCallback((node: Element | null) => { triggerRef.current = node; }, []);
+  // Null until the hover delay passes, then the side the card fits on.
+  const [side, setSide] = React.useState<'right' | 'left' | null>(null);
 
   React.useEffect(() => {
     if (!active) {
-      setDelayedActive(false);
+      setSide(null);
       return;
     }
-    const timeout = window.setTimeout(() => setDelayedActive(true), 450);
+    const timeout = window.setTimeout(() => setSide(pickRowTooltipSide(triggerRef.current)), 450);
     return () => window.clearTimeout(timeout);
   }, [active]);
 
@@ -120,10 +136,10 @@ const ModelPickerRowTooltip: React.FC<{
   ].filter(Boolean);
 
   return (
-    <Tooltip delayDuration={0} open={active && delayedActive} onOpenChange={() => {}}>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      {active && delayedActive ? (
-        <TooltipContent side="right" sideOffset={8} className="max-w-xs text-left transition-none data-[starting-style]:opacity-100 data-[starting-style]:scale-100 data-[ending-style]:opacity-100 data-[ending-style]:scale-100">
+    <Tooltip delayDuration={0} open={active && side !== null} onOpenChange={() => {}}>
+      <TooltipTrigger asChild ref={setTriggerRef}>{children}</TooltipTrigger>
+      {active && side ? (
+        <TooltipContent side={side} sideOffset={8} className="max-w-xs text-left transition-none data-[starting-style]:opacity-100 data-[starting-style]:scale-100 data-[ending-style]:opacity-100 data-[ending-style]:scale-100">
           <div className="flex flex-col gap-2 text-left text-xs">
             {capabilities.length > 0 ? (
               <div className="flex items-center justify-between gap-3 text-muted-foreground">
