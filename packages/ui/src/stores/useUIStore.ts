@@ -1115,6 +1115,8 @@ interface UIStore {
   fileEditorKeymap: FileEditorKeymap;
 
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
+  /** vimrc map lines applied whenever the file editor runs in Vim mode. */
+  fileEditorVimMappings: string;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
@@ -1349,6 +1351,7 @@ interface UIStore {
 }
 
 
+  setFileEditorVimMappings: (value: string) => void;
 export const useUIStore = create<UIStore>()(
   devtools(
     persist(
@@ -1549,6 +1552,7 @@ export const useUIStore = create<UIStore>()(
         setTheme: (theme) => {
           set({ theme });
           get().applyTheme();
+        fileEditorVimMappings: '',
         },
 
         toggleSidebar: () => {
@@ -3115,6 +3119,11 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createDeferredSafeJSONStorage(),
+        setFileEditorVimMappings: (value) => {
+          // Same cap as the settings registry field.
+          set({ fileEditorVimMappings: value.slice(0, 10_000) });
+        },
+
         version: 21,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
@@ -3509,3 +3518,4 @@ export const useUIStore = create<UIStore>()(
     }
   )
 );
+          fileEditorVimMappings: state.fileEditorVimMappings,

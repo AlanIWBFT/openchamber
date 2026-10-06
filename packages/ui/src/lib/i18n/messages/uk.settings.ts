@@ -2507,4 +2507,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFontPlaceholder': 'Назва встановленого шрифту, напр. Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': 'Назва власного шрифту',
   'settings.openchamber.defaults.field.showChats': 'Показувати чати на бічній панелі',
+  'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim-мапінги',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInfo': 'Один мапінг на рядок, як у vimrc. Діють щоразу, коли редактор у режимі Vim. Підтримуються map, noremap і їхні форми n, i, v, x та o.',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': 'Не застосовано, редактор не розуміє цих рядків: {lines}',
 } as const;

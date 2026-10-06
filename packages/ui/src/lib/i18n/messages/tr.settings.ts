@@ -2498,4 +2498,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFontPlaceholder': 'Yüklü yazı tipi adı, ör. Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': 'Özel yazı tipi adı',
   'settings.openchamber.defaults.field.showChats': 'Sohbetleri kenar çubuğunda göster',
+  'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim eşlemeleri',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInfo': 'Her satıra bir eşleme, vimrc\'deki gibi yazılır. Düzenleyici Vim modundayken her zaman uygulanır. map, noremap ve bunların n, i, v, x ve o biçimleri desteklenir.',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': 'Uygulanmadı, düzenleyici şu satırları okuyamıyor: {lines}',
 };

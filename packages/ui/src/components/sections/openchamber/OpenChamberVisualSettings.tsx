@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { NumberInput } from '@/components/ui/number-input';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
     Select,
     SelectContent,
@@ -33,6 +34,7 @@ import { usePwaDetection } from '@/hooks/usePwaDetection';
 import { loadDesktopSettings, updateDesktopSettings } from '@/lib/persistence';
 import { CODE_FONT_OPTIONS, CUSTOM_FONT_ID, DEFAULT_MONO_FONT, DEFAULT_UI_FONT, UI_FONT_OPTIONS, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 import { useI18n } from '@/lib/i18n';
+import { parseVimMappings } from '@/lib/codemirror/vimMappings';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useEnterpriseMode } from '@/stores/useEnterprisePolicyStore';
 import { useFontPreferences } from '@/hooks/useFontPreferences';
@@ -415,6 +417,12 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setShowTerminalQuickKeysOnDesktop = useUIStore(state => state.setShowTerminalQuickKeysOnDesktop);
     const fileEditorKeymap = useUIStore(state => state.fileEditorKeymap);
     const setFileEditorKeymap = useUIStore(state => state.setFileEditorKeymap);
+    const fileEditorVimMappings = useUIStore(state => state.fileEditorVimMappings);
+    const setFileEditorVimMappings = useUIStore(state => state.setFileEditorVimMappings);
+    const invalidVimMappingLines = React.useMemo(
+        () => parseVimMappings(fileEditorVimMappings).invalidLines,
+        [fileEditorVimMappings],
+    );
     const followUpBehavior = useMessageQueueStore(state => state.followUpBehavior);
     const setFollowUpBehavior = useMessageQueueStore(state => state.setFollowUpBehavior);
     const inputHistoryScope = useInputHistoryStore(state => state.scope);
@@ -1596,6 +1604,27 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                     ))}
                                 </SettingsRadioGroup>
                             </SettingsControlGroup>
+                        )}
+                        {shouldShow('fileEditorKeymap') && fileEditorKeymap === 'vim' && (
+                            <SettingsStackedField
+                                label={t('settings.openchamber.visual.field.fileEditorVimMappings')}
+                                info={t('settings.openchamber.visual.field.fileEditorVimMappingsInfo')}
+                                description={invalidVimMappingLines.length > 0
+                                    ? t('settings.openchamber.visual.field.fileEditorVimMappingsInvalid', { lines: invalidVimMappingLines.join(', ') })
+                                    : undefined}
+                                descriptionPlacement="after"
+                                settingsItem="appearance.file-editor-vim-mappings"
+                            >
+                                <Textarea
+                                    value={fileEditorVimMappings}
+                                    onChange={(event) => setFileEditorVimMappings(event.target.value)}
+                                    placeholder="inoremap jk <Esc>"
+                                    aria-label={t('settings.openchamber.visual.field.fileEditorVimMappings')}
+                                    rows={4}
+                                    spellCheck={false}
+                                    className="w-full font-mono typography-meta"
+                                />
+                            </SettingsStackedField>
                         )}
                         <div className={SETTINGS_OPTION_STACK_CLASS}>
                             {shouldShow('autoSaveEnabled') && (

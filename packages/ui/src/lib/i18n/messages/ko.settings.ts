@@ -2507,4 +2507,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFontPlaceholder': '설치된 글꼴 이름 (예: Maple Mono NF CN)',
   'settings.openchamber.visual.field.customFontAria': '사용자 지정 글꼴 이름',
   'settings.openchamber.defaults.field.showChats': '사이드바에 채팅 표시',
+  'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim 키 매핑',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInfo': '한 줄에 하나씩 vimrc와 같은 형식으로 적습니다. 편집기가 Vim 모드일 때 항상 적용됩니다. map, noremap과 n, i, v, x, o 형식을 지원합니다.',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': '편집기가 읽을 수 없어 적용되지 않은 줄: {lines}',
 } as const;

@@ -2498,4 +2498,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFontPlaceholder': 'Name einer installierten Schrift, z. B. Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': 'Name der eigenen Schrift',
   'settings.openchamber.defaults.field.showChats': 'Chats in der Seitenleiste anzeigen',
+  'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim-Mappings',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInfo': 'Ein Mapping pro Zeile, geschrieben wie in einer vimrc. Sie gelten, sobald der Editor im Vim-Modus ist. Unterstützt map, noremap und ihre n-, i-, v-, x- und o-Varianten.',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': 'Nicht angewendet, der Editor kann diese Zeilen nicht lesen: {lines}',
 };

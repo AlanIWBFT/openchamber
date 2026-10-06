@@ -2507,4 +2507,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFontPlaceholder': 'インストール済みフォント名 (例: Maple Mono NF CN)',
   'settings.openchamber.visual.field.customFontAria': 'カスタムフォント名',
   'settings.openchamber.defaults.field.showChats': 'サイドバーにチャットを表示',
+  'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim のキーマッピング',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInfo': '1 行に 1 つ、vimrc と同じ書き方で記述します。エディタが Vim モードのときに常に適用されます。map、noremap と、その n・i・v・x・o 形式に対応しています。',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': '次の行はエディタが解釈できないため適用されません: {lines}',
 } as const;

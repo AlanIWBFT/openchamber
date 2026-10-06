@@ -399,6 +399,9 @@
     "fileEditorKeymap": {
       "scope": "profile"
     },
+    "fileEditorVimMappings": {
+      "scope": "profile"
+    },
     "autoSaveEnabled": {
       "scope": "profile"
     },

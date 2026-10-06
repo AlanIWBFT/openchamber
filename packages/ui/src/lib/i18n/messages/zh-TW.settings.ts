@@ -2507,4 +2507,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFontPlaceholder': '已安裝字型的名稱，例如 Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': '自訂字型名稱',
   'settings.openchamber.defaults.field.showChats': '在側邊欄中顯示聊天',
+  'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim 鍵映射',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInfo': '每行一個映射，寫法與 vimrc 相同。編輯器處於 Vim 模式時一律生效。支援 map、noremap 及其 n、i、v、x、o 形式。',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': '未套用，編輯器無法識別這些行：{lines}',
 } as const;

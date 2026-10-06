@@ -2508,4 +2508,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFontPlaceholder': 'Nazwa zainstalowanej czcionki, np. Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': 'Nazwa własnej czcionki',
   'settings.openchamber.defaults.field.showChats': 'Pokazuj czaty na pasku bocznym',
+  'settings.openchamber.visual.field.fileEditorVimMappings': 'Mapowania Vim',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInfo': 'Jedno mapowanie w wierszu, zapisane jak w vimrc. Działają zawsze, gdy edytor jest w trybie Vim. Obsługiwane są map, noremap oraz ich odmiany n, i, v, x i o.',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': 'Nie zastosowano, edytor nie rozumie tych wierszy: {lines}',
 };

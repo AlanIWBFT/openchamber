@@ -2497,4 +2497,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFontPlaceholder': 'Naam van een geïnstalleerd lettertype, bijv. Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': 'Naam van aangepast lettertype',
   'settings.openchamber.defaults.field.showChats': 'Chats in de zijbalk tonen',
+  'settings.openchamber.visual.field.fileEditorVimMappings': 'Vim-mappings',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInfo': 'Eén mapping per regel, geschreven zoals in een vimrc. Ze gelden zodra de editor in Vim-modus staat. Ondersteunt map, noremap en hun n-, i-, v-, x- en o-vormen.',
+  'settings.openchamber.visual.field.fileEditorVimMappingsInvalid': 'Niet toegepast, de editor kan deze regels niet lezen: {lines}',
 } as const;

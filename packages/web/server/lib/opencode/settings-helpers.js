@@ -473,6 +473,9 @@ export const createSettingsHelpers = (dependencies) => {
         result.fileEditorKeymap = mode;
       }
     }
+    if (typeof candidate.fileEditorVimMappings === 'string') {
+      result.fileEditorVimMappings = candidate.fileEditorVimMappings.slice(0, 10_000);
+    }
     if (Array.isArray(candidate.providerOrder)) {
       result.providerOrder = normalizeStringArray(candidate.providerOrder);
     }
