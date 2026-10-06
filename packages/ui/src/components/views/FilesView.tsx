@@ -3949,6 +3949,20 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', visible = t
             <TooltipContent side="bottom" sideOffset={6}>{t('filesView.editor.openInDesktopApp')}</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end" className="w-56 max-h-[70vh] overflow-y-auto">
+            {/* Always first: whatever app the OS has for this file type. */}
+            <DropdownMenuItem
+              className="flex items-center gap-2"
+              onClick={() => {
+                if (!selectedFile?.path) return;
+                void openDesktopPath(selectedFile.path).then((opened) => {
+                  if (!opened) toast.error(t('sidebarFilesTree.toast.operationFailed'));
+                });
+              }}
+            >
+              <Icon name="external-link" className="size-4" />
+              <span className="typography-ui-label text-foreground">{t('sidebarFilesTree.menu.openInDefaultApp')}</span>
+            </DropdownMenuItem>
+            {openInApps.length > 0 ? <DropdownMenuSeparator /> : null}
             {openInApps.map((app) => (
               <DropdownMenuItem
                 key={app.id}
