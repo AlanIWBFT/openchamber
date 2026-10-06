@@ -237,3 +237,12 @@ Assembly and delivery live in `packages/web/server/lib/session-knowledge`.
 - HTTP client: `packages/ui/src/lib/projectContextApi.ts`
 - Plan viewer/editor: `packages/ui/src/components/views/PlanView.tsx`
 - User docs: `packages/docs/content/docs/notes-todos-plans.mdx`
+
+## Dictation
+
+The note composer and the todo field carry `InlineDictationButton`, which shows
+only where the chat composer's mic would (dictation enabled, capture supported,
+not VS Code). The transcript continues the field's text instead of adding the
+entry, so a misheard word can be fixed first. It does not answer the
+`toggle_dictation` shortcut: that key belongs to the chat composer, and two
+listeners would start two recordings.

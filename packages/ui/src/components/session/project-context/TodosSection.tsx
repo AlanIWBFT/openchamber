@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { InlineDictationButton } from '@/components/dictation/InlineDictationButton';
 import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
 import { PROJECT_TODO_TEXT_MAX_LENGTH, type ProjectTodoItem } from '@/lib/projectContextApi';
@@ -218,6 +219,15 @@ export const TodosSection: React.FC<{
           placeholder={t('rightSidebar.contextNotesTodo.todo.inputPlaceholder')}
           disabled={disabled}
           className="h-8"
+        />
+        {/* Dictation fills the field rather than adding the todo straight
+            away, so a misheard word can be fixed before it lands. */}
+        <InlineDictationButton
+          onTranscript={(text) => setNewTodoText((current) => (
+            (current.trim() ? `${current.trimEnd()} ${text}` : text).slice(0, PROJECT_TODO_TEXT_MAX_LENGTH)
+          ))}
+          disabled={disabled}
+          buttonClassName="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border border-border/70 text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         />
         <button
           type="button"
