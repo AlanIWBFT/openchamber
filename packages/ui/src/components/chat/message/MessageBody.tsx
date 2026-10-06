@@ -405,15 +405,26 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
     const copyHintTimeoutRef = React.useRef<number | null>(null);
 
     // One expanded state for the whole message: text parts and context cards
-    // collapse and expand together, with a single collapse control up here
-    // instead of one per part.
+    // collapse and expand together, with a single show more / show less link
+    // under the text instead of one control per part.
     const collapsibleUserMessages = useUIStore((state) => state.collapsibleUserMessages);
     const [messageExpanded, setMessageExpanded] = React.useState(false);
+    const [truncatedPartIndexes, setTruncatedPartIndexes] = React.useState<ReadonlySet<number>>(() => new Set());
     const expandMessage = React.useCallback(() => setMessageExpanded(true), []);
-    const collapseMessage = React.useCallback((event: React.MouseEvent) => {
+    const toggleMessageExpanded = React.useCallback((event: React.MouseEvent) => {
         event.stopPropagation();
-        setMessageExpanded(false);
+        setMessageExpanded((value) => !value);
     }, []);
+    const handlePartTruncationChange = React.useCallback((partIndex: number, truncated: boolean) => {
+        setTruncatedPartIndexes((current) => {
+            if (current.has(partIndex) === truncated) return current;
+            const next = new Set(current);
+            if (truncated) next.add(partIndex);
+            else next.delete(partIndex);
+            return next;
+        });
+    }, []);
+    const showMessageExpandToggle = collapsibleUserMessages && (messageExpanded || truncatedPartIndexes.size > 0);
     React.useEffect(() => {
         if (!collapsibleUserMessages) setMessageExpanded(false);
     }, [collapsibleUserMessages]);
@@ -754,16 +765,6 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
             style={CONTAIN_LAYOUT_STYLE}
             onTouchStart={isTouchContext && canCopyMessage && hasCopyableText ? revealCopyHint : undefined}
         >
-            {collapsibleUserMessages && messageExpanded && (
-                <button
-                    type="button"
-                    onClick={collapseMessage}
-                    className="absolute top-0 right-0 z-10 flex items-center justify-center rounded-sm bg-surface-elevated p-0.5 text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground"
-                    aria-label={t('chat.message.userText.collapseAria')}
-                >
-                    <Icon name="arrow-up-s" className="h-3.5 w-3.5" />
-                </button>
-            )}
             <div
                 className={cn(
                     'leading-relaxed text-foreground/90 text-base overflow-x-hidden',
@@ -794,11 +795,27 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
                                 agentMention={mentionForPart}
                                 messageExpanded={messageExpanded}
                                 onExpandMessage={expandMessage}
+                                partIndex={index}
+                                onTruncationChange={handlePartTruncationChange}
                             />
                         </React.Fragment>
                     );
                 })}
             </div>
+            {showMessageExpandToggle && (
+                // A quiet text link, not a button: the collapsed text itself is
+                // already the large tap target. Inline min sizes opt out of the
+                // mobile 36px button minimum, which turned this into a block.
+                <button
+                    type="button"
+                    onClick={toggleMessageExpanded}
+                    className="ms-auto mt-1 block py-0.5 text-end text-sm text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:text-foreground hover:decoration-foreground/60 focus-visible:outline-none focus-visible:text-foreground"
+                    style={{ minHeight: 0, minWidth: 0 }}
+                    aria-expanded={messageExpanded}
+                >
+                    {t(messageExpanded ? 'chat.message.userText.showLess' : 'chat.message.userText.showFullMessage')}
+                </button>
+            )}
             <MessageFilesDisplay files={parts} onShowPopup={onShowPopup} compact />
             {actionsBlock}
         </div>
