@@ -44,6 +44,7 @@
 
 - `getOctokitOrNull()`: current Octokit or `null`.
 - `getOctokitForAccountId(accountId)`: exact persisted or verified CLI Octokit context with credential revision and provider-user identity. It never falls back to another account. A `github.com#cli:` id resolves only while the user has switched to the gh account (`isGhCliActive()`); the gh token is otherwise read only to list the gh account in Settings.
+- `getGitHubCliCredential(accountId, revision?)`: the same gh account as a credential record shaped like a persisted one (`credentialId`, `credentialRevision: 1`, `providerUserId`, `accessToken`, `status: 'valid'`), under the same consent rule plus a check that gh is still signed in as that user. The server's source-control account resolver falls back to it after `getGitHubAuthByAccountId`, so Git transport (fork PR worktrees, managed clones, the credential helper) accepts the gh account that reads already use.
 
 ### Repo
 
@@ -113,6 +114,7 @@ that page, so callers cannot mistake a partial page for a complete one.
 - It reads local git status and remotes first.
 - It ranks remotes in this order: explicit remote, tracking remote, `origin`, `upstream`, then the rest.
 - It resolves those remotes into GitHub repos.
+- The ranked-first remote is the branch's source unless the worktree was checked out from a contributor's fork PR. Such a worktree deliberately has no upstream, so `/pr/status` reads its contributor provenance (`readContributorProvenance`, supplied by the server runtime) and, when the provenance's source ref is this branch, passes the fork remote as `sourceRemoteName`. That remote, not the primary one, is then the only source, so the open PR from the fork is found. Unreadable provenance resolves as for any other branch.
 - It expands each repo through `parent` and `source` so PRs in upstream repos can still be found.
 - It skips PR lookup when the current branch matches that repo's default branch.
 - It first searches for **open** PRs by likely source owner plus exact head branch.

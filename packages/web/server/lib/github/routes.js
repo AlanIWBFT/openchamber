@@ -324,6 +324,20 @@ export function registerGitHubRoutes(app, options = {}) {
     oauthFlowRegistry = createOAuthFlowRegistry();
     return oauthFlowRegistry;
   };
+  // A worktree checked out from a contributor's fork PR deliberately has no
+  // upstream, so the branch alone looks like it came from the primary remote.
+  // Its provenance names the fork remote the branch really came from. Without
+  // provenance (or when it cannot be read) status resolves as for any branch.
+  const readContributorSourceRemote = async (directory, branch) => {
+    if (!(options.readContributorProvenance instanceof Function)) return null;
+    try {
+      const { provenance } = await options.readContributorProvenance(directory);
+      return provenance?.kind === 'contributor-fork' && provenance.provider === 'github'
+        && provenance.sourceRef === `refs/heads/${branch}` ? provenance.remoteName : null;
+    } catch {
+      return null;
+    }
+  };
   const sendOAuthFlowError = (res, error) => {
     if (error?.code === 'SOURCE_CONTROL_OAUTH_FLOW_BUSY') {
       return res.status(409).json({ error: 'OAuth flow is busy', code: error.code });
@@ -1359,12 +1373,14 @@ export function registerGitHubRoutes(app, options = {}) {
 
       const resolveGitHubPrStatus = options.resolveGitHubPrStatus
         ?? (await import('./pr-status.js')).resolveGitHubPrStatus;
+      const sourceRemoteName = await readContributorSourceRemote(directory, branch);
       const resolvedStatus = await withTimeout(
         resolveGitHubPrStatus({
           octokit,
           directory,
           branch,
           remoteName: remote,
+          sourceRemoteName,
           force,
         }),
         PR_STATUS_RESOLVE_TIMEOUT_MS,
