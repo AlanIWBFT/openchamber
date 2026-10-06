@@ -3775,6 +3775,9 @@ export const dict = {
   'contextPanel.browser.devServers.showHiddenPlural': 'Show {count} hidden ports',
   'sidebarFilesTree.menu.openInDefaultApp': 'Open in default app',
   'sessions.sidebar.header.displayMode.showChats': 'Show chats section',
+  'sessions.scheduledTasks.editor.useDefaults.label': 'Use session defaults',
+  'sessions.scheduledTasks.editor.useDefaults.hint': 'Each run takes the default model, thinking level and agent from Settings → Sessions (or the project\'s own defaults) at the time it starts.',
+  'sessions.scheduledTasks.dialog.usesDefaults': 'Session defaults',
 } as const;
 
 export type I18nKey = keyof typeof dict;

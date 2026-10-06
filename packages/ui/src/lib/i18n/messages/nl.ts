@@ -3775,4 +3775,7 @@ export const dict = {
   'contextPanel.browser.devServers.showHiddenPlural': '{count} verborgen poorten tonen',
   'sidebarFilesTree.menu.openInDefaultApp': 'Openen in standaardapp',
   'sessions.sidebar.header.displayMode.showChats': 'Chatsectie tonen',
+  'sessions.scheduledTasks.editor.useDefaults.label': 'Standaardinstellingen voor sessies gebruiken',
+  'sessions.scheduledTasks.editor.useDefaults.hint': 'Elke run neemt bij de start het standaardmodel, denkniveau en de agent uit Instellingen → Sessies (of de eigen standaarden van het project).',
+  'sessions.scheduledTasks.dialog.usesDefaults': 'Standaarden voor sessies',
 } as const;

@@ -3780,4 +3780,7 @@ export const dict: Record<I18nKey, string> = {
   'contextPanel.browser.devServers.showHiddenPlural': 'Pokaż ukryte porty: {count}',
   'sidebarFilesTree.menu.openInDefaultApp': 'Otwórz w domyślnej aplikacji',
   'sessions.sidebar.header.displayMode.showChats': 'Pokaż sekcję czatów',
+  'sessions.scheduledTasks.editor.useDefaults.label': 'Używaj domyślnych ustawień sesji',
+  'sessions.scheduledTasks.editor.useDefaults.hint': 'Każde uruchomienie bierze w chwili startu domyślny model, poziom myślenia i agenta z Ustawienia → Sesje (lub z ustawień projektu).',
+  'sessions.scheduledTasks.dialog.usesDefaults': 'Domyślne ustawienia sesji',
 } as const;

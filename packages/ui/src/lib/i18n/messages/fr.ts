@@ -3774,4 +3774,7 @@ export const dict = {
   'contextPanel.browser.devServers.showHiddenPlural': 'Afficher {count} ports masqués',
   'sidebarFilesTree.menu.openInDefaultApp': 'Ouvrir avec l’app par défaut',
   'sessions.sidebar.header.displayMode.showChats': 'Afficher la section des chats',
+  'sessions.scheduledTasks.editor.useDefaults.label': 'Utiliser les valeurs par défaut des sessions',
+  'sessions.scheduledTasks.editor.useDefaults.hint': 'Chaque exécution prend, au démarrage, le modèle, le niveau de réflexion et l’agent par défaut de Réglages → Sessions (ou ceux du projet).',
+  'sessions.scheduledTasks.dialog.usesDefaults': 'Valeurs par défaut des sessions',
 } as const;

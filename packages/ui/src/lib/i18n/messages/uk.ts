@@ -3776,4 +3776,7 @@ export const dict: Record<I18nKey, string> = {
   'contextPanel.browser.devServers.showHiddenPlural': 'Показати приховані порти: {count}',
   'sidebarFilesTree.menu.openInDefaultApp': 'Відкрити в програмі за замовчуванням',
   'sessions.sidebar.header.displayMode.showChats': 'Показувати розділ чатів',
+  'sessions.scheduledTasks.editor.useDefaults.label': 'Використовувати типові налаштування сесії',
+  'sessions.scheduledTasks.editor.useDefaults.hint': 'Кожен запуск бере на момент старту типові модель, рівень мислення й агента з Налаштування → Сесії (або власні налаштування проєкту).',
+  'sessions.scheduledTasks.dialog.usesDefaults': 'Типові налаштування сесії',
 };

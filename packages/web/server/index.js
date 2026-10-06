@@ -92,6 +92,7 @@ import { createLinearSessionStatusRuntime } from './lib/linear/status-runtime.js
 import { createSessionKnowledgeRuntime } from './lib/session-knowledge/runtime.js';
 import { createMessageSearchRuntime } from './lib/message-search/runtime.js';
 import { createScheduledTasksRuntime } from './lib/scheduled-tasks/runtime.js';
+import { resolveSessionDefaults } from './lib/scheduled-tasks/session-defaults.js';
 import { createChatsScope } from './lib/scheduled-tasks/chats-scope.js';
 import { createServerStartupRuntime } from './lib/opencode/server-startup-runtime.js';
 import { createTunnelWiringRuntime } from './lib/opencode/tunnel-wiring-runtime.js';
@@ -1537,6 +1538,11 @@ const scheduledChatsScope = createChatsScope(OPENCHAMBER_CHATS_DIR);
 const scheduledTasksRuntime = createScheduledTasksRuntime({
   projectConfigRuntime,
   chatsScope: scheduledChatsScope,
+  readSessionDefaults: async (projectID) => {
+    const settings = await readSettingsFromDiskMigrated();
+    const project = sanitizeProjects(settings?.projects || []).find((entry) => entry.id === projectID) ?? null;
+    return resolveSessionDefaults({ settings, project });
+  },
   listProjects: async () => {
     const settings = await readSettingsFromDiskMigrated();
     return sanitizeProjects(settings?.projects || []);

@@ -100,6 +100,16 @@ Manual `runNow` does not claim a schedule occurrence. It also runs paused
 (`enabled: false`) tasks — that is the point of the button — while scheduled
 dispatches still skip disabled tasks, and completion never re-arms a paused task.
 
+## Model, thinking level and agent
+
+A task either pins them (`execution.providerID`, `modelID`, `variant`, `agent`)
+or sets `execution.useDefaults: true`. Such a task reads the session defaults
+when each run starts (`session-defaults.js`: the project's `defaultModel` /
+`defaultVariant` / `defaultAgent`, then the global ones), so changing a default
+reaches it on its next run without editing it. With nothing set, the session is
+created without a model or agent and OpenCode applies its own. A pinned value
+stored next to `useDefaults` is kept only for when the task is pinned again.
+
 ## Files
 
 - `packages/web/server/lib/scheduled-tasks/runtime.js`

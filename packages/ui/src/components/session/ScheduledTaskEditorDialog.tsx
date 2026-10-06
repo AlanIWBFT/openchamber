@@ -475,6 +475,8 @@ type ScheduledTaskDraft = {
     modelID: string;
     variant: string;
     agent: string;
+    /** Model, thinking level and agent follow the session defaults at run time. */
+    useDefaults: boolean;
     goalEnabled: boolean;
     goalTokenBudget: number | null;
     permissionAutoAccept: boolean;
@@ -527,6 +529,7 @@ const toDraft = (
         modelID: defaults.modelID,
         variant: defaults.variant,
         agent: defaults.agent,
+        useDefaults: false,
         goalEnabled: false,
         goalTokenBudget: null,
         permissionAutoAccept: false,
@@ -559,10 +562,13 @@ const toDraft = (
     },
     execution: {
       prompt: task.execution.prompt,
-      providerID: task.execution.providerID,
-      modelID: task.execution.modelID,
+      // A task that followed the defaults may store no model; the picker then
+      // starts from the current defaults if it is pinned again.
+      providerID: task.execution.providerID || defaults.providerID,
+      modelID: task.execution.modelID || defaults.modelID,
       variant: task.execution.variant || '',
       agent: task.execution.agent || '',
+      useDefaults: task.execution.useDefaults === true,
       goalEnabled: task.execution.goalEnabled === true,
       goalTokenBudget: typeof task.execution.goalTokenBudget === 'number' && task.execution.goalTokenBudget > 0
         ? task.execution.goalTokenBudget
@@ -580,7 +586,7 @@ const validateDraft = (draft: ScheduledTaskDraft, t: ReturnType<typeof useI18n>[
   if (!draft.execution.prompt.trim()) {
     return t('sessions.scheduledTasks.editor.validation.promptRequired');
   }
-  if (!draft.execution.providerID.trim() || !draft.execution.modelID.trim()) {
+  if (!draft.execution.useDefaults && (!draft.execution.providerID.trim() || !draft.execution.modelID.trim())) {
     return t('sessions.scheduledTasks.editor.validation.modelRequired');
   }
 
@@ -1169,6 +1175,7 @@ export function ScheduledTaskEditorDialog(props: {
       },
       execution: {
         prompt: draft.execution.prompt,
+        ...(draft.execution.useDefaults ? { useDefaults: true } : {}),
         providerID: draft.execution.providerID,
         modelID: draft.execution.modelID,
         ...(draft.execution.variant.trim() ? { variant: draft.execution.variant.trim() } : {}),
@@ -1497,6 +1504,22 @@ export function ScheduledTaskEditorDialog(props: {
             </div>
           )}
 
+          <label className="inline-flex cursor-pointer items-center gap-2">
+            <Checkbox
+              checked={draft.execution.useDefaults}
+              onChange={(useDefaults) => setDraft((prev) => ({
+                ...prev,
+                execution: { ...prev.execution, useDefaults },
+              }))}
+              ariaLabel={t('sessions.scheduledTasks.editor.useDefaults.label')}
+            />
+            <span className="typography-meta">{t('sessions.scheduledTasks.editor.useDefaults.label')}</span>
+          </label>
+
+          {draft.execution.useDefaults ? (
+            <p className="typography-meta text-muted-foreground">{t('sessions.scheduledTasks.editor.useDefaults.hint')}</p>
+          ) : (
+          <>
           <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
             <div className="flex min-w-0 flex-col gap-1">
               <FieldLabel required>{t('sessions.scheduledTasks.editor.model.label')}</FieldLabel>
@@ -1563,6 +1586,8 @@ export function ScheduledTaskEditorDialog(props: {
               }))}
             />
           </div>
+          </>
+          )}
 
           <div className="flex flex-col gap-1">
             <FieldLabel htmlFor="sched-prompt" required>{t('sessions.scheduledTasks.editor.prompt.label')}</FieldLabel>

@@ -3776,4 +3776,7 @@ export const dict: Record<I18nKey, string> = {
   'contextPanel.browser.devServers.showHiddenPlural': '显示 {count} 个已隐藏端口',
   'sidebarFilesTree.menu.openInDefaultApp': '用默认应用打开',
   'sessions.sidebar.header.displayMode.showChats': '显示聊天分区',
+  'sessions.scheduledTasks.editor.useDefaults.label': '使用会话默认设置',
+  'sessions.scheduledTasks.editor.useDefaults.hint': '每次运行在开始时都会使用“设置 → 会话”（或项目自身默认设置）中的默认模型、思考级别和代理。',
+  'sessions.scheduledTasks.dialog.usesDefaults': '会话默认设置',
 };

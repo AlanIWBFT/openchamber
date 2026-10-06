@@ -3776,4 +3776,7 @@ export const dict: Record<I18nKey, string> = {
   'contextPanel.browser.devServers.showHiddenPlural': 'Mostrar {count} portas ocultas',
   'sidebarFilesTree.menu.openInDefaultApp': 'Abrir no app padrão',
   'sessions.sidebar.header.displayMode.showChats': 'Mostrar seção de chats',
+  'sessions.scheduledTasks.editor.useDefaults.label': 'Usar os padrões de sessão',
+  'sessions.scheduledTasks.editor.useDefaults.hint': 'Cada execução usa, ao começar, o modelo, o nível de raciocínio e o agente padrão de Configurações → Sessões (ou os padrões do projeto).',
+  'sessions.scheduledTasks.dialog.usesDefaults': 'Padrões de sessão',
 };

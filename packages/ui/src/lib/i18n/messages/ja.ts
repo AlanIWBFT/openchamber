@@ -3775,4 +3775,7 @@ export const dict: Record<I18nKey, string> = {
   'contextPanel.browser.devServers.showHiddenPlural': '隠したポート {count} 件を表示',
   'sidebarFilesTree.menu.openInDefaultApp': '既定のアプリで開く',
   'sessions.sidebar.header.displayMode.showChats': 'チャットセクションを表示',
+  'sessions.scheduledTasks.editor.useDefaults.label': 'セッションの既定値を使う',
+  'sessions.scheduledTasks.editor.useDefaults.hint': '各実行は開始時点で、設定 → セッション（またはプロジェクト独自の既定値）の既定モデル、思考レベル、エージェントを使います。',
+  'sessions.scheduledTasks.dialog.usesDefaults': 'セッションの既定値',
 };

@@ -3775,4 +3775,7 @@ export const dict: Record<I18nKey, string> = {
   'contextPanel.browser.devServers.showHiddenPlural': '顯示 {count} 個已隱藏連接埠',
   'sidebarFilesTree.menu.openInDefaultApp': '以預設應用程式開啟',
   'sessions.sidebar.header.displayMode.showChats': '顯示聊天區段',
+  'sessions.scheduledTasks.editor.useDefaults.label': '使用工作階段預設值',
+  'sessions.scheduledTasks.editor.useDefaults.hint': '每次執行在開始時都會使用「設定 → 工作階段」（或專案自身預設值）中的預設模型、思考等級與代理。',
+  'sessions.scheduledTasks.dialog.usesDefaults': '工作階段預設值',
 };

@@ -44,8 +44,9 @@ const scheduleTimes = (task: ScheduledTask): string[] => {
 };
 
 // Model, then variant and agent when the task sets them; names stay literal.
-const formatTaskModel = (task: ScheduledTask): string => {
-  const { providerID, modelID, variant, agent } = task.execution;
+const formatTaskModel = (task: ScheduledTask, t: ReturnType<typeof useI18n>['t']): string => {
+  const { providerID, modelID, variant, agent, useDefaults } = task.execution;
+  if (useDefaults || !providerID || !modelID) return t('sessions.scheduledTasks.dialog.usesDefaults');
   return [
     `${providerID} · ${getModelDisplayName(null, modelID)}`,
     variant?.trim(),
@@ -534,8 +535,8 @@ export function ScheduledTasksView({ layout, onLeave }: {
                   <div className="typography-micro truncate text-muted-foreground">
                     {formatSchedule(task, t)}
                   </div>
-                  <div className="typography-micro truncate text-muted-foreground/70" title={`${task.execution.providerID}/${task.execution.modelID}`}>
-                    {formatTaskModel(task)}
+                  <div className="typography-micro truncate text-muted-foreground/70" title={task.execution.useDefaults ? undefined : `${task.execution.providerID ?? ''}/${task.execution.modelID ?? ''}`}>
+                    {formatTaskModel(task, t)}
                   </div>
                   {task.loopFile ? (
                     <div

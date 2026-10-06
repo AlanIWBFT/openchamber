@@ -3773,4 +3773,7 @@ export const dict = {
   'contextPanel.browser.devServers.showHiddenPlural': '{count} gizli bağlantı noktasını göster',
   'sidebarFilesTree.menu.openInDefaultApp': 'Varsayılan uygulamada aç',
   'sessions.sidebar.header.displayMode.showChats': 'Sohbetler bölümünü göster',
+  'sessions.scheduledTasks.editor.useDefaults.label': 'Oturum varsayılanlarını kullan',
+  'sessions.scheduledTasks.editor.useDefaults.hint': 'Her çalıştırma başlarken varsayılan modeli, düşünme düzeyini ve ajanı Ayarlar → Oturumlar\'dan (ya da projenin kendi varsayılanlarından) alır.',
+  'sessions.scheduledTasks.dialog.usesDefaults': 'Oturum varsayılanları',
 };

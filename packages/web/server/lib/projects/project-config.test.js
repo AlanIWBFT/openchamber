@@ -53,6 +53,23 @@ describe('project-config runtime', () => {
     }
   });
 
+  it('accepts a task that follows the session defaults without a model, and still needs one when pinned', async () => {
+    const { runtime, cleanup } = await createRuntime();
+    const task = (execution) => ({
+      name: 'Follow defaults',
+      enabled: true,
+      schedule: { kind: 'daily', time: '09:30', timezone: 'UTC' },
+      execution: { prompt: 'Summarize', ...execution },
+    });
+    try {
+      const result = await runtime.upsertScheduledTask('project-test', task({ useDefaults: true }));
+      expect(result.task.execution).toEqual({ prompt: 'Summarize', useDefaults: true });
+      await expect(runtime.upsertScheduledTask('project-test', task({}))).rejects.toThrow('execution.providerID is required');
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('rejects invalid cron expressions', async () => {
     const { runtime, cleanup } = await createRuntime();
     try {

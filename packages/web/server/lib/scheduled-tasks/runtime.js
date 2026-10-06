@@ -262,6 +262,9 @@ export const createScheduledTasksRuntime = (deps) => {
     // Chats scope (see chats-scope.js): scheduled like a project, but each run
     // opens a new chat directory and loop files are not discovered for it.
     chatsScope = null,
+    // The session defaults a task with `useDefaults` runs on:
+    // `(projectID) => { providerID, modelID, variant, agent }`, any of them null.
+    readSessionDefaults = null,
     logger = console,
     maxGlobalConcurrency = DEFAULT_GLOBAL_CONCURRENCY,
     maxProjectConcurrency = DEFAULT_PROJECT_CONCURRENCY,
@@ -283,6 +286,32 @@ export const createScheduledTasksRuntime = (deps) => {
       return response;
     },
   });
+
+  // A pinned task runs on what it stores; one that follows the session
+  // defaults reads them now, so changing a default reaches it on its next run.
+  const resolveRunSelection = async (projectID, task) => {
+    const execution = task.execution;
+    if (!execution.useDefaults) {
+      return {
+        providerID: execution.providerID ?? null,
+        modelID: execution.modelID ?? null,
+        variant: execution.variant ?? null,
+        agent: execution.agent ?? null,
+      };
+    }
+    try {
+      const defaults = typeof readSessionDefaults === 'function' ? await readSessionDefaults(projectID) : null;
+      return {
+        providerID: defaults?.providerID ?? null,
+        modelID: defaults?.modelID ?? null,
+        variant: defaults?.variant ?? null,
+        agent: defaults?.agent ?? null,
+      };
+    } catch (error) {
+      logger.warn?.('[scheduled-tasks] session defaults unavailable, using OpenCode defaults:', error?.message ?? error);
+      return { providerID: null, modelID: null, variant: null, agent: null };
+    }
+  };
 
   let started = false;
   const tasksByProject = new Map();
@@ -595,6 +624,7 @@ export const createScheduledTasksRuntime = (deps) => {
     const baseUrl = openCodeOrigin();
     const authHeaders = getOpenCodeAuthHeaders();
     const client = createScopedClient(directory);
+    const selection = await resolveRunSelection(projectID, task);
 
     // Agent, model and variant belong to the session in v2: a scheduled run
     // fixes them here instead of repeating them on every prompt.
@@ -603,12 +633,15 @@ export const createScheduledTasksRuntime = (deps) => {
       const session = await client.session.create({
         title,
         location: { directory },
-        model: {
-          providerID: task.execution.providerID,
-          id: task.execution.modelID,
-          ...(task.execution.variant ? { variant: task.execution.variant } : {}),
-        },
-        ...(task.execution.agent ? { agent: task.execution.agent } : {}),
+        // No model or agent at all: OpenCode picks its own default.
+        ...(selection.providerID && selection.modelID ? {
+          model: {
+            providerID: selection.providerID,
+            id: selection.modelID,
+            ...(selection.variant ? { variant: selection.variant } : {}),
+          },
+        } : {}),
+        ...(selection.agent ? { agent: selection.agent } : {}),
       });
       sessionID = session?.id;
       if (!sessionID) {
@@ -657,8 +690,8 @@ export const createScheduledTasksRuntime = (deps) => {
         directory,
         objective: commandObjective ?? expandSnippets(task.execution.prompt, directory),
         tokenBudget: task.execution.goalTokenBudget,
-        providerID: task.execution.providerID,
-        modelID: task.execution.modelID,
+        providerID: selection.providerID ?? undefined,
+        modelID: selection.modelID ?? undefined,
         onWarning: (message, error) => console.warn(`[scheduled-tasks] ${message}:`, error?.message || error),
       });
     }

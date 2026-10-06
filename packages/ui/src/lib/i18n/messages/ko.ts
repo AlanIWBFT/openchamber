@@ -3775,4 +3775,7 @@ export const dict: Record<I18nKey, string> = {
   'contextPanel.browser.devServers.showHiddenPlural': '숨긴 포트 {count}개 표시',
   'sidebarFilesTree.menu.openInDefaultApp': '기본 앱에서 열기',
   'sessions.sidebar.header.displayMode.showChats': '채팅 섹션 표시',
+  'sessions.scheduledTasks.editor.useDefaults.label': '세션 기본값 사용',
+  'sessions.scheduledTasks.editor.useDefaults.hint': '각 실행은 시작할 때 설정 → 세션(또는 프로젝트 자체 기본값)의 기본 모델, 사고 수준, 에이전트를 사용합니다.',
+  'sessions.scheduledTasks.dialog.usesDefaults': '세션 기본값',
 };

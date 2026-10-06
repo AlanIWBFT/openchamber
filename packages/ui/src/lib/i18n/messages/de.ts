@@ -3773,4 +3773,7 @@ export const dict = {
   'contextPanel.browser.devServers.showHiddenPlural': '{count} ausgeblendete Ports anzeigen',
   'sidebarFilesTree.menu.openInDefaultApp': 'In Standard-App öffnen',
   'sessions.sidebar.header.displayMode.showChats': 'Chat-Bereich anzeigen',
+  'sessions.scheduledTasks.editor.useDefaults.label': 'Sitzungsstandards verwenden',
+  'sessions.scheduledTasks.editor.useDefaults.hint': 'Jeder Lauf übernimmt beim Start Standardmodell, Denkstufe und Agent aus Einstellungen → Sitzungen (oder die Standards des Projekts).',
+  'sessions.scheduledTasks.dialog.usesDefaults': 'Sitzungsstandards',
 };

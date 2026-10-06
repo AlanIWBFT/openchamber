@@ -21,8 +21,11 @@ export type ScheduledTask = {
   };
   execution: {
     prompt: string;
-    providerID: string;
-    modelID: string;
+    /** Absent on a task that follows the session defaults and was never pinned. */
+    providerID?: string;
+    modelID?: string;
+    /** Model, thinking level and agent come from the session defaults at run time. */
+    useDefaults?: boolean;
     variant?: string;
     agent?: string;
     goalEnabled?: boolean;

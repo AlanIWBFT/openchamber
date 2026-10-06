@@ -230,6 +230,9 @@ const normalizeExecution = (value) => {
   const agent = asNonEmptyString(value.agent);
   const goalEnabled = value.goalEnabled === true;
   const permissionAutoAccept = value.permissionAutoAccept === true;
+  // Model, thinking level and agent come from the session defaults at run
+  // time; the stored ones are kept only for when this is turned off.
+  const useDefaults = value.useDefaults === true;
   const goalTokenBudget = typeof value.goalTokenBudget === 'number'
     && Number.isFinite(value.goalTokenBudget)
     && value.goalTokenBudget > 0
@@ -239,17 +242,17 @@ const normalizeExecution = (value) => {
   if (!prompt) {
     throw new Error('execution.prompt is required');
   }
-  if (!providerID) {
+  if (!useDefaults && !providerID) {
     throw new Error('execution.providerID is required');
   }
-  if (!modelID) {
+  if (!useDefaults && !modelID) {
     throw new Error('execution.modelID is required');
   }
 
   return {
     prompt,
-    providerID,
-    modelID,
+    ...(providerID && modelID ? { providerID, modelID } : {}),
+    ...(useDefaults ? { useDefaults: true } : {}),
     ...(variant ? { variant } : {}),
     ...(agent ? { agent } : {}),
     ...(goalEnabled ? { goalEnabled: true } : {}),
