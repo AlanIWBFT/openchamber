@@ -174,7 +174,9 @@ export const useSkillsCatalogStore = create<SkillsCatalogState>()(
                 throw new Error(lastError.message);
               }
 
-              const sources = (payload.sources && payload.sources.length > 0) ? payload.sources : previous.sources;
+              // The server's list is the answer, empty included: a machine
+              // policy can hide every built-in catalog.
+              const sources = payload.sources ?? previous.sources;
               const itemsBySource = options?.refresh ? {} : (get().itemsBySource || {});
               const loadedSourceIds = options?.refresh ? {} : (get().loadedSourceIds || {});
               const currentSelected = get().selectedSourceId;

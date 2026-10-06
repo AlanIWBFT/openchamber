@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import yaml from 'yaml';
 
 import { discoverSkills } from './opencodeConfig';
+import { readEnterprisePolicy } from '../../web/server/lib/enterprise-mode.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -583,7 +584,9 @@ export async function getSkillsCatalog(
   additionalSources?: SkillsCatalogSourceConfig[],
   installedSkills?: Array<{ name: string; scope: SkillScope; source?: 'opencode' | 'agents' | 'claude' }>
 ) {
-  const sources = [...CURATED_SOURCES, ...(Array.isArray(additionalSources) ? additionalSources : [])];
+  // The machine policy can hide the built-in catalogs (see enterprise-mode.js).
+  const curated = readEnterprisePolicy().hideBuiltinSkillCatalogs ? [] : CURATED_SOURCES;
+  const sources = [...curated, ...(Array.isArray(additionalSources) ? additionalSources : [])];
   const discovered = Array.isArray(installedSkills) ? installedSkills : discoverSkills(workingDirectory);
   const installedByName = new Map(discovered.map((s) => [s.name, s]));
 
