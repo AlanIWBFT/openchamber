@@ -3777,4 +3777,10 @@ export const dict = {
   'sessions.scheduledTasks.editor.useDefaults.label': 'Utiliser les valeurs par défaut des sessions',
   'sessions.scheduledTasks.editor.useDefaults.hint': 'Chaque exécution prend, au démarrage, le modèle, le niveau de réflexion et l’agent par défaut de Réglages → Sessions (ou ceux du projet).',
   'sessions.scheduledTasks.dialog.usesDefaults': 'Valeurs par défaut des sessions',
+  'sessions.moveChatToProject.menu': 'Déplacer vers un projet…',
+  'sessions.moveChatToProject.hint': 'Poursuivre cette conversation dans un projet',
+  'sessions.moveChatToProject.title': 'Déplacer le chat vers un projet',
+  'sessions.moveChatToProject.description': 'La conversation se poursuit dans le dossier du projet. Les fichiers créés par le chat restent où ils sont.',
+  'sessions.moveChatToProject.success': 'Chat déplacé vers le projet',
+  'sessions.moveChatToProject.failed': 'Impossible de déplacer le chat',
 } as const;

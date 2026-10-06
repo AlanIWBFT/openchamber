@@ -3778,4 +3778,10 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.editor.useDefaults.label': '세션 기본값 사용',
   'sessions.scheduledTasks.editor.useDefaults.hint': '각 실행은 시작할 때 설정 → 세션(또는 프로젝트 자체 기본값)의 기본 모델, 사고 수준, 에이전트를 사용합니다.',
   'sessions.scheduledTasks.dialog.usesDefaults': '세션 기본값',
+  'sessions.moveChatToProject.menu': '프로젝트로 이동…',
+  'sessions.moveChatToProject.hint': '이 대화를 프로젝트 안에서 이어가기',
+  'sessions.moveChatToProject.title': '채팅을 프로젝트로 이동',
+  'sessions.moveChatToProject.description': '대화는 프로젝트 폴더에서 이어집니다. 채팅이 만든 파일은 그대로 남습니다.',
+  'sessions.moveChatToProject.success': '채팅을 프로젝트로 옮겼습니다',
+  'sessions.moveChatToProject.failed': '채팅을 옮길 수 없습니다',
 };

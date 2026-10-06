@@ -3783,4 +3783,10 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.editor.useDefaults.label': 'Używaj domyślnych ustawień sesji',
   'sessions.scheduledTasks.editor.useDefaults.hint': 'Każde uruchomienie bierze w chwili startu domyślny model, poziom myślenia i agenta z Ustawienia → Sesje (lub z ustawień projektu).',
   'sessions.scheduledTasks.dialog.usesDefaults': 'Domyślne ustawienia sesji',
+  'sessions.moveChatToProject.menu': 'Przenieś do projektu…',
+  'sessions.moveChatToProject.hint': 'Kontynuuj tę rozmowę w projekcie',
+  'sessions.moveChatToProject.title': 'Przenieś czat do projektu',
+  'sessions.moveChatToProject.description': 'Rozmowa toczy się dalej w folderze projektu. Pliki utworzone przez czat zostają na miejscu.',
+  'sessions.moveChatToProject.success': 'Czat przeniesiono do projektu',
+  'sessions.moveChatToProject.failed': 'Nie udało się przenieść czatu',
 } as const;

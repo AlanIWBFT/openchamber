@@ -3776,4 +3776,10 @@ export const dict = {
   'sessions.scheduledTasks.editor.useDefaults.label': 'Sitzungsstandards verwenden',
   'sessions.scheduledTasks.editor.useDefaults.hint': 'Jeder Lauf übernimmt beim Start Standardmodell, Denkstufe und Agent aus Einstellungen → Sitzungen (oder die Standards des Projekts).',
   'sessions.scheduledTasks.dialog.usesDefaults': 'Sitzungsstandards',
+  'sessions.moveChatToProject.menu': 'In Projekt verschieben…',
+  'sessions.moveChatToProject.hint': 'Dieses Gespräch in einem Projekt fortsetzen',
+  'sessions.moveChatToProject.title': 'Chat in ein Projekt verschieben',
+  'sessions.moveChatToProject.description': 'Das Gespräch geht im Ordner des Projekts weiter. Dateien, die der Chat erstellt hat, bleiben, wo sie sind.',
+  'sessions.moveChatToProject.success': 'Chat ins Projekt verschoben',
+  'sessions.moveChatToProject.failed': 'Chat konnte nicht verschoben werden',
 };

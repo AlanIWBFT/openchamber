@@ -3776,4 +3776,10 @@ export const dict = {
   'sessions.scheduledTasks.editor.useDefaults.label': 'Oturum varsayılanlarını kullan',
   'sessions.scheduledTasks.editor.useDefaults.hint': 'Her çalıştırma başlarken varsayılan modeli, düşünme düzeyini ve ajanı Ayarlar → Oturumlar\'dan (ya da projenin kendi varsayılanlarından) alır.',
   'sessions.scheduledTasks.dialog.usesDefaults': 'Oturum varsayılanları',
+  'sessions.moveChatToProject.menu': 'Projeye taşı…',
+  'sessions.moveChatToProject.hint': 'Bu konuşmaya bir proje içinde devam et',
+  'sessions.moveChatToProject.title': 'Sohbeti bir projeye taşı',
+  'sessions.moveChatToProject.description': 'Konuşma projenin klasöründe devam eder. Sohbetin oluşturduğu dosyalar olduğu yerde kalır.',
+  'sessions.moveChatToProject.success': 'Sohbet projeye taşındı',
+  'sessions.moveChatToProject.failed': 'Sohbet taşınamadı',
 };

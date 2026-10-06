@@ -3779,4 +3779,10 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.editor.useDefaults.label': 'Usar os padrões de sessão',
   'sessions.scheduledTasks.editor.useDefaults.hint': 'Cada execução usa, ao começar, o modelo, o nível de raciocínio e o agente padrão de Configurações → Sessões (ou os padrões do projeto).',
   'sessions.scheduledTasks.dialog.usesDefaults': 'Padrões de sessão',
+  'sessions.moveChatToProject.menu': 'Mover para um projeto…',
+  'sessions.moveChatToProject.hint': 'Continuar esta conversa dentro de um projeto',
+  'sessions.moveChatToProject.title': 'Mover o chat para um projeto',
+  'sessions.moveChatToProject.description': 'A conversa continua na pasta do projeto. Os arquivos que o chat criou ficam onde estão.',
+  'sessions.moveChatToProject.success': 'Chat movido para o projeto',
+  'sessions.moveChatToProject.failed': 'Não foi possível mover o chat',
 };

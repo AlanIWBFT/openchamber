@@ -3779,4 +3779,10 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.editor.useDefaults.label': 'Використовувати типові налаштування сесії',
   'sessions.scheduledTasks.editor.useDefaults.hint': 'Кожен запуск бере на момент старту типові модель, рівень мислення й агента з Налаштування → Сесії (або власні налаштування проєкту).',
   'sessions.scheduledTasks.dialog.usesDefaults': 'Типові налаштування сесії',
+  'sessions.moveChatToProject.menu': 'Перенести в проєкт…',
+  'sessions.moveChatToProject.hint': 'Продовжити цю розмову в проєкті',
+  'sessions.moveChatToProject.title': 'Перенести чат у проєкт',
+  'sessions.moveChatToProject.description': 'Розмова продовжиться в теці проєкту. Файли, які створив чат, лишаться там, де є.',
+  'sessions.moveChatToProject.success': 'Чат перенесено в проєкт',
+  'sessions.moveChatToProject.failed': 'Не вдалося перенести чат',
 };

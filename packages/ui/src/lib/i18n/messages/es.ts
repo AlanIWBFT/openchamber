@@ -3779,4 +3779,10 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.editor.useDefaults.label': 'Usar los valores predeterminados de sesión',
   'sessions.scheduledTasks.editor.useDefaults.hint': 'Cada ejecución toma, al empezar, el modelo, el nivel de razonamiento y el agente predeterminados de Ajustes → Sesiones (o los del proyecto).',
   'sessions.scheduledTasks.dialog.usesDefaults': 'Valores predeterminados de sesión',
+  'sessions.moveChatToProject.menu': 'Mover a un proyecto…',
+  'sessions.moveChatToProject.hint': 'Continuar esta conversación dentro de un proyecto',
+  'sessions.moveChatToProject.title': 'Mover el chat a un proyecto',
+  'sessions.moveChatToProject.description': 'La conversación continúa en la carpeta del proyecto. Los archivos que creó el chat se quedan donde están.',
+  'sessions.moveChatToProject.success': 'Chat movido al proyecto',
+  'sessions.moveChatToProject.failed': 'No se pudo mover el chat',
 };

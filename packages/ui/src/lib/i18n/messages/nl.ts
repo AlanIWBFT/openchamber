@@ -3778,4 +3778,10 @@ export const dict = {
   'sessions.scheduledTasks.editor.useDefaults.label': 'Standaardinstellingen voor sessies gebruiken',
   'sessions.scheduledTasks.editor.useDefaults.hint': 'Elke run neemt bij de start het standaardmodel, denkniveau en de agent uit Instellingen → Sessies (of de eigen standaarden van het project).',
   'sessions.scheduledTasks.dialog.usesDefaults': 'Standaarden voor sessies',
+  'sessions.moveChatToProject.menu': 'Naar project verplaatsen…',
+  'sessions.moveChatToProject.hint': 'Dit gesprek binnen een project voortzetten',
+  'sessions.moveChatToProject.title': 'Chat naar een project verplaatsen',
+  'sessions.moveChatToProject.description': 'Het gesprek gaat verder in de map van het project. Bestanden die de chat maakte blijven waar ze zijn.',
+  'sessions.moveChatToProject.success': 'Chat naar het project verplaatst',
+  'sessions.moveChatToProject.failed': 'Chat kon niet worden verplaatst',
 } as const;

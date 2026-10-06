@@ -3779,4 +3779,10 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.editor.useDefaults.label': '使用会话默认设置',
   'sessions.scheduledTasks.editor.useDefaults.hint': '每次运行在开始时都会使用“设置 → 会话”（或项目自身默认设置）中的默认模型、思考级别和代理。',
   'sessions.scheduledTasks.dialog.usesDefaults': '会话默认设置',
+  'sessions.moveChatToProject.menu': '移动到项目…',
+  'sessions.moveChatToProject.hint': '在项目中继续此对话',
+  'sessions.moveChatToProject.title': '将聊天移动到项目',
+  'sessions.moveChatToProject.description': '对话会在项目文件夹中继续。聊天创建的文件保留在原处。',
+  'sessions.moveChatToProject.success': '已将聊天移动到项目',
+  'sessions.moveChatToProject.failed': '无法移动聊天',
 };

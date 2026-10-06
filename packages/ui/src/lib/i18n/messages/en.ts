@@ -3778,6 +3778,12 @@ export const dict = {
   'sessions.scheduledTasks.editor.useDefaults.label': 'Use session defaults',
   'sessions.scheduledTasks.editor.useDefaults.hint': 'Each run takes the default model, thinking level and agent from Settings → Sessions (or the project\'s own defaults) at the time it starts.',
   'sessions.scheduledTasks.dialog.usesDefaults': 'Session defaults',
+  'sessions.moveChatToProject.menu': 'Move to project…',
+  'sessions.moveChatToProject.hint': 'Continue this conversation inside a project',
+  'sessions.moveChatToProject.title': 'Move chat to a project',
+  'sessions.moveChatToProject.description': 'The conversation continues in the project\'s folder. Files the chat created stay where they are.',
+  'sessions.moveChatToProject.success': 'Chat moved to the project',
+  'sessions.moveChatToProject.failed': 'Could not move the chat',
 } as const;
 
 export type I18nKey = keyof typeof dict;

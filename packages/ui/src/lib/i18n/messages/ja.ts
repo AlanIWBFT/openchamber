@@ -3778,4 +3778,10 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.editor.useDefaults.label': 'セッションの既定値を使う',
   'sessions.scheduledTasks.editor.useDefaults.hint': '各実行は開始時点で、設定 → セッション（またはプロジェクト独自の既定値）の既定モデル、思考レベル、エージェントを使います。',
   'sessions.scheduledTasks.dialog.usesDefaults': 'セッションの既定値',
+  'sessions.moveChatToProject.menu': 'プロジェクトへ移動…',
+  'sessions.moveChatToProject.hint': 'この会話をプロジェクト内で続ける',
+  'sessions.moveChatToProject.title': 'チャットをプロジェクトへ移動',
+  'sessions.moveChatToProject.description': '会話はプロジェクトのフォルダーで続きます。チャットが作成したファイルはそのまま残ります。',
+  'sessions.moveChatToProject.success': 'チャットをプロジェクトへ移動しました',
+  'sessions.moveChatToProject.failed': 'チャットを移動できませんでした',
 };

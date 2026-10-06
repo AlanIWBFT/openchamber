@@ -3778,4 +3778,10 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.editor.useDefaults.label': '使用工作階段預設值',
   'sessions.scheduledTasks.editor.useDefaults.hint': '每次執行在開始時都會使用「設定 → 工作階段」（或專案自身預設值）中的預設模型、思考等級與代理。',
   'sessions.scheduledTasks.dialog.usesDefaults': '工作階段預設值',
+  'sessions.moveChatToProject.menu': '移動到專案…',
+  'sessions.moveChatToProject.hint': '在專案中繼續此對話',
+  'sessions.moveChatToProject.title': '將聊天移動到專案',
+  'sessions.moveChatToProject.description': '對話會在專案資料夾中繼續。聊天建立的檔案保留在原處。',
+  'sessions.moveChatToProject.success': '已將聊天移動到專案',
+  'sessions.moveChatToProject.failed': '無法移動聊天',
 };
