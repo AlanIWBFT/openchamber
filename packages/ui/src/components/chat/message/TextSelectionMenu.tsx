@@ -20,6 +20,7 @@ import { useI18n } from '@/lib/i18n';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { getTypeToCommentText } from '@/lib/typeToComment';
 import { useCommentImagePaste } from '@/components/comments/useCommentImagePaste';
+import { useCommentSnippetPicker } from '@/components/comments/useCommentSnippetPicker';
 import { useMessageTTS } from '@/hooks/useMessageTTS';
 import {
     useMobileCommentComposerController,
@@ -135,6 +136,22 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     commentInputRef.current?.setSelectionRange(caret, caret);
     resizeCommentInput();
   }, [commentText, resizeCommentInput]);
+  // `#` opens the composer's snippet picker; references expand on send.
+  const getCommentCaret = React.useCallback(
+    () => commentInputRef.current?.selectionStart ?? 0,
+    [],
+  );
+  const replaceCommentRange = React.useCallback((from: number, to: number, insert: string) => {
+    pendingCommentCaretRef.current = from + insert.length;
+    setCommentText((current) => `${current.slice(0, from)}${insert}${current.slice(to)}`);
+    commentInputRef.current?.focus();
+  }, []);
+  const snippetPicker = useCommentSnippetPicker({
+    text: commentText,
+    getCaret: getCommentCaret,
+    replaceRange: replaceCommentRange,
+  });
+  const closeSnippetPicker = snippetPicker.close;
   const isDraggingRef = React.useRef(false);
   const [isOpening, setIsOpening] = React.useState(false);
   const [isAddingToNotes, setIsAddingToNotes] = React.useState(false);
@@ -560,6 +577,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     if (!selectedTextMarkdown) return;
     // Images pasted into an abandoned comment never reach the composer.
     discardPastedImages();
+    closeSnippetPicker();
     setSelectedAnchor(captureCommentAnchor());
     setCommentText(initialText);
     setCommentMode(true);
@@ -572,7 +590,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
     });
-  }, [captureCommentAnchor, discardPastedImages, selectedTextMarkdown, updateCommentRects]);
+  }, [captureCommentAnchor, closeSnippetPicker, discardPastedImages, selectedTextMarkdown, updateCommentRects]);
 
   const handleOpenComment = React.useCallback(() => openComment(''), [openComment]);
 
@@ -725,21 +743,24 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
   const commentInput = (
     <div
       className={cn(
-        'oc-glass-popover flex items-end gap-2 rounded-3xl border border-[var(--interactive-border)]',
+        'oc-glass-popover relative flex items-end gap-2 rounded-3xl border border-[var(--interactive-border)]',
         'pl-4 shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]',
         'py-1 pr-1',
         'transition-[opacity,transform] duration-200 ease-out',
         isOpening ? 'opacity-0 translate-y-[4px]' : 'opacity-100 translate-y-0'
       )}
     >
+      {snippetPicker.picker}
       <textarea
         ref={commentInputRef}
         rows={1}
         value={commentText}
         onChange={(event) => {
           setCommentText(event.target.value);
+          snippetPicker.sync(event.target.value, event.target.selectionStart);
           resizeCommentInput();
         }}
+        onSelect={(event) => snippetPicker.sync(event.currentTarget.value, event.currentTarget.selectionStart)}
         onPaste={(event) => {
           const pasted = takePastedImages(event);
           if (!pasted) return;
@@ -750,6 +771,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
           // An IME candidate is confirmed with Enter and abandoned with
           // Escape; neither keystroke belongs to the comment yet.
           if (isIMECompositionEvent(event)) return;
+          if (snippetPicker.handleKeyDown(event)) return;
           // Desktop: Enter attaches, Shift+Enter breaks the line. (Mobile has
           // no floating input anymore; its comment editor keeps Enter as a
           // line break and attaches through the button.)

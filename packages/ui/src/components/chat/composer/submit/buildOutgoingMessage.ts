@@ -267,3 +267,20 @@ export function queuedContextToParts(context: readonly QueuedContextPart[]): Out
     }
     return parts;
 }
+
+/**
+ * Expand `#snippet` references in the words of each attached comment, before
+ * the comments become synthetic context. Only `text` expands: the quoted code
+ * or message the comment points at is the user's evidence and stays verbatim.
+ * A comment whose expansion fails is sent as written.
+ */
+export async function expandCommentSnippets(
+    drafts: readonly InlineCommentDraft[],
+    expandText: (text: string) => Promise<string>,
+): Promise<InlineCommentDraft[]> {
+    return Promise.all(drafts.map(async (draft) => {
+        if (!draft.text) return draft;
+        const text = await expandText(draft.text).catch(() => draft.text);
+        return text === draft.text ? draft : { ...draft, text };
+    }));
+}

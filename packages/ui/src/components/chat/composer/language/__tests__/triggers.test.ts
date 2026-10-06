@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { resolveAutocompleteTrigger, type TriggerContext } from '../triggers';
+import { matchSnippetTrigger, resolveAutocompleteTrigger, type TriggerContext } from '../triggers';
 
 const normal: TriggerContext = { inputMode: 'normal' };
 
@@ -133,4 +133,18 @@ test('BTW leaves file and agent references as text while retaining other pickers
     expect(at('@plan|', btw)).toBeNull();
     expect(at('#snippet|', btw)).toEqual({ kind: 'snippet', query: 'snippet' });
     expect(at('@plan|')?.kind).toBe('mention');
+});
+
+describe('matchSnippetTrigger', () => {
+    const snippetAt = (text: string) => matchSnippetTrigger(text.replace('|', ''), text.indexOf('|'));
+
+    test('reads the query after a # at a word boundary', () => {
+        expect(snippetAt('please #rev|')).toBe('rev');
+        expect(snippetAt('#|')).toBe('');
+    });
+
+    test('ignores a # inside a word or a finished token', () => {
+        expect(snippetAt('issue#12|')).toBeNull();
+        expect(snippetAt('#review done|')).toBeNull();
+    });
 });

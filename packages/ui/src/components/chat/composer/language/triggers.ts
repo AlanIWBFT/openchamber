@@ -85,6 +85,14 @@ function matchInlineToken(
 }
 
 /**
+ * The `#snippet` query being typed at the caret, or null. For text fields that
+ * offer only the snippet picker (comment inputs), with the composer's rule.
+ */
+export function matchSnippetTrigger(value: string, cursorPosition: number): string | null {
+    return matchInlineToken(value, cursorPosition, '#', 'snippet')?.query ?? null;
+}
+
+/**
  * Resolve the single autocomplete that the caret asks for, or null when none
  * applies. Pure: the caller supplies the text and caret, and decides what to
  * do with the answer.

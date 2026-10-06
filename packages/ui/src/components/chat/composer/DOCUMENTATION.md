@@ -764,6 +764,15 @@ The comment editor reuses `ComposerEditor` with `dataChatInput="comment"` so
 the `data-chat-input="true"` helpers (`focusChatInput`, shortcut guards) keep
 meaning "the prompt editor".
 
+Snippets are the one part of the prompt language comments speak. Both the
+desktop floating input and the mobile shell open the snippet picker on `#`
+through `components/comments/useCommentSnippetPicker.tsx`, and the mobile editor
+highlights known triggers. Agents, commands and files stay inert. Comments
+become synthetic context, which the send-time snippet expansion skips, so
+`expandCommentSnippets` (`submit/buildOutgoingMessage.ts`) expands each
+comment's own text before assembly, on the send and queue paths alike. The
+quoted code or message stays verbatim.
+
 ## Testing
 
 Tests cover the language, submit assembly, path and drop handling, text splicing,

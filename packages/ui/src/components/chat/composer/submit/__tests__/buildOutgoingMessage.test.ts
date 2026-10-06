@@ -10,6 +10,7 @@ import type { QueuedContextPart } from '@/stores/messageQueueStore';
 import {
     buildComposerContext,
     buildOutgoingMessage,
+    expandCommentSnippets,
     queuedContextToParts,
     type ComposerContextInput,
     type OutgoingMessageDeps,
@@ -541,3 +542,33 @@ describe('the composer send gate counts what the submission builder counts', () 
     });
 });
 
+
+describe('expandCommentSnippets', () => {
+    const draft = (text: string, code = 'see #review here'): InlineCommentDraft => ({
+        id: text,
+        sessionKey: 's',
+        source: 'chat-quote',
+        fileLabel: 'm1',
+        startLine: 1,
+        endLine: 1,
+        code,
+        language: '',
+        text,
+        createdAt: 0,
+    });
+    const expandText = async (text: string) => text.replace('#review', 'Review this carefully.');
+
+    test('expands the comment words and leaves the quote verbatim', async () => {
+        const [expanded] = await expandCommentSnippets([draft('#review please')], expandText);
+        expect(expanded.text).toBe('Review this carefully. please');
+        expect(expanded.code).toBe('see #review here');
+    });
+
+    test('keeps a comment as written when expansion fails', async () => {
+        const original = draft('#review please');
+        const [kept] = await expandCommentSnippets([original], async () => {
+            throw new Error('offline');
+        });
+        expect(kept).toBe(original);
+    });
+});
