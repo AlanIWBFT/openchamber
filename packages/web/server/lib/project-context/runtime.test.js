@@ -284,8 +284,8 @@ describe('todos', () => {
   });
 
   test('clamps oversized todo text', async () => {
-    await runtime.saveTodos(PROJECT_ID, [{ id: 't1', text: 'z'.repeat(300), createdAt: 1 }]);
-    expect((await runtime.readContext(PROJECT_ID)).todos[0].text).toHaveLength(120);
+    await runtime.saveTodos(PROJECT_ID, [{ id: 't1', text: 'z'.repeat(1500), createdAt: 1 }]);
+    expect((await runtime.readContext(PROJECT_ID)).todos[0].text).toHaveLength(1000);
   });
 });
 
