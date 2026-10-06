@@ -622,9 +622,11 @@ interface MessageFilesDisplayProps {
   files: FilePart[];
   onShowPopup?: (content: ToolPopupContent) => void;
   compact?: boolean;
+  /** Compact only: replaces the default top margin, for placement above content. */
+  className?: string;
 }
 
-export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }: MessageFilesDisplayProps) => {
+export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false, className }: MessageFilesDisplayProps) => {
   const { t } = useI18n();
 
   const fileItems = files.filter(f => f.type === 'file' && (f.mime || f.url));
@@ -737,7 +739,7 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
 
   if (compact) {
     return (
-      <div className="space-y-1.5 mt-1.5">
+      <div className={cn('space-y-1.5', className ?? 'mt-1.5')}>
         {otherFiles.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {otherFiles.map((file, index) => {

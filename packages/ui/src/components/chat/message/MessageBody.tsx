@@ -765,6 +765,13 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
             style={CONTAIN_LAYOUT_STYLE}
             onTouchStart={isTouchContext && canCopyMessage && hasCopyableText ? revealCopyHint : undefined}
         >
+            {/* Attachments lead the bubble, above the text. */}
+            <MessageFilesDisplay
+                files={parts}
+                onShowPopup={onShowPopup}
+                compact
+                className={userContentParts.length > 0 ? 'mb-2' : 'mt-0'}
+            />
             <div
                 className={cn(
                     'leading-relaxed text-foreground/90 text-base overflow-x-hidden',
@@ -809,14 +816,13 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
                 <button
                     type="button"
                     onClick={toggleMessageExpanded}
-                    className="ms-auto mt-1 block py-0.5 text-end text-sm text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:text-foreground hover:decoration-foreground/60 focus-visible:outline-none focus-visible:text-foreground"
+                    className="ms-auto mt-1 block py-0.5 text-end text-sm text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:underline focus-visible:outline-none focus-visible:text-foreground"
                     style={{ minHeight: 0, minWidth: 0 }}
                     aria-expanded={messageExpanded}
                 >
                     {t(messageExpanded ? 'chat.message.userText.showLess' : 'chat.message.userText.showFullMessage')}
                 </button>
             )}
-            <MessageFilesDisplay files={parts} onShowPopup={onShowPopup} compact />
             {actionsBlock}
         </div>
     );
