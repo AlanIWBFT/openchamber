@@ -1520,6 +1520,11 @@ async function resyncDirectoryAfterReconnect(
   ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
 }
 
+type CatalogRuntime = { key: string; sdk: ReturnType<typeof opencodeClient.getSdkClient> }
+
+const isCatalogRuntimeCurrent = (runtime: CatalogRuntime): boolean =>
+  runtime.key === getRuntimeKey() && runtime.sdk === opencodeClient.getSdkClient()
+
 /**
  * OpenCode reports a catalog change (`config.updated`, `agent.updated`, ...)
  * without saying what changed, so the affected slice is re-read rather than
@@ -1538,17 +1543,21 @@ async function resyncDirectoryAfterReconnect(
 async function reloadCatalog(
   kind: CatalogKind,
   childStores: ChildStoreManager,
-  directories: ReadonlySet<string>,
+  eventDirectories: readonly string[],
+  runtime: CatalogRuntime,
 ): Promise<void> {
+  if (!isCatalogRuntimeCurrent(runtime)) return
   // Before anything re-reads: a fresh GET must not be served the config the
   // client cached seconds ago.
   if (kind === "config") opencodeClient.clearConfigCache()
 
-  void refreshStoresForCatalogKind(kind)
+  void refreshStoresForCatalogKind(kind, eventDirectories)
 
   if (kind === "project") {
     const projects = await opencodeClient.listProjects().catch(() => null)
-    if (projects) useGlobalSyncStore.getState().actions.set({ projects })
+    if (isCatalogRuntimeCurrent(runtime) && projects) {
+      useGlobalSyncStore.getState().actions.set({ projects })
+    }
     return
   }
   // Config is the only catalog the directory stores hold. Agents, commands,
@@ -1556,11 +1565,13 @@ async function reloadCatalog(
   // `refreshStoresForCatalogKind` re-reads for the same kind.
   if (kind !== "config") return
 
-  await Promise.all([...directories].map(async (directory) => {
+  await Promise.all(eventDirectories.map(async (directory) => {
     const store = childStores.getChild(directory)
     if (!store) return
+    if (!isCatalogRuntimeCurrent(runtime)) return
     try {
       const config = await opencodeClient.getConfig(directory)
+      if (!isCatalogRuntimeCurrent(runtime)) return
       store.setState({ config })
       emitSyncConfigChanged(directory, config)
     } catch {
@@ -1577,29 +1588,42 @@ async function reloadCatalog(
  * credential change) re-reads the current directory.
  */
 const CATALOG_RELOAD_DEBOUNCE_MS = 250
-const pendingCatalogKinds = new Set<CatalogKind>()
-const pendingCatalogDirectories = new Set<string>()
-let pendingCatalogCurrentDirectory = false
+const pendingCatalogReloads = new Map<CatalogKind, Set<string>>()
+const pendingCatalogCurrentKinds = new Set<CatalogKind>()
+let pendingCatalogRuntime: CatalogRuntime | null = null
 let catalogReloadTimer: ReturnType<typeof setTimeout> | null = null
 
-function scheduleCatalogReload(kind: CatalogKind, childStores: ChildStoreManager, directory: string | null): void {
-  // The reload re-reads the active directory's lists only; the directory the
-  // event names loses its fresh mark now, so switching to it re-reads.
+function scheduleCatalogReload(
+  kind: CatalogKind,
+  childStores: ChildStoreManager,
+  directory: string | null,
+): void {
+  const runtime = { key: getRuntimeKey(), sdk: opencodeClient.getSdkClient() }
   markConfigCatalogStale(kind, directory)
-  pendingCatalogKinds.add(kind)
-  if (directory) pendingCatalogDirectories.add(directory)
-  else pendingCatalogCurrentDirectory = true
+  if (pendingCatalogRuntime && !isCatalogRuntimeCurrent(pendingCatalogRuntime)) {
+    pendingCatalogReloads.clear()
+    pendingCatalogCurrentKinds.clear()
+  }
+  pendingCatalogRuntime = runtime
+  const directories = pendingCatalogReloads.get(kind) ?? new Set<string>()
+  if (directory) directories.add(directory)
+  else pendingCatalogCurrentKinds.add(kind)
+  pendingCatalogReloads.set(kind, directories)
   if (catalogReloadTimer) clearTimeout(catalogReloadTimer)
   catalogReloadTimer = setTimeout(() => {
     catalogReloadTimer = null
-    const kinds = [...pendingCatalogKinds]
-    const directories = new Set(pendingCatalogDirectories)
+    const scheduledRuntime = pendingCatalogRuntime
+    pendingCatalogRuntime = null
+    const reloads = [...pendingCatalogReloads.entries()]
+    const currentKinds = new Set(pendingCatalogCurrentKinds)
+    pendingCatalogReloads.clear()
+    pendingCatalogCurrentKinds.clear()
+    if (!scheduledRuntime || !isCatalogRuntimeCurrent(scheduledRuntime)) return
     const currentDirectory = opencodeClient.getDirectory()
-    if (pendingCatalogCurrentDirectory && currentDirectory) directories.add(currentDirectory)
-    pendingCatalogKinds.clear()
-    pendingCatalogDirectories.clear()
-    pendingCatalogCurrentDirectory = false
-    for (const pending of kinds) void reloadCatalog(pending, childStores, directories)
+    for (const [pendingKind, pendingDirectories] of reloads) {
+      if (currentKinds.has(pendingKind) && currentDirectory) pendingDirectories.add(currentDirectory)
+      void reloadCatalog(pendingKind, childStores, [...pendingDirectories], scheduledRuntime)
+    }
   }, CATALOG_RELOAD_DEBOUNCE_MS)
 }
 
