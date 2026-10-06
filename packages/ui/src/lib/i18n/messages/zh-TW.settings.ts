@@ -2516,4 +2516,12 @@ export const settingsDict = {
   'settings.agents.page.field.colorSwatchAria': '使用顏色 {color}',
   'settings.agents.page.field.colorCustomAria': '選擇自訂顏色',
   'settings.agents.page.field.colorHexAria': '十六進位顏色，例如 #ff6b6b',
+  'settings.agents.sidebar.section.disabled': '已停用',
+  'settings.agents.sidebar.actions.disable': '停用',
+  'settings.agents.sidebar.actions.enable': '啟用',
+  'settings.agents.sidebar.actions.enableAria': '啟用 {name}',
+  'settings.agents.sidebar.toast.agentDisabled': '已停用 {name}。檔案仍保留，可在「已停用」清單中重新啟用。',
+  'settings.agents.sidebar.toast.agentEnabled': '已重新啟用 {name}',
+  'settings.agents.sidebar.toast.disableFailed': '無法停用代理：無法寫入其設定檔',
+  'settings.agents.sidebar.toast.enableFailed': '無法啟用代理：無法寫入其設定檔',
 } as const;

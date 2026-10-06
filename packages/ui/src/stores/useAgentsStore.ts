@@ -16,6 +16,7 @@ import { useProjectsStore } from "@/stores/useProjectsStore";
 import { useSkillsCatalogStore } from "@/stores/useSkillsCatalogStore";
 import { invalidateSkillsLoadCache, useSkillsStore } from "@/stores/useSkillsStore";
 import { runtimeFetch } from "@/lib/runtime-fetch";
+import { z } from "zod";
 import { formatModelSelection, parseModelSelection } from "@/lib/modelIdentifier";
 import { getRuntimeKey } from "@/lib/runtime-switch";
 
@@ -170,7 +171,8 @@ export interface AgentEntity {
   hidden?: boolean;
   color?: string | null;
   steps?: number | null;
-  disabled?: boolean;
+  /** null removes the key, which turns a disabled agent back on. */
+  disabled?: boolean | null;
   request?: AgentRequest | null;
   permissions?: PermissionRule[] | null;
 }
@@ -369,6 +371,10 @@ interface AgentsStore {
   updateAgent: (name: string, config: Partial<AgentConfig>, directory?: string | null) => Promise<AgentMutationResult>;
   deleteAgent: (name: string, scope?: AgentScope, directory?: string | null) => Promise<AgentMutationResult>;
   getAgentByName: (name: string, directory?: string | null) => Agent | undefined;
+  /** Agents switched off with `disabled: true`, per directory. OpenCode leaves them out of its list. */
+  disabledAgentsByDirectory: Record<string, DisabledAgent[]>;
+  /** Re-read the disabled agents; a failed read keeps the previous list. */
+  loadDisabledAgents: (directory?: string | null) => Promise<boolean>;
   // Returns only visible agents (excludes hidden internal agents)
   getVisibleAgents: (directory?: string | null) => Agent[];
 }
@@ -380,6 +386,24 @@ declare global {
 }
 
 const EMPTY_AGENTS: Agent[] = [];
+const EMPTY_DISABLED_AGENTS: DisabledAgent[] = [];
+
+const DisabledAgentsResponseSchema = z.object({
+  agents: z.array(z.object({
+    name: z.string().min(1),
+    scope: z.enum(['user', 'project']).nullable(),
+    path: z.string().nullable(),
+    description: z.string().optional(),
+  })),
+});
+
+export type DisabledAgent = z.infer<typeof DisabledAgentsResponseSchema>['agents'][number];
+
+/** Disabled agents of one project; an omitted directory means the project the app is on. */
+export const selectDisabledAgentsForDirectory = (
+  state: Pick<AgentsStore, 'disabledAgentsByDirectory'>,
+  directory?: string | null,
+): DisabledAgent[] => state.disabledAgentsByDirectory[getAgentsCacheKey(resolveDirectory(directory))] ?? EMPTY_DISABLED_AGENTS;
 
 /**
  * Read one of the agent config sub-resources. Returns null on any failure so a
@@ -433,8 +457,31 @@ export const useAgentsStore = create<AgentsStore>()(
         selectedAgentName: null,
         agents: [],
         agentsByDirectory: {},
+        disabledAgentsByDirectory: {},
         isLoading: false,
         agentDraft: null,
+
+        loadDisabledAgents: async (requestedDirectory?: string | null) => {
+          const configDirectory = resolveDirectory(requestedDirectory);
+          const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
+          try {
+            const response = await runtimeFetch(`/api/config/disabled-agents${query}`, {
+              headers: {
+                'Cache-Control': 'no-cache',
+                ...(configDirectory ? { 'x-opencode-directory': configDirectory } : {}),
+              },
+            });
+            if (!response.ok) return false;
+            const parsed = DisabledAgentsResponseSchema.safeParse(await response.json().catch(() => null));
+            if (!parsed.success) return false;
+            const cacheKey = getAgentsCacheKey(configDirectory);
+            set((state) => ({ disabledAgentsByDirectory: { ...state.disabledAgentsByDirectory, [cacheKey]: parsed.data.agents } }));
+            return true;
+          } catch (error) {
+            console.warn('[AgentsStore] Failed to read disabled agents:', error);
+            return false;
+          }
+        },
 
         setSelectedAgent: (name: string | null) => {
           set({ selectedAgentName: name });
@@ -693,6 +740,7 @@ export const useAgentsStore = create<AgentsStore>()(
             if (config.system !== undefined) agentConfig.system = config.system;
             if ('color' in config) agentConfig.color = config.color ?? null;
             if (config.hidden !== undefined) agentConfig.hidden = config.hidden;
+            if ('disabled' in config) agentConfig.disabled = config.disabled ? true : null;
             // `request` is replaced wholesale, so a caller must send the full
             // block it wants persisted, not just the field it changed.
             if (config.request !== undefined) agentConfig.request = config.request;
@@ -724,7 +772,10 @@ export const useAgentsStore = create<AgentsStore>()(
             }
 
             // OpenCode 2 re-reads the file itself; the store just refreshes its list.
-            const loaded = await get().loadAgents(configDirectory);
+            const [loaded] = await Promise.all([
+              get().loadAgents(configDirectory),
+              'disabled' in config ? get().loadDisabledAgents(configDirectory) : Promise.resolve(true),
+            ]);
             if (loaded) {
               emitConfigChange("agents", { source: CONFIG_EVENT_SOURCE });
             }

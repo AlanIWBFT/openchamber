@@ -2517,4 +2517,12 @@ export const settingsDict = {
   'settings.agents.page.field.colorSwatchAria': 'Użyj koloru {color}',
   'settings.agents.page.field.colorCustomAria': 'Wybierz własny kolor',
   'settings.agents.page.field.colorHexAria': 'Kolor w zapisie hex, na przykład #ff6b6b',
+  'settings.agents.sidebar.section.disabled': 'Wyłączone',
+  'settings.agents.sidebar.actions.disable': 'Wyłącz',
+  'settings.agents.sidebar.actions.enable': 'Włącz',
+  'settings.agents.sidebar.actions.enableAria': 'Włącz {name}',
+  'settings.agents.sidebar.toast.agentDisabled': '{name} jest wyłączony. Plik zostaje; włączysz go ponownie z listy Wyłączone.',
+  'settings.agents.sidebar.toast.agentEnabled': '{name} jest znowu włączony',
+  'settings.agents.sidebar.toast.disableFailed': 'Nie udało się wyłączyć agenta: nie można zapisać jego pliku konfiguracji',
+  'settings.agents.sidebar.toast.enableFailed': 'Nie udało się włączyć agenta: nie można zapisać jego pliku konfiguracji',
 };

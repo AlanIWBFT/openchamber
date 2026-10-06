@@ -2506,4 +2506,12 @@ export const settingsDict = {
   'settings.agents.page.field.colorSwatchAria': 'Kleur {color} gebruiken',
   'settings.agents.page.field.colorCustomAria': 'Eigen kleur kiezen',
   'settings.agents.page.field.colorHexAria': 'Kleur als hex, bijvoorbeeld #ff6b6b',
+  'settings.agents.sidebar.section.disabled': 'Uitgeschakeld',
+  'settings.agents.sidebar.actions.disable': 'Uitschakelen',
+  'settings.agents.sidebar.actions.enable': 'Inschakelen',
+  'settings.agents.sidebar.actions.enableAria': '{name} inschakelen',
+  'settings.agents.sidebar.toast.agentDisabled': '{name} is uitgeschakeld. Het bestand blijft bestaan; schakel de agent weer in via de lijst Uitgeschakeld.',
+  'settings.agents.sidebar.toast.agentEnabled': '{name} is weer ingeschakeld',
+  'settings.agents.sidebar.toast.disableFailed': 'De agent kon niet worden uitgeschakeld: het configuratiebestand kon niet worden geschreven',
+  'settings.agents.sidebar.toast.enableFailed': 'De agent kon niet worden ingeschakeld: het configuratiebestand kon niet worden geschreven',
 } as const;

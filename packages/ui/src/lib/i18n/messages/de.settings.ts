@@ -2507,4 +2507,12 @@ export const settingsDict = {
   'settings.agents.page.field.colorSwatchAria': 'Farbe {color} verwenden',
   'settings.agents.page.field.colorCustomAria': 'Eigene Farbe wählen',
   'settings.agents.page.field.colorHexAria': 'Farbe als Hex-Wert, zum Beispiel #ff6b6b',
+  'settings.agents.sidebar.section.disabled': 'Deaktiviert',
+  'settings.agents.sidebar.actions.disable': 'Deaktivieren',
+  'settings.agents.sidebar.actions.enable': 'Aktivieren',
+  'settings.agents.sidebar.actions.enableAria': '{name} aktivieren',
+  'settings.agents.sidebar.toast.agentDisabled': '{name} ist deaktiviert. Die Datei bleibt erhalten; aktiviere den Agenten wieder über die Liste „Deaktiviert“.',
+  'settings.agents.sidebar.toast.agentEnabled': '{name} ist wieder aktiviert',
+  'settings.agents.sidebar.toast.disableFailed': 'Der Agent konnte nicht deaktiviert werden: Die Konfigurationsdatei ließ sich nicht schreiben',
+  'settings.agents.sidebar.toast.enableFailed': 'Der Agent konnte nicht aktiviert werden: Die Konfigurationsdatei ließ sich nicht schreiben',
 };

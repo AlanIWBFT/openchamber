@@ -2516,4 +2516,12 @@ export const settingsDict = {
   'settings.agents.page.field.colorSwatchAria': 'Використати колір {color}',
   'settings.agents.page.field.colorCustomAria': 'Вибрати власний колір',
   'settings.agents.page.field.colorHexAria': 'Колір у hex, наприклад #ff6b6b',
+  'settings.agents.sidebar.section.disabled': 'Вимкнені',
+  'settings.agents.sidebar.actions.disable': 'Вимкнути',
+  'settings.agents.sidebar.actions.enable': 'Увімкнути',
+  'settings.agents.sidebar.actions.enableAria': 'Увімкнути {name}',
+  'settings.agents.sidebar.toast.agentDisabled': '{name} вимкнено. Його файл лишається; увімкнути можна зі списку «Вимкнені».',
+  'settings.agents.sidebar.toast.agentEnabled': '{name} знову увімкнено',
+  'settings.agents.sidebar.toast.disableFailed': 'Не вдалося вимкнути агента: не вийшло записати його конфіг',
+  'settings.agents.sidebar.toast.enableFailed': 'Не вдалося увімкнути агента: не вийшло записати його конфіг',
 } as const;

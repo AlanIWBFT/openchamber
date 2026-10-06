@@ -2507,4 +2507,12 @@ export const settingsDict = {
   'settings.agents.page.field.colorSwatchAria': '{color} rengini kullan',
   'settings.agents.page.field.colorCustomAria': 'Özel renk seç',
   'settings.agents.page.field.colorHexAria': 'Onaltılık renk, örneğin #ff6b6b',
+  'settings.agents.sidebar.section.disabled': 'Devre dışı',
+  'settings.agents.sidebar.actions.disable': 'Devre dışı bırak',
+  'settings.agents.sidebar.actions.enable': 'Etkinleştir',
+  'settings.agents.sidebar.actions.enableAria': '{name} etkinleştir',
+  'settings.agents.sidebar.toast.agentDisabled': '{name} devre dışı. Dosyası duruyor; Devre dışı listesinden yeniden etkinleştirebilirsiniz.',
+  'settings.agents.sidebar.toast.agentEnabled': '{name} yeniden etkin',
+  'settings.agents.sidebar.toast.disableFailed': 'Ajan devre dışı bırakılamadı: yapılandırma dosyası yazılamadı',
+  'settings.agents.sidebar.toast.enableFailed': 'Ajan etkinleştirilemedi: yapılandırma dosyası yazılamadı',
 };

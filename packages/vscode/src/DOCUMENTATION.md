@@ -320,6 +320,9 @@ Bridge surface (`bridge-config-runtime.ts`), matching the web routes:
   with `resource: "permissions"` answers `{ global, agent, effective, source,
   path }`. `POST`/`PATCH` take an `AgentEntity` body (a v1 `permission` map and
   the v1 `prompt` alias are still accepted) and report the written `path`.
+- `api:config/disabled-agents` — `GET` answers `{ agents }`, the agents whose own
+  config says `disabled: true`. OpenCode drops them from its agent list, so
+  Settings reads them here to offer Enable. Mirrors `/api/config/disabled-agents`.
 - `api:config/commands` — same, with `resource: "config"` and a `CommandEntity`;
   `subtask` is accepted as the v1 name for `subagent`.
 - `api:config/mcp` — `McpEntity` bodies; entries carry `sectionKey` and

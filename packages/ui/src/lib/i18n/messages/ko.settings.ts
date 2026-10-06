@@ -2516,4 +2516,12 @@ export const settingsDict = {
   'settings.agents.page.field.colorSwatchAria': '{color} 색상 사용',
   'settings.agents.page.field.colorCustomAria': '사용자 지정 색상 선택',
   'settings.agents.page.field.colorHexAria': '16진수 색상(예: #ff6b6b)',
+  'settings.agents.sidebar.section.disabled': '비활성화됨',
+  'settings.agents.sidebar.actions.disable': '비활성화',
+  'settings.agents.sidebar.actions.enable': '활성화',
+  'settings.agents.sidebar.actions.enableAria': '{name} 활성화',
+  'settings.agents.sidebar.toast.agentDisabled': '{name}을(를) 비활성화했습니다. 파일은 그대로이며 비활성화됨 목록에서 다시 켤 수 있습니다.',
+  'settings.agents.sidebar.toast.agentEnabled': '{name}을(를) 다시 활성화했습니다',
+  'settings.agents.sidebar.toast.disableFailed': '에이전트를 비활성화하지 못했습니다. 설정 파일에 쓸 수 없습니다',
+  'settings.agents.sidebar.toast.enableFailed': '에이전트를 활성화하지 못했습니다. 설정 파일에 쓸 수 없습니다',
 } as const;

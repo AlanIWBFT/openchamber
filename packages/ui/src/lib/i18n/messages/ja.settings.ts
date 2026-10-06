@@ -2516,4 +2516,12 @@ export const settingsDict = {
   'settings.agents.page.field.colorSwatchAria': '色 {color} を使う',
   'settings.agents.page.field.colorCustomAria': 'カスタムカラーを選ぶ',
   'settings.agents.page.field.colorHexAria': '16進数の色（例: #ff6b6b）',
+  'settings.agents.sidebar.section.disabled': '無効',
+  'settings.agents.sidebar.actions.disable': '無効にする',
+  'settings.agents.sidebar.actions.enable': '有効にする',
+  'settings.agents.sidebar.actions.enableAria': '{name} を有効にする',
+  'settings.agents.sidebar.toast.agentDisabled': '{name} を無効にしました。ファイルは残っています。「無効」の一覧から再び有効にできます。',
+  'settings.agents.sidebar.toast.agentEnabled': '{name} を再び有効にしました',
+  'settings.agents.sidebar.toast.disableFailed': 'エージェントを無効にできませんでした。設定ファイルに書き込めませんでした',
+  'settings.agents.sidebar.toast.enableFailed': 'エージェントを有効にできませんでした。設定ファイルに書き込めませんでした',
 } as const;

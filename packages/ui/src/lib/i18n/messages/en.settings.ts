@@ -2506,4 +2506,12 @@ export const settingsDict = {
   'settings.agents.page.field.colorSwatchAria': 'Use colour {color}',
   'settings.agents.page.field.colorCustomAria': 'Pick a custom colour',
   'settings.agents.page.field.colorHexAria': 'Colour as hex, for example #ff6b6b',
+  'settings.agents.sidebar.section.disabled': 'Disabled',
+  'settings.agents.sidebar.actions.disable': 'Disable',
+  'settings.agents.sidebar.actions.enable': 'Enable',
+  'settings.agents.sidebar.actions.enableAria': 'Enable {name}',
+  'settings.agents.sidebar.toast.agentDisabled': '{name} is disabled. Its file stays; enable it again from the Disabled list.',
+  'settings.agents.sidebar.toast.agentEnabled': '{name} is enabled again',
+  'settings.agents.sidebar.toast.disableFailed': 'Couldn\'t disable the agent: its config file could not be written',
+  'settings.agents.sidebar.toast.enableFailed': 'Couldn\'t enable the agent: its config file could not be written',
 } as const;
