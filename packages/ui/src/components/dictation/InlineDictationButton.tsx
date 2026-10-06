@@ -13,6 +13,7 @@ import React from 'react';
 
 import { toast } from '@/components/ui';
 import { Icon } from '@/components/icon/Icon';
+import { DictationWaveform } from '@/components/dictation/DictationWaveform';
 import { useDictation } from '@/hooks/useDictation';
 import { isDictationCaptureSupported } from '@/lib/dictation/use-dictation-audio-source';
 import { isVSCodeRuntime } from '@/lib/desktop';
@@ -48,6 +49,9 @@ export const InlineDictationButton: React.FC<InlineDictationButtonProps> = ({
   const {
     status,
     error,
+    errorReason,
+    duration,
+    subscribeLevel,
     partialTranscript,
     startDictation,
     confirmDictation,
@@ -75,15 +79,33 @@ export const InlineDictationButton: React.FC<InlineDictationButtonProps> = ({
 
   if (status === 'uploading') {
     return (
-      <span className={cn(buttonClassName, 'pointer-events-none')} role="status" aria-label={t('chat.dictation.processing')} title={t('chat.dictation.processing')}>
-        <Icon name="loader-4" className={cn(iconClassName, 'animate-spin')} />
+      <span role="status" className="inline-flex min-w-0 items-center gap-1.5 typography-meta text-muted-foreground">
+        <Icon name="loader-4" className={cn(iconClassName, 'shrink-0 animate-spin')} />
+        <span className="truncate">{t('chat.dictation.processing')}</span>
       </span>
     );
   }
 
   if (status === 'recording') {
+    const downloadingModel = errorReason === 'model_download_in_progress';
     return (
       <>
+        {/* The composer's recording signs: a live dot, the mic level and the
+            elapsed time, so it is plain that speech is being heard. */}
+        <span role="status" aria-label={t('chat.dictation.listening')} className="inline-flex min-w-0 items-center gap-1.5">
+          <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--status-error)] opacity-60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--status-error)]" />
+          </span>
+          {downloadingModel ? (
+            <span className="truncate typography-meta text-muted-foreground">{t('chat.dictation.downloadingModel')}</span>
+          ) : (
+            <DictationWaveform subscribeLevel={subscribeLevel} className="block h-4 w-12 min-w-0" />
+          )}
+          <span className="shrink-0 tabular-nums typography-meta text-muted-foreground">
+            {`${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, '0')}`}
+          </span>
+        </span>
         <button
           type="button"
           onClick={() => void cancelDictation()}
@@ -100,8 +122,7 @@ export const InlineDictationButton: React.FC<InlineDictationButtonProps> = ({
           aria-label={t('chat.dictation.insert')}
           title={t('chat.dictation.insert')}
         >
-          {/* Opacity pulse: the only sign the mic is live while recording. */}
-          <Icon name="check" className={cn(iconClassName, 'animate-pulse')} />
+          <Icon name="check" className={iconClassName} />
         </button>
       </>
     );

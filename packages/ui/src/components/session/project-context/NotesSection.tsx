@@ -258,6 +258,9 @@ export const NotesSection: React.FC<{
         useScrollShadow
         scrollShadowSize={24}
         disabled={disabled}
+        // The footer row carries counter, mic, add and resize; the default
+        // bottom padding left it pressed against the rounded border.
+        outerClassName="pb-3.5"
         endSlot={(
           <>
             <span className="typography-meta text-muted-foreground">
