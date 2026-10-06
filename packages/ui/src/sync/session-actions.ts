@@ -257,8 +257,13 @@ function reconcileSessionMove(
   const sourceState = sourceStore?.getState()
   const destinationState = destinationStore?.getState()
   const liveSession = sourceState?.session.find((candidate) => candidate.id === session.id)
+  // The `session.moved` event may already have carried the session over (it can
+  // beat the move request's response); its record there is the newer one.
+  const adoptedSession = liveSession
+    ? undefined
+    : destinationState?.session.find((candidate) => candidate.id === session.id)
   const movedSession: Session = {
-    ...mergeSessionDirectoryMetadata(session, liveSession),
+    ...(adoptedSession ?? mergeSessionDirectoryMetadata(session, liveSession)),
     directory: destinationDirectory,
   }
 
@@ -327,13 +332,29 @@ export async function moveSessionToDirectory(
   // already happened, but we must not publish stale local state to the UI/stores.
   if (isStaleRuntime(expectedRuntimeKey)) return
 
-  invalidateSessionLoads(session.id, [sourceDirectory, destinationDirectory])
-
-  const moved = reconcileSessionMove(session, sourceDirectory, destinationDirectory)
-
-  registerSessionDirectory(session.id, destinationDirectory)
+  const moved = relocateSession(session, sourceDirectory, destinationDirectory)
   useGlobalSessionsStore.getState().upsertSession(moved)
+}
+
+/**
+ * Follows a move OpenCode already made: an agent's `session_move`, another
+ * client, or this client's own request whose `session.moved` event arrived.
+ * The session, its messages and live state go to the destination's store and
+ * an open chat follows them, so the next prompt lands where the chat reads.
+ * The global list already took the directory from the same event.
+ */
+export function adoptSessionMove(sessionId: string, sourceDirectory: string, destinationDirectory: string): void {
+  const session = _childStores?.getChild(sourceDirectory)?.getState().session.find((candidate) => candidate.id === sessionId)
+  if (!session) return
+  relocateSession(session, sourceDirectory, destinationDirectory)
+}
+
+function relocateSession(session: Session, sourceDirectory: string, destinationDirectory: string): Session {
+  invalidateSessionLoads(session.id, [sourceDirectory, destinationDirectory])
+  const moved = reconcileSessionMove(session, sourceDirectory, destinationDirectory)
+  registerSessionDirectory(session.id, destinationDirectory)
   useSessionUIStore.getState().setSessionDirectory(session.id, destinationDirectory)
+  return moved
 }
 
 function dir() {

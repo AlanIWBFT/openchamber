@@ -45,7 +45,7 @@ import { touchStreamingSession, updateChangedStreamingSessions, updateStreamingS
 import { countSyncPerformance } from "./performance-diagnostics"
 import { runBackgroundNetworkTask } from "@/lib/background-network"
 import { recordDirectoryRecoveryEvent } from "./directory-recovery-snapshots"
-import { setActionRefs } from "./session-actions"
+import { adoptSessionMove, setActionRefs } from "./session-actions"
 import { setSyncRefs, getAllSyncSessions, emitSyncConfigChanged, getDirectoryState } from "./sync-refs"
 import { useSessionUIStore } from "./session-ui-store"
 import { stripSessionDiffSnapshots } from "./sanitize"
@@ -243,12 +243,16 @@ function useLiveSyncSelector<T>(
 // once and each touched top-level slice is cloned at most once per flush.
 // ---------------------------------------------------------------------------
 
+type SessionMove = { sessionID: string; from: string; to: string }
+
 type DirectoryEventBatch = {
   states: Map<StoreApi<DirectoryStore>, DirectoryStore>
   clonedFields: Map<StoreApi<DirectoryStore>, Set<keyof State>>
   changedStores: Set<StoreApi<DirectoryStore>>
   globalSessionEvents: SyncEvent[]
   globalStatusEventsByDirectory: Map<string, SyncEvent[]>
+  /** Applied after the stores publish: a move reads and writes both stores directly. */
+  sessionMoves: SessionMove[]
 }
 
 const createDirectoryEventBatch = (): DirectoryEventBatch => ({
@@ -257,6 +261,7 @@ const createDirectoryEventBatch = (): DirectoryEventBatch => ({
   changedStores: new Set(),
   globalSessionEvents: [],
   globalStatusEventsByDirectory: new Map(),
+  sessionMoves: [],
 })
 
 const getDirectoryEventState = (
@@ -279,6 +284,7 @@ const publishDirectoryEventBatch = (batch: DirectoryEventBatch): void => {
     countSyncPerformance("directoryStorePublications")
     store.setState(state)
   }
+  for (const move of batch.sessionMoves) adoptSessionMove(move.sessionID, move.from, move.to)
 }
 
 /** Read status for a session across all directories */
@@ -2089,6 +2095,11 @@ export function handleEvent(
   const previousPart = toolPartRef
     ? current.part[toolPartRef.messageID]?.find((part) => part.id === toolPartRef.partID)
     : undefined
+  // Only `session.moved` patches a directory; read the old one before the reducer rewrites it.
+  const directoryBeforePatch = payload.type === "session.patched" && payload.properties.patch.directory !== undefined
+    ? current.session.find((session) => session.id === payload.properties.sessionID)?.directory
+    : undefined
+  let sessionMove: SessionMove | null = null
   const draft: State = { ...current }
   const clonedFields = batch?.clonedFields.get(store) ?? new Set<keyof State>()
   const newlyClonedFields: Array<keyof State> = []
@@ -2208,6 +2219,18 @@ export function handleEvent(
       countSyncPerformance("directoryStorePublications")
       store.setState(draft)
     }
+    // The session moved to another directory: the chat reads and sends there
+    // from now on, so its messages and live state follow it.
+    const destinationDirectory = payload.type === "session.patched" ? payload.properties.patch.directory : undefined
+    if (
+      eventSessionID
+      && destinationDirectory
+      && directoryBeforePatch
+      && normalizeEventDirectory(destinationDirectory) !== normalizeEventDirectory(directoryBeforePatch)
+      && expectedRuntimeKey === getRuntimeKey()
+    ) {
+      sessionMove = { sessionID: eventSessionID, from: resolvedDirectory, to: destinationDirectory }
+    }
     const sessionID = eventSessionID
     const messageID = eventMessageID
     if (
@@ -2312,6 +2335,13 @@ export function handleEvent(
   }
 
   updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
+
+  // After the routing index update above, which still files the session under
+  // the source; the move re-registers it under the destination.
+  if (sessionMove) {
+    if (batch) batch.sessionMoves.push(sessionMove)
+    else adoptSessionMove(sessionMove.sessionID, sessionMove.from, sessionMove.to)
+  }
 }
 
 // ---------------------------------------------------------------------------

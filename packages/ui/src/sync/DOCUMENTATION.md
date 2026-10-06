@@ -686,6 +686,7 @@ Examples of global-store updates performed in `session-actions.ts`:
 - `unarchiveSession()` / `unarchiveSessions()` -> wait for server confirmation, then upsert each restored session. A subsession is never restored on its own: restoring a top-level session brings its archived subsessions back with it, and a subsession id alone fails. The one exception is `undo`, which puts back exactly what an archive just moved.
 - `deleteSession()` / `deleteSessions()` -> wait for server confirmation or `404`, then remove the session and its persisted state
 - `moveSessionToDirectory()` -> move the session between directory stores and update the global directory index
+- `session.moved` (an agent's `session_move`, another client, or the echo of our own move) -> `adoptSessionMove()` does the same store move, routing registration and open-chat directory switch. A move the event already applied is kept when the request's response lands later. Without this the chat kept reading the source store while sends went to the destination, so a new prompt never appeared until the session was reopened. In a flushed batch the move runs after the stores publish, so the batch cannot write the session back into the source.
 
 ### Blocking-request (form/permission) reply routing
 
