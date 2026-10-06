@@ -990,6 +990,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const mobileTextareaFocused = mobileShell.focused;
     // Issues, PRs and tracker items on the composer, in attach order.
     const [linkedReferences, setLinkedReferences] = React.useState<ComposerReference[]>([]);
+    const [contextPreviewHost, setContextPreviewHost] = React.useState<HTMLDivElement | null>(null);
     const [attachDialogGuestId, setAttachDialogGuestId] = React.useState<string | null>(null);
     // The chip the attach dialog was opened from; null when opened from the + menu.
     const [attachDialogItem, setAttachDialogItem] = React.useState<AttachIssueRequest | null>(null);
@@ -3700,6 +3701,16 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             })}
         </div>
     ) : null;
+    // Pending context (review comments, quotes, terminal selections) sits in
+    // the attachment row like any attachment; its preview opens above the
+    // composer, outside the clipping glass box.
+    const contextChips = hasDrafts ? (
+        <ComposerContextChips
+            draftTarget={inlineDraftTarget}
+            colors={currentTheme.colors}
+            previewHost={contextPreviewHost}
+        />
+    ) : null;
     // The suggested follow-up is the composer's own top row on every surface
     // (inside the mobile pill and the box alike); on mobile the model and
     // agent are its bottom row too, so the surface stays one shape.
@@ -3910,12 +3921,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     and returns unchanged when the comment exits. */}
                 {!mobileCommentActive ? (<>
                 <AutoReviewBanner />
-                {hasDrafts ? (
-                    <ComposerContextChips
-                        draftTarget={inlineDraftTarget}
-                        colors={currentTheme.colors}
-                    />
-                ) : null}
 
                 <RevertedMessageDock
                     sessionId={currentSessionId}
@@ -3962,6 +3967,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     // Desktop: layout-transparent. Mobile: positioning host for
                     // the wrapper-level dictation overlay across pill/full states.
                     data-dictation-host="true"
+                    // Mobile: the context-chip preview opens above this host.
+                    ref={isMobile ? setContextPreviewHost : undefined}
                     className={cn(
                         !isMobile && 'contents',
                         isMobile && 'relative',
@@ -3996,6 +4003,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                             <div className="px-3 pt-1">
                                 <AttachedFilesList draftIdentity={chatDraftIdentity} onShowPopup={handleShowAttachmentPreview} className="pt-2" />
                                 {linkedReferenceChips}
+                                {contextChips}
                             </div>
                         )}
                         bottomRow={mobileModelAgentRow}
@@ -4022,7 +4030,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     glass box: a backdrop-filter ancestor is a backdrop root,
                     so a glass popup inside the box would only blur the box's
                     own contents and read as a flat tint over the transcript. */}
-                <div className={cn('relative', isComposerExpanded && 'flex flex-1 min-h-0 flex-col')}>
+                <div
+                    ref={isMobile ? undefined : setContextPreviewHost}
+                    className={cn('relative', isComposerExpanded && 'flex flex-1 min-h-0 flex-col')}
+                >
                     <ComposerAutocompletePopups
                         open={openAutocomplete}
                         query={autocompleteQuery}
@@ -4109,6 +4120,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                         <div className="flex items-center gap-1 px-3 pt-1 flex-wrap relative z-10">
                             <AttachedFilesList draftIdentity={chatDraftIdentity} onShowPopup={handleShowAttachmentPreview} className="pt-2" />
                             {!isBtwActive ? linkedReferenceChips : null}
+                            {contextChips}
                             <AttachedVSCodeFileChips draftIdentity={chatDraftIdentity} onShowPopup={handleShowAttachmentPreview} />
                             {!isBtwActive ? <ActiveEditorFileSuggestion /> : null}
                         </div>

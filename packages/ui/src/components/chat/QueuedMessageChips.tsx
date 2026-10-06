@@ -1,4 +1,5 @@
 import React, { memo } from 'react';
+import { AnimatePresence } from 'motion/react';
 import {
     DndContext,
     MouseSensor,
@@ -163,12 +164,12 @@ export const QueuedMessageChips = memo(({ target, hidden = false, onEditMessage,
         onSendMessage(message.id);
     }, [onSendMessage]);
 
-    if (hidden || queuedMessages.length === 0 || !target) {
-        return null;
-    }
+    const visible = !hidden && queuedMessages.length > 0;
 
     return (
-        <ComposerFloatingPanel role="region" ariaLabel={t('chat.queuedMessage.title')} compact={collapsed} header={
+        <AnimatePresence>
+        {visible && target ? (
+        <ComposerFloatingPanel key="queue" role="region" ariaLabel={t('chat.queuedMessage.title')} compact={collapsed} header={
                 <Button
                     type="button"
                     variant="ghost"
@@ -213,6 +214,8 @@ export const QueuedMessageChips = memo(({ target, hidden = false, onEditMessage,
                 </DndContext>
             )}
         </ComposerFloatingPanel>
+        ) : null}
+        </AnimatePresence>
     );
 });
 

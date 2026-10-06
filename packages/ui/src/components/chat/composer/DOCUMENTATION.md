@@ -25,6 +25,16 @@ or collapsing a panel does not resize the transcript or composer.
 The frame also owns the header row through its `header` and `compact` props;
 callers supply controls and content, not their own header padding.
 
+`GlassPopupMotion` gives the frame, the autocomplete pickers and the
+context-chip preview one enter and exit motion: the wrapper moves, the glass
+surface fades. The fade stays on the glass element itself, since an ancestor
+with opacity below 1 is a backdrop root and the blur would go flat mid-fade.
+Exit needs `AnimatePresence` around the conditional popup, so each dock keys
+its panel there (BTW keys each stage, forms key the form id); switching panels
+cross-fades. The frame's clearance cleanup leaves the variable alone while
+another panel is still mounted, because the outgoing panel unmounts after the
+incoming one has written its own height.
+
 `FormDock` is the agent's question (a v2 form request) for the composer's
 session, one field per step with a segment row, Back / Next, and Submit in
 place of Next on the last step; `when`-gated fields join or leave the steps
@@ -151,9 +161,14 @@ whatever was stacked above: the goal row, the status pill, the queue panel.
 This holds for the box, the mobile pill and its queue button, the floating
 panels, the context-chip preview and the mobile dictation overlay.
 
-The context-chip preview stays above its chip. Its scrollable content is capped
-by the space between the chip and the chat column's top edge, so a long preview
-does not hide its entry actions behind the chat header.
+Context chips (review comments, quotes, annotations, terminal selections, PR
+context) sit in the attachment row inside the box, shaped like file and linked
+reference chips. Their preview cannot open inside the box, which clips its
+contents and is a backdrop root, so `ComposerContextChips` portals it into a
+positioned host outside the box: the autocomplete wrapper on desktop, the
+dictation host on mobile. The preview opens above that host, and its scrollable
+content is capped by the space between the host and the chat column's top edge,
+so a long preview does not hide its entry actions behind the chat header.
 
 ## Layers
 

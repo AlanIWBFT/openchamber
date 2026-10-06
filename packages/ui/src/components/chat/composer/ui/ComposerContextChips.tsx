@@ -1,15 +1,22 @@
 /**
- * Context chips above the composer.
+ * Context chips in the composer's attachment row.
  *
  * Each chip stands for context that will be attached to the next message but
  * is not part of its text: review comments left in a diff, preview
- * annotations, terminal selections, PR context, chat quotes. Hovering (or
- * tapping) a chip opens a stacked preview of its items above the composer,
+ * annotations, terminal selections, PR context, chat quotes. The chips sit
+ * beside attached files and linked references and share their look. Hovering
+ * (or tapping) a chip opens a stacked preview of its items above the composer,
  * where a comment the user wrote can be edited in place and any item removed
  * before sending.
+ *
+ * The preview is portaled into `previewHost`, a positioned wrapper outside the
+ * glass composer box: the box clips its contents, and glass does not nest
+ * (see "Floating composer" in composer/DOCUMENTATION.md).
  */
 
 import React from 'react';
+import { createPortal } from 'react-dom';
+import { AnimatePresence } from 'motion/react';
 
 import { useCommentSnippetPicker } from '@/components/comments/useCommentSnippetPicker';
 import { Icon } from '@/components/icon/Icon';
@@ -29,10 +36,13 @@ import type { Theme } from '@/types/theme';
 import { legacyChatQuoteAnchor } from '@/lib/chatQuoteAnchor';
 import { useChatQuoteHighlightApi, type ChatQuoteMark } from '../../hooks/chatQuoteHighlightStore';
 import { getContextPreviewMaxHeight } from './contextPreviewHeight';
+import { GlassPopupMotion } from './GlassPopupMotion';
 
 export interface ComposerContextChipsProps {
     draftTarget: InlineCommentDraftTarget | null;
     colors: Theme['colors'];
+    /** Positioned wrapper above which the preview opens; the preview waits for it. */
+    previewHost: HTMLElement | null;
 }
 
 /** Chip groups: every terminal selection is its own chip; the rest group by kind. */
@@ -58,6 +68,9 @@ const basename = (path: string): string => {
     const segments = path.split('/').filter(Boolean);
     return segments[segments.length - 1] ?? path;
 };
+
+/** Hover-away grace: long enough to cross from the chip to the preview above the composer. */
+const PREVIEW_CLOSE_DELAY_MS = 500;
 
 const ENTRY_ACTION_CLASS = 'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-interactive-hover hover:text-foreground';
 const ENTRY_LABEL_CLASS = 'text-[10px] font-medium uppercase tracking-wide text-muted-foreground opacity-60';
@@ -234,7 +247,7 @@ const DraftPreviewEntry: React.FC<{
     );
 };
 
-export function ComposerContextChips({ draftTarget, colors }: ComposerContextChipsProps) {
+export function ComposerContextChips({ draftTarget, colors, previewHost }: ComposerContextChipsProps) {
     const { t } = useI18n();
     const draftKey = draftTarget
         ? getInlineCommentDraftKey(getRuntimeKey(), draftTarget.directory, draftTarget.sessionKey)
@@ -255,11 +268,12 @@ export function ComposerContextChips({ draftTarget, colors }: ComposerContextChi
     const editingRef = React.useRef<string | null>(null);
     editingRef.current = editingDraftId;
     const containerRef = React.useRef<HTMLDivElement>(null);
+    const previewRef = React.useRef<HTMLDivElement>(null);
     const closeTimerRef = React.useRef<number | null>(null);
     const [previewMaxHeight, setPreviewMaxHeight] = React.useState<number | null>(null);
 
     React.useLayoutEffect(() => {
-        const anchor = containerRef.current;
+        const anchor = previewHost;
         if (!openGroupKey || !anchor) return;
 
         const boundary = anchor.closest('[data-composer-bound]') ?? anchor.closest('[data-chat-area]');
@@ -281,7 +295,7 @@ export function ComposerContextChips({ draftTarget, colors }: ComposerContextChi
             observer.disconnect();
             window.removeEventListener('resize', updateHeight);
         };
-    }, [openGroupKey]);
+    }, [openGroupKey, previewHost]);
 
     const cancelClose = React.useCallback(() => {
         if (closeTimerRef.current !== null) {
@@ -298,7 +312,7 @@ export function ComposerContextChips({ draftTarget, colors }: ComposerContextChi
         closeTimerRef.current = window.setTimeout(() => {
             closeTimerRef.current = null;
             setOpenGroupKey(null);
-        }, 150);
+        }, PREVIEW_CLOSE_DELAY_MS);
     }, [cancelClose]);
     React.useEffect(() => cancelClose, [cancelClose]);
 
@@ -309,7 +323,8 @@ export function ComposerContextChips({ draftTarget, colors }: ComposerContextChi
         const handlePointerDown = (event: PointerEvent) => {
             // SAFETY: a pointer event target inside the document is always a
             // Node; `contains` only needs that.
-            if (containerRef.current?.contains(event.target as Node)) return;
+            const target = event.target as Node;
+            if (containerRef.current?.contains(target) || previewRef.current?.contains(target)) return;
             setOpenGroupKey(null);
             setEditingDraftId(null);
         };
@@ -424,15 +439,22 @@ export function ComposerContextChips({ draftTarget, colors }: ComposerContextChi
     const openGroup = openGroupKey ? groups.find((group) => group.key === openGroupKey) ?? null : null;
 
     return (
-        <div className="relative" ref={containerRef}>
-            {openGroup ? (
+        <div className="flex flex-wrap items-center gap-2 pt-2" ref={containerRef}>
+            {previewHost ? createPortal(
+                // AnimatePresence keeps the last rendered preview mounted
+                // while it fades out after the group closes.
+                <AnimatePresence>
+                {openGroup ? (
                 <div
-                    // Shadow on the wrapper, never on the glass: see "Floating
-                    // composer" in composer/DOCUMENTATION.md.
-                    className="absolute bottom-full left-0 z-30 mb-1.5 w-full max-w-[480px] rounded-xl shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]"
+                    key="context-preview"
+                    ref={previewRef}
+                    className="absolute bottom-full left-0 z-30 mb-1.5 w-full max-w-[480px]"
                     onMouseEnter={cancelClose}
                     onMouseLeave={scheduleClose}
                 >
+                {/* Shadow on the wrapper, never on the glass: see "Floating
+                    composer" in composer/DOCUMENTATION.md. */}
+                <GlassPopupMotion className="origin-bottom-left rounded-xl shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]">
                 <div
                     className="oc-glass-popover overflow-hidden rounded-xl border border-[var(--interactive-border)]"
                     style={previewMaxHeight === null ? undefined : { maxHeight: previewMaxHeight }}
@@ -464,36 +486,41 @@ export function ComposerContextChips({ draftTarget, colors }: ComposerContextChi
                         ))}
                     </div>
                 </div>
+                </GlassPopupMotion>
                 </div>
+                ) : null}
+                </AnimatePresence>,
+                previewHost,
             ) : null}
-            <div className="flex flex-wrap items-center gap-2 pb-2">
-                {groups.map((group) => (
-                    <button
-                        key={group.key}
-                        type="button"
-                        className="oc-glass-popover inline-flex max-w-full items-center gap-1.5 rounded-xl border px-2.5 py-1 text-left"
-                        style={{ borderColor: colors?.interactive?.border }}
-                        onMouseEnter={() => {
-                            cancelClose();
-                            setOpenGroupKey(group.key);
-                        }}
-                        onMouseLeave={scheduleClose}
-                        onClick={() => {
-                            if (editingRef.current) return;
-                            setOpenGroupKey((current) => (current === group.key ? null : group.key));
-                        }}
-                        aria-expanded={openGroupKey === group.key}
-                    >
-                        <Icon name={group.icon} className={`h-3.5 w-3.5 shrink-0 text-muted-foreground ${group.iconClassName ?? ''}`} />
-                        <span className="truncate text-xs font-medium text-muted-foreground">{group.label}</span>
-                        {group.count > 0 ? (
-                            <span className="text-xs font-semibold" style={{ color: colors?.status?.info }}>
-                                {group.count}
-                            </span>
-                        ) : null}
-                    </button>
-                ))}
-            </div>
+            {groups.map((group) => (
+                <button
+                    key={group.key}
+                    type="button"
+                    // Same chip shape as attached files and linked
+                    // references; the inline minimums opt out of the
+                    // mobile 36px button floor so the row stays even.
+                    className="inline-flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-lg border border-border/80 bg-background px-2 text-left text-xs transition-opacity hover:opacity-80"
+                    style={{ minHeight: 0, minWidth: 0 }}
+                    onMouseEnter={() => {
+                        cancelClose();
+                        setOpenGroupKey(group.key);
+                    }}
+                    onMouseLeave={scheduleClose}
+                    onClick={() => {
+                        if (editingRef.current) return;
+                        setOpenGroupKey((current) => (current === group.key ? null : group.key));
+                    }}
+                    aria-expanded={openGroupKey === group.key}
+                >
+                    <Icon name={group.icon} className={`h-3.5 w-3.5 shrink-0 text-muted-foreground ${group.iconClassName ?? ''}`} />
+                    <span className="truncate text-foreground">{group.label}</span>
+                    {group.count > 0 ? (
+                        <span className="font-semibold" style={{ color: colors?.status?.info }}>
+                            {group.count}
+                        </span>
+                    ) : null}
+                </button>
+            ))}
         </div>
     );
 }
