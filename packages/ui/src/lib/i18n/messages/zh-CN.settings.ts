@@ -2506,4 +2506,5 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFont': '自定义…',
   'settings.openchamber.visual.field.customFontPlaceholder': '已安装字体的名称，例如 Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': '自定义字体名称',
+  'settings.openchamber.defaults.field.showChats': '在侧边栏中显示聊天',
 } as const;

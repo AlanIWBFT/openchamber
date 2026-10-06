@@ -2496,4 +2496,5 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFont': 'Aangepast…',
   'settings.openchamber.visual.field.customFontPlaceholder': 'Naam van een geïnstalleerd lettertype, bijv. Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': 'Naam van aangepast lettertype',
+  'settings.openchamber.defaults.field.showChats': 'Chats in de zijbalk tonen',
 } as const;

@@ -2506,4 +2506,5 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFont': 'Personnalisée…',
   'settings.openchamber.visual.field.customFontPlaceholder': 'Nom d’une police installée, p. ex. Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': 'Nom de la police personnalisée',
+  'settings.openchamber.defaults.field.showChats': 'Afficher les chats dans la barre latérale',
 } as const;

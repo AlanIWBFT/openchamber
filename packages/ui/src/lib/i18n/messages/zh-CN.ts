@@ -3775,4 +3775,5 @@ export const dict: Record<I18nKey, string> = {
   'contextPanel.browser.devServers.showHiddenSingle': '显示 {count} 个已隐藏端口',
   'contextPanel.browser.devServers.showHiddenPlural': '显示 {count} 个已隐藏端口',
   'sidebarFilesTree.menu.openInDefaultApp': '用默认应用打开',
+  'sessions.sidebar.header.displayMode.showChats': '显示聊天分区',
 };

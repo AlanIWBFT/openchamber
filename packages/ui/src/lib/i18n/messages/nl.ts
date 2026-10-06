@@ -3774,4 +3774,5 @@ export const dict = {
   'contextPanel.browser.devServers.showHiddenSingle': '{count} verborgen poort tonen',
   'contextPanel.browser.devServers.showHiddenPlural': '{count} verborgen poorten tonen',
   'sidebarFilesTree.menu.openInDefaultApp': 'Openen in standaardapp',
+  'sessions.sidebar.header.displayMode.showChats': 'Chatsectie tonen',
 } as const;

@@ -280,6 +280,10 @@
       "scope": "profile",
       "perSurface": true
     },
+    "sidebarShowChatsSection": {
+      "scope": "profile",
+      "perSurface": true
+    },
     "workStatusSectionOrder": {
       "scope": "profile"
     },

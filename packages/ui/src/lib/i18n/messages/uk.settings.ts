@@ -2506,4 +2506,5 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFont': 'Власний…',
   'settings.openchamber.visual.field.customFontPlaceholder': 'Назва встановленого шрифту, напр. Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': 'Назва власного шрифту',
+  'settings.openchamber.defaults.field.showChats': 'Показувати чати на бічній панелі',
 } as const;

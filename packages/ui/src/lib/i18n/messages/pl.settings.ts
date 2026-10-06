@@ -2507,4 +2507,5 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFont': 'Własna…',
   'settings.openchamber.visual.field.customFontPlaceholder': 'Nazwa zainstalowanej czcionki, np. Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': 'Nazwa własnej czcionki',
+  'settings.openchamber.defaults.field.showChats': 'Pokazuj czaty na pasku bocznym',
 };

@@ -2497,4 +2497,5 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFont': 'Eigene…',
   'settings.openchamber.visual.field.customFontPlaceholder': 'Name einer installierten Schrift, z. B. Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': 'Name der eigenen Schrift',
+  'settings.openchamber.defaults.field.showChats': 'Chats in der Seitenleiste anzeigen',
 };

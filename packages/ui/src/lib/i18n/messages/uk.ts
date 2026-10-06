@@ -3775,4 +3775,5 @@ export const dict: Record<I18nKey, string> = {
   'contextPanel.browser.devServers.showHiddenSingle': 'Показати приховані порти: {count}',
   'contextPanel.browser.devServers.showHiddenPlural': 'Показати приховані порти: {count}',
   'sidebarFilesTree.menu.openInDefaultApp': 'Відкрити в програмі за замовчуванням',
+  'sessions.sidebar.header.displayMode.showChats': 'Показувати розділ чатів',
 };

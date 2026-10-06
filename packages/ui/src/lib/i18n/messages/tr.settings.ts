@@ -2497,4 +2497,5 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFont': 'Özel…',
   'settings.openchamber.visual.field.customFontPlaceholder': 'Yüklü yazı tipi adı, ör. Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': 'Özel yazı tipi adı',
+  'settings.openchamber.defaults.field.showChats': 'Sohbetleri kenar çubuğunda göster',
 };

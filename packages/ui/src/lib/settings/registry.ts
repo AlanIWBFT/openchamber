@@ -358,6 +358,7 @@ export const SETTINGS_REGISTRY = {
   // Per surface: Recent turned on in the desktop sidebar must not fill the
   // phone's drawer, and the phone's choice must not change the desktop.
   sidebarShowRecentSection: field({ scope: 'profile', perSurface: true, parse: parseBoolean, ui: sessionDisplayField('showRecentSection') }),
+  sidebarShowChatsSection: field({ scope: 'profile', perSurface: true, parse: parseBoolean, ui: sessionDisplayField('showChatsSection') }),
 
   // ── Work status ──
   workStatusSectionOrder: field({

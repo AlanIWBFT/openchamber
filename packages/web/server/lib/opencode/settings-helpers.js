@@ -354,6 +354,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.sidebarShowRecentSection === 'boolean') {
       result.sidebarShowRecentSection = candidate.sidebarShowRecentSection;
     }
+    if (typeof candidate.sidebarShowChatsSection === 'boolean') {
+      result.sidebarShowChatsSection = candidate.sidebarShowChatsSection;
+    }
 
     if (Array.isArray(candidate.securityScopedBookmarks)) {
       result.securityScopedBookmarks = normalizeStringArray(candidate.securityScopedBookmarks);

@@ -70,6 +70,8 @@ export function SidebarHeader(props: Props): React.ReactNode {
 
   const showRecentSection = useSessionDisplayStore((state) => state.showRecentSection);
   const toggleRecentSection = useSessionDisplayStore((state) => state.toggleRecentSection);
+  const showChatsSection = useSessionDisplayStore((state) => state.showChatsSection);
+  const setShowChatsSection = useSessionDisplayStore((state) => state.setShowChatsSection);
   const projectSortOrder = useSessionDisplayStore((state) => state.projectSortOrder);
   const setProjectSortOrder = useSessionDisplayStore((state) => state.setProjectSortOrder);
   const worktreeSortOrder = useSessionDisplayStore((state) => state.worktreeSortOrder);
@@ -318,6 +320,18 @@ export function SidebarHeader(props: Props): React.ReactNode {
                   </>
                 ) : null}
                 </>}
+                {showRecentControls ? (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setShowChatsSection(!showChatsSection);
+                      void updateDesktopSettings({ sidebarShowChatsSection: !showChatsSection });
+                    }}
+                    className="flex items-center justify-between"
+                  >
+                    <span>{t('sessions.sidebar.header.displayMode.showChats')}</span>
+                    {showChatsSection ? <Icon name="check" className="h-4 w-4 text-primary" /> : null}
+                  </DropdownMenuItem>
+                ) : null}
                 {!timelineView && showRecentControls && !isSingleProjectMode ? (
                   <DropdownMenuItem
                     onClick={() => {

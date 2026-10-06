@@ -2506,4 +2506,5 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFont': '사용자 지정…',
   'settings.openchamber.visual.field.customFontPlaceholder': '설치된 글꼴 이름 (예: Maple Mono NF CN)',
   'settings.openchamber.visual.field.customFontAria': '사용자 지정 글꼴 이름',
+  'settings.openchamber.defaults.field.showChats': '사이드바에 채팅 표시',
 } as const;

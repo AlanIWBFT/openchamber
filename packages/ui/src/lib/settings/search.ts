@@ -505,6 +505,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     isAvailable: (ctx) => !ctx.isVSCode,
   },
   {
+    id: 'sessions.show-chats',
+    page: 'sessions',
+    titleKey: 'settings.openchamber.defaults.field.showChats',
+    keywords: ['chats', 'sidebar', 'hide', 'show', 'section'],
+    isAvailable: (ctx) => !ctx.isVSCode,
+  },
+  {
     id: 'sessions.work',
     page: 'sessions',
     titleKey: 'settings.openchamber.sessionWork.title',

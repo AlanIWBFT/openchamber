@@ -2506,4 +2506,5 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFont': 'Personalizada…',
   'settings.openchamber.visual.field.customFontPlaceholder': 'Nombre de una fuente instalada, p. ej. Maple Mono NF CN',
   'settings.openchamber.visual.field.customFontAria': 'Nombre de la fuente personalizada',
+  'settings.openchamber.defaults.field.showChats': 'Mostrar chats en la barra lateral',
 } as const;

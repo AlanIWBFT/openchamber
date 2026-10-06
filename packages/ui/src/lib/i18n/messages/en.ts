@@ -3774,6 +3774,7 @@ export const dict = {
   'contextPanel.browser.devServers.showHiddenSingle': 'Show {count} hidden port',
   'contextPanel.browser.devServers.showHiddenPlural': 'Show {count} hidden ports',
   'sidebarFilesTree.menu.openInDefaultApp': 'Open in default app',
+  'sessions.sidebar.header.displayMode.showChats': 'Show chats section',
 } as const;
 
 export type I18nKey = keyof typeof dict;

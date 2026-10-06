@@ -3775,4 +3775,5 @@ export const dict: Record<I18nKey, string> = {
   'contextPanel.browser.devServers.showHiddenSingle': 'Mostrar {count} porta oculta',
   'contextPanel.browser.devServers.showHiddenPlural': 'Mostrar {count} portas ocultas',
   'sidebarFilesTree.menu.openInDefaultApp': 'Abrir no app padrão',
+  'sessions.sidebar.header.displayMode.showChats': 'Mostrar seção de chats',
 };

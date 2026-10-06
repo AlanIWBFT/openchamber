@@ -3774,4 +3774,5 @@ export const dict: Record<I18nKey, string> = {
   'contextPanel.browser.devServers.showHiddenSingle': '隠したポート {count} 件を表示',
   'contextPanel.browser.devServers.showHiddenPlural': '隠したポート {count} 件を表示',
   'sidebarFilesTree.menu.openInDefaultApp': '既定のアプリで開く',
+  'sessions.sidebar.header.displayMode.showChats': 'チャットセクションを表示',
 };

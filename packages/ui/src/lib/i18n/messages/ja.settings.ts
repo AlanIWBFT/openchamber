@@ -2506,4 +2506,5 @@ export const settingsDict = {
   'settings.openchamber.visual.field.customFont': 'カスタム…',
   'settings.openchamber.visual.field.customFontPlaceholder': 'インストール済みフォント名 (例: Maple Mono NF CN)',
   'settings.openchamber.visual.field.customFontAria': 'カスタムフォント名',
+  'settings.openchamber.defaults.field.showChats': 'サイドバーにチャットを表示',
 } as const;
