@@ -84,6 +84,16 @@ function sendAuthStorageError(res, error) {
   return null;
 }
 
+/** A list's state and whose items, from the query; unknown values read as open and anyone. */
+function readListFilter(query) {
+  const state = requestText(query?.state);
+  const people = requestText(query?.people);
+  return {
+    state: ['open', 'closed', 'merged', 'all'].includes(state) ? state : 'open',
+    people: ['any', 'assigned', 'created', 'reviewRequested'].includes(people) ? people : 'any',
+  };
+}
+
 function requestText(value) {
   return isString(value) ? value.trim() : '';
 }
@@ -795,6 +805,7 @@ export function registerGitLabRoutes(app, options = {}) {
       return res.json(await service.listChangeRequests(directory, {
         page: requestNumber(req.query?.page) ?? 1,
         query: requestText(req.query?.query) || undefined,
+        ...readListFilter(req.query),
         remote: trustedContext.primaryRemote,
       }));
     } catch (error) {
@@ -818,7 +829,7 @@ export function registerGitLabRoutes(app, options = {}) {
       if (!number) return res.status(400).json({ error: 'number is required' });
       const service = await getResourceService(origin, trustedContext.accountId, true);
       return res.json(await service.changeRequestContext(directory, number, {
-        includeDiff: req.query?.diff === '1', includeCIDetails: req.query?.checkDetails === '1',
+        includeDiff: req.query?.diff === '1', includeCIDetails: req.query?.checkDetails === '1', includeTimeline: req.query?.timeline === '1',
         project: owner ? { owner, name: repo } : undefined,
         remote: trustedContext.primaryRemote,
         constrainToPrimary: true,
@@ -840,6 +851,7 @@ export function registerGitLabRoutes(app, options = {}) {
       const service = await getResourceService(origin, trustedContext.accountId, true);
       return res.json(await service.listIssues(directory, {
         page: requestNumber(req.query?.page) ?? 1, query: requestText(req.query?.query) || undefined,
+        ...readListFilter(req.query),
         remote: trustedContext.primaryRemote,
       }));
     } catch (error) {

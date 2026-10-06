@@ -17,7 +17,7 @@ import type {
     GitHubPullStatus,
     GitHubReference,
     GitHubReferenceDetail,
-    GitHubReferenceFilter,
+    RepositoryReferenceFilter,
     GitHubReferenceKind,
     LinearAPI,
     LinearIssue,
@@ -219,25 +219,26 @@ export function useGitHubReferenceList(options: {
     enabled: boolean;
     directory: string | null;
     kind: GitHubReferenceKind;
-    filter: GitHubReferenceFilter;
+    filter: RepositoryReferenceFilter;
     query: string;
 }) {
     const { sourceControl } = useRuntimeAPIs();
     const { enabled, directory, kind, filter, query } = options;
+    const { state, people } = filter;
     const context = useGitHubReadContext(enabled ? directory : null);
     const text = query.trim();
     const scope = context && context !== 'missing' ? readContextCacheKey(context) : 'missing';
     const key = enabled && directory && context
-        ? JSON.stringify([getRuntimeKey(), scope, directory, kind, filter, text])
+        ? JSON.stringify([getRuntimeKey(), scope, directory, kind, filter.state, filter.people, text])
         : null;
     const fetchPage = React.useCallback(async (cursor: string | null): Promise<ListPage<GitHubReference>> => {
         if (!context || context === 'missing') return { kind: 'unavailable', reason: 'no-repo' };
-        if (context.provider === 'gitlab') return fetchGitLabReferencePage(sourceControl, context, kind, text, cursor);
-        const result = await sourceControl.githubReferences(context, { kind, filter, query: text, cursor });
+        if (context.provider === 'gitlab') return fetchGitLabReferencePage(sourceControl, context, kind, { state, people }, text, cursor);
+        const result = await sourceControl.githubReferences(context, { kind, state, people, query: text, cursor });
         if (!result.connected) return { kind: 'unavailable', reason: 'disconnected' };
         if (!result.repo) return { kind: 'unavailable', reason: 'no-repo' };
         return { kind: 'page', items: result.items, cursor: result.cursor, hasMore: result.hasMore };
-    }, [context, filter, kind, sourceControl, text]);
+    }, [context, kind, people, sourceControl, state, text]);
     return useCachedList(githubLists, key, fetchPage);
 }
 
@@ -253,18 +254,21 @@ export function useLinearReferenceList(options: {
     const { enabled, filter, query } = options;
     const teamId = options.teamId ?? null;
     const text = query.trim();
-    const key = enabled && linear ? JSON.stringify([getRuntimeKey(), workspace, filter, text, teamId]) : null;
+    const { status, people, priority } = filter;
+    const key = enabled && linear ? JSON.stringify([getRuntimeKey(), workspace, status, people, priority, text, teamId]) : null;
     const fetchPage = React.useCallback(async (cursor: string | null): Promise<ListPage<LinearIssueSummary>> => {
         if (!linear) return { kind: 'unavailable', reason: 'disconnected' };
         const result = await linear.issuesList({
             query: text || undefined,
             cursor: cursor ?? undefined,
-            assignee: filter === 'assigned' ? 'me' : 'any',
+            status,
+            assignee: people,
+            priority,
             teamId: teamId ?? undefined,
         });
         if (result.connected === false) return { kind: 'unavailable', reason: 'disconnected' };
         return { kind: 'page', items: result.issues ?? [], cursor: result.cursor ?? null, hasMore: Boolean(result.hasMore) };
-    }, [filter, linear, teamId, text]);
+    }, [linear, people, priority, status, teamId, text]);
     return useCachedList(linearLists, key, fetchPage);
 }
 

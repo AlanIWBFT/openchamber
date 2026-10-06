@@ -125,6 +125,35 @@ export function mapGitLabNote(value, identity, fallbackUrl = '') {
   return note;
 }
 
+// GitLab writes a review verdict as a system note on the merge request.
+const VERDICT_NOTES = new Map([
+  ['approved this merge request', 'approved'],
+  ['requested changes', 'changes_requested'],
+]);
+
+/** A system note that records an approval or a change request; null for any other note. */
+export function mapGitLabVerdictNote(value, identity, fallbackUrl = '') {
+  if (!isPlainObject(value) || value.system !== true || !isString(value.body)) return null;
+  const state = VERDICT_NOTES.get(value.body.trim().toLowerCase());
+  if (!state) return null;
+  const verdict = { state, url: text(value.web_url) || fallbackUrl, createdAt: text(value.created_at) ? value.created_at : null };
+  const author = mapGitLabUser(value.author, identity);
+  if (author) verdict.author = author;
+  return verdict;
+}
+
+/** A merge request commit as the preview's timeline shows it. */
+export function mapGitLabCommit(value) {
+  if (!isPlainObject(value) || !text(value.id)) return null;
+  return {
+    sha: value.id,
+    headline: text(value.title) || '',
+    authorName: text(value.author_name) || null,
+    committedAt: text(value.committed_date) || text(value.created_at) || null,
+    url: text(value.web_url) || null,
+  };
+}
+
 export function mapGitLabDiff(value) {
   if (!isPlainObject(value) || (!text(value.new_path) && !text(value.old_path))) return null;
   const file = {

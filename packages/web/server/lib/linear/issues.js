@@ -25,7 +25,7 @@ function readListStatus(value) {
 
 function readListAssignee(value) {
   const assignee = readTrimmedString(value);
-  if (assignee === 'me' || assignee === 'any') {
+  if (assignee === 'me' || assignee === 'created' || assignee === 'any') {
     return assignee;
   }
   return 'any';
@@ -58,6 +58,9 @@ function buildIssueListFilter({ status, assignee, teamId, priority } = {}) {
   }
   if (resolvedAssignee === 'me') {
     filter.assignee = { isMe: { eq: true } };
+  }
+  if (resolvedAssignee === 'created') {
+    filter.creator = { isMe: { eq: true } };
   }
   if (team) {
     filter.team = { id: { eq: team } };

@@ -195,7 +195,7 @@ describe('GET /api/source-control/github/references', () => {
     });
 
     const res = await request(app).get('/api/source-control/github/references')
-      .query({ ...readContext(project), kind: 'issue', filter: 'created', query: 'crash' })
+      .query({ ...readContext(project), kind: 'issue', state: 'open', people: 'created', query: 'crash' })
       .expect(200);
 
     expect(res.body).toMatchObject({ connected: true, cursor: 'c1', hasMore: true, total: 31 });
@@ -229,7 +229,7 @@ describe('GET /api/source-control/github/references', () => {
       changedFiles: 1,
       comments: { totalCount: 0, nodes: [] },
       reviews: { nodes: [] },
-      commits: { nodes: [] },
+      commits: { totalCount: 0, nodes: [] },
     } } } }));
 
     const detail = await request(app).get('/api/source-control/github/references/detail')

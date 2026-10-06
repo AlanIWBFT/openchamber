@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildIssueContextText } from './linearStartSession';
+import { buildIssueContextText } from './linearIssueContext';
 import type { LinearIssue } from '@/lib/api/types';
 
 const issue: LinearIssue = {

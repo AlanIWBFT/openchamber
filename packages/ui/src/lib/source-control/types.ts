@@ -412,6 +412,23 @@ export interface PageResult<TItem> {
   incompleteProjectIds?: string[];
 }
 
+/** A commit of a change request, as a timeline shows it. */
+export interface ChangeRequestCommit {
+  sha: string;
+  headline: string;
+  authorName: string | null;
+  committedAt: string | null;
+  url: string | null;
+}
+
+/** A review verdict on a change request: an approval or a request for changes. */
+export interface ChangeRequestVerdict {
+  state: 'approved' | 'changes_requested';
+  author?: SourceControlUser;
+  createdAt: string | null;
+  url: string;
+}
+
 export interface ChangeRequestContext {
   identity: SourceControlIdentity;
   fetchedAt?: number;
@@ -422,6 +439,12 @@ export interface ChangeRequestContext {
   files: ChangeRequestFile[];
   diff?: string;
   ci?: CI | null;
+  /** With `includeTimeline`: the newest commits, oldest first. */
+  commits?: ChangeRequestCommit[];
+  /** False when `commits` holds only the newest ones. */
+  commitsComplete?: boolean;
+  /** With `includeTimeline`: the verdicts reviewers gave, as the host recorded them. */
+  verdicts?: ChangeRequestVerdict[];
 }
 
 export interface ChangeRequestStatus {

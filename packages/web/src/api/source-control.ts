@@ -6,7 +6,9 @@ import type {
   GitAuxiliaryBindingIntent,
   GitAuxiliaryBindingResult,
   ChangeRequest,
+  ChangeRequestCommit,
   ChangeRequestContext,
+  ChangeRequestVerdict,
   ChangeRequestFile,
   ChangeRequestReviewComment,
   ChangeRequestStatus,
@@ -1036,6 +1038,26 @@ const parseSourceIssue = (issue: Issue, identity: SourceControlIdentity): Issue 
   return result;
 };
 
+const parseSourceCommit = (commit: ChangeRequestCommit): ChangeRequestCommit => {
+  if (!commit || !isNonEmptyString(commit.sha) || !isStringValue(commit.headline)
+    || (commit.authorName !== null && !isStringValue(commit.authorName))
+    || (commit.committedAt !== null && !isNonEmptyString(commit.committedAt))
+    || (commit.url !== null && !isHttpUrl(commit.url))) {
+    throw new Error('Source control response contained an invalid commit');
+  }
+  return { sha: commit.sha, headline: commit.headline, authorName: commit.authorName, committedAt: commit.committedAt, url: commit.url };
+};
+
+const parseSourceVerdict = (verdict: ChangeRequestVerdict, identity: SourceControlIdentity): ChangeRequestVerdict => {
+  if (!verdict || (verdict.state !== 'approved' && verdict.state !== 'changes_requested') || !isNonEmptyString(verdict.url)
+    || (verdict.createdAt !== null && !isNonEmptyString(verdict.createdAt))) {
+    throw new Error('Source control response contained an invalid review verdict');
+  }
+  const result: ChangeRequestVerdict = { state: verdict.state, url: verdict.url, createdAt: verdict.createdAt };
+  if (verdict.author) result.author = parseSourceUser(verdict.author, identity);
+  return result;
+};
+
 const parseSourceComment = (comment: IssueComment, identity: SourceControlIdentity): IssueComment => {
   if (!comment || !isValidId(comment.id) || !isNonEmptyString(comment.url) || !isStringValue(comment.body)
     || !hasMatchingIdentity(comment, identity)
@@ -1503,6 +1525,8 @@ export const createWebSourceControlAPI = (options: WebSourceControlAPIOptions = 
       const query = boundReadQuery(context);
       query.set('page', String(listOptions?.page ?? 1));
       if (listOptions?.query) query.set('query', listOptions.query);
+      if (listOptions?.state) query.set('state', listOptions.state);
+      if (listOptions?.people) query.set('people', listOptions.people);
       if (normalized.provider === 'gitlab') {
         const payload = await request<PageResult<ChangeRequest> & ErrorResponse>(fetch, normalized, '/pulls/list', {}, query);
         return { items: payload.items.map((item) => parseSourceChangeRequest(item, normalized)), page: payload.page, hasMore: payload.hasMore };
@@ -1522,6 +1546,7 @@ export const createWebSourceControlAPI = (options: WebSourceControlAPIOptions = 
       query.set('number', String(number));
       if (contextOptions?.includeDiff) query.set('diff', '1');
       if (contextOptions?.includeCIDetails) query.set('checkDetails', '1');
+      if (contextOptions?.includeTimeline) query.set('timeline', '1');
       if (contextOptions?.project) {
         query.set('owner', contextOptions.project.owner);
         query.set('repo', contextOptions.project.name);
@@ -1538,6 +1563,11 @@ export const createWebSourceControlAPI = (options: WebSourceControlAPIOptions = 
           diff: payload.diff,
           ci: parseSourceCI(payload.ci, normalized),
           fetchedAt: payload.fetchedAt,
+          ...(payload.commits ? {
+            commits: payload.commits.map(parseSourceCommit),
+            commitsComplete: payload.commitsComplete !== false,
+            verdicts: (payload.verdicts ?? []).map((verdict) => parseSourceVerdict(verdict, normalized)),
+          } : {}),
         };
       }
       const payload = await request<GitHubPullRequestContextResult & ErrorResponse>(fetch, normalized, '/pulls/context', {}, query);
@@ -1568,6 +1598,8 @@ export const createWebSourceControlAPI = (options: WebSourceControlAPIOptions = 
       const query = boundReadQuery(context);
       query.set('page', String(listOptions?.page ?? 1));
       if (listOptions?.query) query.set('query', listOptions.query);
+      if (listOptions?.state) query.set('state', listOptions.state);
+      if (listOptions?.people) query.set('people', listOptions.people);
       if (normalized.provider === 'gitlab') {
         const payload = await request<PageResult<Issue> & ErrorResponse>(fetch, normalized, '/issues/list', {}, query);
         if (!payload || !Array.isArray(payload.items)) throw new Error('Source control response contained invalid issues');

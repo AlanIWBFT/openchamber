@@ -4,6 +4,16 @@ import * as React from 'react';
 
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuLabel,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { dropdownTriggerVariants } from '@/components/ui/dropdown-trigger';
 import { Input } from '@/components/ui/input';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { useI18n } from '@/lib/i18n';
@@ -11,9 +21,16 @@ import { cn } from '@/lib/utils';
 
 import { ReferencePickerRow } from './ReferencePickerRow';
 import {
-    FILTER_LABEL_KEYS,
-    GITHUB_FILTERS,
-    LINEAR_FILTERS,
+    REPOSITORY_PEOPLE,
+    REPOSITORY_PEOPLE_LABEL_KEYS,
+    REPOSITORY_STATE_LABEL_KEYS,
+    REPOSITORY_STATES,
+    LINEAR_PEOPLE_FILTERS,
+    LINEAR_PEOPLE_LABEL_KEYS,
+    LINEAR_PRIORITY_FILTERS,
+    LINEAR_PRIORITY_LABEL_KEYS,
+    LINEAR_STATUS_FILTERS,
+    LINEAR_STATUS_LABEL_KEYS,
     referencePickerItemKey,
     type ReferencePickerItem,
 } from './referencePickerItems';
@@ -34,38 +51,101 @@ export const ReferenceBrowserTabs: React.FC<{ browser: ReferenceBrowser }> = ({ 
                 onSelect={(id) => browser.selectGitHubKind(id === 'pull' ? 'pull' : 'issue')}
                 variant="active-pill"
                 layoutMode="fit"
+                // As tall as the search field and the filter beside it.
+                activePillButtonClassName={browser.isMobile ? undefined : 'h-7'}
             />
         </div>
     );
 };
 
-/** The search field and the filter chips beside it. */
+/** Which items the list shows. Picking stays in the menu, so Linear's parts combine. */
+const ReferenceFilterMenu: React.FC<{ browser: ReferenceBrowser }> = ({ browser }) => {
+    const { t } = useI18n();
+    const { source } = browser;
+    const { status, people, priority } = browser.linearFilter;
+    const repository = browser.githubFilter;
+    const summary = source === 'github'
+        ? [
+            t(REPOSITORY_STATE_LABEL_KEYS[repository.state]),
+            repository.people === 'any' ? null : t(REPOSITORY_PEOPLE_LABEL_KEYS[repository.people]),
+        ].filter(Boolean).join(' · ')
+        : [
+            t(LINEAR_STATUS_LABEL_KEYS[status]),
+            people === 'any' ? null : t(LINEAR_PEOPLE_LABEL_KEYS[people]),
+            priority === 'all' ? null : t(LINEAR_PRIORITY_LABEL_KEYS[priority]),
+        ].filter(Boolean).join(' · ');
+
+    const group = <T extends string>(
+        label: string,
+        value: T,
+        options: readonly T[],
+        labelOf: (option: T) => string,
+        onSelect: (option: T) => void,
+    ) => (
+        <>
+            <DropdownMenuLabel>{label}</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+                value={value}
+                onValueChange={(next) => {
+                    const option = options.find((entry) => entry === next);
+                    if (option) onSelect(option);
+                }}
+            >
+                {options.map((option) => <DropdownMenuRadioItem key={option} value={option}>{labelOf(option)}</DropdownMenuRadioItem>)}
+            </DropdownMenuRadioGroup>
+        </>
+    );
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <button
+                    type="button"
+                    aria-label={t('references.picker.filter.label')}
+                    title={summary}
+                    className={cn(dropdownTriggerVariants(), 'min-w-0 max-w-[18rem] shrink-0', browser.isMobile && 'w-full max-w-none')}
+                >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                        <Icon name="filter-3" className="size-4" />
+                        <span className="truncate">{summary}</span>
+                    </span>
+                    <Icon name="arrow-down-s" className="size-4 opacity-50" />
+                </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+                {source === 'github' ? (
+                    <>
+                        {group(t('references.picker.filter.group.status'), repository.state, REPOSITORY_STATES[browser.githubKind], (option) => t(REPOSITORY_STATE_LABEL_KEYS[option]), (option) => browser.selectGitHubFilter({ state: option }))}
+                        <DropdownMenuSeparator />
+                        {group(t('references.picker.filter.group.people'), repository.people, REPOSITORY_PEOPLE[browser.githubKind], (option) => t(REPOSITORY_PEOPLE_LABEL_KEYS[option]), (option) => browser.selectGitHubFilter({ people: option }))}
+                    </>
+                ) : (
+                    <>
+                        {group(t('references.picker.filter.group.status'), status, LINEAR_STATUS_FILTERS, (option) => t(LINEAR_STATUS_LABEL_KEYS[option]), (option) => browser.selectLinearFilter({ status: option }))}
+                        <DropdownMenuSeparator />
+                        {group(t('references.picker.filter.group.people'), people, LINEAR_PEOPLE_FILTERS, (option) => t(LINEAR_PEOPLE_LABEL_KEYS[option]), (option) => browser.selectLinearFilter({ people: option }))}
+                        <DropdownMenuSeparator />
+                        {group(t('references.picker.filter.group.priority'), priority, LINEAR_PRIORITY_FILTERS, (option) => t(LINEAR_PRIORITY_LABEL_KEYS[option]), (option) => browser.selectLinearFilter({ priority: option }))}
+                    </>
+                )}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+};
+
+/** The search field, taking the room it is given, and the filter beside it. */
 export const ReferenceBrowserSearch: React.FC<{
     browser: ReferenceBrowser;
     onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
 }> = ({ browser, onKeyDown }) => {
     const { t } = useI18n();
     const { source, isGitLab, isMobile, list, query, searchRef } = browser;
-    const filters = source === 'github'
-        ? (isGitLab ? [] : GITHUB_FILTERS[browser.githubKind]).map((filter) => ({
-            id: filter,
-            label: t(FILTER_LABEL_KEYS[filter]),
-            active: browser.githubFilter === filter,
-            select: () => browser.selectGitHubFilter(filter),
-        }))
-        : LINEAR_FILTERS.map((filter) => ({
-            id: filter,
-            label: t(FILTER_LABEL_KEYS[filter]),
-            active: browser.linearFilter === filter,
-            select: () => browser.selectLinearFilter(filter),
-        }));
     const placeholder = t(source === 'linear' ? 'references.picker.search.linear' : isGitLab ? 'references.picker.search.gitlab' : 'references.picker.search.github');
 
     return (
-        <div className={cn('flex gap-2', isMobile ? 'flex-col' : 'min-w-0 flex-1 items-center')}>
-            {/* Desktop: shares a row with the title or the tabs, so the field gives way first when it runs short. */}
-            <div className={cn('relative', isMobile ? 'w-full' : 'min-w-[10rem] max-w-[18rem] flex-1')}>
-                <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <div className={cn('flex gap-2', isMobile ? 'flex-col' : 'min-w-[14rem] flex-1 items-center')}>
+            <div className="relative min-w-0 flex-1">
+                <Icon name="search" className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                     ref={searchRef}
                     autoFocus={!isMobile}
@@ -74,7 +154,8 @@ export const ReferenceBrowserSearch: React.FC<{
                     onKeyDown={onKeyDown}
                     placeholder={placeholder}
                     aria-label={placeholder}
-                    className="h-9 w-full pl-9 pr-14"
+                    title={placeholder}
+                    className={cn('w-full pl-8 pr-14', isMobile ? 'h-9' : 'h-8')}
                 />
                 <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
                     {list.refreshing && list.status !== 'loading' ? (
@@ -96,22 +177,7 @@ export const ReferenceBrowserSearch: React.FC<{
                     ) : null}
                 </div>
             </div>
-            <div className="flex shrink-0 items-center gap-1 overflow-x-auto">
-                {filters.map((filter) => (
-                    <Button
-                        key={filter.id}
-                        type="button"
-                        variant="chip"
-                        size="sm"
-                        // As tall as the search field beside it.
-                        className="h-9"
-                        aria-pressed={filter.active}
-                        onClick={filter.select}
-                    >
-                        {filter.label}
-                    </Button>
-                ))}
-            </div>
+            <ReferenceFilterMenu browser={browser} />
         </div>
     );
 };

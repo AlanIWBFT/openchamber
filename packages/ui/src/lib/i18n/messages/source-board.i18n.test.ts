@@ -5,7 +5,9 @@ import { sourceBoardI18n } from './source-board.i18n';
 const locales = ['en', 'de', 'fr', 'nl', 'es', 'ja', 'pt-BR', 'uk', 'ko', 'pl', 'zh-CN', 'zh-TW', 'tr'] as const;
 
 // Words a language writes the same as English.
-const SAME_AS_ENGLISH = new Map<string, string[]>([['nl', ['sourceBoard.project.label']]]);
+const SAME_AS_ENGLISH = new Map<string, string[]>([
+  ['nl', ['sourceBoard.project.label']],
+]);
 
 describe('issues and PRs board translations', () => {
   test('provides every key in every supported locale, translated', () => {

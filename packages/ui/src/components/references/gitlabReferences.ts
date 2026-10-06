@@ -10,12 +10,14 @@
 import type {
     ChangeRequest,
     ChangeRequestContext,
+    ChangeRequestVerdict,
     GitHubIssueReference,
     GitHubPullReference,
     GitHubReference,
     GitHubReferenceComment,
     GitHubReferenceDetail,
     GitHubReferenceKind,
+    RepositoryReferenceFilter,
     Issue,
     IssueComment,
     Project,
@@ -83,16 +85,18 @@ const toPullReference = (changeRequest: ChangeRequest): GitHubPullReference => (
         : null,
 });
 
-/** One page of a GitLab project's open issues or merge requests; the cursor is the next page number. */
+/** One page of a GitLab project's issues or merge requests, filtered like GitHub's; the cursor is the next page number. */
 export const fetchGitLabReferencePage = async (
     reads: GitLabReads,
     context: SourceControlReadContext,
     kind: GitHubReferenceKind,
+    filter: RepositoryReferenceFilter,
     text: string,
     cursor: string | null,
 ): Promise<ListPage<GitHubReference>> => {
     const page = cursor ? Number(cursor) : 1;
-    const options = text ? { page, query: text } : { page };
+    // An empty query is not sent.
+    const options = { page, state: filter.state, people: filter.people, query: text };
     const result = kind === 'issue'
         ? await reads.issuesList(context, options).then((answer) => ({ ...answer, items: answer.items.map(toIssueReference) }))
         : await reads.changeRequestsList(context, options).then((answer) => ({ ...answer, items: answer.items.map(toPullReference) }));
@@ -113,12 +117,35 @@ const byCreation = (left: GitHubReferenceComment, right: GitHubReferenceComment)
     (left.createdAt ?? '').localeCompare(right.createdAt ?? '')
 );
 
-const pullDetail = (context: ChangeRequestContext): GitHubReferenceDetail['pull'] => ({
-    reviewDecision: null,
-    additions: context.files.reduce((sum, file) => sum + (file.additions ?? 0), 0),
-    deletions: context.files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
-    changedFiles: context.files.length,
-    checks: context.changeRequest?.state === 'open' ? context.ci?.summary ?? null : null,
+const pullDetail = (context: ChangeRequestContext): GitHubReferenceDetail['pull'] => {
+    const commits = (context.commits ?? []).map((commit) => ({
+        sha: commit.sha,
+        headline: commit.headline,
+        author: null,
+        authorName: commit.authorName,
+        committedAt: commit.committedAt,
+        url: commit.url,
+    }));
+    return {
+        reviewDecision: null,
+        additions: context.files.reduce((sum, file) => sum + (file.additions ?? 0), 0),
+        deletions: context.files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
+        changedFiles: context.files.length,
+        checks: context.changeRequest?.state === 'open' ? context.ci?.summary ?? null : null,
+        commits,
+        commitTotal: context.commitsComplete === false ? null : commits.length,
+    };
+};
+
+/** A reviewer's approval or change request, placed among the comments like GitHub's. */
+const toVerdict = (verdict: ChangeRequestVerdict): GitHubReferenceComment => ({
+    author: author(verdict.author),
+    body: '',
+    createdAt: verdict.createdAt,
+    url: verdict.url,
+    path: null,
+    line: null,
+    review: verdict.state,
 });
 
 /** Comments, and a merge request's size and pipeline, for the previewed GitLab item. */
@@ -133,8 +160,11 @@ export const fetchGitLabReferenceDetail = async (
         return { number: reference.number, comments: comments.slice(-50), commentTotal: comments.length, pull: null };
     }
     // The size comes from the changed files, which GitLab only lists with their diffs.
-    const changeRequestContext = await reads.changeRequestContext(context, reference.number, { project, includeDiff: true });
-    const comments = [...changeRequestContext.issueComments, ...changeRequestContext.reviewComments].map(toComment).sort(byCreation);
+    const changeRequestContext = await reads.changeRequestContext(context, reference.number, { project, includeDiff: true, includeTimeline: true });
+    const comments = [
+        ...[...changeRequestContext.issueComments, ...changeRequestContext.reviewComments].map(toComment),
+        ...(changeRequestContext.verdicts ?? []).map(toVerdict),
+    ].sort(byCreation);
     return {
         number: reference.number,
         comments: comments.slice(-50),

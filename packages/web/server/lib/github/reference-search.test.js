@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildReferenceSearchQuery, fetchReferenceDetail, parseReferenceLookup, readReferenceFilter, toReference } from './reference-search.js';
+import { buildReferenceSearchQuery, fetchReferenceDetail, parseReferenceLookup, readReferencePeople, readReferenceState, toReference } from './reference-search.js';
 
 const origin = { owner: 'acme', repo: 'app', source: 'origin' };
 const upstream = { owner: 'Upstream', repo: 'App', source: 'upstream' };
@@ -21,20 +21,36 @@ const common = (number, repository = { name: 'app', owner: { login: 'acme' } }) 
 
 describe('buildReferenceSearchQuery', () => {
   it('lists open items of one kind across the network, newest activity first', () => {
-    expect(buildReferenceSearchQuery({ repos, kind: 'issue', filter: 'open', text: '' }))
+    expect(buildReferenceSearchQuery({ repos, kind: 'issue', state: 'open', people: 'any', text: '' }))
       .toBe('repo:acme/app repo:Upstream/App is:issue is:open sort:updated-desc');
-    expect(buildReferenceSearchQuery({ repos: [origin], kind: 'pull', filter: 'reviewRequested', text: ' crash ' }))
+    expect(buildReferenceSearchQuery({ repos: [origin], kind: 'pull', state: 'open', people: 'reviewRequested', text: ' crash ' }))
       .toBe('repo:acme/app is:pr is:open sort:updated-desc review-requested:@me crash');
   });
 
+  it('combines a state with whose items they are', () => {
+    expect(buildReferenceSearchQuery({ repos: [origin], kind: 'pull', state: 'closed', people: 'created', text: '' }))
+      .toBe('repo:acme/app is:pr is:closed sort:updated-desc author:@me');
+    expect(buildReferenceSearchQuery({ repos: [origin], kind: 'pull', state: 'merged', people: 'assigned', text: '' }))
+      .toBe('repo:acme/app is:pr is:merged sort:updated-desc assignee:@me');
+    expect(buildReferenceSearchQuery({ repos: [origin], kind: 'issue', state: 'all', people: 'any', text: '' }))
+      .toBe('repo:acme/app is:issue sort:updated-desc');
+  });
+
+  it('reads issue-only nonsense as the nearest list: merged as closed, review requests as anyone', () => {
+    expect(buildReferenceSearchQuery({ repos: [origin], kind: 'issue', state: 'merged', people: 'reviewRequested', text: '' }))
+      .toBe('repo:acme/app is:issue is:closed sort:updated-desc');
+  });
+
   it('leaves state and sort to the user when their text sets them', () => {
-    expect(buildReferenceSearchQuery({ repos: [origin], kind: 'issue', filter: 'assigned', text: 'is:closed sort:created-asc' }))
+    expect(buildReferenceSearchQuery({ repos: [origin], kind: 'issue', state: 'open', people: 'assigned', text: 'is:closed sort:created-asc' }))
       .toBe('repo:acme/app is:issue assignee:@me is:closed sort:created-asc');
   });
 
-  it('reads an unknown filter as open', () => {
-    expect(readReferenceFilter('everything')).toBe('open');
-    expect(readReferenceFilter('created')).toBe('created');
+  it('reads unknown values as open and anyone', () => {
+    expect(readReferenceState('everything')).toBe('open');
+    expect(readReferenceState('merged')).toBe('merged');
+    expect(readReferencePeople('everyone')).toBe('any');
+    expect(readReferencePeople('created')).toBe('created');
   });
 });
 
@@ -135,6 +151,10 @@ describe('fetchReferenceDetail', () => {
     deletions: 3,
     changedFiles: 2,
     comments: { totalCount: 1, nodes: [{ author, body: 'first', createdAt: '2026-10-01T10:00:00Z', url: 'u1' }] },
+    commits: { totalCount: 1, nodes: [{ commit: {
+      oid: 'abc1234', messageHeadline: 'fix: the thing', committedDate: '2026-10-01T08:00:00Z', url: 'https://github.com/acme/app/commit/abc1234',
+      author: { name: 'Octo Cat', user: author },
+    } }] },
     reviews: { nodes: reviews },
   });
 
@@ -169,6 +189,15 @@ describe('fetchReferenceDetail', () => {
       additions: 12,
       deletions: 3,
       changedFiles: 2,
+      commits: [{
+        sha: 'abc1234',
+        headline: 'fix: the thing',
+        author: { login: 'octo', avatarUrl: 'https://avatars/octo' },
+        authorName: 'Octo Cat',
+        committedAt: '2026-10-01T08:00:00Z',
+        url: 'https://github.com/acme/app/commit/abc1234',
+      }],
+      commitTotal: 1,
     });
   });
 

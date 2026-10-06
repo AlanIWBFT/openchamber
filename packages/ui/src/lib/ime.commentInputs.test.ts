@@ -53,7 +53,9 @@ describe('comment inputs ignore IME composition keystrokes', () => {
       const start = source.indexOf(input.handler);
       expect(start).toBeGreaterThan(-1);
 
-      const handler = source.slice(start, start + 900);
+      // From the input to the end of its key handler; the selection comment's
+      // input carries change, select and paste handlers before it.
+      const handler = source.slice(start, start + 1500);
       const guardIndex = handler.search(input.guard);
       const keyIndex = handler.search(/(event|e)\.key === '(Enter|Escape)'/);
 

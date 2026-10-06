@@ -4,7 +4,7 @@ import { Icon } from '@/components/icon/Icon';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useMcpStore } from '@/stores/useMcpStore';
 import { useSession } from '@/sync/sync-context';
-import { getDistinctLinkedIssues, getLinkedGitHubPullRequests, getLinkedGitLabThreads, getLinkedSidebarIssues, canOpenLinearIssueInContextPanel, getGitHubThreadRef, getGitLabThreadRef, isLinkedChange } from '@/lib/linkedIssues';
+import { getDistinctLinkedIssues, getLinkedGitHubPullRequests, getLinkedGitLabThreads, getLinkedSidebarIssues, canOpenLinearIssueOnBoard, getGitHubThreadRef, getGitLabThreadRef, isLinkedChange } from '@/lib/linkedIssues';
 import type { PrVisualSummary } from '@/stores/useGitHubPrStatusStore';
 import { useTrackedIssueStates, useTrackedLinearStates, useTrackedPullVisualSummaries } from '@/stores/useTrackedItemsStore';
 import { useTrackedItems } from '@/lib/trackedItems/interest';
@@ -23,6 +23,8 @@ import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useLinearAuthStore } from '@/stores/useLinearAuthStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
+import { useSourceBoardStore } from '@/stores/useSourceBoardStore';
+import { isVSCodeRuntime } from '@/lib/desktop';
 import { WorkStatusCollapsibleSection, WorkStatusRow, WorkStatusValue } from './WorkStatusPrimitives';
 import { useReportWorkStatusPresence } from './presenceContext';
 import { resolveDraftPinnedKnowledge } from './draftKnowledge';
@@ -48,8 +50,6 @@ export const WorkStatusContextSection: React.FC<Props> = ({ sessionId, directory
   const { linear } = useRuntimeAPIs();
   const linearConnected = useLinearAuthStore((state) => state.status?.connected === true);
   const mobileActions = useMobileAppActions();
-  const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
-  const setLinearIssueFocus = useUIStore((state) => state.setLinearIssueFocus);
 
   const session = useSession(sessionId ?? '', directory ?? undefined);
   const newSessionDraft = useSessionUIStore((state) => state.newSessionDraft);
@@ -256,20 +256,18 @@ export const WorkStatusContextSection: React.FC<Props> = ({ sessionId, directory
   const openLinkedIssue = React.useCallback((entry: (typeof linked)[number]) => {
     if (
       entry.kind === 'linear'
-      && directory
-      && canOpenLinearIssueInContextPanel({
+      && canOpenLinearIssueOnBoard({
         linearAvailable: Boolean(linear),
         linearConnected,
-        inDedicatedMobileShell: mobileActions != null,
-        directory,
+        boardAvailable: mobileActions == null && !isVSCodeRuntime(),
       })
     ) {
-      setLinearIssueFocus(entry.identifier);
-      openContextPanelTab(directory, { mode: 'linear' });
+      useSourceBoardStore.getState().focusLinearIssue(entry.identifier);
+      useUIStore.getState().setSourceBoardOpen(true);
       return;
     }
     window.open(entry.url, '_blank', 'noopener,noreferrer');
-  }, [directory, linear, linearConnected, mobileActions, openContextPanelTab, setLinearIssueFocus]);
+  }, [linear, linearConnected, mobileActions]);
   // Connected servers only. A disabled server contributes nothing to the
   // context, so counting it here contradicts the MCP section right above,
   // which shows the same servers switched off.

@@ -10,12 +10,14 @@ import * as React from 'react';
 
 import { handleDropdownNavigationKey } from '@/components/ui/dropdown-navigation';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import type { GitHubPullStatus, GitHubReference, GitHubReferenceFilter, GitHubReferenceKind } from '@/lib/api/types';
+import type { GitHubPullStatus, GitHubReference, GitHubReferenceKind, RepositoryReferenceFilter } from '@/lib/api/types';
 import { isIMECompositionEvent } from '@/lib/ime';
 
 import type { CachedValue } from './referenceCache';
 import {
     referencePickerItemKey,
+    DEFAULT_LINEAR_FILTER,
+    DEFAULT_REPOSITORY_FILTER,
     type LinearReferenceFilter,
     type ReferencePickerItem,
     type ReferencePickerSource,
@@ -33,8 +35,8 @@ import {
 
 // Remembered for the app run: reopening lands on the tab and filter left last.
 let lastGitHubKind: GitHubReferenceKind = 'issue';
-const lastGitHubFilter = new Map<GitHubReferenceKind, GitHubReferenceFilter>();
-let lastLinearFilter: LinearReferenceFilter = 'open';
+const lastGitHubFilter = new Map<GitHubReferenceKind, RepositoryReferenceFilter>();
+let lastLinearFilter: LinearReferenceFilter = DEFAULT_LINEAR_FILTER;
 
 const NO_REFERENCES: GitHubReference[] = [];
 const NO_ITEMS: ReadonlyMap<string, ReferencePickerItem> = new Map();
@@ -66,7 +68,7 @@ export function useReferenceBrowser({
     retainedItems = NO_ITEMS,
 }: ReferenceBrowserOptions) {
     const [githubKind, setGitHubKind] = React.useState<GitHubReferenceKind>(initialGitHubKind ?? lastGitHubKind);
-    const [githubFilter, setGitHubFilter] = React.useState<GitHubReferenceFilter>(lastGitHubFilter.get(initialGitHubKind ?? lastGitHubKind) ?? 'open');
+    const [githubFilter, setGitHubFilter] = React.useState<RepositoryReferenceFilter>(lastGitHubFilter.get(initialGitHubKind ?? lastGitHubKind) ?? DEFAULT_REPOSITORY_FILTER);
     const [linearFilter, setLinearFilter] = React.useState<LinearReferenceFilter>(lastLinearFilter);
     const [query, setQueryState] = React.useState('');
     const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
@@ -85,7 +87,7 @@ export function useReferenceBrowser({
         enabled: source === 'github' && githubStatus === 'ready',
         directory,
         kind: githubKind,
-        filter: isGitLab ? 'open' : githubFilter,
+        filter: githubFilter,
         query: debouncedQuery,
     });
     const linearList = useLinearReferenceList({
@@ -100,7 +102,7 @@ export function useReferenceBrowser({
         enabled: source === 'github' && githubStatus === 'ready',
         directory,
         kind: otherGitHubKind,
-        filter: isGitLab ? 'open' : lastGitHubFilter.get(otherGitHubKind) ?? 'open',
+        filter: lastGitHubFilter.get(otherGitHubKind) ?? DEFAULT_REPOSITORY_FILTER,
         query: '',
     });
     const list = source === 'github' ? githubList : linearList;
@@ -136,23 +138,27 @@ export function useReferenceBrowser({
     const selectGitHubKind = (kind: GitHubReferenceKind) => {
         lastGitHubKind = kind;
         setGitHubKind(kind);
-        setGitHubFilter(lastGitHubFilter.get(kind) ?? 'open');
+        setGitHubFilter(lastGitHubFilter.get(kind) ?? DEFAULT_REPOSITORY_FILTER);
         setHighlightedKey(null);
     };
-    const selectGitHubFilter = (filter: GitHubReferenceFilter) => {
+    /** Changes the state or whose items, keeping the other. */
+    const selectGitHubFilter = (patch: Partial<RepositoryReferenceFilter>) => {
+        const filter = { ...githubFilter, ...patch };
         lastGitHubFilter.set(githubKind, filter);
         setGitHubFilter(filter);
         setHighlightedKey(null);
     };
-    const selectLinearFilter = (filter: LinearReferenceFilter) => {
+    /** Changes one part of the Linear filter, keeping the others. */
+    const selectLinearFilter = (patch: Partial<LinearReferenceFilter>) => {
+        const filter = { ...linearFilter, ...patch };
         lastLinearFilter = filter;
         setLinearFilter(filter);
         setHighlightedKey(null);
     };
-    const setQuery = (value: string) => {
+    const setQuery = React.useCallback((value: string) => {
         setQueryState(value);
         setHighlightedKey(null);
-    };
+    }, []);
 
     const moveHighlight = React.useCallback((direction: 1 | -1) => {
         if (items.length === 0) return;

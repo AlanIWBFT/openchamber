@@ -10,7 +10,8 @@ import { cn } from '@/lib/utils';
 
 import type { CachedValue } from './referenceCache';
 import { getSourceControlProviderLabel } from '@/lib/source-control/identity';
-import { ReferenceComments, type ReferenceCommentItem } from './ReferenceComments';
+import { ReferenceComments } from './ReferenceComments';
+import { buildReferenceTimeline, type ReferenceCommentItem, type ReferenceTimelineEntry } from './referenceTimeline';
 import { ChecksGlyph, ReferenceLabelChips } from './ReferencePickerRow';
 import {
     githubStateLook,
@@ -58,13 +59,20 @@ const MetaRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label
     </>
 );
 
-const StatePill: React.FC<{ icon: React.ComponentProps<typeof Icon>['name']; color: string; label: string }> = ({ icon, color, label }) => (
+/** An item's state as a tinted pill; `trailing` adds a chevron when the pill opens a menu. */
+export const StatePill: React.FC<{
+    icon: React.ComponentProps<typeof Icon>['name'];
+    color: string;
+    label: string;
+    trailing?: React.ReactNode;
+}> = ({ icon, color, label, trailing }) => (
     <span
         className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full px-2 typography-meta font-medium"
         style={{ color, backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)` }}
     >
         <Icon name={icon} className="size-3.5" />
         {label}
+        {trailing}
     </span>
 );
 
@@ -100,16 +108,19 @@ const ReferenceBody: React.FC<{ content: string }> = ({ content }) => (
 
 /** The thread section under the body: loading, failure, empty, or the comments. */
 const CommentsSection: React.FC<{
-    state: CachedValue<ReferenceCommentItem[]>;
+    state: CachedValue<ReferenceTimelineEntry[]>;
+    /** How many comments there are in all, to say when only the newest show. */
     total: number | null;
+    /** A PR's thread carries its commits too. */
+    activity?: boolean;
     now: number;
-}> = ({ state, total, now }) => {
+}> = ({ state, total, activity = false, now }) => {
     const { t } = useI18n();
-    const shown = state.status === 'ready' ? state.value.length : 0;
+    const shown = state.status === 'ready' ? state.value.filter((entry) => entry.kind === 'comment').length : 0;
     return (
         <section className="flex flex-col gap-3 border-t border-border/60 pt-4">
             <h4 className="flex items-center gap-2 typography-ui-label font-semibold text-foreground">
-                {t('references.picker.preview.comments')}
+                {t(activity ? 'references.picker.preview.activity' : 'references.picker.preview.comments')}
                 {state.status === 'ready' && total !== null && total > shown ? (
                     <span className={cn('typography-meta font-normal', REFERENCE_META_TEXT)}>
                         {t('references.picker.preview.commentsLatest', { shown, total })}
@@ -123,7 +134,7 @@ const CommentsSection: React.FC<{
             ) : state.value.length === 0 ? (
                 <p className="typography-meta text-muted-foreground">{t('references.picker.preview.commentsEmpty')}</p>
             ) : (
-                <ReferenceComments comments={state.value} now={now} />
+                <ReferenceComments entries={state.value} now={now} />
             )}
         </section>
     );
@@ -223,7 +234,8 @@ const GitHubPreview: React.FC<{
 }> = ({ reference, pullStatus, detail, purpose, pinned, includeDiff, onIncludeDiffChange, now, footer: footerOverride, pullLinks }) => {
     const { t } = useI18n();
     const comments = React.useMemo(
-        () => mapDetail(detail, (value) => value.comments.map((comment: GitHubReferenceComment, index): ReferenceCommentItem => ({
+        () => mapDetail(detail, (value) => buildReferenceTimeline(value.comments.map((comment: GitHubReferenceComment, index): ReferenceCommentItem => ({
+            kind: 'comment',
             key: `${comment.url}#${index}`,
             author: comment.author?.login ?? null,
             avatarUrl: comment.author?.avatarUrl ?? null,
@@ -232,7 +244,7 @@ const GitHubPreview: React.FC<{
             context: comment.path
                 ? `${comment.path}${comment.line ? `:${comment.line}` : ''}`
                 : comment.review && comment.review !== 'commented' ? t(REVIEW_VERDICT_KEYS[comment.review]) : null,
-        }))),
+        })), value.pull?.commits ?? [])),
         [detail, t],
     );
     const relative = useRelative(now);
@@ -318,7 +330,7 @@ const GitHubPreview: React.FC<{
                 ) : null}
             </div>
 
-            <CommentsSection state={comments} total={detail.status === 'ready' ? detail.value.commentTotal : null} now={now} />
+            <CommentsSection state={comments} total={detail.status === 'ready' ? detail.value.commentTotal : null} activity={reference.kind === 'pull'} now={now} />
         </PreviewFrame>
     );
 };
@@ -330,7 +342,8 @@ const LinearPreview: React.FC<{
     pinned: boolean;
     now: number;
     footer?: React.ReactNode;
-}> = ({ issue, detail, purpose, pinned, now, footer: footerOverride }) => {
+    stateControl?: React.ReactNode;
+}> = ({ issue, detail, purpose, pinned, now, footer: footerOverride, stateControl }) => {
     const { t } = useI18n();
     const relative = useRelative(now);
     const look = linearStateLook(issue);
@@ -339,7 +352,8 @@ const LinearPreview: React.FC<{
     const assignee = issue.assignee?.displayName || issue.assignee?.name;
     const full = detail.status === 'ready' ? detail.value : null;
     const comments = React.useMemo(
-        () => mapDetail(detail, (value) => (value.comments ?? []).map((comment): ReferenceCommentItem => ({
+        () => mapDetail(detail, (value) => (value.comments ?? []).map((comment): ReferenceTimelineEntry => ({
+            kind: 'comment',
             key: comment.id,
             author: comment.user?.displayName || comment.user?.name || null,
             avatarUrl: comment.user?.avatarUrl ?? null,
@@ -360,7 +374,7 @@ const LinearPreview: React.FC<{
         <PreviewFrame pinned={pinned} footer={footer}>
             <header className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                    {issue.state?.name ? <StatePill icon={look.icon} color={look.color} label={issue.state.name} /> : null}
+                    {stateControl ?? (issue.state?.name ? <StatePill icon={look.icon} color={look.color} label={issue.state.name} /> : null)}
                     <span className={cn('truncate typography-meta', REFERENCE_META_TEXT)}>{issue.identifier}</span>
                     <a
                         href={issue.url}
@@ -423,7 +437,9 @@ export const ReferencePreview: React.FC<{
     footer?: React.ReactNode;
     /** Beside a PR's size: where to look at its changes. */
     pullLinks?: React.ReactNode;
-}> = ({ item, pullStatus, linearDetail, githubDetail, purpose, pinned, includeDiff, onIncludeDiffChange, now, footer, pullLinks }) => {
+    /** Replaces a Linear issue's state pill, such as with one that changes the state. */
+    linearStateControl?: React.ReactNode;
+}> = ({ item, pullStatus, linearDetail, githubDetail, purpose, pinned, includeDiff, onIncludeDiffChange, now, footer, pullLinks, linearStateControl }) => {
     const { t } = useI18n();
     if (!item) {
         return (
@@ -433,7 +449,7 @@ export const ReferencePreview: React.FC<{
         );
     }
     if (item.source === 'linear') {
-        return <LinearPreview issue={item.issue} detail={linearDetail} purpose={purpose} pinned={pinned} now={now} footer={footer} />;
+        return <LinearPreview issue={item.issue} detail={linearDetail} purpose={purpose} pinned={pinned} now={now} footer={footer} stateControl={linearStateControl} />;
     }
     return (
         <GitHubPreview

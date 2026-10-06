@@ -10,7 +10,7 @@ import type { DraftStarterRef } from '@/lib/draftStarters';
 import type { CustomProviderIcon } from '@/lib/customProviderIcons';
 import { DEFAULT_MONO_FONT, DEFAULT_UI_FONT, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 import { getStoredMobileKeyboardMode, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
-import type { LinearIssueListAssignee, LinearIssueListPriority, LinearIssueListStatus, TerminalShell } from '@/lib/api/types';
+import type { TerminalShell } from '@/lib/api/types';
 import type { ProjectRef } from '@/lib/projectContextApi';
 import type { PermissionMode } from './utils/permissionAutoAccept';
 import { directoryMayHaveActiveProjectAction, useTerminalStore } from '@/stores/useTerminalStore';
@@ -18,7 +18,6 @@ import { useFilesViewTabsStore } from './useFilesViewTabsStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { noteBrowserTabOpenedWithAddress, requestBrowserTabLoad } from '@/lib/browser/devServerWait';
 import { isContextPanelMode, type ContextPanelMode } from '@/lib/surfaces/modes';
-import { getRuntimeKey, isTransientRuntimeKey } from '@/lib/runtime-switch';
 import { sanitizeWorkStatusSectionOrder, type WorkStatusPanelSectionId } from '@/components/chat/work-status/sections';
 
 export type PendingDiffScope = 'working' | 'staged' | 'turn' | 'branch' | 'commit' | 'pr';
@@ -28,7 +27,7 @@ export type { ContextPanelMode };
 export const clampContextEditorTreeWidth = (width: number): number =>
   Math.min(480, Math.max(200, Math.round(width)));
 
-const contextPanelModeSchema = z.enum(['diff', 'walkthrough', 'file', 'context', 'plan', 'chat', 'browser', 'git', 'pr', 'linear', 'notes', 'terminal']);
+const contextPanelModeSchema = z.enum(['diff', 'walkthrough', 'file', 'context', 'plan', 'chat', 'browser', 'git', 'pr', 'notes', 'terminal']);
 const persistedPanelWidthsSchema = z.object({
   widthByMode: z.record(z.string(), z.number().finite().optional().catch(undefined)).catch({}),
   widthFractionByMode: z.record(z.string(), z.number().positive().max(1).optional().catch(undefined)).catch({}),
@@ -57,69 +56,6 @@ export const normalizeLargeTextPasteBehavior = (value: unknown): LargeTextPasteB
 
 function normalizeFileEditorKeymap(value: unknown): FileEditorKeymap {
   return value === 'vim' ? 'vim' : 'default';
-}
-
-export const LINEAR_ISSUE_LIST_ALL_TEAMS = 'all';
-
-function sanitizeLinearIssueListStatus(value: unknown): LinearIssueListStatus {
-  return value === 'all'
-    || value === 'backlog'
-    || value === 'todo'
-    || value === 'started'
-    || value === 'inReview'
-    || value === 'completed'
-    || value === 'canceled'
-    || value === 'duplicate'
-    ? value
-    : 'all';
-}
-
-function sanitizeLinearIssueListAssignee(value: unknown): LinearIssueListAssignee {
-  return value === 'me' || value === 'any' ? value : 'any';
-}
-
-function sanitizeLinearIssueListTeamId(value: unknown): string {
-  if (typeof value !== 'string') return LINEAR_ISSUE_LIST_ALL_TEAMS;
-  const teamId = value.trim();
-  return teamId || LINEAR_ISSUE_LIST_ALL_TEAMS;
-}
-
-/**
- * Store the team filter under the connected instance, dropping the entry when
- * it falls back to all teams so the map does not accumulate defaults. Transient
- * keys (uninitialised, mobile-disconnected) name no instance and are not written.
- */
-function writeLinearTeamIdForRuntime(
-  entries: Record<string, string>,
-  teamId: string,
-): Record<string, string> {
-  const runtimeKey = getRuntimeKey();
-  if (isTransientRuntimeKey(runtimeKey)) return entries;
-  const next = { ...entries };
-  if (teamId === LINEAR_ISSUE_LIST_ALL_TEAMS) {
-    delete next[runtimeKey];
-  } else {
-    next[runtimeKey] = teamId;
-  }
-  return next;
-}
-
-function sanitizeLinearIssueListTeamIdByRuntime(value: unknown): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const entries: Record<string, string> = {};
-  // SAFETY: guarded above as a non-array object; every value is re-checked below.
-  for (const [runtimeKey, teamId] of Object.entries(value as Record<string, unknown>)) {
-    if (!runtimeKey.trim() || typeof teamId !== 'string') continue;
-    const sanitized = sanitizeLinearIssueListTeamId(teamId);
-    if (sanitized !== LINEAR_ISSUE_LIST_ALL_TEAMS) entries[runtimeKey] = sanitized;
-  }
-  return entries;
-}
-
-function sanitizeLinearIssueListPriority(value: unknown): LinearIssueListPriority {
-  return value === 'none' || value === 'urgent' || value === 'high' || value === 'medium' || value === 'low' || value === 'all'
-    ? value
-    : 'all';
 }
 
 type ContextPanelTab = {
@@ -1006,21 +942,6 @@ interface UIStore {
   walkthroughTocWidth: number;
   gitChangesViewMode: 'flat' | 'tree';
   toolJsonViewMode: 'summary' | 'formatted' | 'raw';
-  linearIssueListStatus: LinearIssueListStatus;
-  linearIssueListAssignee: LinearIssueListAssignee;
-  /**
-   * Team filter for the instance currently connected. A Linear team belongs to
-   * one workspace, and each OpenChamber instance has its own Linear login, so
-   * this is derived from `linearIssueListTeamIdByRuntime` rather than persisted
-   * on its own — a team id carried across a switch filters the new instance's
-   * list down to nothing.
-   */
-  linearIssueListTeamId: string;
-  /** Team filter per instance, keyed the same way every runtime-scoped cache is. */
-  linearIssueListTeamIdByRuntime: Record<string, string>;
-  linearIssueListPriority: LinearIssueListPriority;
-  /** One-shot identifier for opening a Linear issue in the rail panel. Not persisted. */
-  linearIssueFocus: string | null;
   isTimelineDialogOpen: boolean;
   isPromptNavigatorPanelOpen: boolean;
   isImagePreviewOpen: boolean;
@@ -1273,14 +1194,6 @@ interface UIStore {
   setWalkthroughTocWidth: (width: number) => void;
   setGitChangesViewMode: (mode: 'flat' | 'tree') => void;
   setToolJsonViewMode: (mode: 'summary' | 'formatted' | 'raw') => void;
-  setLinearIssueListStatus: (status: LinearIssueListStatus) => void;
-  setLinearIssueListAssignee: (assignee: LinearIssueListAssignee) => void;
-  setLinearIssueListTeamId: (teamId: string) => void;
-  /** Re-read the team filter for the instance now connected. */
-  applyLinearIssueListFiltersForRuntime: () => void;
-  setLinearIssueListPriority: (priority: LinearIssueListPriority) => void;
-  resetLinearIssueListFilters: () => void;
-  setLinearIssueFocus: (identifier: string | null) => void;
   setRunOverviewKey: (runKey: string | null) => void;
   setTimelineDialogOpen: (open: boolean) => void;
   setPromptNavigatorPanelOpen: (open: boolean) => void;
@@ -1477,12 +1390,6 @@ export const useUIStore = create<UIStore>()(
         walkthroughTocWidth: 224,
         gitChangesViewMode: 'flat',
         toolJsonViewMode: 'summary',
-        linearIssueListStatus: 'all',
-        linearIssueListAssignee: 'any',
-        linearIssueListTeamId: LINEAR_ISSUE_LIST_ALL_TEAMS,
-        linearIssueListTeamIdByRuntime: {},
-        linearIssueListPriority: 'all',
-        linearIssueFocus: null,
         isTimelineDialogOpen: false,
         isPromptNavigatorPanelOpen: false,
         isImagePreviewOpen: false,
@@ -2596,53 +2503,6 @@ export const useUIStore = create<UIStore>()(
           set({ toolJsonViewMode: mode });
         },
 
-        setLinearIssueListStatus: (status) => {
-          set({ linearIssueListStatus: sanitizeLinearIssueListStatus(status) });
-        },
-
-        setLinearIssueListAssignee: (assignee) => {
-          set({ linearIssueListAssignee: sanitizeLinearIssueListAssignee(assignee) });
-        },
-
-        setLinearIssueListTeamId: (teamId) => {
-          const sanitized = sanitizeLinearIssueListTeamId(teamId);
-          set((state) => ({
-            linearIssueListTeamId: sanitized,
-            linearIssueListTeamIdByRuntime: writeLinearTeamIdForRuntime(state.linearIssueListTeamIdByRuntime, sanitized),
-          }));
-        },
-
-        applyLinearIssueListFiltersForRuntime: () => {
-          const runtimeKey = getRuntimeKey();
-          set((state) => ({
-            linearIssueListTeamId: isTransientRuntimeKey(runtimeKey)
-              ? LINEAR_ISSUE_LIST_ALL_TEAMS
-              : state.linearIssueListTeamIdByRuntime[runtimeKey] ?? LINEAR_ISSUE_LIST_ALL_TEAMS,
-          }));
-        },
-
-        setLinearIssueListPriority: (priority) => {
-          set({ linearIssueListPriority: sanitizeLinearIssueListPriority(priority) });
-        },
-
-        resetLinearIssueListFilters: () => {
-          set((state) => ({
-            linearIssueListStatus: 'all',
-            linearIssueListAssignee: 'any',
-            linearIssueListTeamId: LINEAR_ISSUE_LIST_ALL_TEAMS,
-            linearIssueListTeamIdByRuntime: writeLinearTeamIdForRuntime(
-              state.linearIssueListTeamIdByRuntime,
-              LINEAR_ISSUE_LIST_ALL_TEAMS,
-            ),
-            linearIssueListPriority: 'all',
-          }));
-        },
-
-        setLinearIssueFocus: (identifier) => {
-          const trimmed = identifier?.trim() ?? '';
-          set({ linearIssueFocus: trimmed || null });
-        },
-
         setInputBarOffset: (offset) => {
           set({ inputBarOffset: offset });
         },
@@ -3149,7 +3009,7 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createDeferredSafeJSONStorage(),
-        version: 21,
+        version: 22,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
             return persistedState;
@@ -3366,14 +3226,13 @@ export const useUIStore = create<UIStore>()(
             }
           }
 
-          state.linearIssueListStatus = sanitizeLinearIssueListStatus(state.linearIssueListStatus);
-          state.linearIssueListAssignee = sanitizeLinearIssueListAssignee(state.linearIssueListAssignee);
-          // v18 -> v19: the team filter became per instance. The legacy flat
-          // value names a team in one workspace with nothing to say which
-          // instance it came from, so it is dropped rather than guessed at.
+          // The Linear rail panel's list filters went with the panel; Linear
+          // lists on the issues and PRs board now.
+          delete state.linearIssueListStatus;
+          delete state.linearIssueListAssignee;
           delete state.linearIssueListTeamId;
-          state.linearIssueListTeamIdByRuntime = sanitizeLinearIssueListTeamIdByRuntime(state.linearIssueListTeamIdByRuntime);
-          state.linearIssueListPriority = sanitizeLinearIssueListPriority(state.linearIssueListPriority);
+          delete state.linearIssueListTeamIdByRuntime;
+          delete state.linearIssueListPriority;
 
           state.fileEditorKeymap = normalizeFileEditorKeymap(state.fileEditorKeymap);
           state.largeTextPasteBehavior = normalizeLargeTextPasteBehavior(state.largeTextPasteBehavior);
@@ -3476,10 +3335,6 @@ export const useUIStore = create<UIStore>()(
           walkthroughTocWidth: state.walkthroughTocWidth,
           gitChangesViewMode: state.gitChangesViewMode,
           toolJsonViewMode: state.toolJsonViewMode,
-          linearIssueListStatus: state.linearIssueListStatus,
-          linearIssueListAssignee: state.linearIssueListAssignee,
-          linearIssueListTeamIdByRuntime: state.linearIssueListTeamIdByRuntime,
-          linearIssueListPriority: state.linearIssueListPriority,
           nativeNotificationsEnabled: state.nativeNotificationsEnabled,
           notificationMode: state.notificationMode,
           showTerminalQuickKeysOnDesktop: state.showTerminalQuickKeysOnDesktop,

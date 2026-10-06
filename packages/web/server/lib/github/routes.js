@@ -1717,7 +1717,7 @@ export function registerGitHubRoutes(app, options = {}) {
   // repository network. Failures are errors, never an empty page: the picker
   // keeps what it showed and offers a retry.
   app.get(canonicalGitHubRoutePath('/references'), async (req, res) => {
-    const { readReferenceFilter, readReferenceKind, searchGitHubReferences } = await import('./reference-search.js');
+    const { readReferencePeople, readReferenceKind, readReferenceState, searchGitHubReferences } = await import('./reference-search.js');
     const directory = readQueryString(req, 'directory');
     const kind = readReferenceKind(req.query?.kind);
     if (!directory || !kind) {
@@ -1751,7 +1751,8 @@ export function registerGitHubRoutes(app, options = {}) {
         octokit,
         repos,
         kind,
-        filter: readReferenceFilter(req.query?.filter),
+        state: readReferenceState(req.query?.state),
+        people: readReferencePeople(req.query?.people),
         text: readQueryString(req, 'query'),
         cursor: readQueryString(req, 'cursor') || null,
       });

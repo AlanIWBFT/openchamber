@@ -275,17 +275,13 @@ export const buildLinkedLinearIssue = (input: {
   linkedAt: input.linkedAt,
 });
 
-export const canOpenLinearIssueInContextPanel = (options: {
+/** Whether a linked Linear issue opens on the issues and PRs board, or falls back to Linear in the browser. */
+export const canOpenLinearIssueOnBoard = (options: {
   linearAvailable: boolean;
   linearConnected: boolean;
-  inDedicatedMobileShell: boolean;
-  directory: string | null | undefined;
-}): boolean => (
-  options.linearAvailable
-  && options.linearConnected
-  && !options.inDedicatedMobileShell
-  && Boolean(options.directory?.trim())
-);
+  /** The phone shell and VS Code have no board. */
+  boardAvailable: boolean;
+}): boolean => options.linearAvailable && options.linearConnected && options.boardAvailable;
 
 export const getLinkedIssues = (session: Session | null | undefined): LinkedIssue[] => {
   const openchamber = getSessionMetadata(session).openchamber;

@@ -84,8 +84,9 @@ export const SourceBoardActions: React.FC<{
     context: SourceControlReadContext | null;
     onStartWorktree: (project: SourceBoardProject, selection: ReferencePickerSelection) => void;
     onChanged: () => void;
-    projectPicker?: React.ReactNode;
-}> = ({ item, project, context, onStartWorktree, onChanged, projectPicker }) => {
+    /** Left of the actions: where a Linear issue's session starts, with a way to pick another project. */
+    startIn?: React.ReactNode;
+}> = ({ item, project, context, onStartWorktree, onChanged, startIn }) => {
     const { t } = useI18n();
     const { sourceControl, linear } = useRuntimeAPIs();
     const confirmation = useConfirmDialog();
@@ -162,30 +163,36 @@ export const SourceBoardActions: React.FC<{
         }
     };
 
-    const canStart = Boolean(project);
+    const maintenance = (
+        <>
+            {openPull && !openPull.draft && mergeMethod ? (
+                <ActionButton icon="git-merge" label={t('sourceBoard.actions.merge')} busy={busy === 'merge'} onClick={() => void merge()} />
+            ) : null}
+            {openPull?.draft && capabilities?.draftChangeRequests ? (
+                <ActionButton icon="git-pull-request" label={t('sourceBoard.actions.markReady')} busy={busy === 'ready'} onClick={() => void markReady()} />
+            ) : null}
+        </>
+    );
 
+    // One row: where the work starts or what the PR needs on the left, the
+    // ways to start on the right, the main one last as in a dialog footer.
     return (
-        <div className="flex flex-col gap-2">
-            {projectPicker}
-            <div className="flex flex-wrap items-center gap-2">
-                {canStart && project ? (
-                    <>
-                        <ActionButton
-                            icon="git-branch"
-                            variant="default"
-                            label={t(pull ? 'sourceBoard.actions.checkoutWorktree' : 'sourceBoard.actions.startWorktree')}
-                            onClick={() => onStartWorktree(project, selectionOf(item))}
-                        />
-                        <ActionButton icon="chat-new" label={t('sourceBoard.actions.newSession')} onClick={startSession} />
-                    </>
-                ) : null}
-                {openPull && !openPull.draft && mergeMethod ? (
-                    <ActionButton icon="git-merge" label={t('sourceBoard.actions.merge')} busy={busy === 'merge'} onClick={() => void merge()} />
-                ) : null}
-                {openPull?.draft && capabilities?.draftChangeRequests ? (
-                    <ActionButton icon="git-pull-request" label={t('sourceBoard.actions.markReady')} busy={busy === 'ready'} onClick={() => void markReady()} />
-                ) : null}
+        <div className="flex min-h-8 flex-wrap items-center gap-2">
+            <div className="mr-auto flex min-w-0 items-center gap-2">
+                {startIn}
+                {maintenance}
             </div>
+            {project ? (
+                <div className="flex shrink-0 items-center gap-2">
+                    <ActionButton icon="chat-new" label={t('sourceBoard.actions.newSession')} onClick={startSession} />
+                    <ActionButton
+                        icon="git-branch"
+                        variant="default"
+                        label={t(pull ? 'sourceBoard.actions.checkoutWorktree' : 'sourceBoard.actions.startWorktree')}
+                        onClick={() => onStartWorktree(project, selectionOf(item))}
+                    />
+                </div>
+            ) : null}
             {confirmation.dialog}
         </div>
     );

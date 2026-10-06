@@ -795,22 +795,6 @@
       "scope": "device",
       "local": true
     },
-    "linearIssueListStatus": {
-      "scope": "device",
-      "local": true
-    },
-    "linearIssueListAssignee": {
-      "scope": "device",
-      "local": true
-    },
-    "linearIssueListTeamIdByRuntime": {
-      "scope": "device",
-      "local": true
-    },
-    "linearIssueListPriority": {
-      "scope": "device",
-      "local": true
-    },
     "showTerminalQuickKeysOnDesktop": {
       "scope": "device",
       "local": true

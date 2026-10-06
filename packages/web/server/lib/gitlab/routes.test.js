@@ -638,10 +638,11 @@ describe('GitLab routes', () => {
 
     expect(createClient).toHaveBeenCalledTimes(2);
     expect(createClient).toHaveBeenCalledWith({ origin, token: 'bound-token', tokenType: 'oauth' });
-    expect(listChangeRequests).toHaveBeenCalledWith('/repo', { page: 1, query: undefined, remote: 'upstream' });
+    expect(listChangeRequests).toHaveBeenCalledWith('/repo', { page: 1, query: undefined, state: 'open', people: 'any', remote: 'upstream' });
     expect(changeRequestContext).toHaveBeenCalledWith('/repo', 5, {
       includeDiff: true,
       includeCIDetails: true,
+      includeTimeline: false,
       project: { owner: 'team', name: 'repo' },
       remote: 'upstream',
       constrainToPrimary: true,
@@ -715,7 +716,7 @@ describe('GitLab routes', () => {
     expect(createClient).toHaveBeenCalledTimes(5);
     expect(createClient).toHaveBeenCalledWith({ origin, token: 'bound-token', tokenType: 'oauth' });
     expect(createResourceService).toHaveBeenCalledWith(expect.objectContaining({ canonicalReads: true }));
-    expect(listIssues).toHaveBeenCalledWith('/repo', { page: 2, query: 'bug', remote: 'upstream' });
+    expect(listIssues).toHaveBeenCalledWith('/repo', { page: 2, query: 'bug', state: 'open', people: 'any', remote: 'upstream' });
     expect(getIssue).toHaveBeenCalledWith('/repo', 3, { owner: 'team', name: 'repo' }, 'upstream');
     expect(issueComments).toHaveBeenCalledWith('/repo', 3, { owner: 'team', name: 'repo' }, 'upstream');
     expect(projectUpstream).toHaveBeenCalledWith('/repo', 'upstream');

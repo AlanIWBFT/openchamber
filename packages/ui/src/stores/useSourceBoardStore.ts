@@ -22,7 +22,12 @@ const EMPTY_CHOICE: SourceBoardChoice = { projectId: null, tab: 'repository', li
 type SourceBoardState = {
   /** Keyed by runtime: project and team ids belong to one server. */
   choices: Record<string, SourceBoardChoice>;
+  /** A Linear issue another surface asked the board to show; taken once. */
+  linearFocus: string | null;
   update: (patch: Partial<SourceBoardChoice>) => void;
+  /** Switches to Linear and searches for `identifier`; the caller opens the board. */
+  focusLinearIssue: (identifier: string) => void;
+  clearLinearFocus: () => void;
 };
 
 const persistedChoices = z.object({
@@ -39,12 +44,18 @@ const persistedChoices = z.object({
  */
 export const useSourceBoardStore = create<SourceBoardState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       choices: {},
+      linearFocus: null,
       update: (patch) => set((state) => {
         const runtimeKey = getRuntimeKey();
         return { choices: { ...state.choices, [runtimeKey]: { ...(state.choices[runtimeKey] ?? EMPTY_CHOICE), ...patch } } };
       }),
+      focusLinearIssue: (identifier) => {
+        get().update({ tab: 'linear', linearTeamId: null });
+        set({ linearFocus: identifier });
+      },
+      clearLinearFocus: () => set({ linearFocus: null }),
     }),
     {
       name: SOURCE_BOARD_STORAGE_KEY,

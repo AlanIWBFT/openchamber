@@ -86,6 +86,51 @@ describe('GitLab resource service', () => {
     await expect(result).rejects.toThrow('invalid merge request');
   });
 
+  it('lists by state and by whose items, reading the user once for review requests', async () => {
+    const all = list([openMR]);
+    const showCurrentUser = vi.fn(async () => ({ id: 3, username: 'sam' }));
+    const issuesAll = list([]);
+    const { service } = setup({
+      MergeRequests: { ...setup().client.MergeRequests, all },
+      Users: { showCurrentUser },
+      Issues: { ...setup().client.Issues, all: issuesAll },
+    });
+    await service.listChangeRequests('/repo', { state: 'merged', people: 'created' });
+    expect(all.mock.calls.at(-1)?.[0]).toMatchObject({ state: 'merged', scope: 'created_by_me' });
+    await service.listChangeRequests('/repo', { state: 'all', people: 'reviewRequested' });
+    await service.listChangeRequests('/repo', { people: 'reviewRequested' });
+    expect(all.mock.calls.at(-1)?.[0]).toMatchObject({ state: 'opened', scope: 'all', reviewerUsername: 'sam' });
+    expect(showCurrentUser).toHaveBeenCalledTimes(1);
+    await service.listIssues('/repo', { state: 'merged', people: 'assigned' });
+    expect(issuesAll.mock.calls.at(-1)?.[0]).toMatchObject({ state: 'closed', scope: 'assigned_to_me' });
+  });
+
+  it('adds commits and review verdicts only when the timeline asks', async () => {
+    const commits = [
+      { id: 'bbb', title: 'second', author_name: 'Sam', committed_date: '2026-10-02T10:00:00Z', web_url: `${origin}/team/repo/-/commit/bbb` },
+      { id: 'aaa', title: 'first', author_name: 'Sam', committed_date: '2026-10-01T10:00:00Z', web_url: `${origin}/team/repo/-/commit/aaa` },
+    ];
+    const notes = [
+      { id: 4, body: 'Looks good', author: { id: 3, username: 'sam' } },
+      { id: 5, body: 'approved this merge request', system: true, created_at: '2026-10-02T11:00:00Z', author: { id: 3, username: 'sam' } },
+      { id: 6, body: 'added 1 commit', system: true, author: { id: 3, username: 'sam' } },
+    ];
+    const allCommits = list(commits);
+    const { service } = setup({
+      MergeRequests: { ...setup().client.MergeRequests, allCommits },
+      MergeRequestNotes: { all: list(notes) },
+    });
+    const plain = await service.changeRequestContext('/repo', 5, {});
+    expect(plain).not.toHaveProperty('commits');
+    expect(allCommits).not.toHaveBeenCalled();
+
+    const result = await service.changeRequestContext('/repo', 5, { includeTimeline: true });
+    expect(result.commits.map((commit) => commit.headline)).toEqual(['first', 'second']);
+    expect(result.commitsComplete).toBe(true);
+    expect(result.verdicts).toMatchObject([{ state: 'approved', createdAt: '2026-10-02T11:00:00Z', author: { username: 'sam' } }]);
+    expect(result.issueComments.map((comment) => comment.body)).toEqual(['Looks good']);
+  });
+
   it('keeps merge-request context when CI jobs fail', async () => {
     const { service } = setup({ Jobs: { all: vi.fn(async () => { throw new Error('jobs unavailable'); }) } });
     const result = await service.changeRequestContext('/repo', 5, { includeDiff: true, includeCIDetails: true });

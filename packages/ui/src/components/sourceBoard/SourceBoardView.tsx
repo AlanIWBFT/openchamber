@@ -14,19 +14,19 @@ import * as React from 'react';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { NewWorktreeDialog } from '@/components/session/NewWorktreeDialog';
-import { ReferenceBrowserList, ReferenceBrowserSearch, ReferenceBrowserTabs } from '@/components/references/ReferenceBrowser';
+import { ReferenceBrowserList, ReferenceBrowserSearch } from '@/components/references/ReferenceBrowser';
 import { IDLE_PULL_STATUS, useReferenceBrowser } from '@/components/references/useReferenceBrowser';
 import { ReferencePreview } from '@/components/references/ReferencePreview';
 import type { ReferencePickerSelection } from '@/components/references/referencePickerItems';
 import { useGitHubReadContext, useRepositoryHostProvider } from '@/components/references/referenceSources';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
-import type { LinearMappingResult, ProjectEntry, SourceControlReadContext } from '@/lib/api/types';
+import type { GitHubReferenceKind, LinearMappingResult, ProjectEntry, SourceControlReadContext } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
+import { resolveLinearMappedProjectPath } from '@/lib/linearProjectMapping';
 import { normalizeProjectPath, resolveProjectForSessionDirectory } from '@/lib/projectResolution';
-import { formatDirectoryName } from '@/lib/utils';
 import { useLinearAuthStore } from '@/stores/useLinearAuthStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSourceBoardChoice, useSourceBoardStore, type SourceBoardTab } from '@/stores/useSourceBoardStore';
@@ -34,10 +34,8 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
 import { SourceBoardActions, SourceBoardPullLinks, type SourceBoardProject } from './SourceBoardActions';
-
-const ALL_TEAMS = '__all__';
-
-const projectLabel = (project: ProjectEntry): string => project.label?.trim() || formatDirectoryName(project.path) || project.path;
+import { SourceBoardLinearStatus } from './SourceBoardLinearStatus';
+import { SourceBoardProjectPicker, SourceBoardTeamPicker } from './SourceBoardPickers';
 
 const openIntegrationsSettings = () => {
     const ui = useUIStore.getState();
@@ -45,19 +43,19 @@ const openIntegrationsSettings = () => {
     ui.setSettingsDialogOpen(true);
 };
 
-/** Linear's teams and which project each one works in, read once per open. */
-function useLinearMapping(enabled: boolean): LinearMappingResult | null {
+/** Linear's teams and which project each one works in, read once per open and workspace. */
+function useLinearMapping(enabled: boolean, workspaceId: string): LinearMappingResult | null {
     const { linear } = useRuntimeAPIs();
-    const [mapping, setMapping] = React.useState<LinearMappingResult | null>(null);
+    const [loaded, setLoaded] = React.useState<{ workspaceId: string; mapping: LinearMappingResult } | null>(null);
     React.useEffect(() => {
         if (!enabled || !linear?.mappingGet) return;
         let cancelled = false;
         void linear.mappingGet()
-            .then((result) => { if (!cancelled) setMapping(result); })
+            .then((mapping) => { if (!cancelled) setLoaded({ workspaceId, mapping }); })
             .catch(() => undefined);
         return () => { cancelled = true; };
-    }, [enabled, linear]);
-    return mapping;
+    }, [enabled, linear, workspaceId]);
+    return loaded && loaded.workspaceId === workspaceId ? loaded.mapping : null;
 }
 
 export const SourceBoardView: React.FC = () => {
@@ -70,6 +68,9 @@ export const SourceBoardView: React.FC = () => {
     );
 };
 
+/** What the board lists: the repository's issues or change requests, or Linear. */
+type SourceBoardKind = GitHubReferenceKind | 'linear';
+
 const SourceBoard: React.FC = () => {
     const { t } = useI18n();
     const { linear } = useRuntimeAPIs();
@@ -77,6 +78,8 @@ const SourceBoard: React.FC = () => {
     const activeProjectId = useProjectsStore((state) => state.activeProjectId);
     const choice = useSourceBoardChoice();
     const updateChoice = useSourceBoardStore((state) => state.update);
+    // The repository tab to land on when switching back from Linear.
+    const [repositoryKind, setRepositoryKind] = React.useState<GitHubReferenceKind | undefined>(undefined);
 
     // The remembered project while it still exists, else the app's own.
     const project = projects.find((entry) => entry.id === choice.projectId)
@@ -92,68 +95,43 @@ const SourceBoard: React.FC = () => {
         ? 'linear'
         : hasRepository ? 'repository' : hasLinear ? 'linear' : null;
 
-    const mapping = useLinearMapping(tab === 'linear' && linearConnected);
+    const linearWorkspaceId = useLinearAuthStore((state) => state.status?.organization?.id ?? '');
+    const mapping = useLinearMapping(tab === 'linear' && linearConnected, linearWorkspaceId);
     const teams = mapping?.teams ?? [];
     const linearTeamId = choice.linearTeamId && teams.some((team) => team.id === choice.linearTeamId) ? choice.linearTeamId : null;
 
-    const sourceButton = (id: SourceBoardTab, icon: 'github' | 'gitlab' | 'linear', label: string) => (
-        <Button
-            key={id}
-            type="button"
-            variant="chip"
-            size="sm"
-            aria-pressed={tab === id}
-            onClick={() => updateChoice({ tab: id })}
-        >
-            <Icon name={icon} className="size-4" />
-            {label}
-        </Button>
-    );
-
-    const sourceSwitch = (
-        <div className="flex shrink-0 items-center gap-1" role="group" aria-label={t('sourceBoard.source.label')}>
-            {hasRepository ? sourceButton('repository', hostProvider === 'gitlab' ? 'gitlab' : 'github', hostProvider === 'gitlab' ? 'GitLab' : 'GitHub') : null}
-            {hasLinear ? sourceButton('linear', 'linear', 'Linear') : null}
-        </div>
-    );
-
-    const scopePicker = tab === 'linear' ? (
-        teams.length > 0 ? (
-            <Select
-                value={linearTeamId ?? ALL_TEAMS}
-                onValueChange={(value) => updateChoice({ linearTeamId: value === ALL_TEAMS ? null : value })}
-            >
-                <SelectTrigger aria-label={t('sourceBoard.team.label')} className="h-8 w-[14rem]">
-                    <SelectValue>{teams.find((team) => team.id === linearTeamId)?.name ?? t('sourceBoard.team.all')}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value={ALL_TEAMS}>{t('sourceBoard.team.all')}</SelectItem>
-                    {teams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}
-                </SelectContent>
-            </Select>
-        ) : null
-    ) : project ? (
-        <Select value={project.id} onValueChange={(value) => updateChoice({ projectId: value })}>
-            <SelectTrigger aria-label={t('sourceBoard.project.label')} className="h-8 w-[14rem]">
-                <SelectValue>{projectLabel(project)}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-                {projects.map((entry) => <SelectItem key={entry.id} value={entry.id}>{projectLabel(entry)}</SelectItem>)}
-            </SelectContent>
-        </Select>
+    const projectPicker = project ? (
+        <SourceBoardProjectPicker
+            projects={projects}
+            selected={project}
+            onSelect={(projectId) => updateChoice({ projectId, tab: 'repository' })}
+            ariaLabel={t('sourceBoard.project.label')}
+            size="toolbar"
+        />
     ) : null;
+    // On Linear the board lists a team, not a project.
+    const scopePicker = tab === 'linear' ? (
+        <SourceBoardTeamPicker
+            teams={teams}
+            selectedTeamId={linearTeamId}
+            onSelectTeam={(teamId) => updateChoice({ linearTeamId: teamId })}
+            onWorkspaceSwitched={() => updateChoice({ linearTeamId: null })}
+        />
+    ) : projectPicker;
 
-    const toolbar = (
-        <div className="flex flex-wrap items-center gap-2">
-            {sourceSwitch}
-            {scopePicker}
-        </div>
-    );
+    const selectKind = (kind: SourceBoardKind) => {
+        if (kind === 'linear') {
+            updateChoice({ tab: 'linear' });
+            return;
+        }
+        setRepositoryKind(kind);
+        updateChoice({ tab: 'repository' });
+    };
 
     if (!tab) {
         return (
             <>
-                <div className="shrink-0 border-b border-border/60 px-5 py-3">{toolbar}</div>
+                <div className="flex h-12 shrink-0 items-center border-b border-border/60 px-2">{projectPicker}</div>
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center typography-meta text-muted-foreground">
                     <span>{t(projects.length === 0 ? 'sourceBoard.empty.noProjects' : 'sourceBoard.empty.noSource')}</span>
                     {projects.length > 0 ? (
@@ -174,7 +152,10 @@ const SourceBoard: React.FC = () => {
             linearTeamId={linearTeamId}
             mapping={mapping}
             projects={projects}
-            toolbar={toolbar}
+            scopePicker={scopePicker}
+            kinds={{ repository: hasRepository ? (hostProvider === 'gitlab' ? 'gitlab' : 'github') : null, linear: hasLinear }}
+            initialRepositoryKind={repositoryKind}
+            onSelectKind={selectKind}
         />
     );
 };
@@ -186,12 +167,30 @@ const SourceBoardBody: React.FC<{
     linearTeamId: string | null;
     mapping: LinearMappingResult | null;
     projects: ProjectEntry[];
-    toolbar: React.ReactNode;
-}> = ({ tab, project, directory, linearTeamId, mapping, projects, toolbar }) => {
+    scopePicker: React.ReactNode;
+    /** The tabs this project offers: its repository host's, and Linear's. */
+    kinds: { repository: 'github' | 'gitlab' | null; linear: boolean };
+    initialRepositoryKind?: GitHubReferenceKind;
+    onSelectKind: (kind: SourceBoardKind) => void;
+}> = ({ tab, project, directory, linearTeamId, mapping, projects, scopePicker, kinds, initialRepositoryKind, onSelectKind }) => {
     const { t } = useI18n();
     const source = tab === 'linear' ? 'linear' : 'github';
-    const browser = useReferenceBrowser({ source, directory: tab === 'linear' ? null : directory, isMobile: false, linearTeamId });
+    const browser = useReferenceBrowser({
+        source,
+        directory: tab === 'linear' ? null : directory,
+        isMobile: false,
+        linearTeamId,
+        initialGitHubKind: initialRepositoryKind,
+    });
     const { previewItem } = browser;
+    // A Linear issue another surface asked to show: searched for, then forgotten.
+    const linearFocus = useSourceBoardStore((state) => (tab === 'linear' ? state.linearFocus : null));
+    const { setQuery } = browser;
+    React.useEffect(() => {
+        if (!linearFocus) return;
+        setQuery(linearFocus);
+        useSourceBoardStore.getState().clearLinearFocus();
+    }, [linearFocus, setQuery]);
     const currentDirectory = useEffectiveDirectory();
     const worktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
     const [worktreeRequest, setWorktreeRequest] = React.useState<{ project: SourceBoardProject; selection: ReferencePickerSelection } | null>(null);
@@ -202,7 +201,7 @@ const SourceBoardBody: React.FC<{
     const linearIssueId = previewItem?.source === 'linear' ? previewItem.issue.id : null;
     const linearProjectOverride = linearProjectChoice && linearProjectChoice.issueId === linearIssueId ? linearProjectChoice.projectId : null;
     const linearTeam = previewItem?.source === 'linear' ? previewItem.issue.team ?? null : null;
-    const mappedPath = (linearTeam && mapping?.teams?.find((team) => team.id === linearTeam.id)?.projectPath) || mapping?.defaultProjectPath || null;
+    const mappedPath = previewItem?.source === 'linear' ? resolveLinearMappedProjectPath(mapping, linearTeam) : null;
     const mappedProject = mappedPath ? projects.find((entry) => normalizeProjectPath(entry.path) === normalizeProjectPath(mappedPath)) ?? null : null;
     const actionProjectEntry = tab === 'linear'
         ? projects.find((entry) => entry.id === linearProjectOverride) ?? mappedProject ?? project
@@ -219,21 +218,18 @@ const SourceBoardBody: React.FC<{
 
     const title = t(tab === 'linear' ? 'sourceBoard.list.linear' : browser.isGitLab ? 'sourceBoard.list.gitlab' : 'sourceBoard.list.github');
 
-    const linearProjectPicker = tab === 'linear' && actionProjectEntry ? (
-        <label className="flex items-center gap-2 typography-meta text-muted-foreground">
+    // Where a Linear issue's session starts, changeable for that issue.
+    const startIn = tab === 'linear' && actionProjectEntry ? (
+        <span className="flex min-w-0 items-center gap-1 typography-meta text-muted-foreground">
             {t('sourceBoard.linear.startIn')}
-            <Select
-                value={actionProjectEntry.id}
-                onValueChange={(projectId) => { if (linearIssueId) setLinearProjectChoice({ issueId: linearIssueId, projectId }); }}
-            >
-                <SelectTrigger aria-label={t('sourceBoard.linear.startIn')} className="h-7 w-[14rem]">
-                    <SelectValue>{projectLabel(actionProjectEntry)}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                    {projects.map((entry) => <SelectItem key={entry.id} value={entry.id}>{projectLabel(entry)}</SelectItem>)}
-                </SelectContent>
-            </Select>
-        </label>
+            <SourceBoardProjectPicker
+                projects={projects}
+                selected={actionProjectEntry}
+                onSelect={(projectId) => { if (linearIssueId) setLinearProjectChoice({ issueId: linearIssueId, projectId }); }}
+                ariaLabel={t('sourceBoard.linear.startIn')}
+                size="inline"
+            />
+        </span>
     ) : null;
 
     const actions = previewItem ? (
@@ -243,7 +239,7 @@ const SourceBoardBody: React.FC<{
             context={context}
             onStartWorktree={(target, selection) => setWorktreeRequest({ project: target, selection })}
             onChanged={browser.list.retry}
-            projectPicker={linearProjectPicker}
+            startIn={startIn}
         />
     ) : null;
 
@@ -259,6 +255,7 @@ const SourceBoardBody: React.FC<{
             onIncludeDiffChange={() => undefined}
             now={browser.now}
             footer={actions}
+            linearStateControl={previewItem?.source === 'linear' ? <SourceBoardLinearStatus issue={previewItem.issue} onChanged={browser.list.retry} /> : undefined}
             pullLinks={previewItem?.source === 'github' && previewItem.reference.kind === 'pull' && actionProject && context ? (
                 <SourceBoardPullLinks
                     pull={previewItem.reference}
@@ -293,14 +290,41 @@ const SourceBoardBody: React.FC<{
         />
     );
 
+    const kindItems = [
+        ...(kinds.repository ? [
+            { id: 'issue', label: t('references.picker.tab.issues'), icon: <Icon name="record-circle" className="size-3.5" /> },
+            { id: 'pull', label: t(kinds.repository === 'gitlab' ? 'references.picker.tab.mergeRequests' : 'references.picker.tab.pulls'), icon: <Icon name="git-pull-request" className="size-3.5" /> },
+        ] : []),
+        ...(kinds.linear ? [{ id: 'linear', label: 'Linear', icon: <Icon name="linear" className="size-3.5" /> }] : []),
+    ];
+    const kindSwitch = (
+        <div className="shrink-0">
+            <SortableTabsStrip
+                items={kindItems}
+                activeId={tab === 'linear' ? 'linear' : browser.githubKind}
+                onSelect={(id) => {
+                    if (id === 'linear' || tab === 'linear') {
+                        onSelectKind(id === 'pull' ? 'pull' : id === 'issue' ? 'issue' : 'linear');
+                        return;
+                    }
+                    browser.selectGitHubKind(id === 'pull' ? 'pull' : 'issue');
+                }}
+                variant="active-pill"
+                // Sized by its labels: `fit` shares out a parent width this row does not give it.
+                layoutMode="scrollable"
+                activePillButtonClassName="h-7 px-3"
+            />
+        </div>
+    );
+
+    // One row: what is listed (scope and kind), then how it is narrowed.
+    // The scope trigger's icon sits 16 px in, on the line of the rows' icons.
     return (
         <>
-            <div className="flex shrink-0 flex-col gap-3 border-b border-border/60 px-5 pb-3 pt-4">
-                {toolbar}
-                <div className="flex flex-wrap items-center gap-3">
-                    <ReferenceBrowserTabs browser={browser} />
-                    {search}
-                </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 px-2 py-2.5">
+                {scopePicker}
+                {kindSwitch}
+                {search}
             </div>
             <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
                 <ScrollableOverlay outerClassName="min-h-0 border-r border-border/60" disableHorizontal>

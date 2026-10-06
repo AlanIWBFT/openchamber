@@ -28,8 +28,15 @@ const REFERENCE_PAGE_SIZE = 30;
 // The preview shows the description; the attach path reads the full one.
 const BODY_PREVIEW_MAX = 20_000;
 // Keys match the filter schema below.
-const SEARCH_FILTERS = {
-  open: '',
+// The list's state and whose items it shows combine, one qualifier each.
+const SEARCH_STATES = {
+  open: 'is:open',
+  closed: 'is:closed',
+  merged: 'is:merged',
+  all: '',
+};
+const SEARCH_PEOPLE = {
+  any: '',
   assigned: 'assignee:@me',
   created: 'author:@me',
   reviewRequested: 'review-requested:@me',
@@ -67,6 +74,8 @@ fragment PullReference on PullRequest {
 
 // The newest comments and reviews; `totalCount` says how many there are.
 const DETAIL_COMMENT_LIMIT = 50;
+// The newest commits, so the preview can show what each review answered.
+const DETAIL_COMMIT_LIMIT = 50;
 
 const DETAIL_QUERY = `
 query ReferenceDetail($owner: String!, $repo: String!, $number: Int!) {
@@ -84,6 +93,10 @@ query ReferenceDetail($owner: String!, $repo: String!, $number: Int!) {
         deletions
         changedFiles
         comments(last: ${DETAIL_COMMENT_LIMIT}) { totalCount nodes { ...DetailComment } }
+        commits(last: ${DETAIL_COMMIT_LIMIT}) {
+          totalCount
+          nodes { commit { oid messageHeadline committedDate url author { name user { login avatarUrl } } } }
+        }
         reviews(last: 30) {
           nodes {
             author { login avatarUrl }
@@ -180,6 +193,18 @@ const detailSchema = z.object({
         deletions: z.number().int(),
         changedFiles: z.number().int(),
         comments: z.object({ totalCount: z.number().int(), nodes: z.array(detailCommentSchema) }),
+        commits: z.object({
+          totalCount: z.number().int(),
+          nodes: z.array(z.object({
+            commit: z.object({
+              oid: z.string(),
+              messageHeadline: z.string(),
+              committedDate: z.string().nullable(),
+              url: z.string().nullable(),
+              author: z.object({ name: z.string().nullable(), user: userSchema }).nullable(),
+            }),
+          })),
+        }),
         reviews: z.object({
           nodes: z.array(z.object({
             author: userSchema,
@@ -325,6 +350,15 @@ export async function fetchReferenceDetail({ octokit, owner, repo, number }) {
       additions: item.additions,
       deletions: item.deletions,
       changedFiles: item.changedFiles,
+      commits: item.commits.nodes.map(({ commit }) => ({
+        sha: commit.oid,
+        headline: commit.messageHeadline,
+        author: toAuthor(commit.author?.user ?? null),
+        authorName: commit.author?.name ?? null,
+        committedAt: commit.committedDate,
+        url: commit.url,
+      })),
+      commitTotal: item.commits.totalCount,
     },
   };
 }
@@ -348,12 +382,18 @@ export function readPullStatusRefs(value) {
   return parseSummaryRefs(refs);
 }
 
-const filterSchema = z.enum(['open', 'assigned', 'created', 'reviewRequested']).catch('open');
+const stateSchema = z.enum(['open', 'closed', 'merged', 'all']).catch('open');
+const peopleSchema = z.enum(['any', 'assigned', 'created', 'reviewRequested']).catch('any');
 const kindSchema = z.enum(['issue', 'pull']).nullable().catch(null);
 
-/** The picker's filter values; anything else reads as `open`. */
-export function readReferenceFilter(value) {
-  return filterSchema.parse(value);
+/** A list's state; anything else reads as `open`. */
+export function readReferenceState(value) {
+  return stateSchema.parse(value);
+}
+
+/** Whose items a list shows; anything else reads as `any`. */
+export function readReferencePeople(value) {
+  return peopleSchema.parse(value);
 }
 
 /** `issue` or `pull`; anything else is null. */
@@ -391,18 +431,21 @@ export function parseReferenceLookup(text, repos) {
  * The GitHub search string for one picker page. The user's text may carry
  * its own qualifiers; state and sort are added only when it does not.
  */
-export function buildReferenceSearchQuery({ repos, kind, filter, text }) {
+export function buildReferenceSearchQuery({ repos, kind, state, people, text }) {
   const userText = text.trim();
   const parts = repos.map((entry) => `repo:${entry.owner}/${entry.repo}`);
   parts.push(kind === 'pull' ? 'is:pr' : 'is:issue');
   if (!/(^|\s)(is:(open|closed|merged|unmerged)|state:\S+)/i.test(userText)) {
-    parts.push('is:open');
+    // An issue is never merged; the nearest list is its closed one.
+    const stateQualifier = SEARCH_STATES[kind === 'issue' && state === 'merged' ? 'closed' : state];
+    if (stateQualifier) parts.push(stateQualifier);
   }
   if (!/(^|\s)sort:\S+/i.test(userText)) {
     parts.push('sort:updated-desc');
   }
-  const qualifier = SEARCH_FILTERS[filter];
-  if (qualifier) parts.push(qualifier);
+  // Review requests exist for pull requests only.
+  const peopleQualifier = kind === 'issue' && people === 'reviewRequested' ? '' : SEARCH_PEOPLE[people];
+  if (peopleQualifier) parts.push(peopleQualifier);
   if (userText) parts.push(userText);
   return parts.join(' ');
 }
@@ -442,7 +485,7 @@ async function runPartialQuery(octokit, query, variables) {
  * first. A lookup answers every repo that has the number, both kinds; a
  * search answers one kind, newest activity first.
  */
-export async function searchGitHubReferences({ octokit, repos, kind, filter, text, cursor }) {
+export async function searchGitHubReferences({ octokit, repos, kind, state, people, text, cursor }) {
   const lookup = parseReferenceLookup(text, repos);
   if (lookup) {
     if (lookup.repos.length === 0) {
@@ -457,7 +500,7 @@ export async function searchGitHubReferences({ octokit, repos, kind, filter, tex
   }
 
   const { search } = searchResultSchema.parse(await octokit.graphql(SEARCH_QUERY, {
-    q: buildReferenceSearchQuery({ repos, kind, filter, text }),
+    q: buildReferenceSearchQuery({ repos, kind, state, people, text }),
     first: REFERENCE_PAGE_SIZE,
     after: cursor || null,
   }));

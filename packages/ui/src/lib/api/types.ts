@@ -1623,11 +1623,16 @@ export type GitHubIssuesListResult = {
 export type GitHubReferenceKind = 'issue' | 'pull';
 
 /** Which slice of open items the picker lists; `reviewRequested` is for PRs. */
-export type GitHubReferenceFilter = 'open' | 'assigned' | 'created' | 'reviewRequested';
+/** A repository list's state; `merged` applies to change requests. */
+export type RepositoryReferenceState = 'open' | 'closed' | 'merged' | 'all';
+/** Whose items a repository list shows; review requests apply to change requests. */
+export type RepositoryReferencePeople = 'any' | 'assigned' | 'created' | 'reviewRequested';
+export type RepositoryReferenceFilter = { state: RepositoryReferenceState; people: RepositoryReferencePeople };
 
 export type GitHubReferencesOptions = {
   kind: GitHubReferenceKind;
-  filter?: GitHubReferenceFilter;
+  state?: RepositoryReferenceState;
+  people?: RepositoryReferencePeople;
   /** Search text, or a pasted link or number, which names one item of either kind. */
   query?: string;
   cursor?: string | null;
@@ -1699,7 +1704,21 @@ export type GitHubReferenceDetail = {
      * checks come with its status, the answer that also colours it.
      */
     checks?: GitHubChecksSummary | null;
+    /** The newest commits, oldest first, for the timeline beside the comments. */
+    commits: GitHubReferenceCommit[];
+    /** How many commits the PR has in all; null when the host does not say. */
+    commitTotal: number | null;
   } | null;
+};
+
+export type GitHubReferenceCommit = {
+  sha: string;
+  headline: string;
+  /** The host account behind the commit, when it is known. */
+  author: { login: string; avatarUrl?: string } | null;
+  authorName: string | null;
+  committedAt: string | null;
+  url: string | null;
 };
 
 export type GitHubReferenceDetailResult =
@@ -1817,17 +1836,23 @@ export interface SourceControlAPI {
   changeRequestReady(payload: ReadyChangeRequestInput): Promise<SourceControlMutationReceipt<SourceControlReadyMutationResult>>;
   changeRequestsList(
     context: SourceControlReadContext,
-    options?: { page?: number; query?: string },
+    options?: { page?: number; query?: string; state?: RepositoryReferenceState; people?: RepositoryReferencePeople },
   ): Promise<PageResult<ChangeRequest>>;
   changeRequestContext(
     context: SourceControlReadContext,
     number: number,
-    options?: { includeDiff?: boolean; includeCIDetails?: boolean; project?: { owner: string; name: string } },
+    options?: {
+      includeDiff?: boolean;
+      includeCIDetails?: boolean;
+      /** Also its commits and review verdicts, for a timeline. GitLab only; GitHub's preview reads them with its detail. */
+      includeTimeline?: boolean;
+      project?: { owner: string; name: string };
+    },
   ): Promise<ChangeRequestContext>;
 
   issuesList(
     context: SourceControlReadContext,
-    options?: { page?: number; query?: string },
+    options?: { page?: number; query?: string; state?: RepositoryReferenceState; people?: RepositoryReferencePeople },
   ): Promise<PageResult<Issue>>;
   issueGet(
     context: SourceControlReadContext,
@@ -2033,8 +2058,10 @@ export type LinearIssue = LinearIssueSummary & {
   comments?: LinearIssueComment[];
 };
 
-export type LinearIssueListStatus = 'all' | 'backlog' | 'todo' | 'started' | 'inReview' | 'completed' | 'canceled' | 'duplicate';
-export type LinearIssueListAssignee = 'any' | 'me';
+/** `open`: not done, canceled or a duplicate; the server's default. */
+export type LinearIssueListStatus = 'open' | 'all' | 'backlog' | 'todo' | 'started' | 'inReview' | 'completed' | 'canceled' | 'duplicate';
+/** Whose issues: anyone's, assigned to me, or created by me. */
+export type LinearIssueListAssignee = 'any' | 'me' | 'created';
 export type LinearIssueListPriority = 'all' | 'none' | 'urgent' | 'high' | 'medium' | 'low';
 
 export type LinearIssuesListOptions = {

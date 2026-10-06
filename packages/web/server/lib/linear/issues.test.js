@@ -263,6 +263,18 @@ describe('Linear issue list/get', () => {
     expect(result.issues).toHaveLength(1);
   });
 
+  it('lists the issues I created', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+      expect(JSON.parse(options.body).variables.filter).toEqual({
+        state: { type: { nin: ['completed', 'canceled', 'duplicate'] } },
+        creator: { isMe: { eq: true } },
+      });
+      return jsonResponse({ data: { issues: { nodes: [issueNode], pageInfo: { hasNextPage: false, endCursor: null } } } });
+    }));
+    const result = await listLinearIssues({ assignee: 'created' });
+    expect(result.issues).toHaveLength(1);
+  });
+
   it('filters each panel status to a Linear state type or name', async () => {
     const filters = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
