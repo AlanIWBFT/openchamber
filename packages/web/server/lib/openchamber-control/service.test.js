@@ -86,6 +86,46 @@ describe('OpenChamber control service', () => {
     }));
   });
 
+  it('updates a scheduled task in place, changing only the named fields', async () => {
+    const { service, scheduledTaskService } = createService();
+    const existing = {
+      id: 'task-1',
+      name: 'Nightly',
+      enabled: true,
+      schedule: { kind: 'daily', times: ['09:00'], timezone: 'UTC' },
+      execution: { prompt: 'Old', providerID: 'a', modelID: 'm', variant: 'high', agent: 'build' },
+      state: { lastRunAt: 5, lastStatus: 'success' },
+    };
+    scheduledTaskService.list.mockResolvedValue([existing]);
+    scheduledTaskService.upsert.mockImplementation(async (_project, task) => ({ task, created: false }));
+
+    await service.execute('schedule.update', { taskId: 'task-1', prompt: 'New', model: 'b/n', cron: '0 * * * *' }, '/repo');
+    const saved = scheduledTaskService.upsert.mock.calls[0][1];
+    expect(saved).toEqual({
+      id: 'task-1',
+      name: 'Nightly',
+      enabled: true,
+      schedule: { kind: 'cron', cron: '0 * * * *' },
+      execution: { prompt: 'New', providerID: 'b', modelID: 'n', agent: 'build' },
+    });
+    // No state in the patch: the stored run history is kept.
+    expect(saved.state).toBeUndefined();
+
+    await service.execute('schedule.update', { taskId: 'task-1', timezone: 'Europe/Kyiv', disabled: true }, '/repo');
+    expect(scheduledTaskService.upsert.mock.calls[1][1]).toMatchObject({
+      enabled: false,
+      schedule: { kind: 'daily', times: ['09:00'], timezone: 'Europe/Kyiv' },
+      execution: existing.execution,
+    });
+  });
+
+  it('refuses to update a missing task or one driven by a loop file', async () => {
+    const { service, scheduledTaskService } = createService();
+    await expect(service.execute('schedule.update', { taskId: 'nope', prompt: 'x' }, '/repo')).rejects.toThrow('Scheduled task not found');
+    scheduledTaskService.list.mockResolvedValue([{ id: 'loop:project:x', loopFile: '/repo/.agents/loops/x.md', name: 'x', execution: {}, schedule: {} }]);
+    await expect(service.execute('schedule.update', { taskId: 'loop:project:x', prompt: 'x' }, '/repo')).rejects.toThrow('change that file instead');
+  });
+
   it('does not combine an explicit schedule project with the tool context directory', async () => {
     const { service, scheduledTaskService } = createService();
     await service.execute('schedule.list', { projectId: ' project-1 ' }, '/current-session');

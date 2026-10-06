@@ -15,6 +15,9 @@ other.
   the filtered `OPENCHAMBER_AGENT_TOOL_*` exports. `schedule.toggle` requires
   the `disabled` boolean and replaces separate enable/disable actions;
   `schedule.list` also returns scheduler status as `scheduler`.
+  `schedule.update` patches a task in place: only the fields the call names
+  change, the id and run state stay, and a task driven by a loop file is
+  refused (the file is its source).
 - `routes.js` is the authenticated CLI HTTP adapter. It forwards one action,
   preserves service status and partial-result details, and propagates request
   cancellation.

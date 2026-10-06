@@ -10,6 +10,7 @@ const WAIT_POLL_INTERVAL_MS = 500;
 // One service, both capabilities: which tool asked is the caller's concern.
 const CONTROL_ACTIONS = new Set(OPENCHAMBER_ALL_ACTIONS);
 const SCHEDULE_TASK_ID_ACTIONS = new Set([
+  'schedule.update',
   'schedule.run',
   'schedule.delete',
   'schedule.toggle',
@@ -140,6 +141,66 @@ const buildScheduledTask = (input) => {
       ...(input.goal === true ? { goalEnabled: true } : {}),
       ...(goalTokenBudget !== undefined ? { goalTokenBudget } : {}),
     },
+  };
+};
+
+/**
+ * `schedule.update`: the stored task with only the fields the call names
+ * changed. The id and the run state stay, so history and references survive;
+ * the scheduler re-arms from the new schedule on save.
+ */
+const patchScheduledTask = (existing, input) => {
+  if (existing.loopFile) {
+    throw new OpenChamberControlError(`This task comes from ${existing.loopFile}; change that file instead`, 409);
+  }
+  const execution = { ...existing.execution };
+  if (input.prompt !== undefined) {
+    const prompt = asNonEmptyString(input.prompt);
+    if (!prompt) throw new OpenChamberControlError('prompt cannot be empty', 400);
+    execution.prompt = prompt;
+  }
+  if (input.model !== undefined) {
+    Object.assign(execution, parseModel(input.model));
+    // A thinking level belongs to the model it was chosen for.
+    delete execution.variant;
+    delete execution.useDefaults;
+  }
+  for (const field of ['variant', 'agent']) {
+    if (input[field] === undefined) continue;
+    const value = asNonEmptyString(input[field]);
+    if (value) execution[field] = value;
+    else delete execution[field];
+  }
+  if (typeof input.goal === 'boolean') {
+    if (input.goal) execution.goalEnabled = true;
+    else {
+      delete execution.goalEnabled;
+      delete execution.goalTokenBudget;
+    }
+  }
+  if (input.goalTokenBudget !== undefined) {
+    if (!execution.goalEnabled) throw new OpenChamberControlError('goalTokenBudget requires goal', 400);
+    if (!Number.isSafeInteger(input.goalTokenBudget) || input.goalTokenBudget < 1000 || input.goalTokenBudget > 100_000_000) {
+      throw new OpenChamberControlError('goalTokenBudget must be from 1000 to 100000000', 400);
+    }
+    execution.goalTokenBudget = input.goalTokenBudget;
+  }
+  let name = existing.name;
+  if (input.name !== undefined) {
+    name = asNonEmptyString(input.name);
+    if (!name) throw new OpenChamberControlError('name cannot be empty', 400);
+  }
+  const replacesSchedule = ['daily', 'weekly', 'once', 'cron'].some((key) => asNonEmptyString(input[key]));
+  const timezone = asNonEmptyString(input.timezone);
+  const schedule = replacesSchedule
+    ? buildSchedule(input)
+    : (timezone ? { ...existing.schedule, timezone } : existing.schedule);
+  return {
+    id: existing.id,
+    name,
+    enabled: typeof input.disabled === 'boolean' ? !input.disabled : existing.enabled,
+    schedule,
+    execution,
   };
 };
 
@@ -647,6 +708,12 @@ export const createOpenChamberControlService = (dependencies) => {
           case 'schedule.create': {
             const result = await scheduledTaskService.upsert(projectID, buildScheduledTask(input));
             return { task: result.task, created: result.created };
+          }
+          case 'schedule.update': {
+            const existing = (await scheduledTaskService.list(projectID)).find((task) => task.id === taskID);
+            if (!existing) throw new OpenChamberControlError(`Scheduled task not found: ${taskID}`, 404);
+            const result = await scheduledTaskService.upsert(projectID, patchScheduledTask(existing, input));
+            return { task: result.task, updated: true };
           }
           case 'schedule.run':
             return scheduledTaskService.run(projectID, taskID);
