@@ -52,7 +52,7 @@ import { StaticToolRow } from './parts/ProgressiveGroup';
 import { ExplorationToolGroup } from './parts/ExplorationToolGroup';
 import { isExpandableTool } from './parts/toolRenderUtils';
 import { LiveActivityCollapse } from '../components/LiveActivityCollapse';
-import { ActivityRowSkipContext, isActivityRowPart, isToolRowShown } from '../lib/turns/activityRows';
+import { isToolRowShown } from '../lib/turns/activityRows';
 import { LiveFinalActivityContext } from '../components/liveActivityContext';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
@@ -1298,7 +1298,6 @@ const AssistantMessageBody = React.memo(({
     const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
     const vscodeApi = useRuntimeAPIs().vscode;
     const liveFinalActivity = React.useContext(LiveFinalActivityContext);
-    const activityRowSkip = React.useContext(ActivityRowSkipContext);
     const isLastAssistantInTurn = turnGroupingContext?.isLastAssistantInTurn ?? false;
     const hasStopFinish = messageFinish === 'stop';
     const effectiveStreamPhase: StreamPhase = hasStopFinish ? 'completed' : streamPhase;
@@ -1650,17 +1649,9 @@ const AssistantMessageBody = React.memo(({
         // Group consecutive static tools (read, grep, glob, etc.) into compact rows.
         // Expandable tools (bash, edit, task) get individual rows.
         // Text renders inline at its natural position.
-        // A working turn with Activity collapsed shows only its latest rows;
-        // the first rows of the message it cuts into are left out here.
-        let rowsToSkip = activityRowSkip?.messageId === messageId ? activityRowSkip.rows : 0;
         let i = 0;
         while (i < visibleParts.length) {
             const part = visibleParts[i];
-            if (rowsToSkip > 0 && isActivityRowPart(part)) {
-                rowsToSkip -= 1;
-                i += 1;
-                continue;
-            }
             rendered = splitLiveActivity && part.type !== 'text' ? activityRendered : answerRendered;
 
             if (part.type === 'text') {
@@ -1812,7 +1803,6 @@ const AssistantMessageBody = React.memo(({
         }
         return answerRendered;
     }, [
-        activityRowSkip,
         alwaysShowMessageActions,
         animatedToolIdsLookup,
         collapsibleThinkingBlocks,

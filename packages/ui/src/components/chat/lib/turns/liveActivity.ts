@@ -1,6 +1,8 @@
 import { getLastConversationRecord } from '@/lib/opencode/model';
-import { isStandaloneTool } from '../../message/parts/toolRenderUtils';
+import { isExplorationPartDisplayReady } from '@/lib/opencode/tools';
+import { shouldHideExecFollowUp } from '../../message/unifiedExec';
 import type { ChatMessageEntry, TurnRecord } from './types';
+import { isToolRowShown, LIVE_ACTIVITY_VISIBLE_ROWS } from './activityRows';
 
 /** A queued user message alone does not retire the previous turn. */
 export function getTurnsWithLaterAssistant(turns: readonly TurnRecord[]): Set<string> {
@@ -25,10 +27,60 @@ export function getLiveFinalMessage(messages: readonly ChatMessageEntry[]): Chat
         ? last : undefined;
 }
 
-/** Subagent calls do not count: a turn that only ran subagents gets no fold, so their rows stay in view. */
 export function hasLiveActivity(turn: TurnRecord, showReasoning: boolean): boolean {
-    return turn.activityParts.some((activity) => (
-        (activity.part.type === 'tool' && !isStandaloneTool(activity.part.tool))
-        || (showReasoning && activity.kind === 'reasoning')
-    ));
+    return turn.hasTools || (showReasoning && turn.hasReasoning);
+}
+
+/** Select seven native rows of a running turn, keeping Exploration whole and pinning the latest prose separately. */
+export function projectLiveActivityPreview(turn: TurnRecord, showReasoning: boolean) {
+    let pinnedText: { message: ChatMessageEntry; part: Extract<ChatMessageEntry['parts'][number], { type: 'text' }> } | undefined;
+    for (const message of turn.assistantMessages) {
+        if (message.info.role !== 'assistant') continue;
+        for (const part of message.parts) {
+            if (part.type === 'text' && part.text.trim()) pinnedText = { message, part };
+        }
+    }
+
+    // Only the group's anchor needs a message body. That body renders the full
+    // original group through its turn context, including calls in later messages.
+    const explorationAnchors = new Map<string, string>();
+    const visibleExplorations = new Set<string>();
+    for (const group of turn.explorationGroups) {
+        const first = group.parts[0];
+        if (!first) continue;
+        if (group.parts.some((activity) => isExplorationPartDisplayReady(activity.part))) visibleExplorations.add(first.id);
+        for (const activity of group.parts) explorationAnchors.set(activity.id, first.id);
+    }
+
+    const rowIds: string[] = [];
+    for (const message of turn.assistantMessages) {
+        for (const part of message.parts) {
+            if (part.type === 'text') {
+                if (part === pinnedText?.part || !part.text.trim()) continue;
+            } else if (part.type === 'reasoning') {
+                if (!showReasoning || !part.text.trim()) continue;
+            } else if (part.type === 'tool') {
+                if (shouldHideExecFollowUp(part)) continue;
+                const anchor = explorationAnchors.get(part.id);
+                if (anchor) {
+                    if (anchor !== part.id || !visibleExplorations.has(anchor)) continue;
+                } else if (!isToolRowShown(part)) {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+            rowIds.push(part.id);
+        }
+    }
+
+    const visibleIds = new Set(rowIds.slice(-LIVE_ACTIVITY_VISIBLE_ROWS));
+    const messages: ChatMessageEntry[] = [];
+    for (const message of turn.assistantMessages) {
+        const parts = message.parts.filter((part) => visibleIds.has(part.id));
+        if (parts.length > 0) {
+            messages.push(parts.length === message.parts.length ? message : { ...message, parts });
+        }
+    }
+    return { messages, pinnedText, hiddenCount: Math.max(0, rowIds.length - LIVE_ACTIVITY_VISIBLE_ROWS) };
 }

@@ -61,12 +61,13 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Thinking block UI (`ReasoningTimelineBlock`), summary + optional duration.
 
 - `components/LiveTurnActivity.tsx` (relative to the chat folder)
-  - Owns the optional turn disclosure. `MessageList` enables it when Activity
-    Default is Collapsed and the turn has visible Activity content.
+  - Owns the turn disclosure. `MessageList` enables it whenever the turn has
+    visible tools or reasoning; Activity Default selects its initial state.
   - `components/LiveActivityCollapse.tsx` owns the finite height transition;
     `components/liveActivityContext.ts` scopes the final message's non-text
     disclosure without changing message context or tool rendering.
-  - `lib/turns/liveActivity.ts` owns final-answer and interruption boundaries.
+  - `lib/turns/liveActivity.ts` owns final-answer and interruption boundaries
+    and the seven-row preview, counting each complete Exploration group once.
   - `lib/turns/liveActivitySummary.ts` derives the report from tool results.
 
 - `BlockLine.tsx`
@@ -100,24 +101,24 @@ reply of more than one text part is drawn by `buildTurnImageExportSource` from
 Markdown with the chat's classes and `decorateMarkdown`. A reply of one text
 part keeps the copy of what the chat rendered.
 
-### Optional history disclosure
+### Live Activity disclosure
 
 The chat has one render mode: parts stream in and stay in the order they ran.
 The Sorted mode, which folded a turn's work into one block above its answers,
 was removed; a stored `chatRenderMode: 'sorted'` reads as Collapsed Activity
-(`lib/settings/parsers.ts`, `parseActivityRenderMode`). Expanded preserves the
-timeline without a turn disclosure. Collapsed adds one Activity header after
-completion or interruption while preserving the original rows, their order, and
-their individual controls. It adds no tool subgroups, side line, height cap, or
-inner scroller. Subagent calls alone do not make a turn collapsible.
+(`lib/settings/parsers.ts`, `parseActivityRenderMode`). Expanded and Collapsed
+select the default state of the same disclosure. Text-only turns stay inline;
+tools, including subagents, and visible reasoning enable the Activity header.
+The original rows retain their order and individual controls.
 
 The active turn has its Activity header from the first step. Folded, it shows
-only the latest 7 rows (a text, a reasoning block or a tool call each;
-`lib/turns/activityRows.ts`); the header counts the earlier ones ("+N more")
-and opens them all. `LiveTurnActivity` leaves out the messages entirely above
-the cut and tells the message it cuts into, through
-`ActivityRowSkipContext`, how many of its first rows `MessageBody` skips; both
-count with the same rule. When the cut moves down, `useActivityRowGlide`
+only the latest 7 top-level rows, counting a cross-message Exploration as one.
+The latest nonempty assistant text is pinned separately below the preview,
+excluded from its row budget, and replaced by newer prose. Original turn
+grouping remains authoritative even when text is pinned. A muted `+N more...`
+control below the header counts earlier rows and opens them all. Hovering the
+running header shows the current view (Latest activity or All activity); touch
+activation shows it for 1.2 seconds. When the cut moves down, `useActivityRowGlide`
 replays the jump as a 220 ms glide of the rows (FLIP, `transform` only, skipped
 with reduced motion). The trim stays while the settled fold closes and lifts
 when the reader opens it. A final assistant message with `finish: stop`
@@ -131,8 +132,13 @@ timeline skips that separates a `stop` answer from the next assistant message
 opens a turn there (`createNoticeTurnSplitter`), so each answer keeps its own
 Activity and stays outside it; a notice between steps of one run does not.
 
-Manual expansion survives later metadata updates and timeline virtualization
-within the session. The disclosure uses a finite 180ms height transition,
+One expansion choice survives completion, idle interruption, resumption,
+metadata updates and timeline virtualization. A folded running turn previews
+its tail; idle or completed turns close fully; resuming restores the preview.
+Opening a running turn mounts its newest messages with no hidden tail. Settled
+turns choose the head or tail window from the reader's position; resuming an
+expanded turn clears the tail limit while preserving its mounted head.
+The disclosure uses a finite 180ms height transition,
 respects reduced motion, and delegates end pinning to the existing timeline.
 It never calls scroll-to-bottom. Collapsed history does not mount its hidden
 message bodies; initial history loads do not animate collapse.
