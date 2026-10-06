@@ -3784,4 +3784,5 @@ export const dict: Record<I18nKey, string> = {
   'sessions.moveChatToProject.description': '對話會在專案資料夾中繼續。聊天建立的檔案保留在原處。',
   'sessions.moveChatToProject.success': '已將聊天移動到專案',
   'sessions.moveChatToProject.failed': '無法移動聊天',
+  'chat.worktreeSetup.running': '正在設定 worktree：正在執行專案的設定命令…',
 };

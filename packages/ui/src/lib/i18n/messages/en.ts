@@ -3784,6 +3784,7 @@ export const dict = {
   'sessions.moveChatToProject.description': 'The conversation continues in the project\'s folder. Files the chat created stay where they are.',
   'sessions.moveChatToProject.success': 'Chat moved to the project',
   'sessions.moveChatToProject.failed': 'Could not move the chat',
+  'chat.worktreeSetup.running': 'Setting up the worktree: running the project\'s setup commands…',
 } as const;
 
 export type I18nKey = keyof typeof dict;

@@ -3784,4 +3784,5 @@ export const dict = {
   'sessions.moveChatToProject.description': 'Het gesprek gaat verder in de map van het project. Bestanden die de chat maakte blijven waar ze zijn.',
   'sessions.moveChatToProject.success': 'Chat naar het project verplaatst',
   'sessions.moveChatToProject.failed': 'Chat kon niet worden verplaatst',
+  'chat.worktreeSetup.running': 'Worktree wordt ingericht: de setupopdrachten van het project lopen…',
 } as const;

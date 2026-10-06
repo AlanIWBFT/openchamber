@@ -217,6 +217,8 @@ import { RevertedMessageDock } from './composer/ui/RevertedMessageDock';
 import { SessionSuggestionChip } from '@/components/chat/SessionSuggestionChip';
 import { SessionDoneHintRow } from '@/components/chat/SessionDoneHintRow';
 import { BackgroundShellsStrip } from '@/components/chat/BackgroundShellsStrip';
+import { WorktreeSetupStrip } from '@/components/chat/WorktreeSetupStrip';
+import { useWorktreeBootstrapPending } from '@/hooks/useWorktreeBootstrapPending';
 import { FormDock } from '@/components/chat/FormDock';
 import { PermissionDock } from '@/components/chat/PermissionDock';
 import { SessionGoalRow } from '@/components/chat/SessionGoalRow';
@@ -3722,10 +3724,16 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             directory={currentSessionDirectoryForSync ?? currentDirectory}
         />
     ) : null;
+    // A new worktree still running its setup commands, first of all: until it
+    // ends, a first prompt can wait with nothing else saying why.
+    const worktreeSetupDirectory = currentSessionDirectoryForSync ?? currentDirectory ?? null;
+    const worktreeSetupPending = useWorktreeBootstrapPending(isBtwActive ? null : worktreeSetupDirectory);
+    const worktreeSetupRow = worktreeSetupPending ? <WorktreeSetupStrip /> : null;
     // Null exactly when the suggestion row alone would have been: the mobile
     // pill picks its shape from whether a top row exists.
-    const composerTopRows = backgroundShellsRow || doneHintRow || suggestionRow ? (
+    const composerTopRows = worktreeSetupRow || backgroundShellsRow || doneHintRow || suggestionRow ? (
         <>
+            {worktreeSetupRow}
             {backgroundShellsRow}
             {doneHintRow}
             {suggestionRow}

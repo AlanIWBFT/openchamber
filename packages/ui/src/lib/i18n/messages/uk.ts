@@ -3785,4 +3785,5 @@ export const dict: Record<I18nKey, string> = {
   'sessions.moveChatToProject.description': 'Розмова продовжиться в теці проєкту. Файли, які створив чат, лишаться там, де є.',
   'sessions.moveChatToProject.success': 'Чат перенесено в проєкт',
   'sessions.moveChatToProject.failed': 'Не вдалося перенести чат',
+  'chat.worktreeSetup.running': 'Налаштовуємо worktree: виконуються команди налаштування проєкту…',
 };

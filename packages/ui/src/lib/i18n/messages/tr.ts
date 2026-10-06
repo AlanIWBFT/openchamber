@@ -3782,4 +3782,5 @@ export const dict = {
   'sessions.moveChatToProject.description': 'Konuşma projenin klasöründe devam eder. Sohbetin oluşturduğu dosyalar olduğu yerde kalır.',
   'sessions.moveChatToProject.success': 'Sohbet projeye taşındı',
   'sessions.moveChatToProject.failed': 'Sohbet taşınamadı',
+  'chat.worktreeSetup.running': 'Worktree hazırlanıyor: projenin kurulum komutları çalışıyor…',
 };

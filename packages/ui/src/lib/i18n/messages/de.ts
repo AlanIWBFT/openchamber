@@ -3782,4 +3782,5 @@ export const dict = {
   'sessions.moveChatToProject.description': 'Das Gespräch geht im Ordner des Projekts weiter. Dateien, die der Chat erstellt hat, bleiben, wo sie sind.',
   'sessions.moveChatToProject.success': 'Chat ins Projekt verschoben',
   'sessions.moveChatToProject.failed': 'Chat konnte nicht verschoben werden',
+  'chat.worktreeSetup.running': 'Worktree wird eingerichtet: Setup-Befehle des Projekts laufen…',
 };

@@ -3784,4 +3784,5 @@ export const dict: Record<I18nKey, string> = {
   'sessions.moveChatToProject.description': '대화는 프로젝트 폴더에서 이어집니다. 채팅이 만든 파일은 그대로 남습니다.',
   'sessions.moveChatToProject.success': '채팅을 프로젝트로 옮겼습니다',
   'sessions.moveChatToProject.failed': '채팅을 옮길 수 없습니다',
+  'chat.worktreeSetup.running': 'worktree 준비 중: 프로젝트 설정 명령을 실행하고 있습니다…',
 };

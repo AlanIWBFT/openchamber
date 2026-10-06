@@ -3785,4 +3785,5 @@ export const dict: Record<I18nKey, string> = {
   'sessions.moveChatToProject.description': 'La conversación continúa en la carpeta del proyecto. Los archivos que creó el chat se quedan donde están.',
   'sessions.moveChatToProject.success': 'Chat movido al proyecto',
   'sessions.moveChatToProject.failed': 'No se pudo mover el chat',
+  'chat.worktreeSetup.running': 'Preparando el worktree: ejecutando los comandos de configuración del proyecto…',
 };

@@ -3789,4 +3789,5 @@ export const dict: Record<I18nKey, string> = {
   'sessions.moveChatToProject.description': 'Rozmowa toczy się dalej w folderze projektu. Pliki utworzone przez czat zostają na miejscu.',
   'sessions.moveChatToProject.success': 'Czat przeniesiono do projektu',
   'sessions.moveChatToProject.failed': 'Nie udało się przenieść czatu',
+  'chat.worktreeSetup.running': 'Przygotowywanie worktree: uruchamianie poleceń konfiguracyjnych projektu…',
 } as const;
