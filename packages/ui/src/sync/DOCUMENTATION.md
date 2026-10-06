@@ -404,7 +404,9 @@ setting uses the instance settings registry across web, desktop, VS Code and mob
 
 Both modes preserve the five most recent sessions in the selected scope, ranked
 by that scope's retention timestamp, plus the selected session, shared sessions,
-and sessions with observed live activity. Parents with an attached `/btw` conversation also stay,
+sessions with observed live activity, and sessions the user keeps: pinned on this
+client (pins live in local storage, so another device does not see them) or in
+the In work block. Parents with an attached `/btw` conversation also stay,
 because the canonical archive/delete actions remove that temporary fork.
 Sessions outside the selected scope remain protected. Because
 OpenCode cascades deletion, every ancestor of a retained session is protected
