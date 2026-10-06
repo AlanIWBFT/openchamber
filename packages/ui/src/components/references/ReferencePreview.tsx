@@ -151,22 +151,26 @@ const LoadError: React.FC<{ error: string }> = ({ error }) => {
 const PullDetailRows: React.FC<{
     detail: CachedValue<GitHubReferenceDetail>;
     checks: CachedValue<GitHubChecksSummary | null>;
-}> = ({ detail, checks }) => {
+    links?: React.ReactNode;
+}> = ({ detail, checks, links }) => {
     const { t } = useI18n();
     const pull = detail.status === 'ready' ? detail.value.pull : null;
     return (
         <>
             <MetaRow label={t('references.picker.preview.changes')}>
-                {detail.status === 'error' ? <LoadError error={detail.error} /> : pull ? (
-                    <span className="inline-flex items-center gap-2">
-                        <span className="text-[var(--status-success)]">+{pull.additions}</span>
-                        <span className="text-[var(--status-error)]">−{pull.deletions}</span>
-                        <span className="inline-flex items-center gap-0.5 text-muted-foreground">
-                            <Icon name="file-list-2" className="size-3.5" />
-                            {pull.changedFiles}
+                <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {detail.status === 'error' ? <LoadError error={detail.error} /> : pull ? (
+                        <span className="inline-flex items-center gap-2">
+                            <span className="text-[var(--status-success)]">+{pull.additions}</span>
+                            <span className="text-[var(--status-error)]">−{pull.deletions}</span>
+                            <span className="inline-flex items-center gap-0.5 text-muted-foreground">
+                                <Icon name="file-list-2" className="size-3.5" />
+                                {pull.changedFiles}
+                            </span>
                         </span>
-                    </span>
-                ) : <Pending />}
+                    ) : <Pending />}
+                    {links}
+                </span>
             </MetaRow>
             {checks.status === 'ready' ? (
                 checks.value && checks.value.total > 0 ? (
@@ -214,7 +218,9 @@ const GitHubPreview: React.FC<{
     includeDiff: boolean;
     onIncludeDiffChange: (include: boolean) => void;
     now: number;
-}> = ({ reference, pullStatus, detail, purpose, pinned, includeDiff, onIncludeDiffChange, now }) => {
+    footer?: React.ReactNode;
+    pullLinks?: React.ReactNode;
+}> = ({ reference, pullStatus, detail, purpose, pinned, includeDiff, onIncludeDiffChange, now, footer: footerOverride, pullLinks }) => {
     const { t } = useI18n();
     const comments = React.useMemo(
         () => mapDetail(detail, (value) => value.comments.map((comment: GitHubReferenceComment, index): ReferenceCommentItem => ({
@@ -235,7 +241,7 @@ const GitHubPreview: React.FC<{
     const updated = relative(reference.updatedAt);
     const body = reference.body.trim() ? reference.body : '';
 
-    const footer = (
+    const footer = footerOverride ?? (
         <div className="flex flex-col gap-2">
             <p className="typography-meta text-muted-foreground">
                 {purpose === 'worktree'
@@ -293,7 +299,7 @@ const GitHubPreview: React.FC<{
                                 <span className="truncate">{reference.base}</span>
                             </span>
                         </MetaRow>
-                        <PullDetailRows detail={detail} checks={previewChecks(reference, pullStatus, detail)} />
+                        <PullDetailRows detail={detail} checks={previewChecks(reference, pullStatus, detail)} links={pullLinks} />
                     </>
                 ) : null}
                 {labels.length > 0 ? (
@@ -323,7 +329,8 @@ const LinearPreview: React.FC<{
     purpose: ReferencePreviewPurpose;
     pinned: boolean;
     now: number;
-}> = ({ issue, detail, purpose, pinned, now }) => {
+    footer?: React.ReactNode;
+}> = ({ issue, detail, purpose, pinned, now, footer: footerOverride }) => {
     const { t } = useI18n();
     const relative = useRelative(now);
     const look = linearStateLook(issue);
@@ -343,7 +350,7 @@ const LinearPreview: React.FC<{
         [detail],
     );
 
-    const footer = (
+    const footer = footerOverride ?? (
         <p className="typography-meta text-muted-foreground">
             {purpose === 'worktree' ? t('references.picker.preview.worktree.issue') : t('references.picker.preview.sends.linear')}
         </p>
@@ -412,7 +419,11 @@ export const ReferencePreview: React.FC<{
     includeDiff: boolean;
     onIncludeDiffChange: (include: boolean) => void;
     now: number;
-}> = ({ item, pullStatus, linearDetail, githubDetail, purpose, pinned, includeDiff, onIncludeDiffChange, now }) => {
+    /** Replaces what the agent gets with what the surface does with the item. */
+    footer?: React.ReactNode;
+    /** Beside a PR's size: where to look at its changes. */
+    pullLinks?: React.ReactNode;
+}> = ({ item, pullStatus, linearDetail, githubDetail, purpose, pinned, includeDiff, onIncludeDiffChange, now, footer, pullLinks }) => {
     const { t } = useI18n();
     if (!item) {
         return (
@@ -422,7 +433,7 @@ export const ReferencePreview: React.FC<{
         );
     }
     if (item.source === 'linear') {
-        return <LinearPreview issue={item.issue} detail={linearDetail} purpose={purpose} pinned={pinned} now={now} />;
+        return <LinearPreview issue={item.issue} detail={linearDetail} purpose={purpose} pinned={pinned} now={now} footer={footer} />;
     }
     return (
         <GitHubPreview
@@ -434,6 +445,8 @@ export const ReferencePreview: React.FC<{
             includeDiff={includeDiff}
             onIncludeDiffChange={onIncludeDiffChange}
             now={now}
+            footer={footer}
+            pullLinks={pullLinks}
         />
     );
 };

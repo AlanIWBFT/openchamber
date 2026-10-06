@@ -58,6 +58,7 @@ import { startReviewFlow } from '@/lib/reviewFlow';
 import { WALKTHROUGH_ACTION_CLASS } from '@/components/views/walkthrough/walkthroughAction';
 import type { WalkthroughTarget } from '@/lib/walkthrough/types';
 import { useWalkthroughStore } from '@/stores/useWalkthroughStore';
+import { usePullRequestSelectionStore } from '@/stores/usePullRequestSelectionStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionMessages } from '@/sync/sync-context';
 import { opencodeClient } from '@/lib/opencode/client';
@@ -1372,8 +1373,15 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const pullRequestContext = binding.contexts[0]?.provider === 'github' || binding.contexts[0]?.provider === 'gitlab'
         ? binding.contexts[0]
         : null;
-    const prComparison = usePullRequestComparison(effectiveDirectory ?? null, currentBranch, pullRequestContext, visible && activeDiffScope === 'pr' && !isVSCodeRuntime());
+    // A pull request opened from the issues and PRs board.
+    const requestedPr = usePullRequestSelectionStore((state) => (effectiveDirectory ? state.diffRequests.get(effectiveDirectory) : undefined));
+    const prComparison = usePullRequestComparison(effectiveDirectory ?? null, currentBranch, pullRequestContext, visible && activeDiffScope === 'pr' && !isVSCodeRuntime(), requestedPr);
     const selectedPr = prComparison.selectedSource;
+    // Taken once the branch is known: the selection it landed in is the real one.
+    React.useEffect(() => {
+        if (!effectiveDirectory || !requestedPr || !status || selectedPr !== requestedPr) return;
+        usePullRequestSelectionStore.getState().settleDiffRequest(effectiveDirectory, requestedPr);
+    }, [effectiveDirectory, requestedPr, selectedPr, status]);
     const commitComparison = useCommitComparison(effectiveDirectory ?? null, currentBranch, visible && activeDiffScope === 'commit' && !isVSCodeRuntime());
     const selectedCommitHash = commitComparison.selectedCommit?.hash ?? null;
     React.useEffect(() => {

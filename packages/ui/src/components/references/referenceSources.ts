@@ -102,6 +102,20 @@ export function useRepositoryHost(directory: string | null): SourceControlIdenti
 }
 
 /**
+ * Where a project's issues and change requests live: its host's provider, or
+ * `none` once its remotes are read and none is on a supported host. While
+ * they load, the provider remembered for the project answers, so a switcher
+ * does not change shape on every visit. Null without a project.
+ */
+export function useRepositoryHostProvider(directory: string | null): SourceControlProvider | 'none' | null {
+    const { binding, hosts } = useRepositoryHosts(directory);
+    const provider = useRepositoryReferenceProvider(directory);
+    if (!directory) return null;
+    if (binding.contexts.length > 0 || hosts.length > 0) return provider;
+    return binding.read ? 'none' : provider;
+}
+
+/**
  * The read context a project's issues and change requests come from, once its
  * binding has been read: GitHub's when the project has one, else GitLab's.
  * Null while the binding or an account on one of its hosts is still loading,
@@ -227,22 +241,30 @@ export function useGitHubReferenceList(options: {
     return useCachedList(githubLists, key, fetchPage);
 }
 
-export function useLinearReferenceList(options: { enabled: boolean; filter: LinearReferenceFilter; query: string }) {
+export function useLinearReferenceList(options: {
+    enabled: boolean;
+    filter: LinearReferenceFilter;
+    query: string;
+    /** One team's issues; every team's when absent. */
+    teamId?: string | null;
+}) {
     const { linear } = useRuntimeAPIs();
     const workspace = useLinearAuthStore((state) => state.status?.organization?.id ?? '');
     const { enabled, filter, query } = options;
+    const teamId = options.teamId ?? null;
     const text = query.trim();
-    const key = enabled && linear ? JSON.stringify([getRuntimeKey(), workspace, filter, text]) : null;
+    const key = enabled && linear ? JSON.stringify([getRuntimeKey(), workspace, filter, text, teamId]) : null;
     const fetchPage = React.useCallback(async (cursor: string | null): Promise<ListPage<LinearIssueSummary>> => {
         if (!linear) return { kind: 'unavailable', reason: 'disconnected' };
         const result = await linear.issuesList({
             query: text || undefined,
             cursor: cursor ?? undefined,
             assignee: filter === 'assigned' ? 'me' : 'any',
+            teamId: teamId ?? undefined,
         });
         if (result.connected === false) return { kind: 'unavailable', reason: 'disconnected' };
         return { kind: 'page', items: result.issues ?? [], cursor: result.cursor ?? null, hasMore: Boolean(result.hasMore) };
-    }, [filter, linear, text]);
+    }, [filter, linear, teamId, text]);
     return useCachedList(linearLists, key, fetchPage);
 }
 

@@ -2,7 +2,9 @@
 
 The picker for GitHub issues and pull requests and Linear issues, used by the
 composer (any number of items, attached together) and by New Worktree (one
-item, which names the branch). Extensions are not inside it: they draw their
+item, which names the branch). The issues and PRs board
+(`components/sourceBoard`) lists the same items on a full page and acts on
+them; see *Board* below. Extensions are not inside it: they draw their
 own search in an iframe and attach through `host.attach`, so the + menu lists
 every source, GitHub, Linear and each extension, as its own row.
 
@@ -10,7 +12,9 @@ every source, GitHub, Linear and each extension, as its own row.
 
 | File | Owns |
 | --- | --- |
-| `ReferencePickerDialog.tsx` | Tabs (GitHub only), search, filter chips, the list, keyboard, checked items, confirm. Desktop shows the list and a preview side by side; mobile opens the preview in place of the list. |
+| `useReferenceBrowser.ts` | The state both the picker and the board read: GitHub tab and filter, search, highlight, the previewed item and its details, arrow and Ctrl+N/P keys. |
+| `ReferenceBrowser.tsx` | The parts both lay out: tabs (GitHub only), search with filter chips, the list with its loading, failure, empty and not-connected states. |
+| `ReferencePickerDialog.tsx` | The picker around them: checked items, the diff switch, Enter/Shift+Enter, confirm. Desktop shows the list and a preview side by side; mobile opens the preview in place of the list. |
 | `ReferencePickerRow.tsx`, `ReferencePreview.tsx` | What a row and the preview show. State colours are the theme's PR tokens through the sidebar's rule (`lib/source-control/prVisualState.ts`). |
 | `referenceSources.ts` | Which cache a list or a Linear preview comes from, and its key. |
 | `referenceCache.ts` | Stale-while-revalidate lists and values. |
@@ -57,3 +61,28 @@ checks the highlighted item. Double-click attaches a row.
 Web, desktop and hosted mobile use it as above; Capacitor mobile gets the
 in-place preview layout. VS Code never opens it: the composer offers only files
 there.
+
+## Board
+
+`components/sourceBoard` is a full page over the chat area, opened from the
+sidebar header (desktop and web; not VS Code, not the phone shell yet). It
+uses `useReferenceBrowser` and the shared parts without checkboxes; the
+preview's footer holds actions instead of what the agent gets.
+
+- The board keeps its own project, tab and Linear team per runtime
+  (`stores/useSourceBoardStore.ts`). Switching them never changes the app's
+  selected project.
+- The repository tab is the project's host only: GitHub or GitLab, whichever
+  `useRepositoryHostProvider` names; a project with no supported remote shows
+  Linear alone.
+- Linear lists one team or all. An issue starts in its team's mapped project,
+  else the mapping's default, else the board's project; the user can pick
+  another for that issue.
+- Actions: start in a worktree (New Worktree opens with the item chosen,
+  `initialSelection`), a new session in the project with the item attached,
+  and for a PR its Changes (`usePullRequestSelectionStore.requestDiff` hands the
+  PR to the diff view's PR scope), Walkthrough, Merge (asks first, with the
+  remembered merge method) and Ready for review. Changes and Walkthrough open
+  in the folder the app shows when it belongs to the project, else in a new
+  draft of the project.
+

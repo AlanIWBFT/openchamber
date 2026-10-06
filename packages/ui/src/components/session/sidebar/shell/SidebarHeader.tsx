@@ -29,6 +29,8 @@ type Props = {
   handleOpenDirectoryDialog: () => void;
   onOpenScheduled: () => void;
   onOpenArchive: () => void;
+  /** The issues and pull requests board; absent where it is not offered. */
+  onOpenSourceBoard?: () => void;
   headerActionIconClass: string;
   headerActionButtonClass: string;
   isSessionSearchOpen: boolean;
@@ -52,6 +54,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
     handleOpenDirectoryDialog,
     onOpenScheduled,
     onOpenArchive,
+    onOpenSourceBoard,
     headerActionIconClass,
     headerActionButtonClass,
     isSessionSearchOpen,
@@ -148,6 +151,22 @@ export function SidebarHeader(props: Props): React.ReactNode {
               </TooltipTrigger>
               <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.scheduledTasks')}</p></TooltipContent>
             </Tooltip>
+
+            {onOpenSourceBoard ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={onOpenSourceBoard}
+                    className={cn(headerActionButtonClass, 'text-muted-foreground hover:text-foreground hover:bg-transparent')}
+                    aria-label={t('sourceBoard.title')}
+                  >
+                    <Icon name="git-pull-request" className={headerActionIconClass} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={4}><p>{t('sourceBoard.title')}</p></TooltipContent>
+              </Tooltip>
+            ) : null}
 
             <Tooltip>
               <TooltipTrigger asChild>
