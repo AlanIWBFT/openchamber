@@ -62,12 +62,13 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Thinking block UI (`ReasoningTimelineBlock`), summary + optional duration.
 
 - `components/LiveTurnActivity.tsx` (relative to the chat folder)
-  - Owns the optional turn disclosure. `MessageList` enables it when Activity
-    Default is Collapsed and the turn has visible Activity content.
+  - Owns the turn disclosure. `MessageList` enables it whenever the turn has
+    visible tools or reasoning; Activity Default selects its initial state.
   - `components/LiveActivityCollapse.tsx` owns the finite height transition;
     `components/liveActivityContext.ts` scopes the final message's non-text
     disclosure without changing message context or tool rendering.
-  - `lib/turns/liveActivity.ts` owns final-answer and interruption boundaries.
+  - `lib/turns/liveActivity.ts` owns final-answer and interruption boundaries
+    and the seven-row preview, counting each complete Exploration group once and excluding successfully rendered pages.
   - `lib/turns/liveActivitySummary.ts` derives the report from tool results.
 
 - `ShownToolCard.tsx`
@@ -93,7 +94,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Full screen opens the page in a dialog, inset from its edges and as tall as the page up to the window, past which the page scrolls. Download saves the page with the theme it was viewed in; on Capacitor it goes through the native share sheet, and VS Code shows no download because its bridge has no save route for HTML.
   - A page can name an image file on the machine by its absolute path (`renderPageImages.ts`). The page cannot read files, so before drawing it the chat asks the image grant route for the paths the page names (the server checks them against the call's stored HTML; see `packages/web/server/lib/markdown-image-grants/`), reads each through `/api/fs/raw` as a data URL and puts it in place of the path. A data URL, not the asset URL: the asset URL carries the URL auth token, which the page's script would see. The page is drawn once its images are in, never before and again after, since a second draw reloads it; its space stays reserved meanwhile. The chat sends every path the page names in one request with the page's call id, and the server shows them in page order while their files add up to 25 MB; the agent's tool result names the rest. An image that does not load keeps its path. VS Code reads workspace images through its file bridge, one by one in page order up to the same 25 MB, since no server weighs the page there, and has no temporary-directory images. A page that scrolls away is remembered with its images in place so it comes back without reading them again; remembered pages are bounded by their total length, 100 MB of characters (about a byte each), and past it the oldest go and read their images again when scrolled back to.
   - VS Code's webview CSP allows inline scripts but no remote ones, and a `srcdoc` page inherits that policy, so the tool description tells agents to draw charts with inline SVG or their own script.
-  - With Activity collapsed, a page is never folded away. `LiveTurnActivity` collects the turn's pages (`getShownPages`) and `LiveTurnHoistedPagesContext` keeps their rows out of the fold, so an opened fold does not draw them twice. While the turn works, and in a turn that ended without a final answer (stopped, failed), the pages sit right below the fold, and what the agent did after the last page (more steps, the reply it is still writing) is drawn below them, so the page stays put while new work appears under it; once the final answer arrives, the final message draws them above its first answer text. With Activity expanded there is no fold, and a page sits where its call ran.
+  - A page stays outside Activity whether it is collapsed or expanded. Before a final answer, `splitLiveActivityAtPages` splits at each shown page's part, including multiple pages in one message. Each segment keeps its own latest-row preview, pinned prose, expansion and message-window key; later work stays below the preceding page. Stopped turns retain these boundaries, and resumed segments clear any settled tail limit. Once the final answer arrives, the turn returns to its single Activity fold and the final message draws all pages above its first answer text. `LiveTurnHoistedPagesContext` prevents duplicate page rows.
 
 - `BlockLine.tsx`
   - The vertical connector line left of a collapsible block's body. It is also a click target: clicking it folds/expands the block via its header toggle handler (`onToggle`), or toggles the nearest native `<details>` when no handler is passed (JSON summary sections). Geometry is inline-styled (12px hit strip centered on the 1px line) so it does not depend on compiled Tailwind classes.
@@ -349,24 +350,24 @@ follow the pre-migration worker. The payload and its byte estimate change from
 HTML to tokens so React can own the code body; streaming-only prefixes stay in
 the bounded recent results.
 
-### Optional history disclosure
+### Live Activity disclosure
 
 The chat has one render mode: parts stream in and stay in the order they ran.
 The Sorted mode, which folded a turn's work into one block above its answers,
 was removed; a stored `chatRenderMode: 'sorted'` reads as Collapsed Activity
-(`lib/settings/parsers.ts`, `parseActivityRenderMode`). Expanded preserves the
-timeline without a turn disclosure. Collapsed adds one Activity header after
-completion or interruption while preserving the original rows, their order, and
-their individual controls. It adds no tool subgroups, side line, height cap, or
-inner scroller. Subagent calls alone do not make a turn collapsible.
+(`lib/settings/parsers.ts`, `parseActivityRenderMode`). Expanded and Collapsed
+select the default state of the same disclosure. Text-only turns stay inline;
+tools, including subagents, and visible reasoning enable the Activity header.
+The original rows retain their order and individual controls.
 
 The active turn has its Activity header from the first step. Folded, it shows
-only the latest 7 rows (a text, a reasoning block or a tool call each;
-`lib/turns/activityRows.ts`); the header counts the earlier ones ("+N more")
-and opens them all. `LiveTurnActivity` leaves out the messages entirely above
-the cut and tells the message it cuts into, through
-`ActivityRowSkipContext`, how many of its first rows `MessageBody` skips; both
-count with the same rule. When the cut moves down, `useActivityRowGlide`
+only the latest 7 top-level rows, counting a cross-message Exploration as one.
+The latest nonempty assistant text is pinned separately below the preview,
+excluded from its row budget, and replaced by newer prose. Original turn
+grouping remains authoritative even when text is pinned. A muted `+N more...`
+control below the header counts earlier rows and opens them all. Hovering the
+running header shows the current view (Latest activity or All activity); touch
+activation shows it for 1.2 seconds. When the cut moves down, `useActivityRowGlide`
 replays the jump as a 220 ms glide of the rows (FLIP, `transform` only, skipped
 with reduced motion). The trim stays while the settled fold closes and lifts
 when the reader opens it.
@@ -390,8 +391,13 @@ timeline skips that separates a `stop` answer from the next assistant message
 opens a turn there (`createNoticeTurnSplitter`), so each answer keeps its own
 Activity and stays outside it; a notice between steps of one run does not.
 
-Manual expansion survives later metadata updates and timeline virtualization
-within the session. The disclosure uses a finite 180ms height transition,
+One expansion choice survives completion, idle interruption, resumption,
+metadata updates and timeline virtualization. A folded running turn previews
+its tail; idle or completed turns close fully; resuming restores the preview.
+Opening a running turn mounts its newest messages with no hidden tail. Settled
+turns choose the head or tail window from the reader's position; resuming an
+expanded turn clears the tail limit while preserving its mounted head.
+The disclosure uses a finite 180ms height transition,
 respects reduced motion, and delegates end pinning to the existing timeline.
 It never calls scroll-to-bottom. Collapsed history does not mount its hidden
 message bodies; initial history loads do not animate collapse.
