@@ -72,8 +72,8 @@ const TaskModelLine: React.FC<{ task: ScheduledTask }> = ({ task }) => {
       {agentName ? (
         <>
           <span aria-hidden="true">·</span>
-          <Icon name="ai-agent" className="h-3 w-3 shrink-0" style={{ color: `var(${getAgentColor(agentName).var})` }} />
-          <span className="shrink-0 truncate" style={{ color: `var(${getAgentColor(agentName).var})` }}>
+          <Icon name="ai-agent" className="h-3 w-3 shrink-0" style={{ color: getAgentColor(agentName).color }} />
+          <span className="shrink-0 truncate" style={{ color: getAgentColor(agentName).color }}>
             {agentLabel(knownAgent ?? { name: agentName, displayName: '' })}
           </span>
         </>
