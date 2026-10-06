@@ -1113,10 +1113,10 @@ interface UIStore {
   reportUsage: boolean;
   shortcutOverrides: Record<string, ShortcutCombo>;
   fileEditorKeymap: FileEditorKeymap;
-
-  setTheme: (theme: 'light' | 'dark' | 'system') => void;
   /** vimrc map lines applied whenever the file editor runs in Vim mode. */
   fileEditorVimMappings: string;
+
+  setTheme: (theme: 'light' | 'dark' | 'system') => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
@@ -1348,10 +1348,10 @@ interface UIStore {
   clearShortcutOverride: (actionId: string) => void;
   resetAllShortcutOverrides: () => void;
   setFileEditorKeymap: (value: FileEditorKeymap) => void;
+  setFileEditorVimMappings: (value: string) => void;
 }
 
 
-  setFileEditorVimMappings: (value: string) => void;
 export const useUIStore = create<UIStore>()(
   devtools(
     persist(
@@ -1548,11 +1548,11 @@ export const useUIStore = create<UIStore>()(
         reportUsage: true,
         shortcutOverrides: {},
         fileEditorKeymap: 'default',
+        fileEditorVimMappings: '',
 
         setTheme: (theme) => {
           set({ theme });
           get().applyTheme();
-        fileEditorVimMappings: '',
         },
 
         toggleSidebar: () => {
@@ -3108,6 +3108,11 @@ export const useUIStore = create<UIStore>()(
           set({ fileEditorKeymap: normalizeFileEditorKeymap(value) });
         },
 
+        setFileEditorVimMappings: (value) => {
+          // Same cap as the settings registry field.
+          set({ fileEditorVimMappings: value.slice(0, 10_000) });
+        },
+
         toggleExpandedInput: () => {
           set((state) => ({ isExpandedInput: !state.isExpandedInput }));
         },
@@ -3119,11 +3124,6 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createDeferredSafeJSONStorage(),
-        setFileEditorVimMappings: (value) => {
-          // Same cap as the settings registry field.
-          set({ fileEditorVimMappings: value.slice(0, 10_000) });
-        },
-
         version: 21,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
@@ -3510,6 +3510,7 @@ export const useUIStore = create<UIStore>()(
           draftStartersVisible: state.draftStartersVisible,
           shortcutOverrides: state.shortcutOverrides,
           fileEditorKeymap: state.fileEditorKeymap,
+          fileEditorVimMappings: state.fileEditorVimMappings,
         })
       }
     ),
@@ -3518,4 +3519,3 @@ export const useUIStore = create<UIStore>()(
     }
   )
 );
-          fileEditorVimMappings: state.fileEditorVimMappings,

@@ -3786,7 +3786,6 @@ export const dict: Record<I18nKey, string> = {
   'sessions.moveChatToProject.success': '已将聊天移动到项目',
   'sessions.moveChatToProject.failed': '无法移动聊天',
   'chat.worktreeSetup.running': '正在设置 worktree：正在运行项目的设置命令…',
-};
   'desktopHostSwitcher.startup.fellBackToLocal': '未能建立连接，因此 OpenChamber 以 Local 启动。待其可访问后，请在实例切换器中连接。',
   'chat.chatInput.contextPreview.saveEdit': '保存评论',
   'chat.chatInput.contextPreview.cancelEdit': '取消编辑',

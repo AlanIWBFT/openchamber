@@ -3784,7 +3784,6 @@ export const dict = {
   'sessions.moveChatToProject.success': 'Chat déplacé vers le projet',
   'sessions.moveChatToProject.failed': 'Impossible de déplacer le chat',
   'chat.worktreeSetup.running': 'Préparation du worktree : exécution des commandes de configuration du projet…',
-} as const;
   'desktopHostSwitcher.startup.fellBackToLocal': 'Sa connexion ne s’est pas ouverte, OpenChamber a donc démarré sur Local. Connectez-la depuis le sélecteur d’instances dès qu’elle est joignable.',
   'chat.chatInput.contextPreview.saveEdit': 'Enregistrer le commentaire',
   'chat.chatInput.contextPreview.cancelEdit': 'Annuler la modification',
