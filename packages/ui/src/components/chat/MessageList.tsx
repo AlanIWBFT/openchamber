@@ -10,7 +10,7 @@ import { earlierAssistantText } from './lib/turns/earlierAssistantText';
 import { areOptionalRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual, areRenderRelevantMessagesEqual } from './message/renderCompare';
 import TurnItem from './components/TurnItem';
 import { LiveTurnActivity } from './components/LiveTurnActivity';
-import { getTurnsWithLaterAssistant, hasLiveActivity } from './lib/turns/liveActivity';
+import { getLiveFinalMessage, getTurnsWithLaterAssistant, hasLiveActivity, splitLiveActivityAtPages } from './lib/turns/liveActivity';
 import type { ChatMessageEntry, TurnExplorationGroup, TurnRecord, TurnGroupingContext } from './lib/turns/types';
 import { useTurnRecords } from './hooks/useTurnRecords';
 import { buildHistoryEntries, type TimelineEntry } from './lib/turns/timelineEntries';
@@ -156,8 +156,8 @@ type ToggleTurnActivity = (turnId: string) => void;
 // Which settled Activity folds the reader opened. It outlives the list, like
 // tool expansion in ChatMessage: returning to a session shows its folds as they
 // were left, which a restored reading position inside an open fold depends on.
-// Turn IDs are message IDs, unique across sessions. The folds only exist in
-// the collapsed activity mode, so a mode switch drops everything.
+// Turn IDs are message IDs, unique across sessions. A default-mode switch
+// resets the choices so the new setting applies to existing turns too.
 const TURN_EXPANSION_CACHE_MAX = 4000;
 const turnExpansionCache = new Map<string, boolean>();
 let turnExpansionCacheMode: string | null = null;
@@ -280,7 +280,7 @@ const TurnBlock = React.memo(({
 }: TurnBlockProps) => {
 
     const showReasoningTraces = useUIStore((state) => state.showReasoningTraces);
-    const isActivityExpanded = turnExpansion.get(turn.turnId) === true;
+    const isActivityExpanded = turnExpansion.get(turn.turnId) ?? defaultActivityExpanded;
     const handleToggleActivity = React.useCallback(() => {
         onToggleTurnActivity(turn.turnId);
     }, [onToggleTurnActivity, turn.turnId]);
@@ -449,12 +449,18 @@ const TurnBlock = React.memo(({
         <TurnItem
             turn={turn}
             renderMessage={renderMessage}
-            assistantContent={!defaultActivityExpanded && hasLiveActivity(turn, showReasoningTraces) ? (
+            assistantContent={hasLiveActivity(turn, showReasoningTraces) ? (
                 <LiveTurnActivity
                     turn={turn}
-                    hasLaterAssistant={hasLaterAssistant}
                     expanded={isActivityExpanded}
+                    isWorking={sessionIsWorking && !hasLaterAssistant}
+                    streamingMessageId={activeStreamingMessageId}
+                    streamPhase={activeStreamingPhase ?? 'completed'}
+                    showReasoning={showReasoningTraces}
                     onToggle={handleToggleActivity}
+                    segmentExpansion={turnExpansion}
+                    defaultExpanded={defaultActivityExpanded}
+                    onToggleSegment={onToggleTurnActivity}
                     renderMessage={renderMessage}
                 />
             ) : undefined}
@@ -857,11 +863,11 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
     const toggleTurnActivity = React.useCallback((turnId: string) => {
         setTurnExpansion((previous) => {
-            const expanded = previous.get(turnId) !== true;
+            const expanded = !(previous.get(turnId) ?? defaultActivityExpanded);
             writeTurnExpansionCache(turnId, expanded);
             return new Map(previous).set(turnId, expanded);
         });
-    }, []);
+    }, [defaultActivityExpanded]);
 
 
     const runningSubagentRuns = useRunningSubagentRuns(sessionKey, directory);
@@ -930,13 +936,12 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const hasUngroupedStaticEntries = projection.ungroupedMessageIds.size > 0;
     const tailHasAssistant = Boolean(streamingTurn?.assistantMessages.length);
     const turnsWithLaterAssistant = React.useMemo(() => {
-        if (defaultActivityExpanded) return new Set<string>();
         const retired = getTurnsWithLaterAssistant(staticTurns);
         if (tailHasAssistant) {
             for (const turn of staticTurns) retired.add(turn.turnId);
         }
         return retired;
-    }, [defaultActivityExpanded, staticTurns, tailHasAssistant]);
+    }, [staticTurns, tailHasAssistant]);
     const staticEntryMessages = hasUngroupedStaticEntries ? displayMessages : EMPTY_STATIC_ENTRY_MESSAGES;
     const staticEntryUngroupedIds = hasUngroupedStaticEntries ? projection.ungroupedMessageIds : EMPTY_UNGROUPED_MESSAGE_IDS;
     const trailingStreamingEntry = React.useMemo<RenderEntry | undefined>(() => {
@@ -1075,17 +1080,29 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         turnIndexMap,
         collapsibleTurnByMessageId,
         turnByAssistantMessageId,
+        activitySegmentsByMessageId,
     } = React.useMemo(() => {
         const messageIndexes = new Map<string, number>();
         const turnIndexes = new Map<string, number>();
         const collapsible = new Map<string, string>();
         const all = new Map<string, string>();
+        const segmentsByMessage = new Map<string, string[]>();
         allEntries.forEach((entry, index) => {
             if (entry.kind === 'ungrouped') {
                 messageIndexes.set(entry.message.info.id, index);
                 return;
             }
             const { turnId, userMessage, assistantMessages } = entry.turn;
+            if (!getLiveFinalMessage(assistantMessages)) {
+                const segments = splitLiveActivityAtPages(entry.turn);
+                if (segments.some((segment) => segment.page)) {
+                    for (const segment of segments) for (const message of segment.messages) {
+                        const ids = segmentsByMessage.get(message.info.id) ?? [];
+                        ids.push(segment.id);
+                        segmentsByMessage.set(message.info.id, ids);
+                    }
+                }
+            }
             turnIndexes.set(turnId, index);
             messageIndexes.set(userMessage.info.id, index);
             assistantMessages.forEach((message, assistantIndex) => {
@@ -1100,6 +1117,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             turnIndexMap: turnIndexes,
             collapsibleTurnByMessageId: collapsible,
             turnByAssistantMessageId: all,
+            activitySegmentsByMessageId: segmentsByMessage,
         };
     }, [allEntries]);
     const turnExpansionRef = React.useRef(turnExpansion);
@@ -1116,7 +1134,8 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const mountWindowedMessage = React.useCallback((messageId: string): void => {
         const turnId = turnByAssistantMessageId.get(messageId);
         if (turnId) turnMessageWindow.setRange(turnId, FULL_MESSAGE_WINDOW);
-    }, [turnByAssistantMessageId, turnMessageWindow]);
+        for (const segmentId of activitySegmentsByMessageId.get(messageId) ?? []) turnMessageWindow.setRange(segmentId, FULL_MESSAGE_WINDOW);
+    }, [turnByAssistantMessageId, turnMessageWindow, activitySegmentsByMessageId]);
 
     /**
      * Opens the turn a linked or searched message is folded into, the way a
@@ -1127,12 +1146,17 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         const turnId = isReasoningRevealTarget(messageId)
             ? turnByAssistantMessageId.get(messageId)
             : collapsibleTurnByMessageId.get(messageId);
-        if (!turnId) return false;
-        if (turnExpansionRef.current.get(turnId) === true) return false;
-        writeTurnExpansionCache(turnId, true);
-        setTurnExpansion((previous) => new Map(previous).set(turnId, true));
+        const ids = activitySegmentsByMessageId.get(messageId) ?? (turnId ? [turnId] : []);
+        const folded = ids.filter((id) => turnExpansionRef.current.get(id) !== true);
+        if (!folded.length) return false;
+        for (const id of folded) writeTurnExpansionCache(id, true);
+        setTurnExpansion((previous) => {
+            const next = new Map(previous);
+            for (const id of folded) next.set(id, true);
+            return next;
+        });
         return true;
-    }, [collapsibleTurnByMessageId, turnByAssistantMessageId]);
+    }, [collapsibleTurnByMessageId, turnByAssistantMessageId, activitySegmentsByMessageId]);
 
     const findMessageElement = React.useCallback((messageId: string): HTMLElement | null => {
         const container = resolveScrollContainer();
