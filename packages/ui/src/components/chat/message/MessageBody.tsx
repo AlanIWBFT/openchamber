@@ -1670,8 +1670,6 @@ const AssistantMessageBody = React.memo(({
         // Group consecutive static tools (read, grep, glob, etc.) into compact rows.
         // Expandable tools (bash, edit, task) get individual rows.
         // Text renders inline at its natural position.
-        // A working turn with Activity collapsed shows only its latest rows;
-        // the first rows of the message it cuts into are left out here.
         let rowsToSkip = activityRowSkip?.messageId === messageId ? activityRowSkip.rows : 0;
         let i = 0;
         while (i < visibleParts.length) {
@@ -1866,9 +1864,9 @@ const AssistantMessageBody = React.memo(({
         }
         return answerRendered;
     }, [
-        activityRowSkip,
         alwaysShowMessageActions,
         hoistedPages,
+        activityRowSkip,
         animatedToolIdsLookup,
         collapsibleThinkingBlocks,
         expandedTools,
