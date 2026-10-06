@@ -1,10 +1,12 @@
 import { isInvisibleText } from '@/lib/invisibleText';
 import { getLastConversationRecord, type TextPart, type ToolPart } from '@/lib/opencode/model';
-import { isShownInPlace, openChamberToolCall, renderedPage } from '@/lib/opencode/tools';
+import { openChamberToolCall, renderedPage } from '@/lib/opencode/tools';
 import { isSessionNoticePart } from '@/lib/opencode/session-notices';
-import { isStandaloneTool } from '../../message/parts/toolRenderUtils';
 import { fenceUiBlocks } from '../../uiBlocks/taggedBlocks';
+import { isExplorationPartDisplayReady, isShownInPlace } from '@/lib/opencode/tools';
+import { shouldHideExecFollowUp } from '../../message/unifiedExec';
 import type { ChatMessageEntry, TurnRecord } from './types';
+import { isToolRowShown, LIVE_ACTIVITY_VISIBLE_ROWS } from './activityRows';
 
 /** A queued user message alone does not retire the previous turn. */
 export function getTurnsWithLaterAssistant(turns: readonly TurnRecord[]): Set<string> {
@@ -29,14 +31,10 @@ export function getLiveFinalMessage(messages: readonly ChatMessageEntry[]): Chat
         ? last : undefined;
 }
 
-/**
- * Subagent calls do not count: a turn that only ran subagents gets no fold, so
- * their rows stay in view. Nor do session notices: a turn whose only row is a
- * notice shows it above the answer.
- */
+/** A notice alone stays above the answer; tool calls and reasoning form Activity. */
 export function hasLiveActivity(turn: TurnRecord, showReasoning: boolean): boolean {
     return turn.activityParts.some((activity) => (
-        (activity.part.type === 'tool' && !isStandaloneTool(activity.part.tool) && !isSessionNoticePart(activity.part))
+        (activity.part.type === 'tool' && !isSessionNoticePart(activity.part))
         || (showReasoning && activity.kind === 'reasoning')
     ));
 }
@@ -96,4 +94,86 @@ export function uiPageMessageId(turn: TurnRecord | undefined, expanded: boolean,
     return !expanded && turn && final && getShownPages(turn.assistantMessages, final).some((part) => part.id === partId && part.messageID === messageId)
         ? final.info.id
         : messageId;
+}
+
+/** Select seven native rows of a running turn, keeping Exploration whole and pinning the latest prose separately. */
+export function projectLiveActivityPreview(turn: TurnRecord, showReasoning: boolean) {
+    let pinnedText: { message: ChatMessageEntry; part: Extract<ChatMessageEntry['parts'][number], { type: 'text' }> } | undefined;
+    for (const message of turn.assistantMessages) {
+        if (message.info.role !== 'assistant') continue;
+        for (const part of message.parts) {
+            if (part.type === 'text' && !isInvisibleText(part.text)) pinnedText = { message, part };
+        }
+    }
+
+    // Only the group's anchor needs a message body. That body renders the full
+    // original group through its turn context, including calls in later messages.
+    const explorationAnchors = new Map<string, string>();
+    const visibleExplorations = new Set<string>();
+    for (const group of turn.explorationGroups) {
+        const first = group.parts[0];
+        if (!first) continue;
+        if (group.parts.some((activity) => isExplorationPartDisplayReady(activity.part))) visibleExplorations.add(first.id);
+        for (const activity of group.parts) explorationAnchors.set(activity.id, first.id);
+    }
+
+    const rowIds: string[] = [];
+    for (const message of turn.assistantMessages) {
+        for (const part of message.parts) {
+            if (part.type === 'text') {
+                if (part === pinnedText?.part || isInvisibleText(part.text)) continue;
+            } else if (part.type === 'reasoning') {
+                if (!showReasoning || !part.text.trim()) continue;
+            } else if (part.type === 'tool') {
+                if (shouldHideExecFollowUp(part)) continue;
+                if (isShownInPlace(part.tool, part.state)) continue;
+                const anchor = explorationAnchors.get(part.id);
+                if (anchor) {
+                    if (anchor !== part.id || !visibleExplorations.has(anchor)) continue;
+                } else if (!isToolRowShown(part)) {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+            rowIds.push(part.id);
+        }
+    }
+
+    const visibleIds = new Set(rowIds.slice(-LIVE_ACTIVITY_VISIBLE_ROWS));
+    const messages: ChatMessageEntry[] = [];
+    for (const message of turn.assistantMessages) {
+        const parts = message.parts.filter((part) => visibleIds.has(part.id));
+        if (parts.length > 0) {
+            messages.push(parts.length === message.parts.length ? message : { ...message, parts });
+        }
+    }
+    return { messages, pinnedText, hiddenCount: Math.max(0, rowIds.length - LIVE_ACTIVITY_VISIBLE_ROWS) };
+}
+
+/** Part-level boundaries keep prose and calls following a page below it, even in the same message. */
+export function splitLiveActivityAtPages(turn: TurnRecord) {
+    const shownIds = new Set(getShownPages(turn.assistantMessages).map((part) => part.id));
+    const segments: { id: string; messages: ChatMessageEntry[]; page?: ShownPart }[] = [];
+    let segment: typeof segments[number] = { id: turn.turnId, messages: [] };
+    for (const message of turn.assistantMessages) {
+        let parts: ChatMessageEntry['parts'] = [];
+        const flush = () => {
+            if (parts.length) segment.messages.push({ ...message, parts });
+            parts = [];
+        };
+        for (const part of message.parts) {
+            if ((part.type !== 'tool' && part.type !== 'text') || !shownIds.has(part.id)) {
+                parts.push(part);
+                continue;
+            }
+            flush();
+            segment.page = part;
+            segments.push(segment);
+            segment = { id: `${turn.turnId}:after-page:${part.id}`, messages: [] };
+        }
+        flush();
+    }
+    if (segment.messages.length) segments.push(segment);
+    return segments;
 }
