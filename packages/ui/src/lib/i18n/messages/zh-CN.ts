@@ -3793,4 +3793,9 @@ export const dict: Record<I18nKey, string> = {
   'desktopHostSwitcher.startup.fellBackToLocal': '未能建立连接，因此 OpenChamber 以 Local 启动。待其可访问后，请在实例切换器中连接。',
   'chat.chatInput.contextPreview.saveEdit': '保存评论',
   'chat.chatInput.contextPreview.cancelEdit': '取消编辑',
+  'sessions.scheduledTasks.dialog.actions.openSession': '打开会话',
+  'sessions.scheduledTasks.dialog.actions.openSessionAria': '打开 {taskName} 上次运行的会话',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': '此任务已有一次运行在进行中，开始于 {time}',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunning': '此任务已有一次运行在进行中',
+  'sessions.scheduledTasks.dialog.toast.alreadyQueued': '此任务已在队列中等待，有空位时就会运行',
 };

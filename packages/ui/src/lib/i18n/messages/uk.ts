@@ -3793,4 +3793,9 @@ export const dict: Record<I18nKey, string> = {
   'desktopHostSwitcher.startup.fellBackToLocal': 'З\'єднання не відкрилося, тож OpenChamber запустився на Local. Підключіть інстанс через перемикач, щойно він стане доступним.',
   'chat.chatInput.contextPreview.saveEdit': 'Зберегти коментар',
   'chat.chatInput.contextPreview.cancelEdit': 'Скасувати редагування',
+  'sessions.scheduledTasks.dialog.actions.openSession': 'Відкрити сесію',
+  'sessions.scheduledTasks.dialog.actions.openSessionAria': 'Відкрити сесію останнього запуску {taskName}',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': 'Ця задача вже виконується, запуск о {time}',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunning': 'Ця задача вже виконується',
+  'sessions.scheduledTasks.dialog.toast.alreadyQueued': 'Ця задача вже чекає в черзі й запуститься, щойно звільниться місце',
 };

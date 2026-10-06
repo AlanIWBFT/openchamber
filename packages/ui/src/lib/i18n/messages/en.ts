@@ -3792,6 +3792,11 @@ export const dict = {
   'desktopHostSwitcher.startup.fellBackToLocal': 'Its connection didn\'t open, so OpenChamber started on Local. Connect it from the instance switcher once it\'s reachable.',
   'chat.chatInput.contextPreview.saveEdit': 'Save comment',
   'chat.chatInput.contextPreview.cancelEdit': 'Cancel editing',
+  'sessions.scheduledTasks.dialog.actions.openSession': 'Open session',
+  'sessions.scheduledTasks.dialog.actions.openSessionAria': 'Open the session from the last run of {taskName}',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': 'This task already has a run in progress, started at {time}',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunning': 'This task already has a run in progress',
+  'sessions.scheduledTasks.dialog.toast.alreadyQueued': 'This task is already waiting in the queue and will run when a slot frees up',
 } as const;
 
 export type I18nKey = keyof typeof dict;

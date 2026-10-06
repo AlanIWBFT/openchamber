@@ -3792,4 +3792,9 @@ export const dict: Record<I18nKey, string> = {
   'desktopHostSwitcher.startup.fellBackToLocal': '接続を開けなかったため、OpenChamber は Local で起動しました。到達できるようになったら、インスタンス切り替えから接続してください。',
   'chat.chatInput.contextPreview.saveEdit': 'コメントを保存',
   'chat.chatInput.contextPreview.cancelEdit': '編集をキャンセル',
+  'sessions.scheduledTasks.dialog.actions.openSession': 'セッションを開く',
+  'sessions.scheduledTasks.dialog.actions.openSessionAria': '{taskName} の前回の実行のセッションを開く',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': 'このタスクはすでに実行中です（{time} に開始）',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunning': 'このタスクはすでに実行中です',
+  'sessions.scheduledTasks.dialog.toast.alreadyQueued': 'このタスクはすでにキューで待機中です。空きができ次第実行されます',
 };

@@ -3790,4 +3790,9 @@ export const dict = {
   'desktopHostSwitcher.startup.fellBackToLocal': 'Die Verbindung kam nicht zustande, daher wurde OpenChamber mit Local gestartet. Verbinde sie über den Instanzwechsler, sobald sie erreichbar ist.',
   'chat.chatInput.contextPreview.saveEdit': 'Kommentar speichern',
   'chat.chatInput.contextPreview.cancelEdit': 'Bearbeitung abbrechen',
+  'sessions.scheduledTasks.dialog.actions.openSession': 'Sitzung öffnen',
+  'sessions.scheduledTasks.dialog.actions.openSessionAria': 'Sitzung des letzten Laufs von {taskName} öffnen',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': 'Diese Aufgabe läuft bereits, gestartet um {time}',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunning': 'Diese Aufgabe läuft bereits',
+  'sessions.scheduledTasks.dialog.toast.alreadyQueued': 'Diese Aufgabe wartet bereits in der Warteschlange und läuft, sobald ein Platz frei wird',
 };

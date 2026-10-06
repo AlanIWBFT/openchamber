@@ -3793,4 +3793,9 @@ export const dict: Record<I18nKey, string> = {
   'desktopHostSwitcher.startup.fellBackToLocal': 'A conexão não abriu, então o OpenChamber iniciou no Local. Conecte-a pelo seletor de instâncias quando estiver acessível.',
   'chat.chatInput.contextPreview.saveEdit': 'Salvar comentário',
   'chat.chatInput.contextPreview.cancelEdit': 'Cancelar edição',
+  'sessions.scheduledTasks.dialog.actions.openSession': 'Abrir sessão',
+  'sessions.scheduledTasks.dialog.actions.openSessionAria': 'Abrir a sessão da última execução de {taskName}',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': 'Esta tarefa já tem uma execução em andamento, iniciada às {time}',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunning': 'Esta tarefa já tem uma execução em andamento',
+  'sessions.scheduledTasks.dialog.toast.alreadyQueued': 'Esta tarefa já está na fila e será executada quando houver uma vaga',
 };

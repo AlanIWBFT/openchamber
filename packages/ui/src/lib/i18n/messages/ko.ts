@@ -3792,4 +3792,9 @@ export const dict: Record<I18nKey, string> = {
   'desktopHostSwitcher.startup.fellBackToLocal': '연결을 열지 못해 OpenChamber가 Local로 시작했습니다. 접속할 수 있게 되면 인스턴스 전환기에서 연결하세요.',
   'chat.chatInput.contextPreview.saveEdit': '댓글 저장',
   'chat.chatInput.contextPreview.cancelEdit': '편집 취소',
+  'sessions.scheduledTasks.dialog.actions.openSession': '세션 열기',
+  'sessions.scheduledTasks.dialog.actions.openSessionAria': '{taskName}의 마지막 실행 세션 열기',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': '이 작업은 이미 실행 중입니다({time}에 시작)',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunning': '이 작업은 이미 실행 중입니다',
+  'sessions.scheduledTasks.dialog.toast.alreadyQueued': '이 작업은 이미 대기열에 있으며 자리가 나면 실행됩니다',
 };

@@ -3792,4 +3792,9 @@ export const dict: Record<I18nKey, string> = {
   'desktopHostSwitcher.startup.fellBackToLocal': '未能建立連線，因此 OpenChamber 以 Local 啟動。待其可連線後，請在實例切換器中連線。',
   'chat.chatInput.contextPreview.saveEdit': '儲存評論',
   'chat.chatInput.contextPreview.cancelEdit': '取消編輯',
+  'sessions.scheduledTasks.dialog.actions.openSession': '開啟工作階段',
+  'sessions.scheduledTasks.dialog.actions.openSessionAria': '開啟 {taskName} 上次執行的工作階段',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': '此任務已有一次執行正在進行，開始於 {time}',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunning': '此任務已有一次執行正在進行',
+  'sessions.scheduledTasks.dialog.toast.alreadyQueued': '此任務已在佇列中等待，有空位時就會執行',
 };

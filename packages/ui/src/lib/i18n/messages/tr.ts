@@ -3790,4 +3790,9 @@ export const dict = {
   'desktopHostSwitcher.startup.fellBackToLocal': 'Bağlantısı açılamadı, bu yüzden OpenChamber Local ile başladı. Erişilebilir olduğunda örnek değiştiriciden bağlanın.',
   'chat.chatInput.contextPreview.saveEdit': 'Yorumu kaydet',
   'chat.chatInput.contextPreview.cancelEdit': 'Düzenlemeyi iptal et',
+  'sessions.scheduledTasks.dialog.actions.openSession': 'Oturumu aç',
+  'sessions.scheduledTasks.dialog.actions.openSessionAria': '{taskName} görevinin son çalıştırmasındaki oturumu aç',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunningSince': 'Bu görevin {time} saatinde başlayan bir çalıştırması zaten sürüyor',
+  'sessions.scheduledTasks.dialog.toast.alreadyRunning': 'Bu görevin bir çalıştırması zaten sürüyor',
+  'sessions.scheduledTasks.dialog.toast.alreadyQueued': 'Bu görev zaten kuyrukta bekliyor; yer açılınca çalışacak',
 };

@@ -156,7 +156,7 @@ export const createScheduledTaskService = (dependencies) => {
     if (!normalizedTaskID) throw new OpenChamberControlError('taskId is required', 400);
     const result = await scheduledTasksRuntime.runNow(id, normalizedTaskID);
     if (result.running || result.queued) {
-      throw new OpenChamberControlError(result.error || 'Task already running', 409);
+      throw new OpenChamberControlError(result.error || 'Task already running', 409, { busy: result.queued ? 'queued' : 'running' });
     }
     if (result.skipped) throw new OpenChamberControlError('Task not found or disabled', 404);
     if (!result.ok) {

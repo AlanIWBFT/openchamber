@@ -156,6 +156,16 @@ const RunNowResponseSchema = z.object({
   persistError: z.string().trim().min(1).optional().catch(undefined),
 });
 
+const BusyResponseSchema = z.object({ busy: z.enum(['running', 'queued']) });
+
+/** Run now refused because the task already has a run in flight or queued. */
+export class ScheduledTaskBusyError extends Error {
+  constructor(readonly busy: 'running' | 'queued', message: string) {
+    super(message);
+    this.name = 'ScheduledTaskBusyError';
+  }
+}
+
 export const runScheduledTaskNow = async (
   projectID: string,
   taskID: string,
@@ -168,6 +178,12 @@ export const runScheduledTaskNow = async (
       accept: 'application/json',
     },
   });
+  if (response.status === 409) {
+    const body = await response.json().catch(() => null);
+    const busy = BusyResponseSchema.safeParse(body);
+    if (busy.success) throw new ScheduledTaskBusyError(busy.data.busy, 'Scheduled task is already running');
+    throw new Error('Failed to run scheduled task');
+  }
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, 'Failed to run scheduled task'));
   }

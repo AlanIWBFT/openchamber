@@ -23,6 +23,7 @@ import {
   deleteScheduledTaskLoopFile,
   fetchScheduledTasks,
   runScheduledTaskNow,
+  ScheduledTaskBusyError,
   setLoopScheduledTaskEnabled,
   upsertScheduledTask,
   type ScheduledTask,
@@ -419,6 +420,16 @@ export function ScheduledTasksView({ layout, onLeave }: {
     onLeave('file');
   }, [selectedProject?.path, onLeave]);
 
+  // The session of the task's latest run; a run records it as soon as it
+  // creates the session, so a running or failed run has one too.
+  const openLastRunSession = React.useCallback((task: ScheduledTask) => {
+    const sessionId = task.state?.lastSessionId;
+    if (!sessionId) return;
+    const project = projects.find((entry) => entry.id === selectedProjectID);
+    useSessionUIStore.getState().setCurrentSession(sessionId, project?.path ?? null);
+    onLeave('session');
+  }, [projects, selectedProjectID, onLeave]);
+
   const handleRunNow = React.useCallback(async (task: ScheduledTask) => {
     if (!selectedProjectID) {
       return;
@@ -442,11 +453,23 @@ export function ScheduledTasksView({ layout, onLeave }: {
         onLeave('session');
       }
     } catch (error) {
+      if (error instanceof ScheduledTaskBusyError) {
+        const startedAt = task.state?.lastRunAt;
+        const message = error.busy === 'queued'
+          ? t('sessions.scheduledTasks.dialog.toast.alreadyQueued')
+          : startedAt
+            ? t('sessions.scheduledTasks.dialog.toast.alreadyRunningSince', { time: formatClockTime(startedAt, timeFormatPreference) })
+            : t('sessions.scheduledTasks.dialog.toast.alreadyRunning');
+        toast.info(message, error.busy === 'running' && task.state?.lastSessionId
+          ? { action: { label: t('sessions.scheduledTasks.dialog.actions.openSession'), onClick: () => openLastRunSession(task) } }
+          : undefined);
+        return;
+      }
       toast.error(error instanceof Error ? error.message : t('sessions.scheduledTasks.dialog.toast.runFailed'));
     } finally {
       setMutatingTaskID(null);
     }
-  }, [selectedProjectID, projects, reloadTasks, onLeave, t]);
+  }, [selectedProjectID, projects, reloadTasks, onLeave, t, timeFormatPreference, openLastRunSession]);
 
   const chatsLabel = (
     <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -651,6 +674,16 @@ export function ScheduledTasksView({ layout, onLeave }: {
                   </label>
 
                   <div className="flex flex-wrap items-center gap-1.5">
+                    {task.state?.lastSessionId ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openLastRunSession(task)}
+                        aria-label={t('sessions.scheduledTasks.dialog.actions.openSessionAria', { taskName: task.name })}
+                      >
+                        <Icon name="chat-1" className="h-4 w-4" /> {t('sessions.scheduledTasks.dialog.actions.openSession')}
+                      </Button>
+                    ) : null}
                     <Button
                       variant="outline"
                       size="sm"
