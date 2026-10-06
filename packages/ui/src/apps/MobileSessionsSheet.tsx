@@ -193,7 +193,6 @@ type WorktreeBucket = {
 type ProjectNode = {
   project: ProjectMeta;
   buckets: WorktreeBucket[];
-  totalSessions: number;
   isActive: boolean;
 };
 
@@ -653,11 +652,10 @@ const SortableWorktreeReorderRow: React.FC<{ worktree: WorktreeMetadata }> = ({ 
     the project through their own nested DndContext. */
 const SortableProjectRow: React.FC<{
   project: ProjectMeta;
-  totalSessions: number;
   expanded: boolean;
   onToggleExpanded: () => void;
   onReorderWorktrees: (orderedPaths: string[]) => void;
-}> = ({ project, totalSessions, expanded, onToggleExpanded, onReorderWorktrees }) => {
+}> = ({ project, expanded, onToggleExpanded, onReorderWorktrees }) => {
   const { t } = useI18n();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id });
   const worktreeSensors = useSensors(
@@ -711,7 +709,6 @@ const SortableProjectRow: React.FC<{
         >
           <MobileProjectIcon project={project} />
           <span className="block min-w-0 flex-1 truncate typography-ui-label text-foreground">{project.label}</span>
-          <span className="shrink-0 typography-micro text-muted-foreground tabular-nums">{totalSessions}</span>
           {hasWorktrees ? (
             <RiArrowDownSLine
               className={cn('size-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-180')}
@@ -1173,7 +1170,6 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
     const nodes: ProjectNode[] = rankByLatestActivity(projectsMeta, projectSortOrder, (project) => project.id, sessionOwnership.sessionsByProject).map((project) => ({
       project,
       buckets: [] as WorktreeBucket[],
-      totalSessions: 0,
       isActive: project.id === activeProjectId,
     }));
 
@@ -1223,9 +1219,6 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
     for (const node of nodes) {
       for (const bucket of node.buckets) {
         bucket.sessions = orderSessionsByLifecycleScopes(bucket.sessions, pinnedSessionIds, sessionOrderRanks);
-        for (const session of bucket.sessions) {
-          if (!getParentId(session)) node.totalSessions += 1;
-        }
       }
     }
 
@@ -1919,12 +1912,10 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                 >
                   <div className="flex flex-col gap-1.5">
                     {projectsMeta.map((project) => {
-                      const node = projectNodes.find((n) => n.project.id === project.id);
                       return (
                         <SortableProjectRow
                           key={project.id}
                           project={project}
-                          totalSessions={node?.totalSessions ?? 0}
                           expanded={reorderExpandedProjects.has(project.id)}
                           onToggleExpanded={() => toggleReorderProjectExpanded(project.id)}
                           onReorderWorktrees={(orderedPaths) => setWorktreeOrder(project.id, orderedPaths)}
@@ -2316,9 +2307,6 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                                       {isActiveWt ? (
                                         <ActiveDot ariaLabel={t('mobile.sessions.activeWorktreeAria')} />
                                       ) : null}
-                                      <span className="shrink-0 typography-micro text-muted-foreground tabular-nums">
-                                        {bucket.sessions.length}
-                                      </span>
                                     </button>
                                     </MobileSwipeActionsRow>
                                     {bucket.space ? <SpaceGroupStatus spaceId={bucket.space.id} className="px-3 pb-1 pl-9" /> : null}
