@@ -192,7 +192,7 @@ export interface AgentEntityEnvelope {
 }
 
 /** What `GET /api/config/agents/:name/permissions` answers. */
-export interface AgentPermissionsEnvelope {
+interface AgentPermissionsEnvelope {
   global: PermissionRule[];
   agent: PermissionRule[];
   effective: Array<PermissionRule & { source: 'global' | 'agent' }>;
@@ -334,7 +334,7 @@ const upsertOptimisticAgentLocal = (
   }
 };
 
-export interface AgentDraft {
+interface AgentDraft {
   name: string;
   scope: AgentScope;
   description?: string;
