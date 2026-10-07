@@ -97,6 +97,8 @@ const referenceDetailResultSchema = z.discriminatedUnion('connected', [
       commentTotal: z.number(),
       pull: z.object({
         reviewDecision: z.enum(['approved', 'changes_requested', 'review_required']).nullable(),
+        reviewers: z.array(z.object({ id: z.string(), login: z.string(), avatarUrl: z.string().optional() })).default([]),
+        checks: checksSummarySchema.nullable().optional(),
         additions: z.number(),
         deletions: z.number(),
         changedFiles: z.number(),

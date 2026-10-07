@@ -296,14 +296,21 @@ export function useGitHubReferenceDetail(directory: string | null, reference: Gi
         if (!result.detail) throw new Error('Not found');
         return result.detail;
     }, [context, number, owner, reference, repo, sourceControl]);
-    return useCachedValue(githubDetails, key, fetch, settled);
+    const detail = useCachedValue(githubDetails, key, fetch, settled);
+    // After a write (a comment, a review) the feed shows it without waiting for staleness.
+    const refresh = React.useCallback(() => {
+        if (key) githubDetails.ensure(key, fetch, { force: true }).catch(() => undefined);
+    }, [fetch, key]);
+    return { detail, refresh };
 }
 
 // A key per PR and head commit: a push asks again, a page loaded later
 // reuses what the earlier pages already answered.
 const githubPullStatuses = createValueCache<GitHubPullStatus | null>(200);
-// The server's limit: one listed page.
-const PULL_STATUS_BATCH = 30;
+// A third of a listed page per request, asked together: GitHub answers a
+// page's checks in one query only after ~10 s, at the edge of the request's
+// timeout, so the first rows (and the preview) waited for the slowest PR.
+const PULL_STATUS_BATCH = 10;
 const IDLE: CachedValue<GitHubPullStatus | null> = { status: 'idle' };
 
 /** An open PR, draft or not: its preview shows checks, and a ready one is coloured by them. */
@@ -335,11 +342,15 @@ export function useGitHubPullStatuses(directory: string | null, references: read
     const pulls = React.useMemo(() => (scope ? references.filter(needsPullStatus) : []), [references, scope]);
     const keys = React.useMemo(() => pulls.map(keyOf), [keyOf, pulls]);
 
-    const [, bump] = React.useReducer((count: number) => count + 1, 0);
-    React.useEffect(() => {
-        const stops = keys.map((key) => githubPullStatuses.subscribe(key, bump));
+    // Through the store, not an effect: React reads the version again once it
+    // has subscribed, so an answer that lands between a render and its
+    // subscription (a list shown from the cache while its statuses are on the
+    // way) still shows instead of leaving the row and preview loading.
+    const subscribe = React.useCallback((listener: () => void) => {
+        const stops = keys.map((key) => githubPullStatuses.subscribe(key, listener));
         return () => stops.forEach((stop) => stop());
     }, [keys]);
+    React.useSyncExternalStore(subscribe, githubPullStatuses.version, githubPullStatuses.version);
 
     React.useEffect(() => {
         if (!github || pulls.length === 0) return;

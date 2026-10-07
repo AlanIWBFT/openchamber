@@ -22,7 +22,7 @@
 
 import { z } from 'zod';
 
-import { isGraphqlRateLimitError, parseSummaryRefs } from './pr-summaries.js';
+import { checkContextSchema, isGraphqlRateLimitError, parseSummaryRefs, summarizeCheckContexts } from './pr-summaries.js';
 
 const REFERENCE_PAGE_SIZE = 30;
 // The preview shows the description; the attach path reads the full one.
@@ -88,7 +88,25 @@ query ReferenceDetail($owner: String!, $repo: String!, $number: Int!) {
       }
       ... on PullRequest {
         number
+        state
         reviewDecision
+        # The preview's checks, from the PR itself rather than the list's batch.
+        headCommit: commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun { databaseId name status conclusion startedAt checkSuite { app { databaseId } } }
+                    ... on StatusContext { context state }
+                  }
+                }
+              }
+            }
+          }
+        }
+        reviewRequests(first: 30) { nodes { requestedReviewer { __typename ... on User { login avatarUrl } } } }
         additions
         deletions
         changedFiles
@@ -188,7 +206,24 @@ const detailSchema = z.object({
       z.object({
         __typename: z.literal('PullRequest'),
         number: z.number().int(),
+        state: z.enum(['OPEN', 'CLOSED', 'MERGED']),
         reviewDecision: z.enum(['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED']).nullable(),
+        headCommit: z.object({
+          nodes: z.array(z.object({
+            commit: z.object({
+              statusCheckRollup: z.object({ contexts: z.object({ nodes: z.array(checkContextSchema) }) }).nullable(),
+            }),
+          })),
+        }),
+        reviewRequests: z.object({
+          nodes: z.array(z.object({
+            requestedReviewer: z.object({
+              __typename: z.string(),
+              login: z.string().optional(),
+              avatarUrl: z.string().nullable().optional(),
+            }).nullable(),
+          })),
+        }),
         additions: z.number().int(),
         deletions: z.number().int(),
         changedFiles: z.number().int(),
@@ -347,6 +382,17 @@ export async function fetchReferenceDetail({ octokit, owner, repo, number }) {
     commentTotal: item.comments.totalCount,
     pull: {
       reviewDecision: item.reviewDecision ? REVIEW_DECISIONS[item.reviewDecision] : null,
+      // People asked to review and not done yet; a team request is left out
+      // since the board only picks people.
+      reviewers: item.reviewRequests.nodes.flatMap(({ requestedReviewer: reviewer }) => (
+        reviewer?.__typename === 'User' && reviewer.login
+          ? [{ id: reviewer.login, ...toAuthor({ login: reviewer.login, avatarUrl: reviewer.avatarUrl }) }]
+          : []
+      )),
+      // Like the list's statuses: a closed or merged PR's checks are not actionable.
+      checks: item.state === 'OPEN'
+        ? summarizeCheckContexts(item.headCommit.nodes[0]?.commit.statusCheckRollup?.contexts.nodes ?? [])
+        : null,
       additions: item.additions,
       deletions: item.deletions,
       changedFiles: item.changedFiles,

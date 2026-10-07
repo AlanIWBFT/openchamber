@@ -133,7 +133,7 @@ export function useReferenceBrowser({
     const previewSettled = Boolean(settledPreviewItem && previewItem
         && referencePickerItemKey(settledPreviewItem) === referencePickerItemKey(previewItem));
     const { detail: linearDetail } = useLinearIssueDetail(previewItem?.source === 'linear' ? previewItem.issue.id : null, previewSettled);
-    const githubDetail = useGitHubReferenceDetail(directory, previewItem?.source === 'github' ? previewItem.reference : null, previewSettled);
+    const { detail: githubDetail, refresh: refreshGithubDetail } = useGitHubReferenceDetail(directory, previewItem?.source === 'github' ? previewItem.reference : null, previewSettled);
 
     const selectGitHubKind = (kind: GitHubReferenceKind) => {
         lastGitHubKind = kind;
@@ -214,6 +214,7 @@ export function useReferenceBrowser({
         closeMobilePreview: () => setMobilePreviewKey(null),
         linearDetail,
         githubDetail,
+        refreshGithubDetail,
         now,
         searchRef,
         handleNavigationKey,

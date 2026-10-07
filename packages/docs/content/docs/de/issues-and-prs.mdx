@@ -40,6 +40,14 @@ Für Linear:
 
 Die Vorschau zeigt Beschreibung, Labels und Kommentare. Bei einem Linear-Issue klickst du auf die Status-Pille, um es in einen anderen Status des Teams zu verschieben.
 
+In der Zeile **Labels** öffnet ein Stift-Button eine durchsuchbare Liste der Labels des Repositorys. Hake sie an oder ab. Gespeichert wird beim Schließen der Liste, mehrere Klicks zählen also als eine Änderung. Ein offener Pull Request (auf GitLab Merge Request) hat außerdem eine Zeile **Reviewers**, die genauso funktioniert, mit den Personen, die im Repository reviewen können. Auf GitHub wird der Autor des Pull Requests nicht angeboten. Linear-Issues haben keine dieser Zeilen.
+
+## Kommentieren und Review abgeben
+
+Unter der Aktivität eines Issues oder Pull Requests steht ein Kommentarfeld. **Comment** postet deinen Text auf GitHub oder GitLab, ebenso <kbd>⌘</kbd>+<kbd>Enter</kbd> (<kbd>Ctrl</kbd>+<kbd>Enter</kbd> unter Windows und Linux). Der Text bleibt im Feld, bis er gepostet ist, bei einem Fehlschlag geht also nichts verloren. Wechselst du zu einem anderen Eintrag, wird das Feld geleert. Linear-Issues haben kein Kommentarfeld.
+
+Ein offener Pull Request (auf GitLab Merge Request) hat außerdem **Approve** und **Request changes**, und der Text im Feld geht mit dem Review mit. **Request changes** braucht Text, der sagt, was geändert werden soll. Das Review gilt für die Commits, die die Vorschau zeigt. Hat seitdem jemand gepusht, wird es abgelehnt, und die Vorschau lädt neu, damit du noch einmal hinsehen kannst. Auf GitLab funktioniert **Request changes**, wenn du Reviewer des Merge Requests bist, und der Review-Text wird als eigener Kommentar gepostet. Schlägt nur dieser Kommentar fehl, zählt das Review trotzdem, und dein Text bleibt im Feld.
+
 ## Mit der Arbeit beginnen
 
 Die Aktionen stehen unten in der Vorschau.
@@ -56,6 +64,8 @@ Die Vorschau eines Pull Requests zeigt außerdem seinen Branch, seine Größe (h
 Neben der Größe stehen zwei Schaltflächen. **Changes** öffnet den Diff des Pull Requests im Seitenpanel, **Walkthrough** öffnet seinen [Änderungsrundgang](/de/walkthrough/). Ist die App gerade auf einem anderen Projekt, wechselt sie zuerst zum Projekt des PRs. Beide gibt es nur auf Desktop und im Web.
 
 Unten fragt **Merge** vor dem Mergen nach und nutzt deine übliche Merge-Methode. Ein Entwurf bekommt zusätzlich **Ready for review**.
+
+Ein offenes Issue oder ein offener Pull Request hat unten außerdem **Close issue** oder **Close pull request** (auf GitLab **Close merge request**), ein geschlossener **Reopen issue** oder **Reopen pull request** (**Reopen merge request**). Beides fragt nicht nach, weil es sich rückgängig machen lässt. Ein gemergter Pull Request lässt sich weder schließen noch wieder öffnen. Auf GitHub wird ein Issue als erledigt geschlossen.
 
 ## Verwandt
 

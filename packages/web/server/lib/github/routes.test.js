@@ -224,6 +224,8 @@ describe('GET /api/source-control/github/references', () => {
       number: 4,
       state: 'OPEN',
       reviewDecision: 'APPROVED',
+      headCommit: { nodes: [] },
+      reviewRequests: { nodes: [] },
       additions: 1,
       deletions: 2,
       changedFiles: 1,
@@ -246,6 +248,32 @@ describe('GET /api/source-control/github/references', () => {
       .query({ ...readContext(project), owner: 'someone', repo: 'else', number: '4' })
       .expect(400);
     expect(graphqlCalls()).toBe(before);
+  });
+
+  it("reads a repository's labels and assignable people for the board's pickers, only from the project repo network", async () => {
+    const fetch = vi.fn(async (url) => {
+      const endpoint = new URL(url);
+      if (endpoint.pathname === '/repos/example/project') return response({ full_name: 'example/project', fork: false });
+      if (endpoint.pathname === '/repos/example/project/labels') return response([{ name: 'bug', color: 'd73a4a' }, { name: 'docs', color: '' }]);
+      if (endpoint.pathname === '/repos/example/project/assignees') return response([{ login: 'octo', avatar_url: 'https://avatars/octo' }, { login: 'hubot' }]);
+      throw new Error(`Unexpected GitHub request: ${endpoint.pathname}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const labels = await request(app).get('/api/source-control/github/references/labels')
+      .query({ ...readContext(project), owner: 'example', repo: 'project' }).expect(200);
+    const reviewers = await request(app).get('/api/source-control/github/references/reviewers')
+      .query({ ...readContext(project), owner: 'example', repo: 'project' }).expect(200);
+
+    expect(labels.body).toEqual({ connected: true, items: [{ name: 'bug', color: 'd73a4a' }, { name: 'docs' }] });
+    expect(reviewers.body).toEqual({ connected: true, items: [
+      { id: 'octo', login: 'octo', avatarUrl: 'https://avatars/octo' },
+      { id: 'hubot', login: 'hubot' },
+    ] });
+    const calls = fetch.mock.calls.length;
+    await request(app).get('/api/source-control/github/references/labels')
+      .query({ ...readContext(project), owner: 'someone', repo: 'else' }).expect(400);
+    expect(fetch.mock.calls.slice(calls).some(([url]) => String(url).includes('/labels'))).toBe(false);
   });
 
   it('reads the statuses of listed PRs with the sidebar summaries, only from the project repo network', async () => {

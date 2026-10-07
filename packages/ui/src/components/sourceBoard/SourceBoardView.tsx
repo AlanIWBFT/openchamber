@@ -19,7 +19,7 @@ import { NewWorktreeDialog } from '@/components/session/NewWorktreeDialog';
 import { ReferenceBrowserList, ReferenceBrowserSearch } from '@/components/references/ReferenceBrowser';
 import { IDLE_PULL_STATUS, useReferenceBrowser } from '@/components/references/useReferenceBrowser';
 import { ReferencePreview } from '@/components/references/ReferencePreview';
-import type { ReferencePickerSelection } from '@/components/references/referencePickerItems';
+import { referencePickerItemKey, type ReferencePickerSelection } from '@/components/references/referencePickerItems';
 import { useGitHubReadContext, useRepositoryHostProvider } from '@/components/references/referenceSources';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
@@ -36,6 +36,9 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 
 import { SourceBoardActions, SourceBoardPullLinks, type SourceBoardProject } from './SourceBoardActions';
 import { SourceBoardLinearStatus } from './SourceBoardLinearStatus';
+import { SourceBoardReply } from './SourceBoardReply';
+import { SourceBoardChecksDialog } from './SourceBoardChecksDialog';
+import { SourceBoardLabels, SourceBoardReviewers } from './SourceBoardMetaEditors';
 import { SourceBoardProjectPicker, SourceBoardTeamPicker } from './SourceBoardPickers';
 
 const LIST_MIN_WIDTH = 280;
@@ -267,6 +270,25 @@ const SourceBoardBody: React.FC<{
         />
     ) : null;
 
+    // The previewed PR's check runs, opened from its checks totals.
+    const [checksOpenFor, setChecksOpenFor] = React.useState<string | null>(null);
+    const previewPull = previewItem?.source === 'github' && previewItem.reference.kind === 'pull' ? previewItem.reference : null;
+    const previewKey = previewItem ? referencePickerItemKey(previewItem) : null;
+    const checksDialog = previewPull && context ? (
+        <SourceBoardChecksDialog
+            pull={previewPull}
+            context={context}
+            open={checksOpenFor !== null && checksOpenFor === previewKey}
+            onOpenChange={(open) => setChecksOpenFor(open ? previewKey : null)}
+        />
+    ) : null;
+
+    // After a change to an issue or PR: its detail and the list read again.
+    const refreshRepositoryItem = () => {
+        browser.refreshGithubDetail();
+        browser.list.retry();
+    };
+
     const preview = (
         <ReferencePreview
             item={previewItem}
@@ -280,6 +302,28 @@ const SourceBoardBody: React.FC<{
             now={browser.now}
             footer={actions}
             linearStateControl={previewItem?.source === 'linear' ? <SourceBoardLinearStatus issue={previewItem.issue} onChanged={browser.list.retry} /> : undefined}
+            onOpenChecks={previewPull && context ? () => setChecksOpenFor(previewKey) : undefined}
+            labelsControl={previewItem?.source === 'github' && context ? (
+                <SourceBoardLabels key={referencePickerItemKey(previewItem)} reference={previewItem.reference} context={context} onChanged={refreshRepositoryItem} />
+            ) : undefined}
+            reviewersControl={previewItem?.source === 'github' && previewItem.reference.kind === 'pull' && context ? (
+                <SourceBoardReviewers
+                    key={referencePickerItemKey(previewItem)}
+                    pull={previewItem.reference}
+                    detail={browser.githubDetail}
+                    context={context}
+                    onChanged={refreshRepositoryItem}
+                />
+            ) : undefined}
+            // Keyed by the item: a draft never carries over to another one.
+            reply={previewItem?.source === 'github' && context ? (
+                <SourceBoardReply
+                    key={referencePickerItemKey(previewItem)}
+                    reference={previewItem.reference}
+                    context={context}
+                    onRefresh={refreshRepositoryItem}
+                />
+            ) : undefined}
             // The phone shell has no side panel to open a PR's changes in.
             pullLinks={!isMobile && previewItem?.source === 'github' && previewItem.reference.kind === 'pull' && actionProject && context ? (
                 <SourceBoardPullLinks
@@ -400,6 +444,7 @@ const SourceBoardBody: React.FC<{
                     {inPreview ? preview : list}
                 </ScrollableOverlay>
                 {worktreeDialog}
+                {checksDialog}
             </>
         );
     }
@@ -416,8 +461,9 @@ const SourceBoardBody: React.FC<{
             </div>
             <div ref={splitRef} className="flex min-h-0 flex-1">
                 {/* CSS keeps a remembered width inside the board: never under
-                    280 px, never over 60 % of it. */}
-                <div className="min-h-0 min-w-[280px] max-w-[60%] shrink-0" style={{ width: listWidth ?? '41.666%' }} ref={listRef}>
+                    280 px (or half a narrow board, so the preview keeps room),
+                    never over 60 % of it. */}
+                <div className="min-h-0 min-w-[min(280px,50%)] max-w-[60%] shrink-0" style={{ width: listWidth ?? '41.666%' }} ref={listRef}>
                     <ScrollableOverlay outerClassName="h-full min-h-0" disableHorizontal>
                         {list}
                     </ScrollableOverlay>
@@ -439,6 +485,7 @@ const SourceBoardBody: React.FC<{
                 <div className="min-h-0 min-w-0 flex-1">{preview}</div>
             </div>
             {worktreeDialog}
+            {checksDialog}
         </>
     );
 };

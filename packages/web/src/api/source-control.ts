@@ -39,6 +39,11 @@ import type {
   Project,
   ProjectUpstream,
   ReadyChangeRequestInput,
+  CommentInput,
+  ReviewChangeRequestInput,
+  SetStateInput,
+  SetLabelsInput,
+  SetReviewersInput,
   SourceControlAPI,
   SourceControlAuthAccount,
   SourceControlAuthStatus,
@@ -54,6 +59,8 @@ import type {
   SourceControlMutationContext,
   SourceControlMutationReceipt,
   SourceControlReadyMutationResult,
+  SourceControlReviewMutationResult,
+  SourceControlStateMutationResult,
   SourceControlResolvedMutationTarget,
   SourceControlBindingRead,
   SourceControlRepositoryBinding,
@@ -63,6 +70,9 @@ import type {
   SourceControlReadContext,
   SourceControlUser,
   UpdateChangeRequestInput,
+  GitHubIssueLabel,
+  GitHubReferenceReviewer,
+  GitHubRepoSelector,
 } from '@openchamber/ui/lib/api/types';
 import { runtimeFetch } from '@openchamber/ui/lib/runtime-fetch';
 import type { RuntimeFetchOptions } from '@openchamber/ui/lib/runtime-fetch';
@@ -173,6 +183,8 @@ interface MutationResultDTO {
   merged?: boolean;
   message?: string;
   ready?: boolean;
+  commented?: boolean;
+  state?: string;
 }
 
 type SourceControlFetch = (input: string, init?: RuntimeFetchOptions) => Promise<Response>;
@@ -184,6 +196,11 @@ type PostBody =
   | CreateBody
   | UpdateBody
   | (MutationBody<SourceControlExistingMutationTarget> & { method: 'merge' | 'squash' | 'rebase' })
+  | (MutationBody<SourceControlExistingMutationTarget> & { body: string })
+  | (MutationBody<SourceControlExistingMutationTarget> & { state: SetStateInput['state'] })
+  | (MutationBody<SourceControlExistingMutationTarget> & { labels: string[] })
+  | (MutationBody<SourceControlExistingMutationTarget> & { reviewers: string[] })
+  | (MutationBody<SourceControlExistingMutationTarget> & { verdict: ReviewChangeRequestInput['verdict']; body?: string })
   | MutationBody;
 
 interface WebSourceControlAPIOptions {
@@ -525,6 +542,56 @@ const parseMergeMutationResult = (result: MutationResultDTO): SourceControlMerge
     throw new Error('Source control response contained an invalid merge result');
   }
   return result.message === undefined ? { merged: result.merged } : { merged: result.merged, message: result.message };
+};
+
+const parseReviewMutationResult = (result: MutationResultDTO): SourceControlReviewMutationResult => {
+  if (!hasExactKeys(result, ['commented']) || !isBooleanValue(result.commented)) {
+    throw new Error('Source control response contained an invalid review result');
+  }
+  return { commented: result.commented };
+};
+
+interface RepositoryChoicesDTO extends ErrorResponse {
+  connected?: boolean;
+  items?: Array<{ name?: string; color?: string; id?: string; login?: string; avatarUrl?: string }>;
+}
+
+/** Labels or reviewer candidates of one project in the bound repository's network. */
+const readRepositoryChoices = async (
+  fetch: SourceControlFetch,
+  context: SourceControlReadContext,
+  project: GitHubRepoSelector,
+  path: string,
+): Promise<NonNullable<RepositoryChoicesDTO['items']>> => {
+  const identity = normalizeIdentity(context);
+  const query = boundReadQuery(context);
+  query.set('owner', project.owner);
+  query.set('repo', project.repo);
+  const payload = await request<RepositoryChoicesDTO>(fetch, identity, path, {}, query);
+  if (payload.connected !== true) throw new Error(`${identity.provider === 'gitlab' ? 'GitLab' : 'GitHub'} is not connected`);
+  if (!Array.isArray(payload.items)) throw new Error('Source control response contained an invalid list');
+  return payload.items;
+};
+
+const parseLabelChoices = (items: NonNullable<RepositoryChoicesDTO['items']>): GitHubIssueLabel[] => items.map((item) => {
+  if (!isNonEmptyString(item.name) || (item.color !== undefined && !isStringValue(item.color))) {
+    throw new Error('Source control response contained an invalid label');
+  }
+  return item.color ? { name: item.name, color: item.color } : { name: item.name };
+});
+
+const parseReviewerChoices = (items: NonNullable<RepositoryChoicesDTO['items']>): GitHubReferenceReviewer[] => items.map((item) => {
+  if (!isNonEmptyString(item.id) || !isNonEmptyString(item.login) || (item.avatarUrl !== undefined && !isHttpUrl(item.avatarUrl))) {
+    throw new Error('Source control response contained an invalid user');
+  }
+  return item.avatarUrl ? { id: item.id, login: item.login, avatarUrl: item.avatarUrl } : { id: item.id, login: item.login };
+});
+
+const parseStateMutationResult = (result: MutationResultDTO): SourceControlStateMutationResult => {
+  if (!hasExactKeys(result, ['state']) || (result.state !== 'open' && result.state !== 'closed')) {
+    throw new Error('Source control response contained an invalid state result');
+  }
+  return { state: result.state };
 };
 
 const parseReadyMutationResult = (result: MutationResultDTO): SourceControlReadyMutationResult => {
@@ -1520,6 +1587,66 @@ export const createWebSourceControlAPI = (options: WebSourceControlAPIOptions = 
       const result = await post<MutationReceiptDTO>(fetch, identity, '/pr/ready', mutationBody(payload, identity, 'existing'));
       return parseMutationReceipt(result, payload, identity, parseReadyMutationResult);
     },
+    changeRequestComment: async (payload: CommentInput) => {
+      const identity = normalizeIdentity(payload);
+      const result = await post<MutationReceiptDTO>(fetch, identity, '/pr/comment', {
+        ...mutationBody(payload, identity, 'existing'), body: payload.body,
+      });
+      return parseMutationReceipt(result, payload, identity, parseEmptyMutationResult);
+    },
+    changeRequestReview: async (payload: ReviewChangeRequestInput) => {
+      const identity = normalizeIdentity(payload);
+      const body: MutationBody<SourceControlExistingMutationTarget> & { verdict: ReviewChangeRequestInput['verdict']; body?: string } = {
+        ...mutationBody(payload, identity, 'existing'), verdict: payload.verdict,
+      };
+      if (payload.body !== undefined) body.body = payload.body;
+      const result = await post<MutationReceiptDTO>(fetch, identity, '/pr/review', body);
+      return parseMutationReceipt(result, payload, identity, parseReviewMutationResult);
+    },
+    changeRequestSetState: async (payload: SetStateInput) => {
+      const identity = normalizeIdentity(payload);
+      const result = await post<MutationReceiptDTO>(fetch, identity, '/pr/state', {
+        ...mutationBody(payload, identity, 'existing'), state: payload.state,
+      });
+      return parseMutationReceipt(result, payload, identity, parseStateMutationResult);
+    },
+    issueSetState: async (payload: SetStateInput) => {
+      const identity = normalizeIdentity(payload);
+      const result = await post<MutationReceiptDTO>(fetch, identity, '/issues/state', {
+        ...mutationBody(payload, identity, 'existing'), state: payload.state,
+      });
+      return parseMutationReceipt(result, payload, identity, parseStateMutationResult);
+    },
+    changeRequestSetLabels: async (payload: SetLabelsInput) => {
+      const identity = normalizeIdentity(payload);
+      const result = await post<MutationReceiptDTO>(fetch, identity, '/pr/labels', {
+        ...mutationBody(payload, identity, 'existing'), labels: payload.labels,
+      });
+      return parseMutationReceipt(result, payload, identity, parseEmptyMutationResult);
+    },
+    issueSetLabels: async (payload: SetLabelsInput) => {
+      const identity = normalizeIdentity(payload);
+      const result = await post<MutationReceiptDTO>(fetch, identity, '/issues/labels', {
+        ...mutationBody(payload, identity, 'existing'), labels: payload.labels,
+      });
+      return parseMutationReceipt(result, payload, identity, parseEmptyMutationResult);
+    },
+    changeRequestSetReviewers: async (payload: SetReviewersInput) => {
+      const identity = normalizeIdentity(payload);
+      const result = await post<MutationReceiptDTO>(fetch, identity, '/pr/reviewers', {
+        ...mutationBody(payload, identity, 'existing'), reviewers: payload.reviewers,
+      });
+      return parseMutationReceipt(result, payload, identity, parseEmptyMutationResult);
+    },
+    referenceLabels: async (context, project) => parseLabelChoices(await readRepositoryChoices(fetch, context, project, '/references/labels')),
+    referenceReviewers: async (context, project) => parseReviewerChoices(await readRepositoryChoices(fetch, context, project, '/references/reviewers')),
+    issueComment: async (payload: CommentInput) => {
+      const identity = normalizeIdentity(payload);
+      const result = await post<MutationReceiptDTO>(fetch, identity, '/issues/comment', {
+        ...mutationBody(payload, identity, 'existing'), body: payload.body,
+      });
+      return parseMutationReceipt(result, payload, identity, parseEmptyMutationResult);
+    },
     changeRequestsList: async (context, listOptions): Promise<PageResult<ChangeRequest>> => {
       const normalized = normalizeIdentity(context);
       const query = boundReadQuery(context);
@@ -1553,7 +1680,7 @@ export const createWebSourceControlAPI = (options: WebSourceControlAPIOptions = 
       }
       if (normalized.provider === 'gitlab') {
         const payload = await request<ChangeRequestContext & ErrorResponse>(fetch, normalized, '/pulls/context', {}, query);
-        return {
+        const context: ChangeRequestContext = {
           identity: normalized,
           project: payload.project ? parseSourceProject(payload.project, normalized) : null,
           changeRequest: payload.changeRequest ? parseSourceChangeRequest(payload.changeRequest, normalized) : null,
@@ -1563,12 +1690,15 @@ export const createWebSourceControlAPI = (options: WebSourceControlAPIOptions = 
           diff: payload.diff,
           ci: parseSourceCI(payload.ci, normalized),
           fetchedAt: payload.fetchedAt,
-          ...(payload.commits ? {
-            commits: payload.commits.map(parseSourceCommit),
-            commitsComplete: payload.commitsComplete !== false,
-            verdicts: (payload.verdicts ?? []).map((verdict) => parseSourceVerdict(verdict, normalized)),
-          } : {}),
         };
+        // Only the preview's timeline asks for commits and verdicts.
+        if (payload.commits) {
+          context.commits = payload.commits.map(parseSourceCommit);
+          context.commitsComplete = payload.commitsComplete !== false;
+          context.verdicts = (payload.verdicts ?? []).map((verdict) => parseSourceVerdict(verdict, normalized));
+          if (payload.reviewers) context.reviewers = payload.reviewers.map((user) => parseSourceUser(user, normalized));
+        }
+        return context;
       }
       const payload = await request<GitHubPullRequestContextResult & ErrorResponse>(fetch, normalized, '/pulls/context', {}, query);
       requireConnected(payload.connected);

@@ -105,6 +105,7 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': 'Also send the diff',
     'references.picker.preview.worktree.issue': 'The worktree gets a new branch named after this issue.',
     'references.picker.preview.worktree.pull': 'The worktree checks out this pull request’s branch.',
+    'references.picker.preview.reviewers': 'Reviewers',
   },
   de: {
     'references.picker.title.gitlab.attach': 'Aus GitLab verknüpfen',
@@ -211,6 +212,7 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': 'Auch den Diff senden',
     'references.picker.preview.worktree.issue': 'Der Worktree bekommt einen neuen Branch, benannt nach diesem Issue.',
     'references.picker.preview.worktree.pull': 'Der Worktree checkt den Branch dieses Pull Requests aus.',
+    'references.picker.preview.reviewers': 'Reviewer',
   },
   fr: {
     'references.picker.title.gitlab.attach': 'Lier depuis GitLab',
@@ -317,6 +319,7 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': 'Envoyer aussi le diff',
     'references.picker.preview.worktree.issue': 'Le worktree reçoit une nouvelle branche nommée d’après cette issue.',
     'references.picker.preview.worktree.pull': 'Le worktree extrait la branche de cette pull request.',
+    'references.picker.preview.reviewers': 'Relecteurs',
   },
   nl: {
     'references.picker.title.gitlab.attach': 'Koppelen vanuit GitLab',
@@ -423,6 +426,7 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': 'Ook de diff sturen',
     'references.picker.preview.worktree.issue': 'De worktree krijgt een nieuwe branch, vernoemd naar dit issue.',
     'references.picker.preview.worktree.pull': 'De worktree checkt de branch van deze pull request uit.',
+    'references.picker.preview.reviewers': 'Reviewers',
   },
   es: {
     'references.picker.title.gitlab.attach': 'Vincular desde GitLab',
@@ -529,6 +533,7 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': 'Enviar también el diff',
     'references.picker.preview.worktree.issue': 'El worktree recibe una rama nueva con el nombre de esta issue.',
     'references.picker.preview.worktree.pull': 'El worktree usa la rama de esta pull request.',
+    'references.picker.preview.reviewers': 'Revisores',
   },
   ja: {
     'references.picker.title.gitlab.attach': 'GitLab からリンク',
@@ -635,6 +640,7 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': '差分も送る',
     'references.picker.preview.worktree.issue': 'この Issue にちなんだ名前の新しいブランチが worktree に作られます。',
     'references.picker.preview.worktree.pull': 'worktree はこのプルリクエストのブランチをチェックアウトします。',
+    'references.picker.preview.reviewers': 'レビュアー',
   },
   'pt-BR': {
     'references.picker.title.gitlab.attach': 'Vincular do GitLab',
@@ -741,6 +747,7 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': 'Enviar também o diff',
     'references.picker.preview.worktree.issue': 'O worktree ganha uma branch nova com o nome desta issue.',
     'references.picker.preview.worktree.pull': 'O worktree usa a branch desta pull request.',
+    'references.picker.preview.reviewers': 'Revisores',
   },
   uk: {
     'references.picker.title.gitlab.attach': 'Прив’язати з GitLab',
@@ -847,6 +854,7 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': 'Надіслати ще й diff',
     'references.picker.preview.worktree.issue': 'Worktree отримає нову гілку з назвою за цим issue.',
     'references.picker.preview.worktree.pull': 'Worktree перемкнеться на гілку цього pull request.',
+    'references.picker.preview.reviewers': 'Рецензенти',
   },
   ko: {
     'references.picker.title.gitlab.attach': 'GitLab에서 연결',
@@ -953,6 +961,7 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': 'diff도 보내기',
     'references.picker.preview.worktree.issue': '이 이슈 이름을 딴 새 브랜치가 worktree에 만들어집니다.',
     'references.picker.preview.worktree.pull': 'worktree가 이 풀 리퀘스트의 브랜치를 체크아웃합니다.',
+    'references.picker.preview.reviewers': '리뷰어',
   },
   pl: {
     'references.picker.title.gitlab.attach': 'Połącz z GitLaba',
@@ -1059,6 +1068,7 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': 'Wyślij też diff',
     'references.picker.preview.worktree.issue': 'Worktree dostanie nową gałąź nazwaną od tego issue.',
     'references.picker.preview.worktree.pull': 'Worktree przełączy się na gałąź tego pull requesta.',
+    'references.picker.preview.reviewers': 'Recenzenci',
   },
   'zh-CN': {
     'references.picker.title.gitlab.attach': '从 GitLab 关联',
@@ -1165,6 +1175,7 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': '同时发送 diff',
     'references.picker.preview.worktree.issue': 'worktree 会获得一个以此 Issue 命名的新分支。',
     'references.picker.preview.worktree.pull': 'worktree 会检出这个拉取请求的分支。',
+    'references.picker.preview.reviewers': '审查者',
   },
   'zh-TW': {
     'references.picker.title.gitlab.attach': '從 GitLab 連結',
@@ -1271,6 +1282,7 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': '同時傳送 diff',
     'references.picker.preview.worktree.issue': 'worktree 會得到一個以此 Issue 命名的新分支。',
     'references.picker.preview.worktree.pull': 'worktree 會簽出這個拉取請求的分支。',
+    'references.picker.preview.reviewers': '審查者',
   },
   tr: {
     'references.picker.title.gitlab.attach': 'GitLab’dan bağla',
@@ -1377,5 +1389,6 @@ export const referencePickerI18n = {
     'references.picker.preview.includeDiff': 'Diff’i de gönder',
     'references.picker.preview.worktree.issue': 'Worktree, bu issue’nun adını taşıyan yeni bir dal alır.',
     'references.picker.preview.worktree.pull': 'Worktree bu pull request’in dalına geçer.',
+    'references.picker.preview.reviewers': 'İnceleyiciler',
   },
 } as const;

@@ -11,11 +11,19 @@ const KINDS = [
   'change-request-update',
   'change-request-merge',
   'change-request-ready',
+  'change-request-comment',
+  'change-request-review',
+  'issue-comment',
+  'change-request-state',
+  'issue-state',
+  'change-request-labels',
+  'issue-labels',
+  'change-request-reviewers',
 ];
 const STATES = ['running', 'succeeded', 'failed', 'outcome-unknown'];
 const TERMINAL_STATES = ['succeeded', 'failed'];
 const TARGET_OPTIONAL_KEYS = ['number', 'head', 'base', 'headSha'];
-const RESULT_KEYS = [...TARGET_OPTIONAL_KEYS, 'state', 'merged', 'ready', 'failureStatus', 'failureCode'];
+const RESULT_KEYS = [...TARGET_OPTIONAL_KEYS, 'state', 'merged', 'ready', 'commented', 'failureStatus', 'failureCode'];
 
 const emptyState = () => ({ version: VERSION, records: {} });
 const isPlainObject = (value) => value === Object(value)
@@ -83,6 +91,7 @@ const isTerminalResult = (value) => isPlainObject(value)
   && (value.headSha === undefined || isNonEmptyString(value.headSha))
   && (value.state === undefined || isNonEmptyString(value.state))
   && (value.merged === undefined || isBoolean(value.merged))
+  && (value.commented === undefined || isBoolean(value.commented))
   && (value.ready === undefined || isBoolean(value.ready))
   && (value.failureStatus === undefined || isFailureStatus(value.failureStatus))
   && (value.failureCode === undefined || isNonEmptyString(value.failureCode));

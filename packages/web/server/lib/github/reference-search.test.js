@@ -146,7 +146,17 @@ describe('fetchReferenceDetail', () => {
   const pull = (reviews = []) => ({
     __typename: 'PullRequest',
     number: 9,
+    state: 'OPEN',
     reviewDecision: 'CHANGES_REQUESTED',
+    headCommit: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: [
+      { __typename: 'CheckRun', databaseId: 1, name: 'test', status: 'COMPLETED', conclusion: 'FAILURE', startedAt: null, checkSuite: { app: { databaseId: 15368 } } },
+      { __typename: 'CheckRun', databaseId: 2, name: 'lint', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null, checkSuite: { app: { databaseId: 15368 } } },
+    ] } } } }] },
+    reviewRequests: { nodes: [
+      { requestedReviewer: { __typename: 'User', login: 'hubot', avatarUrl: null } },
+      { requestedReviewer: { __typename: 'Team' } },
+      { requestedReviewer: null },
+    ] },
     additions: 12,
     deletions: 3,
     changedFiles: 2,
@@ -186,6 +196,8 @@ describe('fetchReferenceDetail', () => {
     ]);
     expect(detail?.pull).toEqual({
       reviewDecision: 'changes_requested',
+      reviewers: [{ id: 'hubot', login: 'hubot', avatarUrl: undefined }],
+      checks: expect.objectContaining({ state: 'failure', total: 2, success: 1, failure: 1 }),
       additions: 12,
       deletions: 3,
       changedFiles: 2,

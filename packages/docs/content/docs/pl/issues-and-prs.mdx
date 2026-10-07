@@ -40,6 +40,14 @@ Dla Linear:
 
 Podgląd pokazuje opis, etykiety i komentarze. W issue z Linear kliknij znacznik statusu, aby przenieść je do innego stanu zespołu.
 
+Wiersz **Labels** ma przycisk z ołówkiem, który otwiera listę etykiet repozytorium z wyszukiwaniem. Zaznacz je albo odznacz. Zmiana zapisuje się, gdy zamkniesz listę, więc kilka kliknięć liczy się jako jedna zmiana. Otwarty pull request (na GitLabie merge request) ma też wiersz **Reviewers**, który działa tak samo, z osobami, które mogą robić review w repozytorium. Na GitHubie autor pull requesta nie jest proponowany. Issues z Linear nie mają żadnego z tych wierszy.
+
+## Skomentuj i zrób review
+
+Pod aktywnością issue albo pull requesta jest pole komentarza. **Comment** publikuje twój tekst na GitHubie albo GitLabie, tak samo jak <kbd>⌘</kbd>+<kbd>Enter</kbd> (<kbd>Ctrl</kbd>+<kbd>Enter</kbd> w Windows i Linuksie). Tekst zostaje w polu, dopóki nie zostanie opublikowany, więc przy nieudanej próbie nic nie przepada. Przejście do innego elementu czyści pole. Issues z Linear nie mają tego pola.
+
+Otwarty pull request (na GitLabie merge request) ma też **Approve** i **Request changes**, a tekst z pola idzie razem z review. **Request changes** wymaga tekstu, który mówi, co zmienić. Review dotyczy commitów pokazanych w podglądzie. Jeśli ktoś od tego czasu zrobił push, review zostaje odrzucone, a podgląd się odświeża, żebyś mógł spojrzeć jeszcze raz. Na GitLabie **Request changes** działa, gdy jesteś reviewerem merge requesta, a tekst review jest publikowany jako osobny komentarz. Jeśli nie uda się tylko ten komentarz, review i tak się liczy, a twój tekst zostaje w polu.
+
 ## Zacznij pracę
 
 Akcje są na dole podglądu.
@@ -56,6 +64,8 @@ Podgląd pull requesta pokazuje też jego gałąź, rozmiar (dodane i usunięte 
 Obok rozmiaru są dwa przyciski. **Changes** otwiera diff pull requesta w panelu bocznym, a **Walkthrough** otwiera jego [przewodnik po zmianach](/pl/walkthrough/). Jeśli aplikacja jest na innym projekcie, najpierw przełącza się na projekt PR-a. Oba są dostępne tylko na desktopie i w webie.
 
 Na dole **Merge** pyta przed scaleniem i używa twojej zwykłej metody scalania. Szkic ma też **Ready for review**.
+
+Otwarte issue albo pull request ma na dole też **Close issue** lub **Close pull request** (na GitLabie **Close merge request**), a zamknięte **Reopen issue** lub **Reopen pull request** (**Reopen merge request**). Nie ma pytania o potwierdzenie, bo to da się cofnąć. Scalonego pull requesta nie da się zamknąć ani ponownie otworzyć. Na GitHubie issue zamyka się jako ukończone.
 
 ## Powiązane
 

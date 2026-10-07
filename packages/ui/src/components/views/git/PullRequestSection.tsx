@@ -38,7 +38,6 @@ import { getSourceControlStatusKey, useBranchTrackedPulls, useGitHubPrStatusStor
 import { useTrackedItems } from '@/lib/trackedItems/interest';
 import { getChangeRequestContextKey, useChangeRequestContextStore } from '@/stores/useChangeRequestContextStore';
 import type {
-  CIRun,
   CreateChangeRequestInput,
   Project,
   SourceControlAPI,
@@ -59,30 +58,14 @@ import {
   reconcileUnknownMutationOutcome,
 } from './sourceControlMutationOutcome';
 import { readMergeMethod, rememberMergeMethod, type MergeMethod } from './mergeMethodPreference';
+import { CheckRunList } from './CheckRunList';
+import { formatElapsedDuration, isFailedConclusion, useCheckRunExpansion } from './checkRunState';
 
 type PrSegment = 'overview' | 'checks' | 'comments';
 type PullRequest = NonNullable<SourceControlStatus['pr']>;
 
 const PR_CHECKS_AUTO_REFRESH_MS = 35_000;
 
-const formatElapsedDuration = (startISO?: string, endISO?: string, now?: number): string | null => {
-  if (!startISO) return null;
-  const start = Date.parse(startISO);
-  if (!Number.isFinite(start)) return null;
-  const end = endISO ? Date.parse(endISO) : (now ?? Date.now());
-  if (!Number.isFinite(end) || end <= start) return null;
-  const totalMinutes = Math.floor((end - start) / 60_000);
-  if (totalMinutes < 1) return '<1m';
-  if (totalMinutes < 60) return `${totalMinutes}m`;
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-};
-
-const isFailedConclusion = (conclusion?: string | null): boolean => {
-  const normalized = typeof conclusion === 'string' ? conclusion.toLowerCase() : '';
-  return Boolean(normalized) && !['success', 'neutral', 'skipped'].includes(normalized);
-};
 const statusColor = (state: string | undefined | null): string => {
   switch (state) {
     case 'success':
@@ -521,8 +504,7 @@ export const PullRequestSection: React.FC<{
   }, [availableBaseBranches, baseBranch, targetBaseBranch]);
 
   const [activeSegment, setActiveSegmentState] = React.useState<PrSegment>(() => initialSnapshot?.activeSegment ?? 'overview');
-  const [expandedCheckStepKeys, setExpandedCheckStepKeys] = React.useState<Set<string>>(new Set());
-  const [expandedCheckRunKeys, setExpandedCheckRunKeys] = React.useState<Set<string>>(new Set());
+  const checkRunExpansion = useCheckRunExpansion();
 
   const attemptedBodyHydrationRef = React.useRef<Set<string>>(new Set());
   const lastSyncedPrNumberRef = React.useRef<number | null>(null);
@@ -863,138 +845,6 @@ export const PullRequestSection: React.FC<{
       text: '',
     });
   }, [changeRequestNumberLabel, pr?.number, repositoryHost?.provider]);
-
-  const renderCheckRunSummary = React.useCallback((run: CIRun, options?: { hideHeader?: boolean }) => {
-    const status = run.status || 'unknown';
-    const conclusion = run.conclusion ?? undefined;
-    const statusText = conclusion ? `${status} / ${conclusion}` : status;
-    const appName = run.application?.name || run.application?.slug;
-    return (
-      <div className="space-y-2">
-        <div className={options?.hideHeader ? 'flex items-start justify-end gap-3' : 'flex items-start justify-between gap-3'}>
-          {!options?.hideHeader ? (
-            <div className="min-w-0">
-              <div className="typography-ui-label text-foreground truncate">{run.name}</div>
-              <div className="typography-micro text-muted-foreground truncate">
-                {appName ? `${appName} · ${statusText}` : statusText}
-              </div>
-            </div>
-          ) : null}
-
-          {run.detailsUrl ? (
-            <Button variant="outline" size="sm" asChild className="flex-shrink-0">
-              <a href={run.detailsUrl} target="_blank" rel="noopener noreferrer">
-                <Icon name="external-link" className="size-4" />
-                Open
-              </a>
-            </Button>
-          ) : null}
-        </div>
-
-        {run.output?.title ? (
-          <div className="typography-micro text-foreground">{run.output.title}</div>
-        ) : null}
-        {run.output?.summary ? (
-          <div className="typography-micro text-muted-foreground whitespace-pre-wrap break-words">
-            {run.output.summary}
-          </div>
-        ) : null}
-        {run.output?.text ? (
-          <div className="rounded border border-border/40 bg-transparent px-2 py-2 typography-micro text-muted-foreground whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
-            {run.output.text}
-          </div>
-        ) : null}
-
-        {Array.isArray(run.annotations) && run.annotations.length > 0 ? (
-          <div className="space-y-1">
-            <div className="typography-micro text-muted-foreground">
-              Failed annotations{run.annotations.length > 20 ? ` (showing 20/${run.annotations.length})` : ''}
-            </div>
-            <div className="space-y-1">
-              {run.annotations.slice(0, 20).map((annotation, idx) => (
-                <div key={`${annotation.path || 'file'}:${annotation.startLine || idx}:${idx}`} className="rounded border border-[var(--status-error-border)] bg-[var(--status-error-background)]/40 px-2 py-2">
-                  <div className="typography-micro break-words text-[var(--status-error)]">
-                    {annotation.title || annotation.level || 'Issue'}
-                    {annotation.path ? ` · ${annotation.path}` : ''}
-                    {typeof annotation.startLine === 'number' ? `:${annotation.startLine}` : ''}
-                    {typeof annotation.endLine === 'number' && annotation.endLine !== annotation.startLine ? `-${annotation.endLine}` : ''}
-                  </div>
-                  <div className="typography-micro text-foreground whitespace-pre-wrap break-words mt-1">
-                    {annotation.message}
-                  </div>
-                  {annotation.rawDetails ? (
-                    <div className="typography-micro text-muted-foreground whitespace-pre-wrap break-words mt-1">
-                      {annotation.rawDetails}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {run.job?.steps && run.job.steps.length > 0 ? (
-          <div className="space-y-1">
-            <div className="typography-micro text-muted-foreground">{t('gitView.pr.checks.steps')}</div>
-            <div className="space-y-1">
-              {run.job.steps.map((step, idx) => {
-                const c = (step.conclusion || '').toLowerCase();
-                const isFail = c && !['success', 'neutral', 'skipped'].includes(c);
-                const stepKey = `${run.id ?? 'run'}:${run.job?.jobId ?? 'job'}:${step.number ?? idx}:${step.name}`;
-                const stepExpanded = expandedCheckStepKeys.has(stepKey);
-                if (!isFail) {
-                  return (
-                    <div
-                      key={stepKey}
-                      className="typography-micro flex w-full items-center gap-2 rounded px-2 py-1 text-muted-foreground"
-                    >
-                      <span className="truncate">{step.name}</span>
-                      {step.conclusion ? <span className="ml-auto flex-shrink-0">{step.conclusion}</span> : null}
-                    </div>
-                  );
-                }
-                return (
-                  <Collapsible key={stepKey} open={stepExpanded}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setExpandedCheckStepKeys((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(stepKey)) {
-                            next.delete(stepKey);
-                          } else {
-                            next.add(stepKey);
-                          }
-                          return next;
-                        });
-                      }}
-                      className={
-                        'typography-micro flex w-full items-center gap-2 rounded px-2 py-1 text-left ' +
-                        (isFail ? 'bg-destructive/10 text-destructive' : 'text-muted-foreground')
-                      }
-                    >
-                      {stepExpanded ? <Icon name="arrow-down-s" className="size-4" /> : <Icon name="arrow-right-s" className="size-4" />}
-                      <span className="truncate">{step.name}</span>
-                      {step.conclusion ? <span className="ml-auto flex-shrink-0">{step.conclusion}</span> : null}
-                    </button>
-                    <CollapsibleContent>
-                      <div className="ml-6 mt-1 rounded border border-border/40 bg-transparent px-2 py-2 typography-micro text-muted-foreground space-y-1">
-                        {typeof step.number === 'number' ? <div>{t('gitView.pr.checks.stepLabel')}: {step.number}</div> : null}
-                        {step.status ? <div>{t('gitView.pr.checks.statusLabel')}: {step.status}</div> : null}
-                        {step.conclusion ? <div>{t('gitView.pr.checks.conclusionLabel')}: {step.conclusion}</div> : null}
-                        {step.startedAt ? <div>{t('gitView.pr.checks.startedLabel')}: {formatTimestamp(step.startedAt)}</div> : null}
-                        {step.completedAt ? <div>{t('gitView.pr.checks.completedLabel')}: {formatTimestamp(step.completedAt)}</div> : null}
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-      </div>
-    );
-  }, [expandedCheckStepKeys, formatTimestamp, t]);
 
   const [isAttachingChecks, setIsAttachingChecks] = React.useState(false);
   const [isAttachingComments, setIsAttachingComments] = React.useState(false);
@@ -1963,69 +1813,12 @@ export const PullRequestSection: React.FC<{
                     ) : null}
 
                     {(prContext?.ci?.runs?.length ?? 0) > 0 ? (
-                      <div className="flex flex-col gap-1.5">
-                        {(prContext?.ci?.runs ?? []).map((run, idx) => {
-                          const runKey = `${run.id ?? 'run'}:${run.name}:${idx}`;
-                          const isRunning = run.status === 'in_progress';
-                          const isQueued = run.status === 'queued';
-                          const failed = isFailedConclusion(run.conclusion);
-                          const expanded = expandedCheckRunKeys.has(runKey);
-                          const hasDetails = Boolean(
-                            run.output?.title || run.output?.summary || run.output?.text
-                            || (run.annotations?.length ?? 0) > 0
-                            || (run.job?.steps?.length ?? 0) > 0
-                            || run.detailsUrl,
-                          );
-                          const workflowName = run.job?.workflowName;
-                          const durationLabel = isRunning
-                            ? formatElapsedDuration(run.startedAt, undefined, nowTick)
-                            : formatElapsedDuration(run.startedAt, run.completedAt);
-                          return (
-                            <div key={runKey} className={cn('rounded-md border border-border/40', failed && 'border-[var(--status-error-border)]')}>
-                              <button
-                                type="button"
-                                disabled={!hasDetails}
-                                onClick={() => {
-                                  setExpandedCheckRunKeys((previous) => {
-                                    const next = new Set(previous);
-                                    if (next.has(runKey)) {
-                                      next.delete(runKey);
-                                    } else {
-                                      next.add(runKey);
-                                    }
-                                    return next;
-                                  });
-                                }}
-                                className="flex w-full items-center gap-2 px-2.5 py-2 text-left disabled:cursor-default"
-                              >
-                                {isRunning ? (
-                                  <Icon name="loader-4" className="size-4 shrink-0 animate-spin text-[var(--status-warning)]" />
-                                ) : isQueued ? (
-                                  <Icon name="time" className="size-4 shrink-0 text-muted-foreground" />
-                                ) : failed ? (
-                                  <Icon name="close-circle" className="size-4 shrink-0 text-[var(--status-error)]" />
-                                ) : (
-                                  <Icon name="checkbox-circle" className="size-4 shrink-0 text-[var(--status-success)]" />
-                                )}
-                                <span className="min-w-0 flex-1 truncate typography-ui-label text-foreground">
-                                  {workflowName && workflowName !== run.name ? `${workflowName} / ${run.name}` : run.name}
-                                </span>
-                                {durationLabel ? (
-                                  <span className="shrink-0 typography-micro tabular-nums text-muted-foreground">{durationLabel}</span>
-                                ) : null}
-                                {hasDetails ? (
-                                  <Icon name="arrow-down-s" className={cn('size-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-180')} />
-                                ) : null}
-                              </button>
-                              {expanded && hasDetails ? (
-                                <div className="min-w-0 overflow-hidden border-t border-border/40 p-2.5">
-                                  {renderCheckRunSummary(run, { hideHeader: true })}
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <CheckRunList
+                        runs={prContext?.ci?.runs ?? []}
+                        now={nowTick}
+                        expansion={checkRunExpansion}
+                        formatTimestamp={formatTimestamp}
+                      />
                     ) : isLoadingPrContext ? (
                       <div className="flex items-center justify-center gap-2 py-6 typography-micro text-muted-foreground">
                         <Icon name="loader-4" className="size-4 animate-spin" />

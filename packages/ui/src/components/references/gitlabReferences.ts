@@ -128,6 +128,9 @@ const pullDetail = (context: ChangeRequestContext): GitHubReferenceDetail['pull'
     }));
     return {
         reviewDecision: null,
+        reviewers: (context.reviewers ?? []).map((user) => (user.avatarUrl
+            ? { id: user.id, login: user.username, avatarUrl: user.avatarUrl }
+            : { id: user.id, login: user.username })),
         additions: context.files.reduce((sum, file) => sum + (file.additions ?? 0), 0),
         deletions: context.files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
         changedFiles: context.files.length,

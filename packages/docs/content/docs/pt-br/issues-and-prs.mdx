@@ -40,6 +40,14 @@ Para o Linear:
 
 A prévia mostra a descrição, as labels e os comentários. Numa issue do Linear, clique na pílula de status para passá-la para outro estado do time.
 
+A linha **Labels** tem um botão de lápis que abre uma lista pesquisável das labels do repositório. Marque ou desmarque as que quiser. A mudança é salva quando você fecha a lista, então vários cliques contam como uma só mudança. Um pull request aberto (merge request no GitLab) também tem uma linha **Reviewers** que funciona do mesmo jeito, com as pessoas que podem revisar no repositório. No GitHub, o autor do pull request não aparece entre as opções. Issues do Linear não têm nenhuma das duas linhas.
+
+## Comente e revise
+
+Abaixo da atividade de uma issue ou pull request há uma caixa de comentário. **Comment** publica seu texto no GitHub ou no GitLab, assim como <kbd>⌘</kbd>+<kbd>Enter</kbd> (<kbd>Ctrl</kbd>+<kbd>Enter</kbd> no Windows e no Linux). O texto fica na caixa até ser publicado, então um envio que falhou não perde nada. Ao trocar para outro item, a caixa é limpa. Issues do Linear não têm essa caixa.
+
+Um pull request aberto (merge request no GitLab) também tem **Approve** e **Request changes**, e o que estiver na caixa vai junto com a revisão. **Request changes** precisa de um texto dizendo o que mudar. A revisão vale para os commits mostrados na prévia. Se alguém fez push depois disso, ela é recusada e a prévia é atualizada para você olhar de novo. No GitLab, **Request changes** funciona quando você é revisor do merge request, e o texto da revisão é publicado como um comentário separado. Se só esse comentário falhar, a revisão vale mesmo assim e seu texto fica na caixa.
+
 ## Comece o trabalho
 
 As ações ficam no rodapé da prévia.
@@ -56,6 +64,8 @@ A prévia de um pull request também mostra o branch, o tamanho (linhas adiciona
 Ao lado do tamanho há dois botões. **Changes** abre o diff do pull request no painel lateral, e **Walkthrough** abre o [percurso pelas mudanças](/pt-br/walkthrough/). Se o app estiver em outro projeto, ele muda primeiro para o projeto do PR. Os dois existem só no desktop e na web.
 
 No rodapé, **Merge** pergunta antes de fazer o merge e usa seu método de merge de sempre. Um rascunho também tem **Ready for review**.
+
+Uma issue ou um pull request aberto também tem no rodapé **Close issue** ou **Close pull request** (**Close merge request** no GitLab), e um fechado tem **Reopen issue** ou **Reopen pull request** (**Reopen merge request**). Nenhum dos dois pede confirmação, porque dá para desfazer. Um pull request já mesclado não pode ser fechado nem reaberto. No GitHub, a issue é fechada como concluída.
 
 ## Relacionado
 

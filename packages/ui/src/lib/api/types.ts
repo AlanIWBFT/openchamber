@@ -12,6 +12,11 @@ import type {
   PageResult,
   ProjectUpstream,
   ReadyChangeRequestInput,
+  CommentInput,
+  ReviewChangeRequestInput,
+  SetStateInput,
+  SetLabelsInput,
+  SetReviewersInput,
   SourceControlAuthStatus,
   SourceControlCapabilities,
   SourceControlDeviceFlowComplete,
@@ -21,6 +26,8 @@ import type {
   SourceControlMergeMutationResult,
   SourceControlMutationReceipt,
   SourceControlReadyMutationResult,
+  SourceControlReviewMutationResult,
+  SourceControlStateMutationResult,
   SourceControlBindingRead,
   SourceControlProvider,
   SourceControlProviderBindingMutation,
@@ -1686,6 +1693,13 @@ export type GitHubReferenceComment = {
   review: 'approved' | 'changes_requested' | 'commented' | 'dismissed' | null;
 };
 
+/** Someone asked to review, or who can be; `id` is what the host names them by (a login on GitHub). */
+export type GitHubReferenceReviewer = {
+  id: string;
+  login: string;
+  avatarUrl?: string;
+};
+
 /** What the preview adds for one item; too slow to ask for a whole page. */
 export type GitHubReferenceDetail = {
   number: number;
@@ -1696,6 +1710,8 @@ export type GitHubReferenceDetail = {
   /** Null for an issue. */
   pull: {
     reviewDecision: 'approved' | 'changes_requested' | 'review_required' | null;
+    /** Asked to review and not done yet (GitHub); everyone set as a reviewer (GitLab). */
+    reviewers: GitHubReferenceReviewer[];
     additions: number;
     deletions: number;
     changedFiles: number;
@@ -1834,6 +1850,18 @@ export interface SourceControlAPI {
   changeRequestUpdate(payload: UpdateChangeRequestInput): Promise<SourceControlMutationReceipt<SourceControlEmptyMutationResult>>;
   changeRequestMerge(payload: MergeChangeRequestInput): Promise<SourceControlMutationReceipt<SourceControlMergeMutationResult>>;
   changeRequestReady(payload: ReadyChangeRequestInput): Promise<SourceControlMutationReceipt<SourceControlReadyMutationResult>>;
+  changeRequestComment(payload: CommentInput): Promise<SourceControlMutationReceipt<SourceControlEmptyMutationResult>>;
+  changeRequestReview(payload: ReviewChangeRequestInput): Promise<SourceControlMutationReceipt<SourceControlReviewMutationResult>>;
+  issueComment(payload: CommentInput): Promise<SourceControlMutationReceipt<SourceControlEmptyMutationResult>>;
+  changeRequestSetState(payload: SetStateInput): Promise<SourceControlMutationReceipt<SourceControlStateMutationResult>>;
+  issueSetState(payload: SetStateInput): Promise<SourceControlMutationReceipt<SourceControlStateMutationResult>>;
+  changeRequestSetLabels(payload: SetLabelsInput): Promise<SourceControlMutationReceipt<SourceControlEmptyMutationResult>>;
+  issueSetLabels(payload: SetLabelsInput): Promise<SourceControlMutationReceipt<SourceControlEmptyMutationResult>>;
+  changeRequestSetReviewers(payload: SetReviewersInput): Promise<SourceControlMutationReceipt<SourceControlEmptyMutationResult>>;
+  /** One page of a project's labels, for the board's picker. */
+  referenceLabels(context: SourceControlReadContext, project: GitHubRepoSelector): Promise<GitHubIssueLabel[]>;
+  /** One page of the people who can be asked to review in a project. */
+  referenceReviewers(context: SourceControlReadContext, project: GitHubRepoSelector): Promise<GitHubReferenceReviewer[]>;
   changeRequestsList(
     context: SourceControlReadContext,
     options?: { page?: number; query?: string; state?: RepositoryReferenceState; people?: RepositoryReferencePeople },

@@ -40,6 +40,14 @@ Pour Linear :
 
 L'aperçu montre la description, les labels et les commentaires. Sur une issue Linear, clique sur la pastille de statut pour la passer dans un autre état de l'équipe.
 
+La ligne **Labels** a un bouton crayon qui ouvre la liste des labels du dépôt, avec une recherche. Coche ou décoche-les. La modification est enregistrée quand tu fermes la liste, donc plusieurs clics comptent pour une seule modification. Une pull request ouverte (merge request sur GitLab) a aussi une ligne **Reviewers** qui fonctionne de la même façon, avec les personnes qui peuvent faire une review dans le dépôt. Sur GitHub, l'auteur de la pull request n'est pas proposé. Les issues Linear n'ont aucune de ces lignes.
+
+## Commenter et faire une review
+
+Sous l'activité d'une issue ou d'une pull request se trouve une zone de commentaire. **Comment** publie ton texte sur GitHub ou GitLab, tout comme <kbd>⌘</kbd>+<kbd>Enter</kbd> (<kbd>Ctrl</kbd>+<kbd>Enter</kbd> sous Windows et Linux). Le texte reste dans la zone jusqu'à sa publication, donc un envoi raté ne fait rien perdre. Passer à un autre élément vide la zone. Les issues Linear n'en ont pas.
+
+Une pull request ouverte (merge request sur GitLab) a aussi **Approve** et **Request changes**, et le texte de la zone part avec la review. **Request changes** demande un texte qui dit quoi changer. La review porte sur les commits affichés dans l'aperçu. Si quelqu'un a poussé depuis, elle est refusée et l'aperçu se rafraîchit pour que tu puisses regarder à nouveau. Sur GitLab, **Request changes** fonctionne si tu es reviewer de la merge request, et le texte de la review est publié comme un commentaire séparé. Si seul ce commentaire échoue, la review compte quand même et ton texte reste dans la zone.
+
 ## Démarrer le travail
 
 Les actions se trouvent en bas de l'aperçu.
@@ -56,6 +64,8 @@ L'aperçu d'une pull request montre aussi sa branche, sa taille (lignes ajoutée
 Deux boutons se trouvent à côté de la taille. **Changes** ouvre le diff de la pull request dans le panneau latéral, et **Walkthrough** ouvre sa [parcours des modifications](/fr/walkthrough/). Si l'app est sur un autre projet, elle passe d'abord au projet de la PR. Les deux n'existent que sur le bureau et le web.
 
 En bas, **Merge** demande confirmation avant de fusionner et utilise ta méthode de merge habituelle. Un brouillon a aussi **Ready for review**.
+
+Une issue ou une pull request ouverte a aussi en bas **Close issue** ou **Close pull request** (**Close merge request** sur GitLab), et une fermée a **Reopen issue** ou **Reopen pull request** (**Reopen merge request**). Aucune confirmation n'est demandée, puisqu'on peut annuler. Une pull request fusionnée ne peut être ni fermée ni rouverte. Sur GitHub, une issue est fermée comme terminée.
 
 ## Pages liées
 

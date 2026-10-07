@@ -4,7 +4,7 @@ import { parseGitLabRemoteUrl } from './repo.js';
 const text = (value) => isString(value) ? value : '';
 const integer = (value) => Number.isInteger(value) && value >= 0 ? value : null;
 
-function mapGitLabUser(value, identity) {
+export function mapGitLabUser(value, identity) {
   if (!isPlainObject(value) || integer(value.id) === null || !text(value.username)) return null;
   const user = { ...identity, id: String(value.id), username: value.username };
   if (text(value.avatar_url)) user.avatarUrl = value.avatar_url;

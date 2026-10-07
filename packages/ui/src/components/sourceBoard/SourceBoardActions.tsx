@@ -2,7 +2,7 @@ import * as React from 'react';
 
 import { Icon } from '@/components/icon/Icon';
 import { DiffViewIcon } from '@/components/icons/DiffIcon';
-import { REFERENCE_META_TEXT } from '@/components/references/referencePickerItems';
+import { REFERENCE_META_TEXT, referenceNumberLabel } from '@/components/references/referencePickerItems';
 import type { IconName } from '@/components/icon/icons';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
@@ -17,12 +17,13 @@ import type { GitHubPullReference, SourceControlReadContext } from '@/lib/api/ty
 import type { PullRequestSource } from '@/lib/diff/pullRequestDiff';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import type { SourceControlCapabilities } from '@/lib/source-control/types';
+import type { SetStateInput, SourceControlCapabilities } from '@/lib/source-control/types';
 import { formatChangeRequestReference } from '@/lib/source-control/identity';
 import { usePullRequestSelectionStore } from '@/stores/usePullRequestSelectionStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useWalkthroughStore } from '@/stores/useWalkthroughStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { newMutationKey } from './mutationKey';
 
 /** A project the board acts in: its id and root folder. */
 export type SourceBoardProject = { id: string; path: string };
@@ -32,8 +33,6 @@ const MERGE_METHOD_KEYS = {
     squash: 'sourceBoard.merge.method.squash',
     rebase: 'sourceBoard.merge.method.rebase',
 } as const;
-
-const newMutationKey = (): string => globalThis.crypto?.randomUUID?.() ?? `source-board-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
 /** What a session started from the item gets: the item itself, as a composer chip. */
 const selectionOf = (item: ReferencePickerItem): ReferencePickerSelection => (
@@ -92,7 +91,7 @@ export const SourceBoardActions: React.FC<{
     const { t } = useI18n();
     const { sourceControl, linear } = useRuntimeAPIs();
     const confirmation = useConfirmDialog();
-    const [busy, setBusy] = React.useState<'merge' | 'ready' | null>(null);
+    const [busy, setBusy] = React.useState<'merge' | 'ready' | 'state' | null>(null);
 
     const pull: GitHubPullReference | null = item.source === 'github' && item.reference.kind === 'pull' ? item.reference : null;
     const openPull = pull && pull.state === 'open' ? pull : null;
@@ -166,6 +165,42 @@ export const SourceBoardActions: React.FC<{
         }
     };
 
+    // An open issue or PR closes, a closed one reopens; a merged PR stays as it is.
+    const repositoryItem = item.source === 'github' ? item.reference : null;
+    const nextState = !repositoryItem || repositoryItem.state === 'merged' ? null : repositoryItem.state === 'open' ? 'closed' : 'open';
+    const stateLabel = (() => {
+        if (!repositoryItem || !nextState) return '';
+        if (repositoryItem.kind === 'issue') return t(nextState === 'closed' ? 'sourceBoard.actions.closeIssue' : 'sourceBoard.actions.reopenIssue');
+        const gitlab = repositoryItem.provider === 'gitlab';
+        if (nextState === 'closed') return t(gitlab ? 'sourceBoard.actions.closePull.gitlab' : 'sourceBoard.actions.closePull.github');
+        return t(gitlab ? 'sourceBoard.actions.reopenPull.gitlab' : 'sourceBoard.actions.reopenPull.github');
+    })();
+
+    const changeState = async () => {
+        if (!repositoryItem || !nextState || !context) return;
+        const label = referenceNumberLabel(repositoryItem);
+        setBusy('state');
+        try {
+            const payload: SetStateInput = {
+                ...context,
+                idempotencyKey: newMutationKey(),
+                target: { project: { owner: repositoryItem.sourceRepo.owner, name: repositoryItem.sourceRepo.repo }, number: repositoryItem.number },
+                state: nextState,
+            };
+            if (repositoryItem.kind === 'pull') await sourceControl.changeRequestSetState(payload);
+            else await sourceControl.issueSetState(payload);
+            toast.success(t(nextState === 'closed' ? 'sourceBoard.toast.closed' : 'sourceBoard.toast.reopened', { reference: label }));
+        } catch (error) {
+            toast.error(
+                t(nextState === 'closed' ? 'sourceBoard.toast.closeFailed' : 'sourceBoard.toast.reopenFailed', { reference: label }),
+                { description: error instanceof Error ? error.message : String(error) },
+            );
+        } finally {
+            setBusy(null);
+            onChanged();
+        }
+    };
+
     const maintenance = (
         <>
             {openPull && !openPull.draft && mergeMethod ? (
@@ -173,6 +208,14 @@ export const SourceBoardActions: React.FC<{
             ) : null}
             {openPull?.draft && capabilities?.draftChangeRequests ? (
                 <ActionButton icon="git-pull-request" label={t('sourceBoard.actions.markReady')} busy={busy === 'ready'} onClick={() => void markReady()} />
+            ) : null}
+            {nextState && context ? (
+                <ActionButton
+                    icon={nextState === 'open' ? 'arrow-go-back' : repositoryItem?.kind === 'pull' ? 'git-close-pull-request' : 'checkbox-circle'}
+                    label={stateLabel}
+                    busy={busy === 'state'}
+                    onClick={() => void changeState()}
+                />
             ) : null}
         </>
     );

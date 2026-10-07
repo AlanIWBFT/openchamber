@@ -41,7 +41,7 @@ project.
 - Keys someone is subscribed to are never evicted; the 40-entry bound is a soft target.
 - GitHub pages come from `GET /api/source-control/github/references` (server: `packages/web/server/lib/github/DOCUMENTATION.md`), read with the project's GitHub read context (`useGitHubReadContext`): the account its binding names, or the current github.com account for a repository nobody bound. List and preview cache keys carry that account. Linear lists use `linear.issuesList` with the filter's status, whose issues (`assignee=me` or `created`) and priority, combined; picking in the filter menu keeps it open.
 
-- An open PR turns orange on failed checks or a conflict, as in the sidebar. A page does not carry that (mergeability alone made a 30-PR page about three times slower), so once the list shows, `useGitHubPullStatuses` asks `references/status` for the open PRs it lists, a page per request, and the rows and the preview recolour when it lands. The preview's Checks line reads the same answer, so its text and the colour never disagree. Statuses are cached per PR and head commit. Until a status arrives, or when it fails, a PR reads as open. GitLab projects ask nothing and keep their state colour.
+- An open PR turns orange on failed checks or a conflict, as in the sidebar. A page does not carry that (mergeability alone made a 30-PR page about three times slower), so once the list shows, `useGitHubPullStatuses` asks `references/status` for the open PRs it lists, ten per request and all at once (a whole page in one query takes GitHub about ten seconds, at the edge of the request timeout), and the rows and the preview recolour when it lands. The preview's Checks line does not wait for that batch: the previewed PR's own detail carries its checks (GitHub's head-commit `statusCheckRollup`, summarized like the batch; GitLab's pipeline). On the board the totals open `SourceBoardChecksDialog`, which reads the PR's runs, steps and failed annotations through `useChangeRequestContextStore` (the PR panel's cache) when it opens, and again while runs are still going. `components/views/git/CheckRunList.tsx` draws the runs for both. Statuses are cached per PR and head commit. Until a status arrives, or when it fails, a PR reads as open. GitLab projects ask nothing and keep their state colour.
 
 ## Preview and attach
 
@@ -94,7 +94,20 @@ preview's footer holds actions instead of what the agent gets.
   `initialSelection`), a new session in the project with the item attached,
   and for a PR its Changes (`usePullRequestSelectionStore.requestDiff` hands the
   PR to the diff view's PR scope), Walkthrough, Merge (asks first, with the
-  remembered merge method) and Ready for review. Changes and Walkthrough open
+  remembered merge method) and Ready for review, and Close or Reopen for an
+  issue or a PR that is not merged (no confirmation: both are reversible). Changes and Walkthrough open
   in the folder the app shows when it belongs to the project, else in a new
   draft of the project.
+- Labels and reviewers (`SourceBoardMetaEditors`, `SourceBoardChoicePicker`):
+  the preview's Labels row (shown empty too) and an open PR's Reviewers row
+  get a pencil that opens a searchable checklist, read when it opens. The new
+  set is sent once, when the popup closes, so several clicks are one change;
+  a GitHub PR's author is not offered as its reviewer.
+- Reply (`SourceBoardReply`, GitHub and GitLab items): below the activity a
+  comment box; on an open PR also Approve and Request changes (needs text),
+  for the head commit the preview shows. The box is keyed by the item, so a
+  draft never moves to another one, and keeps its text until the host has it.
+  After a write, and after a refused review (usually a push since the
+  preview was read), the item's detail is read again (`ensure(..., { force })`
+  after any read already running) and the list refreshes.
 
