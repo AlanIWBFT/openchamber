@@ -188,7 +188,7 @@ export const SettingsAddCard: React.FC<{
     data-settings-item={settingsItem}
     className={cn(
       CARD_CLASS,
-      'items-center justify-center gap-2 border-dashed border-[var(--interactive-border)] text-muted-foreground hover:bg-[var(--interactive-hover)]/50 hover:text-foreground',
+      'items-center justify-center gap-2 text-center border-dashed border-[var(--interactive-border)] text-muted-foreground hover:bg-[var(--interactive-hover)]/50 hover:text-foreground',
     )}
   >
     <span className="flex size-10 items-center justify-center rounded-[10px] bg-[var(--surface-muted)]">
