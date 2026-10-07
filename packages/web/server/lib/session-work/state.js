@@ -16,6 +16,7 @@ const workSchema = z.object({
   openedBy: z.enum(['jev', 'user']).optional(),
   doneAt: z.number().optional(),
   suggestDoneAt: z.number().optional(),
+  suggestReviewAt: z.number().optional(),
 });
 
 const metadataSchema = z.object({ openchamber: z.object({ work: workSchema }) });
@@ -31,7 +32,7 @@ export const openByJevPatch = (metadata, { requestAt, now }) => {
   if (work?.state === 'open') return null;
   // Closed after this request was sent: the user's decision stands.
   if (work?.state === 'done' && Number.isFinite(requestAt) && (work.doneAt ?? 0) >= requestAt) return null;
-  return patchOf({ state: 'open', openedAt: now, openedBy: 'jev', doneAt: null, suggestDoneAt: null });
+  return patchOf({ state: 'open', openedAt: now, openedBy: 'jev', doneAt: null, suggestDoneAt: null, suggestReviewAt: null });
 };
 
 /** The turn that just ended looks like the end of the work. */
@@ -40,9 +41,18 @@ export const suggestDonePatch = (metadata, { now }) => {
   return patchOf({ suggestDoneAt: now });
 };
 
+/** The turn that just ended handed over changes worth a look. */
+export const suggestReviewPatch = (metadata, { now }) => {
+  if (readWork(metadata)?.state !== 'open') return null;
+  return patchOf({ suggestReviewAt: now });
+};
+
 /** A new turn started: whatever Jev concluded about the last one no longer holds. */
 export const clearSuggestionPatch = (metadata) => {
   const work = readWork(metadata);
-  if (!work || work.suggestDoneAt === undefined) return null;
-  return patchOf({ suggestDoneAt: null });
+  if (!work) return null;
+  const cleared = {};
+  if (work.suggestDoneAt !== undefined) cleared.suggestDoneAt = null;
+  if (work.suggestReviewAt !== undefined) cleared.suggestReviewAt = null;
+  return Object.keys(cleared).length > 0 ? patchOf(cleared) : null;
 };

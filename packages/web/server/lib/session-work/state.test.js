@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clearSuggestionPatch, openByJevPatch, readWork, suggestDonePatch } from './state.js';
+import { clearSuggestionPatch, openByJevPatch, readWork, suggestDonePatch, suggestReviewPatch } from './state.js';
 
 const withWork = (work) => ({ openchamber: { goal: { id: 'g' }, work } });
 
@@ -12,7 +12,7 @@ describe('session work state', () => {
 
   it('opens a session that is not in work and records that Jev did it', () => {
     expect(openByJevPatch({}, { requestAt: 5, now: 10 })).toEqual({
-      openchamber: { work: { state: 'open', openedAt: 10, openedBy: 'jev', doneAt: null, suggestDoneAt: null } },
+      openchamber: { work: { state: 'open', openedAt: 10, openedBy: 'jev', doneAt: null, suggestDoneAt: null, suggestReviewAt: null } },
     });
     expect(openByJevPatch(withWork({ state: 'open', openedAt: 1 }), { requestAt: 5, now: 10 })).toBeNull();
   });
@@ -30,5 +30,12 @@ describe('session work state', () => {
     expect(suggestDonePatch({}, { now: 3 })).toBeNull();
     expect(clearSuggestionPatch(withWork({ state: 'open', suggestDoneAt: 3 }))).toEqual({ openchamber: { work: { suggestDoneAt: null } } });
     expect(clearSuggestionPatch(withWork({ state: 'open' }))).toBeNull();
+  });
+
+  it('offers a review only on a session in work, and a new turn retires either hint', () => {
+    expect(suggestReviewPatch(withWork({ state: 'open' }), { now: 3 })).toEqual({ openchamber: { work: { suggestReviewAt: 3 } } });
+    expect(suggestReviewPatch(withWork({ state: 'done' }), { now: 3 })).toBeNull();
+    expect(suggestReviewPatch({}, { now: 3 })).toBeNull();
+    expect(clearSuggestionPatch(withWork({ state: 'open', suggestReviewAt: 3 }))).toEqual({ openchamber: { work: { suggestReviewAt: null } } });
   });
 });

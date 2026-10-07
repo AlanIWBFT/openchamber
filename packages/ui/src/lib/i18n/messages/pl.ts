@@ -495,6 +495,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.work.updateFailed': 'Nie udało się zaktualizować sesji',
   'chat.work.doneHint.text': 'Ta praca wygląda na skończoną.',
   'chat.work.doneHint.action': 'Oznacz jako gotowe',
+  'chat.work.reviewHint.text': 'Zmiany są gotowe do przejrzenia.',
+  'chat.work.reviewHint.aiReview': 'Przegląd AI',
   'chat.backgroundShells.aria': 'Polecenia w tle',
   'chat.backgroundShells.count': 'Polecenia w tle: {count}',
   'chat.backgroundShells.subagent': 'subagent',

@@ -649,6 +649,8 @@ export const dict = {
   'sessions.sidebar.session.work.updateFailed': 'Sessie kon niet worden bijgewerkt',
   'chat.work.doneHint.text': 'Dit werk lijkt afgerond.',
   'chat.work.doneHint.action': 'Markeer als afgerond',
+  'chat.work.reviewHint.text': 'De wijzigingen zijn klaar om te bekijken.',
+  'chat.work.reviewHint.aiReview': 'AI-review',
   'chat.backgroundShells.aria': 'Achtergrondopdrachten',
   'chat.backgroundShells.count': 'Achtergrondopdrachten: {count}',
   'chat.backgroundShells.subagent': 'subagent',

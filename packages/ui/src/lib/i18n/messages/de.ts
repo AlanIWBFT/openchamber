@@ -583,6 +583,8 @@ export const dict = {
   'sessions.sidebar.session.work.updateFailed': 'Sitzung konnte nicht aktualisiert werden',
   'chat.work.doneHint.text': 'Diese Arbeit scheint erledigt.',
   'chat.work.doneHint.action': 'Als erledigt markieren',
+  'chat.work.reviewHint.text': 'Die Änderungen sind bereit zur Durchsicht.',
+  'chat.work.reviewHint.aiReview': 'KI-Review',
   'chat.backgroundShells.aria': 'Hintergrundbefehle',
   'chat.backgroundShells.count': 'Hintergrundbefehle: {count}',
   'chat.backgroundShells.subagent': 'Subagent',

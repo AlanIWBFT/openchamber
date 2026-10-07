@@ -671,6 +671,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.work.updateFailed': '無法更新工作階段',
   'chat.work.doneHint.text': '這項工作看起來已完成。',
   'chat.work.doneHint.action': '標記為完成',
+  'chat.work.reviewHint.text': '變更已可檢視。',
+  'chat.work.reviewHint.aiReview': 'AI 審查',
   'chat.backgroundShells.aria': '背景指令',
   'chat.backgroundShells.count': '背景指令：{count}',
   'chat.backgroundShells.subagent': '子代理',

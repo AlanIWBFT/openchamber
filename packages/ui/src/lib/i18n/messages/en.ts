@@ -657,6 +657,8 @@ export const dict = {
   'sessions.sidebar.session.work.updateFailed': 'Couldn\'t update the session',
   'chat.work.doneHint.text': 'This work looks done.',
   'chat.work.doneHint.action': 'Mark done',
+  'chat.work.reviewHint.text': 'Changes are ready to look over.',
+  'chat.work.reviewHint.aiReview': 'AI Review',
   'chat.backgroundShells.aria': 'Background commands',
   'chat.backgroundShells.count': 'Background commands: {count}',
   'chat.backgroundShells.subagent': 'subagent',

@@ -165,13 +165,13 @@ describe('session work runtime: a turn ended', () => {
     const gate = await runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: true, suggestion: true } });
 
     expect(jev.ask).toHaveBeenCalledTimes(1);
-    expect(Object.keys(jev.ask.mock.calls[0][0].questions).sort()).toEqual(['change', 'next_step', 'recap', 'toward_change']);
+    expect(Object.keys(jev.ask.mock.calls[0][0].questions).sort()).toEqual(['change', 'next_step', 'recap', 'review_ready', 'toward_change']);
     expect(jev.ask.mock.calls[0][0].state).toMatchObject({ request: 'Implement it', answer: 'Done, try it.' });
     expect(gate).toEqual({ recap: true, suggestion: false });
     expect(records.get('ses_1')).toMatchObject({ openchamber: { work: { state: 'open' } } });
   });
 
-  it('asks only whether the work looks done in a session already in work, and a new turn retires the hint', async () => {
+  it('asks only about the end of the work and a review in a session already in work, and a new turn retires the hint', async () => {
     stubOpenCode();
     const { runtime, jev, records, updateMetadata } = makeRuntime({
       metadata: { openchamber: { work: { state: 'open', openedAt: 1 } } },
@@ -180,7 +180,7 @@ describe('session work runtime: a turn ended', () => {
 
     const gate = await runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: false, suggestion: false } });
 
-    expect(Object.keys(jev.ask.mock.calls[0][0].questions)).toEqual(['wrap_up']);
+    expect(Object.keys(jev.ask.mock.calls[0][0].questions)).toEqual(['wrap_up', 'review_ready']);
     expect(gate).toBeNull();
     expect(records.get('ses_1').openchamber.work.suggestDoneAt).toBeTypeOf('number');
 
@@ -191,6 +191,31 @@ describe('session work runtime: a turn ended', () => {
     expect(records.get('ses_1').openchamber.work).not.toHaveProperty('suggestDoneAt');
     // One write for the hint, one to retire it: the second busy found nothing to retire.
     expect(updateMetadata).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers a review after a turn that changed the project, and looks done wins over it', async () => {
+    stubOpenCode();
+    const open = { openchamber: { work: { state: 'open', openedAt: 1 } } };
+    const review = makeRuntime({ metadata: open, answers: { wrap_up: { noul: 0.2 }, review_ready: { noul: 0.75 } } });
+    await review.runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: false, suggestion: false } });
+    expect(review.records.get('ses_1').openchamber.work.suggestReviewAt).toBeTypeOf('number');
+    expect(review.records.get('ses_1').openchamber.work).not.toHaveProperty('suggestDoneAt');
+
+    const both = makeRuntime({ metadata: open, answers: { wrap_up: { noul: 0.9 }, review_ready: { noul: 0.9 } } });
+    await both.runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: false, suggestion: false } });
+    expect(both.records.get('ses_1').openchamber.work.suggestDoneAt).toBeTypeOf('number');
+    expect(both.records.get('ses_1').openchamber.work).not.toHaveProperty('suggestReviewAt');
+  });
+
+  it('offers a review on the turn that opened the work, and none when the turn did not open it', async () => {
+    stubOpenCode();
+    const opened = makeRuntime({ answers: { change: { noul: 0.97 }, review_ready: { noul: 0.8 } } });
+    await opened.runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: false, suggestion: false } });
+    expect(opened.records.get('ses_1').openchamber.work).toMatchObject({ state: 'open', suggestReviewAt: expect.any(Number) });
+
+    const closed = makeRuntime({ answers: { change: { noul: 0.1 }, review_ready: { noul: 0.8 } } });
+    await closed.runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: false, suggestion: false } });
+    expect(closed.records.get('ses_1')).toEqual({});
   });
 
   it('drops a late done answer once the next turn started', async () => {

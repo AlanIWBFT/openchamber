@@ -658,6 +658,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.work.updateFailed': 'セッションを更新できませんでした',
   'chat.work.doneHint.text': 'この作業は完了したようです。',
   'chat.work.doneHint.action': '完了にする',
+  'chat.work.reviewHint.text': '変更を確認する準備ができました。',
+  'chat.work.reviewHint.aiReview': 'AIレビュー',
   'chat.backgroundShells.aria': 'バックグラウンドコマンド',
   'chat.backgroundShells.count': 'バックグラウンドコマンド: {count}',
   'chat.backgroundShells.subagent': 'サブエージェント',

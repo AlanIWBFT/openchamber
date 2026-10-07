@@ -4,7 +4,8 @@ import type { Metadata, Session } from '@/lib/opencode/model';
 /**
  * "In work", stored under `session.metadata.openchamber.work`. The server's
  * session-work runtime opens a session when Jev sees real work start and
- * stamps `suggestDoneAt` when a turn looks like the end of it; the user alone
+ * stamps `suggestDoneAt` when a turn looks like the end of it, or
+ * `suggestReviewAt` when it handed over changes worth a look; the user alone
  * closes. The shape is owned by `packages/web/server/lib/session-work/state.js`.
  */
 const workSchema = z.object({
@@ -13,6 +14,7 @@ const workSchema = z.object({
   openedBy: z.enum(['jev', 'user']).optional(),
   doneAt: z.number().optional(),
   suggestDoneAt: z.number().optional(),
+  suggestReviewAt: z.number().optional(),
 });
 
 export type SessionWork = z.infer<typeof workSchema>;
@@ -37,16 +39,27 @@ export function isSessionInWork(session: Session | null | undefined): boolean {
  * same rule the session assist uses. Callers still hide it while a turn runs.
  */
 export function isDoneSuggested(session: Session | null | undefined): boolean {
-  const work = getSessionWork(session);
-  if (work?.state !== 'open' || work.suggestDoneAt === undefined || !session) return false;
-  return work.suggestDoneAt >= (session.time?.idle ?? 0);
+  return isHintCurrent(session, getSessionWork(session)?.suggestDoneAt);
+}
+
+/**
+ * Whether Jev's "changes are ready to look over" offer is current: the same
+ * freshness rule, and a current done hint takes the slot instead.
+ */
+export function isReviewSuggested(session: Session | null | undefined): boolean {
+  return isHintCurrent(session, getSessionWork(session)?.suggestReviewAt) && !isDoneSuggested(session);
+}
+
+function isHintCurrent(session: Session | null | undefined, writtenAt: number | undefined): boolean {
+  if (!session || writtenAt === undefined || getSessionWork(session)?.state !== 'open') return false;
+  return writtenAt >= (session.time?.idle ?? 0);
 }
 
 const openchamberSchema = z.object({ openchamber: z.record(z.string(), z.json()) });
 
 /**
  * The metadata after the user tracked the session (`open`) or marked it done.
- * Done keeps when and by whom the work was opened and drops Jev's hint.
+ * Done keeps when and by whom the work was opened and drops Jev's hints.
  */
 export function withSessionWorkState(metadata: Metadata, state: SessionWork['state'], now: number): Metadata {
   const namespace = openchamberSchema.safeParse(metadata).data?.openchamber ?? {};

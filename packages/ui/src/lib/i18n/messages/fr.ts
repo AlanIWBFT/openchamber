@@ -481,6 +481,8 @@ export const dict = {
   'sessions.sidebar.session.work.updateFailed': 'Impossible de mettre à jour la session',
   'chat.work.doneHint.text': 'Ce travail semble terminé.',
   'chat.work.doneHint.action': 'Marquer comme terminé',
+  'chat.work.reviewHint.text': 'Les modifications sont prêtes à être relues.',
+  'chat.work.reviewHint.aiReview': 'Revue IA',
   'chat.backgroundShells.aria': 'Commandes en arrière-plan',
   'chat.backgroundShells.count': 'Commandes en arrière-plan : {count}',
   'chat.backgroundShells.subagent': 'sous-agent',

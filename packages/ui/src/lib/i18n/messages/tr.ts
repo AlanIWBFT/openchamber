@@ -568,6 +568,8 @@ export const dict = {
   'sessions.sidebar.session.work.updateFailed': 'Oturum güncellenemedi',
   'chat.work.doneHint.text': 'Bu iş tamamlanmış görünüyor.',
   'chat.work.doneHint.action': 'Tamamlandı olarak işaretle',
+  'chat.work.reviewHint.text': 'Değişiklikler incelenmeye hazır.',
+  'chat.work.reviewHint.aiReview': 'Yapay zekâ incelemesi',
   'chat.backgroundShells.aria': 'Arka plan komutları',
   'chat.backgroundShells.count': 'Arka plan komutları: {count}',
   'chat.backgroundShells.subagent': 'alt ajan',

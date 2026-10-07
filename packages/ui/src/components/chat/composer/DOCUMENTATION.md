@@ -103,6 +103,15 @@ new-session drafts. The elapsed text is a leaf on the shared one-second
 ticker, and the tree is compared as a string, so neither the tick nor
 session-list updates re-render the composer.
 
+The "looks done" hint (`SessionDoneHintRow`) and the review offer
+(`SessionReviewHintRow`, "Changes are ready to look over") take the same
+slot, below the background commands. Both show only while the session idles
+and Jev's hint is current (`lib/sessionWorkMetadata.ts`); the server writes
+one or the other per turn, and a current done hint wins. The review offer
+opens the composer's review dialog (the one `/handoff-review` opens) or a
+walkthrough of the whole working tree, and is not shown on a mobile layout,
+where neither action is offered elsewhere either.
+
 The queue header toggles an `aria-expanded` disclosure with the current count.
 Its open/closed state is one persisted preference in `useUIStore`
 (`messageQueueExpanded`, open by default), shared by every session and

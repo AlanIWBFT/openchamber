@@ -658,6 +658,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.work.updateFailed': '无法更新会话',
   'chat.work.doneHint.text': '这项工作看起来已完成。',
   'chat.work.doneHint.action': '标记为完成',
+  'chat.work.reviewHint.text': '更改已可查看。',
+  'chat.work.reviewHint.aiReview': 'AI 审查',
   'chat.backgroundShells.aria': '后台命令',
   'chat.backgroundShells.count': '后台命令：{count}',
   'chat.backgroundShells.subagent': '子代理',

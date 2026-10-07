@@ -659,6 +659,8 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.session.work.updateFailed": "Не вдалося оновити сесію",
   "chat.work.doneHint.text": "Схоже, тут усе готово.",
   "chat.work.doneHint.action": "Позначити готовим",
+  "chat.work.reviewHint.text": "Зміни готові до перегляду.",
+  "chat.work.reviewHint.aiReview": "AI-ревʼю",
   "chat.backgroundShells.aria": "Фонові команди",
   "chat.backgroundShells.count": "Фонові команди: {count}",
   "chat.backgroundShells.subagent": "субагент",
