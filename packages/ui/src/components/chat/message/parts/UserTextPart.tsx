@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { Icon } from '@/components/icon/Icon';
 import type { Part } from '@/lib/opencode/model';
 import type { AgentMentionInfo } from '../types';
 import { SimpleMarkdownRenderer } from '../../MarkdownRenderer';
@@ -9,9 +10,14 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { getDirectoryForFilePath } from '@/lib/path-utils';
 import { useI18n } from '@/lib/i18n';
 import {
+    INTERACTIVE_REFERENCE_CHIP_CLASS,
     buildAgentMentionUrl,
     parseSkillHref,
+    type AttachmentCitationLink,
 } from '@/lib/messages/inlineMessageLinks';
+import { getFileTypeIconHref } from '@/lib/fileTypeIcons';
+import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
+import { withAttachmentChips, type InlineTextNode } from './attachmentCitationChips';
 import { prepareUserMarkdownContent, SKILL_TOKEN_PATTERN } from './userTextPartContent';
 import { extractTerminalContexts } from '@/lib/messages/terminalContext';
 import { readContextPart } from '@/lib/messages/contextParts';
@@ -34,7 +40,12 @@ type UserTextPartProps = {
     onExpandMessage: () => void;
     partIndex: number;
     onTruncationChange: (partIndex: number, truncated: boolean) => void;
+    /** Names of the files attached to this message; `[name]` in the text renders as a file chip. */
+    attachmentFilenames: readonly string[];
 };
+
+const EMPTY_ATTACHMENT_LINKS: AttachmentCitationLink[] = [];
+
 
 const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' => {
     return mode === 'markdown' ? 'markdown' : 'plain';
@@ -48,6 +59,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({
     onExpandMessage,
     partIndex,
     onTruncationChange,
+    attachmentFilenames,
 }) => {
     // Structured context (inline comments, terminal selections, annotations,
     // PR context) renders as a dedicated block instead of raw prompt text.
@@ -70,6 +82,16 @@ const UserTextPart: React.FC<UserTextPartProps> = ({
     const isCollapsed = collapsibleUserMessages && !messageExpanded;
     const textRef = React.useRef<HTMLDivElement>(null);
     const skillByName = React.useMemo(() => new Map(skills.map((skill) => [skill.name, skill])), [skills]);
+    const themeSystem = useOptionalThemeSystem();
+    const themeVariant = themeSystem?.currentTheme.metadata.variant === 'light' ? 'light' : 'dark';
+    const attachmentLinks = React.useMemo<AttachmentCitationLink[]>(() => (
+        attachmentFilenames.length === 0
+            ? EMPTY_ATTACHMENT_LINKS
+            : attachmentFilenames.map((filename) => ({
+                filename,
+                iconId: getFileTypeIconHref(filename, { themeVariant }).slice(1),
+            }))
+    ), [attachmentFilenames, themeVariant]);
 
     const openSkill = React.useCallback((name: string) => {
         const skill = skillByName.get(name);
@@ -187,11 +209,12 @@ const UserTextPart: React.FC<UserTextPartProps> = ({
             textContent,
             agentMention,
             skillNames: new Set(skillByName.keys()),
+            attachments: attachmentLinks,
         });
-    }, [agentMention, skillByName, textContent]);
+    }, [agentMention, attachmentLinks, skillByName, textContent]);
 
-    const plainTextContent = React.useMemo(() => {
-        const nodes: React.ReactNode[] = [];
+    const plainTextNodes = React.useMemo(() => {
+        const nodes: InlineTextNode[] = [];
         let cursor = 0;
         let agentMentionUsed = false;
         let match: RegExpExecArray | null;
@@ -210,13 +233,17 @@ const UserTextPart: React.FC<UserTextPartProps> = ({
                     key={`skill-${slashIndex}-${skillName}`}
                     type="button"
                     dir="ltr"
-                    className="text-primary hover:underline [unicode-bidi:isolate]"
+                    className={cn(INTERACTIVE_REFERENCE_CHIP_CLASS, '[unicode-bidi:isolate]')}
+                    // Inline minimums opt out of the mobile 36px button floor.
+                    style={{ minHeight: 0, minWidth: 0 }}
+                    title={`/${skillName}`}
                     onClick={(event) => {
                         event.stopPropagation();
                         openSkill(skillName);
                     }}
                 >
-                    /{skillName}
+                    <Icon name="book-open" className="h-[1.1em] w-[1.1em] shrink-0" />
+                    {skillName}
                 </button>
             );
             cursor = slashIndex + skillName.length + 1;
@@ -229,7 +256,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({
             return withSkills;
         }
 
-        return withSkills.flatMap((node, index) => {
+        return withSkills.flatMap<InlineTextNode>((node, index) => {
             if (agentMentionUsed || typeof node !== 'string') return node;
             const idx = node.indexOf(agentMention.token);
             if (idx === -1) return node;
@@ -252,10 +279,19 @@ const UserTextPart: React.FC<UserTextPartProps> = ({
         });
     }, [agentMention, openSkill, skillByName, textContent]);
 
+    // Attachment citations become file chips in the plain-text path too.
+    const plainTextContent = React.useMemo(() => {
+        if (attachmentFilenames.length === 0) return plainTextNodes;
+        return plainTextNodes.flatMap((node, nodeIndex) => (
+            React.isValidElement<unknown>(node) ? node : withAttachmentChips(node, attachmentFilenames, `attachment-${nodeIndex}`)
+        ));
+    }, [attachmentFilenames, plainTextNodes]);
+
     if (contextPayload) {
         return (
             <UserContextPart
                 payload={contextPayload}
+                attachmentFilenames={attachmentFilenames}
                 collapsed={isCollapsed}
                 onExpand={onExpandMessage}
             />

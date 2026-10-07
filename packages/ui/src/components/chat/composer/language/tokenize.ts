@@ -44,6 +44,16 @@ export interface ComposerLanguageContext {
     knownSnippetTriggers: ReadonlySet<string>;
     /** Filenames of the currently attached files, cited inline as `[name]`. */
     attachmentFilenames: readonly string[];
+    /**
+     * Names cited before their file finished attaching. A live set, like
+     * `confirmedMentions`: filled before the citation text is inserted, so the
+     * chip appears with the text instead of a frame later.
+     */
+    pendingAttachmentFilenames?: ReadonlySet<string>;
+    /** Lowercased skill names; a completed `/skill` token renders as a chip. Empty when absent. */
+    knownSkillNames?: ReadonlySet<string>;
+    /** Theme variant for the file-type icons on citation chips; dark when absent. */
+    fileIconVariant?: 'light' | 'dark';
 }
 
 /** Mention ranges alone — the composer also needs these to resolve references. */

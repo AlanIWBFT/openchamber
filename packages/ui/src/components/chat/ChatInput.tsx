@@ -806,6 +806,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         for (const skill of availableSkills) names.add(skill.name.toLowerCase());
         return names;
     }, [availableCommands, availableSkills, isMobile]);
+    const knownSkillNames = React.useMemo(
+        () => new Set(availableSkills.map((skill) => skill.name.toLowerCase())),
+        [availableSkills],
+    );
 
     // Extension slash commands. Built-ins, OpenCode commands, and skills are
     // reserved: an extension command with one of those names is ignored.
@@ -843,7 +847,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         knownSlashNames: knownSlashNamesWithGuests,
         knownSnippetTriggers,
         attachmentFilenames,
-    }), [attachmentFilenames, inputMode, knownAgentNames, knownSlashNamesWithGuests, knownSnippetTriggers]);
+        pendingAttachmentFilenames: pendingPastedAttachmentFilenamesRef.current,
+        knownSkillNames,
+        fileIconVariant: currentTheme.metadata.variant === 'light' ? 'light' : 'dark',
+    }), [attachmentFilenames, currentTheme.metadata.variant, inputMode, knownAgentNames, knownSkillNames, knownSlashNamesWithGuests, knownSnippetTriggers]);
 
     const sanitizeAttachmentsForSend = React.useCallback(
         (files: readonly AttachedFile[] | undefined): AttachedFile[] => [...(files ?? [])]
@@ -2681,13 +2688,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 ...pendingPastedAttachmentFilenamesRef.current,
             ],
         );
+        // Pending before the text lands, so the editor draws the citation as a
+        // chip in the same transaction that inserts it.
+        for (const filename of assignedImageNames) pendingPastedAttachmentFilenamesRef.current.add(filename);
         insertCitation(assignedImageNames, leadingText);
 
         let attached = false;
         for (let index = 0; index < imageFiles.length; index += 1) {
             const filename = assignedImageNames[index];
             const file = renameFileForAttachmentCitation(imageFiles[index], filename);
-            pendingPastedAttachmentFilenamesRef.current.add(filename);
             try {
                 attached = (await addAttachedFile(file)) || attached;
             } catch (error) {
@@ -2696,7 +2705,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             } finally {
                 pendingPastedAttachmentFilenamesRef.current.delete(filename);
             }
-            if (useInputStore.getState().attachmentDraftKey !== attachmentDraftKey) return;
+            if (useInputStore.getState().attachmentDraftKey !== attachmentDraftKey) {
+                // The draft changed under the paste: the rest never attach here.
+                for (const rest of assignedImageNames.slice(index + 1)) pendingPastedAttachmentFilenamesRef.current.delete(rest);
+                return;
+            }
         }
 
         const attachedOtherNames: string[] = [];
@@ -2835,16 +2848,17 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     currentMessage.slice(candidate?.to ?? selectionEnd),
                 );
 
-                if (!candidate) {
-                    insertTextAtSelection(
-                        insertionText,
-                        getFileMentionInputSourceForInsertedText(insertionText),
-                    );
-                }
-
                 const file = createPastedContextFile(pastedText, filename);
+                // Pending before the citation lands, so it shows as a chip at once.
                 pendingPastedAttachmentFilenamesRef.current.add(filename);
                 try {
+                    if (!candidate) {
+                        insertTextAtSelection(
+                            insertionText,
+                            getFileMentionInputSourceForInsertedText(insertionText),
+                        );
+                    }
+
                     if (candidate) {
                         await largeTextPasteGesture.convert(
                             candidate, async () => {

@@ -165,6 +165,7 @@ describe('UserTextPart expand affordance (issue #3742)', () => {
                                 messageExpanded={false}
                                 onExpandMessage={onExpandMessage}
                                 partIndex={0}
+                                attachmentFilenames={[]}
                                 onTruncationChange={(_index, truncated) => { truncation.push(truncated); }}
                             />
                         </I18nProvider>
@@ -214,6 +215,7 @@ describe('UserTextPart expand affordance (issue #3742)', () => {
                                 messageExpanded={false}
                                 onExpandMessage={() => undefined}
                                 partIndex={0}
+                                attachmentFilenames={[]}
                                 onTruncationChange={(_index, truncated) => { truncation.push(truncated); }}
                             />
                         </I18nProvider>
@@ -259,6 +261,7 @@ describe('UserTextPart expand affordance (issue #3742)', () => {
                                 messageExpanded={false}
                                 onExpandMessage={onExpandMessage}
                                 partIndex={0}
+                                attachmentFilenames={[]}
                                 onTruncationChange={() => undefined}
                             />
                         </I18nProvider>

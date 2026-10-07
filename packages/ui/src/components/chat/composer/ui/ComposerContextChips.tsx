@@ -18,11 +18,11 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence } from 'motion/react';
 
-import { useCommentSnippetPicker } from '@/components/comments/useCommentSnippetPicker';
+import { CommentTextEditor } from '@/components/comments/CommentTextEditor';
+import { useCommentImagePaste } from '@/components/comments/useCommentImagePaste';
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import { useI18n } from '@/lib/i18n';
-import { isIMECompositionEvent } from '@/lib/ime';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import {
     EMPTY_INLINE_COMMENT_DRAFTS,
@@ -36,6 +36,8 @@ import type { Theme } from '@/types/theme';
 import { legacyChatQuoteAnchor } from '@/lib/chatQuoteAnchor';
 import { useChatQuoteHighlightApi, type ChatQuoteMark } from '../../hooks/chatQuoteHighlightStore';
 import { getContextPreviewMaxHeight } from './contextPreviewHeight';
+import { withAttachmentChips } from '../../message/parts/attachmentCitationChips';
+import { useInputStore } from '@/sync/input-store';
 import { GlassPopupMotion } from './GlassPopupMotion';
 
 export interface ComposerContextChipsProps {
@@ -87,54 +89,38 @@ const DraftPreviewEntry: React.FC<{
     /** Chat quotes: point at the quoted fragment in the transcript. */
     onFocusQuote: ((focused: boolean) => void) | null;
     onRevealQuote: (() => void) | null;
-}> = ({ draft, index, title, editing, onStartEdit, onEndEdit, onRemove, onSaveComment, onFocusQuote, onRevealQuote }) => {
+    /** Composer attachment names: images pasted into the comment render as file chips. */
+    attachmentFilenames: readonly string[];
+}> = ({ draft, index, title, editing, onStartEdit, onEndEdit, onRemove, onSaveComment, onFocusQuote, onRevealQuote, attachmentFilenames }) => {
     const { t } = useI18n();
     const [editText, setEditText] = React.useState(draft.text);
-    const editRef = React.useRef<HTMLTextAreaElement>(null);
+    // Images pasted while editing join the composer's attachments on save.
+    const imagePaste = useCommentImagePaste();
 
     React.useEffect(() => {
         if (!editing) return;
         setEditText(draft.text);
-        queueMicrotask(() => {
-            const element = editRef.current;
-            if (element) {
-                element.focus();
-                element.setSelectionRange(element.value.length, element.value.length);
-            }
-        });
         // The draft text at edit start is the baseline; later store updates are
         // our own saves.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [editing]);
 
-    // `#` opens the composer's snippet picker; references expand on send.
-    const getEditCaret = React.useCallback(() => editRef.current?.selectionStart ?? 0, []);
-    const replaceEditRange = React.useCallback((from: number, to: number, insert: string) => {
-        const next = `${(editRef.current?.value ?? '').slice(0, from)}${insert}${(editRef.current?.value ?? '').slice(to)}`;
-        setEditText(next);
-        requestAnimationFrame(() => {
-            const element = editRef.current;
-            if (!element) return;
-            element.focus();
-            element.setSelectionRange(from + insert.length, from + insert.length);
-        });
-    }, []);
-    const snippetPicker = useCommentSnippetPicker({ text: editText, getCaret: getEditCaret, replaceRange: replaceEditRange });
-
     const commitEdit = () => {
         if (onSaveComment && editText !== draft.text) {
             onSaveComment(editText);
         }
+        void imagePaste.attachCitedImages(editText);
         onEndEdit();
     };
 
     const cancelEdit = () => {
+        imagePaste.discardPastedImages();
         setEditText(draft.text);
         onEndEdit();
     };
 
-    // Keep focus in the textarea while a header button is pressed: without
-    // this the textarea's blur commits first, the header re-renders under the
+    // Keep focus in the field while a header button is pressed: without
+    // this the field's blur commits first, the header re-renders under the
     // pointer, and the click lands on the button that replaced the pressed one
     // (save punches through to edit, cancel to remove).
     const keepEditorFocus = (event: React.PointerEvent) => {
@@ -205,40 +191,21 @@ const DraftPreviewEntry: React.FC<{
                     <div>
                         <div className={ENTRY_LABEL_CLASS}>{t('chat.chatInput.contextPreview.commentLabel')}</div>
                         {editing ? (
-                            <div className="relative">
-                            {snippetPicker.picker}
-                            <textarea
-                                ref={editRef}
-                                rows={2}
+                            <CommentTextEditor
                                 value={editText}
-                                onChange={(event) => {
-                                    setEditText(event.target.value);
-                                    snippetPicker.sync(event.target.value, event.target.selectionStart);
-                                }}
-                                onSelect={(event) => snippetPicker.sync(event.currentTarget.value, event.currentTarget.selectionStart)}
+                                onChange={setEditText}
+                                onSubmit={commitEdit}
+                                onCancel={cancelEdit}
                                 onBlur={commitEdit}
-                                onKeyDown={(event) => {
-                                    // An IME candidate is confirmed with Enter and
-                                    // abandoned with Escape; neither keystroke should
-                                    // commit or revert the edit.
-                                    if (isIMECompositionEvent(event)) return;
-                                    if (snippetPicker.handleKeyDown(event)) return;
-                                    if (event.key === 'Enter' && !event.shiftKey) {
-                                        event.preventDefault();
-                                        commitEdit();
-                                    } else if (event.key === 'Escape') {
-                                        event.preventDefault();
-                                        setEditText(draft.text);
-                                        onEndEdit();
-                                    }
-                                }}
+                                enterSubmits
+                                imagePaste={imagePaste}
                                 placeholder={t('chat.textSelection.comment.placeholder')}
-                                className="oc-surface-elevated mt-0.5 w-full resize-none rounded-md border border-border bg-surface-elevated px-2 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                                style={{ minHeight: 0 }}
+                                className="oc-surface-elevated mt-0.5 w-full rounded-md border border-border bg-surface-elevated px-2 py-1 text-sm leading-5 text-foreground focus-within:ring-2 focus-within:ring-ring"
                             />
-                            </div>
                         ) : (
-                            <div className="mt-0.5 whitespace-pre-wrap break-words text-sm text-foreground">{draft.text}</div>
+                            <div className="mt-0.5 whitespace-pre-wrap break-words text-sm text-foreground">
+                                {withAttachmentChips(draft.text, attachmentFilenames, `draft-${draft.id}`)}
+                            </div>
                         )}
                     </div>
                 ) : null}
@@ -262,6 +229,8 @@ export function ComposerContextChips({ draftTarget, colors, previewHost }: Compo
     const quoteHighlights = useChatQuoteHighlightApi();
     const quotePublisher = React.useId();
     const updateDraft = useInlineCommentDraftStore((state) => state.updateDraft);
+    const attachedFiles = useInputStore((state) => state.attachedFiles);
+    const attachmentFilenames = React.useMemo(() => attachedFiles.map((file) => file.filename), [attachedFiles]);
 
     const [openGroupKey, setOpenGroupKey] = React.useState<string | null>(null);
     const [editingDraftId, setEditingDraftId] = React.useState<string | null>(null);
@@ -482,6 +451,7 @@ export function ComposerContextChips({ draftTarget, colors, previewHost }: Compo
                                 onRevealQuote={quoteHighlights && draft.source === 'chat-quote' && draft.fileLabel
                                     ? () => quoteHighlights.reveal(draft.fileLabel, draft.anchor ?? legacyChatQuoteAnchor(draft.code))
                                     : null}
+                                attachmentFilenames={attachmentFilenames}
                             />
                         ))}
                     </div>

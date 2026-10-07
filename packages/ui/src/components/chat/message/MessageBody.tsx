@@ -438,6 +438,10 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
         });
     }, [parts]);
 
+    const attachmentFilenames = React.useMemo(() => parts.flatMap((part) => (
+        part.type === 'file' && part.filename ? [part.filename] : []
+    )), [parts]);
+
     const mentionToken = agentMention?.token;
     let mentionInjected = false;
 
@@ -804,6 +808,7 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
                                 onExpandMessage={expandMessage}
                                 partIndex={index}
                                 onTruncationChange={handlePartTruncationChange}
+                                attachmentFilenames={attachmentFilenames}
                             />
                         </React.Fragment>
                     );

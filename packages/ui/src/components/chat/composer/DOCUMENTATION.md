@@ -262,6 +262,21 @@ DOM-only tests cannot verify these.
 exactly what gets sent, so nothing downstream serializes a rich document model
 back into a prompt.
 
+Attachment citations (`[name.png]`) and finished skill tokens (`/name` followed
+by whitespace) render in the editor as atomic replace widgets shaped like the
+sent message's chips (`composerLanguage.ts`). The document keeps the source
+text, so sending, copying and undo are unchanged; the caret steps over a chip
+and one Backspace removes it. File and agent mentions, skills and snippets
+chip the same way; a token whose last character was just typed stays text
+until typing moves on, so a name is never chipped halfway. Commands keep
+their color only.
+
+Desktop comment fields (chat quote comments, diff and file comments, editing a
+pending comment above the composer) are `components/comments/CommentTextEditor`:
+this editor with comment keys (Enter submits, Escape cancels, both after an IME
+composition), the `#` snippet picker and image paste, where a pasted image's
+citation is a chip at once through `pendingAttachmentFilenames`.
+
 The composer disables CodeMirror EditContext through `ComposerEditorView`:
 on Android Chrome with Gboard (Thai input, #3514) the EditContext path moved
 the caret into the middle of the draft and reinserted fragments. Generic

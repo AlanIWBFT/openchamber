@@ -265,6 +265,16 @@ Why: only navigation tools use the compact static path; all other tools need obs
 ## Quick map of files in this folder
 
 - Text: `AssistantTextPart.tsx`, `UserTextPart.tsx`
+- Attachment citations: the composer writes `[name.png]` into the text for each
+  pasted or picked file. `UserTextPart` gets the message's file names and draws
+  each citation of one of them as an inline chip with its file-type icon. The
+  Markdown path rewrites it to a `#openchamber-attachment:` link
+  (`lib/messages/inlineMessageLinks.ts`) that `markdownCore` renders as a span
+  and `decorate.ts` gives its icon; the plain-text path builds the same chip
+  directly. Brackets around anything that is not an attachment stay text.
+  A known skill (`/name`) renders as the same chip with the book icon and still
+  opens the skill file on click. The composer draws both chips too
+  (`composer/editor/composerLanguage.ts`).
 - User-attached context (inline code comments, terminal selections, browser
   annotations, PR comments/checks): `UserContextPart.tsx`. `UserTextPart`
   routes to it when the part's metadata carries an `openchamberContext`
