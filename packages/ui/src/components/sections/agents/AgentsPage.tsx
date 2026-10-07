@@ -471,7 +471,7 @@ export const AgentsPage: React.FC = () => {
       <SettingsSection
         title={t('settings.agents.page.section.identityRole')}
         divider={false}
-        contentClassName="space-y-0"
+        contentClassName="space-y-3"
       >
         {isNewAgent && (
           <SettingsFieldRow
