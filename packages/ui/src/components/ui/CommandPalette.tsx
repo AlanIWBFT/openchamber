@@ -335,7 +335,7 @@ export const CommandPalette: React.FC = () => {
         id: 'open-source-board',
         secondary: true,
         title: t('sourceBoard.title'),
-        icon: <Icon name="git-pull-request" className="mr-2 h-4 w-4" />,
+        icon: <Icon name="todo" className="mr-2 h-4 w-4" />,
         shortcutId: 'toggle_source_board',
         searchText: t('sourceBoard.title'),
         onSelect: run(() => useUIStore.getState().setSourceBoardOpen(true)),
