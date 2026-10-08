@@ -1345,7 +1345,7 @@ export const useUIStore = create<UIStore>()(
         sessionSuggestionEnabled: true,
         sessionWorkEnabled: true,
         sessionWorkAutoOpen: true,
-        sessionReviewOfferEnabled: true,
+        sessionReviewOfferEnabled: false,
         sessionGoalEnabled: true,
         sessionGoalChecker: 'small-model',
         sessionGoalMaxAutoTurns: DEFAULT_SESSION_GOAL_MAX_AUTO_TURNS,

@@ -107,7 +107,7 @@ the wording or thresholds without re-running this measurement.
 - `sessionWorkEnabled`: the block and the actions, default on.
 - `sessionWorkAutoOpen`: Jev opens sessions, default on; not offered in VS
   Code, and inert without a classification provider.
-- `sessionReviewOfferEnabled`: the review offer, default on (Settings → Chat →
+- `sessionReviewOfferEnabled`: the review offer, default off (Settings → Chat →
   Session Assistance); not offered in VS Code, inert without a classification
   provider, independent of the other two.
 

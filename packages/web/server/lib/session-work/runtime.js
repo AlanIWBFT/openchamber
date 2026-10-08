@@ -39,13 +39,13 @@ const OPENCHAMBER_SETTINGS_FILE = path.join(
   'settings.json',
 );
 
-/** All default on; read at every use so a change applies without a restart. */
+/** In work and auto-open default on, the review offer off; read at every use so a change applies without a restart. */
 const readSessionWorkSettings = () => {
   const settings = readMergedSettingsSync({ fs, path, settingsFilePath: OPENCHAMBER_SETTINGS_FILE });
   return {
     enabled: settings.sessionWorkEnabled !== false,
     autoOpen: settings.sessionWorkAutoOpen !== false,
-    reviewOffer: settings.sessionReviewOfferEnabled !== false,
+    reviewOffer: settings.sessionReviewOfferEnabled === true,
   };
 };
 
