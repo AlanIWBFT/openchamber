@@ -144,6 +144,19 @@ with that directory. It appears in the status card while the server reports
 `needs_auth`; once the credential is stored, the page connects the server
 again, which is what moves it out of `needs_auth`.
 
+### Policy-blocked MCP servers and skills
+
+OpenCode drops an MCP server or skill an `integration.use` deny names
+(`mcp:<name>`, `skill:<id>`, wildcards allowed) from its own lists, while the
+MCP and Skills pages list what the config files and the disk hold.
+`shared/useIntegrationPolicyBlock.ts` reads the statements from
+`/api/config` (`readIntegrationPolicies`, decided like OpenCode: documents
+reversed, last match wins) and the pages mark such a row "Blocked by policy";
+the MCP page also disables Connect and Test. A skill's id is its `SKILL.md`
+folder name, not its display name. Statements from a connected OpenCode
+Console workspace are not in `/api/config`, so a server blocked only there is
+not marked.
+
 ## Entity shapes: OpenCode 2 only
 
 Every OpenCode entity these pages read and write speaks the v2 shape defined in
