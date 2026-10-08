@@ -40,6 +40,7 @@ import {
     type ChatDraftIdentity,
     type ChatDraftSnapshot,
 } from '@/lib/chatDraftPersistence';
+import { CHAT_DRAFT_PROJECT_ID } from '@/lib/chatDirectories';
 import { ReviewFlowDialog, type ReviewFlowExecution } from '@/components/session/ReviewFlowDialog';
 import { BtwPanel } from './btw/BtwPanel';
 import { useBtwPanelState } from './btw/useBtwPanelState';
@@ -333,11 +334,18 @@ interface ChatInputProps {
     draftPresentationExiting?: boolean;
 }
 
+// A new Chat's working directory moves from the Chats root to a prepared
+// folder on the first keystroke. Its composer text keys on the Chats bucket
+// instead, so that move neither clears what was typed nor leaves it behind
+// under the root for the next new Chat to show.
+const NEW_CHAT_DRAFT_DIRECTORY = CHAT_DRAFT_PROJECT_ID;
+
 const resolveChatDraftIdentity = (column: ChatColumnSession | null): ChatDraftIdentity | null => {
     const sessionState = useSessionUIStore.getState();
     const sessionId = column ? column.sessionId : sessionState.currentSessionId;
-    const newSessionDirectory = sessionState.newSessionDraft?.open
-        ? sessionState.newSessionDraft.bootstrapPendingDirectory ?? sessionState.newSessionDraft.directoryOverride
+    const draft = sessionState.newSessionDraft;
+    const newSessionDirectory = draft?.open
+        ? draft.target === 'chat' ? NEW_CHAT_DRAFT_DIRECTORY : draft.bootstrapPendingDirectory ?? draft.directoryOverride
         : null;
     const directory = sessionId
         ? sessionState.getDirectoryForSession(sessionId) ?? (column ? column.directory : sessionState.currentSessionDirectory)
@@ -467,13 +475,16 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     // they no longer apply.
     const isPromotedBtwSession = wasPromotedBtwSession(btwPanel.parentSession);
     const activeRuntimeKey = getRuntimeKey();
+    const isNewChatDraft = useSessionUIStore((s) => (
+        !columnPinned && !currentSessionId && Boolean(s.newSessionDraft?.open) && s.newSessionDraft.target === 'chat'
+    ));
     const chatDraftIdentity = React.useMemo(
         () => createChatDraftIdentity(
             activeRuntimeKey,
-            currentSessionDirectoryForSync ?? currentDirectory,
+            isNewChatDraft ? NEW_CHAT_DRAFT_DIRECTORY : currentSessionDirectoryForSync ?? currentDirectory,
             isBtwActive ? btwComposerSessionId : currentSessionId,
         ),
-        [activeRuntimeKey, btwComposerSessionId, currentDirectory, currentSessionDirectoryForSync, currentSessionId, isBtwActive],
+        [activeRuntimeKey, btwComposerSessionId, currentDirectory, currentSessionDirectoryForSync, currentSessionId, isBtwActive, isNewChatDraft],
     );
     const claimAttachmentSlot = React.useCallback(() => {
         useInputStore.getState().selectAttachmentDraft(chatDraftIdentity);
