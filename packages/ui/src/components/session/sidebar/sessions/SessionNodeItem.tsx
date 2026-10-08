@@ -53,6 +53,7 @@ import { useFreshestSourceControlVisualSummaryForBranch, type PrVisualSummary } 
 import { useTrackedIssueStates, useTrackedLinearStates, useTrackedPullVisualSummaries } from '@/stores/useTrackedItemsStore';
 import { githubThread, gitlabThread, linearIssue } from '@/lib/trackedItems/fromLinks';
 import { formatChangeRequestReference } from '@/lib/source-control/identity';
+import { refTintStyle } from '@/lib/source-control/prVisualState';
 import { getLinkedGitHubPullRequests, getLinkedSidebarChanges, getLinkedSidebarIssues, type LinkedGitHubPullRequest, type LinkedSidebarChange, type LinkedSidebarIssue } from '@/lib/linkedIssues';
 import { buildSessionIssueItems, combineSessionPrSummaries, findLinkedPrsWithoutState } from './sessionPrSummaries';
 import { useSessionUnseenCount } from '@/sync/notification-store';
@@ -899,7 +900,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
           key={session.id}
           style={{ paddingLeft: ROW_GUTTER_LEFT_PX + 4 }}
           className={cn(
-            'group relative my-0.5 flex items-center rounded-md pr-2.5',
+            'oc-ref-tint-scope group relative my-0.5 flex items-center rounded-md pr-2.5',
             isTimelineChatRow ? 'py-1' : 'py-1.5',
             isActive && 'bg-interactive-selection/70 text-interactive-selection-foreground',
           )}
@@ -917,8 +918,8 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
             directoryIndicator={null}
             prBadge={primaryRef ? (
               <span
-                className={cn('inline-flex flex-shrink-0 items-center gap-1 typography-micro', !primaryRef.color && 'text-muted-foreground')}
-                style={primaryRef.color ? { color: primaryRef.color } : undefined}
+                className={cn('inline-flex flex-shrink-0 items-center gap-1 typography-micro', primaryRef.color ? 'oc-ref-tint' : 'text-muted-foreground')}
+                style={primaryRef.color ? refTintStyle(primaryRef.color) : undefined}
               >
                 <Icon name={primaryRef.icon} className="h-3 w-3" />
                 <span className="leading-none tabular-nums">{primaryRef.label}</span>
@@ -1592,9 +1593,9 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
           type="button"
           className={cn(
             'inline-flex flex-shrink-0 items-center gap-1 rounded typography-micro hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:no-underline',
-            !primaryRef.color && 'text-muted-foreground',
+            primaryRef.color ? 'oc-ref-tint' : 'text-muted-foreground',
           )}
-          style={primaryRef.color ? { color: primaryRef.color } : undefined}
+          style={primaryRef.color ? refTintStyle(primaryRef.color) : undefined}
           disabled={!primaryRef.url}
           aria-label={refBadgeLabel}
           onPointerDown={handleRowActionPointerDown}
@@ -1743,7 +1744,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                 // on the right (their left edge is the status/chevron gutter).
                 style={{ paddingLeft: isTimelineRow ? ROW_GUTTER_LEFT_PX + 4 : ROW_TEXT_LEFT_PX + depth * ROW_DEPTH_STEP_PX }}
                 className={cn(
-                  'group relative my-0.5 flex cursor-pointer items-center rounded-md pr-2.5',
+                  'oc-ref-tint-scope group relative my-0.5 flex cursor-pointer items-center rounded-md pr-2.5',
                   isTimelineRow && !isTimelineChatRow ? 'py-1.5' : 'py-1',
                   isTimelineRow && !(isActive || isRowSelected) && 'hover:bg-interactive-hover/60',
                   (isActive || isRowSelected) && 'bg-interactive-selection/70 text-interactive-selection-foreground',
@@ -1813,8 +1814,8 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                               {showInlineBranchMarker ? (
                                 <Icon
                                   name="git-branch"
-                                  className={cn('h-3 w-3', !branchPrIconColor && 'text-muted-foreground/60')}
-                                  style={branchPrIconColor ? { color: branchPrIconColor } : undefined}
+                                  className={cn('h-3 w-3', branchPrIconColor ? 'oc-ref-tint' : 'text-muted-foreground/60')}
+                                  style={branchPrIconColor ? refTintStyle(branchPrIconColor) : undefined}
                                 />
                               ) : null}
                               {sessionCompactUpdatedLabel}
@@ -1840,8 +1841,8 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                                 {showInlineBranchMarker ? (
                                   <Icon
                                     name="git-branch"
-                                    className={cn('h-3 w-3', !branchPrIconColor && 'text-muted-foreground/60')}
-                                    style={branchPrIconColor ? { color: branchPrIconColor } : undefined}
+                                    className={cn('h-3 w-3', branchPrIconColor ? 'oc-ref-tint' : 'text-muted-foreground/60')}
+                                    style={branchPrIconColor ? refTintStyle(branchPrIconColor) : undefined}
                                   />
                                 ) : null}
                                 {/* The recent activity list shows its compact
@@ -1894,7 +1895,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                     ) : null}
                     {tooltipBranchLabel ? (
                       <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-                        <Icon name="git-branch" className="h-3 w-3 flex-shrink-0" style={branchPrIconColor ? { color: branchPrIconColor } : undefined} />
+                        <Icon name="git-branch" className={cn('h-3 w-3 flex-shrink-0', branchPrIconColor && 'oc-ref-tint')} style={branchPrIconColor ? refTintStyle(branchPrIconColor) : undefined} />
                         <span className="min-w-0 truncate">{tooltipBranchLabel}</span>
                       </div>
                     ) : null}

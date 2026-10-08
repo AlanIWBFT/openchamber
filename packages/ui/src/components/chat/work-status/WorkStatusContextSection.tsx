@@ -24,6 +24,8 @@ import { WorkStatusCollapsibleSection, WorkStatusRow, WorkStatusValue } from './
 import { useReportWorkStatusPresence } from './presenceContext';
 import { resolveDraftPinnedKnowledge } from './draftKnowledge';
 import { changeRequestCopy } from '@/lib/source-control/changeRequestCopy';
+import { refTintStyle } from '@/lib/source-control/prVisualState';
+import { cn } from '@/lib/utils';
 
 
 type Props = {
@@ -323,12 +325,26 @@ export const WorkStatusContextSection: React.FC<Props> = ({ sessionId, directory
       : gitlab ? `${gitlab.thread === 'pull' ? '!' : '#'}${gitlab.number}`
         : entry.kind === 'linear' || entry.kind === 'guest' || entry.kind === 'external' ? entry.identifier : `#${entry.number}`;
   };
+  // The kind, never the author: an agent's link has no avatar, and a mix of
+  // faces and icons hid which row was a PR. An issue reads as an issue
+  // wherever it lives (GitHub, GitLab, an agent's or an extension's link) and
+  // wears its state's colour, muted, as on a sidebar row.
+  const renderLinkedIcon = (entry: (typeof linked)[number]) => {
+    const color = liveLookOf(entry)?.color;
+    return (
+      <Icon
+        name={isLinkedChange(entry) ? 'git-pull-request' : entry.kind === 'linear' ? 'linear' : 'record-circle'}
+        className={cn('size-4 shrink-0', color ? 'oc-ref-tint' : 'text-muted-foreground')}
+        style={color ? refTintStyle(color) : undefined}
+      />
+    );
+  };
   const renderLinkedLabel = (entry: (typeof linked)[number]) => {
     const look = liveLookOf(entry);
     const identifier = renderedIdentifier(entry);
     return (
       <>
-        <span className="tabular-nums" style={look ? { color: look.color } : undefined}>{look ? look.text : identifier}</span>
+        <span className={cn('tabular-nums', look && 'oc-ref-tint')} style={look ? refTintStyle(look.color) : undefined}>{look ? look.text : identifier}</span>
         {entry.title ? <> · {entry.title}</> : null}
       </>
     );
@@ -346,17 +362,7 @@ export const WorkStatusContextSection: React.FC<Props> = ({ sessionId, directory
       {linked.map((entry) => (
         <WorkStatusRow
           key={entry.id}
-          // The kind, never the author: an agent's link has no avatar, and a
-          // mix of faces and icons hid which row was a PR.
-          // An issue reads as an issue wherever it lives — GitHub, GitLab, an
-          // agent's or an extension's link — as on a sidebar row.
-          icon={isLinkedChange(entry)
-            ? 'git-pull-request'
-            : entry.kind === 'linear'
-              ? 'linear'
-              : 'record-circle'}
-          // The state's colour on the icon too, as on a sidebar row.
-          iconColor={liveLookOf(entry)?.color}
+          leading={renderLinkedIcon(entry)}
           label={renderLinkedLabel(entry)}
           muted
           // On the board, selected, in this session's project; Cmd or Ctrl,

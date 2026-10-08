@@ -54,6 +54,7 @@ import { useShiftKeyHeld } from '@/hooks/useShiftKeyHeld';
 import type { WorktreeMetadata } from '@/types/worktree';
 import { useWorktreeRemoving } from '@/lib/worktrees/worktreeRemovalState';
 import { formatChangeRequestReference } from '@/lib/source-control/identity';
+import { refTintStyle } from '@/lib/source-control/prVisualState';
 
 type DeleteFolderConfirm = {
   scopeKey: string;
@@ -1094,7 +1095,7 @@ function SessionGroupSectionBase(props: SessionGroupSectionProps): React.ReactNo
 
   return (
     <><div className={cn('oc-group', worktreeRemoving && 'opacity-60')} aria-busy={worktreeRemoving || undefined}>
-      <div className={cn('group/gh relative flex items-start justify-between gap-1 py-1 min-w-0 rounded-md', 'cursor-pointer')}>
+      <div className={cn('oc-ref-tint-scope group/gh relative flex items-start justify-between gap-1 py-1 min-w-0 rounded-md', 'cursor-pointer')}>
       <Tooltip disabled={groupPrSummary ? !groupPrStatusLabel : !primaryGroupIssue}>
       <TooltipTrigger asChild closeDelay={SIDEBAR_REF_TOOLTIP_CLOSE_DELAY_MS}>
       <div
@@ -1150,8 +1151,8 @@ function SessionGroupSectionBase(props: SessionGroupSectionProps): React.ReactNo
                     </span>
                   ) : <span className="relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
                     <Icon name={group.space ? 'box-3' : 'git-branch'}
-                      className={cn('h-3.5 w-3.5 shrink-0', !groupPrColor && 'text-muted-foreground', headerIconFadeClass)}
-                      style={groupPrColor ? { color: groupPrColor } : undefined}
+                      className={cn('h-3.5 w-3.5 shrink-0', groupPrColor ? 'oc-ref-tint' : 'text-muted-foreground', headerIconFadeClass)}
+                      style={groupPrColor ? refTintStyle(groupPrColor) : undefined}
                       aria-label={group.space ? t('sessions.sidebar.group.space') : undefined}
                     />
                     <span className={cn(
@@ -1172,8 +1173,8 @@ function SessionGroupSectionBase(props: SessionGroupSectionProps): React.ReactNo
                     // drag handle, so it keeps its pointer and keys to itself.
                     <button
                       type="button"
-                      className={cn('ml-auto flex-shrink-0 rounded text-[0.72rem] font-medium leading-none hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:no-underline', headerCoveredFadeClass)}
-                      style={groupPrColor ? { color: groupPrColor } : undefined}
+                      className={cn('ml-auto flex-shrink-0 rounded text-[0.72rem] font-medium leading-none hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:no-underline', groupPrColor && 'oc-ref-tint', headerCoveredFadeClass)}
+                      style={groupPrColor ? refTintStyle(groupPrColor) : undefined}
                       disabled={!groupPrSummary.url}
                       aria-label={groupPrLabel}
                       onPointerDown={(event) => event.stopPropagation()}
@@ -1192,10 +1193,10 @@ function SessionGroupSectionBase(props: SessionGroupSectionProps): React.ReactNo
                       type="button"
                       className={cn(
                         'ml-auto inline-flex flex-shrink-0 items-center gap-1 rounded text-[0.72rem] font-medium leading-none hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                        !primaryGroupIssue.color && 'text-muted-foreground',
+                        primaryGroupIssue.color ? 'oc-ref-tint' : 'text-muted-foreground',
                         headerCoveredFadeClass,
                       )}
-                      style={primaryGroupIssue.color ? { color: primaryGroupIssue.color } : undefined}
+                      style={primaryGroupIssue.color ? refTintStyle(primaryGroupIssue.color) : undefined}
                       aria-label={groupIssueItems.map((item) => item.text).join(', ')}
                       onPointerDown={(event) => event.stopPropagation()}
                       onKeyDown={(event) => event.stopPropagation()}
