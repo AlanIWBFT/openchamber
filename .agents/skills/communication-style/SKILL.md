@@ -6,6 +6,8 @@ author: poteto (pstack), extended with OpenChamber's own drafts
 
 # Communication style
 
+The openchamber and openchamber-website repositories carry identical copies of this skill; an edit to one goes to both.
+
 These rules cover everything you write that a person reads: your replies in a session, in any language, and every text that lands somewhere. Every rule below applies to all of it. Write like a person who knows the subject and respects the reader's time.
 
 ## The one rule
