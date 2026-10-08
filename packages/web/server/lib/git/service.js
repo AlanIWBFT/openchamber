@@ -1465,12 +1465,15 @@ export async function resolveRepositoryGitPaths(directory) {
  * `git remote get-url [--push]` reports them: the first URL of several, and a
  * remote with no URL read as a URL equal to its name, as Git does. Lines may
  * end in CRLF (Git for Windows); a kept `\r` would match no line and read
- * every remote as URL-less.
+ * every remote as URL-less. Anything after the URL-kind marker — Git 2.54+
+ * appends the partial-clone filter there as `[blob:none]` — is decoration
+ * about the remote, never part of the URL, and is ignored whether or not its
+ * shape is recognized.
  */
 export function parseRemoteListing(names, listing) {
   const urls = new Map();
   for (const line of String(listing || '').split(/\r?\n/)) {
-    const match = line.match(/^([^\t]+)\t(.*) \((fetch|push)\)$/);
+    const match = line.match(/^([^\t]+)\t(.*) \((fetch|push)\)/);
     if (!match) continue;
     const entry = urls.get(match[1]) ?? {};
     if (entry[match[3]] === undefined) entry[match[3]] = match[2];

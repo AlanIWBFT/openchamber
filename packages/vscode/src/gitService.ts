@@ -14,6 +14,7 @@ import { execGit as executeGit } from './bridge-git-process-runtime';
 import { readConfig } from './opencodeConfig';
 import { resolveWorktreeDirectory } from './worktree-directory';
 import { readSubmoduleState, resolveGitPathTarget, type GitPathUnavailable, type GitSubmoduleState } from './gitPathDiff';
+import { parseGitRemoteListing, type GitRemote } from './gitRemoteListing';
 import type { API as GitAPI, Repository, GitExtension, Status } from './git.d';
 
 let gitApi: GitAPI | null = null;
@@ -3709,12 +3710,6 @@ export async function setGitIdentity(
 
 // ============== Remote Operations ==============
 
-export interface GitRemote {
-  name: string;
-  fetchUrl: string;
-  pushUrl: string;
-}
-
 /**
  * Get list of remotes
  */
@@ -3723,27 +3718,7 @@ export async function getRemotes(directory: string): Promise<GitRemote[]> {
   if (result.exitCode !== 0) {
     return [];
   }
-
-  const remoteMap = new Map<string, GitRemote>();
-  const lines = result.stdout.split('\n').filter(Boolean);
-
-  for (const line of lines) {
-    const match = line.match(/^(\S+)\s+(\S+)\s+\((fetch|push)\)$/);
-    if (match) {
-      const [, name, url, type] = match;
-      if (!remoteMap.has(name)) {
-        remoteMap.set(name, { name, fetchUrl: '', pushUrl: '' });
-      }
-      const remote = remoteMap.get(name)!;
-      if (type === 'fetch') {
-        remote.fetchUrl = url;
-      } else {
-        remote.pushUrl = url;
-      }
-    }
-  }
-
-  return Array.from(remoteMap.values());
+  return parseGitRemoteListing(result.stdout);
 }
 
 export async function removeRemote(directory: string, remote: string): Promise<{ success: boolean }> {
