@@ -1,6 +1,7 @@
 import * as React from 'react';
 
 import { toast } from '@/components/ui';
+import { referenceNumberLabel } from '@/components/references/referencePickerItems';
 import type { ReferenceCommentItem } from '@/components/references/referenceTimeline';
 import { isFailedConclusion } from '@/components/views/git/checkRunState';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -51,10 +52,10 @@ export function usePullAttachments(reference: GitHubReference | null) {
         return { directory, sessionKey };
     }, [directory, t]);
 
-    // How the chip names what it came from: GitLab's `!N`, a PR's `PR #N`, an issue's `#N`.
-    const label = !reference ? '' : reference.provider === 'gitlab' && reference.kind === 'pull'
-        ? `!${reference.number}`
-        : reference.kind === 'pull' ? `PR #${reference.number}` : `#${reference.number}`;
+    // How the chip names what it came from: GitLab's `!N` and an issue's `#N`
+    // say what they are; a GitHub PR reads `PR #N`.
+    const numberLabel = reference ? referenceNumberLabel(reference) : '';
+    const label = reference?.kind === 'pull' && reference.provider !== 'gitlab' ? `PR ${numberLabel}` : numberLabel;
     const provider = reference?.provider;
 
     const pin = React.useCallback((into: InlineCommentDraftTarget, draft: Omit<InlineCommentDraft, 'id' | 'createdAt' | 'sessionKey'>) => {

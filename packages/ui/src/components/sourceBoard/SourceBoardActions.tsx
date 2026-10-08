@@ -69,10 +69,9 @@ const ActionButton: React.FC<{
     icon: IconName;
     label: string;
     onClick: () => void;
-    variant?: 'default' | 'outline';
     busy?: boolean;
-}> = ({ icon, label, onClick, variant = 'outline', busy = false }) => (
-    <Button size="sm" variant={variant} onClick={onClick} disabled={busy}>
+}> = ({ icon, label, onClick, busy = false }) => (
+    <Button size="sm" variant="outline" onClick={onClick} disabled={busy}>
         <Icon name={busy ? 'loader-4' : icon} className={busy ? 'size-3.5 animate-spin' : 'size-3.5'} />
         {label}
     </Button>

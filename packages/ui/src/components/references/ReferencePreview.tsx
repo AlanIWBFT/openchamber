@@ -279,18 +279,19 @@ const GitHubPreview: React.FC<{
 }> = ({ reference, pullStatus, detail, purpose, pinned, includeDiff, onIncludeDiffChange, now, footer: footerOverride, pullLinks, reply, labelsControl, reviewersControl, onOpenChecks, commentAttachments, stateMenu }) => {
     const { t } = useI18n();
     const comments = React.useMemo(
-        () => mapDetail(detail, (value) => buildReferenceTimeline(value.comments.map((comment: GitHubReferenceComment, index): ReferenceCommentItem => ({
-            kind: 'comment',
-            key: `${comment.url}#${index}`,
-            author: comment.author?.login ?? null,
-            avatarUrl: comment.author?.avatarUrl ?? null,
-            body: comment.body,
-            createdAt: comment.createdAt,
-            context: comment.path
-                ? `${comment.path}${comment.line ? `:${comment.line}` : ''}`
-                : comment.review && comment.review !== 'commented' ? t(REVIEW_VERDICT_KEYS[comment.review]) : null,
-            location: comment.path ? `${comment.path}${comment.line ? `:${comment.line}` : ''}` : null,
-        })), (value.pull?.commits ?? []).map((commit) => ({
+        () => mapDetail(detail, (value) => buildReferenceTimeline(value.comments.map((comment: GitHubReferenceComment, index): ReferenceCommentItem => {
+            const location = comment.path ? `${comment.path}${comment.line ? `:${comment.line}` : ''}` : null;
+            return {
+                kind: 'comment',
+                key: `${comment.url}#${index}`,
+                author: comment.author?.login ?? null,
+                avatarUrl: comment.author?.avatarUrl ?? null,
+                body: comment.body,
+                createdAt: comment.createdAt,
+                context: location ?? (comment.review && comment.review !== 'commented' ? t(REVIEW_VERDICT_KEYS[comment.review]) : null),
+                location,
+            };
+        }), (value.pull?.commits ?? []).map((commit) => ({
             sha: commit.sha,
             headline: commit.headline,
             author: commit.author?.login ?? commit.authorName,

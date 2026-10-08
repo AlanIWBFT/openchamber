@@ -106,12 +106,11 @@ const createMutationKey = (): string => {
 };
 
 const createMutationSignature = (
-  operation: 'create',
   runtimeKey: string,
   context: SourceControlReadContext,
   details: Array<string | number | boolean | undefined>,
 ): string => JSON.stringify([
-  operation,
+  'create',
   runtimeKey,
   context.provider,
   context.instance,
@@ -762,7 +761,7 @@ export const PullRequestSection: React.FC<{
     const payloadBody = body.trim() ? body : undefined;
     const remote = useDetectedUpstream ? undefined : readContext.primaryRemote;
     const headRemote = useDetectedUpstream ? readContext.primaryRemote : undefined;
-    const signature = createMutationSignature('create', capturedRuntimeKey, readContext, [
+    const signature = createMutationSignature(capturedRuntimeKey, readContext, [
       target.owner, target.name, branch, trimmedBase, trimmedTitle, payloadBody, draft, remote, headRemote,
     ]);
     const idempotencyKey = beginMutation(signature);
@@ -810,10 +809,11 @@ export const PullRequestSection: React.FC<{
     }
   }, [beginMutation, body, branch, branchPush, detectedUpstream, directory, draft, finishMutation, isMutationScopeCurrent, needsPush, prStatusKey, readContext, reconcileUnknownOutcome, refresh, scheduleActionRefresh, sourceControl, sourceControlCapabilities?.changeRequests, statusProject, targetBaseBranch, title, useDetectedUpstream, t]);
 
+  const containerClassName = 'border-0 bg-transparent rounded-none px-4 py-3';
 
   if (!canShow) {
     return (
-      <section className="border-0 bg-transparent rounded-none px-4 py-3">
+      <section className={containerClassName}>
         <div className="space-y-1 pt-3">
           <div className="flex items-center justify-between gap-2">
             <div className="typography-ui-header font-semibold text-foreground">
@@ -901,7 +901,6 @@ export const PullRequestSection: React.FC<{
       ? `${checks.success}/${checks.total} ${t('gitView.pr.checks.label')}`
       : `${checks.state} ${t('gitView.pr.checks.label')}`
     : '';
-  const containerClassName = 'border-0 bg-transparent rounded-none px-4 py-3';
   const headerClassName = 'px-0 py-3 border-b border-border/40 flex flex-col gap-1';
   const bodyClassName = 'flex flex-col gap-3 py-3';
 
@@ -942,77 +941,69 @@ export const PullRequestSection: React.FC<{
       {pr ? <div className={headerClassName}>
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            {pr ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                className="shrink-0"
-                onClick={() => void openExternal(pr.url)}
-                aria-label={providerName
-                  ? t('gitView.pr.actions.openOnProviderAria', { provider: providerName })
-                  : t('gitView.header.openPullRequest')}
-              >
-                <Icon name={prStateIconName} className="size-4 shrink-0" style={{ color: prColorVar }} />
-                {providerName
-                  ? t('gitView.pr.actions.openOnProvider', { provider: providerName })
-                  : t('gitView.header.openPullRequest')}
-              </Button>
-            ) : (
-              <Icon name={prStateIconName} className="size-4 shrink-0" style={{ color: 'var(--surface-muted-foreground)' }} />
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              className="shrink-0"
+              onClick={() => void openExternal(pr.url)}
+              aria-label={providerName
+                ? t('gitView.pr.actions.openOnProviderAria', { provider: providerName })
+                : t('gitView.header.openPullRequest')}
+            >
+              <Icon name={prStateIconName} className="size-4 shrink-0" style={{ color: prColorVar }} />
+              {providerName
+                ? t('gitView.pr.actions.openOnProvider', { provider: providerName })
+                : t('gitView.header.openPullRequest')}
+            </Button>
             <h3 className="typography-ui-header font-semibold text-foreground truncate">{t('gitView.pullRequest.title')}</h3>
-            {pr ? (
-              <span className="typography-meta text-muted-foreground truncate">{formatChangeRequestReference(statusIdentity?.provider, pr.number)}</span>
-            ) : null}
+            <span className="typography-meta text-muted-foreground truncate">{formatChangeRequestReference(statusIdentity?.provider, pr.number)}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1">{refreshButton}</div>
         </div>
 
-        {pr ? (
-          <div className="@container/pr-actions flex min-w-0 items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 typography-micro text-muted-foreground">
-              <span style={{ color: prColorVar }}>{prStatusText}</span>
-              {checks ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <span className={`h-2 w-2 rounded-full ${statusColor(checks.state)}`} />
-                  {checksText}
-                </span>
-              ) : null}
-              {trackingBranch && selectedRemoteName && trackingBranch.split('/')[0] !== selectedRemoteName ? (
-                <span className="min-w-0 truncate">
-                  {trackingBranch.split('/')[0]} → {selectedRemoteName}
-                </span>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              {showWalkthroughAction && (readContext?.provider === 'github' || readContext?.provider === 'gitlab') ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={cn('pr-actions__walkthrough-button h-7 shrink-0 gap-1.5 px-2', WALKTHROUGH_ACTION_CLASS)}
-                  onClick={() => {
-                    requestWalkthroughTarget(directory, {
-                      source: {
-                        kind: 'pr',
-                        number: pr.number,
-                        ...(statusProject ? { sourceRepo: { owner: statusProject.owner, repo: statusProject.name } } : {}),
-                      },
-                      context: readContext,
-                    });
-                    openContextSurface(directory, 'walkthrough');
-                  }}
-                  aria-label={t('walkthrough.action.open')}
-                >
-                  <Icon name="route" className="size-4" />
-                  <span className="pr-actions__walkthrough-label typography-ui-label">
-                    {t('walkthrough.action.open')}
-                  </span>
-                </Button>
-              ) : null}
-            </div>
+        <div className="@container/pr-actions flex min-w-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 typography-micro text-muted-foreground">
+            <span style={{ color: prColorVar }}>{prStatusText}</span>
+            {checks ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className={`h-2 w-2 rounded-full ${statusColor(checks.state)}`} />
+                {checksText}
+              </span>
+            ) : null}
+            {trackingBranch && selectedRemoteName && trackingBranch.split('/')[0] !== selectedRemoteName ? (
+              <span className="min-w-0 truncate">
+                {trackingBranch.split('/')[0]} → {selectedRemoteName}
+              </span>
+            ) : null}
           </div>
-        ) : null}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {showWalkthroughAction && (readContext?.provider === 'github' || readContext?.provider === 'gitlab') ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn('pr-actions__walkthrough-button h-7 shrink-0 gap-1.5 px-2', WALKTHROUGH_ACTION_CLASS)}
+                onClick={() => {
+                  requestWalkthroughTarget(directory, {
+                    source: {
+                      kind: 'pr',
+                      number: pr.number,
+                      ...(statusProject ? { sourceRepo: { owner: statusProject.owner, repo: statusProject.name } } : {}),
+                    },
+                    context: readContext,
+                  });
+                  openContextSurface(directory, 'walkthrough');
+                }}
+                aria-label={t('walkthrough.action.open')}
+              >
+                <Icon name="route" className="size-4" />
+                <span className="pr-actions__walkthrough-label typography-ui-label">
+                  {t('walkthrough.action.open')}
+                </span>
+              </Button>
+            ) : null}
+          </div>
+        </div>
       </div> : null}
 
       <div className={bodyClassName}>

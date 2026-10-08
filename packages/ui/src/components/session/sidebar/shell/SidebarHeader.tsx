@@ -185,7 +185,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
                   <TooltipContent side="bottom" sideOffset={4}><p>{t('sourceBoard.title')}</p></TooltipContent>
                 </Tooltip>
               ) : null}
-  
+
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -199,7 +199,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
                 </TooltipTrigger>
                 <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.scheduledTasks')}</p></TooltipContent>
               </Tooltip>
-  
+
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button

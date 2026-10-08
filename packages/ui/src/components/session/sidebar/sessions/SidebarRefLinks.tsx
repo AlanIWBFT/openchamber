@@ -28,34 +28,34 @@ export type SidebarRefLink = {
 export const SidebarRefLinks: React.FC<{ items: readonly SidebarRefLink[]; directory: string | null }> = ({ items, directory }) => {
   const openOnBoard = useOpenOnBoard();
   return (
-  <div className="flex min-w-0 flex-col gap-1">
-    {items.map((item) => (
-      <button
-        key={item.key}
-        type="button"
-        className={cn(
-          'group/ref flex min-w-0 flex-col rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default',
-          item.color ? 'oc-ref-tint' : 'text-muted-foreground',
-        )}
-        style={item.color ? refTintStyle(item.color) : undefined}
-        disabled={!item.url}
-        onPointerDown={(event) => event.stopPropagation()}
-        onMouseDown={(event) => event.stopPropagation()}
-        onKeyDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation();
-          if (item.url) openOnBoard(item.url, directory, event);
-        }}
-      >
-        <span className="flex min-w-0 items-center gap-1.5 group-hover/ref:underline group-disabled/ref:no-underline">
-          <Icon name={item.icon} className="h-3 w-3 flex-shrink-0" />
-          <span className="min-w-0 truncate">{item.text}</span>
-        </span>
-        {item.title ? (
-          <span className="min-w-0 truncate pl-[18px] text-muted-foreground">{item.title}</span>
-        ) : null}
-      </button>
-    ))}
-  </div>
+    <div className="flex min-w-0 flex-col gap-1">
+      {items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          className={cn(
+            'group/ref flex min-w-0 flex-col rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default',
+            item.color ? 'oc-ref-tint' : 'text-muted-foreground',
+          )}
+          style={item.color ? refTintStyle(item.color) : undefined}
+          disabled={!item.url}
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (item.url) openOnBoard(item.url, directory, event);
+          }}
+        >
+          <span className="flex min-w-0 items-center gap-1.5 group-hover/ref:underline group-disabled/ref:no-underline">
+            <Icon name={item.icon} className="h-3 w-3 flex-shrink-0" />
+            <span className="min-w-0 truncate">{item.text}</span>
+          </span>
+          {item.title ? (
+            <span className="min-w-0 truncate pl-[18px] text-muted-foreground">{item.title}</span>
+          ) : null}
+        </button>
+      ))}
+    </div>
   );
 };
