@@ -68,7 +68,7 @@ Do not hide a required architectural migration behind a local heuristic. Do not 
 |---|---|
 | Executable source | Focused tests plus package-scoped type-check and lint |
 | Cross-workspace/shared contract | Workspace-wide type-check and lint plus affected builds/tests |
-| Added/deleted/renamed source file, export/type/entrypoint/import shape | `bun run dead-code` in addition to relevant checks |
+| Added/deleted/renamed source file, export/type/entrypoint/import shape | `bun run check:changed` (covers dead code) in addition to relevant checks |
 | Persisted or external contract | Compatibility and round-trip tests plus the applicable failure/ordering cases: missing-versus-empty, malformed data, stale reads versus newer mutations, out-of-order writes, lifecycle handling for debounced writes, conversion, and failed-write/migration rollback |
 | Dependency or lockfile | Workspace-wide checks and affected builds |
 | Added, renamed, or removed `packages/*` workspace | Mirror it in the Dockerfile `deps` stage, which copies those manifests by name, then run `docker build .`: a `COPY` of a missing workspace fails the build, and a workspace another one depends on fails the frozen install when absent. CI does not build the image. |
@@ -97,4 +97,4 @@ For type-only shared contracts, validate compile-time consumers. Add runtime ser
 - Run focused regression tests for the changed contract.
 - Preserve unrelated changes encountered in shared files.
 - Re-read the owning docs and update them when the implementation changed their truth.
-- Perform a final simplification pass: remove speculative branches, shallow wrappers, stale compatibility, and names that do not clarify intent.
+- Perform a final simplification pass over your own diff, hardest after a rework or a removal: every branch, condition, prop, parameter, export, key, and helper the change made unreachable, always-true, or single-valued is gone, along with speculative branches, shallow wrappers, stale compatibility, and names that do not clarify intent. Then `bun run check:changed` passes.

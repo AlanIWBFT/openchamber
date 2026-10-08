@@ -76,5 +76,5 @@ Do not edit until the required project guidance and local context have been read
 2. Apply the smallest behavior-preserving simplification directly; do not stop at a proposal when a safe improvement is clear.
 3. Re-read the edited code and verify that the observable contract is unchanged.
 4. Run the narrowest validation required by the repository guidance and actual risk. Use package-scoped checks for local executable changes and broader checks only for genuinely shared contracts.
-5. Run `bun run dead-code` only when files, exports, types, entrypoints, or import shapes changed, and inspect its non-blocking report.
+5. Run `bun run check:changed`; it covers dead code and fails on any finding.
 6. Summarize meaningful clarity improvements and report exactly what was and was not validated.
