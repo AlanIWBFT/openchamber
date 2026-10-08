@@ -266,11 +266,11 @@ const getFileMentionInputSourceForInsertedText = (insertedText: string): FileMen
 );
 
 /**
- * Skills the user named inline with `/name`. Matched against the registry's
- * exact casing, since the name is echoed back to the model as a skill to load.
+ * Skills the user named with `$name`. Matched against the registry's exact
+ * casing, since the name is echoed back to the model as a skill to load.
  */
 const collectInlineSkillMentions = (text: string, skillNames: Set<string>): string[] =>
-    collectKnownTokenNames(text, '/', skillNames, 'exact');
+    collectKnownTokenNames(text, '$', skillNames, 'exact');
 
 /** Which reference picker is open, and for GitHub on which tab. */
 type ReferencePickerState = { source: 'github'; kind?: 'issue' | 'pull' } | { source: 'linear' } | null;
@@ -794,8 +794,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const knownAgentNamesRef = React.useRef(knownAgentNames);
     knownAgentNamesRef.current = knownAgentNames;
 
-    // Known slash-invocations (commands + skills + built-ins) used to highlight
-    // matching /tokens in the composer, the same way confirmed @files are.
+    // Known slash-invocations (commands + built-ins) and `$` skills, used to
+    // highlight matching tokens in the composer, the same way confirmed
+    // @files are.
     const availableCommands = useCommandsStore((s) => selectCommandsForDirectory(s, currentDirectory));
     const availableSkills = useSkillsStore((s) => selectSkillsForDirectory(s, currentDirectory));
     const knownSlashNames = React.useMemo(() => {
@@ -804,16 +805,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         ]);
         if (!isMobile && !isVSCodeRuntime()) names.add('handoff-review');
         for (const command of availableCommands) names.add(command.name.toLowerCase());
-        for (const skill of availableSkills) names.add(skill.name.toLowerCase());
         return names;
-    }, [availableCommands, availableSkills, isMobile]);
+    }, [availableCommands, isMobile]);
     const knownSkillNames = React.useMemo(
         () => new Set(availableSkills.map((skill) => skill.name.toLowerCase())),
         [availableSkills],
     );
 
-    // Extension slash commands. Built-ins, OpenCode commands, and skills are
-    // reserved: an extension command with one of those names is ignored.
+    // Extension slash commands. Built-ins and OpenCode commands are reserved:
+    // an extension command with one of those names is ignored.
     const guestCommands = useGuestCommands(knownSlashNames);
     const knownSlashNamesWithGuests = React.useMemo(() => {
         if (guestCommands.length === 0) return knownSlashNames;
@@ -3062,16 +3062,16 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         const textarea = composerRef.current;
         const cursorPosition = textarea?.getSelection().start ?? message.length;
         const textBeforeCursor = message.substring(0, cursorPosition);
-        const lastSlashSymbol = textBeforeCursor.lastIndexOf('/');
+        const lastDollarSymbol = textBeforeCursor.lastIndexOf('$');
 
-        if (lastSlashSymbol !== -1) {
+        if (lastDollarSymbol !== -1) {
             const newMessage =
-                message.substring(0, lastSlashSymbol) +
-                `/${skillName} ` +
+                message.substring(0, lastDollarSymbol) +
+                `$${skillName} ` +
                 message.substring(cursorPosition);
             setMessage(newMessage);
 
-            const nextCursor = lastSlashSymbol + skillName.length + 2;
+            const nextCursor = lastDollarSymbol + skillName.length + 2;
             requestAnimationFrame(() => {
                 if (composerRef.current) {
                     composerRef.current.setSelection(nextCursor);

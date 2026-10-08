@@ -10,8 +10,9 @@
  * report the caret and render the result.
  *
  * Exactly one trigger can be active, and order matters: the command palette
- * (a leading `/`) outranks the inline skill picker, which outranks snippets,
- * which outrank mentions. That precedence is the previous behavior, preserved.
+ * (a leading `/`) outranks the skill picker (`$`, anywhere in the text), which
+ * outranks snippets, which outrank mentions. Commands and skills use separate
+ * sigils so the palette lists commands only.
  */
 
 import {
@@ -64,13 +65,13 @@ function matchCommandPalette(value: string, cursorPosition: number): Autocomplet
 }
 
 /**
- * An inline `/skill` or `#snippet` still being typed: the nearest sigil before
- * the caret, at a word boundary, with no separator between it and the caret.
+ * A `$skill` or `#snippet` still being typed: the nearest sigil before the
+ * caret, at a word boundary, with no separator between it and the caret.
  */
 function matchInlineToken(
     value: string,
     cursorPosition: number,
-    sigil: '/' | '#',
+    sigil: '$' | '#',
     kind: AutocompleteKind,
 ): AutocompleteTrigger | null {
     const textBeforeCursor = value.substring(0, cursorPosition);
@@ -105,7 +106,7 @@ export function resolveAutocompleteTrigger(
     if (context.inputMode === 'shell') return null;
 
     return matchCommandPalette(value, cursorPosition)
-        ?? matchInlineToken(value, cursorPosition, '/', 'skill')
+        ?? matchInlineToken(value, cursorPosition, '$', 'skill')
         ?? matchInlineToken(value, cursorPosition, '#', 'snippet')
         ?? matchMention(value, cursorPosition, context);
 }

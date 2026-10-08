@@ -686,7 +686,7 @@ const createParser = (imageMode: MarkdownImageMode, rawHtml: MarkdownRawHtmlMode
           const skillName = parseSkillHref(target);
           if (skillName) {
             // Drawn as a chip; `decorateReferenceChipIcons` adds the skill icon.
-            return `<a href="${escapeAttr(target)}" data-skill-name="${escapeAttr(skillName)}" class="${INTERACTIVE_REFERENCE_CHIP_CLASS}" title="/${escapeAttr(skillName)}">${escapeAttr(skillName)}</a>`;
+            return `<a href="${escapeAttr(target)}" data-skill-name="${escapeAttr(skillName)}" class="${INTERACTIVE_REFERENCE_CHIP_CLASS}" title="$${escapeAttr(skillName)}">${escapeAttr(skillName)}</a>`;
           }
           const titleAttr = title ? ` title="${escapeAttr(title)}"` : '';
           return `<a href="${escapeAttr(target)}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`;

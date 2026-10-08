@@ -103,7 +103,7 @@ export interface OutgoingMessageDeps {
     extractFileMentions: (text: string) => { text: string; attachments: AttachedFile[] };
     /** Normalize attachments for transport (server paths become file URLs). */
     sanitizeAttachments: (files: readonly AttachedFile[] | undefined) => AttachedFile[];
-    /** Skills named inline with `/name`. */
+    /** Skills named with `$name`. */
     collectSkillNames: (text: string) => string[];
 }
 

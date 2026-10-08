@@ -243,12 +243,16 @@ copy.
   itself and is what gets highlighted; in `see @a/b.ts,` the comma is sentence
   punctuation, not part of the file being referenced. Mentions are plain
   editable text: deleting a character edits the token and reopens the mention
-  picker, the same way `/skill` tokens behave — not an atomic delete.
-- `prefixTokens.ts` — `/command`, `/skill`, `#snippet`. Scanning is deliberately
+  picker, the same way `$skill` tokens behave — not an atomic delete.
+- `prefixTokens.ts` — `/command`, `$skill`, `#snippet`. Scanning is deliberately
   generous; **membership in the command, skill or snippet registry is the
-  authority**, not the pattern. An unknown `/token` stays plain prose.
+  authority**, not the pattern. An unknown `/token` or `$token` stays plain
+  prose, so `$5` is just money.
 - `triggers.ts` — which picker a caret position asks for. Exactly one can be
-  active, with precedence `command > skill > snippet > mention`.
+  active, with precedence `command > skill > snippet > mention`. Commands open
+  only on a `/` in the first column; skills open on `$` at any word boundary,
+  the start of the text included. The two never share a list: the `/` palette
+  holds commands only.
 - `tokenize.ts` — one pass producing every highlight range. Adding a construct
   to the language means adding it here, once.
 
@@ -273,7 +277,7 @@ DOM-only tests cannot verify these.
 exactly what gets sent, so nothing downstream serializes a rich document model
 back into a prompt.
 
-Attachment citations (`[name.png]`) and finished skill tokens (`/name` followed
+Attachment citations (`[name.png]`) and finished skill tokens (`$name` followed
 by whitespace) render in the editor as atomic replace widgets shaped like the
 sent message's chips (`composerLanguage.ts`). The document keeps the source
 text, so sending, copying and undo are unchanged; the caret steps over a chip
@@ -396,7 +400,7 @@ and the send path reading the same grammar.
   mention, file mentions, and skill instruction were resolved when it was
   queued, never at delivery — and its context follows it before the next
   queued message.
-- **Skills named inline (`/name`) are attached to the prompt, not hinted at.**
+- **Skills named with `$name` are attached to the prompt, not hinted at.**
   `buildOutgoingMessage` reports the composer text's skill names (deduped, in
   order) as `skillNames`; `ChatInput` hands them to the send as
   `SkillMentions`, and `opencodeClient.sendMessage` maps each name to its
@@ -416,13 +420,15 @@ and the send path reading the same grammar.
   `Skill not found` (resent once with the same message id, since preparation
   fails before admission). Queued messages keep the instruction captured at
   queue time, because the server and the VS Code auto-send deliver them
-  without the composer's registry. A leading `/skill` that routes to
-  `session.command` keeps the instruction too: that route takes no skill
-  attachments.
+  without the composer's registry. A `$skill` in a message that routes to
+  `session.command` (a leading `/command`) keeps the instruction too: that
+  route takes no skill attachments. A hand-typed leading `/name` that matches
+  a skill and no command still attaches the skill (`session-ui-store`), so the
+  old form keeps working; the composer just no longer offers or chips it.
 - Extension slash commands are routed first (`submit/guestCommands.ts`,
   entries from `useGuestCommands` minus every name the composer already
-  knows, so an extension can never shadow a built-in, an OpenCode command, or
-  a skill). The command text is cleared and `runGuestCommand`
+  knows, so an extension can never shadow a built-in or an OpenCode command;
+  skills live under `$` and cannot collide). The command text is cleared and `runGuestCommand`
   (`lib/guests/run-command.ts`) asks the extension: the rail pane if it is
   mounted, otherwise a hidden headless `PluginPane` that `GuestHosts` mounts
   for the call. A returned chip lands through

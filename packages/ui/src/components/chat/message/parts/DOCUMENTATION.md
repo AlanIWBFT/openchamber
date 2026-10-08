@@ -272,8 +272,9 @@ Why: only navigation tools use the compact static path; all other tools need obs
   (`lib/messages/inlineMessageLinks.ts`) that `markdownCore` renders as a span
   and `decorate.ts` gives its icon; the plain-text path builds the same chip
   directly. Brackets around anything that is not an attachment stay text.
-  A known skill (`/name`) renders as the same chip with the book icon and still
-  opens the skill file on click. The composer draws both chips too
+  A known skill (`$name`, or `/name` in messages sent before skills moved to
+  `$`) renders as the same chip with the book icon and still opens the skill
+  file on click. The composer draws both chips too
   (`composer/editor/composerLanguage.ts`).
 - User-attached context (inline code comments, terminal selections, browser
   annotations, PR comments/checks): `UserContextPart.tsx`. `UserTextPart`

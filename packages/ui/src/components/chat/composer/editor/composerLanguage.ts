@@ -88,7 +88,7 @@ function technicalIsolates(ranges: HighlightRange[]): DecorationSet {
 
 /**
  * A reference drawn as the same chip the sent message shows: an attachment
- * citation (`[name.png]`) or a skill (`/name`). The document keeps the source
+ * citation (`[name.png]`) or a skill (`$name`). The document keeps the source
  * text, so sending, copying and undo see it unchanged; the range is atomic, so
  * the caret steps over the chip and one Backspace removes it whole.
  */
@@ -139,8 +139,8 @@ const basename = (path: string): string => {
  * file and agent mentions, skills and snippets. Commands keep their color.
  *
  * `typingEnd` is where the change being typed right now ended. A token ending
- * exactly there is still being written and stays text, so `/review` does not
- * turn into a chip on the way to `/review-pr` (or mid-sentence, where a space
+ * exactly there is still being written and stays text, so `$review` does not
+ * turn into a chip on the way to `$review-pr` (or mid-sentence, where a space
  * already follows the caret). It becomes a chip once anything is typed after
  * it or an edit happens elsewhere. Citations are complete when inserted.
  */
@@ -175,11 +175,9 @@ function referenceChips(text: string, context: ComposerLanguageContext, typingEn
         }
     }
 
-    const skills = context.knownSkillNames;
-    if (skills && skills.size > 0) {
-        for (const token of scanPrefixTokens(text, '/')) {
-            if (!skills.has(token.name.toLowerCase())) continue;
-            addToken(token.start, token.end, new ReferenceChipWidget(token.name, `/${token.name}`, SKILL_CHIP_ICON_HREF));
+    if (context.knownSkillNames) {
+        for (const token of filterKnownTokens(scanPrefixTokens(text, '$'), context.knownSkillNames)) {
+            addToken(token.start, token.end, new ReferenceChipWidget(token.name, `$${token.name}`, SKILL_CHIP_ICON_HREF));
         }
     }
 

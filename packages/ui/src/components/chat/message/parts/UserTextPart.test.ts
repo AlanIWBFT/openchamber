@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { buildSkillHref } from '@/lib/messages/inlineMessageLinks';
 import { prepareUserMarkdownContent } from './userTextPartContent';
 
 describe('prepareUserMarkdownContent', () => {
@@ -25,6 +26,16 @@ describe('prepareUserMarkdownContent', () => {
         expect(content).toContain('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;');
         expect(content).not.toContain('<b>bold</b>');
         expect(content).not.toContain('<script>');
+    });
+
+    test('links $skill and the older /skill form, leaving unknown names as text', () => {
+        const content = prepareUserMarkdownContent({
+            textContent: '$review then /review, not $5 or $other',
+            skillNames: new Set(['review']),
+        });
+
+        expect(content.split(`](${buildSkillHref('review')})`)).toHaveLength(3);
+        expect(content).toContain('not $5 or $other');
     });
 
     test('adds hard line breaks outside fences but not inside', () => {

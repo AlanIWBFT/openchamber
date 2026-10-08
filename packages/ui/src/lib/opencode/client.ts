@@ -206,7 +206,7 @@ export function normalizeOpencodeError(operation: string, error: unknown): Openc
 }
 
 /**
- * Skills the user named inline with `/name`, in order of appearance. They are
+ * Skills the user named with `$name`, in order of appearance. They are
  * attached to the prompt by id so OpenCode loads each one with the message,
  * whatever the session is doing; a name that cannot be attached falls back to
  * the instruction the caller builds for it.

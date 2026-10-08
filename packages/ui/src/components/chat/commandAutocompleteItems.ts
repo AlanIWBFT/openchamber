@@ -5,7 +5,6 @@ export interface CommandAutocompleteSearchItem {
   description?: string;
   searchAliases?: string[];
   isBuiltIn?: boolean;
-  isSkill?: boolean;
 }
 
 function addSearchAliases<T extends CommandAutocompleteSearchItem>(winner: T, duplicate: T): T {
@@ -23,13 +22,12 @@ function addSearchAliases<T extends CommandAutocompleteSearchItem>(winner: T, du
 }
 
 /**
- * Precedence is local command, discovered skill, OpenCode skill-command, then
- * custom/plugin command. Identity matches session.command's case-sensitive lookup.
+ * Precedence is built-in command, then custom/plugin command. Identity matches
+ * session.command's case-sensitive lookup.
  */
 export function mergeCommandAutocompleteItems<T extends CommandAutocompleteSearchItem>(
   builtIns: T[],
   commands: T[],
-  skills: T[],
 ): T[] {
   const merged: T[] = [];
   const byName = new Map<string, { index: number; item: T; precedence: number }>();
@@ -57,9 +55,8 @@ export function mergeCommandAutocompleteItems<T extends CommandAutocompleteSearc
     }
   };
 
-  addItems(builtIns, () => 3);
-  addItems(commands, (item) => item.isBuiltIn ? 3 : item.isSkill ? 1 : 0);
-  addItems(skills, () => 2);
+  addItems(builtIns, () => 1);
+  addItems(commands, (item) => item.isBuiltIn ? 1 : 0);
   return merged;
 }
 

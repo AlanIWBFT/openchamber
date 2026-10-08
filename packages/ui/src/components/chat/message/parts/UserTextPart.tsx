@@ -236,7 +236,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({
                     className={cn(INTERACTIVE_REFERENCE_CHIP_CLASS, '[unicode-bidi:isolate]')}
                     // Inline minimums opt out of the mobile 36px button floor.
                     style={{ minHeight: 0, minWidth: 0 }}
-                    title={`/${skillName}`}
+                    title={`$${skillName}`}
                     onClick={(event) => {
                         event.stopPropagation();
                         openSkill(skillName);

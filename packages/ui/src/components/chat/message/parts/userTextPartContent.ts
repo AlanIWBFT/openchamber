@@ -7,7 +7,9 @@ import {
 } from '@/lib/messages/inlineMessageLinks';
 import { findAttachmentCitationRanges } from '../../attachmentCitations';
 
-export const SKILL_TOKEN_PATTERN = /(^|\s)\/([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/g;
+// Skills are named with `$`; messages sent before that used `/`, which history
+// still shows as a chip.
+export const SKILL_TOKEN_PATTERN = /(^|\s)[$/]([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/g;
 
 const FENCED_CODE_SEGMENT_PATTERN = /(```[\s\S]*?```|~~~[\s\S]*?~~~)/g;
 

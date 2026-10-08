@@ -29,30 +29,41 @@ describe('command palette', () => {
         expect(at('/review\nnext line|')?.kind).not.toBe('command');
     });
 
-    test('a slash that is not in the first column is not the palette', () => {
-        expect(at(' /rev|')).toEqual({ kind: 'skill', query: 'rev' });
+    test('a slash that is not in the first column opens nothing', () => {
+        expect(at(' /rev|')).toBeNull();
+        expect(at('please run /explo|')).toBeNull();
+        expect(at('line\n/pl|')).toBeNull();
     });
 });
 
-describe('inline skill picker', () => {
-    test('a slash after whitespace opens the skill picker', () => {
-        expect(at('please run /explo|')).toEqual({ kind: 'skill', query: 'explo' });
+describe('skill picker', () => {
+    test('a dollar at the start of the text opens the skill picker', () => {
+        expect(at('$rev|')).toEqual({ kind: 'skill', query: 'rev' });
+        expect(at('$|')).toEqual({ kind: 'skill', query: '' });
     });
 
-    test('a slash after a newline opens it', () => {
-        expect(at('line\n/pl|')).toEqual({ kind: 'skill', query: 'pl' });
+    test('a dollar after whitespace opens it', () => {
+        expect(at('please run $explo|')).toEqual({ kind: 'skill', query: 'explo' });
     });
 
-    test('a path separator does not open it', () => {
-        expect(at('src/comp|')).toBeNull();
+    test('a dollar after a newline opens it', () => {
+        expect(at('line\n$pl|')).toEqual({ kind: 'skill', query: 'pl' });
+    });
+
+    test('a dollar inside a word does not open it', () => {
+        expect(at('US$5|')).toBeNull();
     });
 
     test('a space after the sigil closes it', () => {
-        expect(at('run /explore |')).toBeNull();
+        expect(at('run $explore |')).toBeNull();
     });
 
-    test('the nearest slash before the caret wins', () => {
-        expect(at('/a b /c|')).toEqual({ kind: 'skill', query: 'c' });
+    test('the nearest dollar before the caret wins', () => {
+        expect(at('$a b $c|')).toEqual({ kind: 'skill', query: 'c' });
+    });
+
+    test('works after a command invocation', () => {
+        expect(at('/review $pl|')).toEqual({ kind: 'skill', query: 'pl' });
     });
 });
 
@@ -69,8 +80,8 @@ describe('snippet picker', () => {
         expect(at('issue#42|')).toBeNull();
     });
 
-    test('a slash outranks a hash when both are candidates', () => {
-        expect(at('#tag /skill|')).toEqual({ kind: 'skill', query: 'skill' });
+    test('a dollar outranks a hash when both are candidates', () => {
+        expect(at('#tag $skill|')).toEqual({ kind: 'skill', query: 'skill' });
     });
 });
 
@@ -112,11 +123,12 @@ describe('precedence and disabling', () => {
     test('shell mode disables every picker', () => {
         const shell: TriggerContext = { inputMode: 'shell' };
         expect(at('/rev|', shell)).toBeNull();
+        expect(at('$rev|', shell)).toBeNull();
         expect(at('@src|', shell)).toBeNull();
         expect(at('#sig|', shell)).toBeNull();
     });
 
-    test('the command palette outranks the inline skill picker', () => {
+    test('a leading slash opens commands only, never the skill picker', () => {
         expect(at('/pl|')).toEqual({ kind: 'command', query: 'pl' });
     });
 

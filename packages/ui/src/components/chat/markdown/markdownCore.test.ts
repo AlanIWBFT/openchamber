@@ -130,7 +130,7 @@ describe('markdown sanitization', () => {
     const html = renderMarkdownSync('Use [/review](#openchamber-skill:review) here', 'inline');
 
     expect(html).toContain('data-skill-name="review"');
-    expect(html).toContain('title="/review">review</a>');
+    expect(html).toContain('title="$review">review</a>');
   });
 
 });

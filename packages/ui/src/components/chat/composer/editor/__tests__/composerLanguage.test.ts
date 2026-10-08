@@ -181,16 +181,24 @@ describe('composerLanguage — attachment citations', () => {
     test('keeps a token being typed as text and chips it once typing moves on', () => {
         const skills = context({ knownSkillNames: new Set(['review-pr']) });
         const typing = stateWith('run  now', skills)
-            .update({ changes: { from: 4, insert: '/review-pr' }, userEvent: 'input.type' }).state;
+            .update({ changes: { from: 4, insert: '$review-pr' }, userEvent: 'input.type' }).state;
         expect(citationChips(typing)).toEqual([]);
 
         const moved = typing.update({ changes: { from: 14, insert: ',' }, userEvent: 'input.type' }).state;
-        expect(citationChips(moved)).toEqual([['/review-pr', 'review-pr']]);
+        expect(citationChips(moved)).toEqual([['$review-pr', 'review-pr']]);
     });
 
     test('chips a token that arrives whole, as from a restored draft', () => {
         const skills = context({ knownSkillNames: new Set(['review-pr']) });
-        expect(citationChips(stateWith('run /review-pr', skills))).toEqual([['/review-pr', 'review-pr']]);
+        expect(citationChips(stateWith('$review-pr first', skills))).toEqual([['$review-pr', 'review-pr']]);
+        expect(citationChips(stateWith('run $review-pr', skills))).toEqual([['$review-pr', 'review-pr']]);
+    });
+
+    test('a skill name after a slash is not a skill', () => {
+        const skills = context({ knownSkillNames: new Set(['review-pr']) });
+        const state = stateWith('/review-pr now', skills);
+        expect(citationChips(state)).toEqual([]);
+        expect(decoratedText(state)).toEqual([]);
     });
 
     test('chips file and agent mentions and snippets; commands keep their color only', () => {
