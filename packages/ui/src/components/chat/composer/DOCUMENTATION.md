@@ -304,11 +304,18 @@ chip the same way; a token whose last character was just typed stays text
 until typing moves on, so a name is never chipped halfway. Commands keep
 their color only.
 
-Desktop comment fields (chat quote comments, diff and file comments, editing a
+Desktop comment fields in ordinary page DOM (chat quote comments, editing a
 pending comment above the composer) are `components/comments/CommentTextEditor`:
 this editor with comment keys (Enter submits, Escape cancels, both after an IME
 composition), the `#` snippet picker and image paste, where a pasted image's
 citation is a chip at once through `pendingAttachmentFilenames`.
+
+Diff, file editor and file preview line comments (`InlineCommentInput`) stay a
+textarea with the same keys, snippet picker and image paste, and show the
+citation as text until the comment is attached. Those fields live inside other
+editors' DOM, an annotation slot in the diff viewer's shadow tree and a block
+widget of the file editor, where this editor lost its caret and jumped to the
+start of the line while typing.
 
 The composer disables CodeMirror EditContext through `ComposerEditorView`:
 on Android Chrome with Gboard (Thai input, #3514) the EditContext path moved
