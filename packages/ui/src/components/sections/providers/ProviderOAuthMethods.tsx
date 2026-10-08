@@ -1,5 +1,5 @@
 import React from 'react';
-import type { FormField, FormValue, IntegrationOAuthMethod } from '@opencode/client';
+import type { FormField, FormValue } from '@opencode/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui';
@@ -21,11 +21,12 @@ import {
   type OAuthAttempt,
 } from './provider-oauth';
 import { ProviderFormFields } from './ProviderFormFields';
+import type { SignInMethod } from './providerAuth';
 
 interface ProviderOAuthMethodsProps {
   /** The integration that owns these methods; it shares the provider's id. */
   integrationId: string;
-  methods: IntegrationOAuthMethod[];
+  methods: SignInMethod[];
   /** Called once a credential has been stored, so the caller can reload providers. */
   onConnected: () => void | Promise<void>;
   /**
@@ -54,11 +55,15 @@ const IDLE: Flow = { phase: 'idle' };
 const STATUS_POLL_INTERVAL_MS = 1500;
 
 /**
- * OAuth sign-in for a provider's integration methods.
+ * Sign-in for a provider's OAuth and external-credential methods.
  *
- * The mode reported by `integration.oauth.connect` drives everything: `auto`
- * polls `integration.oauth.status` until the attempt completes, `code` collects
- * a pasted code and calls `integration.oauth.complete`. See `provider-oauth.ts`.
+ * For OAuth, the mode reported by `integration.oauth.connect` drives
+ * everything: `auto` polls `integration.oauth.status` until the attempt
+ * completes, `code` collects a pasted code and calls
+ * `integration.oauth.complete`. See `provider-oauth.ts`. An external method
+ * (an Azure CLI login, an AWS profile) only needs its form answered:
+ * `integration.connect.external` stores a reference to credentials managed
+ * outside OpenCode, so there is no attempt to follow.
  *
  * Only one method can run at a time, and an abandoned attempt is cancelled
  * upstream on unmount so it cannot linger until it expires. Mount this with
@@ -109,10 +114,10 @@ export const ProviderOAuthMethods: React.FC<ProviderOAuthMethodsProps> = ({
     toast.error(t(failureKey));
   };
 
-  const succeed = async () => {
+  const succeed = async (successKey: I18nKey = 'settings.providers.page.toast.oauthCompleted') => {
     activeAttemptRef.current = null;
     setFlow(IDLE);
-    toast.success(t('settings.providers.page.toast.oauthCompleted'));
+    toast.success(t(successKey));
     await onConnected();
   };
 
@@ -153,7 +158,27 @@ export const ProviderOAuthMethods: React.FC<ProviderOAuthMethodsProps> = ({
     }
   };
 
-  const runConnect = async (method: IntegrationOAuthMethod, answer: Record<string, FormValue>) => {
+  const runExternalConnect = async (methodID: string, answer: Record<string, FormValue>) => {
+    setFlow({ phase: 'connecting', methodID });
+    try {
+      // OpenCode refuses an answer for a method without a form, even an empty one.
+      await sdk().integration.connect.external({
+        integrationID: integrationId,
+        methodID,
+        answer: Object.keys(answer).length > 0 ? answer : undefined,
+      });
+    } catch (error) {
+      fail(methodID, error, 'settings.providers.page.toast.externalConnectFailed');
+      return;
+    }
+    await succeed('settings.providers.page.toast.externalConnected');
+  };
+
+  const runConnect = async (method: SignInMethod, answer: Record<string, FormValue>) => {
+    if (method.type === 'external') {
+      await runExternalConnect(method.id, answer);
+      return;
+    }
     setFlow({ phase: 'connecting', methodID: method.id });
 
     let attempt: OAuthAttempt;
@@ -188,7 +213,7 @@ export const ProviderOAuthMethods: React.FC<ProviderOAuthMethodsProps> = ({
     await pollAttempt(method.id, attempt.attemptID);
   };
 
-  const beginConnect = (method: IntegrationOAuthMethod) => {
+  const beginConnect = (method: SignInMethod) => {
     const fields = (method.form ?? []).filter(isAnswerableField);
     if (fields.length === 0) {
       void runConnect(method, {});
@@ -198,7 +223,7 @@ export const ProviderOAuthMethods: React.FC<ProviderOAuthMethodsProps> = ({
     setFlow({ phase: 'prompting', methodID: method.id, fields, error: null });
   };
 
-  const submitFields = (method: IntegrationOAuthMethod) => {
+  const submitFields = (method: SignInMethod) => {
     if (flow.phase !== 'prompting') {
       return;
     }
@@ -356,7 +381,9 @@ export const ProviderOAuthMethods: React.FC<ProviderOAuthMethodsProps> = ({
             {isActive && flow.phase === 'connecting' && (
               <p className="typography-meta text-muted-foreground flex items-center gap-2">
                 <Icon name="loader" className="h-3.5 w-3.5 animate-spin" />
-                {t('settings.providers.page.auth.oauth.starting')}
+                {method.type === 'external'
+                  ? t('settings.providers.page.auth.external.connecting')
+                  : t('settings.providers.page.auth.oauth.starting')}
               </p>
             )}
 

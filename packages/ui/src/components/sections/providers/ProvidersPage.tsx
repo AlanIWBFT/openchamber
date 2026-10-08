@@ -33,7 +33,7 @@ import {
   findIntegrationForProvider,
   getCredentialConnections,
   getKeyMethod,
-  getOAuthMethods,
+  getSignInMethods,
   getProviderConnections,
   getSignInIntegrationId,
   readProviderApiKeySetting,
@@ -650,7 +650,7 @@ export const ProvidersPage: React.FC = () => {
                 <>
                   {(() => {
                     const candidateIntegration = findIntegrationForProvider(integrations ?? [], candidateProviderId);
-                    const candidateOAuthMethods = getOAuthMethods(
+                    const candidateSignInMethods = getSignInMethods(
                       findIntegrationForProvider(integrations ?? [], getSignInIntegrationId(candidateProviderId)),
                     );
                     const showApiKey = shouldShowApiKeyAuth(candidateIntegration);
@@ -667,11 +667,11 @@ export const ProvidersPage: React.FC = () => {
                           />
                         ) : null}
 
-                        {candidateOAuthMethods.length > 0 ? (
+                        {candidateSignInMethods.length > 0 ? (
                           <ProviderOAuthMethods
                             key={candidateProviderId}
                             integrationId={getSignInIntegrationId(candidateProviderId)}
-                            methods={candidateOAuthMethods}
+                            methods={candidateSignInMethods}
                             onConnected={() => handleOAuthConnected(candidateProviderId)}
                             className={cn(showApiKey && 'border-t border-[var(--surface-subtle)] pt-2')}
                           />
@@ -704,7 +704,7 @@ export const ProvidersPage: React.FC = () => {
 
   const providerModels = Array.isArray(selectedProvider.models) ? selectedProvider.models : [];
   const selectedIntegration = findIntegrationForProvider(integrations ?? [], selectedProvider.id);
-  const oauthAuthMethods = getOAuthMethods(
+  const signInMethods = getSignInMethods(
     findIntegrationForProvider(integrations ?? [], getSignInIntegrationId(selectedProvider.id)),
   );
   const showApiKeyAuth = shouldShowApiKeyAuth(selectedIntegration);
@@ -904,11 +904,11 @@ export const ProvidersPage: React.FC = () => {
               />
             ) : null}
 
-            {oauthAuthMethods.length > 0 && (
+            {signInMethods.length > 0 && (
               <ProviderOAuthMethods
                 key={selectedProvider.id}
                 integrationId={getSignInIntegrationId(selectedProvider.id)}
-                methods={oauthAuthMethods}
+                methods={signInMethods}
                 onConnected={() => handleOAuthConnected(selectedProvider.id)}
                 className={cn(showApiKeyAuth && 'border-t border-[var(--surface-subtle)] pt-2')}
               />

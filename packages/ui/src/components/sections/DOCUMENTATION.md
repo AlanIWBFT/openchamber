@@ -77,10 +77,19 @@ events refresh the stores. (The old "nudge" went through `/api/config/reload`,
 which restarts a managed OpenCode and showed the reload overlay.)
 
 An integration method can declare a `form` (an Azure resource name, a
-Cloudflare account id). OAuth and API key methods render it through the same
-`ProviderFormFields`, check required fields with the helpers in
+Cloudflare account id). OAuth, external and API key methods render it through
+the same `ProviderFormFields`, check required fields with the helpers in
 `provider-oauth.ts`, and send the answers with the connect call. OpenCode
-rejects a key whose required fields are missing.
+rejects a key whose required fields are missing. A `custom` field with options
+(AWS profiles, Azure resources OpenCode found on the server) offers "Other…"
+for a value it did not find.
+
+A provider's sign-in buttons come from its integration's `oauth` and
+`external` methods in declared order (`getSignInMethods`), both rendered by
+`providers/ProviderOAuthMethods.tsx`. An `external` method (2.0.25+: Azure CLI
+login, AWS profile for Bedrock) asks only its form and calls
+`integration.connect.external`, which stores a reference to credentials managed
+outside OpenCode; the account then lists as "External credentials".
 
 The custom-provider form can discover models before save through
 `POST /api/provider/discover-models`. Discovery is a one-time prefill the user
