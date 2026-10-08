@@ -815,6 +815,14 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     isAvailable: (ctx) => !ctx.isVSCode && ctx.routingAvailable && !ctx.jevBlockedByEnterprise,
   },
   {
+    id: 'routing.preserve-cache',
+    page: 'routing',
+    titleKey: 'settings.routing.auto.preserveCache',
+    descriptionKey: 'settings.routing.auto.preserveCacheInfo',
+    keywords: ['cache', 'prompt cache', 'auto', 'routing', 'switch', 'model', 'cost'],
+    isAvailable: (ctx) => !ctx.isVSCode && ctx.routingAvailable && !ctx.jevBlockedByEnterprise,
+  },
+  {
     id: 'routing.fallback-model',
     page: 'routing',
     titleKey: 'settings.routing.auto.fallbackModel',
