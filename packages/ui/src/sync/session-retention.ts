@@ -26,8 +26,8 @@ const isOlderThanCutoff = (session: Session, cutoff: number, onlyArchived: boole
 };
 
 /** Sessions the user asked to keep: pinned on this client, or in the In work block. */
-export const isSessionKeptByUser = (session: Session): boolean => (
-  isSessionInWork(session) || isSessionPinned(useSessionPinnedStore.getState().ids, session.directory, session.id)
+export const isSessionKeptByUser = (session: Session, pinnedIds: Set<string> = useSessionPinnedStore.getState().ids): boolean => (
+  isSessionInWork(session) || isSessionPinned(pinnedIds, session.directory, session.id)
 );
 
 type CandidateOptions = {

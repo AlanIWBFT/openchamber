@@ -45,7 +45,7 @@ export const useSessionAutoCleanup = ({ autoRun = true, enabled = true }: Cleanu
     action,
     onlyArchived,
     activeSessionIds,
-    isKept: isSessionKeptByUser,
+    isKept: (session) => isSessionKeptByUser(session, pinnedIds),
   }), [activeSessions, archivedSessions, currentSessionId, autoDeleteAfterDays, action, onlyArchived, activeSessionIds, pinnedIds]);
 
   React.useEffect(() => {
