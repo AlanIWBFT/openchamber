@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { ComposerFloatingPanel } from './composer/ui/ComposerFloatingPanel';
 import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight';
 import { getQueuedMessagePreview } from '@/lib/messages/queuedMessagePreview';
+import { withAttachmentChips } from './message/parts/attachmentCitationChips';
 
 interface QueuedMessageChipProps {
     message: QueuedMessage;
@@ -42,6 +43,11 @@ const QueuedMessageChip = memo(({ message, target, onEdit, onSend }: QueuedMessa
     const firstLine = getQueuedMessagePreview(message);
 
     const attachmentCount = message.attachments?.length ?? 0;
+    // `[image-1.png]` citations of the message's own files read as file chips.
+    const attachmentFilenames = React.useMemo(
+        () => (message.attachments ?? []).map((file) => file.filename),
+        [message.attachments],
+    );
 
     return (
         <div
@@ -60,7 +66,7 @@ const QueuedMessageChip = memo(({ message, target, onEdit, onSend }: QueuedMessa
                 <Icon name="draggable" className="h-4 w-4" aria-hidden="true" />
             </button>
             <span className="min-w-0 flex-1 truncate typography-ui-label text-foreground">
-                {firstLine || t('chat.queuedMessage.empty')}
+                {firstLine ? withAttachmentChips(firstLine, attachmentFilenames, `queued-${message.id}`) : t('chat.queuedMessage.empty')}
                 {attachmentCount > 0 && (
                     <span className="ml-1 text-muted-foreground">{t('chat.queuedMessage.attachments', { count: attachmentCount })}</span>
                 )}

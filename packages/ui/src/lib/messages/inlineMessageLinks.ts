@@ -17,8 +17,8 @@ const encodeHrefPart = (value: string): string =>
 export const INLINE_REFERENCE_CHIP_CLASS =
     'mx-px -my-[0.2em] inline-flex h-[1.3em] max-w-full items-center gap-1 rounded-md border border-border/70 bg-background/50 px-1.5 align-middle text-[0.875em] leading-none text-foreground';
 
-/** A chip that opens something (a skill) also reacts to hover. */
-export const INTERACTIVE_REFERENCE_CHIP_CLASS = `${INLINE_REFERENCE_CHIP_CLASS} cursor-pointer transition-colors hover:bg-interactive-hover`;
+/** A chip that opens something (a skill) reacts to hover with a firmer border, not a fill. */
+export const INTERACTIVE_REFERENCE_CHIP_CLASS = `${INLINE_REFERENCE_CHIP_CLASS} cursor-pointer transition-colors hover:border-foreground/40`;
 
 /** Sprite symbol for the skill chip icon (the `book-open` app icon). */
 export const SKILL_CHIP_ICON_HREF = '#oc-book-open';
