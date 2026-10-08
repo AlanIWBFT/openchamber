@@ -90,6 +90,10 @@ const desktopPlatformName = (): string | undefined => {
   return undefined;
 };
 
+// Per transport: an unreachable LAN address must not hold the relay leg back
+// for the platform's TCP connect timeout.
+const PAIRING_REDEEM_TIMEOUT_MS = 15_000;
+
 export const importDesktopHostPairing = async (
   link: string,
   hosts: DesktopHost[],
@@ -131,7 +135,7 @@ export const importDesktopHostPairing = async (
         ...(candidate.grant ? { grant: candidate.grant } : {}),
       });
       try {
-        const token = await readToken(await tunnel.fetch('/api/client-auth/pairing/redeem', redeemInit));
+        const token = await readToken(await tunnel.fetch('/api/client-auth/pairing/redeem', { ...redeemInit, signal: AbortSignal.timeout(PAIRING_REDEEM_TIMEOUT_MS) }));
         if (token) {
           redeemed = {
             relay: { relayUrl: candidate.relayUrl, serverId: candidate.serverId, hostEncPubJwk: candidate.hostEncPubJwk },
@@ -149,7 +153,7 @@ export const importDesktopHostPairing = async (
     const directUrl = normalizeHostUrl(candidate.url);
     if (!directUrl) continue;
     try {
-      const token = await readToken(await fetch(`${directUrl}/api/client-auth/pairing/redeem`, redeemInit));
+      const token = await readToken(await fetch(`${directUrl}/api/client-auth/pairing/redeem`, { ...redeemInit, signal: AbortSignal.timeout(PAIRING_REDEEM_TIMEOUT_MS) }));
       if (token) {
         redeemed = { directUrl, token };
         break;

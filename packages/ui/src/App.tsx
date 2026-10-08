@@ -30,6 +30,7 @@ import { useWindowTitle } from '@/hooks/useWindowTitle';
 import { useRootScrollLock } from '@/hooks/useRootScrollLock';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { isDesktopLocalOriginActive, isDesktopShell, restartDesktopApp, invokeDesktop, openHostSession, takePendingDesktopSessionLinks } from '@/lib/desktop';
+import { runPendingDesktopHostActions } from '@/lib/desktopHostActions';
 import {
   getInjectedBootOutcome,
   getBootInjectionStatus,
@@ -560,6 +561,25 @@ function App({ apis }: AppProps) {
     });
     return () => window.removeEventListener('openchamber:open-session', handler as EventListener);
   }, []);
+
+  // Host work the desktop shell queued (a confirmed pairing link, a relay host
+  // to activate): on mount for links that launched the app, then whenever the
+  // shell queues more.
+  React.useEffect(() => {
+    if (!isDesktopShell()) return;
+    const run = () => {
+      void runPendingDesktopHostActions((failure) => {
+        toast.error(failure === 'invalid-link'
+          ? t('settings.remoteInstances.direct.error.invalidConnectLink')
+          : failure === 'unreachable'
+            ? t('mobile.connect.error.unreachable')
+            : t('onboarding.remoteConnection.errors.failedToSaveConnection'));
+      });
+    };
+    window.addEventListener('openchamber:host-actions-ready', run);
+    run();
+    return () => window.removeEventListener('openchamber:host-actions-ready', run);
+  }, [t]);
 
   // Launch continuity: reopen the session that was open when the app last
   // closed, once per page load. A link or route that already opened
