@@ -394,7 +394,7 @@ export const settingsDict = {
   'settings.magicPrompts.page.group.planTodo.title': 'Planowanie Todo',
   'settings.magicPrompts.page.group.sessionSummary.description': 'Prompty używane przez polecenie /summary: widoczna wiadomość użytkownika + ukryte instrukcje. Niedestrukcyjne – nie kompaktuje historii sesji.',
   'settings.magicPrompts.page.group.sessionSummary.title': 'Podsumowanie Sesji',
-  'settings.magicPrompts.page.group.sessionWorkspaceReview.description': 'Prompty używane przez polecenie /workspace-review: widoczna wiadomość użytkownika + ukryte instrukcje. Sprawdza diff obszaru roboczego — czy realizuje swój zamiar oraz czy jest poprawny i adekwatny, klasyfikując znaleziska według wagi.',
+  'settings.magicPrompts.page.group.sessionWorkspaceReview.description': 'Prompty używane przez polecenie /workspace-review: widoczna wiadomość użytkownika + ukryte instrukcje. Sprawdza diff obszaru roboczego — czy realizuje swój zamiar oraz czy jest poprawny i adekwatny, klasyfikując znaleziska według wagi. Instrukcje obowiązują też w sesjach przeglądu, w tym w automatycznej pętli przeglądu.',
   'settings.magicPrompts.page.group.sessionFeaturePlan.title': 'Planowanie funkcji',
   'settings.magicPrompts.page.group.sessionFeaturePlan.description': 'Prompty używane przez polecenie /plan-feature: widoczna wiadomość użytkownika + ukryte instrukcje. Uruchamia prowadzony dialog, który bada kod i zadaje pytania doprecyzowujące w małych partiach przed utworzeniem planu implementacji.',
   'settings.magicPrompts.page.group.sessionCatchUp.title': 'Nadrobienie kontekstu',

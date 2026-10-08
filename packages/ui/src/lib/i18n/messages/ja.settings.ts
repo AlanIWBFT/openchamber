@@ -2392,7 +2392,7 @@ export const settingsDict = {
   'settings.magicPrompts.page.group.sessionWorkspaceReview.title': 'Workspace レビュー',
   'settings.magicPrompts.page.group.sessionExplore.title': 'コードベースツアー',
   'settings.magicPrompts.page.group.sessionExplore.description': '/explore スラッシュコマンドで使用するプロンプト: 表示ユーザーメッセージ + 非表示指示。ファイルごとのダンプではなく、リポジトリを調査し、全体像、主要モジュール、それらの接続方法、開始場所を構造化された形で提供します。',
-  'settings.magicPrompts.page.group.sessionWorkspaceReview.description': '/workspace-review スラッシュコマンドで使用するプロンプト: 表示ユーザーメッセージ + 非表示指示。Workspace の Diff が意図を達成しているか、正確で適切かをレビューし、重大度ごとに所見を分類します。',
+  'settings.magicPrompts.page.group.sessionWorkspaceReview.description': '/workspace-review スラッシュコマンドで使用するプロンプト: 表示ユーザーメッセージ + 非表示指示。Workspace の Diff が意図を達成しているか、正確で適切かをレビューし、重大度ごとに所見を分類します。この指示は自動レビューループを含むレビューセッションにも使われます。',
   'settings.magicPrompts.page.group.sessionFeaturePlan.title': '機能計画',
   'settings.magicPrompts.page.group.sessionFeaturePlan.description': '/plan-feature スラッシュコマンドで使用するプロンプト: 表示ユーザーメッセージ + 非表示指示。コードを調査し、実装計画を作成する前に少人数のバッチで明確化の質問を行うガイド付き対話を実行します。',
   'settings.magicPrompts.page.group.sessionCatchUp.title': 'キャッチアップ',

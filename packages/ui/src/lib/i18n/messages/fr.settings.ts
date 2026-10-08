@@ -2257,7 +2257,7 @@ export const settingsDict = {
   'settings.magicPrompts.page.group.sessionSummary.title': 'Résumé de la session',
   'settings.magicPrompts.page.group.sessionSummary.description': 'Prompts utilisés par la commande slash /summary : message utilisateur visible + instructions masquées. Non destructif : ne compacte pas l\'historique des sessions.',
   'settings.magicPrompts.page.group.sessionWorkspaceReview.title': 'Examen de l\'espace de travail',
-  'settings.magicPrompts.page.group.sessionWorkspaceReview.description': 'Prompts utilisés par la commande slash /workspace-review : message utilisateur visible + instructions masquées. Examine les modifications actuelles de l’espace de travail pour ne signaler que les problèmes importants.',
+  'settings.magicPrompts.page.group.sessionWorkspaceReview.description': 'Prompts utilisés par la commande slash /workspace-review : message utilisateur visible + instructions masquées. Examine les modifications actuelles de l’espace de travail pour ne signaler que les problèmes importants. Les instructions guident aussi les sessions de revue, y compris la boucle de revue automatique.',
   'settings.view.search.placeholder': 'Rechercher dans les paramètres',
   'settings.view.search.aria': 'Rechercher dans les paramètres',
   'settings.view.search.clear': 'Effacer la recherche des paramètres',

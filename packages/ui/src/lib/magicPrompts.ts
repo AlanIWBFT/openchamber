@@ -385,7 +385,7 @@ Respond in the same language the user used most in the conversation.`,
     id: 'session.review.instructions',
     title: 'Workspace Review Instructions',
     group: 'Session',
-    description: 'Hidden instructions attached to the /workspace-review command. Reviews the workspace diff for intent, correctness, and adequacy, with severity-classified findings.',
+    description: 'Hidden instructions attached to the /workspace-review command and to the first message of every review session. Reviews the workspace diff for intent, correctness, and adequacy, with severity-classified findings.',
     template: `Review the changes in this workspace and judge whether they are correct and adequate — not just whether they contain catastrophic bugs.
 
 The diff is the source of truth. Read the relevant code around the diff too, not only the diff itself, so you understand the change in context.
@@ -456,14 +456,15 @@ Keep the review concise and practical. Respond in the same language the user use
     title: 'Review Handoff Instructions',
     group: 'Session',
     description: 'Hidden instructions attached to the /handoff-review command. Produces a handoff for a separate review agent.',
-    template: `Produce a review handoff for another agent. Do not compact or mutate session history. Your output is an assistant message that OpenChamber will send to a separate reviewer agent.
+    template: `Produce a review handoff for another agent. Your output is an assistant message that OpenChamber will send to a separate reviewer agent, who checks whether the work actually came out right.
 
 Include:
 - The user's original intent and any later clarifications that changed the intent
+- Decisions the user made in this session and anything deliberately left out of scope, so the reviewer does not report them as gaps
 - What was implemented and why
-- Files changed, with brief purpose per file
+- Where the work lives: the files changed, with a brief purpose per file, or the commit range when the work is already committed. Say that other uncommitted changes in the workspace are not part of this work
 - Important design decisions and tradeoffs
-- Validation/tests run, if known
+- Validation: the exact checks and tests that ran with their results, and what was not checked
 - Known gaps, uncertainty, or areas the reviewer should inspect closely
 
 Formatting:
@@ -507,7 +508,7 @@ Focus on correctness, regressions, missing implementation, missing tests, and wh
     ],
     template: `Another agent reviewed your changes and left the feedback below.
 
-Please review the feedback, resolve the relevant issues, and explain what you changed.
+Fix the findings you agree with. When you think a finding is wrong, leave the code as it is and explain why. Then list what you changed and which findings you declined, with the reason for each.
 
 {{review_feedback}}`,
   },
@@ -521,7 +522,7 @@ Please review the feedback, resolve the relevant issues, and explain what you ch
     ],
     template: `The agent implementing the changes has responded to the previous review feedback.
 
-Please review the latest state again and report any remaining issues.
+Review the current diff again. For each earlier finding, say whether it is fixed, declined for a reason you accept, or still open; when you disagree with a decline, explain why. Report new findings only for problems the latest changes introduced.
 
 {{implementation_response}}`,
   },

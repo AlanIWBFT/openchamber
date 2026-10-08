@@ -2283,7 +2283,7 @@ export const settingsDict = {
   'settings.magicPrompts.page.group.sessionWorkspaceReview.title': 'Çalışma Alanı İncelemesi',
   'settings.magicPrompts.page.group.sessionExplore.title': 'Kod Tabanı Turu',
   'settings.magicPrompts.page.group.sessionExplore.description': '/explore slash komutunun kullandığı prompt\'lar: görünür kullanıcı mesajı + gizli talimatlar. Depoyu inceler ve yapılandırılmış bir yönlendirme sunar — büyük resim, ana modüller, nasıl bağlandıkları ve nereden başlanacağı — dosya dosya bir döküm yerine.',
-  'settings.magicPrompts.page.group.sessionWorkspaceReview.description': '/workspace-review slash komutunun kullandığı prompt\'lar: görünür kullanıcı mesajı + gizli talimatlar. Çalışma alanı diff\'ini amacına ulaşıp ulaşmadığı ve doğru, yeterli olup olmadığı açısından inceler; bulguları önem derecesine göre sınıflandırır.',
+  'settings.magicPrompts.page.group.sessionWorkspaceReview.description': '/workspace-review slash komutunun kullandığı prompt\'lar: görünür kullanıcı mesajı + gizli talimatlar. Çalışma alanı diff\'ini amacına ulaşıp ulaşmadığı ve doğru, yeterli olup olmadığı açısından inceler; bulguları önem derecesine göre sınıflandırır. Talimatlar, otomatik inceleme döngüsü dahil inceleme oturumlarında da kullanılır.',
   'settings.magicPrompts.page.group.sessionFeaturePlan.title': 'Özellik Planlaması',
   'settings.magicPrompts.page.group.sessionFeaturePlan.description': '/plan-feature slash komutunun kullandığı prompt\'lar: görünür kullanıcı mesajı + gizli talimatlar. Kodu araştıran ve bir uygulama planı üretmeden önce netleştirici soruları küçük gruplar halinde soran rehberli bir diyalog yürütür.',
   'settings.magicPrompts.page.group.sessionCatchUp.title': 'Son Durumu Yakala',
