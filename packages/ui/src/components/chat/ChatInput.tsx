@@ -1342,6 +1342,12 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             selectSkillsForDirectory(useSkillsStore.getState(), currentDirectory).map((skill) => skill.name),
         );
         const skillInstruction = buildSkillMentionInstruction(collectInlineSkillMentions(sanitizedText, availableSkillNames));
+        // The server and the VS Code auto-send deliver `text` as is, so its
+        // snippets expand now; `content` keeps them for editing.
+        const textToQueue = await useSnippetsStore.getState().expandText(sanitizedText).catch((error) => {
+            console.warn('[queue] Failed to expand snippets, queueing original text:', error);
+            return sanitizedText;
+        });
 
         // Everything attached to the composer leaves with the message: the
         // chips are part of what was queued, and come back if it is edited.
@@ -1379,7 +1385,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         try {
             await addToQueue(queueTarget, {
                 content: messageToQueue,
-                text: sanitizedText,
+                text: textToQueue,
                 agentMention: mention?.name,
                 attachments: attachmentsToQueue.length > 0 ? attachmentsToQueue : undefined,
                 context: context.length > 0 ? context : undefined,
