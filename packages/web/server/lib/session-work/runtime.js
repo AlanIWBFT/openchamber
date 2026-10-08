@@ -30,7 +30,7 @@ import {
   decideReviewReady,
   decideWrapUp,
 } from './questions.js';
-import { clearSuggestionPatch, openByJevPatch, readWork, suggestDonePatch, suggestReviewPatch } from './state.js';
+import { clearSuggestionPatch, offerReviewPatch, openByJevPatch, readWork, suggestDonePatch } from './state.js';
 
 const OPENCHAMBER_SETTINGS_FILE = path.join(
   process.env.OPENCHAMBER_DATA_DIR
@@ -39,12 +39,13 @@ const OPENCHAMBER_SETTINGS_FILE = path.join(
   'settings.json',
 );
 
-/** Both default on; read at every use so a change applies without a restart. */
+/** All default on; read at every use so a change applies without a restart. */
 const readSessionWorkSettings = () => {
   const settings = readMergedSettingsSync({ fs, path, settingsFilePath: OPENCHAMBER_SETTINGS_FILE });
   return {
     enabled: settings.sessionWorkEnabled !== false,
     autoOpen: settings.sessionWorkAutoOpen !== false,
+    reviewOffer: settings.sessionReviewOfferEnabled !== false,
   };
 };
 
@@ -79,7 +80,7 @@ const reviewSessionSchema = z.object({ openchamber: z.object({ kind: z.literal('
 export function createSessionWorkRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
-  /** `{ enabled, autoOpen }` as currently saved. */
+  /** `{ enabled, autoOpen, reviewOffer }` as currently saved. */
   getSettings = readSessionWorkSettings,
   /** The classification provider's endpoint, or null when there is no Jev. */
   classifierEndpoint,
@@ -220,7 +221,7 @@ export function createSessionWorkRuntime({
   const evaluateTurnEnd = async ({ sessionId, directory, assist }) => {
     if (stopped || lineage?.isChild(sessionId) === true) return null;
     const settings = getSettings();
-    if (!settings.enabled && !assist.recap && !assist.suggestion) return null;
+    if (!settings.enabled && !settings.reviewOffer && !assist.recap && !assist.suggestion) return null;
     // Never capture 0: an evicted session also reads 0.
     if (!turnGenerations.has(sessionId)) advanceTurn(sessionId);
     const generation = turnGeneration(sessionId);
@@ -235,7 +236,7 @@ export function createSessionWorkRuntime({
       const ask = {
         open: settings.enabled && settings.autoOpen && work?.state !== 'open',
         wrapUp: settings.enabled && work?.state === 'open',
-        reviewReady: settings.enabled && (work?.state === 'open' || settings.autoOpen),
+        reviewReady: settings.reviewOffer,
         recap: assist.recap,
         nextStep: assist.suggestion,
       };
@@ -255,12 +256,10 @@ export function createSessionWorkRuntime({
         const requestAt = turn.user.created ?? now();
         await updateMetadata(sessionId, (metadata) => openByJevPatch(metadata, { requestAt, now: now() }), { directory });
       }
-      // Looks done wins over a review offer from the same turn. The review
-      // offer needs the session in work, which the open above may just have
-      // done.
+      // Looks done wins over a review offer from the same turn.
       const suggest = ask.wrapUp && decideWrapUp(answers)
         ? suggestDonePatch
-        : ask.reviewReady && decideReviewReady(answers) ? suggestReviewPatch : null;
+        : ask.reviewReady && decideReviewReady(answers) ? offerReviewPatch : null;
       if (suggest) {
         // Decided at write time: a turn that started while Jev was answering
         // makes this answer about an older turn.

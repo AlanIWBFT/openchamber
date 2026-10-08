@@ -23,12 +23,12 @@ export const SessionReviewHintRow: React.FC<SessionReviewHintRowProps> = React.m
   const { t } = useI18n();
   const session = useSession(sessionId ?? '', directory);
   const status = useSessionStatus(sessionId ?? '', directory);
-  const sessionWorkEnabled = useUIStore((state) => state.sessionWorkEnabled);
+  const reviewOfferEnabled = useUIStore((state) => state.sessionReviewOfferEnabled);
   const openContextSurface = useUIStore((state) => state.openContextSurface);
   const requestWalkthroughTarget = useWalkthroughStore((state) => state.requestTarget);
   const isIdle = !status || status.type === 'idle';
 
-  if (!sessionId || !directory || !sessionWorkEnabled || !isIdle || !isReviewSuggested(session)) return null;
+  if (!sessionId || !directory || !reviewOfferEnabled || !isIdle || !isReviewSuggested(session)) return null;
 
   const handleWalkthrough = () => {
     // The whole working tree: what this session changed is not separable

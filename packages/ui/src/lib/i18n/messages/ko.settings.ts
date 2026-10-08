@@ -2206,6 +2206,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.sessionRecapAria': '에이전트가 완료되면 요약을 생성합니다',
   'settings.openchamber.visual.field.sessionSuggestion': '다음 사용자 메시지 제안 생성',
   'settings.openchamber.visual.field.sessionSuggestionAria': '에이전트가 완료되면 다음 사용자 메시지 제안을 생성합니다',
+  'settings.openchamber.visual.field.sessionReviewOffer': '변경 사항 검토 제안',
+  'settings.openchamber.visual.field.sessionReviewOfferInfo': '프로젝트를 변경한 턴이 끝나면 입력란 위에 AI 리뷰나 워크스루를 제안합니다.',
   'settings.openchamber.visual.field.sessionGoal': '세션 목표 사용',
   'settings.openchamber.visual.field.sessionGoalAria': '세션이 목표를 향해 자동으로 계속 작업하도록 합니다',
   'settings.openchamber.visual.goal.sectionTitle': '목표',

@@ -2229,6 +2229,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.sessionRecapAria': 'Genereer een samenvatting nadat de agent klaar is',
   'settings.openchamber.visual.field.sessionSuggestion': 'Suggestie voor volgend gebruikersbericht genereren',
   'settings.openchamber.visual.field.sessionSuggestionAria': 'Genereer een suggestie voor het volgende gebruikersbericht nadat de agent klaar is',
+  'settings.openchamber.visual.field.sessionReviewOffer': 'Aanbieden om wijzigingen te bekijken',
+  'settings.openchamber.visual.field.sessionReviewOfferInfo': 'Biedt na een beurt die het project heeft gewijzigd boven het berichtveld een AI-review of een walkthrough aan.',
   'settings.openchamber.visual.field.sessionGoal': 'Goals voor sessies aanzetten',
   'settings.openchamber.visual.field.sessionGoalAria': 'Laat de sessie automatisch aan een goal werken',
   'settings.openchamber.visual.goal.sectionTitle': 'Goal',

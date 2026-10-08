@@ -494,6 +494,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.sessionWorkAutoOpen === 'boolean') {
       result.sessionWorkAutoOpen = candidate.sessionWorkAutoOpen;
     }
+    if (typeof candidate.sessionReviewOfferEnabled === 'boolean') {
+      result.sessionReviewOfferEnabled = candidate.sessionReviewOfferEnabled;
+    }
     if (typeof candidate.sessionGoalEnabled === 'boolean') {
       result.sessionGoalEnabled = candidate.sessionGoalEnabled;
     }

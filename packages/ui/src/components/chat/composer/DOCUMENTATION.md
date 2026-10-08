@@ -107,7 +107,9 @@ The "looks done" hint (`SessionDoneHintRow`) and the review offer
 (`SessionReviewHintRow`, "Changes are ready to look over") take the same
 slot, below the background commands. Both show only while the session idles
 and Jev's hint is current (`lib/sessionWorkMetadata.ts`); the server writes
-one or the other per turn, and a current done hint wins. The review offer
+one or the other per turn, and a current done hint wins. The done hint
+follows the In work setting, the review offer its own
+(`sessionReviewOfferEnabled`), and needs no session in work. The review offer
 opens the composer's review dialog (the one `/handoff-review` opens) or a
 walkthrough of the whole working tree, and is not shown on a mobile layout,
 where neither action is offered elsewhere either.

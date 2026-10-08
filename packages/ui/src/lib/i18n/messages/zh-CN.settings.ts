@@ -2206,6 +2206,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.sessionRecapAria': '智能体完成后生成回顾',
   'settings.openchamber.visual.field.sessionSuggestion': '生成下一条用户消息建议',
   'settings.openchamber.visual.field.sessionSuggestionAria': '智能体完成后生成下一条用户消息建议',
+  'settings.openchamber.visual.field.sessionReviewOffer': '提议审查更改',
+  'settings.openchamber.visual.field.sessionReviewOfferInfo': '在更改了项目的一轮之后，于输入框上方提议 AI 审查或变更讲解。',
   'settings.openchamber.visual.field.sessionGoal': '启用会话目标',
   'settings.openchamber.visual.field.sessionGoalAria': '让会话自动朝着目标持续工作',
   'settings.openchamber.visual.goal.sectionTitle': '目标',

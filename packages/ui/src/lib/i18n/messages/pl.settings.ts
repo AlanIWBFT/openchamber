@@ -1214,6 +1214,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.sessionRecapAria': 'Generuj podsumowanie po zakończeniu pracy agenta',
   'settings.openchamber.visual.field.sessionSuggestion': 'Generuj sugestię następnej wiadomości użytkownika',
   'settings.openchamber.visual.field.sessionSuggestionAria': 'Generuj sugerowaną następną wiadomość użytkownika po zakończeniu pracy agenta',
+  'settings.openchamber.visual.field.sessionReviewOffer': 'Proponuj przegląd zmian',
+  'settings.openchamber.visual.field.sessionReviewOfferInfo': 'Po turze, która zmieniła projekt, proponuje nad polem wiadomości przegląd AI lub omówienie zmian.',
   'settings.openchamber.visual.field.sessionGoal': 'Włącz cele sesji',
   'settings.openchamber.visual.field.sessionGoalAria': 'Utrzymuj automatyczną pracę sesji w kierunku celu',
   'settings.openchamber.visual.goal.sectionTitle': 'Cel',

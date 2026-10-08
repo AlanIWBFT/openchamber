@@ -2206,6 +2206,8 @@ export const settingsDict = {
   "settings.openchamber.visual.field.sessionRecapAria": "Генерувати підсумок після завершення роботи агента",
   "settings.openchamber.visual.field.sessionSuggestion": "Генерувати пропозицію наступного повідомлення користувача",
   "settings.openchamber.visual.field.sessionSuggestionAria": "Генерувати запропоноване наступне повідомлення користувача після завершення роботи агента",
+  "settings.openchamber.visual.field.sessionReviewOffer": "Пропонувати переглянути зміни",
+  "settings.openchamber.visual.field.sessionReviewOfferInfo": "Після ходу, який змінив проєкт, пропонує над полем вводу AI-ревʼю або розбір змін.",
   "settings.openchamber.visual.field.sessionGoal": "Увімкнути цілі сесії",
   "settings.openchamber.visual.field.sessionGoalAria": "Автоматично продовжувати роботу сесії до досягнення цілі",
   "settings.openchamber.visual.goal.sectionTitle": "Ціль",

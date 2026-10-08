@@ -2106,6 +2106,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.sessionRecapAria': '代理完成後產生回顧',
   'settings.openchamber.visual.field.sessionSuggestion': '產生下一則使用者訊息建議',
   'settings.openchamber.visual.field.sessionSuggestionAria': '代理完成後產生下一則使用者訊息建議',
+  'settings.openchamber.visual.field.sessionReviewOffer': '提議審查變更',
+  'settings.openchamber.visual.field.sessionReviewOfferInfo': '在變更了專案的一輪之後，於輸入框上方提議 AI 審查或變更導覽。',
   'settings.openchamber.visual.field.sessionGoal': '啟用工作階段目標',
   'settings.openchamber.visual.field.sessionGoalAria': '讓工作階段自動朝目標持續工作',
   'settings.openchamber.visual.goal.sectionTitle': '目標',

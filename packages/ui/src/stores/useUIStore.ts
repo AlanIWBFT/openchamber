@@ -878,6 +878,8 @@ interface UIStore {
   sessionWorkEnabled: boolean;
   /** Let Jev move a session into work when real work starts in it. */
   sessionWorkAutoOpen: boolean;
+  /** Let Jev offer an AI review or a walkthrough after a turn that changed the project. */
+  sessionReviewOfferEnabled: boolean;
   sessionGoalEnabled: boolean;
   /** Who checks goal progress; the small model checks when no classification provider can. */
   sessionGoalChecker: SessionGoalChecker;
@@ -1131,6 +1133,7 @@ interface UIStore {
   setSessionSuggestionEnabled: (value: boolean) => void;
   setSessionWorkEnabled: (value: boolean) => void;
   setSessionWorkAutoOpen: (value: boolean) => void;
+  setSessionReviewOfferEnabled: (value: boolean) => void;
   setSessionGoalEnabled: (value: boolean) => void;
   setSessionGoalChecker: (value: SessionGoalChecker) => void;
   setSessionGoalMaxAutoTurns: (value: number) => void;
@@ -1342,6 +1345,7 @@ export const useUIStore = create<UIStore>()(
         sessionSuggestionEnabled: true,
         sessionWorkEnabled: true,
         sessionWorkAutoOpen: true,
+        sessionReviewOfferEnabled: true,
         sessionGoalEnabled: true,
         sessionGoalChecker: 'small-model',
         sessionGoalMaxAutoTurns: DEFAULT_SESSION_GOAL_MAX_AUTO_TURNS,
@@ -2271,6 +2275,10 @@ export const useUIStore = create<UIStore>()(
 
         setSessionWorkAutoOpen: (value) => {
           set({ sessionWorkAutoOpen: value });
+        },
+
+        setSessionReviewOfferEnabled: (value) => {
+          set({ sessionReviewOfferEnabled: value });
         },
 
         setSessionGoalEnabled: (value) => {
@@ -3295,6 +3303,7 @@ export const useUIStore = create<UIStore>()(
           sessionSuggestionEnabled: state.sessionSuggestionEnabled,
           sessionWorkEnabled: state.sessionWorkEnabled,
           sessionWorkAutoOpen: state.sessionWorkAutoOpen,
+          sessionReviewOfferEnabled: state.sessionReviewOfferEnabled,
           sessionGoalEnabled: state.sessionGoalEnabled,
           sessionGoalChecker: state.sessionGoalChecker,
           sessionGoalMaxAutoTurns: state.sessionGoalMaxAutoTurns,

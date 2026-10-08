@@ -2229,6 +2229,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.sessionRecapAria': 'Generate a recap after the agent finishes',
   'settings.openchamber.visual.field.sessionSuggestion': 'Generate Next User Message Suggestion',
   'settings.openchamber.visual.field.sessionSuggestionAria': 'Generate a suggested next user message after the agent finishes',
+  'settings.openchamber.visual.field.sessionReviewOffer': 'Offer to Review Changes',
+  'settings.openchamber.visual.field.sessionReviewOfferInfo': 'After a turn that changed the project, offers an AI review or a walkthrough above the message field.',
   'settings.openchamber.visual.field.sessionGoal': 'Enable Session Goals',
   'settings.openchamber.visual.field.sessionGoalAria': 'Keep the session working toward a goal automatically',
   'settings.openchamber.visual.goal.sectionTitle': 'Goal',

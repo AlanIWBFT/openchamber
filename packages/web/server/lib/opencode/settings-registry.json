@@ -564,6 +564,14 @@
         "mobile"
       ]
     },
+    "sessionReviewOfferEnabled": {
+      "scope": "profile",
+      "surfaces": [
+        "web",
+        "desktop",
+        "mobile"
+      ]
+    },
     "sessionGoalEnabled": {
       "scope": "profile"
     },

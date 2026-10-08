@@ -37,6 +37,8 @@ import { useI18n } from '@/lib/i18n';
 import { parseVimMappings } from '@/lib/codemirror/vimMappings';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useEnterpriseMode } from '@/stores/useEnterprisePolicyStore';
+import { selectSafetyNetAvailable, useRoutingStore } from '@/stores/useRoutingStore';
+import { JevAccessNote } from '@/components/sections/classification/JevAccessNote';
 import { useFontPreferences } from '@/hooks/useFontPreferences';
 import { normalizeMobileKeyboardMode, supportsMobileKeyboardResizeContent, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import {
@@ -343,6 +345,9 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const sessionSuggestionEnabled = useUIStore(state => state.sessionSuggestionEnabled);
     const setSessionRecapEnabled = useUIStore(state => state.setSessionRecapEnabled);
     const setSessionSuggestionEnabled = useUIStore(state => state.setSessionSuggestionEnabled);
+    const sessionReviewOfferEnabled = useUIStore(state => state.sessionReviewOfferEnabled);
+    const setSessionReviewOfferEnabled = useUIStore(state => state.setSessionReviewOfferEnabled);
+    const jevAvailable = useRoutingStore(selectSafetyNetAvailable);
     const sessionGoalEnabled = useUIStore(state => state.sessionGoalEnabled);
     const setSessionGoalEnabled = useUIStore(state => state.setSessionGoalEnabled);
     const sessionGoalDefaultBudgetEnabled = useUIStore(state => state.sessionGoalDefaultBudgetEnabled);
@@ -2011,6 +2016,21 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                     settingsItem="chat.session-suggestion"
                                                 />
                                             </>
+                                        )}
+                                        {/* Jev runs on the OpenChamber server, which VS Code does not have. */}
+                                        {shouldShow('sessionAssist') && !isVSCode && (
+                                            <div>
+                                                <SettingsCheckboxRow
+                                                    checked={jevAvailable && sessionReviewOfferEnabled}
+                                                    onChange={setSessionReviewOfferEnabled}
+                                                    disabled={!jevAvailable}
+                                                    label={t('settings.openchamber.visual.field.sessionReviewOffer')}
+                                                    ariaLabel={t('settings.openchamber.visual.field.sessionReviewOffer')}
+                                                    info={t('settings.openchamber.visual.field.sessionReviewOfferInfo')}
+                                                    settingsItem="chat.session-review-offer"
+                                                />
+                                                <JevAccessNote />
+                                            </div>
                                         )}
                                         {shouldShow('subagentReadOnlyBanner') && (
                                             <SettingsCheckboxRow

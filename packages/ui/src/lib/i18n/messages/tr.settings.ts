@@ -2130,6 +2130,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.sessionRecapAria': 'Agent işini bitirdikten sonra özet oluşturur',
   'settings.openchamber.visual.field.sessionSuggestion': 'Sonraki Kullanıcı Mesajı Önerisi Oluştur',
   'settings.openchamber.visual.field.sessionSuggestionAria': 'Agent işini bitirdikten sonra sonraki kullanıcı mesajı için öneri oluşturur',
+  'settings.openchamber.visual.field.sessionReviewOffer': 'Değişiklikleri incelemeyi öner',
+  'settings.openchamber.visual.field.sessionReviewOfferInfo': 'Projeyi değiştiren bir turdan sonra mesaj alanının üstünde yapay zekâ incelemesi veya adım adım anlatım önerir.',
   'settings.openchamber.visual.field.sessionGoal': 'Session Hedeflerini Etkinleştir',
   'settings.openchamber.visual.field.sessionGoalAria': 'Session\'ın bir hedefe doğru otomatik çalışmasını sağlar',
   'settings.openchamber.visual.goal.sectionTitle': 'Hedef',

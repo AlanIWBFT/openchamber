@@ -46,7 +46,7 @@ const makeRuntime = ({ metadata = {}, answers = {}, askError = null, settings = 
   const runtime = createSessionWorkRuntime({
     buildOpenCodeUrl: (fetchPath) => `http://opencode.test${fetchPath}`,
     getOpenCodeAuthHeaders: () => ({}),
-    getSettings: () => ({ enabled: true, autoOpen: true, ...settings }),
+    getSettings: () => ({ enabled: true, autoOpen: true, reviewOffer: true, ...settings }),
     classifierEndpoint: async () => endpoint,
     jev,
     readMetadata: async (id) => records.get(id) ?? {},
@@ -198,24 +198,28 @@ describe('session work runtime: a turn ended', () => {
     const open = { openchamber: { work: { state: 'open', openedAt: 1 } } };
     const review = makeRuntime({ metadata: open, answers: { wrap_up: { noul: 0.2 }, review_ready: { noul: 0.75 } } });
     await review.runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: false, suggestion: false } });
-    expect(review.records.get('ses_1').openchamber.work.suggestReviewAt).toBeTypeOf('number');
+    expect(review.records.get('ses_1').openchamber.reviewOffer.at).toBeTypeOf('number');
     expect(review.records.get('ses_1').openchamber.work).not.toHaveProperty('suggestDoneAt');
 
     const both = makeRuntime({ metadata: open, answers: { wrap_up: { noul: 0.9 }, review_ready: { noul: 0.9 } } });
     await both.runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: false, suggestion: false } });
     expect(both.records.get('ses_1').openchamber.work.suggestDoneAt).toBeTypeOf('number');
-    expect(both.records.get('ses_1').openchamber.work).not.toHaveProperty('suggestReviewAt');
+    expect(both.records.get('ses_1').openchamber).not.toHaveProperty('reviewOffer');
   });
 
-  it('offers a review on the turn that opened the work, and none when the turn did not open it', async () => {
+  it('offers a review without In work, asks nothing about it when it is off, and a new turn retires it', async () => {
     stubOpenCode();
-    const opened = makeRuntime({ answers: { change: { noul: 0.97 }, review_ready: { noul: 0.8 } } });
-    await opened.runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: false, suggestion: false } });
-    expect(opened.records.get('ses_1').openchamber.work).toMatchObject({ state: 'open', suggestReviewAt: expect.any(Number) });
+    const solo = makeRuntime({ settings: { enabled: false }, answers: { review_ready: { noul: 0.8 } } });
+    await solo.runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: false, suggestion: false } });
+    expect(Object.keys(solo.jev.ask.mock.calls[0][0].questions)).toEqual(['review_ready']);
+    expect(solo.records.get('ses_1')).toEqual({ openchamber: { reviewOffer: { at: expect.any(Number) } } });
+    solo.runtime.processPayload({ type: 'session.status', properties: { sessionID: 'ses_1', status: { type: 'busy' } } });
+    await settle(() => !solo.records.get('ses_1').openchamber?.reviewOffer);
+    expect(solo.records.get('ses_1').openchamber).not.toHaveProperty('reviewOffer');
 
-    const closed = makeRuntime({ answers: { change: { noul: 0.1 }, review_ready: { noul: 0.8 } } });
-    await closed.runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: false, suggestion: false } });
-    expect(closed.records.get('ses_1')).toEqual({});
+    const off = makeRuntime({ settings: { reviewOffer: false }, answers: { change: { noul: 0.1 } } });
+    await off.runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: false, suggestion: false } });
+    expect(Object.keys(off.jev.ask.mock.calls[0][0].questions)).not.toContain('review_ready');
   });
 
   it('drops a late done answer once the next turn started', async () => {
@@ -270,9 +274,9 @@ describe('session work runtime: a turn ended', () => {
     expect(updateMetadata).not.toHaveBeenCalled();
   });
 
-  it('makes no call when the feature and both assist fields are off', async () => {
+  it('makes no call when In work, the review offer and both assist fields are off', async () => {
     const fetchMock = stubOpenCode();
-    const { runtime, jev } = makeRuntime({ settings: { enabled: false } });
+    const { runtime, jev } = makeRuntime({ settings: { enabled: false, reviewOffer: false } });
     expect(await runtime.evaluateTurnEnd({ sessionId: 'ses_1', directory: '/repo', assist: { recap: false, suggestion: false } })).toBeNull();
     expect(jev.ask).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();

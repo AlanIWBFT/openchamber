@@ -30,11 +30,11 @@ describe('session work metadata', () => {
     expect(isDoneSuggested(session({ openchamber: { work: { state: 'open' } } }))).toBe(false);
   });
 
-  test('offers a review under the same freshness rule, and yields to a current done hint', () => {
-    expect(isReviewSuggested(session({ openchamber: { work: { state: 'open', suggestReviewAt: 150 } } }, 100))).toBe(true);
-    expect(isReviewSuggested(session({ openchamber: { work: { state: 'open', suggestReviewAt: 150 } } }, 300))).toBe(false);
-    expect(isReviewSuggested(session({ openchamber: { work: { state: 'done', suggestReviewAt: 150 } } }, 100))).toBe(false);
-    expect(isReviewSuggested(session({ openchamber: { work: { state: 'open', suggestReviewAt: 150, suggestDoneAt: 150 } } }, 100))).toBe(false);
+  test('offers a review under the same freshness rule, in or out of work, and yields to a current done hint', () => {
+    expect(isReviewSuggested(session({ openchamber: { reviewOffer: { at: 150 } } }, 100))).toBe(true);
+    expect(isReviewSuggested(session({ openchamber: { reviewOffer: { at: 150 } } }, 300))).toBe(false);
+    expect(isReviewSuggested(session({ openchamber: { work: { state: 'done' }, reviewOffer: { at: 150 } } }, 100))).toBe(true);
+    expect(isReviewSuggested(session({ openchamber: { work: { state: 'open', suggestDoneAt: 150 }, reviewOffer: { at: 150 } } }, 100))).toBe(false);
   });
 
   test('the user tracks and closes; closing keeps when and by whom it opened and drops the hint', () => {

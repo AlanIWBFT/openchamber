@@ -4,9 +4,9 @@ import type { Metadata, Session } from '@/lib/opencode/model';
 /**
  * "In work", stored under `session.metadata.openchamber.work`. The server's
  * session-work runtime opens a session when Jev sees real work start and
- * stamps `suggestDoneAt` when a turn looks like the end of it, or
- * `suggestReviewAt` when it handed over changes worth a look; the user alone
- * closes. The shape is owned by `packages/web/server/lib/session-work/state.js`.
+ * stamps `suggestDoneAt` when a turn looks like the end of it; the user alone
+ * closes. The review offer (`session.metadata.openchamber.reviewOffer`) is
+ * written by the same runtime but does not depend on work. The shape is owned by `packages/web/server/lib/session-work/state.js`.
  */
 const workSchema = z.object({
   state: z.enum(['open', 'done']),
@@ -14,7 +14,6 @@ const workSchema = z.object({
   openedBy: z.enum(['jev', 'user']).optional(),
   doneAt: z.number().optional(),
   suggestDoneAt: z.number().optional(),
-  suggestReviewAt: z.number().optional(),
 });
 
 export type SessionWork = z.infer<typeof workSchema>;
@@ -39,19 +38,23 @@ export function isSessionInWork(session: Session | null | undefined): boolean {
  * same rule the session assist uses. Callers still hide it while a turn runs.
  */
 export function isDoneSuggested(session: Session | null | undefined): boolean {
-  return isHintCurrent(session, getSessionWork(session)?.suggestDoneAt);
+  const work = getSessionWork(session);
+  return work?.state === 'open' && isHintCurrent(session, work.suggestDoneAt);
 }
+
+const reviewOfferSchema = z.object({ openchamber: z.object({ reviewOffer: z.object({ at: z.number() }) }) });
 
 /**
  * Whether Jev's "changes are ready to look over" offer is current: the same
  * freshness rule, and a current done hint takes the slot instead.
  */
 export function isReviewSuggested(session: Session | null | undefined): boolean {
-  return isHintCurrent(session, getSessionWork(session)?.suggestReviewAt) && !isDoneSuggested(session);
+  const offeredAt = reviewOfferSchema.safeParse(session?.metadata).data?.openchamber.reviewOffer.at;
+  return isHintCurrent(session, offeredAt) && !isDoneSuggested(session);
 }
 
 function isHintCurrent(session: Session | null | undefined, writtenAt: number | undefined): boolean {
-  if (!session || writtenAt === undefined || getSessionWork(session)?.state !== 'open') return false;
+  if (!session || writtenAt === undefined) return false;
   return writtenAt >= (session.time?.idle ?? 0);
 }
 

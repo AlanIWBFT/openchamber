@@ -5,9 +5,9 @@
 Keeps sessions where real work is going on in one block at the top of the
 sidebar until the user marks them done. Jev moves a session in when work
 starts in it; the user alone closes it. While a session is in work, Jev also
-says after a turn whether the work looks done, or whether the turn handed over
-changes worth a look (the composer then offers an AI review or a
-walkthrough). The same turn-end Jev call tells session assist whether the
+says after a turn whether the work looks done. Independently of work, the
+same call says whether the turn handed over changes worth a look (the
+composer then offers an AI review or a walkthrough). The same turn-end Jev call tells session assist whether the
 Small Model is worth waking.
 
 ## Files
@@ -27,8 +27,10 @@ Small Model is worth waking.
 - `openedAt`, `openedBy` (`jev` | `user`)
 - `doneAt` once the user closed it
 - `suggestDoneAt` while Jev thinks the last turn closed the work out
-- `suggestReviewAt` while Jev thinks the last turn handed over changes the
-  user could look over
+
+`metadata.openchamber.reviewOffer`: `{ at }` while Jev thinks the last turn
+handed over changes the user could look over. It lives outside `work` so it
+needs neither the In work block nor a session in work.
 
 The UI parser is `packages/ui/src/lib/sessionWorkMetadata.ts`; the user's own
 Track / Done go through the generic metadata route
@@ -48,9 +50,7 @@ also exists in VS Code.
   the counter is unchanged when the write runs (decided inside the store's
   queue). A late Jev answer about a turn the user already moved past writes
   nothing.
-- A turn writes at most one hint: looks done wins over the review offer. The
-  review offer is written only on a session in work, including one the same
-  turn-end call just opened.
+- A turn writes at most one hint: looks done wins over the review offer.
 - A hint is current while its time `>= session.time.idle` (the assist's
   freshness rule). This runtime also deletes a hint it wrote when the next
   turn starts; the rule covers hints written by another process.
@@ -73,8 +73,7 @@ also exists in VS Code.
   message id is asked about once.
 - A turn ended: session assist calls `evaluateTurnEnd` before it arms its quiet
   window. One call carries only the questions that apply: the open questions
-  while not in work, `wrap_up` while in work, `review_ready` while in work or
-  when auto-open may open it now, `recap` / `next_step` for the assist fields
+  while not in work, `wrap_up` while in work, `review_ready` while the review offer is on, `recap` / `next_step` for the assist fields
   the user has on. No applicable question, no call.
 - Jev reads the request's first 1500 characters, the answer's first and last
   500, and three earlier turns cut as routing cuts them.
@@ -105,20 +104,27 @@ the wording or thresholds without re-running this measurement.
 
 ## Settings
 
-`sessionWorkEnabled` (the block and the actions, default on) and
-`sessionWorkAutoOpen` (Jev opens sessions, default on; not offered in VS Code,
-and inert without a classification provider). Both are read at every use.
+- `sessionWorkEnabled`: the block and the actions, default on.
+- `sessionWorkAutoOpen`: Jev opens sessions, default on; not offered in VS
+  Code, and inert without a classification provider.
+- `sessionReviewOfferEnabled`: the review offer, default on (Settings → Chat →
+  Session Assistance); not offered in VS Code, inert without a classification
+  provider, independent of the other two.
+
+All three are read at every use.
 
 ## Runtime parity
 
 - Web, desktop, hosted mobile, Capacitor: all of it; the server owns Jev.
-- VS Code: no OpenChamber server, so no Jev and no done hint. The block and
+- VS Code: no OpenChamber server, so no Jev, no done hint and no review offer. The block and
   Track / Done work through the extension's metadata bridge.
 
 ## Tests
 
 `state.test.js` (patches, reopen rule, hint lifecycle), `runtime.test.js`
-(send-time open, no repeat asks, ineligible sessions, the combined turn-end call, the review offer and looks done winning over it, a late answer after the next turn started, never closing, failure as
+(send-time open, no repeat asks, ineligible sessions, the combined turn-end
+call, the review offer with and without In work and looks done winning over
+it, a late answer after the next turn started, never closing, failure as
 unknown), plus the gate cases in
 `../session-assist/runtime.test.js`, `loadSettledTurns` in
 `../session-assist/context.test.js`, and `updateSessionMetadata` in

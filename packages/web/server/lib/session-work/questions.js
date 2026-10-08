@@ -103,7 +103,7 @@ export const buildSendRequest = ({ history, request }) => ({
 /**
  * The request Jev reads when a turn ended, or null when nothing is asked.
  * `ask` names the groups: `open` (the session is not in work), `wrapUp` (it
- * is), `reviewReady` (it is, or may open now), `recap` and `nextStep` (the
+ * is), `reviewReady` (the review offer is on), `recap` and `nextStep` (the
  * assist fields the user has on).
  */
 export const buildTurnEndRequest = ({ history, request, answer, ask }) => {

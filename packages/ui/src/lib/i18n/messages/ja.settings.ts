@@ -2239,6 +2239,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.sessionRecapAria': 'エージェントの完了後に要約を生成します',
   'settings.openchamber.visual.field.sessionSuggestion': '次のユーザーメッセージの提案を生成',
   'settings.openchamber.visual.field.sessionSuggestionAria': 'エージェントの完了後に次のユーザーメッセージの提案を生成します',
+  'settings.openchamber.visual.field.sessionReviewOffer': '変更のレビューを提案',
+  'settings.openchamber.visual.field.sessionReviewOfferInfo': 'プロジェクトを変更したターンの後、入力欄の上に AI レビューまたはウォークスルーを提案します。',
   'settings.openchamber.visual.field.sessionGoal': 'セッションゴールを有効化',
   'settings.openchamber.visual.field.sessionGoalAria': 'セッションが自動的にゴールに向かって作業を続けます',
   'settings.openchamber.visual.goal.sectionTitle': 'ゴール',
