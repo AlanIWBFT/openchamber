@@ -178,6 +178,7 @@ function ReferencePickerSurface({
                 if (previewKey) setIncludeDiff(previewKey, include);
             }}
             now={browser.now}
+            onOpenLinearIssue={(issue) => browser.openItem({ source: 'linear', issue })}
         />
     );
 

@@ -363,6 +363,7 @@ const SourceBoardBody: React.FC<{
             now={browser.now}
             footer={actions}
             linearStateControl={previewItem?.source === 'linear' ? <SourceBoardLinearStatus issue={previewItem.issue} onChanged={browser.list.retry} /> : undefined}
+            onOpenLinearIssue={(issue) => browser.openItem({ source: 'linear', issue })}
             onOpenChecks={previewPull && context ? () => setChecksOpenFor(previewKey) : undefined}
             stateMenu={previewItem?.source === 'github' && previewItem.reference.state !== 'merged' && context ? (
                 <SourceBoardStateMenuItems item={previewItem} context={context} onChanged={refreshRepositoryItem} />

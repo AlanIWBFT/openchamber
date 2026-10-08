@@ -416,6 +416,79 @@ const GitHubPreview: React.FC<{
     );
 };
 
+/**
+ * A parent or sub-issue as one line: its state, identifier and title. A button
+ * that previews it when the surface can, plain text otherwise.
+ */
+const RelatedLinearIssue: React.FC<{
+    issue: LinearIssueSummary;
+    onOpen?: (issue: LinearIssueSummary) => void;
+    /** A sub-issue row also names its assignee. */
+    showAssignee?: boolean;
+}> = ({ issue, onOpen, showAssignee = false }) => {
+    const look = linearStateLook(issue);
+    const assignee = issue.assignee?.displayName || issue.assignee?.name;
+    const content = (
+        <>
+            <Icon name={look.icon} className="size-3.5 shrink-0" style={{ color: look.color }} />
+            <span className={cn('shrink-0 font-mono', REFERENCE_META_TEXT)}>{issue.identifier}</span>
+            <span className="min-w-0 truncate">{issue.title}</span>
+            {showAssignee && assignee ? (
+                <span className={cn('ml-auto shrink-0 pl-2', REFERENCE_META_TEXT)}>{assignee}</span>
+            ) : null}
+        </>
+    );
+    const className = 'flex w-full min-w-0 items-center gap-1.5 text-left typography-meta';
+    if (!onOpen) return <span className={cn(className, 'text-muted-foreground')}>{content}</span>;
+    return (
+        <button
+            type="button"
+            onClick={() => onOpen(issue)}
+            title={issue.title}
+            className={cn(className, 'rounded-sm text-muted-foreground/80 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring')}
+        >
+            {content}
+        </button>
+    );
+};
+
+/** A Linear issue's sub-issues, finished of all, in Linear's order. */
+const SubIssuesSection: React.FC<{
+    issue: LinearIssue;
+    onOpen?: (issue: LinearIssueSummary) => void;
+}> = ({ issue, onOpen }) => {
+    const { t } = useI18n();
+    const subIssues = issue.subIssues ?? [];
+    if (subIssues.length === 0) return null;
+    const done = subIssues.filter((sub) => sub.state?.type === 'completed' || sub.state?.type === 'canceled' || sub.state?.type === 'duplicate').length;
+    return (
+        <section className="flex flex-col gap-2 border-t border-border/60 pt-4">
+            <h4 className="flex items-center gap-2 typography-ui-label font-semibold text-foreground">
+                {t('references.picker.preview.subIssues')}
+                {issue.subIssuesMore ? null : (
+                    <span className={cn('typography-meta font-normal tabular-nums', REFERENCE_META_TEXT)}>{done}/{subIssues.length}</span>
+                )}
+            </h4>
+            <ul className="flex flex-col gap-1.5">
+                {subIssues.map((sub) => (
+                    <li key={sub.id}><RelatedLinearIssue issue={sub} onOpen={onOpen} showAssignee /></li>
+                ))}
+            </ul>
+            {issue.subIssuesMore ? (
+                <a
+                    href={issue.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn('inline-flex items-center gap-1 self-start typography-meta hover:text-foreground', REFERENCE_META_TEXT)}
+                >
+                    {t('references.picker.preview.subIssuesMore', { count: subIssues.length })}
+                    <Icon name="external-link" className="size-3.5" />
+                </a>
+            ) : null}
+        </section>
+    );
+};
+
 const LinearPreview: React.FC<{
     issue: LinearIssueSummary;
     detail: CachedValue<LinearIssue>;
@@ -424,14 +497,18 @@ const LinearPreview: React.FC<{
     now: number;
     footer?: React.ReactNode;
     stateControl?: React.ReactNode;
-}> = ({ issue, detail, purpose, pinned, now, footer: footerOverride, stateControl }) => {
+    onOpenIssue?: (issue: LinearIssueSummary) => void;
+}> = ({ issue, detail, purpose, pinned, now, footer: footerOverride, stateControl, onOpenIssue }) => {
     const { t } = useI18n();
     const relative = useRelative(now);
     const look = linearStateLook(issue);
-    const labels = (issue.labels ?? []).map((label) => ({ name: label.name, color: labelColor(label.color) }));
+    const full = detail.status === 'ready' ? detail.value : null;
+    // A parent or sub-issue opened from another preview comes without its
+    // labels and parent; its own detail brings them.
+    const labels = (full?.labels ?? issue.labels ?? []).map((label) => ({ name: label.name, color: labelColor(label.color) }));
+    const parent = full?.parent ?? issue.parent ?? null;
     const updated = relative(issue.updatedAt);
     const assignee = issue.assignee?.displayName || issue.assignee?.name;
-    const full = detail.status === 'ready' ? detail.value : null;
     const comments = React.useMemo(
         () => mapDetail(detail, (value) => (value.comments ?? []).map((comment): ReferenceTimelineEntry => ({
             kind: 'comment',
@@ -472,6 +549,11 @@ const LinearPreview: React.FC<{
             </header>
 
             <dl className="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5">
+                {parent ? (
+                    <MetaRow label={t('references.picker.preview.parent')}>
+                        <RelatedLinearIssue issue={parent} onOpen={onOpenIssue} />
+                    </MetaRow>
+                ) : null}
                 {assignee ? <MetaRow label={t('references.picker.preview.assignee')}>{assignee}</MetaRow> : null}
                 {issue.team ? <MetaRow label={t('references.picker.preview.team')}>{issue.team.name}</MetaRow> : null}
                 {issue.priority && issue.priority > 0 ? (
@@ -498,6 +580,7 @@ const LinearPreview: React.FC<{
                 )}
             </div>
 
+            {full ? <SubIssuesSection issue={full} onOpen={onOpenIssue} /> : null}
             {detail.status === 'ready' ? <CommentsSection state={comments} total={null} now={now} /> : null}
         </PreviewFrame>
     );
@@ -532,7 +615,9 @@ export const ReferencePreview: React.FC<{
     commentAttachments?: CommentAttachments;
     /** Menu items on an issue's or PR's state pill, such as close or reopen. */
     stateMenu?: React.ReactNode;
-}> = ({ item, pullStatus, linearDetail, githubDetail, purpose, pinned, includeDiff, onIncludeDiffChange, now, footer, pullLinks, linearStateControl, reply, labelsControl, reviewersControl, onOpenChecks, commentAttachments, stateMenu }) => {
+    /** Previews a Linear issue's parent or sub-issue; without it they are plain text. */
+    onOpenLinearIssue?: (issue: LinearIssueSummary) => void;
+}> = ({ item, pullStatus, linearDetail, githubDetail, purpose, pinned, includeDiff, onIncludeDiffChange, now, footer, pullLinks, linearStateControl, reply, labelsControl, reviewersControl, onOpenChecks, commentAttachments, stateMenu, onOpenLinearIssue }) => {
     const { t } = useI18n();
     if (!item) {
         return (
@@ -542,7 +627,7 @@ export const ReferencePreview: React.FC<{
         );
     }
     if (item.source === 'linear') {
-        return <LinearPreview issue={item.issue} detail={linearDetail} purpose={purpose} pinned={pinned} now={now} footer={footer} stateControl={linearStateControl} />;
+        return <LinearPreview issue={item.issue} detail={linearDetail} purpose={purpose} pinned={pinned} now={now} footer={footer} stateControl={linearStateControl} onOpenIssue={onOpenLinearIssue} />;
     }
     return (
         <GitHubPreview

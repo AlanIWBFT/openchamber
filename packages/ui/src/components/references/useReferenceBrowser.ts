@@ -118,14 +118,22 @@ export function useReferenceBrowser({
             : linearList.items.map((issue) => ({ source: 'linear', issue }))
     ), [githubList.items, linearList.items, source]);
 
+    // An item opened from the preview (a Linear parent or sub-issue): it can be
+    // highlighted while the list does not hold it, like a pinned one.
+    const [openedItem, setOpenedItem] = React.useState<ReferencePickerItem | null>(null);
+
     // The highlight follows the list: the first row until the user moves it,
     // and the first row again when the highlighted one leaves the list.
     const pinnedKey = pinnedItem ? referencePickerItemKey(pinnedItem) : null;
-    const effectiveHighlightKey = highlightedKey && (highlightedKey === pinnedKey || items.some((item) => referencePickerItemKey(item) === highlightedKey))
+    const openedKey = openedItem ? referencePickerItemKey(openedItem) : null;
+    const effectiveHighlightKey = highlightedKey && (highlightedKey === pinnedKey || highlightedKey === openedKey || items.some((item) => referencePickerItemKey(item) === highlightedKey))
         ? highlightedKey
         : (items[0] ? referencePickerItemKey(items[0]) : null);
     const findItem = (key: string | null) => (key
-        ? items.find((item) => referencePickerItemKey(item) === key) ?? retainedItems.get(key) ?? (key === pinnedKey ? pinnedItem : null)
+        ? items.find((item) => referencePickerItemKey(item) === key)
+            ?? retainedItems.get(key)
+            ?? (key === pinnedKey ? pinnedItem : null)
+            ?? (key === openedKey ? openedItem : null)
         : null);
     const highlightedItem = findItem(effectiveHighlightKey);
     const previewKey = isMobile ? mobilePreviewKey : effectiveHighlightKey;
@@ -192,6 +200,12 @@ export function useReferenceBrowser({
         searchRef.current?.focus();
     };
 
+    /** Previews an item the list may not hold, such as a Linear issue's parent or sub-issue. */
+    const openItem = (item: ReferencePickerItem) => {
+        setOpenedItem(item);
+        showItem(referencePickerItemKey(item));
+    };
+
     return {
         source,
         directory,
@@ -223,6 +237,7 @@ export function useReferenceBrowser({
         searchRef,
         handleNavigationKey,
         showItem,
+        openItem,
     };
 }
 
