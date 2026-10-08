@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { hasDesktopInvoke, invokeDesktop } from '@/lib/desktop';
 import { createRelayTunnelClient } from '@/lib/relay/tunnel-client';
 import { parsePairingConnectionPayload, type PairingEndpointCandidate } from '@/lib/connectionPayload';
@@ -534,6 +535,61 @@ export const desktopHostProbe = async (url: string, options?: { clientToken?: st
 
   const latencyMs = readNumber(raw, 'latencyMs') ?? readNumber(raw, 'latency_ms') ?? 0;
   return { status, latencyMs };
+};
+
+const remoteHostUpdateResult = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('started') }),
+  z.object({ status: z.literal('auth') }),
+  z.object({ status: z.literal('failed'), error: z.string().nullable() }),
+]);
+
+type RemoteHostUpdateResult = z.infer<typeof remoteHostUpdateResult>;
+
+/**
+ * Asks a saved remote host to update its own OpenChamber. The desktop shell
+ * reads the host's address and token from its own hosts file, so only a saved
+ * host can be asked. `failed` carries the host's reason when it gave one.
+ */
+export const desktopHostUpdateServer = async (hostId: string): Promise<RemoteHostUpdateResult> => {
+  const invoke = getInvoke();
+  if (!invoke) return { status: 'failed', error: null };
+  const raw = await invoke('desktop_host_update_server', { hostId }).catch(() => null);
+  const parsed = remoteHostUpdateResult.safeParse(raw);
+  return parsed.success ? parsed.data : { status: 'failed', error: null };
+};
+
+const REMOTE_HOST_UPDATE_WAIT_MS = 10 * 60 * 1000;
+const REMOTE_HOST_UPDATE_POLL_MS = 3_000;
+
+/**
+ * Waits until a host that was asked to update answers as a compatible server.
+ * While it installs it still answers as the old version, then drops off while
+ * it restarts; both mean "keep waiting". `auth` counts as back: the server is
+ * up, and connecting will ask to sign in again.
+ */
+export const waitForDesktopHostUpdated = async (
+  hostId: string,
+  {
+    maxWaitMs = REMOTE_HOST_UPDATE_WAIT_MS,
+    intervalMs = REMOTE_HOST_UPDATE_POLL_MS,
+    readHosts = desktopHostsGet,
+    probe = desktopHostProbe,
+  }: {
+    maxWaitMs?: number;
+    intervalMs?: number;
+    readHosts?: typeof desktopHostsGet;
+    probe?: typeof desktopHostProbe;
+  } = {},
+): Promise<'updated' | 'timeout'> => {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(intervalMs, Math.max(0, deadline - Date.now()))));
+    const host = (await readHosts()).hosts.find((entry) => entry.id === hostId);
+    if (!host) return 'timeout';
+    const result = await probe(getDesktopHostApiUrl(host), { clientToken: host.clientToken, requestHeaders: host.requestHeaders });
+    if (result.status === 'ok' || result.status === 'update-recommended' || result.status === 'auth') return 'updated';
+  }
+  return 'timeout';
 };
 
 export const desktopOpenNewWindowAtUrl = async (url: string, options?: { clientToken?: string | null; requestHeaders?: Record<string, string> | null }): Promise<void> => {
