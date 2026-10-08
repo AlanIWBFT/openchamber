@@ -157,15 +157,21 @@ export function createComposerMorphController(): ComposerMorphController {
         // The slot's natural height with the box at rest. The form's bottom
         // padding follows the keyboard's root class, which flips only when
         // the keyboard leg starts, so the natural height is re-read then.
+        // Measured without the morph state too: its clip and non-shrinking
+        // rows can size the box differently from rest, and any difference
+        // shows up as a riders jump when the slot is unpinned at the end.
         const measureSlotNatural = (): number | null => {
             if (!slot) return null;
             const pinned = slot.style.height;
             const boxHeight = box.style.height;
+            const morphState = box.getAttribute(MORPH_STATE_ATTR);
             slot.style.height = '';
             box.style.height = '';
+            box.removeAttribute(MORPH_STATE_ATTR);
             const natural = slot.getBoundingClientRect().height;
             slot.style.height = pinned;
             box.style.height = boxHeight;
+            if (morphState !== null) box.setAttribute(MORPH_STATE_ATTR, morphState);
             return natural;
         };
         if (slot && fromSlotHeight !== null) {
