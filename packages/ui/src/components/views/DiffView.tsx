@@ -565,6 +565,7 @@ interface InlineDiffViewerProps {
   staged: boolean;
   renderSideBySide: boolean;
   wrapLines: boolean;
+  hideWhitespace: boolean;
   hunkActions?: DiffHunkActions;
   onExpandContextRequest?: (request: ContextExpansionRequest) => void;
   pendingContextExpansion?: ContextExpansionRequest | null;
@@ -577,6 +578,7 @@ const InlineDiffViewer = React.memo<InlineDiffViewerProps>(({
   staged,
   renderSideBySide,
   wrapLines,
+  hideWhitespace,
   hunkActions,
   onExpandContextRequest,
   pendingContextExpansion,
@@ -615,6 +617,7 @@ const InlineDiffViewer = React.memo<InlineDiffViewerProps>(({
         fileName={filePath}
         renderSideBySide={renderSideBySide}
         wrapLines={wrapLines}
+        hideWhitespace={hideWhitespace}
         layout="inline"
         hunkActions={hunkActions}
         onExpandContextRequest={onExpandContextRequest}
@@ -631,6 +634,8 @@ interface MultiFileDiffEntryProps {
     file: FileEntry;
     layout: 'inline' | 'side-by-side';
     wrapLines: boolean;
+    /** Show lines that changed only by whitespace as unchanged, without hunk actions. */
+    hideWhitespace?: boolean;
     isSelected: boolean;
     isExpanded: boolean;
     isMounted: boolean;
@@ -670,6 +675,7 @@ export const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
     file,
     layout,
     wrapLines,
+    hideWhitespace = false,
     isSelected,
     isExpanded,
     isMounted,
@@ -1167,6 +1173,7 @@ export const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
                                 staged={staged}
                                 renderSideBySide={renderSideBySide}
                                 wrapLines={wrapLines}
+                                hideWhitespace={hideWhitespace}
                                 hunkActions={diffHunkActions}
                                 onExpandContextRequest={canLoadFullFile ? setContextExpansion : undefined}
                                 pendingContextExpansion={contextExpansion}
@@ -1257,6 +1264,8 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const setDiffFileLayout = useUIStore((state) => state.setDiffFileLayout);
     const diffWrapLinesStore = useUIStore((state) => state.diffWrapLines);
     const setDiffWrapLines = useUIStore((state) => state.setDiffWrapLines);
+    const diffHideWhitespace = useUIStore((state) => state.diffHideWhitespace);
+    const setDiffHideWhitespace = useUIStore((state) => state.setDiffHideWhitespace);
     const diffFileListMode = useUIStore((state) => state.diffFileListMode);
     const setDiffFileListMode = useUIStore((state) => state.setDiffFileListMode);
     const openContextFileAtLine = useUIStore((state) => state.openContextFileAtLine);
@@ -2266,6 +2275,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                 file={file}
                 layout={getLayoutForFile(file)}
                 wrapLines={diffWrapLines}
+                hideWhitespace={diffHideWhitespace}
                 isSelected={false}
                 isExpanded={isSingleFile || expandedFiles.has(file.path)}
                 isMounted={isSingleFile || mountedStackedFiles.has(file.path) || file.path === pinnedStackedTarget}
@@ -2669,6 +2679,22 @@ export const DiffView: React.FC<DiffViewProps> = ({
                     </Button>
                 )}
                 {currentLayoutForAllFiles && (
+                {changedFiles.length > 0 && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDiffHideWhitespace(!diffHideWhitespace)}
+                        aria-pressed={diffHideWhitespace}
+                        className={cn(
+                            'h-5 w-5 p-0 transition-opacity',
+                            diffHideWhitespace ? 'text-foreground opacity-100' : 'text-muted-foreground opacity-60 hover:opacity-100'
+                        )}
+                        title={diffHideWhitespace ? t('diffView.actions.showWhitespace') : t('diffView.actions.hideWhitespace')}
+                        aria-label={diffHideWhitespace ? t('diffView.actions.showWhitespace') : t('diffView.actions.hideWhitespace')}
+                    >
+                        <Icon name="space" className="size-4" />
+                    </Button>
+                )}
                     <DiffViewToggle
                         mode={currentLayoutForAllFiles === 'side-by-side' ? 'side-by-side' : 'unified'}
                         onModeChange={handleHeaderLayoutChange}

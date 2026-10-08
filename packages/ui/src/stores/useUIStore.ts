@@ -935,6 +935,7 @@ interface UIStore {
   diffLayoutPreference: 'dynamic' | 'inline' | 'side-by-side';
   diffFileLayout: Record<string, 'inline' | 'side-by-side'>;
   diffWrapLines: boolean;
+  diffHideWhitespace: boolean;
   diffFileListMode: 'flat' | 'tree';
   /** Width of the diff view's file tree column, in pixels. */
   diffFileTreeWidth: number;
@@ -1189,6 +1190,7 @@ interface UIStore {
   setDiffLayoutPreference: (mode: 'dynamic' | 'inline' | 'side-by-side') => void;
   setDiffFileLayout: (filePath: string, mode: 'inline' | 'side-by-side') => void;
   setDiffWrapLines: (wrap: boolean) => void;
+  setDiffHideWhitespace: (hide: boolean) => void;
   setDiffFileListMode: (mode: 'flat' | 'tree') => void;
   setDiffFileTreeWidth: (width: number) => void;
   setWalkthroughTocWidth: (width: number) => void;
@@ -1385,6 +1387,7 @@ export const useUIStore = create<UIStore>()(
         diffLayoutPreference: 'inline',
         diffFileLayout: {},
         diffWrapLines: false,
+        diffHideWhitespace: false,
         diffFileListMode: 'flat',
         diffFileTreeWidth: 240,
         walkthroughTocWidth: 224,
@@ -2491,6 +2494,10 @@ export const useUIStore = create<UIStore>()(
           set({ diffWrapLines: wrap });
         },
 
+        setDiffHideWhitespace: (hide) => {
+          set({ diffHideWhitespace: hide });
+        },
+
         setWalkthroughTocWidth: (width) => {
           set({ walkthroughTocWidth: Math.round(width) });
         },
@@ -3330,6 +3337,7 @@ export const useUIStore = create<UIStore>()(
           recentEfforts: state.recentEfforts,
           diffLayoutPreference: state.diffLayoutPreference,
           diffWrapLines: state.diffWrapLines,
+          diffHideWhitespace: state.diffHideWhitespace,
           diffFileListMode: state.diffFileListMode,
           diffFileTreeWidth: state.diffFileTreeWidth,
           walkthroughTocWidth: state.walkthroughTocWidth,

@@ -449,6 +449,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.diffWrapLines === 'boolean') {
       result.diffWrapLines = candidate.diffWrapLines;
     }
+    if (typeof candidate.diffHideWhitespace === 'boolean') {
+      result.diffHideWhitespace = candidate.diffHideWhitespace;
+    }
     if (typeof candidate.persistChatDraft === 'boolean') {
       result.persistChatDraft = candidate.persistChatDraft;
     }

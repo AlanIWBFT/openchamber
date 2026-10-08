@@ -381,6 +381,9 @@
     "diffWrapLines": {
       "scope": "profile"
     },
+    "diffHideWhitespace": {
+      "scope": "profile"
+    },
     "gitChangesViewMode": {
       "scope": "profile"
     },
