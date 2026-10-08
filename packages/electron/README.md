@@ -246,6 +246,22 @@ Use an explicit override when testing a different OpenCode CLI build or when a u
 ## Native Features Owned Here
 
 - Floating Mini Chat windows.
+- Quake Mode (Windows Terminal-style): one configurable global hotkey
+  (``Ctrl+` `` by default, deliberately without the Win key) toggles the existing
+  main window between hidden and a top-attached dropdown on the display holding
+  the cursor. Startup always opens a normal window; Quake geometry (fullscreen
+  by default, adjustable down to 30%) applies only when the hotkey is pressed
+  while Quake Mode is enabled. The window stays an ordinary window otherwise
+  (taskbar, Alt+Tab, minimize/maximize all behave normally). Hiding never
+  destroys the renderer or its sessions; showing never reloads it. The hotkey
+  hides the window only when it is visible and focused; a window behind
+  another app is brought forward instead. Closing the window hides it while
+  Quake Mode is enabled and its hotkey is registered; without a registered
+  hotkey close behaves as usual, since nothing could bring the window back.
+  A shortcut given to another action is stored as `__unassigned__` and never
+  falls back to the default. See `quake-mode.mjs` (pure
+  settings/geometry/toggle helpers) and the `desktop_get/set_quake_mode*` IPC
+  commands in `main.mjs`.
 - Mini Chat loads from the resolved local UI origin in HMR development, not the
   API server origin. Bundled mode keeps `openchamber-ui://` assets. Native zoom
   targets the focused window directly; composer focus adjusts interface scale,
