@@ -234,6 +234,12 @@ renders `projects`.
   and status icon on the right beside the time; the goal glyph and badges ride
   in the same cluster. Collapsing a zone header resets its
   Show more state.
+- Zone collapse state lives in `useSessionProjectViewState` next to project
+  collapse and lasts for the mount only. The display menu's Collapse all /
+  Expand all (grouped view only) set every project and the grouped zones
+  (`GROUPED_ACTIVITY_KEYS`: Chats, In work, Recent) together; the timeline's
+  Projects zone keeps its own state. Session folders keep their own collapse
+  state.
 - Zone headers are sticky in the projects view and never in the timeline; there
   is no user toggle. Timeline zone headers drop the leading icon and use a
   taller band.
