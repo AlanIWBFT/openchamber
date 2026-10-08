@@ -4007,62 +4007,6 @@ export function useSessionMessageRecords(
   return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
-/**
- * Ensures a session's messages are loaded into the sync store.
- * If the session exists in state.session but messages haven't been fetched
- * (state.message[sessionID] is absent), triggers a background API fetch.
- *
- * This covers the case where a user navigates to an old parent session
- * whose child session messages were never loaded — bootstrap only loads
- * session metadata, not messages.
- */
-
-// Module-level in-flight tracking for useEnsureSessionMessages.
-// Prevents redundant parallel fetches when multiple component instances
-// (e.g. multiple ToolParts) request the same session's messages.
-const _ensureMessagesLoading = new Set<string>()
-
-/**
- * @param enabled Gate for callers that only need a session materialised under
- * a specific condition — a panel resolving pinned message text, say. Loading a
- * whole session is not free, so "something is missing" is not on its own a
- * reason to fetch it.
- */
-export function useEnsureSessionMessages(sessionID: string, directory?: string, enabled = true) {
-  const syncDirectory = useSyncDirectory()
-  const resolvedDirectory = directory ?? syncDirectory
-  const store = useDirectoryStore(resolvedDirectory)
-  const requestGenerationRef = React.useRef(0)
-
-  React.useEffect(() => {
-    if (!sessionID || !enabled) return
-
-    const state = store.getState()
-    // Already loaded into a renderable message/part snapshot — nothing to do.
-    if (getSessionMaterializationStatus(state, sessionID).renderable) return
-    // Session doesn't exist — nothing to load
-    if (!state.session.some((s) => s.id === sessionID)) return
-
-    const loadingKey = `${resolvedDirectory}:${sessionID}`
-    // Already loading this session for this directory
-    if (_ensureMessagesLoading.has(loadingKey)) return
-
-    const generation = ++requestGenerationRef.current
-    const isStale = () => generation !== requestGenerationRef.current
-
-    _ensureMessagesLoading.add(loadingKey)
-
-    void (async () => {
-      try {
-        await materializeSessionFromServer(resolvedDirectory, sessionID, store, { reason: "ensure-session-messages", isStale })
-      } catch {
-        // Transient failure — next navigation or reconnect will retry
-      } finally {
-        _ensureMessagesLoading.delete(loadingKey)
-      }
-    })()
-  }, [enabled, sessionID, store, resolvedDirectory])
-}
 const EMPTY_MESSAGES: Message[] = []
 const EMPTY_PARTS: Part[] = []
 const EMPTY_PERMISSION_REQUESTS: PermissionRequest[] = []

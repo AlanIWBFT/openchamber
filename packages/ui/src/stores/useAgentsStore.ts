@@ -397,7 +397,7 @@ const DisabledAgentsResponseSchema = z.object({
   })),
 });
 
-export type DisabledAgent = z.infer<typeof DisabledAgentsResponseSchema>['agents'][number];
+type DisabledAgent = z.infer<typeof DisabledAgentsResponseSchema>['agents'][number];
 
 /** Disabled agents of one project; an omitted directory means the project the app is on. */
 export const selectDisabledAgentsForDirectory = (

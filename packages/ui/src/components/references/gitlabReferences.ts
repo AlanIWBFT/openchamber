@@ -67,30 +67,33 @@ const toIssueReference = (issue: Issue): GitHubIssueReference => ({
  * A change request as the preview reads it. GitLab's lists and any host's
  * branch status carry this shape; labels and the comment count are not in it.
  */
-export const pullReferenceFromChangeRequest = (changeRequest: ChangeRequest): GitHubPullReference => ({
-    kind: 'pull',
-    provider: changeRequest.provider,
-    number: changeRequest.number,
-    title: changeRequest.title,
-    url: changeRequest.url,
-    ...body(changeRequest.body),
-    createdAt: changeRequest.createdAt ?? null,
-    updatedAt: changeRequest.updatedAt ?? null,
-    author: author(changeRequest.author),
-    labels: [],
-    commentCount: 0,
-    sourceRepo: sourceRepo(changeRequest.project),
+export const pullReferenceFromChangeRequest = (changeRequest: ChangeRequest): GitHubPullReference => {
+    const reference: GitHubPullReference = {
+        kind: 'pull',
+        provider: changeRequest.provider,
+        number: changeRequest.number,
+        title: changeRequest.title,
+        url: changeRequest.url,
+        ...body(changeRequest.body),
+        createdAt: changeRequest.createdAt ?? null,
+        updatedAt: changeRequest.updatedAt ?? null,
+        author: author(changeRequest.author),
+        labels: [],
+        commentCount: 0,
+        sourceRepo: sourceRepo(changeRequest.project),
+        state: changeRequest.state,
+        draft: changeRequest.draft,
+        head: changeRequest.head,
+        base: changeRequest.base,
+        headSha: changeRequest.headSha ?? '',
+        headRepo: changeRequest.headProject
+            ? { owner: changeRequest.headProject.owner, repo: changeRequest.headProject.name, url: changeRequest.headProject.url }
+            : null,
+    };
     // GitHub names a project by owner/repo; only GitLab's numeric id is kept.
-    ...(changeRequest.provider === 'gitlab' ? { projectId: changeRequest.project.id } : {}),
-    state: changeRequest.state,
-    draft: changeRequest.draft,
-    head: changeRequest.head,
-    base: changeRequest.base,
-    headSha: changeRequest.headSha ?? '',
-    headRepo: changeRequest.headProject
-        ? { owner: changeRequest.headProject.owner, repo: changeRequest.headProject.name, url: changeRequest.headProject.url }
-        : null,
-});
+    if (changeRequest.provider === 'gitlab') reference.projectId = changeRequest.project.id;
+    return reference;
+};
 
 /** One page of a GitLab project's issues or merge requests, filtered like GitHub's; the cursor is the next page number. */
 export const fetchGitLabReferencePage = async (

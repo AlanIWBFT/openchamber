@@ -298,24 +298,24 @@ const hostResultSchema = z.object({
   };
 });
 
-export const guestRunningShellSchema = z.object({
+const guestRunningShellSchema = z.object({
   id: z.string().min(1).max(GUEST_SHELL_ID_MAX),
   sessionID: z.string().min(1).max(1024),
   command: z.string(),
   startedAt: z.number().nonnegative(),
   background: z.boolean(),
 }).strict();
-export const guestEndedShellSchema = guestRunningShellSchema.extend({
+const guestEndedShellSchema = guestRunningShellSchema.extend({
   status: z.enum(GUEST_SHELL_END_STATUSES),
   exit: z.number().int().optional(),
   endedAt: z.number().nonnegative(),
 }).strict();
-export const guestShellsScopeSchema = z.discriminatedUnion('kind', [
+const guestShellsScopeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('session'), sessionId: z.string().min(1).max(1024) }).strict(),
   z.object({ kind: z.literal('project'), projectId: z.string().min(1).max(1024) }).strict(),
   z.object({ kind: z.literal('global') }).strict(),
 ]);
-export const guestRunningShellsSnapshotSchema = z.object({
+const guestRunningShellsSnapshotSchema = z.object({
   kind: z.literal('shells'),
   scope: guestShellsScopeSchema,
   shells: z.array(guestRunningShellSchema).max(GUEST_SHELLS_MAX),

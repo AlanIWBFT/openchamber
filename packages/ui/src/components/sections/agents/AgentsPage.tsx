@@ -9,7 +9,8 @@ import { useSettingsDirectory } from '@/hooks/useSettingsDirectory';
 import { selectAgentsForDirectory, useAgentsStore, type AgentConfig, type AgentEntity, type AgentEntityEnvelope, type AgentMutationResult, type AgentRequest, type AgentRequestBody, type AgentScope, type AgentWithExtras } from '@/stores/useAgentsStore';
 import { useShallow } from 'zustand/react/shallow';
 import { ModelSelector } from './ModelSelector';
-import { AgentColorField, isAgentHexColor } from './AgentColorField';
+import { AgentColorField } from './AgentColorField';
+import { configuredAgentColor } from '@/lib/agentColors';
 import { useI18n } from '@/lib/i18n';
 import { formatModelSelection, parseModelIdentifier, parseModelSelection } from '@/lib/modelIdentifier';
 import { findCatalogModel } from '@/lib/opencode/model';
@@ -63,15 +64,8 @@ const getVariantOptionsForModel = (
   const model = findCatalogModel(provider?.models, parsedModel.modelId);
   return modelVariantNames(model);
 };
-/**
- * The colour the form shows for a stored value. #aaaaaa is what OpenCode's v1
- * migration writes for theme names it could not keep, so it reads as automatic,
- * matching the colour resolver.
- */
-const storedAgentColor = (stored: string | null | undefined): string => {
-  const value = stored?.trim().toLowerCase() ?? '';
-  return isAgentHexColor(value) && value !== '#aaaaaa' ? value : '';
-};
+/** The colour the form shows for a stored value; empty reads as automatic, as in the colour resolver. */
+const storedAgentColor = (stored: string | null | undefined): string => configuredAgentColor(stored)?.toLowerCase() ?? '';
 
 /** Everything the page writes into the agent's config file. */
 interface FormState {

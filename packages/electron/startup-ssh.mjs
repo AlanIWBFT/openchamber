@@ -6,7 +6,7 @@
 // slow or unreachable host cannot hold the splash indefinitely; on failure
 // the attempt is torn down and the caller falls back to Local.
 
-export const STARTUP_SSH_CONNECT_TIMEOUT_MS = 30_000;
+const STARTUP_SSH_CONNECT_TIMEOUT_MS = 30_000;
 
 /** The id of the default host when it is an SSH instance, else null. */
 export const resolveDefaultSshInstanceId = (defaultHostId, instances) => {

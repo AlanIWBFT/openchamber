@@ -24,7 +24,7 @@ const clipboardImages = (data: DataTransfer): File[] => {
 };
 
 /** Where a paste's citations go: replace `[from, to)` of the comment with `insertion`. */
-export interface CommentImageInsertion {
+interface CommentImageInsertion {
   from: number;
   to: number;
   insertion: string;
