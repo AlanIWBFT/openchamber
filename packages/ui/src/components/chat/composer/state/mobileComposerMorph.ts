@@ -36,6 +36,7 @@
 
 import { KEYBOARD_EASING_CSS, KEYBOARD_HIDE_MS, KEYBOARD_SHOW_MS } from '@/lib/mobileKeyboardTiming';
 import { isCapacitorApp } from '@/lib/platform';
+import { composerTailInsetFor } from './composerTailInset';
 import type { ComposerMorphEventDetail } from '../../lib/scroll/keyboardFollowGlide';
 
 export type ComposerMorphDirection = 'expand' | 'collapse';
@@ -177,11 +178,22 @@ export function createComposerMorphController(): ComposerMorphController {
         if (slot && fromSlotHeight !== null) {
             pinSlot(direction === 'expand' ? slot.getBoundingClientRect().height : fromSlotHeight);
         }
-        // The transcript's end changes by the slot's delta, not the box's
-        // alone (the form's own padding changes with the keyboard too).
-        let slotDelta = fromSlotHeight !== null && slot
-            ? Math.abs(slot.getBoundingClientRect().height - fromSlotHeight)
+        // The riders travel by the slot's delta, not the box's alone (the
+        // form's own padding changes with the keyboard too). The transcript's
+        // end moves by the change of the column's tail inset, which takes the
+        // gap above the composer first (composerTailInset), so the glide is
+        // told that amount.
+        const column = slot?.parentElement ?? null;
+        const transcriptDeltaFor = (toSlotHeight: number): number => (
+            column && fromSlotHeight !== null
+                ? Math.abs(composerTailInsetFor(column, toSlotHeight) - composerTailInsetFor(column, fromSlotHeight))
+                : delta
+        );
+        const initialSlotHeight = slot?.getBoundingClientRect().height ?? null;
+        let slotDelta = fromSlotHeight !== null && initialSlotHeight !== null
+            ? Math.abs(initialSlotHeight - fromSlotHeight)
             : delta;
+        let transcriptDelta = initialSlotHeight !== null ? transcriptDeltaFor(initialSlotHeight) : delta;
         // Freeze the box at the outgoing height with its rows on the bottom
         // edge; mobile.css supplies the clip and bottom anchoring.
         box.setAttribute(MORPH_STATE_ATTR, direction);
@@ -242,7 +254,7 @@ export function createComposerMorphController(): ComposerMorphController {
             active = null;
             cleanup();
             if (!startedByKeyboard) {
-                dispatchMorph({ phase: 'release', direction, delta: slotDelta, durationMs: timing.durationMs });
+                dispatchMorph({ phase: 'release', direction, delta: transcriptDelta, durationMs: timing.durationMs });
             }
         };
         const start = (byKeyboard: boolean) => {
@@ -262,8 +274,9 @@ export function createComposerMorphController(): ComposerMorphController {
                 const natural = measureSlotNatural();
                 if (natural !== null) {
                     slotDelta = Math.abs(natural - fromSlotHeight);
+                    transcriptDelta = transcriptDeltaFor(natural);
                     if (direction === 'expand') pinSlot(natural);
-                    dispatchMorph({ phase: 'hold', direction, delta: slotDelta, durationMs: timing.durationMs });
+                    dispatchMorph({ phase: 'hold', direction, delta: transcriptDelta, durationMs: timing.durationMs });
                 }
             }
             const options: KeyframeAnimationOptions = { duration: timing.durationMs, easing: timing.easing, fill: 'forwards' };
@@ -300,7 +313,7 @@ export function createComposerMorphController(): ComposerMorphController {
             }
             if (!byKeyboard) {
                 // No keyboard leg: the transcript glides on the morph alone.
-                dispatchMorph({ phase: 'glide', direction, delta: slotDelta, durationMs: timing.durationMs });
+                dispatchMorph({ phase: 'glide', direction, delta: transcriptDelta, durationMs: timing.durationMs });
                 finishTimer = window.setTimeout(finish, timing.durationMs + FINISH_SLACK_MS);
             } else {
                 // The keyboard's settled event ends the leg; the timer is a
@@ -324,7 +337,7 @@ export function createComposerMorphController(): ComposerMorphController {
             finish();
         }
 
-        dispatchMorph({ phase: 'hold', direction, delta: slotDelta, durationMs: timing.durationMs });
+        dispatchMorph({ phase: 'hold', direction, delta: transcriptDelta, durationMs: timing.durationMs });
         window.addEventListener('oc:keyboard-anim', handleKeyboardAnim);
         window.addEventListener('oc:keyboard-settled', handleKeyboardSettled);
         startTimer = window.setTimeout(() => {
