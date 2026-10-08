@@ -10,11 +10,16 @@ export type ReferenceCommentItem = {
     createdAt: string | null;
     /** What the comment is attached to: a review verdict, or `path:line`. */
     context: string | null;
+    /** The `path:line` a review comment sits on, for what it is attached to in chat. */
+    location: string | null;
 };
 
 export type ReferenceCommitItem = {
     sha: string;
     headline: string;
+    /** Who made it: the host account, or the name git recorded. */
+    author: string | null;
+    avatarUrl: string | null;
     committedAt: string | null;
     url: string | null;
 };

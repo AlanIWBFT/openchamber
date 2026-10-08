@@ -3,9 +3,9 @@ import { describe, expect, test } from 'bun:test';
 import { buildReferenceTimeline, type ReferenceCommentItem } from './referenceTimeline';
 
 const comment = (key: string, createdAt: string | null): ReferenceCommentItem => ({
-  kind: 'comment', key, author: 'sam', avatarUrl: null, body: key, createdAt, context: null,
+  kind: 'comment', key, author: 'sam', avatarUrl: null, body: key, createdAt, context: null, location: null,
 });
-const commit = (sha: string, committedAt: string | null) => ({ sha, headline: sha, committedAt, url: null });
+const commit = (sha: string, committedAt: string | null) => ({ sha, headline: sha, author: null, avatarUrl: null, committedAt, url: null });
 
 describe('reference timeline', () => {
   test('puts commits between the comments they came between, grouping the ones in a row', () => {

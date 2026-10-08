@@ -6,7 +6,7 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import { REFERENCE_META_TEXT, relativeTimeOf } from './referencePickerItems';
-import type { ReferenceCommitGroup, ReferenceTimelineEntry } from './referenceTimeline';
+import type { ReferenceCommentItem, ReferenceCommitGroup, ReferenceTimelineEntry } from './referenceTimeline';
 
 const relativeLabel = (t: ReturnType<typeof useI18n>['t'], iso: string | null, now: number) => {
     const relative = relativeTimeOf(iso, now);
@@ -37,6 +37,14 @@ const CommitGroup: React.FC<{ group: ReferenceCommitGroup; now: number }> = ({ g
                                 <span className={cn('shrink-0 font-mono typography-micro', REFERENCE_META_TEXT)}>{sha}</span>
                             )}
                             <span className="min-w-0 flex-1 truncate text-foreground" title={commit.headline}>{commit.headline}</span>
+                            {commit.author ? (
+                                <span className={cn('inline-flex min-w-0 max-w-[40%] shrink-0 items-center gap-1 self-center typography-micro', REFERENCE_META_TEXT)}>
+                                    {commit.avatarUrl ? (
+                                        <img src={commit.avatarUrl} alt="" className="size-3.5 shrink-0 rounded-full" loading="lazy" />
+                                    ) : null}
+                                    <span className="truncate">{commit.author}</span>
+                                </span>
+                            ) : null}
                             {when ? <span className={cn('shrink-0 typography-micro', REFERENCE_META_TEXT)}>{when}</span> : null}
                         </li>
                     );
@@ -51,14 +59,19 @@ const CommitGroup: React.FC<{ group: ReferenceCommitGroup; now: number }> = ({ g
  * line, then the comment. Bodies render images and the HTML GitHub allows.
  * A PR's commits sit on the same line, grouped between the comments.
  */
-export const ReferenceComments: React.FC<{ entries: ReferenceTimelineEntry[]; now: number }> = ({ entries, now }) => {
+export const ReferenceComments: React.FC<{
+    entries: ReferenceTimelineEntry[];
+    now: number;
+    /** Pins one comment above the composer; shown on hover beside its author. */
+    onAttachComment?: (comment: ReferenceCommentItem) => void;
+}> = ({ entries, now, onAttachComment }) => {
     const { t } = useI18n();
     return (
         <div className="flex flex-col">
             {entries.map((entry, index) => {
                 const isLast = index === entries.length - 1;
                 return (
-                    <div key={entry.key} className="relative pb-4 pl-9 last:pb-0">
+                    <div key={entry.key} className="group relative pb-4 pl-9 last:pb-0">
                         {!isLast ? <div className="absolute bottom-1 left-3 top-8 w-px bg-border/60" /> : null}
                         {entry.kind === 'commits' ? <CommitGroup group={entry} now={now} /> : (
                             <>
@@ -73,6 +86,16 @@ export const ReferenceComments: React.FC<{ entries: ReferenceTimelineEntry[]; no
                                     <span className="font-medium text-muted-foreground">{entry.author ?? '—'}</span>
                                     {relativeLabel(t, entry.createdAt, now) ? <span>{relativeLabel(t, entry.createdAt, now)}</span> : null}
                                     {entry.context ? <span className="min-w-0 truncate font-mono typography-micro">{entry.context}</span> : null}
+                                    {onAttachComment ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => onAttachComment(entry)}
+                                            className="ml-auto inline-flex items-center gap-1 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                                        >
+                                            <Icon name="attachment-2" className="size-3.5" />
+                                            {t('gitView.pr.actions.sendToAgent')}
+                                        </button>
+                                    ) : null}
                                 </div>
                                 {entry.body.trim() ? (
                                     <SimpleMarkdownRenderer

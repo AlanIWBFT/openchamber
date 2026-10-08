@@ -25,6 +25,7 @@ const reads = (overrides: Partial<Parameters<typeof fetchGitLabReferencePage>[0]
   changeRequestsList: async () => ({ items: [mergeRequest], page: 2, hasMore: false }),
   issueComments: async () => [],
   changeRequestContext: async (): Promise<ChangeRequestContext> => ({ identity, project, changeRequest: mergeRequest, issueComments: [], reviewComments: [], files: [] }),
+  issueGet: async (): Promise<Issue | null> => issue,
   ...overrides,
 });
 
@@ -54,6 +55,37 @@ describe('GitLab references', () => {
     const pullKey = referencePickerItemKey({ source: 'github', reference: pulls.items[0]! });
     expect(issueKey).toBe('gitlab:group/sub/app#7');
     expect(pullKey).toBe('gitlab:group/sub/app!7');
+  });
+
+  test('a number or a link reads that one item instead of searching titles', async () => {
+    const searched: string[] = [];
+    let readNumber: number | null = null;
+    let readProject: { owner: string; name: string } | undefined;
+    const lookups = reads({
+      changeRequestsList: async (_context, options) => {
+        searched.push(options?.query ?? '');
+        return { items: [], page: 1, hasMore: false };
+      },
+      changeRequestContext: async (_context, number, options) => {
+        readNumber = number;
+        readProject = options?.project;
+        return { identity, project, changeRequest: mergeRequest, issueComments: [], reviewComments: [], files: [] };
+      },
+    });
+    const byNumber = await fetchGitLabReferencePage(lookups, context, 'pull', DEFAULT_REPOSITORY_FILTER, '!7', null);
+    if (byNumber.kind !== 'page') throw new Error('expected a page');
+    expect(byNumber.items.map((item) => item.number)).toEqual([7]);
+    expect(readNumber).toBe(7);
+
+    await fetchGitLabReferencePage(lookups, context, 'pull', DEFAULT_REPOSITORY_FILTER, 'https://gitlab.com/group/sub/app/-/merge_requests/7', null);
+    expect(readProject).toEqual({ owner: 'group/sub', name: 'app' });
+
+    const issueByLink = await fetchGitLabReferencePage(lookups, context, 'issue', DEFAULT_REPOSITORY_FILTER, 'https://gitlab.com/group/sub/app/-/issues/3', null);
+    if (issueByLink.kind !== 'page') throw new Error('expected a page');
+    expect(issueByLink.items.map((item) => item.number)).toEqual([3]);
+
+    await fetchGitLabReferencePage(lookups, context, 'pull', DEFAULT_REPOSITORY_FILTER, 'crash on save', null);
+    expect(searched).toEqual(['crash on save']);
   });
 
   test('a page passes the state and whose items to GitLab', async () => {

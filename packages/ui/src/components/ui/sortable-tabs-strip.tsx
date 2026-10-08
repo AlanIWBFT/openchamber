@@ -47,6 +47,9 @@ type SortableTabsStripProps = {
   activePillInsetClassName?: string;
   activePillButtonClassName?: string;
   inactiveTabsIconOnly?: boolean;
+  /** Every tab with an icon shows it alone, the active one too; the label
+      stays its accessible name and tooltip. For a row short on width. */
+  iconOnly?: boolean;
   animateActivePill?: boolean;
   activePillLowercase?: boolean;
   /** Position the active-pill indicator with left/top instead of translate3d.
@@ -128,6 +131,7 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
   activePillLowercase = true,
   nonCompositedIndicator = false,
   intrinsicWidth = false,
+  iconOnly = false,
   tabContextMenu,
   className,
 }) => {
@@ -473,7 +477,7 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
         ) : null}
         {items.map((item, index) => {
           const isActive = item.id === activeId;
-          const showInactiveIconOnly = inactiveTabsIconOnly && usesActivePillIndicator && !isActive && Boolean(item.icon);
+          const showInactiveIconOnly = (iconOnly || (inactiveTabsIconOnly && !isActive)) && usesActivePillIndicator && Boolean(item.icon);
           const shouldShowLabel = !showInactiveIconOnly;
           const shouldShowIcon = Boolean(item.icon);
           const useIntrinsicActiveTab = inactiveTabsIconOnly && usesActivePillIndicator && isActive && !isScrollable && !useIntrinsicPillSizing;

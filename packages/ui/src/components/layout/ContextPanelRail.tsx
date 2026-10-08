@@ -179,7 +179,6 @@ export const ContextPanelRail: React.FC = () => {
   const openContextSurface = useUIStore((state) => state.openContextSurface);
   const closeContextPanel = useUIStore((state) => state.closeContextPanel);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
-  const isSourceBoardOpen = useUIStore((state) => state.isSourceBoardOpen);
   const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
   const githubAuthChecked = (useSourceControlAuthEntry(GITHUB_SOURCE_CONTROL_IDENTITY)?.hasChecked ?? false);
   // Change requests come from GitHub or GitLab, whichever the project lives on,
@@ -318,9 +317,7 @@ export const ContextPanelRail: React.FC = () => {
     setContextRailOrder(arrayMove(orderedIds, fromIndex, toIndex));
   }, [guestSurfaces, setContextRailOrder]);
 
-  // The board is a page of its own: switching panels from beside it would
-  // only hide them again (see ContextPanel).
-  if (!directoryKey || isSourceBoardOpen) {
+  if (!directoryKey) {
     return null;
   }
 

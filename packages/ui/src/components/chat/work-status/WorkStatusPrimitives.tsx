@@ -126,7 +126,7 @@ type RowProps = {
   value?: React.ReactNode;
   muted?: boolean;
   /** Turns the row into a button; the caller decides what it opens. */
-  onClick?: () => void;
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   ariaLabel?: string;
   tooltip?: React.ReactNode;
   className?: string;

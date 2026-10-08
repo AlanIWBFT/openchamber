@@ -37,7 +37,7 @@ import { useFreshestSourceControlVisualSummaryForBranch } from '@/stores/useGitH
 type FolderScope = { scopeKey: string; directory: string | null };
 import { getLinkedSidebarIssues, type LinkedSidebarIssue } from '@/lib/linkedIssues';
 import { buildSessionIssueItems } from '../sessions/sessionPrSummaries';
-import { openExternalUrl } from '@/lib/url';
+import { useOpenOnBoard } from '@/components/sourceBoard/openOnBoard';
 import { SIDEBAR_REF_TOOLTIP_CLOSE_DELAY_MS, SidebarRefLinks, type SidebarRefLink } from '../sessions/SidebarRefLinks';
 import { useI18n } from '@/lib/i18n';
 import { useChildStoreManager } from '@/sync/sync-context';
@@ -315,6 +315,7 @@ const EMPTY_GROUP_ISSUES: readonly LinkedSidebarIssue[] = [];
 
 function SessionGroupSectionBase(props: SessionGroupSectionProps): React.ReactNode {
   const { t } = useI18n();
+  const openOnBoard = useOpenOnBoard();
   const {
     group,
     groupKey,
@@ -1179,7 +1180,7 @@ function SessionGroupSectionBase(props: SessionGroupSectionProps): React.ReactNo
                       onKeyDown={(event) => event.stopPropagation()}
                       onClick={(event) => {
                         event.stopPropagation();
-                        if (groupPrSummary.url) void openExternalUrl(groupPrSummary.url);
+                        if (groupPrSummary.url) openOnBoard(groupPrSummary.url, group.directory ?? null, event);
                       }}
                     >
                       {groupPrReference}
@@ -1200,12 +1201,14 @@ function SessionGroupSectionBase(props: SessionGroupSectionProps): React.ReactNo
                       onKeyDown={(event) => event.stopPropagation()}
                       onClick={(event) => {
                         event.stopPropagation();
-                        void openExternalUrl(primaryGroupIssue.url);
+                        // The `+N` only counts the others; the tooltip lists them.
+                        if (event.target instanceof Element && event.target.closest('[data-ref-more]')) return;
+                        openOnBoard(primaryGroupIssue.url, group.directory ?? null, event);
                       }}
                     >
                       <Icon name={primaryGroupIssue.icon} className="h-3 w-3" />
                       {primaryGroupIssue.label}
-                      {groupIssueItems.length > 1 ? <span className="text-muted-foreground">+{groupIssueItems.length - 1}</span> : null}
+                      {groupIssueItems.length > 1 ? <span data-ref-more className="text-muted-foreground">+{groupIssueItems.length - 1}</span> : null}
                     </button>
                   ) : null}
                 </span>
@@ -1235,11 +1238,11 @@ function SessionGroupSectionBase(props: SessionGroupSectionProps): React.ReactNo
       </TooltipTrigger>
       {groupPrLinks.length > 0 ? (
         <TooltipContent side="right" sideOffset={8} className="max-w-xs">
-          <SidebarRefLinks items={groupPrLinks} />
+          <SidebarRefLinks items={groupPrLinks} directory={group.directory ?? null} />
         </TooltipContent>
       ) : !groupPrSummary && primaryGroupIssue ? (
         <TooltipContent side="right" sideOffset={8} className="max-w-xs">
-          <SidebarRefLinks items={groupIssueItems} />
+          <SidebarRefLinks items={groupIssueItems} directory={group.directory ?? null} />
         </TooltipContent>
       ) : null}
       </Tooltip>

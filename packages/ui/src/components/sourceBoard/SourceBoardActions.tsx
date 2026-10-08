@@ -6,12 +6,13 @@ import { REFERENCE_META_TEXT, referenceNumberLabel } from '@/components/referenc
 import type { IconName } from '@/components/icon/icons';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { usePendingComposerReferences } from '@/components/chat/composer/pendingComposerReferences';
 import type { ReferencePickerItem, ReferencePickerSelection } from '@/components/references/referencePickerItems';
 import { readLinearIssueDetail } from '@/components/references/referenceSources';
 import { resolveComposerReferences } from '@/components/references/resolveComposerReferences';
-import { readMergeMethod } from '@/components/views/git/mergeMethodPreference';
+import { readMergeMethod, rememberMergeMethod, type MergeMethod } from '@/components/views/git/mergeMethodPreference';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { GitHubPullReference, SourceControlReadContext } from '@/lib/api/types';
 import type { PullRequestSource } from '@/lib/diff/pullRequestDiff';
@@ -23,10 +24,17 @@ import { usePullRequestSelectionStore } from '@/stores/usePullRequestSelectionSt
 import { useUIStore } from '@/stores/useUIStore';
 import { useWalkthroughStore } from '@/stores/useWalkthroughStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { useSession } from '@/sync/sync-context';
 import { newMutationKey } from './mutationKey';
 
 /** A project the board acts in: its id and root folder. */
 export type SourceBoardProject = { id: string; path: string };
+
+const MERGE_METHOD_LABELS = {
+    squash: 'gitView.pr.mergeMethod.squash',
+    merge: 'gitView.pr.mergeMethod.merge',
+    rebase: 'gitView.pr.mergeMethod.rebase',
+} as const;
 
 const MERGE_METHOD_KEYS = {
     merge: 'sourceBoard.merge.method.merge',
@@ -91,18 +99,19 @@ export const SourceBoardActions: React.FC<{
     const { t } = useI18n();
     const { sourceControl, linear } = useRuntimeAPIs();
     const confirmation = useConfirmDialog();
-    const [busy, setBusy] = React.useState<'merge' | 'ready' | 'state' | null>(null);
+    const [busy, setBusy] = React.useState<'merge' | 'ready' | null>(null);
 
     const pull: GitHubPullReference | null = item.source === 'github' && item.reference.kind === 'pull' ? item.reference : null;
     const openPull = pull && pull.state === 'open' ? pull : null;
     // Asked only while an open PR is previewed: nothing else merges.
     const capabilities = useCapabilities(openPull ? context : null);
 
-    const startSession = () => {
-        if (!project) return;
-        useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: project.id, directoryOverride: project.path });
-        onLeave?.();
-        // The draft opens first, so the chip lands on its composer.
+    // The open session, when the chat shows one rather than a new-session draft.
+    const currentSessionId = useSessionUIStore((state) => (state.newSessionDraft?.open ? null : state.currentSessionId));
+    const currentSession = useSession(currentSessionId, currentSessionId ? useSessionUIStore.getState().getDirectoryForSession(currentSessionId) ?? undefined : undefined);
+
+    // The item lands on the composer as a chip, never as a sent message.
+    const attachToComposer = () => {
         void resolveComposerReferences([selectionOf(item)], {
             sourceControl,
             context,
@@ -116,9 +125,31 @@ export const SourceBoardActions: React.FC<{
         });
     };
 
+    const startSession = () => {
+        if (!project) return;
+        useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: project.id, directoryOverride: project.path });
+        onLeave?.();
+        // The draft opens first, so the chip lands on its composer.
+        attachToComposer();
+    };
+
+    // Back to the chat the board covered; its composer takes the chip.
+    const attachToCurrentSession = () => {
+        useUIStore.getState().closeMainSurfaces();
+        onLeave?.();
+        attachToComposer();
+    };
+
     const mergeMethods = capabilities?.mergeChangeRequests ? capabilities.mergeMethods ?? [] : [];
-    const remembered = readMergeMethod();
-    const mergeMethod = mergeMethods.includes(remembered) ? remembered : mergeMethods[0] ?? null;
+    // The last method chosen anywhere, while this repository allows it.
+    const [chosenMethod, setChosenMethod] = React.useState<MergeMethod>(readMergeMethod);
+    const mergeMethod = mergeMethods.includes(chosenMethod) ? chosenMethod : mergeMethods[0] ?? null;
+    const chooseMergeMethod = (value: string) => {
+        const method = mergeMethods.find((candidate) => candidate === value);
+        if (!method) return;
+        setChosenMethod(method);
+        rememberMergeMethod(method);
+    };
     const reference = pull ? formatChangeRequestReference(pull.provider ?? 'github', pull.number) : '';
 
     const merge = async () => {
@@ -165,57 +196,49 @@ export const SourceBoardActions: React.FC<{
         }
     };
 
-    // An open issue or PR closes, a closed one reopens; a merged PR stays as it is.
-    const repositoryItem = item.source === 'github' ? item.reference : null;
-    const nextState = !repositoryItem || repositoryItem.state === 'merged' ? null : repositoryItem.state === 'open' ? 'closed' : 'open';
-    const stateLabel = (() => {
-        if (!repositoryItem || !nextState) return '';
-        if (repositoryItem.kind === 'issue') return t(nextState === 'closed' ? 'sourceBoard.actions.closeIssue' : 'sourceBoard.actions.reopenIssue');
-        const gitlab = repositoryItem.provider === 'gitlab';
-        if (nextState === 'closed') return t(gitlab ? 'sourceBoard.actions.closePull.gitlab' : 'sourceBoard.actions.closePull.github');
-        return t(gitlab ? 'sourceBoard.actions.reopenPull.gitlab' : 'sourceBoard.actions.reopenPull.github');
-    })();
-
-    const changeState = async () => {
-        if (!repositoryItem || !nextState || !context) return;
-        const label = referenceNumberLabel(repositoryItem);
-        setBusy('state');
-        try {
-            const payload: SetStateInput = {
-                ...context,
-                idempotencyKey: newMutationKey(),
-                target: { project: { owner: repositoryItem.sourceRepo.owner, name: repositoryItem.sourceRepo.repo }, number: repositoryItem.number },
-                state: nextState,
-            };
-            if (repositoryItem.kind === 'pull') await sourceControl.changeRequestSetState(payload);
-            else await sourceControl.issueSetState(payload);
-            toast.success(t(nextState === 'closed' ? 'sourceBoard.toast.closed' : 'sourceBoard.toast.reopened', { reference: label }));
-        } catch (error) {
-            toast.error(
-                t(nextState === 'closed' ? 'sourceBoard.toast.closeFailed' : 'sourceBoard.toast.reopenFailed', { reference: label }),
-                { description: error instanceof Error ? error.message : String(error) },
-            );
-        } finally {
-            setBusy(null);
-            onChanged();
-        }
-    };
-
     const maintenance = (
         <>
             {openPull && !openPull.draft && mergeMethod ? (
-                <ActionButton icon="git-merge" label={t('sourceBoard.actions.merge')} busy={busy === 'merge'} onClick={() => void merge()} />
+                // One control, as on the host: the button says how it merges,
+                // the arrow beside it picks another way.
+                <div className="flex shrink-0 items-center">
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        // Two halves of one control: the inner corners stay square.
+                        className={cn(mergeMethods.length > 1 && 'rounded-r-none supports-[corner-shape:squircle]:rounded-r-none')}
+                        disabled={busy === 'merge'}
+                        onClick={() => void merge()}
+                    >
+                        <Icon name={busy === 'merge' ? 'loader-4' : 'git-merge'} className={busy === 'merge' ? 'size-3.5 animate-spin' : 'size-3.5'} />
+                        {t(MERGE_METHOD_LABELS[mergeMethod])}
+                    </Button>
+                    {mergeMethods.length > 1 ? (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="rounded-l-none border-l-0 supports-[corner-shape:squircle]:rounded-l-none px-1.5"
+                                    disabled={busy === 'merge'}
+                                    aria-label={t('sourceBoard.merge.methodAria')}
+                                >
+                                    <Icon name="arrow-down-s" className="size-3.5" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-56">
+                                <DropdownMenuRadioGroup value={mergeMethod} onValueChange={(value) => chooseMergeMethod(String(value))}>
+                                    {mergeMethods.map((method) => (
+                                        <DropdownMenuRadioItem key={method} value={method}>{t(MERGE_METHOD_LABELS[method])}</DropdownMenuRadioItem>
+                                    ))}
+                                </DropdownMenuRadioGroup>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    ) : null}
+                </div>
             ) : null}
             {openPull?.draft && capabilities?.draftChangeRequests ? (
                 <ActionButton icon="git-pull-request" label={t('sourceBoard.actions.markReady')} busy={busy === 'ready'} onClick={() => void markReady()} />
-            ) : null}
-            {nextState && context ? (
-                <ActionButton
-                    icon={nextState === 'open' ? 'arrow-go-back' : repositoryItem?.kind === 'pull' ? 'git-close-pull-request' : 'checkbox-circle'}
-                    label={stateLabel}
-                    busy={busy === 'state'}
-                    onClick={() => void changeState()}
-                />
             ) : null}
         </>
     );
@@ -228,16 +251,41 @@ export const SourceBoardActions: React.FC<{
                 {startIn}
                 {maintenance}
             </div>
-            {project ? (
-                <div className="flex shrink-0 items-center gap-2">
-                    <ActionButton icon="chat-new" label={t('sourceBoard.actions.newSession')} onClick={startSession} />
-                    <ActionButton
-                        icon="git-branch"
-                        variant="default"
-                        label={t(pull ? 'sourceBoard.actions.checkoutWorktree' : 'sourceBoard.actions.startWorktree')}
-                        onClick={() => onStartWorktree(project, selectionOf(item))}
-                    />
-                </div>
+            {project || currentSessionId ? (
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="default" className="shrink-0">
+                            <Icon name="attachment-2" className="size-3.5" />
+                            {t('sourceBoard.actions.attach')}
+                            <Icon name="arrow-down-s" className="size-3.5 opacity-70" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-64">
+                        {currentSessionId ? (
+                            <DropdownMenuItem onSelect={attachToCurrentSession}>
+                                <Icon name="chat-4" className="size-4 shrink-0" />
+                                <span className="flex min-w-0 flex-col">
+                                    <span>{t('sourceBoard.actions.currentSession')}</span>
+                                    {currentSession?.title ? (
+                                        <span className="truncate typography-micro text-muted-foreground">{currentSession.title}</span>
+                                    ) : null}
+                                </span>
+                            </DropdownMenuItem>
+                        ) : null}
+                        {project ? (
+                            <>
+                                <DropdownMenuItem onSelect={startSession}>
+                                    <Icon name="chat-new" className="size-4 shrink-0" />
+                                    {t('sourceBoard.actions.newSession')}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => onStartWorktree(project, selectionOf(item))}>
+                                    <Icon name="git-branch" className="size-4 shrink-0" />
+                                    {t(pull ? 'sourceBoard.actions.checkoutWorktree' : 'sourceBoard.actions.newWorktreeSession')}
+                                </DropdownMenuItem>
+                            </>
+                        ) : null}
+                    </DropdownMenuContent>
+                </DropdownMenu>
             ) : null}
             {confirmation.dialog}
         </div>
@@ -292,3 +340,57 @@ export const SourceBoardPullLinks: React.FC<{
     );
 };
 
+
+/**
+ * Close or reopen for the previewed issue or PR, as items of its state pill's
+ * menu. Null for a merged PR or Linear, which have neither here.
+ */
+export const SourceBoardStateMenuItems: React.FC<{
+    item: ReferencePickerItem;
+    context: SourceControlReadContext;
+    onChanged: () => void;
+}> = ({ item, context, onChanged }) => {
+    const { t } = useI18n();
+    const { sourceControl } = useRuntimeAPIs();
+    // An open issue or PR closes, a closed one reopens; a merged PR stays as it is.
+    const repositoryItem = item.source === 'github' ? item.reference : null;
+    const nextState = !repositoryItem || repositoryItem.state === 'merged' ? null : repositoryItem.state === 'open' ? 'closed' : 'open';
+    const stateLabel = (() => {
+        if (!repositoryItem || !nextState) return '';
+        if (repositoryItem.kind === 'issue') return t(nextState === 'closed' ? 'sourceBoard.actions.closeIssue' : 'sourceBoard.actions.reopenIssue');
+        const gitlab = repositoryItem.provider === 'gitlab';
+        if (nextState === 'closed') return t(gitlab ? 'sourceBoard.actions.closePull.gitlab' : 'sourceBoard.actions.closePull.github');
+        return t(gitlab ? 'sourceBoard.actions.reopenPull.gitlab' : 'sourceBoard.actions.reopenPull.github');
+    })();
+
+    const changeState = async () => {
+        if (!repositoryItem || !nextState) return;
+        const label = referenceNumberLabel(repositoryItem);
+        try {
+            const payload: SetStateInput = {
+                ...context,
+                idempotencyKey: newMutationKey(),
+                target: { project: { owner: repositoryItem.sourceRepo.owner, name: repositoryItem.sourceRepo.repo }, number: repositoryItem.number },
+                state: nextState,
+            };
+            if (repositoryItem.kind === 'pull') await sourceControl.changeRequestSetState(payload);
+            else await sourceControl.issueSetState(payload);
+            toast.success(t(nextState === 'closed' ? 'sourceBoard.toast.closed' : 'sourceBoard.toast.reopened', { reference: label }));
+        } catch (error) {
+            toast.error(
+                t(nextState === 'closed' ? 'sourceBoard.toast.closeFailed' : 'sourceBoard.toast.reopenFailed', { reference: label }),
+                { description: error instanceof Error ? error.message : String(error) },
+            );
+        } finally {
+            onChanged();
+        }
+    };
+
+    if (!repositoryItem || !nextState) return null;
+    return (
+        <DropdownMenuItem onSelect={() => void changeState()}>
+            <Icon name={nextState === 'open' ? 'arrow-go-back' : repositoryItem.kind === 'pull' ? 'git-close-pull-request' : 'checkbox-circle'} className="size-4 shrink-0" />
+            {stateLabel}
+        </DropdownMenuItem>
+    );
+};

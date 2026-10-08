@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Session } from '@/lib/opencode/model';
 import type { SessionMetadataRecord } from './sessionReviewMetadata';
-import { buildLinkedGuestIssue, buildLinkedIssue, buildLinkedIssueId, buildLinkedLinearIssue, canOpenLinearIssueOnBoard, getDistinctLinkedIssues, getGitLabThreadRef, getLinkedGitHubPullRequests, getLinkedGitLabThreads, getLinkedIssues, getLinkedSidebarChanges, getLinkedSidebarIssues, withLinkedIssue, type LinkedIssue } from './linkedIssues';
+import { buildLinkedGuestIssue, buildLinkedIssue, buildLinkedIssueId, buildLinkedLinearIssue, getDistinctLinkedIssues, getGitLabThreadRef, getLinkedGitHubPullRequests, getLinkedGitLabThreads, getLinkedIssues, getLinkedSidebarChanges, getLinkedSidebarIssues, withLinkedIssue, type LinkedIssue } from './linkedIssues';
 
 type LinkedRepositoryIssue = Extract<LinkedIssue, { kind: 'issue' | 'pull' }>;
 
@@ -292,18 +292,6 @@ describe('withLinkedIssue', () => {
       true,
     );
     expect((next.openchamber as { linked_issues: LinkedIssue[] }).linked_issues).toEqual([issue()]);
-  });
-});
-
-describe('canOpenLinearIssueOnBoard', () => {
-  test('opens the board when Linear is connected and the shell has one', () => {
-    expect(canOpenLinearIssueOnBoard({ linearAvailable: true, linearConnected: true, boardAvailable: true })).toBe(true);
-  });
-
-  test('falls back when Linear is missing or disconnected, or there is no board', () => {
-    expect(canOpenLinearIssueOnBoard({ linearAvailable: false, linearConnected: true, boardAvailable: true })).toBe(false);
-    expect(canOpenLinearIssueOnBoard({ linearAvailable: true, linearConnected: false, boardAvailable: true })).toBe(false);
-    expect(canOpenLinearIssueOnBoard({ linearAvailable: true, linearConnected: true, boardAvailable: false })).toBe(false);
   });
 });
 

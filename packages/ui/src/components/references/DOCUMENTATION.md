@@ -46,7 +46,7 @@ project.
 ## Preview and attach
 
 - The preview shows the list item at once and asks for the rest of the item the highlight rests on (250 ms after it stops moving): GitHub comments, and a PR's size, review and newest commits, from `references/detail` with the same read context (a GitLab merge request's pipeline, commits and verdicts come with its detail, read with `includeTimeline`); a Linear issue's description and comments from `linear.issueGet`. Both land in value caches: going back to an item shows what was already read at once, without waiting out the 250 ms, and attaching a previewed Linear issue reuses the answer.
-- A PR's thread is its activity (`referenceTimeline.ts`): comments, review verdicts and commits by time, commits in a row grouped, so a review reads next to the commits it answered. Comments made at the same moment as a commit come first.
+- A PR's thread is its activity (`referenceTimeline.ts`): comments, review verdicts and commits by time, commits in a row grouped, so a review reads next to the commits it answered. Comments made at the same moment as a commit come first. Each commit names its author: the host account with its avatar on GitHub, the name git recorded on GitLab.
 - Descriptions and comments render with `allowRawHtml`, the Files preview's allowlist: GitHub's `<img>` screenshots, tables and `<details>` show, scripts, styles and author classes are dropped. An image with both `width` and `height` scales by its ratio. The Linear panel and the Git view's PR section render GitHub and Linear text the same way.
 - Attaching reads the full context the agent receives through the provider-neutral source-control reads (`issueGet` + `issueComments`, `changeRequestContext`) with the same read context: issue with all comments, PR context with the diff only when "Also send the diff" is checked for that PR, Linear issue with comments. Chips and context parts use the provider-neutral kinds `repository-issue` and `change-request` (with its provider). Each item resolves on its own; the ones that fail stay checked in the picker with the reason, the rest attach.
 - The composer keeps attached items as a list (`chat/composer/composerReferences.ts`). The same item attached again replaces its chip in place.
@@ -66,7 +66,7 @@ there.
 ## Board
 
 `components/sourceBoard` is a full page over the chat area, opened from the
-sidebar header (desktop and web; not VS Code, not the phone shell yet). It
+sidebar header (desktop and web, and the phone shell's menu; not VS Code). It
 uses `useReferenceBrowser` and the shared parts without checkboxes; the
 preview's footer holds actions instead of what the agent gets.
 
@@ -80,22 +80,40 @@ preview's footer holds actions instead of what the agent gets.
   like the draft composer's; a team picker on Linear, with the workspace in the
   same menu when there is more than one), one switch for Issues, Pull requests
   and Linear, then the search and the filter. The preview's footer is one row:
-  where a Linear issue starts and a PR's merge or ready on the left, New session
-  and the worktree action on the right, the main one last.
+  where a Linear issue starts and a PR's merge or ready on the left, and one
+  Attach to session menu on the right: the open session (when the chat shows
+  one, not a draft; the board closes and its composer takes the chip), a new
+  session, or a new session in a worktree.
 - Linear lists one team or all. An issue starts in its team's mapped project
   (`resolveLinearMappedProjectPath`), else the mapping's default, else the
   board's project; the user can pick another for that issue. Its state pill
-  in the preview opens the team's states (`SourceBoardLinearStatus`). Linear has no other
-  browsing surface: a linked Linear issue in the work-status panel opens the
-  board searched for it (`useSourceBoardStore.focusLinearIssue`).
+  in the preview opens the team's states (`SourceBoardLinearStatus`).
+- An issue, PR or Linear issue a session links to opens on the board, selected:
+  from the work-status panel and from the sidebar's badges and their tooltips
+  (`sourceBoard/openOnBoard.ts`). The board moves to the session's project and
+  tab and previews the item, read on its own (`focusRepositoryItem` with its
+  link, `focusLinearIssue` with its identifier, then the browser's
+  `pinnedItem`) while the search stays empty and the list as it was. A link
+  finds that one item whatever its state, on GitLab too, where a number or link
+  is read rather than searched; one the host does not know opens in the
+  browser, and a Linear identifier Linear cannot read is searched for. The phone opens the found
+  item's preview. Cmd or Ctrl-click, VS Code, a session outside any
+  project, Linear while disconnected and links the board does not list open in
+  the browser. A badge's `+N` does nothing; its tooltip lists the others.
+- The side panel and its rail stay beside the board. A board under 960 px
+  wide shows the kinds by icon and drops the list column: a trigger left of the search names the previewed
+  item (`#12`, `!12`, `ENG-7`) and opens the list as a dropdown over the
+  preview; typing in the search opens it too, and picking a row, Enter or
+  Escape closes it. The search then takes a row of its own.
 - `toggle_source_board` (`mod+k b`) opens and closes the board; the command
   palette lists it too.
 - Actions: start in a worktree (New Worktree opens with the item chosen,
   `initialSelection`), a new session in the project with the item attached,
   and for a PR its Changes (`usePullRequestSelectionStore.requestDiff` hands the
-  PR to the diff view's PR scope), Walkthrough, Merge (asks first, with the
-  remembered merge method) and Ready for review, and Close or Reopen for an
-  issue or a PR that is not merged (no confirmation: both are reversible). Changes and Walkthrough open
+  PR to the diff view's PR scope), Walkthrough, Merge (one split button named
+  after the remembered method, the arrow picks another; asks first) and Ready
+  for review, and Close or Reopen for an issue or a PR that is not merged, in
+  the menu of the preview's state pill (no confirmation: both are reversible). Changes and Walkthrough open
   in the folder the app shows when it belongs to the project, else in a new
   draft of the project.
 - Labels and reviewers (`SourceBoardMetaEditors`, `SourceBoardChoicePicker`):
@@ -110,4 +128,22 @@ preview's footer holds actions instead of what the agent gets.
   After a write, and after a refused review (usually a push since the
   preview was read), the item's detail is read again (`ensure(..., { force })`
   after any read already running) and the list refreshes.
+- Attach (`sourceBoard/pullAttachments.ts`): a comment (on hover), all the
+  comments shown (from the Activity heading) and, in the checks dialog, the
+  failed runs with their steps and annotations are pinned above the composer
+  as inline drafts (`pr-comment`, `pr-check`), the way the PR panel always
+  did. They go to the session in view or a new session's draft; with neither
+  open, a toast says so.
+- The PR panel (`views/git/BranchPullRequestPreview.tsx`) shows the checked-out
+  branch's open PR with this same preview: no new-session or worktree actions,
+  since the branch is already here. `PullRequestSection` keeps the create form
+  and the merged/closed state. The form is one row of branch → base (picked in
+  place), the title (a one-commit branch is titled by that commit until edited),
+  the description with Generate on it (its arrow adds notes only the generator
+  reads), and a split Create button whose arrow picks a draft, remembered. The
+  host makes the PR from what the remote has, so an unpublished or ahead branch
+  is pushed first through the Git view's own publish path (`useBranchPush`) and
+  the button says so. The PR comes from the branch status; on GitHub
+  `#N` is also looked up for its labels and comment count, which the status
+  does not carry.
 

@@ -13,14 +13,16 @@ import * as React from 'react';
 
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
+import { dropdownTriggerVariants } from '@/components/ui/dropdown-trigger';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { NewWorktreeDialog } from '@/components/session/NewWorktreeDialog';
 import { ReferenceBrowserList, ReferenceBrowserSearch } from '@/components/references/ReferenceBrowser';
 import { IDLE_PULL_STATUS, useReferenceBrowser } from '@/components/references/useReferenceBrowser';
 import { ReferencePreview } from '@/components/references/ReferencePreview';
-import { referencePickerItemKey, type ReferencePickerSelection } from '@/components/references/referencePickerItems';
-import { useGitHubReadContext, useRepositoryHostProvider } from '@/components/references/referenceSources';
+import { DEFAULT_REPOSITORY_FILTER, referenceNumberLabel, referencePickerItemKey, type ReferencePickerItem, type ReferencePickerSelection } from '@/components/references/referencePickerItems';
+import { useGitHubReadContext, useGitHubReferenceList, useLinearIssueDetail, useRepositoryHostProvider } from '@/components/references/referenceSources';
+import { openExternalUrl } from '@/lib/url';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { GitHubReferenceKind, LinearMappingResult, ProjectEntry, SourceControlReadContext } from '@/lib/api/types';
@@ -34,14 +36,17 @@ import { useSourceBoardChoice, useSourceBoardStore, type SourceBoardTab } from '
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
-import { SourceBoardActions, SourceBoardPullLinks, type SourceBoardProject } from './SourceBoardActions';
+import { SourceBoardActions, SourceBoardPullLinks, SourceBoardStateMenuItems, type SourceBoardProject } from './SourceBoardActions';
 import { SourceBoardLinearStatus } from './SourceBoardLinearStatus';
 import { SourceBoardReply } from './SourceBoardReply';
 import { SourceBoardChecksDialog } from './SourceBoardChecksDialog';
 import { SourceBoardLabels, SourceBoardReviewers } from './SourceBoardMetaEditors';
 import { SourceBoardProjectPicker, SourceBoardTeamPicker } from './SourceBoardPickers';
+import { usePullAttachments } from './pullAttachments';
 
 const LIST_MIN_WIDTH = 280;
+/** Below this the list leaves its column for a dropdown, so the preview keeps the width. */
+const NARROW_BOARD_WIDTH = 960;
 const LIST_MAX_FRACTION = 0.6;
 
 const openIntegrationsSettings = () => {
@@ -200,22 +205,75 @@ const SourceBoardBody: React.FC<{
     const isMobile = layout === 'mobile';
     const { t } = useI18n();
     const source = tab === 'linear' ? 'linear' : 'github';
+    // An item another surface asked to show: an issue or PR by its link, a
+    // Linear issue by its identifier. It is read on its own, not typed into the
+    // search: the list stays as it was, and the preview opens on the item.
+    const [pinnedLink, setPinnedLink] = React.useState<{ kind: GitHubReferenceKind; url: string } | null>(null);
+    const [pinnedLinearId, setPinnedLinearId] = React.useState<string | null>(null);
+    const pinnedLookup = useGitHubReferenceList({
+        enabled: tab === 'repository' && pinnedLink !== null,
+        directory,
+        kind: pinnedLink?.kind ?? 'issue',
+        filter: DEFAULT_REPOSITORY_FILTER,
+        query: pinnedLink?.url ?? '',
+    });
+    const { detail: pinnedLinear } = useLinearIssueDetail(tab === 'linear' ? pinnedLinearId : null, true);
+    const pinnedReference = tab === 'repository' && pinnedLink ? pinnedLookup.items[0] ?? null : null;
+    const pinnedLinearIssue = tab === 'linear' && pinnedLinear.status === 'ready' ? pinnedLinear.value : null;
+    const pinnedItem = React.useMemo<ReferencePickerItem | null>(() => {
+        if (pinnedReference) return { source: 'github', reference: pinnedReference };
+        if (pinnedLinearIssue) return { source: 'linear', issue: pinnedLinearIssue };
+        return null;
+    }, [pinnedLinearIssue, pinnedReference]);
     const browser = useReferenceBrowser({
         source,
         directory: tab === 'linear' ? null : directory,
         isMobile,
         linearTeamId,
         initialGitHubKind: initialRepositoryKind,
+        pinnedItem,
     });
-    const { previewItem } = browser;
-    // A Linear issue another surface asked to show: searched for, then forgotten.
+    const { previewItem, setQuery, selectGitHubKind, showItem } = browser;
+    const shownPinnedKeyRef = React.useRef<string | null>(null);
     const linearFocus = useSourceBoardStore((state) => (tab === 'linear' ? state.linearFocus : null));
-    const { setQuery } = browser;
     React.useEffect(() => {
         if (!linearFocus) return;
-        setQuery(linearFocus);
+        shownPinnedKeyRef.current = null;
+        setQuery('');
+        setPinnedLinearId(linearFocus);
         useSourceBoardStore.getState().clearLinearFocus();
     }, [linearFocus, setQuery]);
+    const repositoryFocus = useSourceBoardStore((state) => (tab === 'repository' ? state.repositoryFocus : null));
+    React.useEffect(() => {
+        if (!repositoryFocus) return;
+        shownPinnedKeyRef.current = null;
+        selectGitHubKind(repositoryFocus.kind);
+        setQuery('');
+        setPinnedLink({ kind: repositoryFocus.kind, url: repositoryFocus.query });
+        useSourceBoardStore.getState().clearRepositoryFocus();
+    }, [repositoryFocus, selectGitHubKind, setQuery]);
+    // Shown once found; the user then moves on from it like from any row.
+    React.useEffect(() => {
+        if (!pinnedItem) return;
+        const key = referencePickerItemKey(pinnedItem);
+        if (shownPinnedKeyRef.current === key) return;
+        shownPinnedKeyRef.current = key;
+        showItem(key);
+    }, [pinnedItem, showItem]);
+    // Not found: a link the project's host does not know opens in the browser;
+    // a Linear identifier is searched for instead.
+    const pinnedLinkStatus = pinnedLookup.status;
+    React.useEffect(() => {
+        if (!pinnedLink || pinnedLinkStatus === 'loading' || pinnedReference) return;
+        void openExternalUrl(pinnedLink.url);
+        setPinnedLink(null);
+    }, [pinnedLink, pinnedLinkStatus, pinnedReference]);
+    const pinnedLinearStatus = pinnedLinear.status;
+    React.useEffect(() => {
+        if (!pinnedLinearId || pinnedLinearStatus !== 'error') return;
+        setQuery(pinnedLinearId);
+        setPinnedLinearId(null);
+    }, [pinnedLinearId, pinnedLinearStatus, setQuery]);
     const currentDirectory = useEffectiveDirectory();
     const worktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
     const [worktreeRequest, setWorktreeRequest] = React.useState<{ project: SourceBoardProject; selection: ReferencePickerSelection } | null>(null);
@@ -270,6 +328,8 @@ const SourceBoardBody: React.FC<{
         />
     ) : null;
 
+    const attachments = usePullAttachments(previewItem?.source === 'github' ? previewItem.reference : null);
+
     // The previewed PR's check runs, opened from its checks totals.
     const [checksOpenFor, setChecksOpenFor] = React.useState<string | null>(null);
     const previewPull = previewItem?.source === 'github' && previewItem.reference.kind === 'pull' ? previewItem.reference : null;
@@ -280,6 +340,7 @@ const SourceBoardBody: React.FC<{
             context={context}
             open={checksOpenFor !== null && checksOpenFor === previewKey}
             onOpenChange={(open) => setChecksOpenFor(open ? previewKey : null)}
+            onAttachFailed={attachments.attachFailedChecks}
         />
     ) : null;
 
@@ -303,6 +364,12 @@ const SourceBoardBody: React.FC<{
             footer={actions}
             linearStateControl={previewItem?.source === 'linear' ? <SourceBoardLinearStatus issue={previewItem.issue} onChanged={browser.list.retry} /> : undefined}
             onOpenChecks={previewPull && context ? () => setChecksOpenFor(previewKey) : undefined}
+            stateMenu={previewItem?.source === 'github' && previewItem.reference.state !== 'merged' && context ? (
+                <SourceBoardStateMenuItems item={previewItem} context={context} onChanged={refreshRepositoryItem} />
+            ) : undefined}
+            commentAttachments={previewItem?.source === 'github'
+                ? { onAttach: attachments.attachComment, onAttachAll: attachments.attachComments }
+                : undefined}
             labelsControl={previewItem?.source === 'github' && context ? (
                 <SourceBoardLabels key={referencePickerItemKey(previewItem)} reference={previewItem.reference} context={context} onChanged={refreshRepositoryItem} />
             ) : undefined}
@@ -337,15 +404,68 @@ const SourceBoardBody: React.FC<{
         />
     );
 
+    // A narrow board (the side panel beside it, a small window) shows the list
+    // as a dropdown under the toolbar instead of a column.
+    const boardRef = React.useRef<HTMLDivElement>(null);
+    const [narrow, setNarrow] = React.useState(false);
+    const [listOpen, setListOpen] = React.useState(false);
+    React.useLayoutEffect(() => {
+        const board = boardRef.current;
+        if (!board) return;
+        const observer = new ResizeObserver(([entry]) => {
+            if (entry) setNarrow(entry.contentRect.width < NARROW_BOARD_WIDTH);
+        });
+        observer.observe(board);
+        return () => observer.disconnect();
+    }, []);
+    const listDropdown = narrow && listOpen;
+
     const list = (
         <ReferenceBrowserList
             browser={browser}
             label={title}
             multiselectable={false}
             onOpenSettings={openIntegrationsSettings}
+            onShow={() => setListOpen(false)}
         />
     );
-    const search = <ReferenceBrowserSearch browser={browser} onKeyDown={(event) => { browser.handleNavigationKey(event); }} />;
+    const search = (
+        <ReferenceBrowserSearch
+            browser={browser}
+            onKeyDown={(event) => {
+                if (narrow) {
+                    // Typing or arrows show the results; Enter keeps the one picked.
+                    if (event.key === 'Enter' || event.key === 'Escape') {
+                        if (listOpen && event.key === 'Escape') event.stopPropagation();
+                        setListOpen(false);
+                    } else if (event.key.length === 1 || event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Backspace') {
+                        setListOpen(true);
+                    }
+                }
+                browser.handleNavigationKey(event);
+            }}
+        />
+    );
+    const itemLabel = previewItem
+        ? previewItem.source === 'linear' ? previewItem.issue.identifier : referenceNumberLabel(previewItem.reference)
+        : t('sourceBoard.list.choose');
+    const itemIcon = previewItem?.source === 'linear' || tab === 'linear'
+        ? 'linear'
+        : browser.githubKind === 'pull' ? 'git-pull-request' : 'record-circle';
+    const itemTrigger = (
+        <button
+            type="button"
+            className={cn(dropdownTriggerVariants({ size: 'default' }), 'shrink-0 gap-1.5')}
+            aria-expanded={listDropdown}
+            aria-label={t('sourceBoard.list.toggleAria', { item: itemLabel })}
+            data-popup-open={listDropdown ? '' : undefined}
+            onClick={() => setListOpen((open) => !open)}
+        >
+            <Icon name={itemIcon} className="size-3.5" />
+            <span className="tabular-nums">{itemLabel}</span>
+            <Icon name="arrow-down-s" className="size-4 opacity-70" />
+        </button>
+    );
 
     const worktreeDialog = (
         <NewWorktreeDialog
@@ -384,7 +504,9 @@ const SourceBoardBody: React.FC<{
                 // own. Phone: the full row, shared.
                 layoutMode={isMobile ? 'fit' : 'scrollable'}
                 intrinsicWidth={!isMobile}
-                activePillButtonClassName={isMobile ? undefined : 'h-7 px-3'}
+                // A narrow board names the kinds by icon; the label is the tooltip.
+                iconOnly={narrow}
+                activePillButtonClassName={isMobile ? undefined : narrow ? 'h-7 px-2.5' : 'h-7 px-3'}
             />
         </div>
     );
@@ -453,12 +575,29 @@ const SourceBoardBody: React.FC<{
     // kind switch comes first: its width is fixed, while the scope picker's
     // follows the chosen name and would push the switch around.
     return (
-        <>
+        <div ref={boardRef} className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 px-2 py-2.5">
                 {kindSwitch}
                 {scopePicker}
-                {search}
+                {narrow ? itemTrigger : null}
+                {/* Narrow, the search takes a row of its own rather than shrink to a few letters. */}
+                {narrow ? <div className="flex min-w-[20rem] flex-1">{search}</div> : search}
             </div>
+            {narrow ? (
+                <div className="relative min-h-0 flex-1">
+                    {preview}
+                    {listDropdown ? (
+                        <>
+                            <div className="absolute inset-0 z-10" aria-hidden onClick={() => setListOpen(false)} />
+                            <div className="oc-glass-popover oc-glass-floating absolute inset-x-2 top-1 z-20 flex h-[min(28rem,75%)] flex-col overflow-hidden rounded-xl">
+                                <ScrollableOverlay outerClassName="min-h-0 flex-1" disableHorizontal>
+                                    {list}
+                                </ScrollableOverlay>
+                            </div>
+                        </>
+                    ) : null}
+                </div>
+            ) : (
             <div ref={splitRef} className="flex min-h-0 flex-1">
                 {/* CSS keeps a remembered width inside the board: never under
                     280 px (or half a narrow board, so the preview keeps room),
@@ -484,8 +623,9 @@ const SourceBoardBody: React.FC<{
                 />
                 <div className="min-h-0 min-w-0 flex-1">{preview}</div>
             </div>
+            )}
             {worktreeDialog}
             {checksDialog}
-        </>
+        </div>
     );
 };

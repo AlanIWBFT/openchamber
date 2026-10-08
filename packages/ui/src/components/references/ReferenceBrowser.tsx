@@ -198,7 +198,9 @@ export const ReferenceBrowserList: React.FC<{
     onOpenSettings: () => void;
     rowSelection?: (item: ReferencePickerItem, key: string) => ReferenceBrowserRowSelection;
     onActivate?: (item: ReferencePickerItem) => void;
-}> = ({ browser, label, multiselectable, onOpenSettings, rowSelection, onActivate }) => {
+    /** After a row is clicked to show it, as when the list closes then. */
+    onShow?: () => void;
+}> = ({ browser, label, multiselectable, onOpenSettings, rowSelection, onActivate, onShow }) => {
     const { t } = useI18n();
     const { source, sourceStatus, list, items, isGitLab, isMobile, directory, debouncedQuery, githubKind } = browser;
 
@@ -277,7 +279,10 @@ export const ReferenceBrowserList: React.FC<{
                         checked={selection?.checked ?? null}
                         diffIncluded={selection?.diffIncluded ?? false}
                         now={browser.now}
-                        onHighlight={() => browser.showItem(key)}
+                        onHighlight={() => {
+                            browser.showItem(key);
+                            onShow?.();
+                        }}
                         onToggle={() => selection?.onToggle()}
                         onActivate={() => onActivate?.(item)}
                     />

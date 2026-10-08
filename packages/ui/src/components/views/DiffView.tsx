@@ -2407,14 +2407,15 @@ export const DiffView: React.FC<DiffViewProps> = ({
         if (activeDiffScope === 'pr') {
             if (!selectedPr || comparison.error) {
                 return <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+                    {!comparison.error && !prComparison.error && !prComparison.loading
+                        && <Icon name="git-pull-request" className="size-6 text-muted-foreground" />}
                     <p className="typography-meta text-muted-foreground">{comparison.error ?? prComparison.error ?? (prComparison.loading
                         ? t(changeRequestCopy('session.githubPrPicker.loading.pullRequests', prComparison.provider))
-                        : t(changeRequestCopy('pullRequestComparison.select', prComparison.provider)))}</p>
+                        : t(changeRequestCopy('pullRequestComparison.pickAbove', prComparison.provider)))}</p>
                     {(comparison.error || prComparison.error) && <Button variant="outline" size="sm" onClick={() => {
                         if (selectedPr) void comparison.refresh();
                         else void prComparison.refresh();
                     }}>{t('diffView.actions.retry')}</Button>}
-                    {!selectedPr && !prComparison.loading && <PullRequestComparisonSelector comparison={prComparison} />}
                 </div>;
             }
             if (!comparison.files) return <div className="flex flex-1 items-center justify-center gap-2 typography-meta text-muted-foreground">
@@ -2678,7 +2679,6 @@ export const DiffView: React.FC<DiffViewProps> = ({
                         <Icon name="text-wrap" className="size-4" />
                     </Button>
                 )}
-                {currentLayoutForAllFiles && (
                 {changedFiles.length > 0 && (
                     <Button
                         variant="ghost"
@@ -2695,6 +2695,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                         <Icon name="space" className="size-4" />
                     </Button>
                 )}
+                {currentLayoutForAllFiles && (
                     <DiffViewToggle
                         mode={currentLayoutForAllFiles === 'side-by-side' ? 'side-by-side' : 'unified'}
                         onModeChange={handleHeaderLayoutChange}

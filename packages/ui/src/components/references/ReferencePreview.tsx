@@ -4,6 +4,7 @@ import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import type { GitHubChecksSummary, GitHubPullStatus, GitHubReference, GitHubReferenceComment, GitHubReferenceDetail, LinearIssue, LinearIssueSummary } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
@@ -123,7 +124,8 @@ const CommentsSection: React.FC<{
     /** A PR's thread carries its commits too. */
     activity?: boolean;
     now: number;
-}> = ({ state, total, activity = false, now }) => {
+    attachments?: CommentAttachments;
+}> = ({ state, total, activity = false, now, attachments }) => {
     const { t } = useI18n();
     const shown = state.status === 'ready' ? state.value.filter((entry) => entry.kind === 'comment').length : 0;
     return (
@@ -135,6 +137,16 @@ const CommentsSection: React.FC<{
                         {t('references.picker.preview.commentsLatest', { shown, total })}
                     </span>
                 ) : null}
+                {attachments && shown > 0 && state.status === 'ready' ? (
+                    <button
+                        type="button"
+                        onClick={() => attachments.onAttachAll(state.value.flatMap((entry) => (entry.kind === 'comment' ? [entry] : [])))}
+                        className={cn('ml-auto inline-flex items-center gap-1 typography-meta font-normal hover:text-foreground', REFERENCE_META_TEXT)}
+                    >
+                        <Icon name="attachment-2" className="size-3.5" />
+                        {t('gitView.pr.comments.addAll')}
+                    </button>
+                ) : null}
             </h4>
             {state.status === 'error' ? (
                 <p className="typography-meta text-[var(--status-error-text)]">{t('references.picker.error.load', { error: state.error })}</p>
@@ -143,10 +155,16 @@ const CommentsSection: React.FC<{
             ) : state.value.length === 0 ? (
                 <p className="typography-meta text-muted-foreground">{t('references.picker.preview.commentsEmpty')}</p>
             ) : (
-                <ReferenceComments entries={state.value} now={now} />
+                <ReferenceComments entries={state.value} now={now} onAttachComment={attachments?.onAttach} />
             )}
         </section>
     );
+};
+
+/** Pins a comment, or all of them, above the composer. */
+type CommentAttachments = {
+    onAttach: (comment: ReferenceCommentItem) => void;
+    onAttachAll: (comments: ReferenceCommentItem[]) => void;
 };
 
 const REVIEW_VERDICT_KEYS = {
@@ -256,7 +274,9 @@ const GitHubPreview: React.FC<{
     labelsControl?: React.ReactNode;
     reviewersControl?: React.ReactNode;
     onOpenChecks?: () => void;
-}> = ({ reference, pullStatus, detail, purpose, pinned, includeDiff, onIncludeDiffChange, now, footer: footerOverride, pullLinks, reply, labelsControl, reviewersControl, onOpenChecks }) => {
+    commentAttachments?: CommentAttachments;
+    stateMenu?: React.ReactNode;
+}> = ({ reference, pullStatus, detail, purpose, pinned, includeDiff, onIncludeDiffChange, now, footer: footerOverride, pullLinks, reply, labelsControl, reviewersControl, onOpenChecks, commentAttachments, stateMenu }) => {
     const { t } = useI18n();
     const comments = React.useMemo(
         () => mapDetail(detail, (value) => buildReferenceTimeline(value.comments.map((comment: GitHubReferenceComment, index): ReferenceCommentItem => ({
@@ -269,7 +289,15 @@ const GitHubPreview: React.FC<{
             context: comment.path
                 ? `${comment.path}${comment.line ? `:${comment.line}` : ''}`
                 : comment.review && comment.review !== 'commented' ? t(REVIEW_VERDICT_KEYS[comment.review]) : null,
-        })), value.pull?.commits ?? [])),
+            location: comment.path ? `${comment.path}${comment.line ? `:${comment.line}` : ''}` : null,
+        })), (value.pull?.commits ?? []).map((commit) => ({
+            sha: commit.sha,
+            headline: commit.headline,
+            author: commit.author?.login ?? commit.authorName,
+            avatarUrl: commit.author?.avatarUrl ?? null,
+            committedAt: commit.committedAt,
+            url: commit.url,
+        })))),
         [detail, t],
     );
     const relative = useRelative(now);
@@ -298,7 +326,27 @@ const GitHubPreview: React.FC<{
         <PreviewFrame pinned={pinned} footer={footer}>
             <header className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                    <StatePill icon={look.icon} color={look.color} label={t(look.labelKey)} />
+                    {stateMenu ? (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <button
+                                    type="button"
+                                    aria-label={t('references.picker.preview.stateMenuAria', { state: t(look.labelKey) })}
+                                    className="shrink-0 rounded-full outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-ring"
+                                >
+                                    <StatePill
+                                        icon={look.icon}
+                                        color={look.color}
+                                        label={t(look.labelKey)}
+                                        trailing={<Icon name="arrow-down-s" className="size-3.5 opacity-70" />}
+                                    />
+                                </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-56">{stateMenu}</DropdownMenuContent>
+                        </DropdownMenu>
+                    ) : (
+                        <StatePill icon={look.icon} color={look.color} label={t(look.labelKey)} />
+                    )}
                     <span className={cn('truncate typography-meta', REFERENCE_META_TEXT)}>
                         {reference.sourceRepo.owner}/{reference.sourceRepo.repo} {referenceNumberLabel(reference)}
                     </span>
@@ -361,7 +409,7 @@ const GitHubPreview: React.FC<{
                 ) : null}
             </div>
 
-            <CommentsSection state={comments} total={detail.status === 'ready' ? detail.value.commentTotal : null} activity={reference.kind === 'pull'} now={now} />
+            <CommentsSection state={comments} total={detail.status === 'ready' ? detail.value.commentTotal : null} activity={reference.kind === 'pull'} now={now} attachments={commentAttachments} />
             {reply}
         </PreviewFrame>
     );
@@ -392,6 +440,7 @@ const LinearPreview: React.FC<{
             body: comment.body,
             createdAt: comment.createdAt,
             context: null,
+            location: null,
         }))),
         [detail],
     );
@@ -478,7 +527,11 @@ export const ReferencePreview: React.FC<{
     reviewersControl?: React.ReactNode;
     /** Opens the previewed PR's check runs from its checks totals. */
     onOpenChecks?: () => void;
-}> = ({ item, pullStatus, linearDetail, githubDetail, purpose, pinned, includeDiff, onIncludeDiffChange, now, footer, pullLinks, linearStateControl, reply, labelsControl, reviewersControl, onOpenChecks }) => {
+    /** An issue's or PR's comments, pinned above the composer one by one or together. */
+    commentAttachments?: CommentAttachments;
+    /** Menu items on an issue's or PR's state pill, such as close or reopen. */
+    stateMenu?: React.ReactNode;
+}> = ({ item, pullStatus, linearDetail, githubDetail, purpose, pinned, includeDiff, onIncludeDiffChange, now, footer, pullLinks, linearStateControl, reply, labelsControl, reviewersControl, onOpenChecks, commentAttachments, stateMenu }) => {
     const { t } = useI18n();
     if (!item) {
         return (
@@ -506,6 +559,8 @@ export const ReferencePreview: React.FC<{
             labelsControl={labelsControl}
             reviewersControl={reviewersControl}
             onOpenChecks={onOpenChecks}
+            commentAttachments={commentAttachments}
+            stateMenu={stateMenu}
         />
     );
 };

@@ -7,6 +7,8 @@
  * mapped onto the rows and preview GitHub items use.
  */
 
+import { parseChangeRequestReference } from '@/lib/source-control/changeRequestReference';
+import { parseIssueReference } from '@/lib/source-control/issueReference';
 import type {
     ChangeRequest,
     ChangeRequestContext,
@@ -28,7 +30,7 @@ import type {
 
 import type { ListPage } from './referenceCache';
 
-type GitLabReads = Pick<SourceControlAPI, 'issuesList' | 'changeRequestsList' | 'issueComments' | 'changeRequestContext'>;
+type GitLabReads = Pick<SourceControlAPI, 'issuesList' | 'changeRequestsList' | 'issueComments' | 'changeRequestContext' | 'issueGet'>;
 
 const BODY_LIMIT = 20_000;
 
@@ -61,9 +63,13 @@ const toIssueReference = (issue: Issue): GitHubIssueReference => ({
     state: issue.state === 'open' ? 'open' : 'completed',
 });
 
-const toPullReference = (changeRequest: ChangeRequest): GitHubPullReference => ({
+/**
+ * A change request as the preview reads it. GitLab's lists and any host's
+ * branch status carry this shape; labels and the comment count are not in it.
+ */
+export const pullReferenceFromChangeRequest = (changeRequest: ChangeRequest): GitHubPullReference => ({
     kind: 'pull',
-    provider: 'gitlab',
+    provider: changeRequest.provider,
     number: changeRequest.number,
     title: changeRequest.title,
     url: changeRequest.url,
@@ -74,7 +80,8 @@ const toPullReference = (changeRequest: ChangeRequest): GitHubPullReference => (
     labels: [],
     commentCount: 0,
     sourceRepo: sourceRepo(changeRequest.project),
-    projectId: changeRequest.project.id,
+    // GitHub names a project by owner/repo; only GitLab's numeric id is kept.
+    ...(changeRequest.provider === 'gitlab' ? { projectId: changeRequest.project.id } : {}),
     state: changeRequest.state,
     draft: changeRequest.draft,
     head: changeRequest.head,
@@ -95,11 +102,23 @@ export const fetchGitLabReferencePage = async (
     cursor: string | null,
 ): Promise<ListPage<GitHubReference>> => {
     const page = cursor ? Number(cursor) : 1;
+    // A number or a link names one item, as on GitHub: it is read, not
+    // searched for (GitLab's search matches titles and descriptions only).
+    const lookup = kind === 'pull' ? parseChangeRequestReference(text) : parseIssueReference(text);
+    if (lookup && lookup.identity?.provider !== 'github') {
+        if (page > 1) return { kind: 'page', items: [], cursor: null, hasMore: false };
+        if (kind === 'pull') {
+            const found = await reads.changeRequestContext(context, lookup.number, lookup.project ? { project: lookup.project } : undefined);
+            return { kind: 'page', items: found.changeRequest ? [pullReferenceFromChangeRequest(found.changeRequest)] : [], cursor: null, hasMore: false };
+        }
+        const issue = await reads.issueGet(context, lookup.number, lookup.project);
+        return { kind: 'page', items: issue ? [toIssueReference(issue)] : [], cursor: null, hasMore: false };
+    }
     // An empty query is not sent.
     const options = { page, state: filter.state, people: filter.people, query: text };
     const result = kind === 'issue'
         ? await reads.issuesList(context, options).then((answer) => ({ ...answer, items: answer.items.map(toIssueReference) }))
-        : await reads.changeRequestsList(context, options).then((answer) => ({ ...answer, items: answer.items.map(toPullReference) }));
+        : await reads.changeRequestsList(context, options).then((answer) => ({ ...answer, items: answer.items.map(pullReferenceFromChangeRequest) }));
     return { kind: 'page', items: result.items, cursor: result.hasMore ? String(page + 1) : null, hasMore: result.hasMore };
 };
 
