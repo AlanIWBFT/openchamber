@@ -575,6 +575,81 @@ describe('fs write', () => {
   });
 });
 
+describe('fs rename', () => {
+  const registerRename = (fsPromises) => {
+    const { app, getRoute } = createRouteRegistry();
+    registerFsRoutes(app, {
+      os: { homedir: () => '/home/user' },
+      path: path.posix,
+      fsPromises: {
+        realpath: async (targetPath) => targetPath,
+        ...fsPromises,
+      },
+      spawn: vi.fn(),
+      crypto: { randomUUID: () => 'job-0' },
+      normalizeDirectoryPath: (p) => p,
+      resolveProjectDirectory: async () => ({ directory: '/repo' }),
+      buildAugmentedPath: () => '/usr/bin',
+      resolveGitBinaryForSpawn: () => 'git',
+      openchamberUserConfigRoot: '/home/user/.config',
+    });
+    return getRoute('POST', '/api/fs/rename');
+  };
+  const missing = () => Object.assign(new Error('missing'), { code: 'ENOENT' });
+
+  it('renames when the destination is free', async () => {
+    const fsPromises = {
+      lstat: vi.fn(async (targetPath) => {
+        if (targetPath === '/repo/a.txt') return { dev: 1, ino: 10 };
+        throw missing();
+      }),
+      rename: vi.fn(async () => undefined),
+    };
+    const res = createMockResponse();
+    await registerRename(fsPromises)({ body: { oldPath: '/repo/a.txt', newPath: '/repo/b.txt' } }, res);
+
+    expect(res.body).toEqual({ success: true, path: '/repo/b.txt' });
+    expect(fsPromises.rename).toHaveBeenCalledWith('/repo/a.txt', '/repo/b.txt');
+  });
+
+  it('returns a conflict instead of replacing an existing destination', async () => {
+    const fsPromises = {
+      lstat: vi.fn(async (targetPath) => (targetPath === '/repo/a.txt' ? { dev: 1, ino: 10 } : { dev: 1, ino: 20 })),
+      rename: vi.fn(async () => undefined),
+    };
+    const res = createMockResponse();
+    await registerRename(fsPromises)({ body: { oldPath: '/repo/a.txt', newPath: '/repo/b.txt' } }, res);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'Destination path already exists', reason: 'already-exists' });
+    expect(fsPromises.rename).not.toHaveBeenCalled();
+  });
+
+  it('allows a case-only rename that resolves to the source itself', async () => {
+    const fsPromises = {
+      lstat: vi.fn(async () => ({ dev: 1, ino: 10 })),
+      rename: vi.fn(async () => undefined),
+    };
+    const res = createMockResponse();
+    await registerRename(fsPromises)({ body: { oldPath: '/repo/Readme.md', newPath: '/repo/README.md' } }, res);
+
+    expect(res.body).toEqual({ success: true, path: '/repo/README.md' });
+    expect(fsPromises.rename).toHaveBeenCalledWith('/repo/Readme.md', '/repo/README.md');
+  });
+
+  it('reports a missing source as not found', async () => {
+    const fsPromises = {
+      lstat: vi.fn(async () => { throw missing(); }),
+      rename: vi.fn(async () => undefined),
+    };
+    const res = createMockResponse();
+    await registerRename(fsPromises)({ body: { oldPath: '/repo/a.txt', newPath: '/repo/b.txt' } }, res);
+
+    expect(res.statusCode).toBe(404);
+    expect(fsPromises.rename).not.toHaveBeenCalled();
+  });
+});
+
 describe('fs upload', () => {
   it('streams a binary file to temp storage before committing it without overwrite', async () => {
     const write = vi.fn(async (_buffer, _offset, length) => ({ bytesWritten: length }));

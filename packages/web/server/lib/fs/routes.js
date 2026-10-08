@@ -1564,6 +1564,19 @@ export const registerFsRoutes = (app, dependencies) => {
         return res.status(400).json({ error: 'Source and destination must share the same workspace root' });
       }
 
+      // fs.rename silently replaces an existing file. A destination that is the
+      // source itself is a case-only rename on a case-insensitive filesystem.
+      const [sourceStats, destinationStats] = await Promise.all([
+        fsPromises.lstat(resolvedOld.resolved),
+        fsPromises.lstat(resolvedNew.resolved).catch((error) => {
+          if (error?.code === 'ENOENT') return null;
+          throw error;
+        }),
+      ]);
+      if (destinationStats && (destinationStats.dev !== sourceStats.dev || destinationStats.ino !== sourceStats.ino)) {
+        return res.status(409).json({ error: 'Destination path already exists', reason: 'already-exists' });
+      }
+
       await fsPromises.rename(resolvedOld.resolved, resolvedNew.resolved);
       return res.json({ success: true, path: resolvedNew.resolved });
     } catch (error) {
