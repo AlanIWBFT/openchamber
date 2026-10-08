@@ -635,6 +635,10 @@ const projectContextRuntime = createProjectContextRuntime({
   path,
   projectsDirPath: OPENCHAMBER_PROJECTS_CONFIG_DIR,
   resolveSharedPlansDir: (projectId) => projectConfigRuntime.resolveSharedPlansDir(projectId),
+  onChanged: (projectId) => broadcastOpenChamberUiEvent({
+    type: 'openchamber:project-context-changed',
+    properties: { projectId },
+  }),
 });
 
 const agentMemoryRuntime = createAgentMemoryRuntime({

@@ -912,7 +912,7 @@ export const ContextPanel: React.FC = () => {
             : activeTab?.mode === 'pr'
                 ? <PullRequestView />
             : activeTab?.mode === 'notes'
-                ? <ProjectContextPanel />
+                ? <ProjectContextPanel visible={isOpen} />
         : activeTab?.mode === 'plan'
             ? <React.Suspense fallback={null}><PlanView
                 targetPath={activeTab.targetPath}
