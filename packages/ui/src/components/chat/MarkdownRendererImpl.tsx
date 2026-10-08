@@ -136,7 +136,7 @@ const stripLeadingFrontmatter = (markdown: string): string => {
 
 export type MarkdownVariant = 'assistant' | 'tool' | 'reasoning';
 
-interface MarkdownRendererProps {
+export interface MarkdownRendererProps {
   content: string;
   part?: Part;
   messageId: string;

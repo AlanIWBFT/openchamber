@@ -30,7 +30,7 @@
     "extensions:build": "bun scripts/build-builtin-extensions.mjs",
     "build:electron": "bun run --cwd packages/electron build",
     "build:mobile": "bun run --cwd packages/mobile build",
-    "type-check": "bun run --filter '*' type-check",
+    "type-check": "bun run --cwd packages/ui type-check && bun run --filter '*' type-check",
     "type-check:web": "bun run --cwd packages/web type-check",
     "type-check:ui": "bun run --cwd packages/ui type-check",
     "settings-registry:generate": "bun run --cwd packages/ui src/lib/settings/registry-snapshot.ts",
