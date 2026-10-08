@@ -340,6 +340,13 @@ matching and ordering. Search does not fetch sessions or broaden list membership
   through callback-backed state so virtualization activates after every mount
   without waiting for an unrelated render. Archived groups must not add a
   nested virtualizer.
+- An unmeasured row is estimated at the measured height of a row with the same
+  kind, render context and trailing section gap (`sessionSidebarRowSizeKey`),
+  falling back to the model estimate plus that gap. The virtualizer corrects the
+  scroll position whenever a row above the viewport measures differently from
+  its estimate, and those writes land in the middle of a scroll gesture as small
+  jumps; rows of one key share a height at any interface font size, so after
+  the first rows mount the estimates are exact.
 - Sticky project/activity identity comes from model header descriptors and the
   first visible virtual index, which keeps the live current and adjacent header
   rows mounted. `CrossfadeZoneHeaders` uses their cached virtual layout offsets
