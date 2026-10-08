@@ -316,10 +316,42 @@ const callRead = async (handler, query) => {
   return res;
 };
 
+const createStreamingResponse = () => {
+  const chunks = [];
+  const headers = new Map();
+  let statusCode = 200;
+  const res = new Writable({
+    write(chunk, _encoding, callback) {
+      chunks.push(Buffer.from(chunk));
+      callback();
+    },
+  });
+  Object.assign(res, {
+    status(code) { statusCode = code; return res; },
+    json(payload) { chunks.push(Buffer.from(JSON.stringify(payload))); return res; },
+    type() { return res; },
+    send(payload) { chunks.push(Buffer.from(payload)); return res; },
+    setHeader(name, value) { headers.set(name.toLowerCase(), value); return res; },
+    getHeader(name) { return headers.get(name.toLowerCase()); },
+  });
+  return {
+    res,
+    finished: new Promise((resolve) => res.on('finish', resolve)),
+    get statusCode() { return statusCode; },
+    get body() { return Buffer.concat(chunks).toString('utf8'); },
+  };
+};
+
+// File bytes as `fs/promises` hands them to the raw route: an open handle that streams a span.
+const openBytes = (bytes) => vi.fn(async () => ({
+  createReadStream: ({ start, end }) => Readable.from([bytes.subarray(start, end + 1)]),
+}));
+
 const callRaw = async (handler, query) => {
-  const res = createMockResponse();
-  await handler({ query }, res);
-  return res;
+  const response = createStreamingResponse();
+  await handler({ query }, response.res);
+  await response.finished;
+  return response;
 };
 
 const callMkdir = async (handler, body) => {
@@ -895,7 +927,7 @@ describe('fs read', () => {
     const fsPromises = {
       realpath: vi.fn(async (targetPath) => targetPath),
       stat: vi.fn(async () => ({ isFile: () => true, size: 6 })),
-      readFile: vi.fn(async () => Buffer.from('secret')),
+      open: openBytes(Buffer.from('secret')),
     };
     const handler = registerRaw(fsPromises);
 
@@ -905,7 +937,7 @@ describe('fs read', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.getHeader('referrer-policy')).toBe('no-referrer');
+    expect(res.res.getHeader('referrer-policy')).toBe('no-referrer');
   });
 
   it('stats outside files without a grant', async () => {
@@ -1292,36 +1324,8 @@ describe('fs exec git-read cache', () => {
 });
 
 describe('fs raw byte ranges', () => {
-  const createStreamingResponse = () => {
-    const chunks = [];
-    const headers = new Map();
-    let statusCode = 200;
-    const res = new Writable({
-      write(chunk, _encoding, callback) {
-        chunks.push(Buffer.from(chunk));
-        callback();
-      },
-    });
-    Object.assign(res, {
-      status(code) { statusCode = code; return res; },
-      json(payload) { chunks.push(Buffer.from(JSON.stringify(payload))); return res; },
-      type() { return res; },
-      send(payload) { chunks.push(Buffer.from(payload)); return res; },
-      setHeader(name, value) { headers.set(name.toLowerCase(), value); return res; },
-      getHeader(name) { return headers.get(name.toLowerCase()); },
-    });
-    return {
-      res,
-      finished: new Promise((resolve) => res.on('finish', resolve)),
-      get statusCode() { return statusCode; },
-      get body() { return Buffer.concat(chunks).toString('utf8'); },
-    };
-  };
-
   const registerRawWithFile = (bytes) => {
-    const open = vi.fn(async () => ({
-      createReadStream: ({ start, end }) => Readable.from([bytes.subarray(start, end + 1)]),
-    }));
+    const open = openBytes(bytes);
     const readFile = vi.fn(async () => bytes);
     const handler = registerRaw({
       stat: async () => ({ isFile: () => true, size: bytes.length }),
@@ -1339,7 +1343,7 @@ describe('fs raw byte ranges', () => {
     await response.finished;
 
     expect(response.statusCode).toBe(206);
-    expect(response.getHeader?.('content-range') ?? response.res.getHeader('content-range')).toBe('bytes 3-9/10');
+    expect(response.res.getHeader('content-range')).toBe('bytes 3-9/10');
     expect(response.res.getHeader('content-length')).toBe('7');
     expect(response.res.getHeader('accept-ranges')).toBe('bytes');
     expect(response.body).toBe('3456789');
@@ -1347,15 +1351,32 @@ describe('fs raw byte ranges', () => {
     expect(readFile).not.toHaveBeenCalled();
   });
 
-  it('serves the whole file, advertising ranges, when no span is asked for', async () => {
-    const { handler, open } = registerRawWithFile(Buffer.from('0123456789'));
-    const res = createMockResponse();
+  it('streams the whole file, advertising ranges, when no span is asked for', async () => {
+    const { handler, open, readFile } = registerRawWithFile(Buffer.from('0123456789'));
+    const response = createStreamingResponse();
 
-    await handler({ query: { path: '/repo/clip.mp4' }, headers: {} }, res);
+    await handler({ query: { path: '/repo/clip.mp4' }, headers: {} }, response.res);
+    await response.finished;
 
-    expect(res.statusCode).toBe(200);
-    expect(res.getHeader('accept-ranges')).toBe('bytes');
-    expect(res.body.toString('utf8')).toBe('0123456789');
+    expect(response.statusCode).toBe(200);
+    expect(response.res.getHeader('accept-ranges')).toBe('bytes');
+    expect(response.res.getHeader('content-length')).toBe('10');
+    expect(response.res.getHeader('content-range')).toBeUndefined();
+    expect(response.body).toBe('0123456789');
+    expect(open).toHaveBeenCalledWith('/repo/clip.mp4', 'r');
+    expect(readFile).not.toHaveBeenCalled();
+  });
+
+  it('answers an empty file without opening it', async () => {
+    const { handler, open } = registerRawWithFile(Buffer.alloc(0));
+    const response = createStreamingResponse();
+
+    await handler({ query: { path: '/repo/empty.txt' }, headers: {} }, response.res);
+    await response.finished;
+
+    expect(response.statusCode).toBe(200);
+    expect(response.res.getHeader('content-length')).toBe('0');
+    expect(response.body).toBe('');
     expect(open).not.toHaveBeenCalled();
   });
 
@@ -1459,8 +1480,8 @@ describe('fs raw download Content-Disposition', () => {
   it('uses RFC 5987 filename*= encoding for non-ASCII filenames on download', async () => {
     const fsPromises = {
       realpath: vi.fn(async (targetPath) => targetPath),
-      stat: vi.fn(async () => ({ isFile: () => true, size: 6 })),
-      readFile: vi.fn(async () => Buffer.from('content')),
+      stat: vi.fn(async () => ({ isFile: () => true, size: 7 })),
+      open: openBytes(Buffer.from('content')),
     };
     const handler = registerRaw(fsPromises);
 
@@ -1470,7 +1491,7 @@ describe('fs raw download Content-Disposition', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    const cd = res.getHeader('content-disposition');
+    const cd = res.res.getHeader('content-disposition');
     expect(cd).toContain("filename*=UTF-8''");
     expect(cd).toContain(encodeURIComponent('文件.txt'));
     // ASCII fallback strips non-ASCII chars, leaving extension
@@ -1480,15 +1501,15 @@ describe('fs raw download Content-Disposition', () => {
   it('uses plain filename for ASCII-only filenames on download', async () => {
     const fsPromises = {
       realpath: vi.fn(async (targetPath) => targetPath),
-      stat: vi.fn(async () => ({ isFile: () => true, size: 6 })),
-      readFile: vi.fn(async () => Buffer.from('content')),
+      stat: vi.fn(async () => ({ isFile: () => true, size: 7 })),
+      open: openBytes(Buffer.from('content')),
     };
     const handler = registerRaw(fsPromises);
 
     const res = await callRaw(handler, { path: '/repo/readme.txt', download: 'true' });
 
     expect(res.statusCode).toBe(200);
-    const cd = res.getHeader('content-disposition');
+    const cd = res.res.getHeader('content-disposition');
     expect(cd).toContain('filename="readme.txt"');
     expect(cd).toContain("filename*=UTF-8''readme.txt");
   });
