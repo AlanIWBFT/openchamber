@@ -622,11 +622,11 @@ describe("SessionMessageLoader", () => {
   test("a tail refresh replaces the optimistic prompt's client clock with the server's", async () => {
     // The browser's clock runs ahead of the server's: the prompt was stamped
     // 10s, the server recorded it at 1s and its reply at 1.5s.
-    const prompt = createRecord("session-skew", "msg_prompt", 10_000)
-    const serverPrompt = createRecord("session-skew", "msg_prompt", 1_000)
-    const reply = {
-      info: { id: "msg_reply", sessionID: "session-skew", role: "assistant", time: { created: 1_500, completed: 2_000 } } as Message,
-      parts: [{ id: "part_reply", messageID: "msg_reply", sessionID: "session-skew", type: "text", text: "answer" }] as Part[],
+    const prompt = createRecord("session-skew", "msg_prompt", 1, 10_000)
+    const serverPrompt = createRecord("session-skew", "msg_prompt", 1, 1_000)
+    const reply: MessagePage["items"][number] = {
+      info: { id: "msg_reply", sessionID: "session-skew", role: "assistant", seq: 2, agent: "build", providerID: "test", modelID: "test", time: { created: 1_500, completed: 2_000 } },
+      parts: [{ id: "part_reply", messageID: "msg_reply", sessionID: "session-skew", type: "text", text: "answer" }],
     }
     const { childStores, loader } = createLoader(async () => response([serverPrompt, reply]))
     const target = { directory: "/remote", sessionID: "session-skew" }
@@ -641,9 +641,9 @@ describe("SessionMessageLoader", () => {
     childStores.disposeAll()
   })
 
-  test("a tail refresh keeps a prompt a live event already replaced", async () => {
-    const prompt = createRecord("session-live", "msg_prompt", 10_000)
-    const { childStores, loader } = createLoader(async () => response([createRecord("session-live", "msg_prompt", 1_000)]))
+  test("a later stored read confirms a prompt previously received through a live event", async () => {
+    const prompt = createRecord("session-live", "msg_prompt", 1, 10_000)
+    const { childStores, loader } = createLoader(async () => response([createRecord("session-live", "msg_prompt", 1, 1_000)]))
     const target = { directory: "/remote", sessionID: "session-live" }
     loader.initializeCreatedSession(target)
     loader.optimisticAdd({ ...target, message: prompt.info, parts: prompt.parts })
@@ -653,7 +653,7 @@ describe("SessionMessageLoader", () => {
 
     await loader.refreshTail(target, 30)
 
-    expect(store.getState().message[target.sessionID]).toEqual([live])
+    expect(store.getState().message[target.sessionID]).toEqual([createRecord("session-live", "msg_prompt", 1, 1_000).info])
     loader.dispose()
     childStores.disposeAll()
   })

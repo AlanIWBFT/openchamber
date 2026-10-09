@@ -114,21 +114,21 @@ export const scheduleDesktopHostCandidateRefresh = (hostId: string): void => {
 export const restoreDesktopRelayRuntime = async (
   targetHostId?: string,
   options?: { reconnectActive?: boolean },
-): Promise<void> => {
-  if (!isElectronShell()) return;
+): Promise<boolean> => {
+  if (!isElectronShell()) return false;
   const config = await desktopHostsGet().catch(() => null);
-  if (!config) return;
+  if (!config) return false;
   // An explicit target (a "new window for host X") wins over the default-host
   // relaunch logic.
   const hostId = targetHostId || (config.defaultHostId !== 'local' ? config.defaultHostId : null);
-  if (!hostId) return;
+  if (!hostId) return false;
   const host = config.hosts.find((entry) => entry.id === hostId);
-  if (!host?.relay) return;
+  if (!host?.relay) return false;
   // Must match runtimeKeyForHost() in DesktopHostSwitcher so switch/resolve agree.
   const runtimeKey = `host:${host.id}`;
   // `reconnectActive`: the host was just paired again and carries a new token,
   // so an already active runtime for it must switch over as well.
-  if (getRuntimeKey() === runtimeKey && !options?.reconnectActive) return;
+  if (getRuntimeKey() === runtimeKey && !options?.reconnectActive) return false;
 
   const switchToDirect = (url: string) => {
     switchRuntimeEndpoint({
@@ -154,7 +154,7 @@ export const restoreDesktopRelayRuntime = async (
   const directUrl = host.apiUrl ? normalizeHostUrl(getDesktopHostApiUrl(host)) : null;
   if (!directUrl) {
     switchToRelay();
-    return;
+    return true;
   }
 
   // Race the direct probe against a short headstart instead of serializing the
@@ -179,10 +179,10 @@ export const restoreDesktopRelayRuntime = async (
   if (winner) {
     if (probeOk(winner)) {
       switchToDirect(directUrl);
-      return;
+      return true;
     }
     switchToRelay();
-    return;
+    return true;
   }
 
   // Headstart expired: connect via relay now; adopt the direct transport if the
@@ -193,4 +193,5 @@ export const restoreDesktopRelayRuntime = async (
     if (getRuntimeKey() !== runtimeKey) return; // user switched away meanwhile
     switchToDirect(directUrl);
   });
+  return true;
 };

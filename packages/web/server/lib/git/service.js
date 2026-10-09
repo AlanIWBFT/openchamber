@@ -15,10 +15,11 @@ import { overlayEnvironment } from '../environment/variables.js';
 import { primaryWorktreeRootFromGitDir, unsupportedRepositoryRootReason } from './repository-root.js';
 import { randomUUID } from 'crypto';
 import { isMainThread } from 'node:worker_threads';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   resolveGitBinary,
 } from './git-binary.js';
-import { runGitReadWorkerTask } from './git-read-worker-client.js';
+import { runGitReadWorkerTask as dispatchGitReadWorkerTask } from './git-read-worker-client.js';
 import { runSharedGitReadTask } from './git-read-shared.js';
 import { execFileWithProcessBroker, getProcessBrokerSpawn } from './process-broker.js';
 
@@ -280,6 +281,16 @@ const resolveSshAuthSock = async () => {
 // Variables the user gave OpenChamber for the directory's project
 // (lib/environment). Unset in tests and tools that use this module alone.
 let gitEnvironment = null;
+const gitReadEnvironment = new AsyncLocalStorage();
+
+export const withGitReadEnvironment = (variables, run) => gitReadEnvironment.run({ variables }, run);
+
+const runGitReadWorkerTask = async (operation, payload, options = {}) => {
+  throwIfGitReadCancelled(options);
+  const environment = await directoryEnvironmentForGit(payload.directory, { refresh: false });
+  throwIfGitReadCancelled(options);
+  return dispatchGitReadWorkerTask(operation, { ...payload, environment }, options);
+};
 
 export const configureGitEnvironment = (runtime) => {
   gitEnvironment = runtime;
@@ -306,9 +317,12 @@ const REPOSITORY_LOCATION_ENV_NAMES = new Set([
 ]);
 const isKeptOutOfGitOverlay = (name) => isRefusedBySimpleGit(name) || REPOSITORY_LOCATION_ENV_NAMES.has(name.toUpperCase());
 
-const directoryEnvironmentForGit = async (directory) => {
+const directoryEnvironmentForGit = async (directory, options) => {
+  const request = gitReadEnvironment.getStore();
+  if (request) return request.variables;
   if (!gitEnvironment || !directory) return null;
-  const variables = await gitEnvironment.forDirectory(normalizeDirectoryPath(directory));
+  const normalized = normalizeDirectoryPath(directory);
+  const variables = options ? await gitEnvironment.forDirectory(normalized, options) : await gitEnvironment.forDirectory(normalized);
   if (!variables) return null;
   return Object.fromEntries(Object.entries(variables).filter(([name]) => !isKeptOutOfGitOverlay(name)));
 };

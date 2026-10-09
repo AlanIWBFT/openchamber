@@ -1,6 +1,6 @@
 import { parentPort } from 'node:worker_threads';
 
-import { getFileDiff, getPrGitContext, getStatus, isAncestorOfHead } from './service.js';
+import { getFileDiff, getPrGitContext, getStatus, isAncestorOfHead, withGitReadEnvironment } from './service.js';
 
 if (!parentPort) {
   throw new Error('Git read worker requires a parent port');
@@ -33,34 +33,22 @@ const runRequest = async (message) => {
       throw createCancellationError();
     }
 
-    let result;
-    if (message.operation === 'status') {
-      result = await getStatus(message.payload.directory, {
-        mode: message.payload.mode,
-        signal: controller.signal,
-        cancellationView,
-      });
-    } else if (message.operation === 'pr-context') {
-      result = await getPrGitContext(message.payload.directory, message.payload.branch, {
-        signal: controller.signal,
-        cancellationView,
-      });
-    } else if (message.operation === 'ancestor') {
-      result = await isAncestorOfHead(message.payload.directory, message.payload.sha, {
-        signal: controller.signal,
-        cancellationView,
-      });
-    } else if (message.operation === 'file-diff') {
-      result = await getFileDiff(message.payload.directory, {
-        path: message.payload.path,
-        staged: message.payload.staged,
-        signal: controller.signal,
-        cancellationView,
-      });
-    } else {
+    const result = await withGitReadEnvironment(message.payload.environment, async () => {
+      const options = { signal: controller.signal, cancellationView };
+      if (message.operation === 'status') {
+        return getStatus(message.payload.directory, { ...options, mode: message.payload.mode });
+      }
+      if (message.operation === 'pr-context') {
+        return getPrGitContext(message.payload.directory, message.payload.branch, options);
+      }
+      if (message.operation === 'ancestor') {
+        return isAncestorOfHead(message.payload.directory, message.payload.sha, options);
+      }
+      if (message.operation === 'file-diff') {
+        return getFileDiff(message.payload.directory, { ...options, path: message.payload.path, staged: message.payload.staged });
+      }
       throw new Error(`Unsupported Git read operation: ${message.operation}`);
-    }
-
+    });
     parentPort.postMessage({ type: 'response', requestId: message.requestId, ok: true, result });
   } catch (error) {
     parentPort.postMessage({

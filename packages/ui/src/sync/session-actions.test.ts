@@ -629,11 +629,11 @@ describe("confirmed session removal", () => {
           time: { created: 1, updated: 1, archived: 2 },
         }
         const source = createStore({}, { session: [session] })
-        const { deleteSession, deleteSessionInDirectory, setActionRefs } = await import('./session-actions')
-        setActionRefs(createChildStores([['/test/project', source]]), () => '/test/project')
+        const { deleteSession, setActionRefs } = await import('./session-actions')
+        setActionRefs(createChildStores([['/test/project', source]]), () => scoped ? '/another/project' : '/test/project')
         if (result === 'failed') sessionDeleteError = new Error('delete failed')
         if (result === 'runtime-switch') beforeArchiveIdentityResolve = () => { runtimeKey = 'another-runtime' }
-        const deleted = await (scoped ? deleteSessionInDirectory(session.id, session.directory) : deleteSession(session.id))
+        const deleted = await deleteSession(session.id)
         expect(deleted).toBe(result === 'deleted')
         expect(replyCalls.some((call) => call.method === 'session.stop')).toBe(false)
         expect(openchamberRouteRequests).toEqual([])

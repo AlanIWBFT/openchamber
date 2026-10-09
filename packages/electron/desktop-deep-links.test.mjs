@@ -1,6 +1,36 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createDesktopDeepLinkQueue, createDesktopNavigationReadiness } from './desktop-deep-links.mjs';
+import { createDesktopDeepLinkQueue, createDesktopNavigationReadiness, createDesktopHostActionQueue } from './desktop-deep-links.mjs';
+
+for (const outcome of ['committed', 'failed', 'renderer-gone']) {
+  test(`renderer host handoff preserves session ordering when ${outcome}`, async () => {
+    const actions = createDesktopHostActionQueue();
+    const owner = {};
+    const delivered = [];
+    let ready = false;
+    const queue = createDesktopDeepLinkQueue({
+      isReady: (link) => link.type !== 'session' || ready,
+      dispatch: async (link, committed) => {
+        if (link.type === 'session') { delivered.push(link.value); return; }
+        if (await actions.enqueue({ type: 'host', hostId: link.value })) committed();
+      },
+      onError: assert.fail,
+    });
+    queue.enqueue({ type: 'session', value: 'old' });
+    queue.enqueue({ type: 'host', value: 'remote' });
+    const [action] = actions.take(owner);
+    assert.equal(actions.complete({}, action.id, true), false);
+    assert.deepEqual(actions.take(owner), []);
+    ready = true;
+    queue.enqueue({ type: 'session', value: 'new' });
+    assert.deepEqual(delivered, []);
+    if (outcome === 'renderer-gone') actions.cancelOwner(owner);
+    else assert.equal(actions.complete(owner, action.id, outcome === 'committed'), true);
+    await new Promise(setImmediate);
+    assert.deepEqual(delivered, outcome === 'committed' ? ['new'] : ['old', 'new']);
+    assert.equal(actions.complete(owner, action.id, true), false);
+  });
+}
 
 test('only remote documents get a fallback, retired on navigation, receiver readiness and shutdown', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });

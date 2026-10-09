@@ -35,7 +35,7 @@ import { usePwaDetection } from '@/hooks/usePwaDetection';
 import { loadDesktopSettings, updateDesktopSettings } from '@/lib/persistence';
 import { getCodeFontOptions, isMonoFontOption, CUSTOM_FONT_ID, DEFAULT_MONO_FONT, DEFAULT_UI_FONT, UI_FONT_OPTIONS, type LocalMonoFont, type UiFontOption } from '@/lib/fontOptions';
 import { parseVimMappings } from '@/lib/codemirror/vimMappings';
-import { useI18n, type Locale } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useEnterpriseMode } from '@/stores/useEnterprisePolicyStore';
 import { selectSafetyNetAvailable, useRoutingStore } from '@/stores/useRoutingStore';
@@ -1390,7 +1390,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             } else if (isMonoFontOption(value)) setMonoFont(value);
                                         }}>
                                             <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectCodeFontAria')} size={SETTINGS_SELECT_SIZE} className={SETTINGS_SELECT_TRIGGER_CLASS}>
-                                                <SelectValue>{selectedCodeFont?.label ?? t('settings.openchamber.visual.field.customFont')}</SelectValue>
+                                                <SelectValue>{selectedCodeFont?.label ?? (monoFont === CUSTOM_FONT_ID && customMonoFont ? customMonoFont : t('settings.openchamber.visual.field.customFont'))}</SelectValue>
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {codeFontOptions.map((option) => (

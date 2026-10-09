@@ -12,7 +12,6 @@ export {
 } from './delta-coalescer.js';
 
 export {
-  DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
   DEFAULT_UPSTREAM_STALL_TIMEOUT_MS,
   UPSTREAM_STALL_TIMEOUT_CONCURRENT_MS,
 } from './upstream-reader.js';

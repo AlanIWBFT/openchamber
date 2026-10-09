@@ -470,6 +470,24 @@ describe('terminal runtime', () => {
     expect(response.body).toEqual({ error: 'Terminal runtime is shutting down' });
   });
 
+  it('does not spawn after shutdown while project environment resolution is pending', async () => {
+    const started = deferred();
+    const released = deferred();
+    const harness = createHarness({ environmentRuntime: { applyToDirectory: async (_directory, env) => {
+      started.resolve();
+      await released.promise;
+      return env;
+    } } });
+    const response = createResponse();
+    const creating = harness.routes.post.get('/api/terminal/create')({ body: { sessionId: 'late-env', cwd: '/repo' } }, response);
+    await started.promise;
+    harness.runtime.forceShutdown();
+    released.resolve();
+    await creating;
+    expect(harness.processes).toHaveLength(0);
+    expect(response.body).toEqual({ error: 'Terminal runtime is shutting down' });
+  });
+
   it('creates client-identified sessions and forwards bounded resize operations', async () => {
     const harness = createHarness();
     try {

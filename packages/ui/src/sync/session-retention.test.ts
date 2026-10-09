@@ -7,7 +7,7 @@ import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from './session-ui-store';
 import { ChildStoreManager } from './child-store';
-import { deleteSessionInDirectory, setActionRefs } from './session-actions';
+import { deleteSession, setActionRefs } from './session-actions';
 import { resetSessionActionFailures, takeSessionActionFailure } from './session-action-failures';
 import { replaceGlobalSessionStatusById } from './global-session-status';
 import { buildSessionRetentionCandidates, isSessionKeptByUser, runSessionRetentionCleanup, useSessionRetentionRunStore } from './session-retention';
@@ -213,7 +213,7 @@ describe('retention execution', () => {
     const read = spyOn(opencodeClient, 'getSession').mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }));
     const remove = spyOn(opencodeClient, 'deleteSession');
 
-    expect(await deleteSessionInDirectory('gone', '/explicit-directory')).toBe(true);
+    expect(await deleteSession('gone')).toBe(true);
     expect(stop.mock.calls).toEqual([['gone', '/explicit-directory']]);
     expect(read.mock.calls).toEqual([['gone', '/explicit-directory']]);
     expect(remove.mock.calls).toHaveLength(0);

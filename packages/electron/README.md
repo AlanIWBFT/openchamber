@@ -109,6 +109,12 @@ main window's top frame, including a remote runtime page; it exposes no native
 host privileges. The standard entry/splash/configuration startup flow owns page
 loading independently of this queue.
 
+Renderer-owned host actions report a committed switch through
+`desktop_complete_host_action`. Taking an action leaves earlier session links queued
+until that result arrives. Failure, navigation or renderer loss before acknowledgement
+preserves those links. Only the main window's trusted local page can take and complete
+host actions; session-link delivery remains single-dispatch.
+
 Remote pages that do not report readiness retain upstream's ten-second
 best-effort delivery fallback. The timer belongs to the loaded document and is
 cancelled on navigation, renderer loss, readiness reports, window closure and
@@ -416,8 +422,9 @@ uses fonts on the desktop machine. Results are cached for the lifetime of the ru
 API adapter. Restart Desktop after installing fonts to refresh the list.
 
 Code fonts end with the selected UI font stack as their missing-glyph fallback.
-Local selections persist as `local:<family>` and survive an absent font, using concrete
-system monospace fallbacks before the UI stack. Web, VS Code, mobile and non-Windows
+Local selections use `monoFont: 'custom'` with `customMonoFont` and survive an absent font,
+using concrete system monospace fallbacks before the UI stack. Old `local:` values require
+reselection. Web, VS Code, mobile and non-Windows
 desktop apply the same stack but do not enumerate local fonts.
 
 The local `native/windows-shell` N-API module calls `ShellExecuteExW` with the default verb on a COM STA worker.

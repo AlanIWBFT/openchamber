@@ -5488,6 +5488,33 @@ describe('getStatus untracked directories', () => {
 });
 
 describe('git environment through simple-git', () => {
+  it('passes project environment to Windows read workers without leaking into the next request', async () => {
+    if (!canRunGit() || process.platform !== 'win32') return;
+    const repo = createTempDir();
+    const directory = path.join(repo, 'nested');
+    runGit(repo, ['init', '-b', 'main']);
+    fs.mkdirSync(directory);
+    const inheritedCeiling = process.env.GIT_CEILING_DIRECTORIES;
+    let variables = { GIT_CEILING_DIRECTORIES: repo.replaceAll('\\', '/') };
+    const reads = [];
+    configureGitEnvironment({ forDirectory: async (directory, options) => {
+      reads.push({ directory, userAction: isUserAction(), refresh: options?.refresh });
+      return variables;
+    } });
+    try {
+      await expect(getStatus(directory, { mode: 'full' })).rejects.toThrow('not a git repository');
+      expect(reads.length).toBeGreaterThan(0);
+      variables = null;
+      const visible = await getStatus(directory, { mode: 'full' });
+      expect(visible.isGitRepository).toBe(true);
+      expect(reads.length).toBeGreaterThanOrEqual(2);
+      expect(reads.every((read) => read.directory === directory && read.userAction === false && read.refresh === false)).toBe(true);
+      expect(process.env.GIT_CEILING_DIRECTORIES).toBe(inheritedCeiling);
+    } finally {
+      configureGitEnvironment(null);
+    }
+  });
+
   const withProcessEnv = async (overrides, run) => {
     const previous = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
     for (const [key, value] of Object.entries(overrides)) {

@@ -113,7 +113,7 @@ export const UI_FONT_OPTIONS: FontOptionDefinition<UiFontOption>[] = [
     }
 ];
 
-export const CODE_FONT_OPTIONS: FontOptionDefinition<BuiltinMonoFontOption>[] = [
+const CODE_FONT_OPTIONS: FontOptionDefinition<BuiltinMonoFontOption>[] = [
     {
         id: 'jetbrains-mono',
         label: 'JetBrains Mono',
@@ -184,7 +184,7 @@ const buildFontMap = <T extends string>(options: FontOptionDefinition<T>[]) =>
     Object.fromEntries(options.map((option) => [option.id, option])) as Record<T, FontOptionDefinition<T>>;
 
 export const UI_FONT_OPTION_MAP = buildFontMap(UI_FONT_OPTIONS);
-export const CODE_FONT_OPTION_MAP = buildFontMap(CODE_FONT_OPTIONS);
+const CODE_FONT_OPTION_MAP = buildFontMap(CODE_FONT_OPTIONS);
 
 export const DEFAULT_UI_FONT: UiFontOption = 'system';
 export const DEFAULT_MONO_FONT: BuiltinMonoFontOption = 'system-mono';
