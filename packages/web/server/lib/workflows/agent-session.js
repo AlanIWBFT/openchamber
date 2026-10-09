@@ -91,6 +91,11 @@ export const createWorkflowAgentSessions = ({
     }
   };
 
+  const stopSession = async (client, sessionId) => {
+    const result = await client.session.stop({ sessionID: sessionId });
+    if (result.failed > 0) throw new Error(`${result.failed} persistent commands could not be stopped`);
+  };
+
   /**
    * Admits a synthetic message into a session, the way dispatch-results
    * delivers a dispatched session's answer. Throws with `status` set, so the
@@ -169,27 +174,29 @@ export const createWorkflowAgentSessions = ({
   const prompt = async (client, sessionId, text, signal) => {
     const afterIdleId = await latestIdleId(client, sessionId);
     // A run stopped meanwhile sends nothing; one stopped while the prompt was
-    // on its way interrupts the turn it started, which the run's own
-    // interrupts may have missed.
+    // on its way stops the turn and persistent commands it started, which
+    // the run's own cleanup may have missed.
     if (signal.aborted) throw new WorkflowAgentStopped();
     await client.session.prompt({ sessionID: sessionId, text });
     if (signal.aborted) {
-      await client.session.interrupt({ sessionID: sessionId }).catch(() => undefined);
+      await stopSession(client, sessionId).catch((error) => {
+        console.warn(`[workflows] could not stop agent session ${sessionId}:`, error?.message ?? error);
+      });
       throw new WorkflowAgentStopped();
     }
     return waitForTurn(client, sessionId, afterIdleId, signal);
   };
 
   /**
-   * Interrupts a running agent session. Failure is reported, not thrown: the
+   * Stops an owned agent session and its persistent commands. Failure is reported, not thrown: the
    * run is being stopped either way.
    */
   const interrupt = async (directory, sessionId) => {
     try {
       const client = await getClient(directory);
-      await client.session.interrupt({ sessionID: sessionId });
+      await stopSession(client, sessionId);
     } catch (error) {
-      console.warn(`[workflows] could not interrupt agent session ${sessionId}:`, error?.message ?? error);
+      console.warn(`[workflows] could not stop agent session ${sessionId}:`, error?.message ?? error);
     }
   };
 
