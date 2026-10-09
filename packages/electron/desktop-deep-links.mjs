@@ -74,3 +74,35 @@ export const createDesktopDeepLinkQueue = ({ isReady, dispatch, onError }) => {
     flush,
   };
 };
+
+// Only host actions cross to the renderer and report whether a switch committed.
+export const createDesktopHostActionQueue = () => {
+  let nextId = 0;
+  const pending = [];
+  const claimed = new Map();
+  return {
+    enqueue(action) {
+      return new Promise((resolve) => pending.push({ action: { ...action, id: ++nextId }, resolve }));
+    },
+    take(owner) {
+      return pending.splice(0).map((entry) => {
+        claimed.set(entry.action.id, { owner, resolve: entry.resolve });
+        return entry.action;
+      });
+    },
+    complete(owner, id, committed) {
+      const entry = claimed.get(id);
+      if (!entry || entry.owner !== owner) return false;
+      claimed.delete(id);
+      entry.resolve(committed === true);
+      return true;
+    },
+    cancelOwner(owner) {
+      for (const [id, entry] of claimed) {
+        if (entry.owner !== owner) continue;
+        claimed.delete(id);
+        entry.resolve(false);
+      }
+    },
+  };
+};
