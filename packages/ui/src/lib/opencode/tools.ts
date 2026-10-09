@@ -88,6 +88,7 @@ export const isSubagentTool = is(OPENCODE_TOOLS.subagent)
 export const isQuestionTool = is(OPENCODE_TOOLS.question)
 export const isSkillTool = is(OPENCODE_TOOLS.skill)
 export const isEditTool = is(OPENCODE_TOOLS.edit)
+export const isReadTool = is(OPENCODE_TOOLS.read)
 export const isWriteTool = is(OPENCODE_TOOLS.write)
 export const isPatchTool = is(OPENCODE_TOOLS.patch)
 

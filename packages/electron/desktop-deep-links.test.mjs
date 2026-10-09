@@ -1,7 +1,64 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createDesktopDeepLinkQueue } from './desktop-deep-links.mjs';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import { createDesktopDeepLinkQueue, createDesktopHostActionQueue } from './desktop-deep-links.mjs';
 import { createSessionLinkGate } from './session-link-gate.mjs';
+
+test('receiver and startup flushes release extension links queued after the initial drain exactly once', () => {
+  const source = readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
+  const helper = source.match(/const flushPendingDeepLinks = \(\) => \{[\s\S]*?\n\};/);
+  assert.ok(helper, 'exercise the helper actually wired to desktop readiness');
+  let ready = false;
+  let sessionFlushes = 0;
+  const pendingExtensionInstalls = [];
+  const delivered = [];
+  const flush = runInNewContext(`${helper[0]}\nflushPendingDeepLinks`, {
+    pendingDeepLinks: { flush: () => { sessionFlushes++; } }, pendingExtensionInstalls,
+    isMainWindowReadyForDeepLink: () => ready, dispatchDeepLink: (link) => delivered.push(link),
+  });
+  const link = { type: 'extensions', value: 'install', raw: 'openchamber://extensions/install?url=https://example.test/repo' };
+  pendingExtensionInstalls.push(link);
+  flush();
+  assert.deepEqual(delivered, []);
+  assert.deepEqual(pendingExtensionInstalls, [link]);
+  ready = true;
+  flush();
+  flush();
+  assert.deepEqual(delivered, [link]);
+  assert.deepEqual(pendingExtensionInstalls, []);
+  assert.equal(sessionFlushes, 3);
+});
+
+for (const outcome of ['committed', 'failed', 'renderer-gone']) {
+  test(`renderer host handoff preserves session ordering when ${outcome}`, async () => {
+    const actions = createDesktopHostActionQueue();
+    const owner = {};
+    const delivered = [];
+    let ready = false;
+    const queue = createDesktopDeepLinkQueue({
+      isReady: (link) => link.type !== 'session' || ready,
+      dispatch: async (link, committed) => {
+        if (link.type === 'session') { delivered.push(link.value); return; }
+        if (await actions.enqueue({ type: 'host', hostId: link.value })) committed();
+      },
+      onError: assert.fail,
+    });
+    queue.enqueue({ type: 'session', value: 'old' });
+    queue.enqueue({ type: 'host', value: 'remote' });
+    const [action] = actions.take(owner);
+    assert.equal(actions.complete({}, action.id, true), false);
+    assert.deepEqual(actions.take(owner), []);
+    ready = true;
+    queue.enqueue({ type: 'session', value: 'new' });
+    assert.deepEqual(delivered, []);
+    if (outcome === 'renderer-gone') actions.cancelOwner(owner);
+    else assert.equal(actions.complete(owner, action.id, outcome === 'committed'), true);
+    await new Promise(setImmediate);
+    assert.deepEqual(delivered, outcome === 'committed' ? ['new'] : ['old', 'new']);
+    assert.equal(actions.complete(owner, action.id, true), false);
+  });
+}
 
 test('only remote documents get a fallback, retired on navigation, receiver readiness and shutdown', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
