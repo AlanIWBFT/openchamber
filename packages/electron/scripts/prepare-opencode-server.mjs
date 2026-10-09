@@ -164,7 +164,7 @@ const main = async () => {
     },
   };
 
-  fs.rmSync(outputDir, { recursive: true, force: true });
+  fs.rmSync(outputDir, { recursive: true, force: true, maxRetries: process.platform === 'win32' ? 7 : 0, retryDelay: 50 });
   fs.mkdirSync(assetsDir, { recursive: true });
 
   const claudeAgentSdk = { name: '@anthropic-ai/claude-agent-sdk', version: readManifest(coreDir).peerDependencies?.['@anthropic-ai/claude-agent-sdk'] };
