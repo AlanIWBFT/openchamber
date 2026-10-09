@@ -32,6 +32,68 @@ describe("v2 status and cancellation HTTP boundary", () => {
       await expect(opencodeClient.stopSession("session")).rejects.toThrow("Failed to terminate 1 exec command session")
     } finally { fetch.mockRestore() }
   })
+
+  test("subagent stop waits for the parent note before stopping the child's persistent commands", async () => {
+    const requests: Array<{ path: string; directory: string | null }> = []
+    let markNoteStarted!: () => void
+    const noteStarted = new Promise<void>((resolve) => { markNoteStarted = resolve })
+    let deliverNote!: (response: Response) => void
+    const noteResponse = new Promise<Response>((resolve) => { deliverNote = resolve })
+    let noteBody = ""
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const request = new Request(input, init)
+      const url = new URL(request.url)
+      requests.push({ path: url.pathname, directory: request.headers.get("x-opencode-directory") })
+      if (url.pathname.endsWith("/synthetic")) {
+        noteBody = await request.text()
+        markNoteStarted()
+        return noteResponse
+      }
+      return Response.json({ matched: 1, terminated: 1, failed: 0 })
+    })
+    const stopping = opencodeClient.stopSubagent({ sessionID: "parent", childSessionID: "child", directory: "C:/Other project", description: "Run checks" })
+    try {
+      await noteStarted
+      expect(requests.map((request) => request.path)).toEqual(["/api/session/parent/synthetic"])
+      expect(JSON.parse(noteBody)).toMatchObject({ resume: false, metadata: { openchamberSubagentCancellation: { sessionID: "child" } } })
+      deliverNote(Response.json({}))
+      await stopping
+      expect(requests).toEqual([
+        { path: "/api/session/parent/synthetic", directory: encodeURIComponent("C:/Other project") },
+        { path: "/api/session/child/stop", directory: encodeURIComponent("C:/Other project") },
+      ])
+    } finally {
+      deliverNote(Response.json({}))
+      await stopping.catch(() => undefined)
+      fetch.mockRestore()
+    }
+  })
+
+  test("subagent stop does not stop the child when the cancellation note fails", async () => {
+    const paths: string[] = []
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      paths.push(new URL(input instanceof Request ? input.url : input.toString()).pathname)
+      return new Response("Note could not be saved", { status: 500 })
+    })
+    try {
+      await expect(opencodeClient.stopSubagent({ sessionID: "parent", childSessionID: "child", description: undefined })).rejects.toThrow()
+      expect(paths).toEqual(["/api/session/parent/synthetic"])
+    } finally { fetch.mockRestore() }
+  })
+
+  test("subagent stop reports persistent command cleanup failure", async () => {
+    const paths: string[] = []
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString())
+      paths.push(url.pathname)
+      return Response.json(url.pathname.endsWith("/synthetic") ? {} : { matched: 2, terminated: 1, failed: 1 })
+    })
+    try {
+      await expect(opencodeClient.stopSubagent({ sessionID: "parent", childSessionID: "child", description: undefined })).rejects.toThrow("Failed to terminate 1 exec command session")
+      expect(paths).toEqual(["/api/session/parent/synthetic", "/api/session/child/stop"])
+    } finally { fetch.mockRestore() }
+  })
+
   test("directory bootstrap blocking reads each spend one HTTP request", async () => {
     const requests: Array<{ path: string; directory: string | null }> = []
     const fetch = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {

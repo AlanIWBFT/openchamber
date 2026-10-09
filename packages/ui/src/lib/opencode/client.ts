@@ -1648,9 +1648,10 @@ class OpencodeService {
    * Stops a subagent the agent started, in the foreground or the background.
    * The agent is told first, in a note that does not wake it, that the
    * cancellation OpenCode is about to report is the user's stop (see
-   * `subagentCancellationNote`); the child session is interrupted only once
-   * the note is in. Throws when either step fails, and nothing is stopped
-   * when the note could not be delivered.
+   * `subagentCancellationNote`); the child's turn and persistent commands
+   * are stopped only once the note is in. Throws when either step fails,
+   * including command cleanup, and nothing is stopped when the note could
+   * not be delivered.
    */
   async stopSubagent(params: {
     sessionID: string
@@ -1668,7 +1669,7 @@ class OpencodeService {
         resume: false,
       }),
     )
-    await this.abortSession(params.childSessionID, params.directory)
+    await this.stopSession(params.childSessionID, params.directory)
   }
 
   /** Global pending items when requested, then each distinct directory. */
