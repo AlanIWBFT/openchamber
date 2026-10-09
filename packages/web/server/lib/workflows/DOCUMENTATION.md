@@ -77,7 +77,10 @@ workflow in `../session-knowledge/runtime.js` (`WORKFLOW_GUIDANCE`).
    lines and phase moves since, and an agent that was working shows as stopped
    with its session, counted against the limit.
 4. The script returns (`completed`), throws (`failed`), or is stopped
-   (`stopped`). Agents still running are interrupted and counted as stopped.
+   (`stopped`). Agents still owned by the run are stopped with `session.stop`,
+   ending their model execution and persistent commands, and counted as stopped.
+   Sessions whose agent calls already settled are not stopped again. Failed
+   command cleanup is logged, including a stop after an in-flight prompt lands.
 5. The report, a synthetic message `<openchamber-workflow …>` with metadata
    `{ source: 'openchamber-workflow', runId, name, state }`, goes into the
    proposing session. A completed or failed run wakes it (`resume: true`) only
@@ -152,7 +155,7 @@ session proposed. `workflow.save` writes a script to
 - Only a `failed` or `stopped` run resumes. Completed answers an attempt did
   not ask for again stay on the run for the next attempt.
 - A prompt is never sent once the run stopped; one in flight when it stopped
-  interrupts the turn it started.
+  also stops the turn and persistent commands it started.
 - The tool is never behind Code Mode: the chat draws the run's card from the
   tool's own call, which an `execute` script would hide.
 - The run files are owner-readable only; a file that does not parse is moved
@@ -177,6 +180,12 @@ unverified identity; a dead PID is still recovered. This conservative fallback
 can leave a legacy or unverifiable reused PID marked running, but avoids
 stopping another server's live work. A record owned by the current PID on
 startup is recovered because this runtime has no worker for it.
+
+### Why cancellation uses stop rather than interrupt
+
+The local `session.stop` ends both the model and persistent exec lanes; upstream
+`session.interrupt` leaves those commands running. Only sessions still owned by
+the workflow are stopped, so completed agents keep their background work.
 
 ### Why archive lookup failure leaves a report pending
 
