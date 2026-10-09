@@ -1,5 +1,5 @@
-import { buildLocalUrl } from './cli-network.js';
-import { readDesktopLocalClientTokenFromSettings, readDesktopLocalPortFromSettings } from './cli-paths.js';
+import { buildLocalUrl, resolveApiHost } from './cli-network.js';
+import { readDesktopLocalClientTokenFromSettings } from './cli-paths.js';
 import { getInstanceFilePath, readInstanceOptions } from './cli-process.js';
 
 const UI_SESSION_COOKIE_NAME = 'oc_ui_session';
@@ -73,16 +73,17 @@ async function createUiSessionCookie(port, password, timeoutMs) {
   }
 }
 
-function getDesktopLocalAuthHeader(port, requestHeaders) {
+async function getDesktopLocalAuthHeader(port, requestHeaders) {
   if (requestHeaders.Authorization || requestHeaders.authorization) {
     return null;
   }
-  const desktopPort = readDesktopLocalPortFromSettings();
-  if (desktopPort !== port) {
+  if (!['127.0.0.1', 'localhost', '::1'].includes(resolveApiHost())) {
     return null;
   }
   const token = readDesktopLocalClientTokenFromSettings();
-  return token ? `Bearer ${token}` : null;
+  if (!token) return null;
+  const info = await fetchSystemInfoFromPort(port);
+  return info?.runtime === 'desktop' ? `Bearer ${token}` : null;
 }
 
 async function requestServerShutdown(port, hostOverride) {
@@ -119,7 +120,7 @@ async function requestJson(port, endpoint, options = {}) {
       ...(fetchOptions.body ? { 'Content-Type': 'application/json' } : {}),
       ...(fetchOptions.headers || {}),
     };
-    const desktopAuth = getDesktopLocalAuthHeader(port, requestHeaders);
+    const desktopAuth = await getDesktopLocalAuthHeader(port, requestHeaders);
     if (desktopAuth) {
       requestHeaders.Authorization = desktopAuth;
     }
@@ -228,6 +229,7 @@ async function fetchSystemInfoFromPort(port, fetchImpl = globalThis.fetch, hostO
   try {
     const response = await fetchImpl(buildLocalUrl(port, '/api/system/info', hostOverride), {
       headers: { Accept: 'application/json' },
+      redirect: 'error',
       signal: controller.signal,
     });
     if (!response.ok) return null;

@@ -9,7 +9,6 @@ import {
   discoverRunningInstances,
   getLatestInstance,
   inspectTunnelAttachability,
-  isDesktopRuntimeForPort,
   resolveDoctorPortStatuses,
   resolveTunnelProviders,
 } from './cli-lifecycle.js';
@@ -168,7 +167,7 @@ async function resolveTargetInstance({
 
     if (rejectDesktopRuntime) {
       const systemInfo = await fetchSystemInfoFromPort(options.port, globalThis.fetch, options.host);
-      if (isDesktopRuntimeForPort(systemInfo, options.port)) {
+      if (systemInfo?.runtime === 'desktop') {
         throw new Error(
           `Port ${options.port} is used by OpenChamber Desktop app. Tunnel attach requires a CLI instance from \`openchamber serve\`.`
         );

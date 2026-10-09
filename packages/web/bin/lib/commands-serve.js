@@ -7,7 +7,7 @@ import { fetchSystemInfoFromPort } from './cli-http.js';
 import { isPortAvailable, resolveAvailablePort } from './cli-ports.js';
 import { ensureLogsDir, getLogFilePath } from './cli-paths.js';
 import { rotateLogFile } from './cli-log-files.js';
-import { discoverOpenChamberInstanceOnPort, isDesktopRuntimeForPort } from './cli-lifecycle.js';
+import { discoverOpenChamberInstanceOnPort } from './cli-lifecycle.js';
 import { getPidFilePath, getInstanceFilePath, writePidFile, writeInstanceOptions, removePidFile, removeInstanceFile, isProcessRunning, terminateProcessTree } from './cli-process.js';
 import { isNetworkExposedBindHost } from '../../server/lib/security/bind-host.js';
 import {
@@ -87,13 +87,12 @@ async function serveCommand(options) {
 
       if (explicitPort && !(await isPortAvailable(targetPort, effectiveHost))) {
         const systemInfo = await fetchSystemInfoFromPort(targetPort, globalThis.fetch, effectiveHost);
-        if (isDesktopRuntimeForPort(systemInfo, targetPort)) {
+        if (systemInfo?.runtime === 'desktop') {
           throw new Error(
             `Port ${targetPort} is used by OpenChamber Desktop app. Choose another port or stop the desktop app.`
           );
         }
-        const systemInfoRuntimeMatchesPort = systemInfo?.runtime !== 'desktop' || isDesktopRuntimeForPort(systemInfo, targetPort);
-        if (systemInfo?.runtime && systemInfoRuntimeMatchesPort) {
+        if (systemInfo?.runtime) {
           throw new Error(`OpenChamber is already running on port ${targetPort}. Use \`openchamber status\` or \`openchamber stop --port ${targetPort}\`.`);
         }
         throw new Error(`Port ${targetPort} is already in use by another process.`);

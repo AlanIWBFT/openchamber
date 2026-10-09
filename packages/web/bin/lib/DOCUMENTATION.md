@@ -98,10 +98,12 @@ These modules hold reusable, non-presentational logic for commands.
 
 - `cli-lifecycle.js`
   - Instance discovery, live health probing, attachability checks, provider discovery, and status aggregation used by lifecycle/status/tunnel commands.
+  - `desktopLocalPort` is a preferred port. Automatic desktop discovery probes it, or `57123` when unset. Temporary desktop ports require `--port`; their live runtime response determines instance identity and desktop lifecycle restrictions.
 
 - `cli-http.js`
   - HTTP helpers for health checks, shutdown requests, JSON API calls, tunnel provider fetches, and system info fetches.
   - Owns local desktop bearer auth and managed CLI-instance UI password retry for control-plane requests.
+  - Before attaching the stored desktop token, probes the target loopback port for a desktop runtime without credentials or redirects. This also authenticates temporary desktop ports without changing settings.
 
 - `cli-control.js`
   - Sends one typed action request to the authenticated OpenChamber control endpoint and maps HTTP failures to CLI exit behavior.

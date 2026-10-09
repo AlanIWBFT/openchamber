@@ -10,7 +10,7 @@ import { pathToFileURL } from 'url';
 import { isModuleCliExecution, normalizeCliEntryPath } from './cli-entry.js';
 import { requestJson } from './lib/cli-http.js';
 import { requestControlAction } from './lib/cli-control.js';
-import { inspectTunnelAttachability } from './lib/cli-lifecycle.js';
+import { discoverDesktopInstance, inspectTunnelAttachability } from './lib/cli-lifecycle.js';
 import { startupCommand } from './lib/commands-startup.js';
 import { formatGoal, scheduleCommand } from './lib/commands-schedule.js';
 import {
@@ -953,32 +953,74 @@ describe('CLI HTTP helpers', () => {
     });
   });
 
-  it('authenticates desktop-local API requests with the stored client token', async () => {
+  it.each(['saved', 'temporary', 'unset'])('authenticates desktop-local API requests with port preference %s', async (preference) => {
     await withTempOpenChamberDataDir(async (dir) => {
-      const port = 57123;
-      fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({
-        desktopLocalPort: port,
-        desktopLocalClientToken: 'oc_client_test',
-      }, null, 2));
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = async (_url, options = {}) => {
-        if (options.headers?.Authorization === 'Bearer oc_client_test') {
-          return createMockJsonResponse({ ok: true });
+      const requests = [];
+      const server = createServer((req, res) => {
+        requests.push({ path: req.url, authorization: req.headers.authorization });
+        res.setHeader('Content-Type', 'application/json');
+        if (req.url === '/api/system/info') {
+          res.end(JSON.stringify({ runtime: 'desktop', pid: process.pid }));
+          return;
         }
-        return {
-          ok: false,
-          status: 401,
-          json: async () => ({ error: 'Client authentication required', locked: true }),
-        };
-      };
-
+        const authenticated = req.headers.authorization === 'Bearer oc_client_test';
+        res.statusCode = authenticated ? 200 : 401;
+        res.end(JSON.stringify(authenticated ? { ok: true } : { error: 'UI authentication required', locked: true }));
+      });
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
       try {
-        const { response, body } = await requestJson(port, '/api/openchamber/scheduled-tasks/status');
-
+        const port = server.address().port;
+        const settingsPath = path.join(dir, 'settings.json');
+        const settingsRoot = { desktopLocalClientToken: 'oc_client_test' };
+        if (preference !== 'unset') {
+          settingsRoot.desktopLocalPort = preference === 'saved' ? port : (port === 57123 ? 57124 : 57123);
+        }
+        const settings = JSON.stringify(settingsRoot);
+        fs.writeFileSync(settingsPath, settings);
+        const targetPort = await resolveTargetPort({ explicitPort: true, port });
+        const { response, body } = await requestJson(targetPort, '/api/openchamber/scheduled-tasks/status');
         expect(response.ok).toBe(true);
         expect(body).toEqual({ ok: true });
+        expect(requests).toEqual([
+          { path: '/api/system/info', authorization: undefined },
+          { path: '/api/openchamber/scheduled-tasks/status', authorization: 'Bearer oc_client_test' },
+        ]);
+        expect(fs.readFileSync(settingsPath, 'utf8')).toBe(settings);
       } finally {
-        globalThis.fetch = originalFetch;
+        await new Promise((resolve) => server.close(resolve));
+      }
+    });
+  });
+
+  it.each(['web', 'unavailable', 'redirect'])('does not send the desktop token after identity response %s', async (identity) => {
+    await withTempOpenChamberDataDir(async (dir) => {
+      const credentials = [];
+      const server = createServer((req, res) => {
+        credentials.push(req.headers.authorization);
+        res.setHeader('Content-Type', 'application/json');
+        if (req.url === '/api/system/info') {
+          if (identity === 'redirect') {
+            res.writeHead(302, { Location: '/redirected-info' });
+          } else if (identity === 'unavailable') {
+            res.statusCode = 503;
+          }
+          res.end(JSON.stringify({ runtime: 'web' }));
+          return;
+        }
+        if (req.url === '/redirected-info') {
+          res.end(JSON.stringify({ runtime: 'desktop', pid: process.pid }));
+          return;
+        }
+        res.end(JSON.stringify({ ok: true }));
+      });
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+      try {
+        const port = server.address().port;
+        fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ desktopLocalPort: port, desktopLocalClientToken: 'oc_client_test' }));
+        await requestJson(port, '/api/openchamber/scheduled-tasks/status');
+        expect(credentials).toEqual([undefined, undefined]);
+      } finally {
+        await new Promise((resolve) => server.close(resolve));
       }
     });
   });
@@ -1073,7 +1115,7 @@ describe('isOpenchamberProcessRunning', () => {
 });
 
 describe('lifecycle instance discovery', () => {
-  it('does not attribute a desktop runtime response to a different explicit port', async () => {
+  it('recognizes a desktop runtime on an explicit temporary port', async () => {
     await withTempOpenChamberDataDir(async (dir) => {
       fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ desktopLocalPort: 57123 }, null, 2));
 
@@ -1081,7 +1123,7 @@ describe('lifecycle instance discovery', () => {
         fetchImpl: async () => createMockJsonResponse({ runtime: 'desktop', pid: 934 }),
       });
 
-      expect(instance).toBeNull();
+      expect(instance).toEqual(expect.objectContaining({ port: 3003, pid: 934, runtime: 'desktop' }));
     });
   });
 
@@ -1101,7 +1143,7 @@ describe('lifecycle instance discovery', () => {
     });
   });
 
-  it('does not mark tunnel attachability as desktop for a different explicit port', async () => {
+  it('rejects tunnel attachment to desktop on a temporary port', async () => {
     await withTempOpenChamberDataDir(async (dir) => {
       fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ desktopLocalPort: 57123 }, null, 2));
       const originalFetch = globalThis.fetch;
@@ -1109,9 +1151,41 @@ describe('lifecycle instance discovery', () => {
       try {
         const attachability = await inspectTunnelAttachability(3004, { requireHealthy: false });
 
-        expect(attachability.reason).not.toBe('desktop');
+        expect(attachability).toEqual(expect.objectContaining({ attachable: false, reason: 'desktop' }));
       } finally {
         globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  it.each([undefined, 1.5, 65536])('discovers the default desktop port when the preference is %s', async (desktopLocalPort) => {
+    await withTempOpenChamberDataDir(async (dir) => {
+      fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ desktopLocalPort }));
+      const instance = await discoverDesktopInstance(async (url) => {
+        expect(new URL(url).port).toBe('57123');
+        return createMockJsonResponse({ runtime: 'desktop', pid: 934 });
+      });
+      expect(instance).toEqual({ port: 57123, pid: 934, runtime: 'desktop' });
+    });
+  });
+
+  it('reports temporary desktop ports as running and preserves desktop stop ownership', async () => {
+    await withTempOpenChamberDataDir(async (dir) => {
+      const server = await startMockOpenChamberServer({ runtime: 'desktop', pid: 934 });
+      try {
+        const settings = JSON.stringify({ desktopLocalPort: server.port === 57123 ? 57124 : 57123 });
+        const settingsPath = path.join(dir, 'settings.json');
+        fs.writeFileSync(settingsPath, settings);
+        const options = { explicitPort: true, port: server.port, json: true };
+        const status = JSON.parse(await captureStdout(() => commands.status(options)));
+        expect(status.state).toBe('running');
+        expect(status.instances).toEqual([expect.objectContaining({ runtime: 'desktop', port: server.port })]);
+        const stopped = JSON.parse(await captureStdout(() => commands.stop(options)));
+        expect(stopped.results).toEqual([expect.objectContaining({ stopped: false, reason: 'desktop-managed' })]);
+        expect(server.shutdownRequested).toBe(false);
+        expect(fs.readFileSync(settingsPath, 'utf8')).toBe(settings);
+      } finally {
+        await server.close();
       }
     });
   });
@@ -1375,13 +1449,15 @@ describe('lifecycle commands with unmanaged explicit ports', () => {
   });
 
   it('status --json reports the address a registered server was asked to bind', async () => {
-    await withTempOpenChamberDataDir(async () => {
+    await withTempOpenChamberDataDir(async (dir) => {
       const server = await startMockOpenChamberServer();
       const child = spawnOpenChamberLikeIdleProcess();
       try {
         await new Promise((resolve) => setTimeout(resolve, 150));
         fs.writeFileSync(await getPidFilePath(server.port), String(child.pid));
         fs.writeFileSync(await getInstanceFilePath(server.port), JSON.stringify({ port: server.port, host: '0.0.0.0', launchMode: 'daemon' }, null, 2));
+        // Keep automatic desktop discovery inside this fixture's endpoints.
+        fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ desktopLocalPort: server.port }));
 
         const output = await captureStdout(() => commands.status({ json: true }));
 
