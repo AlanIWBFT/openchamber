@@ -18,7 +18,7 @@ test('changing either font setting updates both code CSS variables without remou
   };
   const globals = { window: dom, document: dom.document, IS_REACT_ACT_ENVIRONMENT: true };
   const descriptors = Object.getOwnPropertyDescriptors(globalThis);
-  const { monoFont, uiFont, fontPixelAlignment } = useUIStore.getState();
+  const { monoFont, uiFont, customMonoFont, fontPixelAlignment } = useUIStore.getState();
   Object.assign(globalThis, globals);
   const host = document.createElement('div');
   document.body.append(host);
@@ -40,7 +40,7 @@ test('changing either font setting updates both code CSS variables without remou
     await act(async () => { useUIStore.getState().setFontPixelAlignment(true); });
     expect(style.getPropertyValue('--font-pixel-align')).toBe('1');
     expect(style.getPropertyValue('--font-mono').startsWith('"JetBrains Mono",')).toBe(true);
-    await act(async () => { useUIStore.setState({ monoFont: 'local:更纱等宽 SC' }); });
+    await act(async () => { useUIStore.setState({ monoFont: 'custom', customMonoFont: '更纱等宽 SC' }); });
     expect(style.getPropertyValue('--font-mono').startsWith('"更纱等宽 SC",')).toBe(true);
     await act(async () => { useUIStore.setState({ uiFont: 'inter' }); });
     expect(style.getPropertyValue('--font-mono').endsWith(UI_FONT_OPTION_MAP.inter.stack)).toBe(true);
@@ -59,7 +59,7 @@ test('changing either font setting updates both code CSS variables without remou
     Object.defineProperty(dom, 'devicePixelRatio', { configurable: true, value: 1 });
     for (const query of queries) query.dispatchEvent(new dom.Event('change'));
     expect(document.documentElement.style.getPropertyValue('--code-grid-pixel')).toBe(pixelSize);
-    useUIStore.setState({ monoFont, uiFont, fontPixelAlignment });
+    useUIStore.setState({ monoFont, uiFont, customMonoFont, fontPixelAlignment });
     for (const key of Object.keys(globals)) {
       const descriptor = descriptors[key];
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
