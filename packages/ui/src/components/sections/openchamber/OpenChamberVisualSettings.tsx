@@ -872,7 +872,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             } else if (isMonoFontOption(value)) setMonoFont(value);
                                         }}>
                                             <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectCodeFontAria')} className={SETTINGS_SELECT_TRIGGER_CLASS}>
-                                                <SelectValue>{selectedCodeFont?.label ?? t('settings.openchamber.visual.field.customFont')}</SelectValue>
+                                                <SelectValue>{selectedCodeFont?.label ?? (monoFont === CUSTOM_FONT_ID && customMonoFont ? customMonoFont : t('settings.openchamber.visual.field.customFont'))}</SelectValue>
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {codeFontOptions.map((option) => (
