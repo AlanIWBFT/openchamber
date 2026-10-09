@@ -57,6 +57,22 @@ const createSessionRequest = async ({ parent, allowTools, model }) => {
 };
 
 describe('workflow agent sessions', () => {
+  it('stops only live command IDs belonging to the selected run sessions', async () => {
+    const stops = [];
+    const sessions = createWorkflowAgentSessions({
+      buildOpenCodeUrl: (route) => `http://localhost:4096${route}`,
+      getOpenCodeAuthHeaders: () => ({}), globalEventHub: { subscribeEvent: () => () => {} },
+      createClient: () => ({ session: { exec: {
+        list: async () => [{ sessionID: 'worker', execID: 3, startedAt: 1 }, { sessionID: 'unrelated', execID: 4, startedAt: 1 }, { sessionID: 'worker', execID: 5, startedAt: 9 }],
+        stop: async (input) => { stops.push(input); return { failed: 0 }; },
+      } } }),
+    });
+    const retained = await sessions.commandIds('/repo', 'worker', 7);
+    expect(retained).toEqual([3]);
+    await sessions.stopCommands('/repo', new Map([['worker', retained], ['no-live-commands', 'active']]));
+    expect(stops).toEqual([{ sessionID: 'worker', execIDs: [3] }]);
+    sessions.stop();
+  });
   it.each([false, true])('awaits the child-id checkpoint before prompting, rejection=%s', async (rejectCheckpoint) => {
     let release;
     let seen;

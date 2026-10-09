@@ -44,6 +44,9 @@ const fakeAgentSessions = ({ answer = (prompt) => `done: ${prompt}`, hang = [], 
     allowed: [],
     followUps: [],
     interrupted: [],
+    commandStops: [],
+    commandIds: async () => [],
+    stopCommands: async (_, targets) => { fake.commandStops.push([...targets]); },
     readParentArchive: async () => 'active',
     maxRunning: 0,
     reports: [],
@@ -885,6 +888,25 @@ describe('workflow runtime', () => {
     await runtime.approve({ runId });
     await runtime.stop({ runId });
     expect((await finished(runId)).state).toBe('stopped');
+  });
+
+  it.each(['button', 'tool'])('the %s stop cleans up even agents that answered, scoped to this run', async (entry) => {
+    const agents = fakeAgentSessions({ hang: ['hold'] });
+    agents.commandIds = async (_, id) => id === 'ses_agent2' ? [42] : [];
+    const { runtime, act, finished, store } = await setup(agents);
+    const other = await act('workflow.run', { script: script("return agent('other')") });
+    await runtime.approve(other);
+    await finished(other.runId);
+    expect(agents.commandStops).toEqual([]);
+    const { runId } = await act('workflow.run', { script: script("await agent('already answered'); return agent('hold')") });
+    await runtime.approve({ runId });
+    await waitFor(async () => (await act('workflow.status', { runId })).agents.some(a => a.sessionId === 'ses_agent3'));
+    if (entry === 'button') await runtime.stop({ runId });
+    else await act('workflow.stop', { runId });
+    expect((await finished(runId)).state).toBe('stopped');
+    expect(agents.commandStops).toEqual([[['ses_agent2', [42]], ['ses_agent3', 'active']]]);
+    expect(agents.interrupted).toEqual(['ses_agent3']);
+    await store.flush();
   });
 
   it.each([['archived', false], ['active', true]])('retries the same saved report when its parent becomes readable (%s)', async (state, resume) => {

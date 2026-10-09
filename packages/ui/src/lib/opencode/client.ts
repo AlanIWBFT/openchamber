@@ -1736,7 +1736,7 @@ class OpencodeService {
         resume: false,
       }),
     )
-    await this.abortSession(params.childSessionID, params.directory)
+    await this.stopSession(params.childSessionID, params.directory)
   }
 
   private uniqueDirectories(entries: Array<string | null | undefined> | undefined): string[] {

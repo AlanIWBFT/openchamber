@@ -19,6 +19,7 @@ const agentSchema = z.object({
   model: z.string().optional(),
   schema: z.unknown().optional(),
   sessionId: z.string().optional(),
+  retainedExecIds: z.array(z.number().int().nonnegative()).optional(),
   modelUsed: z.string().optional(),
   usage: z.object({
     cost: z.number(),

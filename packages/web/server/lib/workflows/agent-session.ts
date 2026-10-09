@@ -173,6 +173,34 @@ export const createWorkflowAgentSessions = ({
     }
   };
 
+  const commandIds: AgentSessions['commandIds'] = async (directory, id, through) => {
+    const { session } = await getClient(directory);
+    return (await session.exec.list()).filter(cmd => cmd.sessionID === id && cmd.startedAt <= through).map(cmd => cmd.execID);
+  };
+
+  const stopCommands: AgentSessions['stopCommands'] = async (directory, targets) => {
+    if (!targets.size) return;
+    const { session } = await getClient(directory);
+    const groups = new Map<string, number[]>();
+    for (const { sessionID, execID } of await session.exec.list()) {
+      const target = targets.get(sessionID);
+      if (!target || (target !== 'active' && !target.includes(execID))) continue;
+      const ids = groups.get(sessionID);
+      if (ids) ids.push(execID);
+      else groups.set(sessionID, [execID]);
+    }
+    const errors: string[] = [];
+    for (const [sessionID, execIDs] of groups) {
+      try {
+        const { failed } = await session.exec.stop({ sessionID, execIDs });
+        if (failed) errors.push(`${sessionID}: ${failed} command(s)`);
+      } catch {
+        errors.push(`${sessionID}: stop request failed`);
+      }
+    }
+    if (errors.length) throw new Error(errors.join('; '));
+  };
+
   const readParentArchive: AgentSessions['readParentArchive'] = async (directory, sessionID) => {
     const { session } = await getClient(directory);
     try {
@@ -230,5 +258,5 @@ export const createWorkflowAgentSessions = ({
     };
   };
 
-  return { start, createSession, followUp, interrupt, readParentArchive, readUsage, postSynthetic, stop: unsubscribe };
+  return { start, createSession, followUp, interrupt, commandIds, stopCommands, readParentArchive, readUsage, postSynthetic, stop: unsubscribe };
 };

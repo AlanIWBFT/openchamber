@@ -419,6 +419,13 @@ export const createWorkflowRuntime = ({
       if (record.sessionId) {
         execution.sessions.delete(record.sessionId);
         answerSlots.delete(record.sessionId);
+        if (!signal.aborted && record.endedAt !== undefined) {
+          try {
+            record.retainedExecIds = await agentSessions.commandIds(run.directory, record.sessionId, record.endedAt);
+          } catch {
+            log(run, `Could not record live command IDs for ${label}; later stops cannot confirm their ownership.`);
+          }
+        }
         const read = await agentSessions.readUsage({ directory: run.directory, sessionId: record.sessionId }).catch(() => null);
         if (read?.model) record.modelUsed = read.model;
         if (read) record.usage = read.usage;
@@ -479,11 +486,27 @@ export const createWorkflowRuntime = ({
     }
 
     try {
+      const stillRunning = new Set(execution.sessions);
       execution.controller.abort();
       await Promise.allSettled([...execution.sessions].map((sessionId) => agentSessions.interrupt(run.directory, sessionId)));
       await Promise.allSettled([...execution.inflight]);
       for (const [key, agent] of completed) {
         if (!execution.consumed.has(key)) run.agents.push(agent);
+      }
+      if (execution.explicitStop) {
+        const sessions = new Map<string, readonly number[] | 'active'>();
+        for (const agent of run.agents) {
+          if (!agent.sessionId) continue;
+          if (stillRunning.has(agent.sessionId)) sessions.set(agent.sessionId, 'active');
+          else if (agent.retainedExecIds?.length) sessions.set(agent.sessionId, agent.retainedExecIds);
+        }
+        try {
+          await agentSessions.stopCommands(run.directory, sessions);
+        } catch (error) {
+          const detail = `Could not confirm workflow command cleanup: ${error instanceof Error ? error.message : 'backend unavailable'}`;
+          log(run, detail);
+          ending.error = `${ending.error ?? 'The workflow stopped.'} ${detail}`;
+        }
       }
       await settleRun(run, ending.state, ending);
     } catch (error) {
@@ -510,6 +533,7 @@ export const createWorkflowRuntime = ({
       consumed: new Set(),
       occurrences: new Map(),
       stopReason: null,
+      explicitStop: false,
       sandbox: null,
     };
     active.set(run.id, execution);
@@ -625,6 +649,7 @@ export const createWorkflowRuntime = ({
       throw new OpenChamberControlError(`The run is ${run.state}, not running`, 409);
     }
     execution.stopReason ??= sessionId ? 'The agent stopped the workflow.' : 'The user stopped the workflow.';
+    execution.explicitStop = true;
     execution.sandbox?.terminate();
     return { runId: run.id, state: 'stopping' };
   };
