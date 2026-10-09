@@ -1,17 +1,20 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { createRuntimeOpencodeClient } from '@/lib/opencode/client';
+import { useAuthSessionStore } from '@/lib/runtime-auth-expiry';
 import { createEventPipeline } from '../event-pipeline';
 
 const savedDocument = globalThis.document;
 const savedWindow = globalThis.window;
 const savedNavigator = globalThis.navigator;
 const savedFetch = globalThis.fetch;
+const savedAuthState = useAuthSessionStore.getState().state;
 
 afterEach(() => {
   globalThis.document = savedDocument;
   globalThis.window = savedWindow;
   globalThis.navigator = savedNavigator;
   globalThis.fetch = savedFetch;
+  useAuthSessionStore.setState({ state: savedAuthState });
 });
 
 function createEventTarget(extras = {}) {
