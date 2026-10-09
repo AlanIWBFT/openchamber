@@ -11,6 +11,9 @@ const electronRoot = path.resolve(__dirname, '..');
 const outputDir = path.join(electronRoot, 'resources', 'opencode-cli');
 const cacheRoot = path.join(electronRoot, '.cache', 'opencode-cli');
 const windowsProcessBroker = 'OpenCode.ProcessBroker.exe';
+// A version probe's broker can briefly retain its executable after the CLI exits.
+// rm retries transient errors only with recursive enabled; keep the wait bounded.
+const stagedCleanupOptions = { recursive: true, force: true, maxRetries: process.platform === 'win32' ? 7 : 0, retryDelay: 50 };
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -105,7 +108,7 @@ const stageBinary = (source, destination, expectedVersion) => {
 
   for (const entry of fs.readdirSync(outputDir)) {
     if (entry === '.gitkeep' || entry === binaryName) continue;
-    fs.rmSync(path.join(outputDir, entry), { recursive: true, force: true });
+    fs.rmSync(path.join(outputDir, entry), stagedCleanupOptions);
   }
 };
 
@@ -219,7 +222,7 @@ const main = async () => {
   }
   const existingVersion = readBinaryVersion(outputBinary);
   if (existingVersion === version) {
-    fs.rmSync(path.join(outputDir, windowsProcessBroker), { force: true });
+    fs.rmSync(path.join(outputDir, windowsProcessBroker), stagedCleanupOptions);
     console.log(`[electron] bundled OpenCode CLI already prepared: ${outputBinary} (${version})`);
     return;
   }
