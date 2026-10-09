@@ -5,7 +5,8 @@ import type { CliOptions } from './cli-args.js';
 import type { ProcessStateOptions } from './cli-process.js';
 import type { JsonValue } from '../../server/lib/shared/json-values.js';
 import { isString } from '../../server/lib/shared/object-guards.js';
-import { getRunDir, readDesktopLocalPortFromSettings } from './cli-paths.js';
+import { getDataDir, getRunDir, readDesktopLocalPortFromSettings } from './cli-paths.js';
+import { readDesktopInstance } from '../../server/lib/server-frame/desktop-instance.js';
 import { resolveApiHost } from './cli-network.js';
 import { fetchTunnelProvidersFromPort, fetchSystemInfoFromPort, isServerHealthReady } from './cli-http.js';
 import { isPortAvailable } from './cli-ports.js';
@@ -291,9 +292,6 @@ async function discoverOpenChamberInstanceOnPort(port: number | undefined, optio
     isDiscoveryCallback(options.fetchImpl) ? options.fetchImpl : globalThis.fetch,
     options.host,
   );
-  if (info?.runtime === 'desktop' && !isDesktopRuntimeForPort(info, port)) {
-    return null;
-  }
   return createLivePortInstance(port, info, options.host);
 }
 
@@ -365,20 +363,12 @@ function getLatestInstance<Instance extends Pick<LifecycleInstance, 'startedAt' 
   })[0];
 }
 
-function isDesktopRuntimeForPort(info: Pick<SystemInfo, 'runtime'> | null, port: number) {
-  if (info?.runtime !== 'desktop') {
-    return false;
-  }
-  const desktopPort = readDesktopLocalPortFromSettings();
-  return !desktopPort || desktopPort === port;
-}
-
 async function inspectTunnelAttachability(port: number, { requireHealthy = true } = {}) {
   const info = await fetchSystemInfoFromPort(port);
   if (!info) {
     return { attachable: false, reason: 'unreachable' };
   }
-  if (isDesktopRuntimeForPort(info, port)) {
+  if (info.runtime === 'desktop') {
     return { attachable: false, reason: 'desktop', info };
   }
   if (requireHealthy) {
@@ -391,10 +381,7 @@ async function inspectTunnelAttachability(port: number, { requireHealthy = true 
 }
 
 async function discoverDesktopInstance(fetchImpl = globalThis.fetch) {
-  const port = readDesktopLocalPortFromSettings();
-  if (!port) {
-    return null;
-  }
+  const port = readDesktopInstance(getDataDir())?.port ?? readDesktopLocalPortFromSettings() ?? 57123;
 
   const info = await fetchSystemInfoFromPort(port, fetchImpl);
   if (!info || info.runtime !== 'desktop') {
@@ -453,7 +440,6 @@ export {
   discoverLifecycleInstances,
   discoverUnconfirmedRegistryInstanceOnPort,
   getLatestInstance,
-  isDesktopRuntimeForPort,
   inspectTunnelAttachability,
   discoverDesktopInstance,
   resolveTunnelProviders,

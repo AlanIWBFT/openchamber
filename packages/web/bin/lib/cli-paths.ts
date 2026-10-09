@@ -24,7 +24,7 @@ function isDesktopSettings(value: unknown): value is DesktopSettings {
 }
 
 function isDesktopPort(value: unknown): value is number {
-  return Number.isFinite(value);
+  return Number.isInteger(value);
 }
 
 function isTunnelCliState(value: unknown): value is TunnelCliState {

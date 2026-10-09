@@ -157,6 +157,7 @@ import { compareVersions } from '@openchamber/web/server/lib/version-order.js';
 import { applyConnectAttemptTimeout } from '@openchamber/web/server/lib/network-defaults.js';
 import { isNetworkAccessBlocked } from '@openchamber/web/server/lib/enterprise-mode.js';
 import { assignInjectedEnv } from '@openchamber/web/server/lib/injected-env.js';
+import { publishDesktopInstance } from '@openchamber/web/server/lib/server-frame/desktop-instance.js';
 import { resolveDesktopGitBroker } from './desktop-git-broker.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -1475,13 +1476,19 @@ const shouldSkipLocalServer = async () => {
   return isLocalServerSkipped();
 };
 
+let retireDesktopInstance;
 const startLocalServer = async () => {
   const serverStartedAt = performance.now();
   recordElectronStartupPerformance('electron.server.start');
   await inheritUserShellEnv();
 
   const settings = readSettingsRoot();
-  const storedPort = Number.isFinite(settings.desktopLocalPort) ? settings.desktopLocalPort : null;
+  const storedPort = Number.isInteger(settings.desktopLocalPort) && settings.desktopLocalPort > 0 && settings.desktopLocalPort <= 65535
+    ? settings.desktopLocalPort
+    : null;
+  // When the user enables "Desktop Network Access" we bind on all interfaces
+  // so phones/tablets on the same Wi-Fi can reach the app. UI shows a clear
+  // warning and persists the flag via /api/config/settings.
   const lanAccessEnabled = settings.desktopLanAccessEnabled === true;
   setDesktopKeepAwakeActive(settings.desktopKeepAwakeEnabled === true);
   const desktopUiPassword = typeof settings.desktopUiPassword === 'string' ? settings.desktopUiPassword.trim() : '';
@@ -1499,17 +1506,8 @@ const startLocalServer = async () => {
   const hmrApiPort = isDev && Number.isInteger(configuredHmrApiPort) && configuredHmrApiPort > 0 && configuredHmrApiPort <= 65535
     ? configuredHmrApiPort
     : null;
-  const candidates = [hmrApiPort, storedPort, DEFAULT_DESKTOP_PORT].filter((v) => Number.isFinite(v) && v > 0);
-  let chosenPort = 0;
-  for (const candidate of candidates) {
-    if (await isPortFree(candidate, bindHost)) {
-      chosenPort = candidate;
-      break;
-    }
-  }
-  if (chosenPort === 0) {
-    chosenPort = await pickUnusedPort(bindHost);
-  }
+  const preferredPort = hmrApiPort ?? storedPort ?? DEFAULT_DESKTOP_PORT;
+  const chosenPort = await isPortFree(preferredPort, bindHost) ? preferredPort : await pickUnusedPort(bindHost);
   if (hmrApiPort && chosenPort !== hmrApiPort) {
     throw new Error(`HMR API port ${hmrApiPort} is unavailable`);
   }
@@ -1593,15 +1591,14 @@ const startLocalServer = async () => {
 
   state.serverHandle = handle;
   state.sidecarUrl = url;
+  try {
+    retireDesktopInstance = publishDesktopInstance(path.dirname(settingsFilePath()), port);
+  } catch (error) {
+    log.warn('[electron] could not publish the local CLI port:', error);
+  }
   recordElectronStartupPerformance('electron.server.ready', {
     durationMs: performance.now() - serverStartedAt,
   });
-
-  if (port !== storedPort) {
-    await mutateSettingsRoot((root) => {
-      root.desktopLocalPort = port;
-    });
-  }
 
   return url;
 };
@@ -1609,6 +1606,8 @@ const startLocalServer = async () => {
 const spawnLocalServer = createStartupSingleFlight(startLocalServer);
 
 const killSidecar = async () => {
+  try { retireDesktopInstance?.(); } catch (error) { log.warn('[electron] could not retire the local CLI port:', error); }
+  retireDesktopInstance = undefined;
   const handle = state.serverHandle;
   const serverModule = state.serverModule;
   state.serverHandle = null;

@@ -1,5 +1,6 @@
-import { buildLocalUrl } from './cli-network.js';
-import { readDesktopLocalClientTokenFromSettings, readDesktopLocalPortFromSettings } from './cli-paths.js';
+import { buildLocalUrl, resolveApiHost } from './cli-network.js';
+import { getDataDir, readDesktopLocalClientTokenFromSettings } from './cli-paths.js';
+import { readDesktopInstance } from '../../server/lib/server-frame/desktop-instance.js';
 import { getInstanceFilePath, readInstanceOptions, hasInstanceFields } from './cli-process.js';
 import type { CliOptions } from './cli-args.js';
 import type { JsonValue } from '../../server/lib/shared/json-values.js';
@@ -113,16 +114,19 @@ async function createUiSessionCookie(port: number, password: string | null, time
   }
 }
 
-function getDesktopLocalAuthHeader(port: number, requestHeaders: JsonRequestHeaders) {
+async function getDesktopLocalAuthHeader(port: number, requestHeaders: JsonRequestHeaders) {
   if (requestHeaders.Authorization || requestHeaders.authorization) {
     return null;
   }
-  const desktopPort = readDesktopLocalPortFromSettings();
-  if (desktopPort !== port) {
+  if (!['127.0.0.1', 'localhost', '::1'].includes(resolveApiHost())) {
     return null;
   }
+  const instance = readDesktopInstance(getDataDir());
+  if (!instance || instance.port !== port) return null;
   const token = readDesktopLocalClientTokenFromSettings();
-  return token ? `Bearer ${token}` : null;
+  if (!token) return null;
+  const info = await fetchSystemInfoFromPort(port);
+  return info?.runtime === 'desktop' && info.pid === instance.pid ? `Bearer ${token}` : null;
 }
 
 async function requestServerShutdown(port: number | undefined, hostOverride?: JsonValue) {
@@ -162,7 +166,7 @@ async function requestJson(port: number, endpoint: string, options: JsonRequestO
       ...contentTypeHeader,
       ...(headers || {}),
     };
-    const desktopAuth = getDesktopLocalAuthHeader(port, requestHeaders);
+    const desktopAuth = await getDesktopLocalAuthHeader(port, requestHeaders);
     if (desktopAuth) {
       requestHeaders.Authorization = desktopAuth;
     }
@@ -273,6 +277,7 @@ async function fetchSystemInfoFromPort(port: number, fetchImpl = globalThis.fetc
   try {
     const response = await fetchImpl(buildLocalUrl(port, '/api/system/info', hostOverride), {
       headers: { Accept: 'application/json' },
+      redirect: 'error',
       signal: controller.signal,
     });
     if (!response.ok) return null;

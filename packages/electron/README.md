@@ -16,6 +16,8 @@ On Windows, latency-sensitive Git status, PR-context, and per-file diff reads us
 
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
 
+Desktop first tries the saved `desktopLocalPort`, or port `57123` when no valid port is configured. If that port is unavailable, it uses a temporary OS-assigned port. Startup does not write the selected port to settings, so the next launch retries the same preferred port. HMR development requires its configured API port. Desktop publishes its actual port and PID under `run/desktop-instance.json` in its data directory. The CLI uses this record and an unauthenticated loopback identity probe before sending its desktop token. With no record it can probe the saved preference or default port without the token.
+
 Electron loads `entry.mjs`, not `main.mjs`. Electron holds `ready` until the
 entry module's import graph has evaluated, and importing the server module
 graph blocks the main thread for a few hundred milliseconds, so the entry

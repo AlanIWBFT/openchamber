@@ -32,13 +32,13 @@ describe('CLI settings reads', () => {
     },
   );
 
-  it('preserves the finite-number acceptance rule and trims the token', () => {
+  it('rejects a fractional port and trims the token', () => {
     fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({
       desktopLocalPort: 3000.5,
       desktopLocalClientToken: ' local-token ',
     }));
 
-    expect(readDesktopLocalPortFromSettings()).toBe(3000.5);
+    expect(readDesktopLocalPortFromSettings()).toBeNull();
     expect(readDesktopLocalClientTokenFromSettings()).toBe('local-token');
   });
 
