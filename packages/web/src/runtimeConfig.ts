@@ -99,14 +99,14 @@ export const createConfiguredWebAPIs = () => {
     void refreshLocalRuntimeUrlAuthToken(localOrigin).catch(() => {});
   }
   installRuntimeFetchBridge();
-
-
-
-
-
-  const restoreRelayRuntime = (): Promise<void> => {
-
-
+  // Desktop only: connect a relay-capable host now that the fetch bridge is
+  // installed. No-op elsewhere; resolves in milliseconds when no relay host is
+  // involved. main.tsx holds the app render on this promise so the user sees the
+  // splash instead of a transient auth screen against an endpoint still being
+  // selected.
+  const restoreRelayRuntime = () => {
+    // Opened for this relay host. Boot already set its runtime key, so force the
+    // restore past its already-active check, or the tunnel never opens.
     if (relayHostId) return restoreDesktopRelayRuntime(relayHostId, { reconnectActive: true });
 
     if (explicitRuntime) return Promise.resolve();

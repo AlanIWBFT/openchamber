@@ -1,5 +1,5 @@
 
-import { takePendingDesktopHostActions } from '@/lib/desktop';
+import { completeDesktopHostAction, takePendingDesktopHostActions } from '@/lib/desktop';
 import { runtimeKeyForDesktopHost } from '@/lib/desktopCurrentHost';
 import { desktopHostsGet, desktopHostsSet, getDesktopHostApiUrl, importDesktopHostPairing, normalizeHostUrl } from '@/lib/desktopHosts';
 import { restoreDesktopRelayRuntime } from '@/lib/desktopRelayRestore';
@@ -13,12 +13,11 @@ const failureOf = (message: string): HostActionFailure => {
   return 'failed';
 };
 
-const activateHost = async (hostId: string, options?: { reconnectActive?: boolean }): Promise<void> => {
+const activateHost = async (hostId: string, options?: { reconnectActive?: boolean }): Promise<boolean> => {
   const host = (await desktopHostsGet()).hosts.find((entry) => entry.id === hostId);
   if (!host) throw new Error('host-not-found');
   if (host.relay) {
-    await restoreDesktopRelayRuntime(host.id, options);
-    return;
+    return restoreDesktopRelayRuntime(host.id, options);
   }
   const apiBaseUrl = normalizeHostUrl(getDesktopHostApiUrl(host));
   if (!apiBaseUrl) throw new Error('host-not-found');
@@ -29,9 +28,10 @@ const activateHost = async (hostId: string, options?: { reconnectActive?: boolea
     runtimeKey: runtimeKeyForDesktopHost(host),
     sshForwarded: host.sshForwarded === true,
   });
+  return true;
 };
 
-const pairAndActivate = async (link: string): Promise<void> => {
+const pairAndActivate = async (link: string): Promise<boolean> => {
   const config = await desktopHostsGet();
   const imported = await importDesktopHostPairing(link, config.hosts);
   await desktopHostsSet({
@@ -39,7 +39,7 @@ const pairAndActivate = async (link: string): Promise<void> => {
     defaultHostId: config.defaultHostId || imported.hostId,
     initialHostChoiceCompleted: true,
   });
-  await activateHost(imported.hostId, { reconnectActive: true });
+  return activateHost(imported.hostId, { reconnectActive: true });
 };
 
 export const runPendingDesktopHostActions = async (
@@ -47,13 +47,15 @@ export const runPendingDesktopHostActions = async (
 ): Promise<void> => {
   const actions = await takePendingDesktopHostActions();
   for (const action of actions) {
+    let committed = false;
     try {
-      if (action.type === 'pairing') await pairAndActivate(action.link);
-      else await activateHost(action.hostId);
+      committed = action.type === 'pairing' ? await pairAndActivate(action.link) : await activateHost(action.hostId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn('[desktop] host action failed', action.type, message);
       onFailure(failureOf(message));
+    } finally {
+      await completeDesktopHostAction(action.id, committed);
     }
   }
 };

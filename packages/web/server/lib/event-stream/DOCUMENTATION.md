@@ -46,7 +46,6 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 
 ### Upstream reader helpers
 - `DEFAULT_UPSTREAM_STALL_TIMEOUT_MS`: default idle timeout before an attached upstream SSE fetch is aborted for reconnect.
-- `DEFAULT_UPSTREAM_RECONNECT_DELAY_MS`: default delay between upstream reconnect attempts.
 - `createUpstreamSseReader(...)`: creates a start/stop reader for OpenCode SSE streams. The reader parses SSE blocks, tracks the latest `Last-Event-ID`, reconnects after closed or stalled upstream streams, and reports events through callbacks.
 - `reconnectDelayMs` takes a number or a function. A number is the base of the reader's exponential backoff, and the failure counter increments before the delay is computed, so the first failure waits the base delay. A function belongs to a caller that keeps its own backoff.
 

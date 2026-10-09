@@ -608,12 +608,21 @@ export const takePendingDesktopSessionLinks = async (): Promise<PendingDesktopSe
 };
 
 const pendingHostActionsSchema = z.array(z.discriminatedUnion('type', [
-  z.object({ type: z.literal('pairing'), link: z.string().min(1) }),
-  z.object({ type: z.literal('host'), hostId: z.string().min(1) }),
+  z.object({ id: z.number().int().positive(), type: z.literal('pairing'), link: z.string().min(1) }),
+  z.object({ id: z.number().int().positive(), type: z.literal('host'), hostId: z.string().min(1) }),
 ]));
 
 type PendingDesktopHostAction = z.infer<typeof pendingHostActionsSchema>[number];
 
+export const completeDesktopHostAction = async (id: number, committed: boolean): Promise<void> => {
+  await invokeDesktop('desktop_complete_host_action', { id, committed });
+};
+
+/**
+ * Host work the desktop shell hands to the main window: a pairing link the user
+ * confirmed (`openchamber://connect`), or a relay-capable host to activate
+ * (`openchamber://host/<id>`). Taking them removes them.
+ */
 export const takePendingDesktopHostActions = async (): Promise<PendingDesktopHostAction[]> => {
   if (!isDesktopShell()) return [];
   try {

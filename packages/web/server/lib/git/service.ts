@@ -33,10 +33,12 @@ import type {
 } from './service-contracts.js';
 export type { RepositoryGitPaths } from './service-contracts.js';
 import { isMainThread } from 'node:worker_threads';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   resolveGitBinary,
 } from './git-binary.js';
-import { runGitReadWorkerTask } from './git-read-worker-client.js';
+import { runGitReadWorkerTask as dispatchGitReadWorkerTask } from './git-read-worker-client.js';
+import type { GitReadInputs, ReadEnvironment, ReadOperation } from './git-read-protocol.js';
 import { runSharedGitReadTask } from './git-read-shared.js';
 import { execFileWithProcessBroker, getProcessBrokerSpawn, type BrokerOptions } from './process-broker.js';
 
@@ -291,6 +293,16 @@ const execGitFileAsync = (args: string[], options: BrokerOptions) => (
 );
 
 let gitEnvironment: GitEnvironment | null = null;
+const gitReadEnvironment = new AsyncLocalStorage<{ variables: ReadEnvironment }>();
+export const withGitReadEnvironment = <T>(variables: ReadEnvironment | undefined, run: () => T) =>
+  gitReadEnvironment.run({ variables: variables ?? null }, run);
+
+const runGitReadWorkerTask = async <K extends ReadOperation>(operation: K, payload: GitReadInputs[K], options: GitReadOptions = {}) => {
+  throwIfGitReadCancelled(options);
+  const environment = await directoryEnvironmentForGit(payload.directory, { refresh: false });
+  throwIfGitReadCancelled(options);
+  return dispatchGitReadWorkerTask(operation, { ...payload, environment }, options);
+};
 
 export const configureGitEnvironment = (runtime: GitEnvironment | null) => {
   gitEnvironment = runtime;
@@ -328,9 +340,12 @@ const REPOSITORY_LOCATION_ENV_NAMES = new Set([
 ]);
 const isKeptOutOfGitOverlay = (name: string) => isRefusedBySimpleGit(name) || REPOSITORY_LOCATION_ENV_NAMES.has(name.toUpperCase());
 
-const directoryEnvironmentForGit = async (directory: string) => {
+const directoryEnvironmentForGit = async (directory: string, options?: { refresh: boolean }) => {
+  const request = gitReadEnvironment.getStore();
+  if (request) return request.variables;
   if (!gitEnvironment || !directory) return null;
-  const variables = await gitEnvironment.forDirectory(normalizeDirectoryPath(directory));
+  const normalized = normalizeDirectoryPath(directory);
+  const variables = options ? await gitEnvironment.forDirectory(normalized, options) : await gitEnvironment.forDirectory(normalized);
   if (!variables) return null;
   return Object.fromEntries(Object.entries(variables).filter(([name]) => !isKeptOutOfGitOverlay(name)));
 };

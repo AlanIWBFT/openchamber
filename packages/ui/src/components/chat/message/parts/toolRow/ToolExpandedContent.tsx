@@ -24,7 +24,7 @@ import { extractFirstChangedLineFromDiff, getDiffPatchEntries, getToolFallbackDi
 import { useStreamingTextThrottle } from '../../../hooks/useStreamingTextThrottle';
 import { getToolOutput } from '../toolOutput';
 import { toAbsoluteFilePath } from '@/lib/path-utils';
-import { executeOutputTruncation, executeScript, isEditTool, isExecuteTool, isFileChangeTool, isPatchTool, isQuestionTool, isShellTool, isSubagentTool, isTodoWriteTool, isWebSearchTool, todoWriteItems, isWriteTool, isOpenChamberTool, openChamberCallSummary } from '@/lib/opencode/tools';
+import { executeOutputTruncation, executeScript, isEditTool, isReadTool, isExecuteTool, isFileChangeTool, isPatchTool, isQuestionTool, isShellTool, isSubagentTool, isTodoWriteTool, isWebSearchTool, todoWriteItems, isWriteTool, isOpenChamberTool, openChamberCallSummary } from '@/lib/opencode/tools';
 import { createScriptToolProjection } from '@/lib/opencode/script';
 import { getUnifiedExecCommand, getUnifiedExecMetadata, getUnifiedExecOutput, isExecCommandTool, isUnifiedExecTool } from '../../unifiedExec';
 import ToolPart from '../ToolPart';
@@ -122,7 +122,7 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
         || isPatchTool(part.tool)
         || isEditTool(part.tool)
         || isExecuteTool(part.tool)
-        || (part.tool === 'read' && getReadToolDisplayType(metadata, rawOutputString) === 'directory');
+        || (isReadTool(part.tool) && getReadToolDisplayType(metadata, rawOutputString) === 'directory');
     const isExecute = isExecuteTool(part.tool);
     const executeCode = React.useMemo(() => (isExecute ? executeScript(input) : undefined), [input, isExecute]);
     const project = React.useMemo(() => createScriptToolProjection({ id: part.id, sessionID: part.sessionID, messageID: part.messageID }), [part.id, part.sessionID, part.messageID]);

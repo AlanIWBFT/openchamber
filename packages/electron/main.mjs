@@ -70,7 +70,7 @@ import {
   wasEarlyWindowClosed,
 } from './early-startup.mjs';
 import { createStartupSingleFlight } from './startup-single-flight.mjs';
-import { createDesktopDeepLinkQueue } from './desktop-deep-links.mjs';
+import { createDesktopDeepLinkQueue, createDesktopHostActionQueue } from './desktop-deep-links.mjs';
 import { createServerDependencyPreload } from './server-dependency-preload.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import {
@@ -1872,6 +1872,12 @@ const extensionInstallUrl = (link) => {
 
 const pendingExtensionInstalls = [];
 const takePendingExtensionInstalls = () => pendingExtensionInstalls.splice(0).map(extensionInstallUrl).filter(Boolean);
+const flushPendingDeepLinks = () => {
+  void pendingDeepLinks.flush();
+  if (isMainWindowReadyForDeepLink({ type: 'session' })) {
+    for (const link of pendingExtensionInstalls.splice(0)) dispatchDeepLink(link);
+  }
+};
 
 const parseDeepLink = (raw) => {
   if (typeof raw !== 'string') return null;
@@ -1904,11 +1910,19 @@ const readDeepLinkQueryParam = (raw, name) => {
   }
 };
 
-const pendingHostActions = [];
+// Host work the main window's renderer does itself (desktop_take_pending_host_actions):
+// redeeming a pairing link the user confirmed, and activating a host with a
+// relay leg. Both need the E2EE relay client, which lives in the renderer; it
+// probes the direct address first and falls back to the tunnel, like the host
+// switcher. Pairing links carry the one-time secret: they leave this queue only
+// to that renderer and are never logged.
+const pendingHostActions = createDesktopHostActionQueue();
 
-const queueHostAction = (action) => {
-  pendingHostActions.push(action);
+const queueHostAction = (action, onHostSwitch) => {
+  if (!state.mainWindow || !isLocalSender(state.mainWindow.webContents)) throw new Error('Host actions require a local desktop page');
+  const result = pendingHostActions.enqueue(action);
   emitToWindow(state.mainWindow, 'openchamber:host-actions-ready');
+  return result.then((committed) => { if (committed) onHostSwitch(); });
 };
 
 const switchToHostById = async (rawId, onHostSwitch) => {
@@ -1932,8 +1946,7 @@ const switchToHostById = async (rawId, onHostSwitch) => {
     }
     if (sanitizeHostRelayForStorage(host.relay)) {
       log.info('[electron] activating relay-capable host in renderer', { id });
-      queueHostAction({ type: 'host', hostId: id });
-      return;
+      return queueHostAction({ type: 'host', hostId: id }, onHostSwitch);
     }
     targetUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : host.url;
     apiBaseUrl = host.apiUrl || host.url;
@@ -1994,7 +2007,7 @@ const dispatchDeepLink = (link, onHostSwitch) => {
           log.info('[electron] connect pairing deep-link declined by user');
           return;
         }
-        queueHostAction({ type: 'pairing', link: link.raw.trim() });
+        return queueHostAction({ type: 'pairing', link: link.raw.trim() }, onHostSwitch);
       });
     }
     log.warn('[electron] invalid connect deep-link payload');
@@ -2037,8 +2050,7 @@ const dispatchDeepLink = (link, onHostSwitch) => {
 const mainWindowSessionLinkGate = createSessionLinkGate({
   fallbackMs: PENDING_SESSION_LINK_FALLBACK_MS,
   onFallback: () => {
-    void pendingDeepLinks.flush();
-    for (const link of pendingExtensionInstalls.splice(0)) dispatchDeepLink(link);
+    flushPendingDeepLinks();
   },
 });
 
@@ -2652,9 +2664,17 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
   attachRendererRecovery(browserWindow, { log, label: 'window' });
   attachDevWindowTape(app, browserWindow);
 
+  const hostActionOwner = browserWindow.webContents;
+  browserWindow.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) {
+      pendingHostActions.cancelOwner(hostActionOwner);
+    }
+  });
   browserWindow.webContents.on('render-process-gone', () => {
     if (browserWindow === state.mainWindow) mainWindowSessionLinkGate.documentReplaced();
+    pendingHostActions.cancelOwner(hostActionOwner);
   });
+  browserWindow.webContents.on('destroyed', () => pendingHostActions.cancelOwner(hostActionOwner));
 
   browserWindow.webContents.on('dom-ready', () => {
     if (browserWindow.__ocLabel === 'main') {
@@ -2690,7 +2710,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
     if (browserWindow.__ocLabel === 'main' && !state.quitInProgress) {
       const remotePage = /^https?:\/\//i.test(browserWindow.webContents.getURL()) && !isLocalSender(browserWindow.webContents);
       mainWindowSessionLinkGate.applicationDocumentLoaded(browserWindow.webContents.mainFrame, remotePage);
-      void pendingDeepLinks.flush();
+      flushPendingDeepLinks();
     }
   });
 
@@ -2783,7 +2803,7 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
       await navigateWindow(mainWindow, url, { allowAbort: true });
     }
     if (state.quitInProgress) return mainWindow;
-    void pendingDeepLinks.flush();
+    flushPendingDeepLinks();
     showWindow(mainWindow);
     mainWindow.focus();
     return mainWindow;
@@ -2795,7 +2815,7 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
     url,
     runtimeConfig,
   });
-  void pendingDeepLinks.flush();
+  flushPendingDeepLinks();
   return state.mainWindow;
 };
 
@@ -4827,7 +4847,11 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
 
     case 'desktop_take_pending_host_actions':
       if (!browserWindow || !state.mainWindow || browserWindow.id !== state.mainWindow.id) return [];
-      return pendingHostActions.splice(0, pendingHostActions.length);
+      return pendingHostActions.take(browserWindow.webContents);
+
+    case 'desktop_complete_host_action':
+      if (!browserWindow || !state.mainWindow || browserWindow.id !== state.mainWindow.id) return false;
+      return pendingHostActions.complete(browserWindow.webContents, args.id, args.committed);
 
     case 'desktop_take_pending_extension_installs':
       if (!browserWindow || !state.mainWindow || browserWindow.id !== state.mainWindow.id) return [];
@@ -5401,6 +5425,9 @@ ipcMain.handle('openchamber:invoke', async (event, command, args) => {
   }
   const local = isLocalSender(event.sender);
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  if ((command === 'desktop_take_pending_host_actions' || command === 'desktop_complete_host_action') && event.senderFrame !== event.sender.mainFrame) {
+    throw new Error('Host actions require the main frame');
+  }
   if (command === 'desktop_navigation_ready' || command === 'desktop_take_pending_session_links') {
     if (event.senderFrame !== event.sender.mainFrame || (command === 'desktop_navigation_ready' && args?.ready !== true && args?.ready !== false)) {
       throw new Error('Navigation readiness requires a top-frame boolean');
@@ -5409,7 +5436,7 @@ ipcMain.handle('openchamber:invoke', async (event, command, args) => {
     if (command === 'desktop_navigation_ready' && !args.ready) mainWindowSessionLinkGate.documentStopped(event.senderFrame);
     else {
       mainWindowSessionLinkGate.documentAsked(event.senderFrame);
-      void pendingDeepLinks.flush();
+      flushPendingDeepLinks();
     }
     return [];
   }
@@ -5591,7 +5618,7 @@ const revealMainWindow = async () => {
 const focusMainWindowWithSession = async (sessionId, directory) => {
   if (sessionId) pendingDeepLinks.enqueue({ type: 'session', value: sessionId, directory: directory || '' });
   await revealMainWindow();
-  void pendingDeepLinks.flush();
+  flushPendingDeepLinks();
 };
 
 const dispatchTrayAction = async (action) => {
