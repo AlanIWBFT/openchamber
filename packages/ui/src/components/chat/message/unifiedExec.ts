@@ -33,10 +33,6 @@ export const getExecProcessRunning = (tool: ToolName, metadata: UnifiedExecMetad
     return metadata.processRunning;
 };
 
-export const isExecProcessRunning = (tool: ToolName, metadata: UnifiedExecMetadata, stateStatus?: ToolPart['state']['status']): boolean => (
-    getExecProcessRunning(tool, metadata, stateStatus) === true
-);
-
 export const getUnifiedExecCommand = (
     input: ToolInput | undefined,
     metadata: UnifiedExecMetadata,
