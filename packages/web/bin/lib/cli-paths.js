@@ -26,7 +26,7 @@ function readDesktopLocalPortFromSettings() {
     const raw = fs.readFileSync(getSettingsFilePath(), 'utf8');
     const parsed = JSON.parse(raw);
     const value = parsed?.desktopLocalPort;
-    if (Number.isFinite(value) && value > 0 && value <= 65535) {
+    if (Number.isInteger(value) && value > 0 && value <= 65535) {
       return value;
     }
     return null;

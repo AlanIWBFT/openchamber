@@ -260,9 +260,6 @@ async function discoverOpenChamberInstanceOnPort(port, options = {}) {
     typeof options.fetchImpl === 'function' ? options.fetchImpl : globalThis.fetch,
     options.host,
   );
-  if (info?.runtime === 'desktop' && !isDesktopRuntimeForPort(info, port)) {
-    return null;
-  }
   return createLivePortInstance(port, info, options.host);
 }
 
@@ -333,20 +330,12 @@ function getLatestInstance(instances) {
   })[0];
 }
 
-function isDesktopRuntimeForPort(info, port) {
-  if (info?.runtime !== 'desktop') {
-    return false;
-  }
-  const desktopPort = readDesktopLocalPortFromSettings();
-  return !desktopPort || desktopPort === port;
-}
-
 async function inspectTunnelAttachability(port, { requireHealthy = true } = {}) {
   const info = await fetchSystemInfoFromPort(port);
   if (!info || typeof info.runtime !== 'string') {
     return { attachable: false, reason: 'unreachable' };
   }
-  if (isDesktopRuntimeForPort(info, port)) {
+  if (info.runtime === 'desktop') {
     return { attachable: false, reason: 'desktop', info };
   }
   if (requireHealthy) {
@@ -359,10 +348,7 @@ async function inspectTunnelAttachability(port, { requireHealthy = true } = {}) 
 }
 
 async function discoverDesktopInstance(fetchImpl = globalThis.fetch) {
-  const port = readDesktopLocalPortFromSettings();
-  if (!port) {
-    return null;
-  }
+  const port = readDesktopLocalPortFromSettings() ?? 57123;
 
   const info = await fetchSystemInfoFromPort(port, fetchImpl);
   if (!info || info.runtime !== 'desktop') {
@@ -414,7 +400,6 @@ export {
   discoverLifecycleInstances,
   discoverUnconfirmedRegistryInstanceOnPort,
   getLatestInstance,
-  isDesktopRuntimeForPort,
   inspectTunnelAttachability,
   discoverDesktopInstance,
   resolveTunnelProviders,
