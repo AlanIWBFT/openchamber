@@ -86,7 +86,7 @@ export const createConfiguredWebAPIs = () => {
   // involved. main.tsx holds the app render on this promise so the user sees the
   // splash instead of a transient auth screen against an endpoint still being
   // selected.
-  const restoreRelayRuntime = (): Promise<void> => {
+  const restoreRelayRuntime = () => {
     // Opened for this relay host. Boot already set its runtime key, so force the
     // restore past its already-active check, or the tunnel never opens.
     if (relayHostId) return restoreDesktopRelayRuntime(relayHostId, { reconnectActive: true });
