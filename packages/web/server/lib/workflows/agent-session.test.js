@@ -43,6 +43,32 @@ const createSessionRequest = async ({ parent, allowTools, model }) => {
 };
 
 describe('workflow agent sessions', () => {
+  it.each([0, 2])('stops model execution and persistent commands, reporting %i cleanup failures', async (failed) => {
+    const stop = vi.fn(async () => ({ matched: 2, terminated: 2 - failed, failed }));
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sessions = createSessions({ session: { stop } });
+    await sessions.interrupt('/repo', 'ses_agent');
+    expect(stop).toHaveBeenCalledWith({ sessionID: 'ses_agent' });
+    expect(warning).toHaveBeenCalledTimes(failed > 0 ? 1 : 0);
+    if (failed > 0) expect(warning).toHaveBeenCalledWith(expect.stringContaining('ses_agent'), '2 persistent commands could not be stopped');
+    sessions.stop();
+  });
+
+  it('stops a prompt that landed after cancellation and reports command cleanup failure', async () => {
+    const controller = new AbortController();
+    const stop = vi.fn(async () => ({ matched: 1, terminated: 0, failed: 1 }));
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sessions = createSessions({
+      message: { list: async () => ({ data: [] }) },
+      session: { prompt: async () => controller.abort(), stop },
+    });
+    await expect(sessions.followUp({ directory: '/repo', sessionId: 'ses_agent', text: 'work', signal: controller.signal }))
+      .rejects.toBeInstanceOf(WorkflowAgentStopped);
+    expect(stop).toHaveBeenCalledWith({ sessionID: 'ses_agent' });
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('ses_agent'), '1 persistent commands could not be stopped');
+    sessions.stop();
+  });
+
   it.each([undefined, 0, 123])('reads backend archive state, including timestamp %s', async (archived) => {
     const sessions = createSessions({ session: { get: async () => ({ time: { archived } }) } });
     await expect(sessions.isArchived('ses_parent')).resolves.toBe(archived !== undefined);

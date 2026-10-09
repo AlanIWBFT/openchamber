@@ -114,6 +114,7 @@ describe('workflow runtime', () => {
     const status = await finished(proposed.runId);
 
     expect(status.state).toBe('completed');
+    expect(agents.interrupted).toEqual([]);
     expect(status.agents.map((agent) => [agent.label, agent.phase, agent.state])).toEqual([['check a', 'Work', 'completed'], ['check b', 'Work', 'completed']]);
     const [report] = agents.reports;
     expect(report.sessionId).toBe('ses_parent');
@@ -416,6 +417,18 @@ describe('workflow runtime', () => {
     await runtime.approve({ runId });
     await runtime.stop({ runId });
     expect((await finished(runId)).state).toBe('stopped');
+  });
+
+  it('stops only agents still owned by the run, not a completed session', async () => {
+    const agents = fakeAgentSessions({ hang: ['slow'] });
+    const { runtime, act, finished } = await setup(agents);
+    const { runId } = await act('workflow.run', { script: script("await agent('finished')\nreturn agent('slow')") });
+    await runtime.approve({ runId });
+    await waitFor(async () => (await act('workflow.status', { runId })).agents.some((agent) => agent.label === 'slow' && agent.sessionId));
+    await runtime.stop({ runId });
+    const status = await finished(runId);
+    expect(status.agents.map((agent) => agent.state)).toEqual(['completed', 'stopped']);
+    expect(agents.interrupted).toEqual(['ses_agent2']);
   });
 
   it('resumes only a failed or stopped run', async () => {
