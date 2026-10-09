@@ -1,7 +1,7 @@
 import type { Message } from "@/lib/opencode/model"
 import { findMessageIndex } from "./message-ordering"
 
-export function findMessageBoundary(messages: readonly Message[], messageID: string | undefined): number {
+function findMessageBoundary(messages: readonly Message[], messageID: string | undefined): number {
   if (!messageID) return -1
   return findMessageIndex(messages, messageID)
 }

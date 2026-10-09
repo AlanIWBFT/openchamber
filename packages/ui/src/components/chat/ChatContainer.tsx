@@ -69,7 +69,7 @@ import { useChatSurfaceMode } from './useChatSurfaceMode';
 import { useDeviceInfo } from '@/lib/device';
 import { Button } from '@/components/ui/button';
 import { StopIcon } from '@/components/icons/StopIcon';
-import { abortCurrentOperation } from '@/sync/session-actions';
+import { stopSessionExecution } from '@/sync/session-actions';
 import { OverlayScrollbar } from '@/components/ui/OverlayScrollbar';
 import { Icon } from "@/components/icon/Icon";
 import { cn, formatDirectoryName } from '@/lib/utils';
@@ -1951,7 +1951,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                                 ? t('spaces.archive.readOnlyBanner', { name: spaceArchive.name })
                                 : t('chat.container.readOnlySubagentPromptBanner')}
                             onStop={!spaceArchive && currentSessionId && sessionStatusForCurrent.type !== 'idle'
-                                ? () => void abortCurrentOperation(currentSessionId)
+                                ? () => void stopSessionExecution(currentSessionId).catch((error) => console.error('[chat] Stop failed', error))
                                 : undefined}
                             stopLabel={t('chat.chatInput.actions.stopGeneratingAria')}
                         />

@@ -85,6 +85,7 @@ import {
     OPENCODE_TOOLS,
     executeScript,
     isEditTool,
+    isReadTool,
     isExecuteTool,
     isFileChangeTool,
     isPatchTool,
