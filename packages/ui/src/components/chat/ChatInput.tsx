@@ -1161,6 +1161,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const addToQueue = useMessageQueueStore((state) => state.addToQueue);
     const takeForSend = useMessageQueueStore((state) => state.takeForSend);
     const popQueuedToInput = useMessageQueueStore((state) => state.popToInput);
+    const keyboardQueueSends = React.useRef(new Set<string>());
 
     // Inline comment drafts
     const inlineDraftSessionKey = isBtwActive ? btwComposerSessionId ?? '' : currentSessionId ?? (newSessionDraftOpen ? 'draft' : '');
@@ -2740,8 +2741,17 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         })) {
             e.preventDefault();
 
-            // An empty composer with a queue sends the whole queue now. While
-            // a turn runs Stop replaces the send button, so only Enter does it.
+            if (!hasContent) {
+                if (e.repeat || !messageQueueTarget || newSessionDraftOpen || inputMode !== 'normal') return;
+                const queue = useMessageQueueStore.getState().getSendableQueue(messageQueueTarget);
+                const next = selectComposerQueue(queue).find((item) => !keyboardQueueSends.current.has(item.id));
+                if (!next) return;
+                keyboardQueueSends.current.add(next.id);
+                void handleSubmit({ queuedOnly: true, queuedMessageId: next.id, delivery: 'steer' }).finally(() => {
+                    keyboardQueueSends.current.delete(next.id);
+                });
+                return;
+            }
 
             // Queueing / steering only works when there's an existing busy
             // session (or an active auto-review run).
