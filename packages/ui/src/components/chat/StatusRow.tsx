@@ -45,8 +45,8 @@ export const StatusRow: React.FC<StatusRowProps> = ({
     <div
       style={STATUS_ROW_CONTAINER_STYLE}
     >
-      <div className="oc-surface-floating inline-flex w-max max-w-full items-center gap-2 h-7 whitespace-nowrap rounded-full [corner-shape:round] ps-1.5 pe-2">
-        <div className="flex items-center min-w-0 gap-2 overflow-x-clip">
+      <div className="oc-surface-floating inline-flex w-max max-w-full items-center gap-2 min-h-7 whitespace-nowrap rounded-full [corner-shape:round] ps-1.5 pe-2">
+        <div className="flex items-center min-w-0 gap-2 overflow-x-clip py-1.5">
           {shouldRenderPlaceholder ? (
             <WorkingPlaceholder
               key={currentSessionId ?? "no-session"}

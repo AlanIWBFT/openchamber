@@ -21,7 +21,7 @@ const ScrollAction: React.FC<{ onClick: () => void; children?: React.ReactNode }
                     type="button"
                     onClick={onClick}
                     aria-label={t('chat.scrollToBottom.aria')}
-                    className="inline-flex h-[calc(1.75rem-2px)] min-w-0 max-w-full flex-1 items-center rounded-full [corner-shape:round] text-start"
+                    className="inline-flex min-h-[calc(1.75rem-2px)] py-[calc(0.375rem-1px)] min-w-0 max-w-full flex-1 items-center rounded-full [corner-shape:round] text-start"
                 >
                     <span className="flex h-full w-7 flex-1 shrink-0 basis-7 items-center justify-center text-muted-foreground">
                         <Icon name="arrow-down" className="h-4 w-4" />
@@ -51,7 +51,7 @@ const WorkingPillBody: React.FC<{ onClick: () => void }> = ({ onClick }) => {
     return (
         <>
             <ScrollAction onClick={onClick}>
-                <span className={cn('-ms-px min-w-0 truncate text-[0.8125rem] leading-5 text-muted-foreground', working.canBackground ? 'pe-1' : 'pe-2')}>
+                <span className={cn('-ms-px min-w-0 overflow-x-clip text-ellipsis whitespace-nowrap text-[0.8125rem] leading-[calc(16em/13)] text-muted-foreground', working.canBackground ? 'pe-1' : 'pe-2')}>
                     {label}
                 </span>
             </ScrollAction>
