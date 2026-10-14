@@ -548,7 +548,7 @@ describe('the composer send gate counts what the submission builder counts', () 
             .toBe('selectComposerQueue(queuedMessages)');
         expect(gateExpression(/const hasQueuedMessages = ([^;\n]*);/, 'the manual queue content gate'))
             .toContain('composerQueuedMessages.length > 0');
-        const projection = gateExpression(/const queuedProjection = ([\s\S]*?);\n/, 'the captured queue projection');
+        const projection = gateExpression(/const queuedProjection = ([\s\S]*?);\r?\n/, 'the captured queue projection');
         expect(projection).toContain('composerQueuedMessages');
         expect(projection).not.toContain('queuedMessages');
         expect(gateExpression(/const capturedSendConfig = ([^;\n]*);/, 'the captured queue selection'))
