@@ -53,8 +53,8 @@ export const StatusRow: React.FC<StatusRowProps> = ({
       // scroll-to-bottom pill uses).
       style={STATUS_ROW_CONTAINER_STYLE}
     >
-      {/* 28px, the toolbar control height, shared with the scroll-to-bottom
-          pill that takes over this label away from the live edge. */}
+      {/* Keep a 28px floor; the padded text grows with pixel-aligned fonts,
+          matching the scroll-to-bottom pill away from the live edge. */}
       {/* The chip lives here, not on the container: the root above is
           an inline-size query container, whose width ignores its children —
           a shrink-to-fit wrapper around it always collapsed to zero. */}
@@ -63,11 +63,11 @@ export const StatusRow: React.FC<StatusRowProps> = ({
           WorkingPlaceholder, so the visible marks land on the same line.
           pe-2 evens out the far side: text glyph to edge lands ~10px, the
           same optical gap as the start. */}
-      <div className="oc-surface-floating inline-flex w-max max-w-full items-center gap-2 h-7 whitespace-nowrap rounded-full [corner-shape:round] ps-1.5 pe-2">
+      <div className="oc-surface-floating inline-flex w-max max-w-full items-center gap-2 min-h-7 whitespace-nowrap rounded-full [corner-shape:round] ps-1.5 pe-2">
         {/* overflow-clip, not overflow-x-hidden: hiding one axis turns the
             other into `auto`, and a sub-pixel overshoot of the label (zoom,
             font metrics) then gave the chip its own scrollbar. */}
-        <div className="flex items-center min-w-0 gap-2 overflow-clip">
+        <div className="flex items-center min-w-0 gap-2 overflow-clip py-1.5">
           {shouldRenderPlaceholder ? (
             <WorkingPlaceholder
               key={currentSessionId ?? "no-session"}
