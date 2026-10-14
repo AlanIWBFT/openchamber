@@ -47,7 +47,7 @@ export const ExplorationDisclosure = React.memo(({ id, counts, isExpanded, onTog
                 </div>
             </button>
             {isExpanded ? (
-                <div id={contentId} className="relative ms-2 pb-1 ps-3 pt-0.5">
+                <div id={contentId} className="relative ms-2 pb-2 ps-3 pt-2">
                     <span aria-hidden="true" className="pointer-events-none absolute bottom-0 inset-s-0 top-0 w-px" style={{ backgroundColor: 'var(--tools-border)' }} />
                     {children}
                 </div>
