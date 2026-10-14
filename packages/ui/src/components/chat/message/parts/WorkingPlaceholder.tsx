@@ -237,13 +237,13 @@ export function WorkingPlaceholder({
 
     return (
       <div
-        className="flex h-full items-center text-muted-foreground"
+        className="flex min-w-0 items-center text-muted-foreground"
         role="status"
         aria-live="polite"
         aria-label={retryText}
       >
         {providerLogo}
-        <span className="typography-ui-header">{retryText}</span>
+        <span className="typography-ui-header truncate">{retryText}</span>
       </div>
     );
   }
@@ -263,7 +263,7 @@ export function WorkingPlaceholder({
       // text: the row and the pill hand off to each other in the same spot
       // and must read as one element changing chrome.
       className={
-        'flex h-full items-center text-muted-foreground'
+        'flex min-w-0 items-center text-muted-foreground'
       }
       role="status"
       aria-live={displayedPermission ? 'assertive' : 'polite'}
@@ -271,7 +271,7 @@ export function WorkingPlaceholder({
       data-waiting={displayedPermission ? 'true' : undefined}
     >
       {providerLogo}
-      <span className="text-[13px] leading-4">{label}</span>
+      <span className="min-w-0 overflow-x-clip text-ellipsis whitespace-nowrap text-[13px] leading-[calc(16em/13)]">{label}</span>
     </div>
   );
 }

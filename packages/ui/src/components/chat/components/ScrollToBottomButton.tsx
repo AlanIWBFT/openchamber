@@ -14,13 +14,13 @@ import { registerFloatingPanelClearanceReader } from '@/components/chat/composer
 const ScrollAction: React.FC<{ onClick: () => void; children?: React.ReactNode }> = ({ onClick, children }) => {
     const { t } = useI18n();
     return (
-        // Sits inside the pill's hairline border, so the pill as a whole is
-        // 28px like the status row it takes over from.
+        // Include the pill's border in its 28px floor and text padding.
+        // Auto height follows the pixel-aligned label, like the status row.
         <button
             type="button"
             onClick={onClick}
             aria-label={t('chat.scrollToBottom.aria')}
-            className="inline-flex h-[calc(1.75rem-2px)] min-w-0 max-w-full flex-1 items-center rounded-full [corner-shape:round] text-start"
+            className="inline-flex min-h-[calc(1.75rem-2px)] py-[calc(0.375rem-1px)] min-w-0 max-w-full flex-1 items-center rounded-full [corner-shape:round] text-start"
         >
             {/* flex-1 so the icon stays centred when the mobile
                 touch-target floor widens the bare button past 28px;
@@ -61,9 +61,9 @@ const WorkingPillBody: React.FC<{ onClick: () => void }> = ({ onClick }) => {
     return (
         <>
             <ScrollAction onClick={onClick}>
-                {/* leading-5: `truncate` clips at the line box, and a 16px one
-                    cut off descenders in fonts with taller metrics. */}
-                <span className={cn('-ms-px min-w-0 truncate text-[13px] leading-5 text-muted-foreground', working.canBackground ? 'pe-1' : 'pe-2')}>
+                {/* Clip only the width so descenders can use the pill's padding
+                    without increasing its pixel-aligned line height. */}
+                <span className={cn('-ms-px min-w-0 overflow-x-clip text-ellipsis whitespace-nowrap text-[13px] leading-[calc(16em/13)] text-muted-foreground', working.canBackground ? 'pe-1' : 'pe-2')}>
                     {label}
                 </span>
             </ScrollAction>
