@@ -12,6 +12,7 @@ type ComposerQueueState = Pick<ReturnType<typeof useMessageQueueStore.getState>,
     'addToQueue' | 'takeForSend' | 'followUpBehavior'> & {
     popQueuedToInput: ReturnType<typeof useMessageQueueStore.getState>['popToInput'];
     queuedMessages: QueuedMessage[];
+    keyboardQueueSends: Set<string>;
     messageQueueTarget: ReturnType<typeof createMessageQueueTarget> | null;
     parentMessageQueueTarget: ReturnType<typeof createMessageQueueTarget> | null;
 };
@@ -33,6 +34,7 @@ export function useComposerQueueState({
     const parentMessageQueueKey = parentMessageQueueTarget ? getMessageQueueKey(parentMessageQueueTarget) : null;
 
     const messageQueueTarget = !isBtwActive ? parentMessageQueueTarget : null;
+    const keyboardQueueSends = React.useRef(new Set<string>()).current;
 
     const messageQueueKey = !isBtwActive ? parentMessageQueueKey : null;
 
@@ -55,7 +57,7 @@ export function useComposerQueueState({
     const popQueuedToInput = useMessageQueueStore((state) => state.popToInput);
 
     return {
-        queuedMessages, messageQueueTarget, addToQueue, popQueuedToInput, takeForSend, followUpBehavior,
+        queuedMessages, messageQueueTarget, addToQueue, popQueuedToInput, takeForSend, followUpBehavior, keyboardQueueSends,
         parentMessageQueueTarget,
     };
 }

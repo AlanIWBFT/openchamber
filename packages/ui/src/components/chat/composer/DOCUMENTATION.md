@@ -386,15 +386,7 @@ queueing captures.
 `selectComposerQueue` in the submission builder excludes server-scheduled items
 before the composer counts manual content or reads captured send configuration.
 Mixed queues use only ordinary items for manual send; a scheduled-only queue
-cannot trigger an empty composer send. Enter and Ctrl/Cmd+Enter in an empty
-composer send the whole queue now, as one visible message (#4746). While a turn
-runs only Enter does this: the send button gives way to Stop until the turn
-ends, and a row's own Send sends just that message. An empty-composer send
-dismisses open permission requests and the forms that hold a turn, as a direct
-composer send does, and defers the session's own waiting question when the send
-goes out as a plain prompt to that session (`sync/DOCUMENTATION.md`, blocking
-requests; a command, or a local prompt command such as `/summary`, leaves it
-pending); a row's own Send is queued-only and dismisses nothing.
+cannot trigger an empty composer send. With an empty composer the keyboard shortcut sends one ordinary queued item, in queue order. Held-key repeats do nothing. Queued-only sends leave pending questions and permissions intact. The send button still sends the whole ordinary queue together; while a turn is running it is replaced by Stop.
 Scheduled items stay visible in the queue rows with reorder and remove, but no
 edit or send action.
 

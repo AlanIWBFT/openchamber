@@ -14,6 +14,8 @@ import type { useComposerDraftText } from './useComposerDraftText';
 import type { useComposerDraftHistory } from './useComposerDraftHistory';
 import type { useComposerAutocompleteState } from './useComposerAutocompleteState';
 import { useUIStore } from '@/stores/useUIStore';
+import { useMessageQueueStore } from '@/stores/messageQueueStore';
+import { selectComposerQueue } from '../submit/buildOutgoingMessage';
 import { shouldSubmitEnter } from '../../composer/keyboardPolicy';
 import { getDropdownNavigationKey } from '@/components/ui/dropdown-navigation';
 import { isIMECompositionEvent } from '@/lib/ime';
@@ -28,10 +30,10 @@ type Dependencies = {
     preferences: Pick<ReturnType<typeof useComposerPreferences>, 'largeTextPasteBehavior' | 'cycleAgentShortcut' | 'isMobile' | 'enterToSend' | 'enterToSendConfigured' | 'mobileReturnKeySends'>;
     expansion: Pick<ReturnType<typeof useComposerExpansion>, 'isDesktopExpanded' | 'setExpandedInput'>;
     mobileActions: Pick<ReturnType<typeof useComposerMobileActions>, 'handlePromptHistoryShortcut'>;
-    sessionScope: Pick<ReturnType<typeof useComposerSessionScope>, 'isBtwActive' | 'inputMode' | 'currentSessionId' | 'attachedFiles'>;
+    sessionScope: Pick<ReturnType<typeof useComposerSessionScope>, 'isBtwActive' | 'inputMode' | 'currentSessionId' | 'attachedFiles' | 'newSessionDraftOpen'>;
     sessionLifecycle: Pick<ReturnType<typeof useComposerSessionLifecycle>, 'handleExitBtw' | 'currentSessionPhase' | 'autoReviewRunning'>;
     editorActions: Pick<ReturnType<typeof useComposerEditorActions>, 'handleCycleAgent'>;
-    queueState: Pick<ReturnType<typeof useComposerQueueState>, 'queuedMessages' | 'followUpBehavior'>;
+    queueState: Pick<ReturnType<typeof useComposerQueueState>, 'queuedMessages' | 'followUpBehavior' | 'keyboardQueueSends' | 'messageQueueTarget'>;
     queueActions: Pick<ReturnType<typeof useComposerQueueActions>, 'handleQueuedMessageEdit' | 'handleQueueMessage'>;
     draftHistory: Pick<ReturnType<typeof useComposerDraftHistory>, 'messageHistory' | 'applyHistoryValue'>;
     sendAvailability: Pick<ReturnType<typeof useComposerSendAvailability>, 'pendingFirstSend' | 'isPageWaiting' | 'getCurrentInputSnapshot'>;
@@ -234,9 +236,18 @@ export function createComposerKeyHandler({
         })) {
             e.preventDefault();
             if (pendingFirstSend) return;
+            if (!getCurrentInputSnapshot().hasContent) {
+                const { messageQueueTarget, keyboardQueueSends } = queueState;
+                if (e.repeat || !messageQueueTarget || sessionScope.newSessionDraftOpen || inputMode !== 'normal') return;
+                const next = selectComposerQueue(useMessageQueueStore.getState().getSendableQueue(messageQueueTarget))
+                    .find((item) => !keyboardQueueSends.has(item.id));
+                if (!next) return;
+                keyboardQueueSends.add(next.id);
+                void handleSubmit({ queuedOnly: true, queuedMessageId: next.id, delivery: 'steer' }).finally(() => keyboardQueueSends.delete(next.id));
+                return;
+            }
 
-
-            const canQueue = !isBtwActive && !isPageWaiting && inputMode === 'normal' && getCurrentInputSnapshot().hasContent && currentSessionId && (currentSessionPhase !== 'idle' || autoReviewRunning);
+            const canQueue = !isBtwActive && !isPageWaiting && inputMode === 'normal' && currentSessionId && (currentSessionPhase !== 'idle' || autoReviewRunning);
 
             if (followUpBehavior === 'queue') {
                 if (isCtrlEnter || !canQueue) {
