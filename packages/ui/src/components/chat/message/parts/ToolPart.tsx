@@ -1637,7 +1637,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     return (
         <div
             className={cn(
-                'relative pe-2 pb-2 pt-2 space-y-2 ps-4'
+                'relative pb-2 pt-2 space-y-2'
             )}
         >
             {isQuestionTool(part.tool) ? (
