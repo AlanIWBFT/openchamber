@@ -1406,7 +1406,12 @@ function cleanupSessionDataInLiveStores(sessionIds: readonly string[]): void {
       || current.permission[sessionId] !== undefined
       || current.form[sessionId] !== undefined,
     )
-    if (applicable.length === 0) continue
+    // Even an empty store can have a pre-deletion list request in flight.
+    const revision = sessionsMutationPatch(current, sessionIds, true)
+    if (applicable.length === 0) {
+      store.setState(revision)
+      continue
+    }
     const cache = {
       session: current.session.filter((session) => !deleted.has(session.id)),
       session_status: { ...current.session_status },
@@ -1416,7 +1421,7 @@ function cleanupSessionDataInLiveStores(sessionIds: readonly string[]): void {
       form: { ...current.form },
     }
     dropSessionCaches(cache, applicable)
-    store.setState(cache)
+    store.setState({ ...cache, ...revision })
   }
 }
 
