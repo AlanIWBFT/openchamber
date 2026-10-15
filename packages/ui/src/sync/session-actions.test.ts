@@ -694,6 +694,34 @@ describe("confirmed session removal", () => {
     expect(deletedCleanupIdentities).toEqual([])
   })
 
+  for (const loaded of [false, true]) {
+    for (const outcome of ["success", "missing", "failure"] as const) {
+      test(`deletion ${outcome} survives an older directory list with loaded=${loaded}`, async () => {
+        const session = sessionFixture("session-a")
+        const other = sessionFixture("session-b")
+        globalActiveSessions = [session, other]
+        const source = createStore({}, { session: loaded ? [session, other] : [] })
+        const baselineRevision = source.getState().sessionRevision ?? 0
+        const { deleteSession, setActionRefs } = await import("./session-actions")
+        const { mergeBootstrapSessions } = await import("./reconnect-recovery")
+        setActionRefs(createChildStores([["/test/project", source]]), () => "/test/project")
+        if (outcome === "missing") sessionDeleteError = notFound("Session")
+        if (outcome === "failure") sessionDeleteError = new Error("delete failed")
+
+        expect(await deleteSession(session.id)).toBe(outcome !== "failure")
+        const current = source.getState()
+        const recovered = mergeBootstrapSessions([session, other], [session, other], current.session, {
+          baselineRevision,
+          eventRevision: current.sessionEventRevision,
+          deletedRevision: current.sessionDeletedRevision,
+        })
+        expect(recovered.sessions.map((item) => item.id)).toEqual(
+          outcome === "failure" ? [session.id, other.id] : [other.id],
+        )
+      })
+    }
+  }
+
   test("cleans persisted state after the server confirms deletion", async () => {
     const source = createStore({}, {
       session: [{ id: "session-a", directory: "/test/project", time: { created: 1 } } as Session],
