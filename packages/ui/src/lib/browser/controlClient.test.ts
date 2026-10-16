@@ -13,6 +13,7 @@ const posted: Array<{ requestId: string; ok: boolean; data?: unknown; error?: st
 const claims: string[] = [];
 /** Flipped to false to play the client that lost the race for a request. */
 let grantClaims = true;
+let beforeClaim: (() => Promise<void>) | null = null;
 let listener: Listener | null = null;
 
 mock.module('@/lib/runtime-fetch', () => ({
@@ -20,6 +21,7 @@ mock.module('@/lib/runtime-fetch', () => ({
     const body = JSON.parse(init?.body ?? '{}');
     if (path.endsWith('/claim')) {
       claims.push(body.requestId);
+      await beforeClaim?.();
       return { ok: true, status: 200, json: async () => ({ granted: grantClaims }) };
     }
     posted.push(body);
@@ -41,6 +43,11 @@ const {
   setShownBrowserTab,
 } = await import('./controlClient');
 
+const registerOpener = (
+  open: Parameters<typeof registerBrowserOpener>[0]['open'],
+  tabs: Parameters<typeof registerBrowserOpener>[0]['tabs'] = () => [],
+) => registerBrowserOpener({ open, tabs });
+
 /** A request from an older server or a caller with no session. */
 const UNKNOWN_CONTEXT: RequestContext = { directory: null, sessionId: null };
 /** The project every tab below lives in unless a test says otherwise. */
@@ -49,8 +56,8 @@ const REPO = '/repo';
 /** Registrations are module-global, so every test unwinds its own. */
 const cleanups: Array<() => void> = [];
 
-const emitOpen = (parameters: Record<string, unknown>, context: RequestContext = UNKNOWN_CONTEXT): void => {
-  listener?.({ type: 'browser-control-request', requestId: 'req-1', action: 'browser.open', parameters, context });
+const emitOpen = (parameters: Record<string, unknown>, context: RequestContext = UNKNOWN_CONTEXT, requestId = 'req-1'): void => {
+  listener?.({ type: 'browser-control-request', requestId, action: 'browser.open', parameters, context });
 };
 
 const emit = (action: string, parameters: Record<string, unknown>, context: RequestContext = UNKNOWN_CONTEXT): void => {
@@ -76,6 +83,7 @@ const resetRequests = (): void => {
   posted.length = 0;
   claims.length = 0;
   grantClaims = true;
+  beforeClaim = null;
   setShownBrowserTab(REPO, null);
 };
 
@@ -87,10 +95,12 @@ describe('opening a page before any view exists', () => {
   });
 
   test('lets the view that the open created apply the layout that was asked for', async () => {
+    Object.defineProperty(globalThis, 'window', { value: { __OPENCHAMBER_ELECTRON__: {} }, configurable: true, writable: true });
+    cleanups.push(() => Reflect.deleteProperty(globalThis, 'window'));
     const opened: string[] = [];
     const ran: Array<{ action: string; parameters: Record<string, unknown> }> = [];
 
-    cleanups.push(registerBrowserOpener((url) => {
+    cleanups.push(registerOpener((url) => {
       opened.push(url);
       // The pane mounts a moment after the tab is created, as it does in the app.
       setTimeout(() => {
@@ -117,9 +127,10 @@ describe('opening a page before any view exists', () => {
       url: 'https://example.test',
       opened: true,
       tabId: 'tab-new',
+      tabCreated: true,
       viewportApplied: true,
       viewport: { mode: 'mobile', width: 390, height: 844 },
-      drivable: false,
+      drivable: true,
     });
   });
 
@@ -127,7 +138,7 @@ describe('opening a page before any view exists', () => {
     grantClaims = false;
     const opened: string[] = [];
     const ran: string[] = [];
-    cleanups.push(registerBrowserOpener((url) => { opened.push(url); return 'tab-new'; }));
+    cleanups.push(registerOpener((url) => { opened.push(url); return 'tab-new'; }));
     cleanups.push(tab('tab-1', ran));
 
     emitOpen({ url: 'https://example.test' });
@@ -152,32 +163,32 @@ describe('opening a page before any view exists', () => {
   });
 
   test('does not wait for a view when no layout was requested', async () => {
-    cleanups.push(registerBrowserOpener(() => 'tab-new'));
+    cleanups.push(registerOpener(() => 'tab-new'));
 
     emitOpen({ url: 'https://example.test' });
     await wait(20);
 
-    expect(posted[0]?.data).toEqual({ url: 'https://example.test', opened: true, tabId: 'tab-new', drivable: false });
+    expect(posted[0]?.data).toEqual({ url: 'https://example.test', opened: true, tabId: 'tab-new', tabCreated: true, drivable: false });
   });
 
   test('on a driving host, an open whose view never appears is drivable and not settled', async () => {
     // Only an Electron renderer can drive the page it shows.
     Object.defineProperty(globalThis, 'window', { value: { __OPENCHAMBER_ELECTRON__: {} }, configurable: true, writable: true });
     cleanups.push(() => Reflect.deleteProperty(globalThis, 'window'));
-    cleanups.push(registerBrowserOpener(() => 'tab-new'));
+    cleanups.push(registerOpener(() => 'tab-new'));
 
     emitOpen({ url: 'https://example.test' });
     // Past the client's own attach deadline.
     await wait(2_400);
 
-    expect(posted[0]?.data).toEqual({ url: 'https://example.test', opened: true, tabId: 'tab-new', settled: false, drivable: true });
+    expect(posted[0]?.data).toEqual({ url: 'https://example.test', opened: true, tabId: 'tab-new', tabCreated: true, settled: false, drivable: true });
   });
 
   test('on a driving host, an open waits for the new view to say how its page came out', async () => {
     Object.defineProperty(globalThis, 'window', { value: { __OPENCHAMBER_ELECTRON__: {} }, configurable: true, writable: true });
     cleanups.push(() => Reflect.deleteProperty(globalThis, 'window'));
     const ran: string[] = [];
-    cleanups.push(registerBrowserOpener(() => {
+    cleanups.push(registerOpener(() => {
       setTimeout(() => {
         cleanups.push(registerBrowserController({
           tabId: 'tab-new',
@@ -195,7 +206,7 @@ describe('opening a page before any view exists', () => {
 
     expect(ran).toEqual(['browser.settle']);
     expect(posted[0]?.data).toEqual({
-      url: 'https://example.test', opened: true, tabId: 'tab-new', title: 'App', settled: true, drivable: true,
+      url: 'https://example.test', opened: true, tabId: 'tab-new', tabCreated: true, title: 'App', settled: true, drivable: true,
     });
   });
 
@@ -209,17 +220,28 @@ describe('opening a page before any view exists', () => {
       describe: () => ({ title: '', url: '' }),
       run: async () => { throw new Error('The browser panel is not ready'); },
     }));
-    cleanups.push(registerBrowserOpener(() => 'tab-new'));
+    cleanups.push(registerOpener(() => 'tab-new'));
 
     emitOpen({ url: 'https://example.test' });
     await wait(50);
 
     expect(posted[0]?.ok).toBe(true);
-    expect(posted[0]?.data).toEqual({ url: 'https://example.test', opened: true, tabId: 'tab-new', settled: false, drivable: true });
+    expect(posted[0]?.data).toEqual({ url: 'https://example.test', opened: true, tabId: 'tab-new', tabCreated: true, settled: false, drivable: true });
+  });
+
+  test('display-only hosts report an unsupported viewport without failing a created tab', async () => {
+    cleanups.push(registerOpener(() => 'tab-new'));
+    emitOpen({ url: 'https://example.test', viewport: 'mobile' });
+    await wait(20);
+    expect(posted[0]).toMatchObject({ ok: true, data: {
+      tabId: 'tab-new', tabCreated: true, drivable: false, viewportApplied: false,
+    } });
   });
 
   test('says the layout was not applied when no view ever appears', async () => {
-    cleanups.push(registerBrowserOpener(() => 'tab-new'));
+    Object.defineProperty(globalThis, 'window', { value: { __OPENCHAMBER_ELECTRON__: {} }, configurable: true, writable: true });
+    cleanups.push(() => Reflect.deleteProperty(globalThis, 'window'));
+    cleanups.push(registerOpener(() => 'tab-new'));
 
     emitOpen({ url: 'https://example.test', viewport: 'mobile' });
     // Past the client's own attach deadline.
@@ -319,27 +341,28 @@ describe('choosing the tab an action runs in', () => {
     const opened: string[] = [];
     cleanups.push(tab('shown', ran));
     setShownBrowserTab(REPO, 'shown');
-    cleanups.push(registerBrowserOpener((url) => { opened.push(url); return 'agent-tab'; }));
+    cleanups.push(registerOpener((url) => { opened.push(url); return 'agent-tab'; }));
 
     emit('browser.open', { url: 'https://example.test' });
     await wait(50);
 
     expect(ran).toEqual([]);
     expect(opened).toEqual(['https://example.test']);
-    expect(posted[0]?.data).toEqual({ url: 'https://example.test', opened: true, tabId: 'agent-tab', drivable: false });
+    expect(posted[0]?.data).toEqual({ url: 'https://example.test', opened: true, tabId: 'agent-tab', tabCreated: true, drivable: false });
   });
 
   test('navigates the named tab when browser.open gives one', async () => {
     const ran: string[] = [];
     const opened: string[] = [];
     cleanups.push(tab('agent-tab', ran));
-    cleanups.push(registerBrowserOpener((url) => { opened.push(url); return 'other'; }));
+    cleanups.push(registerOpener((url) => { opened.push(url); return 'other'; }));
 
     emit('browser.open', { url: 'https://example.test', tabId: 'agent-tab' });
     await wait(50);
 
     expect(opened).toEqual([]);
     expect(ran).toEqual(['agent-tab:browser.open']);
+    expect(posted[0]?.data).toMatchObject({ tabId: 'agent-tab', tabCreated: false });
   });
 });
 
@@ -359,12 +382,201 @@ describe('tabs belong to the session that opened them', () => {
   const sessionA: RequestContext = { directory: '/repo-a', sessionId: 'ses_a' };
   const sessionB: RequestContext = { directory: '/repo-b', sessionId: 'ses_b' };
 
+  test('waits for the last created tab instead of navigating an older mounted page', async () => {
+    const ran: string[] = [];
+    const opened: string[] = [];
+    let created = false;
+    cleanups.push(tab('older', ran, { directory: '/repo-a', ownerSessionId: 'ses_a' }));
+    cleanups.push(registerOpener((url) => {
+      opened.push(url);
+      created = true;
+      return 'pending';
+    }, () => created ? [{
+      tabId: 'pending', directory: '/repo-a', ownerSessionId: 'ses_a',
+      describe: () => ({ title: '', url: opened[0] }), wake: () => {},
+    }] : []));
+
+    emitOpen({ url: 'https://login.test', newTab: true }, sessionA, 'create');
+    await wait(20);
+    emitOpen({ url: 'https://login.test/account' }, sessionA, 'reuse');
+    await wait(60);
+    expect(ran).toEqual([]);
+    expect(opened).toEqual(['https://login.test']);
+    expect(posted).toHaveLength(1);
+    cleanups.push(tab('pending', ran, { directory: '/repo-a', ownerSessionId: 'ses_a' }));
+    await wait(80);
+    expect(ran).toEqual(['pending:browser.open']);
+    expect(posted[1]).toMatchObject({ requestId: 'reuse', data: { tabId: 'pending', tabCreated: false } });
+  });
+
+  test('concurrent default opens create one tab even before its controller registers', async () => {
+    let releaseClaim = () => {};
+    const claim = new Promise<void>((resolve) => { releaseClaim = resolve; });
+    beforeClaim = () => claim;
+    const opened: string[] = [];
+    const ran: string[] = [];
+    const catalog: ReturnType<Parameters<typeof registerBrowserOpener>[0]['tabs']>[number][] = [];
+    cleanups.push(registerOpener((url) => {
+      opened.push(url);
+      const tabId = `concurrent-${opened.length}`;
+      catalog.push({
+        tabId, directory: '/repo-a', ownerSessionId: 'ses_a',
+        describe: () => ({ title: '', url }), wake: () => {},
+      });
+      return tabId;
+    }, () => catalog));
+    emitOpen({ url: 'https://first.test' }, sessionA, 'first');
+    emitOpen({ url: 'https://second.test' }, sessionA, 'second');
+    await wait(500);
+    releaseClaim();
+    await wait(30);
+    expect(claims).toEqual(['first', 'second']);
+    expect(opened).toHaveLength(1);
+    expect(posted).toHaveLength(1);
+    cleanups.push(tab('concurrent-1', ran, { directory: '/repo-a', ownerSessionId: 'ses_a' }));
+    await wait(80);
+    expect(ran).toEqual(['concurrent-1:browser.open']);
+    expect(posted[1]).toMatchObject({ requestId: 'second', data: { tabId: 'concurrent-1', tabCreated: false } });
+  });
+
+  test('failed attachment keeps the pending target until the user closes that tab', async () => {
+    const ran: string[] = [];
+    const opened: string[] = [];
+    let created = false;
+    cleanups.push(tab('older', ran, { directory: '/repo-a', ownerSessionId: 'ses_a' }));
+    cleanups.push(registerOpener((url) => {
+      opened.push(url);
+      created = true;
+      return 'never-mounted';
+    }, () => created ? [{
+      tabId: 'never-mounted', directory: '/repo-a', ownerSessionId: 'ses_a',
+      describe: () => ({ title: '', url: opened[0] }), wake: () => {},
+    }] : []));
+    emitOpen({ url: 'https://login.test', newTab: true }, sessionA, 'create');
+    await wait(20);
+    emitOpen({ url: 'https://login.test/account' }, sessionA, 'reuse');
+    await wait(2_200);
+    expect(ran).toEqual([]);
+    expect(opened).toHaveLength(1);
+    expect(posted[1]?.ok).toBe(false);
+    expect(posted[1]?.error).toContain('never-mounted could not be loaded');
+    created = false;
+    emitOpen({ url: 'https://other.test' }, sessionA, 'after-close');
+    await wait(50);
+    expect(ran).toEqual(['older:browser.open']);
+    expect(posted[2]).toMatchObject({ data: { tabId: 'older', tabCreated: false } });
+  });
+
+  test('rechecks catalog removal during the claim instead of targeting a closed pending tab', async () => {
+    let releaseClaim = () => {};
+    const claim = new Promise<void>((resolve) => { releaseClaim = resolve; });
+    beforeClaim = () => claim;
+    let existing = true;
+    const opened: string[] = [];
+    cleanups.push(registerOpener((url) => { opened.push(url); return 'replacement'; }, () => existing ? [{
+      tabId: 'closing', directory: '/repo-a', ownerSessionId: 'ses_a',
+      describe: () => ({ title: '', url: 'https://closing.test' }), wake: () => {},
+    }] : []));
+    emitOpen({ url: 'https://new.test' }, sessionA);
+    await wait(20);
+    existing = false;
+    releaseClaim();
+    await wait(30);
+    expect(opened).toEqual(['https://new.test']);
+    expect(posted[0]).toMatchObject({ data: { tabId: 'replacement', tabCreated: true } });
+  });
+
+  test('reuses the page after the first open, including when the user switches to another owned tab', async () => {
+    const ran: string[] = [];
+    const opened: string[] = [];
+    cleanups.push(registerOpener((url, context) => {
+      opened.push(url);
+      cleanups.push(tab('reused', ran, { directory: '/repo-a', ownerSessionId: context.sessionId }));
+      return 'reused';
+    }));
+    emitOpen({ url: 'https://login.test' }, sessionA);
+    await wait(500);
+    cleanups.push(tab('other-owned', ran, { directory: '/repo-a', ownerSessionId: 'ses_a' }));
+    setShownBrowserTab('/repo-a', 'other-owned');
+    posted.length = 0;
+    emit('browser.snapshot', {}, sessionA);
+    await wait(50);
+    emitOpen({ url: 'https://login.test/account' }, sessionA);
+    await wait(50);
+    expect(opened).toEqual(['https://login.test']);
+    expect(ran).toEqual(['reused:browser.snapshot', 'reused:browser.open']);
+    expect(posted[1]?.data).toMatchObject({ tabId: 'reused', tabCreated: false });
+  });
+
+  test('explicit newTab creates another page without navigating the existing one', async () => {
+    const ran: string[] = [];
+    const opened: string[] = [];
+    cleanups.push(tab('existing', ran, { directory: '/repo-a', ownerSessionId: 'ses_a' }));
+    cleanups.push(registerOpener((url) => { opened.push(url); return 'fresh'; }));
+    emitOpen({ url: 'https://compare.test', newTab: true }, sessionA);
+    await wait(50);
+    expect(opened).toEqual(['https://compare.test']);
+    expect(ran).toEqual([]);
+    expect(posted[0]?.data).toMatchObject({ tabId: 'fresh', tabCreated: true });
+  });
+
+  test('default open never navigates a user or another session tab', async () => {
+    const ran: string[] = [];
+    cleanups.push(tab('user-page', ran, { directory: '/repo-a' }));
+    cleanups.push(tab('another-session', ran, { directory: '/repo-a', ownerSessionId: 'ses_b' }));
+    setShownBrowserTab('/repo-a', 'user-page');
+    cleanups.push(registerOpener(() => 'own-new'));
+    emitOpen({ url: 'https://own.test' }, sessionA);
+    await wait(100);
+    expect(claims).toEqual([]);
+    await wait(400);
+    expect(ran).toEqual([]);
+    expect(posted[0]?.data).toMatchObject({ tabId: 'own-new', tabCreated: true });
+  });
+
+  test('a client with no owned tab lets another client reuse the session tab first', async () => {
+    const opened: string[] = [];
+    cleanups.push(registerOpener((url) => { opened.push(url); return 'duplicate'; }));
+    emitOpen({ url: 'https://own.test' }, sessionA);
+    await wait(100);
+    expect(claims).toEqual([]);
+    grantClaims = false;
+    await wait(400);
+    expect(opened).toEqual([]);
+    expect(posted).toEqual([]);
+  });
+
+  test('newTab fails when no opener exists instead of reusing a page', async () => {
+    const ran: string[] = [];
+    cleanups.push(tab('existing', ran, { directory: '/repo-a', ownerSessionId: 'ses_a' }));
+    emitOpen({ url: 'https://new.test', newTab: true }, sessionA);
+    await wait(500);
+    expect(ran).toEqual([]);
+    expect(posted[0]?.ok).toBe(false);
+  });
+
+  test('default open wakes its owned sleeping tab instead of creating a new one', async () => {
+    const ran: string[] = [];
+    const opened: string[] = [];
+    cleanups.push(registerSleepingBrowserTab({
+      tabId: 'owned-sleeping', directory: '/repo-a', ownerSessionId: 'ses_a',
+      describe: () => ({ title: '', url: 'https://old.test' }),
+      wake: () => { cleanups.push(tab('owned-sleeping', ran, { directory: '/repo-a', ownerSessionId: 'ses_a' })); },
+    }));
+    cleanups.push(registerOpener((url) => { opened.push(url); return 'duplicate'; }));
+    emitOpen({ url: 'https://new.test' }, sessionA);
+    await wait(50);
+    expect(opened).toEqual([]);
+    expect(ran).toEqual(['owned-sleeping:browser.open']);
+    expect(posted[0]?.data).toMatchObject({ tabId: 'owned-sleeping', tabCreated: false });
+  });
+
   test('opens the tab with the calling session and its project', async () => {
     const contexts: RequestContext[] = [];
-    cleanups.push(registerBrowserOpener((_url, context) => { contexts.push(context); return 'tab-a'; }));
+    cleanups.push(registerOpener((_url, context) => { contexts.push(context); return 'tab-a'; }));
 
     emitOpen({ url: 'https://a.test' }, sessionA);
-    await wait(20);
+    await wait(500);
 
     expect(contexts).toEqual([sessionA]);
   });
@@ -384,8 +596,8 @@ describe('tabs belong to the session that opened them', () => {
   test('returns to the tab the session opened last', async () => {
     const ran: string[] = [];
     cleanups.push(tab('tab-a1', ran, { directory: '/repo-a', ownerSessionId: 'ses_a' }));
-    cleanups.push(registerBrowserOpener(() => 'tab-a2'));
-    emitOpen({ url: 'https://a2.test' }, sessionA);
+    cleanups.push(registerOpener(() => 'tab-a2'));
+    emitOpen({ url: 'https://a2.test', newTab: true }, sessionA);
     await wait(20);
     cleanups.push(tab('tab-a2', ran, { directory: '/repo-a', ownerSessionId: 'ses_a' }));
     // A tab of the same session that registers later, as a restored one does

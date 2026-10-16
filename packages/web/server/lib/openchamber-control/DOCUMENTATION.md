@@ -97,6 +97,11 @@ other.
   The resolved title comes from `render-page.js`, so pages named from their HTML
   remain readable after the turn and after OpenCode compaction.
 
+- Browser opens accept optional boolean `newTab`, forwarded to the selected
+  browser provider. `newTab: true` with `tabId`, non-boolean values, and use on
+  actions other than `browser.open` fail before dispatch. Default opens reuse
+  the calling session's page; explicit creation is requested with `newTab: true`.
+
 - Session status and messages come from official directory-scoped OpenCode
   APIs. Message output includes text, completed `question` answers and completed
   `openchamber_render` page choices projected from structured metadata as user messages. Page choices contain only the title, summary and JSON data, explicitly labeled as page-generated values submitted by the user rather than verbatim user text; HTML, unanswered, stopped and chat-instead calls are excluded. Every other tool

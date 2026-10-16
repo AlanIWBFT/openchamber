@@ -15,8 +15,9 @@
  * Every browser tab registers its view under the tab's id, with the project it
  * belongs to and the session whose agent opened it (none for the user's own
  * tabs). An action with a `tabId` goes to that tab. Without one it goes to the
- * calling session's tab: the one the user is looking at if it is the
- * session's, else the one the session last opened or worked in. A session
+ * calling session's tab: the one the session last opened or worked in,
+ * else its newest registered tab. Switching the visible tab does not retarget
+ * the agent. For actions other than open, a session
  * with no tab of its own gets the tab the user is looking at, if that tab is
  * the user's and in the session's project; another session's tab is never
  * picked for it. Acting in a background tab does not switch the user to it.
@@ -79,10 +80,13 @@ type RegisteredTab = BrowserController | SleepingBrowserTab;
 
 /**
  * Opens a URL in a new background tab for the calling session, in that
- * session's project, and returns the tab's id, or null when this client has
- * nowhere to open one.
+ * session's project. Its live catalog includes tabs before React mounts their
+ * panes, and removes them when the user closes them.
  */
-type BrowserOpener = (url: string, context: BrowserControlRequestContext) => string | null;
+type BrowserOpener = {
+  readonly open: (url: string, context: BrowserControlRequestContext) => string | null;
+  readonly tabs: () => readonly SleepingBrowserTab[];
+};
 
 /**
  * Closes a browser tab in the panel. Registered by the panel, because closing
@@ -207,24 +211,31 @@ const waitForTab = async (
   return controllers.get(tabId) ?? null;
 };
 
-const hasTab = (tabId: string): boolean => controllers.has(tabId) || sleepingTabs.has(tabId);
+const hasTab = (tabId: string): boolean => tabOf(tabId) !== null;
 
-const tabOf = (tabId: string): RegisteredTab | null => controllers.get(tabId) ?? sleepingTabs.get(tabId) ?? null;
+const tabOf = (tabId: string): RegisteredTab | null => (
+  controllers.get(tabId) ?? sleepingTabs.get(tabId) ?? opener?.tabs().find((tab) => tab.tabId === tabId) ?? null
+);
 
-/** Mounted views first, then sleeping tabs, each in registration order. */
-const registeredTabs = (): RegisteredTab[] => [
-  ...controllers.values(),
-  ...[...sleepingTabs.values()].filter((tab) => !controllers.has(tab.tabId)),
-];
+/** Mounted views first; the owner's catalog fills the gap before pane registration. */
+const registeredTabs = (): RegisteredTab[] => {
+  const registered = [
+    ...controllers.values(),
+    ...[...sleepingTabs.values()].filter((tab) => !controllers.has(tab.tabId)),
+  ];
+  const ids = new Set(registered.map((tab) => tab.tabId));
+  return [...registered, ...(opener?.tabs() ?? []).filter((tab) => !ids.has(tab.tabId))];
+};
 
 /**
  * The tab an action that names none runs in, or null when the caller has
  * none it may use.
  */
-const defaultTabFor = (caller: Caller): string | null => {
+const defaultTabFor = (caller: Caller, ownedOnly = false): string | null => {
   const shownCandidate = shownTabId ? tabOf(shownTabId) : null;
   const shown = shownCandidate?.directory === shownDirectory ? shownCandidate : null;
   if (!caller.sessionId) {
+    if (ownedOnly) return null;
     // Unknown caller: the tab the user is looking at, else the most recently
     // registered tab of the project on screen, views before sleeping tabs.
     if (shown) return shown.tabId;
@@ -234,7 +245,6 @@ const defaultTabFor = (caller: Caller): string | null => {
     return candidates.length > 0 ? candidates[candidates.length - 1].tabId : null;
   }
 
-  if (shown?.ownerSessionId === caller.sessionId) return shown.tabId;
   const last = lastTabBySession.get(caller.sessionId);
   if (last && tabOf(last)?.ownerSessionId === caller.sessionId) return last;
   const owned = registeredTabs().filter((tab) => tab.ownerSessionId === caller.sessionId);
@@ -243,7 +253,7 @@ const defaultTabFor = (caller: Caller): string | null => {
   // No tab of its own: the user's tab on screen, when it is in this session's
   // project. "Look at what I have open" works; another session's page and
   // another project's page are left alone.
-  if (shown && shown.ownerSessionId === null && (!caller.directory || shown.directory === caller.directory)) {
+  if (!ownedOnly && shown && shown.ownerSessionId === null && (!caller.directory || shown.directory === caller.directory)) {
     return shown.tabId;
   }
   return null;
@@ -274,9 +284,9 @@ const rememberTab = (caller: Caller, tabId: string): void => {
 const viewForTab = async (tabId: string): Promise<BrowserController | null> => {
   const mounted = controllers.get(tabId);
   if (mounted) return mounted;
-  const sleeping = sleepingTabs.get(tabId);
-  if (!sleeping) return null;
-  sleeping.wake();
+  const tab = tabOf(tabId);
+  if (!tab) return null;
+  if ('wake' in tab) tab.wake();
   return waitForTab(tabId);
 };
 
@@ -312,7 +322,7 @@ const listTabs = (caller: Caller): ListedTab[] => {
 };
 
 const unloadableTabError = (tabId: string): string => (
-  `The browser tab ${tabId} could not be loaded. Try again, or open the page in a new tab with browser.open.`
+  `The browser tab ${tabId} could not be loaded. Try again, or use browser.open with newTab: true.`
 );
 
 const unknownTabError = (tabId: string): string => (
@@ -433,7 +443,7 @@ const handleRequest = async (request: BrowserControlRequest): Promise<void> => {
   const isOpen = request.action === 'browser.open';
   const isClose = request.action === 'browser.close';
   const caller = callerOf(request.context);
-  const { tabId: rawTabId, ...parameters } = request.parameters;
+  const { tabId: rawTabId, newTab, ...parameters } = request.parameters;
   const tabId = rawTabId === undefined ? null : String(rawTabId);
 
   if (isClose) {
@@ -459,20 +469,27 @@ const handleRequest = async (request: BrowserControlRequest): Promise<void> => {
     return;
   }
 
-  const targetTabId = defaultTabFor(caller);
+  // Give a client that already owns the session's page first chance to claim.
+  // Re-resolve after waiting: a tab created by the previous call may just have mounted.
+  if (isOpen && newTab !== true && caller.sessionId && !defaultTabFor(caller, true)) {
+    await new Promise((resolve) => setTimeout(resolve, UNKNOWN_TAB_CLAIM_DELAY_MS));
+  }
+  const targetTabId = isOpen ? (newTab === true ? null : defaultTabFor(caller, true)) : defaultTabFor(caller);
   if (!targetTabId && !(isOpen && opener)) {
     // A known session with no tab it may use here. Another client may hold its
     // tab, so that one claims first; otherwise the agent hears why at once
     // instead of waiting out the timeout.
     if (!caller.sessionId) return;
-    await new Promise((resolve) => setTimeout(resolve, UNKNOWN_TAB_CLAIM_DELAY_MS));
+    if (!isOpen || newTab === true) await new Promise((resolve) => setTimeout(resolve, UNKNOWN_TAB_CLAIM_DELAY_MS));
     if (!await claimRequest(request.requestId)) return;
-    await answer(request, { ok: false, error: noTabForSessionError(caller) });
+    await answer(request, { ok: false, error: isOpen
+      ? 'This client cannot create a browser tab. Existing pages were not changed.'
+      : noTabForSessionError(caller) });
     return;
   }
   // Falling back to the user's tab: a client holding the session's own tab
   // must get the request, so it claims first.
-  const usesOpener = isOpen && opener !== null;
+  const usesOpener = isOpen && !targetTabId && opener !== null;
   if (!usesOpener && caller.sessionId && tabOf(targetTabId!)?.ownerSessionId !== caller.sessionId) {
     await new Promise((resolve) => setTimeout(resolve, UNKNOWN_TAB_CLAIM_DELAY_MS));
   }
@@ -481,17 +498,19 @@ const handleRequest = async (request: BrowserControlRequest): Promise<void> => {
   if (!await claimRequest(request.requestId)) return;
 
   try {
-    // Opening a page without naming a tab makes a new background tab, so the
-    // agent never replaces the page the user is on; the id comes back with
-    // the answer and the agent keeps working in that tab.
+    // Claiming yields to other requests. Resolve again after the claim, then
+    // create synchronously: another open may already have published a tab in
+    // the owner's catalog even though its pane has not mounted yet.
+    const currentTabId = isOpen ? (newTab === true ? null : defaultTabFor(caller, true)) : targetTabId;
+    // Only create when explicitly requested or when this session has no page.
     const url = typeof request.parameters.url === 'string' ? request.parameters.url : '';
     if (isOpen && !url) {
       await answer(request, { ok: false, error: 'url is required' });
       return;
     }
     const openStartedAt = Date.now();
-    const openedTabId = isOpen && opener ? opener(url, request.context) : null;
-    if (isOpen && !openedTabId && !targetTabId) {
+    const openedTabId = isOpen && !currentTabId && opener ? opener.open(url, request.context) : null;
+    if (isOpen && !openedTabId && !currentTabId) {
       await answer(request, { ok: false, error: 'There is no browser here to open the page in.' });
       return;
     }
@@ -507,7 +526,14 @@ const handleRequest = async (request: BrowserControlRequest): Promise<void> => {
       // Only a host that drives its pages can say how the page came out.
       const settle = canDriveBrowserPage();
       if (!resize && !settle) {
-        await answer(request, { ok: true, data: { url, opened: true, tabId: openedTabId } });
+        await answer(request, { ok: true, data: { url, opened: true, tabId: openedTabId, tabCreated: true } });
+        return;
+      }
+      if (!canDriveBrowserPage()) {
+        await answer(request, { ok: true, data: {
+          url, opened: true, tabId: openedTabId, tabCreated: true, viewportApplied: false,
+          note: 'This browser is display-only; the requested viewport was not applied.',
+        } });
         return;
       }
 
@@ -517,7 +543,7 @@ const handleRequest = async (request: BrowserControlRequest): Promise<void> => {
       // answer say whether that page has rendered.
       const attached = await waitForTab(openedTabId);
       if (!attached && !resize) {
-        await answer(request, { ok: true, data: { url, opened: true, tabId: openedTabId, settled: false } });
+        await answer(request, { ok: true, data: { url, opened: true, tabId: openedTabId, tabCreated: true, settled: false } });
         return;
       }
       if (!attached) {
@@ -529,6 +555,7 @@ const handleRequest = async (request: BrowserControlRequest): Promise<void> => {
             url,
             opened: true,
             tabId: openedTabId,
+            tabCreated: true,
             viewportApplied: false,
             note: 'The panel had no browser view yet, so the viewport was not applied. Call browser.resize now that one exists.',
           },
@@ -551,7 +578,7 @@ const handleRequest = async (request: BrowserControlRequest): Promise<void> => {
       await answer(request, {
         ok: true,
         data: Object.assign(
-          { url, opened: true, tabId: openedTabId },
+          { url, opened: true, tabId: openedTabId, tabCreated: true },
           resize ? { viewportApplied: true, viewport } : {},
           page ? (page.success ? page.data : { settled: false }) : {},
         ),
@@ -559,10 +586,10 @@ const handleRequest = async (request: BrowserControlRequest): Promise<void> => {
       return;
     }
 
-    const view = await viewForTab(targetTabId!);
+    const view = await viewForTab(currentTabId!);
     await answer(request, view
       ? await runAction(view, caller, request.action, parameters)
-      : { ok: false, error: unloadableTabError(targetTabId!) });
+      : { ok: false, error: unloadableTabError(currentTabId!) });
   } catch (error) {
     await answer(request, {
       ok: false,
@@ -594,6 +621,10 @@ const runAction = async (
 ): Promise<{ ok: boolean; data?: unknown; error?: string }> => {
   try {
     const data = await controller.run(action, parameters);
+    rememberTab(caller, controller.tabId);
+    if (action === 'browser.open') {
+      return { ok: true, data: Object.assign({}, data, { tabId: controller.tabId, tabCreated: false }) };
+    }
     if (action === 'browser.snapshot' && Object(data) === data) {
       return { ok: true, data: { ...Object(data), tabs: listTabs(caller) } };
     }
