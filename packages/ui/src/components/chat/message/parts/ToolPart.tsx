@@ -984,7 +984,9 @@ const UnifiedExecOutput: React.FC<{
                         {t('chat.toolPart.unifiedExec.outputStreamError', { error: metadata.outputError })}
                     </div>
                 ) : null}
-                <pre dir="ltr" className="m-0 whitespace-pre-wrap break-words typography-code text-muted-foreground/90">{text}</pre>
+                <pre dir="ltr" className="m-0 whitespace-pre-wrap break-words typography-code text-muted-foreground/90">
+                    {command}{command && output ? '\n\n' : ''}<span className="text-foreground">{output}</span>
+                </pre>
             </ScrollShadow>
         </div>
     );
