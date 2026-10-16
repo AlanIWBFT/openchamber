@@ -11,6 +11,11 @@ the user can want independently:
   `agentControlToolEnabled` setting is not `false`.
 - `openchamber_web` — looking at and interacting with the page in OpenChamber's
   browser panel. Enabled while `agentWebToolEnabled` is not `false`.
+  `browser.open` reuses the session's tab by default, creates one when absent,
+  and takes `newTab: true` for explicit creation. `tabId` targets an existing
+  tab and cannot accompany `newTab: true`. Login guidance asks the user to
+  finish login or verification in the current tab, then tells the agent to
+  snapshot that tab before continuing without reopening the login flow.
 - `openchamber_notify` — `notify.send`, a notification to the user through
   `lib/notifications/emit-route.js` (same limits and rate window as
   `POST /api/notifications/emit`). Off by default: enabled only while

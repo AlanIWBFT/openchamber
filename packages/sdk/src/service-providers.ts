@@ -42,13 +42,15 @@ export const BROWSER_PROVIDER_IDLE_MS = 10 * 60_000;
 
 /**
  * Which tab an action is for: an `id` from `BrowserSnapshotData.tabs`, passed
- * through from the agent untouched. Absent means the tab the user is looking
- * at. A provider answers an id it did not issue with `ok: false`, never by
+ * through from the agent untouched. Absent means the calling session's last
+ * opened or used tab; changing the visible tab does not change that target.
+ * A provider answers an id it did not issue with `ok: false`, never by
  * acting on another tab; one without tabs issues none and refuses every id.
  */
 export type BrowserTabTarget = { tabId?: string };
 
-export type BrowserOpenParameters = BrowserTabTarget & { url: string; viewport?: BrowserViewportMode };
+/** Reuse the session's tab by default; create one if absent. newTab: true and tabId are mutually exclusive. */
+export type BrowserOpenParameters = BrowserTabTarget & { url: string; viewport?: BrowserViewportMode; newTab?: boolean };
 export type BrowserSnapshotParameters = BrowserTabTarget & { selector?: string };
 export type BrowserClickParameters = BrowserTabTarget & { selector?: string; text?: string };
 export type BrowserTypeParameters = BrowserTabTarget & { selector: string; value: string; submit: boolean };
@@ -107,6 +109,8 @@ export type BrowserSnapshotElement = {
 export type BrowserOpenData = {
   /** The tab the page opened in, when the provider has tabs; the agent names it in later actions. */
   tabId?: string;
+  /** Whether this call created a tab. Older providers may omit it. */
+  tabCreated?: boolean;
   url: string;
   title: string;
   opened: true;
@@ -130,7 +134,7 @@ export type BrowserSnapshotData = {
   viewport: BrowserViewportSummary;
   /** Warnings and errors the page logged since it was opened; absent when none. */
   consoleProblems?: BrowserConsoleProblem[];
-  /** Every open tab, so the agent can name one with `tabId`; `active` is the one the user sees. */
+  /** Every open tab, so the agent can name one with `tabId`; `active` is the default target for this caller. */
   tabs?: BrowserTab[];
 };
 
