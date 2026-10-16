@@ -413,8 +413,8 @@ describe("error normalisation", () => {
 })
 
 describe("sendMessage", () => {
-  test("switches model and agent, admits context as synthetic messages, then prompts", async () => {
-    responses.push(agentList("build", "plan"), noContent(), noContent(), json({ id: "syn_1" }), json({ id: "msg_1" }))
+  test("switches model and agent, then submits context with the prompt", async () => {
+    responses.push(agentList("build", "plan"), noContent(), noContent(), json({ id: "msg_1" }))
     const id = await opencodeClient.sendMessage({
       id: "ses_1",
       providerID: "openai",
@@ -431,25 +431,21 @@ describe("sendMessage", () => {
       "GET /api/agent",
       "POST /api/session/ses_1/model",
       "POST /api/session/ses_1/agent",
-      "POST /api/session/ses_1/synthetic",
       "POST /api/session/ses_1/prompt",
     ])
     expect(requests[1].body).toEqual({ model: { id: "gpt-5.6-luna", providerID: "openai" } })
-    expect(requests[3].body).toMatchObject({ text: "selected code", resume: false, metadata: { openchamberContext: { kind: "file-quote" } } })
-    expect(requests[4].body).toEqual({
+    expect(requests[3].body).toEqual({
       id: "msg_1",
       text: "hello",
+      context: [{ text: "selected code", metadata: { openchamberContext: { kind: "file-quote" } } }],
       agents: [{ name: "explore", mention: { start: 0, end: 8, text: "@explore" } }],
     })
     expect(requests.every((r) => r.headers.get("x-opencode-directory") === encodeURIComponent("/repo/app"))).toBe(true)
   })
 
-  test("beforeSend runs once every context part was admitted and right before the prompt leaves", async () => {
+  test("beforeSend runs right before the atomic prompt leaves", async () => {
     const seen: string[] = []
     responses.push(
-      json({ id: "syn_1" }),
-      // The second context part answers late: beforeSend must still wait for it.
-      async () => { await new Promise((resolve) => setTimeout(resolve, 20)); seen.push("context admitted"); return json({ id: "syn_2" }) },
       () => { seen.push("prompt request"); return json({ id: "msg_1" }) },
     )
     await opencodeClient.sendMessage({
@@ -460,27 +456,22 @@ describe("sendMessage", () => {
       context: [{ text: "first" }, { text: "second" }],
       beforeSend: () => { seen.push("beforeSend") },
     })
-    expect(seen).toEqual(["context admitted", "beforeSend", "prompt request"])
+    expect(seen).toEqual(["beforeSend", "prompt request"])
     expect(requests.map((r) => r.url.pathname)).toEqual([
-      "/api/session/ses_1/synthetic",
-      "/api/session/ses_1/synthetic",
       "/api/session/ses_1/prompt",
     ])
   })
 
-  test("context ids travel with the synthetic messages and sort below the prompt id", async () => {
-    responses.push(json({ id: "a" }), json({ id: "b" }), json({ id: "c" }))
+  test("context travels in order without provisional preview ids", async () => {
+    responses.push(json({ id: "a" }))
     const id = await opencodeClient.sendMessage({
       id: "ses_1",
       providerID: "openai",
       text: "",
       context: [{ id: "msg_given", text: "first" }, { text: "second" }],
     })
-    const [first, second] = requests.slice(0, 2).map((request) => request.body)
-    expect(first).toMatchObject({ id: "msg_given", text: "first" })
-    expect(second).toMatchObject({ text: "second" })
-    const mintedID = z.object({ id: z.string().startsWith("msg_") }).parse(second).id
-    expect(mintedID < id).toBe(true)
+    expect(requests).toHaveLength(1)
+    expect(requests[0].body).toEqual({ id, text: "", context: [{ text: "first" }, { text: "second" }] })
   })
 
   test("without a selection change only the prompt is sent, with files as URIs", async () => {
@@ -607,11 +598,8 @@ describe("sendMessage", () => {
     ])
   })
 
-  test("stops between context messages when the runtime changes", async () => {
-    responses.push(() => {
-      runtimeKey = "other"
-      return json({ id: "syn_1" })
-    })
+  test("sends neither context nor prompt after a runtime change during skill lookup", async () => {
+    responses.push(() => { runtimeKey = "other"; return json({ data: [] }) })
     await expect(
       opencodeClient.sendMessage({
         runtimeKey: "test-runtime",
@@ -619,9 +607,10 @@ describe("sendMessage", () => {
         providerID: "openai",
         text: "hello",
         context: [{ text: "one" }, { text: "two" }],
+        skills: { names: ["missing"], instructionFor: () => "use missing" },
       }),
     ).rejects.toThrow("runtime changed")
-    expect(requests.map((r) => r.url.pathname)).toEqual(["/api/session/ses_1/synthetic"])
+    expect(requests.map((r) => r.url.pathname)).toEqual(["/api/skill"])
   })
 })
 
@@ -650,7 +639,7 @@ describe("sendMessage with inline skills", () => {
   })
 
   test("names OpenCode does not list fall back to an instruction admitted before the prompt", async () => {
-    responses.push(json({ location: { directory: "/repo/app" }, data: [skillInfo("deploy")] }), json({ id: "syn_1" }), json({ id: "msg_1" }))
+    responses.push(json({ location: { directory: "/repo/app" }, data: [skillInfo("deploy")] }), json({ id: "msg_1" }))
     await opencodeClient.sendMessage({
       id: "ses_1",
       providerID: "openai",
@@ -658,13 +647,12 @@ describe("sendMessage with inline skills", () => {
       messageId: "msg_1",
       skills: { names: ["deploy", "ghost"], instructionFor },
     })
-    expect(requests.map((r) => r.url.pathname)).toEqual(["/api/skill", "/api/session/ses_1/synthetic", "/api/session/ses_1/prompt"])
-    expect(requests[1].body).toMatchObject({ text: "use: ghost", resume: false })
-    expect(requests[2].body).toMatchObject({ skills: [{ id: "deploy" }] })
+    expect(requests.map((r) => r.url.pathname)).toEqual(["/api/skill", "/api/session/ses_1/prompt"])
+    expect(requests[1].body).toMatchObject({ context: [{ text: "use: ghost" }], skills: [{ id: "deploy" }] })
   })
 
   test("a failed skill list still sends, naming every skill in the instruction", async () => {
-    responses.push(json({ _tag: "UnknownError", message: "boom" }, 500), json({ id: "syn_1" }), json({ id: "msg_1" }))
+    responses.push(json({ _tag: "UnknownError", message: "boom" }, 500), json({ id: "msg_1" }))
     await opencodeClient.sendMessage({
       id: "ses_1",
       providerID: "openai",
@@ -672,9 +660,9 @@ describe("sendMessage with inline skills", () => {
       messageId: "msg_1",
       skills: { names: ["deploy"], instructionFor },
     })
-    expect(requests.map((r) => r.url.pathname)).toEqual(["/api/skill", "/api/session/ses_1/synthetic", "/api/session/ses_1/prompt"])
-    expect(requests[1].body).toMatchObject({ text: "use: deploy" })
-    const promptBody = requests[2].body
+    expect(requests.map((r) => r.url.pathname)).toEqual(["/api/skill", "/api/session/ses_1/prompt"])
+    expect(requests[1].body).toMatchObject({ context: [{ text: "use: deploy" }] })
+    const promptBody = requests[1].body
     expect(typeof promptBody === "object" && promptBody !== null && "skills" in promptBody).toBe(false)
   })
 
@@ -682,7 +670,6 @@ describe("sendMessage with inline skills", () => {
     responses.push(
       json({ location: { directory: "/repo/app" }, data: [skillInfo("deploy")] }),
       json({ _tag: "InvalidRequestError", message: "Skill not found: deploy", field: "skills" }, 400),
-      json({ id: "syn_1" }),
       json({ id: "msg_1" }),
     )
     const id = await opencodeClient.sendMessage({
@@ -696,12 +683,10 @@ describe("sendMessage with inline skills", () => {
     expect(requests.map((r) => r.url.pathname)).toEqual([
       "/api/skill",
       "/api/session/ses_1/prompt",
-      "/api/session/ses_1/synthetic",
       "/api/session/ses_1/prompt",
     ])
     expect(requests[1].body).toMatchObject({ id: "msg_1", skills: [{ id: "deploy" }] })
-    expect(requests[2].body).toMatchObject({ text: "use: deploy" })
-    expect(requests[3].body).toEqual({ id: "msg_1", text: "x" })
+    expect(requests[2].body).toEqual({ id: "msg_1", text: "x", context: [{ text: "use: deploy" }] })
   })
 
   test("other prompt rejections are not retried", async () => {
@@ -1049,11 +1034,10 @@ describe("read timeouts (#2470)", () => {
 })
 
 describe("sendCommand context", () => {
-  test("delivers attached context as non-resuming synthetic messages before the command", async () => {
+  test("submits attached context in the command request", async () => {
     responses.push(agentList("build")) // agent check
     responses.push(new Response(null, { status: 204 })) // model switch
     responses.push(new Response(null, { status: 204 })) // agent switch
-    responses.push(json({ data: { id: "msg_ctx" } })) // synthetic
     responses.push(new Response(null, { status: 204 })) // command
     await opencodeClient.sendCommand({
       id: "ses_1",
@@ -1064,10 +1048,9 @@ describe("sendCommand context", () => {
       context: [{ text: "quoted selection", description: "Selection" }],
     })
     const paths = requests.map((request) => request.url.pathname)
-    expect(paths.at(-2)).toBe("/api/session/ses_1/synthetic")
+    expect(paths).not.toContain("/api/session/ses_1/synthetic")
     expect(paths.at(-1)).toBe("/api/session/ses_1/command")
-    expect(requests.at(-2)?.body).toMatchObject({ text: "quoted selection", resume: false })
-    expect(requests.at(-1)?.body).toMatchObject({ name: "review", text: "src" })
+    expect(requests.at(-1)?.body).toMatchObject({ name: "review", text: "src", context: [{ text: "quoted selection", description: "Selection" }] })
   })
 })
 
