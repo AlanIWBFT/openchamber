@@ -44,7 +44,12 @@ export const getUnifiedExecCommand = (
 
 export const getUnifiedExecOutput = (metadata: UnifiedExecMetadata, fallback: string): string => {
     const output = metadata.output ?? fallback;
-    return output.replace(/\r\n?/g, '\n');
+    const lines = output.replace(/\r\n?/g, '\n').split('\n');
+    let start = 0;
+    let end = lines.length;
+    while (start < end && lines[start].trim() === '') start++;
+    while (end > start && lines[end - 1].trim() === '') end--;
+    return lines.slice(start, end).join('\n');
 };
 
 export const formatUnifiedExecDuration = (durationMs: number, locale = 'en'): string => {
