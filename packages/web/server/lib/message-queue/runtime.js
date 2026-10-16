@@ -589,26 +589,13 @@ export function createMessageQueueRuntime({
       });
     }
 
-    // Same order as a UI send: everything attached to the message is admitted
-    // before the message itself, so the model reads it as background. This
-    // holds for a command too: its route takes file attachments only, and
-    // sending "/name args" as a prompt instead would skip the template
-    // OpenCode 2.x expands only on the command route.
-    for (const synthetic of contextMessages) {
-      await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}/synthetic`, {
-        directory,
-        method: 'POST',
-        body: synthetic,
-      });
-    }
+    // Context is submitted with the owning prompt or command. OpenCode keeps
+    // it attached through revert commit, queueing, cancellation and delivery.
+    const context = contextMessages.map(({ text, description, metadata }) => ({ text, description, metadata }));
 
     // The goal briefing goes last, right before the message the goal is about.
     if (item.goal) {
-      await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}/synthetic`, {
-        directory,
-        method: 'POST',
-        body: { text: buildGoalIntroText(item.goal.tokenBudget), resume: false },
-      });
+      context.push({ text: buildGoalIntroText(item.goal.tokenBudget) });
     }
 
     if (command) {
@@ -619,6 +606,7 @@ export function createMessageQueueRuntime({
           // OpenCode 2.0.8 renamed the command body field `command` to `name`.
           name: command.name,
           text: command.arguments,
+          context: context.length > 0 ? context : undefined,
           ...(promptFiles.length > 0 ? { files: promptFiles } : {}),
         },
       });
@@ -628,6 +616,7 @@ export function createMessageQueueRuntime({
         method: 'POST',
         body: {
           text: item.text,
+          context: context.length > 0 ? context : undefined,
           ...(promptFiles.length > 0 ? { files: promptFiles } : {}),
           ...(item.agentMention ? { agents: [{ name: item.agentMention }] } : {}),
         },

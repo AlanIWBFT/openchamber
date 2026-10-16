@@ -364,11 +364,12 @@ describe('scheduled-tasks runtime prompt dispatch', () => {
     expect(posts.find((post) => post.pathname === '/api/session')?.body.metadata).toEqual({ openchamber: { kind: 'scheduled' } });
     // The project knowledge is written into the session before anything is sent to it.
     const dispatch = posts.filter((post) => post.pathname.startsWith('/api/session/ses_run/') || post.pathname.startsWith('knowledge:'));
-    expect(dispatch.map((post) => post.pathname.split('/').at(-1))).toEqual(['knowledge:ses_run', 'synthetic', 'prompt']);
+    expect(dispatch.map((post) => post.pathname.split('/').at(-1))).toEqual(['knowledge:ses_run', 'prompt']);
     expect(dispatch[0].body).toEqual({ directory: '/repo' });
-    expect(dispatch[1].body.resume).toBe(false);
-    expect(dispatch[2].body).toMatchObject({ text: 'Review open issues' });
-    expect(dispatch[2].body.resume).toBeUndefined();
+    expect(dispatch[1].body).toMatchObject({ text: 'Review open issues' });
+    expect(dispatch[1].body.context).toHaveLength(1);
+    expect(dispatch[1].body.context[0].text).toContain('Goal');
+    expect(dispatch[1].body.resume).toBeUndefined();
   });
 
   it('points a run that fails after creating its session at that session', async () => {
