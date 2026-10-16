@@ -423,6 +423,8 @@ describe('managed agent tool runtime', () => {
     expect(Object.keys(tool.openchamber.input.properties.parameters.properties)).toContain('sessionId');
     expect(Object.keys(tool.openchamber.input.properties.parameters.properties)).toContain('path');
     expect(Object.keys(tool.openchamber_web.input.properties.parameters.properties)).not.toContain('path');
+    expect(tool.openchamber_web.input.properties.parameters.properties.newTab.type).toBe('boolean');
+    expect(tool.openchamber.input.properties.parameters.properties).not.toHaveProperty('newTab');
   });
 
   it('keeps the action schema to one validator keyword', async () => {
@@ -1213,6 +1215,7 @@ describe('managed agent tool runtime', () => {
     ['session.create', 'openchamber', { prompt: 'x', goal: 'true' }, 'goal'],
     ['session.list', 'openchamber', { withStatus: 'true' }, 'withStatus'],
     ['browser.type', 'openchamber_web', { selector: '#q', value: 'x', submit: 'yes' }, 'submit'],
+    ['browser.open', 'openchamber_web', { url: 'https://example.com', newTab: 'true' }, 'newTab'],
     ['knowledge.save', 'openchamber_knowledge', { kind: 'todo', id: 't1', completed: 'false' }, 'completed'],
     ['notify.send', 'openchamber_notify', { title: 't', showWhenFocused: 1 }, 'showWhenFocused'],
   ])('refuses a %s whose boolean %s field is not a boolean', async (action, tool, input, field) => {
