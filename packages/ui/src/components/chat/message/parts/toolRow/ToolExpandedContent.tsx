@@ -201,13 +201,15 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
     const renderResultContent = () => {
         if (exec.execError) return <div className="typography-meta text-[var(--status-error-text)]">{exec.execError}</div>;
         if (isExecCommandTool(part.tool)) {
-            const text = [getUnifiedExecCommand(input, exec), getUnifiedExecOutput(exec, rawOutputString)].filter(Boolean).join('\n\n');
+            const command = getUnifiedExecCommand(input, exec);
+            const output = getUnifiedExecOutput(exec, rawOutputString);
+            const text = [command, output].filter(Boolean).join('\n\n');
             return <div className="relative">
                 <div className="absolute end-1 top-1 z-10"><CopyToolOutputButton output={text} /></div>
                 <ToolScrollableSection maxHeightClass="max-h-[46vh]" className="tool-output-surface pe-8" followKey={text}>
                     {exec.truncated ? <div className="typography-meta text-muted-foreground">{t('chat.toolPart.unifiedExec.outputTruncated')}</div> : null}
                     {exec.outputError ? <div className="typography-meta text-[var(--status-error)]">{t('chat.toolPart.unifiedExec.outputStreamError', { error: exec.outputError })}</div> : null}
-                    <pre dir="ltr" className="m-0 whitespace-pre-wrap break-words typography-code">{text}</pre>
+                    <pre dir="ltr" className="m-0 whitespace-pre-wrap break-words typography-code text-muted-foreground/90">{command}{command && output ? '\n\n' : ''}<span className="text-foreground">{output}</span></pre>
                 </ToolScrollableSection>
             </div>;
         }
