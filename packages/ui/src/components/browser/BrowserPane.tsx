@@ -101,6 +101,7 @@ const ZOOM_STEP = 0.5;
 const ZOOM_MIN = -3;
 const ZOOM_MAX = 4;
 const BROWSER_PARTITION = 'persist:openchamber-browser';
+const browserOpenUrlSchema = z.string().min(1);
 /**
  * A page from an isolated space gets a session of its own, in memory: the
  * desktop shell routes that session through a proxy that reaches only the
@@ -515,8 +516,9 @@ const WebviewBrowser: React.FC<BrowserPaneProps> = ({ initialUrl, directory: tab
     }
 
     if (action === 'browser.open') {
-      const url = typeof parameters.url === 'string' ? parameters.url : '';
-      if (!url) throw new Error('url is required');
+      const parsed = browserOpenUrlSchema.safeParse(parameters.url);
+      if (!parsed.success) throw new Error('url is required');
+      const url = parsed.data;
       applyViewportParameter();
       loadUrl(url);
       await new Promise((resolve) => setTimeout(resolve, 150));
@@ -1069,7 +1071,7 @@ const WebviewBrowser: React.FC<BrowserPaneProps> = ({ initialUrl, directory: tab
  * opaque to us here: no navigation events, no annotation, no console. The
  * toolbar reflects that instead of offering controls that would silently fail.
  */
-const IframeBrowser: React.FC<BrowserPaneProps> = ({ initialUrl, directory: tabsDirectory, siteDirectory: directory, tabID, visible }) => {
+const IframeBrowser: React.FC<BrowserPaneProps> = ({ initialUrl, directory: tabsDirectory, siteDirectory: directory, tabID, visible, ownerSessionId }) => {
   const { t } = useI18n();
   const setContextPanelTabTargetPath = useUIStore((state) => state.setContextPanelTabTargetPath);
   const normalized = normalizeBrowserUrl(initialUrl);
@@ -1123,6 +1125,22 @@ const IframeBrowser: React.FC<BrowserPaneProps> = ({ initialUrl, directory: tabs
       return [...kept, next];
     });
   }, [directory, historyIndex, persistUrl, recordHistoryVisit]);
+
+  // Display-only hosts can navigate an existing tab, but cannot read its page.
+  React.useEffect(() => registerBrowserController({
+    tabId: tabID,
+    directory: normalizeContextPanelDirectoryKey(tabsDirectory),
+    ownerSessionId: ownerSessionId ?? null,
+    describe: () => ({ title: '', url: address }),
+    run: async (action, parameters) => {
+      if (action !== 'browser.open') throw new Error('This browser is display-only; page interaction requires a Chromium host');
+      const parsed = browserOpenUrlSchema.safeParse(parameters.url);
+      if (!parsed.success) throw new Error('url is required');
+      const url = parsed.data;
+      navigate(url);
+      return { url: normalizeBrowserUrl(url), opened: true, settled: false, viewportApplied: false };
+    },
+  }), [address, tabsDirectory, navigate, ownerSessionId, tabID]);
 
   const goTo = React.useCallback((index: number) => {
     const next = history[index];

@@ -53,8 +53,9 @@ itself; it can only ask and wait.
   its project and the session whose agent opened it (`ownerSessionId` on the
   tab, null for the user's own). An action with `tabId` runs in that tab,
   whoever opened it. Without one it runs in the calling session's tab: the
-  shown tab if it is the session's, else the one the session last opened or
-  worked in, else its newest. A session with no tab of its own gets the browser
+  one the session last opened or worked in, else its newest. Changing the
+  visible tab does not change that target. For actions other than open, a
+  session with no tab of its own gets the browser
   tab the user last had in front of them (`setShownBrowserTab`, set by
   `ContextPanel` with the project on screen) only when that tab is the user's
   and in the session's project, and claims it only after a short delay, so a
@@ -63,9 +64,10 @@ itself; it can only ask and wait.
   earlier rule within the project on screen: the shown tab, else that
   project's newest tab. An action
   never switches the user to the tab it acts in. `browser.open` without `tabId`
-  never navigates an existing tab: the registered opener (`ContextPanel`,
-  `useUIStore.openAgentBrowserTab`) makes a new background tab in the calling
-  session's project, owned by that session, and the answer carries its `tabId`.
+  reuses the session's last-used tab, or its newest owned tab. If it has none,
+  the registered opener (`ContextSurfacePanes`, `useUIStore.openAgentBrowserTab`)
+  makes a background tab in the calling session's project, owned by that session.
+  It never automatically navigates a user-owned or another session's tab.
   `browser.close` removes a tab the calling session opened. Closing is panel
   state rather than a page action, so the panel registers a closer the way it
   registers the opener; without `tabId` the session closes its own most recent
@@ -76,6 +78,21 @@ itself; it can only ask and wait.
   an unowned (the user's) tab. When the named tab is gone, a client with the
   panel mounted answers "no such tab" after the claim delay rather than leaving
   the agent to time out.
+  `newTab: true` forces creation and cannot be combined with `tabId`; it is
+  refused on other actions. Open results carry `tabId` and `tabCreated`.
+  A client with no owned tab briefly defers its default open claim so a client
+  holding the session's page can reuse it first. Callers without a session use
+  explicit `tabId` to reuse a page. Iframe hosts register navigation-only
+  controllers so opens can reuse their tabs; they still report `drivable: false`
+  and `viewportApplied: false` for unsupported viewport requests.
+  The opener supplies a live tab catalog from `useUIStore.getState()`, so a
+  newly created tab is a valid default and explicit target before its pane
+  registers. An action waits for that pane and reports an attachment failure
+  if it never appears; it does not fall back to an older tab. Closing the tab
+  removes it from the catalog without a separate pending-tab cache. Default
+  opens resolve their target again after the asynchronous claim, then create
+  synchronously if still needed. Concurrent requests in one client therefore
+  see the first request's tab even before React renders it.
   `ContextPanel` keeps agent tabs of every project mounted (or registered as
   sleeping), so a session keeps working its page while the user looks at
   another project. The user's own tabs, across every project together, keep
@@ -125,6 +142,8 @@ itself; it can only ask and wait.
   `tabId` is validated and passed through by
   `../openchamber-control/service.js` for every action, so an extension
   provider receives it untouched (`BrowserTabTarget` in `@openchamber/sdk`).
+  Providers also receive `newTab` on open and implement the same selection
+  contract; a single-page provider must refuse explicit creation it cannot honor.
 
 ## Invariants
 

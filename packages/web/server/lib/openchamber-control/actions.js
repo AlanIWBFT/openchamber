@@ -61,7 +61,7 @@ export const OPENCHAMBER_SCHEDULE_ACTIONS = Object.freeze(
 );
 
 export const OPENCHAMBER_WEB_ACTION_DEFINITIONS = Object.freeze([
-  { action: 'browser.open', title: 'Open a page in the browser panel', description: 'Load url; without tabId into a new background tab, whose tabId the result returns for later actions. drivable false means display-only: no further actions there' },
+  { action: 'browser.open', title: 'Open a page in the browser panel', description: 'Load url in this session\'s last-used tab, creating a background tab if it has none. newTab: true creates another; tabId names a specific tab; do not combine them. Returns tabId and tabCreated. drivable false means display-only' },
   { action: 'browser.snapshot', title: 'Read the open page', description: 'url, title, visible text, interactive elements with selectors, logged errors, and open tabs with their ids and who opened each; selector reads one part' },
   { action: 'browser.click', title: 'Click on the open page', description: 'By selector, or text for a link or button label' },
   { action: 'browser.type', title: 'Type into the open page', description: 'Type value into selector' },
