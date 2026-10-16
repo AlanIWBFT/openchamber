@@ -1996,7 +1996,7 @@ describe("optimisticSend target directory", () => {
     expect(sent).toEqual({ messageID: added[1].id, texts: ["quoted"] })
   })
 
-  for (const includesContext of [true, false]) test(`confirms only observed context shadows after an ambiguous send (context in page: ${includesContext})`, async () => {
+  for (const includesContext of [true, false]) test(`retires context previews after an ambiguous send is confirmed (context in page: ${includesContext})`, async () => {
     const targetStore = createStore({})
     const childStores = createChildStores([["/target/project", targetStore]])
     const added: Message[] = []
@@ -2016,13 +2016,13 @@ describe("optimisticSend target directory", () => {
       context: [{ text: "context" }],
       send: async () => {
         sessionMessageRecords.set("session-context-confirmed", added.flatMap((info, seq) => (
-          !includesContext && info.role === "synthetic" ? [] : [{ info: { ...info, seq }, parts: [] }]
+          !includesContext && info.role === "synthetic" ? [] : [{ info: { ...info, id: info.role === "synthetic" ? "msg_server_context" : info.id, seq }, parts: [] }]
         )))
         throw Object.assign(new Error("gateway timeout"), { status: 504 })
       },
     })
-    expect(removed).toEqual([])
-    expect(confirmed).toEqual(added.filter((info) => includesContext || info.role === "user").map((info) => info.id))
+    expect(removed).toEqual(added.filter((info) => info.role === "synthetic").map((info) => info.id))
+    expect(confirmed).toEqual(added.filter((info) => info.role === "user").map((info) => info.id))
     expect(targetStore.getState().message["session-context-confirmed"]?.map((info) => info.seq)).toEqual(includesContext ? [0, 1] : [1])
   })
 

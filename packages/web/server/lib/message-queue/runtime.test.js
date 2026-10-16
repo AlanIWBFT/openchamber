@@ -750,7 +750,7 @@ describe('message queue runtime', () => {
     expect(openCode.state.sent[0].body).toEqual({ name: 'review', text: 'src' });
   });
 
-  it('delivers captured context as synthetic messages, instructions first', async () => {
+  it('submits captured context with the prompt, instructions first', async () => {
     const { runtime, openCode, emit } = createRuntime();
     runtime.start();
     const metadata = { openchamberContext: { kind: 'github-pr', number: 7, title: 'PR', url: 'https://x/pr/7' } };
@@ -766,29 +766,23 @@ describe('message queue runtime', () => {
     emit({ type: 'session.status', properties: { sessionID: SESSION, status: { type: 'idle' } } });
     await settle();
 
-    // v2 has no inline synthetic parts: everything attached to the message is
-    // admitted as its own synthetic message, before the prompt.
     expect(openCode.state.sent.map((entry) => entry.path)).toEqual([
-      `/api/session/${SESSION}/synthetic`,
-      `/api/session/${SESSION}/synthetic`,
-      `/api/session/${SESSION}/synthetic`,
-      `/api/session/${SESSION}/synthetic`,
       `/api/session/${SESSION}/prompt`,
     ]);
-    expect(openCode.state.sent.slice(0, 4).map((entry) => entry.body)).toEqual([
-      { text: 'how to read it', resume: false },
-      { text: 'the diff', resume: false, metadata },
-      { text: 'conflict payload', resume: false },
-      { text: 'use the skill', resume: false },
+    expect(openCode.state.sent[0].body.context).toEqual([
+      { text: 'how to read it' },
+      { text: 'the diff', metadata },
+      { text: 'conflict payload' },
+      { text: 'use the skill' },
     ]);
-    expect(openCode.state.sent.at(-1).body).toEqual({
+    expect(openCode.state.sent.at(-1).body).toMatchObject({
       text: 'follow up',
       files: [{ uri: 'data:text/plain,hi', name: 'f.txt' }],
       agents: [{ name: 'reviewer' }],
     });
   });
 
-  it('keeps files on the command route, which is all that route accepts', async () => {
+  it('keeps files on the command route', async () => {
     const { runtime, openCode, emit } = createRuntime();
     runtime.start();
     openCode.state.commands = [{ name: 'review' }];
@@ -807,10 +801,7 @@ describe('message queue runtime', () => {
     });
   });
 
-  it('admits captured context as synthetic messages and still runs a queued command through the command route', async () => {
-    // The command route takes attachments only, so the context goes ahead as
-    // synthetic messages; the command itself keeps its route, because sending
-    // "/review ..." as a prompt would skip the template OpenCode expands there.
+  it('submits captured context through the command route for template expansion', async () => {
     const { runtime, openCode, emit } = createRuntime();
     runtime.start();
     openCode.state.commands = [{ name: 'review', description: 'Review' }];
@@ -824,11 +815,9 @@ describe('message queue runtime', () => {
     await settle();
 
     expect(openCode.state.sent.map((entry) => entry.path)).toEqual([
-      `/api/session/${SESSION}/synthetic`,
       `/api/session/${SESSION}/command`,
     ]);
-    expect(openCode.state.sent[0].body).toEqual({ text: 'quoted', resume: false, metadata });
-    expect(openCode.state.sent[1].body).toEqual({ name: 'review', text: 'src "error handling"' });
+    expect(openCode.state.sent[0].body).toEqual({ name: 'review', text: 'src "error handling"', context: [{ text: 'quoted', metadata }] });
   });
 
   it('writes the project knowledge into the session before a queued command', async () => {
@@ -890,9 +879,9 @@ describe('message queue runtime', () => {
     await settle();
     expect(openCode.state.sent.map((entry) => entry.path)).toEqual([
       'knowledge',
-      `/api/session/${SESSION}/synthetic`,
       `/api/session/${SESSION}/prompt`,
     ]);
     expect(openCode.state.sent[0].body).toEqual({ sessionId: SESSION, directory: DIRECTORY });
+    expect(openCode.state.sent[1].body.context).toEqual([{ text: 'quoted', metadata: {} }]);
   });
 });

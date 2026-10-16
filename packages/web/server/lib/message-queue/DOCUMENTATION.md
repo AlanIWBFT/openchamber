@@ -150,19 +150,18 @@ persisted "sending" flag would strand a message forever.
    captured `openchamber/auto` is resolved into a real pair by the routing
    runtime beforehand. The session's project knowledge is written into its
    instruction entries (`sessionKnowledgeRuntime.sync`, which never fails the
-   send). Then the captured context goes ahead as synthetic messages
-   (`POST /session/:id/synthetic` with `resume: false`, an attached item's
-   metadata riding along), and then the message itself:
+   send). Captured one-shot context and its metadata travel atomically in the
+   request's `context` array:
    - text starting with `/` that names a command in OpenCode's `/command`
      list (skills included) goes to `POST /session/:id/command` (body fields
-     `name` and `text` since OpenCode 2.0.8) with its file attachments. The
-     command route takes files only, which is why the context went ahead of
-     it; sending "/name args" as a prompt instead would skip the template
+      `name` and `text` since OpenCode 2.0.8) with its file attachments and context.
+      Sending "/name args" as a prompt would skip the template
      OpenCode expands only on that route. The command lookup runs before
      anything is admitted, so a failed lookup fails the send without leaving
      context behind for the retry to duplicate;
    - otherwise `POST /session/:id/prompt` with the user's text, files and
-     agent mention.
+      agent mention and context. OpenCode owns context and authored text as
+      one inbox item, through revert commit, queue changes and delivery.
    Success removes the item, persists, broadcasts, and marks the user
    message sent for notifications. Failure keeps the item, backs off
    2 s → 60 s (doubling per consecutive failure of that item), and re-arms.

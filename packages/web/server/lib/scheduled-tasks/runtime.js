@@ -544,18 +544,16 @@ export const createScheduledTasksRuntime = (deps) => {
   const runPrompt = async ({ client, sessionID, projectPath, task }) => {
     await syncKnowledge(sessionID, projectPath);
 
-    // A v2 prompt carries a single authored text. The goal briefing therefore
-    // travels as a synthetic message sent first, so the model still reads the
-    // prompt against it exactly as before. A synthetic message schedules
-    // execution unless `resume: false`: without it the model would start on
-    // the briefing alone, before the task arrived.
-    if (task.execution.goalEnabled) {
-      await client.session.synthetic({ sessionID, text: buildGoalIntroText(task.execution.goalTokenBudget), resume: false });
-    }
+    // The briefing belongs to this prompt; OpenCode delivers it immediately
+    // before the authored text, in the same transaction.
+    const context = [
+      ...(task.execution.goalEnabled ? [{ text: buildGoalIntroText(task.execution.goalTokenBudget) }] : []),
+    ];
 
     await client.session.prompt({
       sessionID,
       text: expandSnippets(task.execution.prompt, projectPath),
+      context: context.length > 0 ? context : undefined,
     });
   };
 

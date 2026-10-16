@@ -618,7 +618,7 @@ const fsHomeResponseSchema = z.object({
   canonicalLegacyChatsRoot: fsAbsolutePathSchema.optional(),
 })
 
-/** One context item admitted as a synthetic message; `id` is client-minted when given. */
+/** One prompt-owned context item; `id` identifies its temporary UI preview only. */
 export type SyntheticContextInput = {
   id?: string
   text: string
@@ -1291,8 +1291,8 @@ class OpencodeService {
 
   /**
    * Sends one user turn. Context the user attached (inline comments, terminal
-   * output, PR checks) travels as synthetic messages admitted right before the
-   * prompt with the same delivery, so the model reads them first and the
+   * output, PR checks) travels inside the prompt request and is delivered as
+   * synthetic messages before the user message, so the model reads it first and the
    * timeline can render them as context blocks from their metadata.
    *
    * Returns the user message id (client-generated so the optimistic message
@@ -1310,8 +1310,8 @@ class OpencodeService {
     text: string
     files?: Array<FileInputLite>
     /**
-     * Context items sent ahead of the prompt as synthetic messages. A caller
-     * that supplies `messageId` also supplies the item ids, minted before it.
+     * Context is submitted with the prompt and delivered before it atomically.
+     * Preview IDs stay client-local; OpenCode assigns the stored context IDs.
      */
     context?: SyntheticContextInput[]
     messageId?: string
@@ -1324,11 +1324,11 @@ class OpencodeService {
   }): Promise<string> {
     this.assertRuntimeUnchanged(params.runtimeKey)
 
-    // Context ids are minted before the prompt's, so the transcript's id order
-    // matches the order the records are admitted in.
+    // Context is owned by the prompt; OpenCode assigns its visible message IDs
+    // at delivery, after any staged revert has committed.
     const context = (params.context ?? [])
       .filter((item) => item.text.trim())
-      .map((item) => ({ ...item, id: item.id ?? ascendingId("msg") }))
+      .map((item) => ({ text: item.text, description: item.description, metadata: item.metadata ? toJsonRecord(item.metadata) : undefined }))
     const messageId = params.messageId ?? ascendingId("msg")
     const files = await Promise.all((params.files ?? []).map((file) => this.toPromptFile(file)))
     const agents = (params.agentMentions ?? [])
@@ -1344,20 +1344,6 @@ class OpencodeService {
 
     assertProviderCircuitClosed(params.providerID)
 
-    const admitSynthetic = async (item: SyntheticContextInput) => {
-      this.assertRuntimeUnchanged(params.runtimeKey)
-      await call("session.synthetic", () =>
-        this.clientFor(params.directory).session.synthetic({
-          sessionID: params.id,
-          id: item.id,
-          text: item.text,
-          description: item.description,
-          metadata: item.metadata ? toJsonRecord(item.metadata) : undefined,
-          delivery: params.delivery,
-          resume: false,
-        }),
-      )
-    }
     const prompt = (skills: readonly SkillAttachmentRef[]) => {
       this.assertRuntimeUnchanged(params.runtimeKey)
       return call("session.prompt", () =>
@@ -1365,6 +1351,7 @@ class OpencodeService {
           sessionID: params.id,
           id: messageId,
           text: params.text,
+          context: context.length > 0 ? context : undefined,
           files: files.length > 0 ? files : undefined,
           agents: agents.length > 0 ? agents : undefined,
           skills: skills.length > 0 ? skills.map((skill) => ({ id: skill.id })) : undefined,
@@ -1378,10 +1365,7 @@ class OpencodeService {
       await this.applySendSelection(params.id, { model: params.model, agent: params.agent }, params.directory, params.runtimeKey)
       const skills = await this.resolveSkillMentions(params.skills?.names ?? [], params.directory)
       const unresolvedInstruction = params.skills?.instructionFor(skills.unresolved) ?? null
-      for (const item of context) {
-        await admitSynthetic(item)
-      }
-      if (unresolvedInstruction) await admitSynthetic({ text: unresolvedInstruction })
+      if (unresolvedInstruction) context.push({ text: unresolvedInstruction, description: undefined, metadata: undefined })
       try {
         await prompt(skills.attached)
       } catch (error) {
@@ -1390,7 +1374,7 @@ class OpencodeService {
         // message id is safe to send again without the attachment.
         if (skills.attached.length === 0 || !(error instanceof OpencodeApiError) || !isSkillNotFound(error)) throw error
         const instruction = params.skills?.instructionFor(skills.attached.map((skill) => skill.name)) ?? null
-        if (instruction) await admitSynthetic({ text: instruction })
+        if (instruction) context.push({ text: instruction, description: undefined, metadata: undefined })
         await prompt([])
       }
     } catch (error) {
@@ -1409,9 +1393,8 @@ class OpencodeService {
 
   /**
    * Runs a slash command in the session. The server assigns the message id.
-   * Attached context (quoted selections, pinned knowledge) goes in first as
-   * synthetic messages that do not start execution, so the command template
-   * still expands on the server with the context already in the transcript.
+   * Attached context travels in the command request and belongs to its
+   * expanded prompt, including queueing, cancellation and revert handling.
    */
   async sendCommand(params: {
     runtimeKey?: string
@@ -1428,27 +1411,16 @@ class OpencodeService {
     this.assertRuntimeUnchanged(params.runtimeKey)
     const files = await Promise.all((params.files ?? []).map((file) => this.toPromptFile(file)))
     await this.applySendSelection(params.id, { model: params.model, agent: params.agent }, params.directory, params.runtimeKey)
-    for (const item of params.context ?? []) {
-      if (!item.text.trim()) continue
-      this.assertRuntimeUnchanged(params.runtimeKey)
-      await call("session.synthetic", () =>
-        this.clientFor(params.directory).session.synthetic({
-          sessionID: params.id,
-          id: item.id,
-          text: item.text,
-          description: item.description,
-          metadata: item.metadata ? toJsonRecord(item.metadata) : undefined,
-          delivery: params.delivery,
-          resume: false,
-        }),
-      )
-    }
+    const context = (params.context ?? []).filter((item) => item.text.trim()).map((item) => ({
+      text: item.text, description: item.description, metadata: item.metadata ? toJsonRecord(item.metadata) : undefined,
+    }))
     this.assertRuntimeUnchanged(params.runtimeKey)
     await call("session.command", () =>
       this.clientFor(params.directory).session.command({
         sessionID: params.id,
         name: params.command,
         text: params.arguments ?? "",
+        context: context.length > 0 ? context : undefined,
         files: files.length > 0 ? files : undefined,
         delivery: params.delivery,
       }),

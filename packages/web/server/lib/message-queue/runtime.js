@@ -552,18 +552,9 @@ export function createMessageQueueRuntime({
     // a UI send does it; a failed write sends without it rather than not at all.
     if (sessionKnowledgeRuntime) await sessionKnowledgeRuntime.sync(sessionId, directory);
 
-    // Same order as a UI send: everything attached to the message is admitted
-    // before the message itself, so the model reads it as background. This
-    // holds for a command too: its route takes file attachments only, and
-    // sending "/name args" as a prompt instead would skip the template
-    // OpenCode 2.x expands only on the command route.
-    for (const synthetic of contextMessages) {
-      await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}/synthetic`, {
-        directory,
-        method: 'POST',
-        body: synthetic,
-      });
-    }
+    // Context is submitted with the owning prompt or command. OpenCode keeps
+    // it attached through revert commit, queueing, cancellation and delivery.
+    const context = contextMessages.map(({ text, description, metadata }) => ({ text, description, metadata }));
 
     if (command) {
       await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}/command`, {
@@ -573,6 +564,7 @@ export function createMessageQueueRuntime({
           // OpenCode 2.0.8 renamed the command body field `command` to `name`.
           name: command.name,
           text: command.arguments,
+          context: context.length > 0 ? context : undefined,
           ...(promptFiles.length > 0 ? { files: promptFiles } : {}),
         },
       });
@@ -582,6 +574,7 @@ export function createMessageQueueRuntime({
         method: 'POST',
         body: {
           text: item.text,
+          context: context.length > 0 ? context : undefined,
           ...(promptFiles.length > 0 ? { files: promptFiles } : {}),
           ...(item.agentMention ? { agents: [{ name: item.agentMention }] } : {}),
         },
