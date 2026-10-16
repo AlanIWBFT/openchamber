@@ -373,12 +373,26 @@ export const ContextSurfacePanes: React.FC = () => {
   // a screenshot of it. The tab appears in the strip of the calling session's
   // project, which is not always the project on screen, and belongs to that
   // session.
-  React.useEffect(() => registerBrowserOpener((url, context) => {
-    const directory = context.directory ? normalizeContextPanelDirectoryKey(context.directory) : directoryKey;
-    if (!directory) return null;
-    const tabId = openAgentBrowserTab(directory, url, context.sessionId);
-    if (tabId) wakeBrowserTab(directory, tabId);
-    return tabId;
+  React.useEffect(() => registerBrowserOpener({
+    open: (url, context) => {
+      const directory = context.directory ? normalizeContextPanelDirectoryKey(context.directory) : directoryKey;
+      if (!directory) return null;
+      const tabId = openAgentBrowserTab(directory, url, context.sessionId);
+      if (tabId) wakeBrowserTab(directory, tabId);
+      return tabId;
+    },
+    // Read the store at call time: React may not have rendered a just-created
+    // tab yet. Closing a tab also removes it from this catalog immediately.
+    tabs: () => Object.entries(useUIStore.getState().contextPanelByDirectory).flatMap(([directory, state]) => (
+      state.tabs.filter((tab) => tab.mode === 'browser' && (directory === directoryKey || tab.ownerSessionId !== null))
+        .map((tab) => ({
+          tabId: tab.id,
+          directory,
+          ownerSessionId: tab.ownerSessionId,
+          describe: () => ({ title: '', url: tab.targetPath ?? '' }),
+          wake: () => wakeBrowserTab(directory, tab.id),
+        }))
+    )),
   }), [directoryKey, openAgentBrowserTab, wakeBrowserTab]);
   // Lets an agent close a tab it opened. controlClient has already checked the
   // tab belongs to the calling session; this only performs the panel close, so

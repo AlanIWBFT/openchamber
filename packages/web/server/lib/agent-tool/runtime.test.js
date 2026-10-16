@@ -429,6 +429,8 @@ describe('managed agent tool runtime', () => {
     expect(Object.keys(controlRequest.properties)).toContain('path');
     expect(Object.keys(webRequest.properties)).not.toContain('path');
     expect(Object.keys(webRequest.properties)).toContain('url');
+    expect(webRequest.properties.newTab.type).toBe('boolean');
+    expect(Object.keys(controlRequest.properties)).not.toContain('newTab');
     expect(Object.keys(controlRequest.properties)).not.toContain('url');
     expect(Object.keys(controlRequest.properties)).toContain('sessionId');
     expect(controlRequest.required).toEqual(['action']);
@@ -860,6 +862,7 @@ describe('managed agent tool runtime', () => {
     ['session.create', 'openchamber', { prompt: 'x', goal: 'true' }, 'goal'],
     ['session.list', 'openchamber', { withStatus: 'true' }, 'withStatus'],
     ['browser.type', 'openchamber_web', { selector: '#q', value: 'x', submit: 'yes' }, 'submit'],
+    ['browser.open', 'openchamber_web', { url: 'https://example.com', newTab: 'true' }, 'newTab'],
     ['knowledge.save', 'openchamber_knowledge', { kind: 'todo', id: 't1', completed: 'false' }, 'completed'],
     ['notify.send', 'openchamber_notify', { title: 't', showWhenFocused: 1 }, 'showWhenFocused'],
   ])('refuses a %s whose boolean %s field is not a boolean', async (action, tool, input, field) => {

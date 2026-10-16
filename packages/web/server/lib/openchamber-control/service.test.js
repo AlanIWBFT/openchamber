@@ -1027,6 +1027,30 @@ describe('render.page', () => {
   });
 });
 
+describe('browser open tab selection', () => {
+  it('forwards explicit creation and targeted reuse to the selected browser', async () => {
+    const request = vi.fn(async () => ({ opened: true, tabId: 'new', tabCreated: true }));
+    const { service } = createService({ browserControl: { request } });
+    await service.execute('browser.open', { url: 'https://example.com', newTab: true }, '/repo', { contextSessionId: 'ses_1' });
+    expect(request).toHaveBeenLastCalledWith('browser.open', { url: 'https://example.com/', newTab: true }, expect.objectContaining({
+      context: { directory: '/repo', sessionId: 'ses_1' },
+    }));
+    await service.execute('browser.open', { url: 'https://example.com', tabId: ' existing ', newTab: false }, '/repo');
+    expect(request).toHaveBeenLastCalledWith('browser.open', { url: 'https://example.com/', tabId: 'existing', newTab: false }, expect.anything());
+  });
+
+  it.each([
+    ['browser.open', { url: 'https://example.com', newTab: true, tabId: 'existing' }],
+    ['browser.open', { url: 'https://example.com', newTab: 'true' }],
+    ['browser.snapshot', { newTab: true }],
+  ])('rejects invalid tab creation before dispatch: %s %j', async (action, input) => {
+    const request = vi.fn();
+    const { service } = createService({ browserControl: { request } });
+    await expect(service.execute(action, input, '/repo')).rejects.toMatchObject({ statusCode: 400 });
+    expect(request).not.toHaveBeenCalled();
+  });
+});
+
 describe('browser capture', () => {
   const pixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
