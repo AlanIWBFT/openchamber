@@ -76,10 +76,10 @@ export interface QueuedItemInput {
 export interface QueuedItem extends QueuedItemInput {
   id: string;
   createdAt: number;
-  syntheticIds?: string[];
+  promptMessageId?: string;
 }
 
-export interface PublicQueuedItem extends Omit<QueuedItem, 'context' | 'syntheticIds' | 'attachments'> {
+export interface PublicQueuedItem extends Omit<QueuedItem, 'context' | 'promptMessageId' | 'attachments'> {
   attachments: Omit<QueuedAttachment, 'dataUrl'>[];
 }
 
@@ -148,13 +148,18 @@ type PromptFile = {
   name?: string;
 };
 
+type PromptContext = { text: string; metadata?: QueueRecord };
+
 interface CommandBody {
+  context?: PromptContext[];
   name: string;
   text: string;
   files?: PromptFile[];
 }
 
 interface PromptBody {
+  id?: string;
+  context?: PromptContext[];
   text: string;
   files?: PromptFile[];
   agents?: { name: string }[];
@@ -278,8 +283,7 @@ const storedItemSchema = z.unknown().transform((value): QueuedItem | null => {
   if (!raw || !id) return null;
   try {
     const item: QueuedItem = { id, createdAt: asCount(raw.createdAt) ?? Date.now(), ...parseQueuedItemInput(raw) };
-    const syntheticIds = asList(raw.syntheticIds) ?? [];
-    if (syntheticIds.length > 0 && syntheticIds.every((entry): entry is string => MESSAGE_ID_PATTERN.test(asText(entry)))) item.syntheticIds = syntheticIds;
+    if (isString(raw.promptMessageId) && MESSAGE_ID_PATTERN.test(raw.promptMessageId)) item.promptMessageId = raw.promptMessageId;
     return item;
   } catch {
     return null;
@@ -569,23 +573,27 @@ export function createMessageQueueRuntime({
     return file;
   };
 
-  const toContextMessages = (part: QueuedContextPart) => {
-    const body = { text: part.text, resume: false };
+  const toContextMessages = (part: QueuedContextPart): PromptContext[] => {
+    const body = { text: part.text };
     if (part.kind !== 'context') return [body];
     const withMetadata = part.metadata ? { ...body, metadata: part.metadata } : body;
     return part.instructions
-      ? [{ text: part.instructions, resume: false }, withMetadata]
+      ? [{ text: part.instructions }, withMetadata]
       : [withMetadata];
   };
 
-  const ensureSyntheticIds = async (item: QueuedItem, count: number) => {
-    if (item.syntheticIds?.length === count) return;
-    const firstAt = now() - count + 1;
-    item.syntheticIds = Array.from({ length: count }, (_, index) => createMessageId(firstAt + index));
+  /**
+   * Save the owning prompt's identity before admission. Context travels in the
+   * same request, so retries after a restart deduplicate the whole inbox item.
+   */
+  const ensurePromptMessageId = async (item: QueuedItem) => {
+    if (item.promptMessageId) return;
+    item.promptMessageId = createMessageId(now());
     try {
       await persist();
     } catch (error) {
-      delete item.syntheticIds;
+      // Unsaved, a crash would mint another id and admit everything twice.
+      delete item.promptMessageId;
       throw error;
     }
   };
@@ -596,9 +604,9 @@ export function createMessageQueueRuntime({
     let model: QueueModel = { id: modelID, providerID };
     if (variant) model.variant = variant;
     const promptFiles = item.attachments.map(toPromptFile);
-    const synthetics = [
+    const context = [
       ...item.context.flatMap(toContextMessages),
-      ...(item.goal ? [{ text: buildGoalIntroText(item.goal.tokenBudget), resume: false }] : []),
+      ...(item.goal ? [{ text: buildGoalIntroText(item.goal.tokenBudget) }] : []),
     ];
 
     const routed = hasSelectedModel(model) ? await resolveAutoSelection?.({
@@ -630,14 +638,7 @@ export function createMessageQueueRuntime({
 
     if (sessionKnowledgeRuntime) await sessionKnowledgeRuntime.sync(sessionId, directory);
 
-    if (synthetics.length > 0) {
-      await ensureSyntheticIds(item, synthetics.length);
-      const session = asRecord(await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}`, { directory }));
-      if (!session) throw new Error(`OpenCode returned no record for session ${sessionId}`);
-      if (session.revert) {
-        await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}/revert/commit`, { directory, method: 'POST' });
-      }
-    }
+    if (!command) await ensurePromptMessageId(item);
 
     if (item.goal) {
       await createSessionGoal({
@@ -652,17 +653,9 @@ export function createMessageQueueRuntime({
       });
     }
 
-    for (const [index, synthetic] of synthetics.entries()) {
-      if (!item.syntheticIds) throw new Error('Queued synthetic IDs are missing');
-      await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}/synthetic`, {
-        directory,
-        method: 'POST',
-        body: { id: item.syntheticIds[index], ...synthetic },
-      });
-    }
-
     if (command) {
       const body: CommandBody = { name: command.name, text: command.arguments };
+      if (context.length) body.context = context;
       if (promptFiles.length > 0) body.files = promptFiles;
       await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}/command`, {
         directory,
@@ -671,6 +664,8 @@ export function createMessageQueueRuntime({
       });
     } else {
       const body: PromptBody = { text: item.text };
+      if (item.promptMessageId) body.id = item.promptMessageId;
+      if (context.length) body.context = context;
       if (promptFiles.length > 0) body.files = promptFiles;
       if (item.agentMention) body.agents = [{ name: item.agentMention }];
       await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}/prompt`, {

@@ -1287,13 +1287,14 @@ class OpencodeService {
     directory?: string | null
     skills?: SkillMentions
     beforeSend?: () => void
-    commitRevert?: () => Promise<void>
   }): Promise<string> {
     this.assertRuntimeUnchanged(params.runtimeKey)
 
+    // Context is owned by the prompt; OpenCode assigns its visible message IDs
+    // at delivery, after any staged revert has committed.
     const context = (params.context ?? [])
       .filter((item) => item.text.trim())
-      .map((item) => ({ ...item, id: item.id ?? ascendingId("msg") }))
+      .map((item) => ({ text: item.text, description: item.description, metadata: item.metadata ? toJsonRecord(item.metadata) : undefined }))
     const messageId = params.messageId ?? ascendingId("msg")
     const files = await Promise.all((params.files ?? []).map((file) => this.toPromptFile(file)))
     const agents = (params.agentMentions ?? [])
@@ -1309,26 +1310,6 @@ class OpencodeService {
 
     assertProviderCircuitClosed(params.providerID)
 
-    let commitRevert = params.commitRevert
-    const admitSynthetic = async (item: SyntheticContextInput) => {
-      this.assertRuntimeUnchanged(params.runtimeKey)
-      if (commitRevert) {
-        await commitRevert()
-        commitRevert = undefined
-        this.assertRuntimeUnchanged(params.runtimeKey)
-      }
-      await call("session.synthetic", () =>
-        this.clientFor(params.directory).session.synthetic({
-          sessionID: params.id,
-          id: item.id,
-          text: item.text,
-          description: item.description,
-          metadata: item.metadata ? toJsonRecord(item.metadata) : undefined,
-          delivery: params.delivery,
-          resume: false,
-        }),
-      )
-    }
     const prompt = (skills: readonly SkillAttachmentRef[]) => {
       this.assertRuntimeUnchanged(params.runtimeKey)
       params.beforeSend?.()
@@ -1337,6 +1318,7 @@ class OpencodeService {
           sessionID: params.id,
           id: messageId,
           text: params.text,
+          context: context.length > 0 ? context : undefined,
           files: files.length > 0 ? files : undefined,
           agents: agents.length > 0 ? agents : undefined,
           skills: skills.length > 0 ? skills.map((skill) => ({ id: skill.id })) : undefined,
@@ -1350,16 +1332,13 @@ class OpencodeService {
       await this.applySendSelection(params.id, { model: params.model, agent: params.agent }, params.directory, params.runtimeKey)
       const skills = await this.resolveSkillMentions(params.skills?.names ?? [], params.directory)
       const unresolvedInstruction = params.skills?.instructionFor(skills.unresolved) ?? null
-      for (const item of context) {
-        await admitSynthetic(item)
-      }
-      if (unresolvedInstruction) await admitSynthetic({ text: unresolvedInstruction })
+      if (unresolvedInstruction) context.push({ text: unresolvedInstruction, description: undefined, metadata: undefined })
       try {
         await prompt(skills.attached)
       } catch (error) {
         if (skills.attached.length === 0 || !(error instanceof OpencodeApiError) || !isSkillNotFound(error)) throw error
         const instruction = params.skills?.instructionFor(skills.attached.map((skill) => skill.name)) ?? null
-        if (instruction) await admitSynthetic({ text: instruction })
+        if (instruction) context.push({ text: instruction, description: undefined, metadata: undefined })
         await prompt([])
       }
     } catch (error) {
@@ -1385,30 +1364,13 @@ class OpencodeService {
     delivery?: SessionInboxDelivery
     directory?: string | null
     beforeSend?: () => void
-    commitRevert?: () => Promise<void>
   }): Promise<void> {
     this.assertRuntimeUnchanged(params.runtimeKey)
     const files = await Promise.all((params.files ?? []).map((file) => this.toPromptFile(file)))
     await this.applySendSelection(params.id, { model: params.model, agent: params.agent }, params.directory, params.runtimeKey)
-    const context = (params.context ?? []).filter((item) => item.text.trim())
-    if (context.length > 0 && params.commitRevert) {
-      this.assertRuntimeUnchanged(params.runtimeKey)
-      await params.commitRevert()
-    }
-    for (const item of context) {
-      this.assertRuntimeUnchanged(params.runtimeKey)
-      await call("session.synthetic", () =>
-        this.clientFor(params.directory).session.synthetic({
-          sessionID: params.id,
-          id: item.id,
-          text: item.text,
-          description: item.description,
-          metadata: item.metadata ? toJsonRecord(item.metadata) : undefined,
-          delivery: params.delivery,
-          resume: false,
-        }),
-      )
-    }
+    const context = (params.context ?? []).filter((item) => item.text.trim()).map((item) => ({
+      text: item.text, description: item.description, metadata: item.metadata ? toJsonRecord(item.metadata) : undefined,
+    }))
     this.assertRuntimeUnchanged(params.runtimeKey)
     params.beforeSend?.()
     await call("session.command", () =>
@@ -1416,6 +1378,7 @@ class OpencodeService {
         sessionID: params.id,
         name: params.command,
         text: params.arguments ?? "",
+        context: context.length > 0 ? context : undefined,
         files: files.length > 0 ? files : undefined,
         delivery: params.delivery,
       }),

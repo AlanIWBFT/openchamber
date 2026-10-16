@@ -1884,7 +1884,11 @@ export async function optimisticSend(input: {
   appendSubmissions?: () => void
   onOptimisticInsert?: (messageID: string) => void
   markBusy?: boolean
-  send: (messageID: string, context: SyntheticContextInput[], commitRevert?: () => Promise<void>) => Promise<void>
+  /**
+   * The actual API call. Receives the user message id for reconciliation and
+   * context with client-local preview ids, omitted at the SDK boundary.
+   */
+  send: (messageID: string, context: SyntheticContextInput[]) => Promise<void>
 }): Promise<void> {
   if (!_optimisticAdd || !_optimisticRemove) {
     throw new Error("Optimistic refs not set — is useSync() mounted?")
@@ -2024,23 +2028,20 @@ export async function optimisticSend(input: {
 
   if (input.markBusy !== false) markSessionStatus(input.sessionId, targetDirectory, "busy")
 
-  let revertCommitSent = false
-  let revertCommitted = false
-  const commitRevert = revertMessageID
-    ? async () => {
-        revertCommitSent = true
-        await commitSessionRevert(input.sessionId, targetDirectory)
-        revertCommitted = true
-      }
-    : undefined
-
   const releasePrompt = trackPromptInFlight(input.sessionId)
   let requestSent = false
   try {
     await input.ready
     assertRuntimeUnchanged()
     requestSent = true
-    await input.send(messageID, context, commitRevert)
+    await input.send(messageID, context)
+    assertRuntimeUnchanged()
+    // These are previews of inline prompt context. Their canonical synthetic
+    // message IDs are assigned by OpenCode when the owning prompt is delivered.
+    for (const optimisticID of optimisticIDs) {
+      if (optimisticID === messageID) continue
+      optimisticRemove({ sessionID: input.sessionId, directory: targetDirectory, messageID: optimisticID })
+    }
   } catch (error) {
     if (requestSent) {
       assertRuntimeUnchanged()
@@ -2061,6 +2062,10 @@ export async function optimisticSend(input: {
     }
     if (accepted) {
       for (const optimisticID of optimisticIDs) {
+        if (optimisticID !== messageID) {
+          optimisticRemove({ sessionID: input.sessionId, directory: targetDirectory, messageID: optimisticID })
+          continue
+        }
         if (!accepted.includes(optimisticID)) continue
         _optimisticConfirm?.({ sessionID: input.sessionId, directory: targetDirectory, messageID: optimisticID })
       }
@@ -2080,11 +2085,20 @@ export async function optimisticSend(input: {
     recordSendFailure(failureRecord)
     console.warn("[session-actions] prompt send rejected; rolling back optimistic message", failureRecord)
 
-    let revertStaged = !revertCommitted
-    if (revertCommitSent && !revertCommitted && ambiguousFailure) {
-      revertStaged = await opencodeClient.getSession(input.sessionId, targetDirectory).then((record) => !!record.revert, () => true)
+    // Admission commits the revert atomically. A lost response may still have
+    // committed it even when confirmation could not find the delivered prompt.
+    const revertStaged = revertMessageID && ambiguousFailure
+      ? await opencodeClient.getSession(input.sessionId, targetDirectory).then((record) => !!record.revert, () => true)
+      : true
+    if (requestSent) {
+      assertRuntimeUnchanged()
+      if (opencodeClient.getSdkClient() !== sdk || (targetDirectory && _childStores?.getChild(targetDirectory) !== store)) throw error
     }
 
+    // Rollback via optimistic infrastructure. Admitted context comes back
+    // with its owning prompt in the next history read. The records
+    // are where the session lives now: a session created from a draft can
+    // have moved to another directory than the one its message was shown in.
     const rollbackDirectory = getSessionDirectory(input.sessionId) ?? targetDirectory
     const rollbackStore = rollbackDirectory && rollbackDirectory !== targetDirectory ? dirStoreForDirectory(rollbackDirectory) : store
     for (const optimisticID of optimisticIDs) {

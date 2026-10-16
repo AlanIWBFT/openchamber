@@ -2256,13 +2256,15 @@ describe('routeMessage skill invocation', () => {
       setSyncRefs({}, new ChildStoreManager(), '');
     });
 
-    test('hands sendCommand the commit of the staged revert, aimed at the session and its directory', async () => {
+    test('sends context with the command without separately committing the revert', async () => {
       seedSession({ id: 'session-command', directory: '/skills/project', revert: { messageID: 'msg_boundary' } });
 
       expect(await sendCommandWithContext()).toBe('command');
 
-      await sendCommandCalls[0].commitRevert();
-      expect(commitRevertCalls).toEqual([['session-command', '/skills/project']]);
+      expect(sendCommandCalls[0].directory).toBe('/skills/project');
+      expect(sendCommandCalls[0].context).toMatchObject([{ text: part().text }]);
+      expect(sendCommandCalls[0].commitRevert).toBeUndefined();
+      expect(commitRevertCalls).toEqual([]);
     });
 
     test('waits for a pending revert before sending a slash command with context', async () => {
@@ -2292,8 +2294,8 @@ describe('routeMessage skill invocation', () => {
         await Promise.all([reverting, sending]);
         expect(sentBeforeStage).toBe(0);
         expect(sendCommandCalls).toHaveLength(1);
-        await sendCommandCalls[0].commitRevert();
-        expect(commitRevertCalls).toEqual([['session-command', '/skills/project']]);
+        expect(sendCommandCalls[0].context).toMatchObject([{ text: part().text }]);
+        expect(commitRevertCalls).toEqual([]);
       } finally {
         releaseStage();
         stage.mockRestore();
@@ -2301,7 +2303,7 @@ describe('routeMessage skill invocation', () => {
       }
     });
 
-    test('reads the marker where the session lives when the send names another directory', async () => {
+    test('admits context where the session lives when the send names another directory', async () => {
       seedSession({ id: 'session-command', directory: '/skills/project', revert: { messageID: 'msg_boundary' } });
       useCommandsStore.setState({
         commandsByDirectory: { '/skills/other': [{ name: 'inspect', template: 'Inspect $ARGUMENTS carefully.' }] },
@@ -2316,8 +2318,9 @@ describe('routeMessage skill invocation', () => {
         additionalParts: [part()],
       });
 
-      await sendCommandCalls[0].commitRevert();
-      expect(commitRevertCalls).toEqual([['session-command', '/skills/project']]);
+      expect(sendCommandCalls[0].directory).toBe('/skills/project');
+      expect(sendCommandCalls[0].context).toMatchObject([{ text: part().text }]);
+      expect(commitRevertCalls).toEqual([]);
     });
 
     test('hands over no commit when nothing is staged', async () => {
@@ -2332,7 +2335,7 @@ describe('routeMessage skill invocation', () => {
   test('a command with a quoted selection still runs as a command', async () => {
     // Sending "/inspect auth flow" as a prompt would skip the template OpenCode
     // 2.x expands only on the command route. The selection travels as a
-    // synthetic message the client admits before the command, and any file it
+    // synthetic message admitted atomically with the command, and any file it
     // brought rides with the command.
     useCommandsStore.setState({
       commandsByDirectory: { '/skills/project': [{ name: 'inspect', template: 'Inspect $ARGUMENTS carefully.' }] },

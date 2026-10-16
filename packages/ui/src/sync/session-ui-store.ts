@@ -78,9 +78,7 @@ import {
   updateSessionTitle as updateSessionTitleAction,
   optimisticSend,
   commitStagedRevert,
-  commitSessionRevert,
   waitForPendingRevert,
-  refetchSessionMessages,
   ensureSessionMessageRequirement,
   revertToMessage as revertToMessageAction,
   forkFromMessage as forkFromMessageAction,
@@ -241,7 +239,6 @@ export async function routeMessage(params: {
         ...skillInstructionContext(),
       ]
       const selection = await sendSelection()
-      const revertStaged = getSyncSessions(sendDirectory()).some((session) => session.id === params.sessionId && session.revert)
       await opencodeClient.sendCommand({
         runtimeKey: params.runtimeKey,
         id: params.sessionId,
@@ -254,7 +251,6 @@ export async function routeMessage(params: {
         delivery: params.delivery,
         directory: sendDirectory(),
         beforeSend: params.beforeSend,
-        commitRevert: revertStaged ? () => commitSessionRevert(params.sessionId, sendDirectory()) : undefined,
       })
       return 'command'
     }
@@ -278,7 +274,7 @@ export async function routeMessage(params: {
     markBusy: params.markBusy,
     appendSubmissions: params.appendSubmissions,
     onOptimisticInsert: params.onMessageMinted,
-    send: async (messageID, context, commitRevert) => {
+    send: async (messageID, context) => {
       assertRuntimeCurrent()
       const selection = await sendSelection()
       return opencodeClient.sendMessage({
@@ -297,7 +293,6 @@ export async function routeMessage(params: {
         directory: sendDirectory(),
         skills,
         beforeSend: params.beforeSend,
-        commitRevert,
       }).then(() => {})
     },
   })
