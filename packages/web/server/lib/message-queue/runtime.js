@@ -179,9 +179,8 @@ const parseStoredItem = (value) => {
   if (!id) return null;
   try {
     const item = { id, createdAt: asCount(raw.createdAt) ?? Date.now(), ...parseQueuedItemInput(raw) };
-    // Only the file carries these: a delivery mints them, a client never does.
-    const syntheticIds = asList(raw.syntheticIds) ?? [];
-    if (syntheticIds.length > 0 && syntheticIds.every((entry) => MESSAGE_ID_PATTERN.test(asText(entry)))) item.syntheticIds = syntheticIds;
+    // Only the file carries this: a delivery mints it, a client never does.
+    if (MESSAGE_ID_PATTERN.test(asText(raw.promptMessageId))) item.promptMessageId = raw.promptMessageId;
     return item;
   } catch {
     return null;
@@ -537,21 +536,17 @@ export function createMessageQueueRuntime({
   };
 
   /**
-   * Gives what an item admits ahead of its message stable ids, saved before the
-   * first attempt: a retry, also after a restart, reuses them and OpenCode keeps
-   * the first admission. They end one millisecond apart at the mint time, so
-   * they sort in admission order and ahead of the message, whose id OpenCode
-   * assigns later.
+   * Save the owning prompt's identity before admission. Context travels in the
+   * same request, so retries after a restart deduplicate the whole inbox item.
    */
-  const ensureSyntheticIds = async (item, count) => {
-    if (item.syntheticIds?.length === count) return;
-    const firstAt = now() - count + 1;
-    item.syntheticIds = Array.from({ length: count }, (_, index) => createMessageId(firstAt + index));
+  const ensurePromptMessageId = async (item) => {
+    if (item.promptMessageId) return;
+    item.promptMessageId = createMessageId(now());
     try {
       await persist();
     } catch (error) {
-      // Unsaved, a crash would mint them again and admit everything twice.
-      delete item.syntheticIds;
+      // Unsaved, a crash would mint another id and admit everything twice.
+      delete item.promptMessageId;
       throw error;
     }
   };
@@ -607,18 +602,7 @@ export function createMessageQueueRuntime({
     // session already holds stays as it is.
     if (sessionKnowledgeRuntime) await sessionKnowledgeRuntime.sync(sessionId, directory);
 
-    // OpenCode's commit of a staged revert deletes everything admitted past the
-    // revert's boundary, so a staged revert is committed before the first
-    // synthetic message, and before the goal save so a failure here leaves no
-    // goal behind. A plain prompt leaves the commit to OpenCode, as a UI send does.
-    if (synthetics.length > 0) {
-      await ensureSyntheticIds(item, synthetics.length);
-      const session = asRecord(await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}`, { directory }));
-      if (!session) throw new Error(`OpenCode returned no record for session ${sessionId}`);
-      if (session.revert) {
-        await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}/revert/commit`, { directory, method: 'POST' });
-      }
-    }
+    if (!command) await ensurePromptMessageId(item);
 
     // A message queued as a goal starts it now, as a direct send would. The
     // goal is saved before anything is admitted, so a failed save leaves
@@ -636,18 +620,9 @@ export function createMessageQueueRuntime({
       });
     }
 
-    // Same order as a UI send: everything attached to the message is admitted
-    // before the message itself, so the model reads it as background. This
-    // holds for a command too: its route takes file attachments only, and
-    // sending "/name args" as a prompt instead would skip the template
-    // OpenCode 2.x expands only on the command route.
-    for (const [index, synthetic] of synthetics.entries()) {
-      await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}/synthetic`, {
-        directory,
-        method: 'POST',
-        body: { id: item.syntheticIds[index], ...synthetic },
-      });
-    }
+    // Context is submitted with the owning prompt or command. OpenCode keeps
+    // it attached through revert commit, queueing, cancellation and delivery.
+    const context = synthetics.map(({ text, description, metadata }) => ({ text, description, metadata }));
 
     if (command) {
       await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}/command`, {
@@ -657,6 +632,7 @@ export function createMessageQueueRuntime({
           // OpenCode 2.0.8 renamed the command body field `command` to `name`.
           name: command.name,
           text: command.arguments,
+          context: context.length > 0 ? context : undefined,
           ...(promptFiles.length > 0 ? { files: promptFiles } : {}),
         },
       });
@@ -666,6 +642,8 @@ export function createMessageQueueRuntime({
         method: 'POST',
         body: {
           text: item.text,
+          id: item.promptMessageId,
+          context: context.length > 0 ? context : undefined,
           ...(promptFiles.length > 0 ? { files: promptFiles } : {}),
           ...(item.agentMention ? { agents: [{ name: item.agentMention }] } : {}),
         },

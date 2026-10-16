@@ -2173,11 +2173,9 @@ describe("optimisticSend target directory", () => {
   })
 
   // A failed send puts the revert back only while the server still has it staged.
-  for (const { outcome, commit, serverStaged, restored } of [
-    { outcome: "before the commit", commit: "none", serverStaged: true, restored: true },
-    { outcome: "after the server committed the revert", commit: "answered", serverStaged: false, restored: false },
-    { outcome: "after a lost commit response the server applied", commit: "lost", serverStaged: false, restored: false },
-    { outcome: "after a lost commit response the server did not apply", commit: "lost", serverStaged: true, restored: true },
+  for (const { outcome, serverStaged, restored } of [
+    { outcome: "after a lost admission response the server applied", serverStaged: false, restored: false },
+    { outcome: "after a lost admission response the server did not apply", serverStaged: true, restored: true },
   ] as const) test(`${restored ? "restores" : "keeps dropped"} the reverted branch when sending fails ${outcome}`, async () => {
     const retainedMessage = { id: "msg_ffffffffffffRetained", role: "user", sessionID: "session-reverted", time: { created: 1 } } as Message
     const revertedMessage = { id: "msg_000000000000Reverted", role: "user", sessionID: "session-reverted", time: { created: 2 } } as Message
@@ -2189,7 +2187,6 @@ describe("optimisticSend target directory", () => {
     })
     const childStores = createChildStores([["/target/project", targetStore]])
     sessionRecords.set("session-reverted", serverStaged ? { ...sessionFixture("session-reverted"), revert: { messageID: revertedMessage.id } } : sessionFixture("session-reverted"))
-    if (commit === "lost") commitRevertError = Object.assign(new Error("gateway timeout"), { status: 504 })
 
     const { optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
     setActionRefs(childStores, () => "/target/project")
@@ -2208,9 +2205,8 @@ describe("optimisticSend target directory", () => {
       sessionId: "session-reverted",
       directory: "/target/project",
       content: "new branch",
-      send: async (_messageID, _context, commitRevert) => {
-        if (commit !== "none") await commitRevert?.()
-        throw new Error("rejected")
+      send: async () => {
+        throw Object.assign(new Error("gateway timeout"), { status: 504 })
       },
     })).rejects.toThrow()
 
@@ -2356,7 +2352,7 @@ describe("optimisticSend target directory", () => {
     expect(sent).toEqual({ messageID: added[1].id, texts: ["quoted"] })
   })
 
-  for (const includesContext of [true, false]) test(`confirms only observed context shadows after an ambiguous send (context in page: ${includesContext})`, async () => {
+  for (const includesContext of [true, false]) test(`retires context previews after an ambiguous send is confirmed (context in page: ${includesContext})`, async () => {
     const targetStore = createStore({})
     const childStores = createChildStores([["/target/project", targetStore]])
     const added: Message[] = []
@@ -2376,13 +2372,13 @@ describe("optimisticSend target directory", () => {
       context: [{ text: "context" }],
       send: async () => {
         sessionMessageRecords.set("session-context-confirmed", added.flatMap((info, seq) => (
-          !includesContext && info.role === "synthetic" ? [] : [{ info: { ...info, seq }, parts: [] }]
+          !includesContext && info.role === "synthetic" ? [] : [{ info: { ...info, id: info.role === "synthetic" ? "msg_server_context" : info.id, seq }, parts: [] }]
         )))
         throw Object.assign(new Error("gateway timeout"), { status: 504 })
       },
     })
-    expect(removed).toEqual([])
-    expect(confirmed).toEqual(added.filter((info) => includesContext || info.role === "user").map((info) => info.id))
+    expect(removed).toEqual(added.filter((info) => info.role === "synthetic").map((info) => info.id))
+    expect(confirmed).toEqual(added.filter((info) => info.role === "user").map((info) => info.id))
     expect(targetStore.getState().message["session-context-confirmed"]?.map((info) => info.seq)).toEqual(includesContext ? [0, 1] : [1])
   })
 

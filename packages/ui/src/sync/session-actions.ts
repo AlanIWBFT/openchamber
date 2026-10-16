@@ -2242,11 +2242,10 @@ export async function optimisticSend(input: {
    */
   markBusy?: boolean
   /**
-   * The actual API call. Receives the optimistic message id and the context
-   * with its optimistic ids, so the server's records reconcile in place, and,
-   * while a revert is staged, the commit to run before any context is admitted.
+   * The actual API call. Receives the user message id for reconciliation and
+   * context with client-local preview ids, omitted at the SDK boundary.
    */
-  send: (messageID: string, context: SyntheticContextInput[], commitRevert?: () => Promise<void>) => Promise<void>
+  send: (messageID: string, context: SyntheticContextInput[]) => Promise<void>
 }): Promise<void> {
   if (!_optimisticAdd || !_optimisticRemove) {
     throw new Error("Optimistic refs not set — is useSync() mounted?")
@@ -2399,19 +2398,6 @@ export async function optimisticSend(input: {
 
   if (input.markBusy !== false) markSessionStatus(input.sessionId, targetDirectory, "busy")
 
-  // Whether the commit of the staged revert left, and whether the server
-  // answered it. A failed send puts the revert back only while the server
-  // still has it staged.
-  let revertCommitSent = false
-  let revertCommitted = false
-  const commitRevert = revertMessageID
-    ? async () => {
-        revertCommitSent = true
-        await opencodeClient.commitRevert(input.sessionId, targetDirectory)
-        revertCommitted = true
-      }
-    : undefined
-
   const releasePrompt = trackPromptInFlight(input.sessionId)
   // Only a request that left can have been accepted; a failure before it is certain.
   let requestSent = false
@@ -2419,7 +2405,14 @@ export async function optimisticSend(input: {
     await input.ready
     assertRuntimeUnchanged()
     requestSent = true
-    await input.send(messageID, context, commitRevert)
+    await input.send(messageID, context)
+    assertRuntimeUnchanged()
+    // These are previews of inline prompt context. Their canonical synthetic
+    // message IDs are assigned by OpenCode when the owning prompt is delivered.
+    for (const optimisticID of optimisticIDs) {
+      if (optimisticID === messageID) continue
+      optimisticRemove({ sessionID: input.sessionId, directory: targetDirectory, messageID: optimisticID })
+    }
   } catch (error) {
     if (requestSent) {
       assertRuntimeUnchanged()
@@ -2440,6 +2433,10 @@ export async function optimisticSend(input: {
     }
     if (accepted) {
       for (const optimisticID of optimisticIDs) {
+        if (optimisticID !== messageID) {
+          optimisticRemove({ sessionID: input.sessionId, directory: targetDirectory, messageID: optimisticID })
+          continue
+        }
         if (!accepted.includes(optimisticID)) continue
         _optimisticConfirm?.({ sessionID: input.sessionId, directory: targetDirectory, messageID: optimisticID })
       }
@@ -2465,15 +2462,18 @@ export async function optimisticSend(input: {
     recordSendFailure(failureRecord)
     console.warn("[session-actions] prompt send rejected; rolling back optimistic message", failureRecord)
 
-    let revertStaged = !revertCommitted
-    // A commit whose response was lost may have landed all the same; the
-    // session record, read once the connection is back, says which.
-    if (revertCommitSent && !revertCommitted && ambiguousFailure) {
-      revertStaged = await opencodeClient.getSession(input.sessionId, targetDirectory).then((record) => !!record.revert, () => true)
+    // Admission commits the revert atomically. A lost response may still have
+    // committed it even when confirmation could not find the delivered prompt.
+    const revertStaged = revertMessageID && ambiguousFailure
+      ? await opencodeClient.getSession(input.sessionId, targetDirectory).then((record) => !!record.revert, () => true)
+      : true
+    if (requestSent) {
+      assertRuntimeUnchanged()
+      if (opencodeClient.getSdkClient() !== sdk || (targetDirectory && _childStores?.getChild(targetDirectory) !== store)) throw error
     }
 
-    // Rollback via optimistic infrastructure. Context the server admitted
-    // before the failure comes back with the next history read. The records
+    // Rollback via optimistic infrastructure. Admitted context comes back
+    // with its owning prompt in the next history read. The records
     // are where the session lives now: a session created from a draft can
     // have moved to another directory than the one its message was shown in.
     const rollbackDirectory = getSessionDirectory(input.sessionId) ?? targetDirectory
