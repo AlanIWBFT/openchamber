@@ -12,6 +12,7 @@ export interface BrowserControlOptions {
 
 export interface BrowserControlParameters {
   tabId?: string;
+  newTab?: boolean;
   url?: string;
   viewport?: 'mobile' | 'tablet' | 'desktop' | 'fill';
   label?: string;

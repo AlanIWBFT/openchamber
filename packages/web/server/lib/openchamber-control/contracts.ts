@@ -73,6 +73,7 @@ export interface ControlInput {
   offset?: unknown;
   limit?: unknown;
   tabId?: unknown;
+  newTab?: unknown;
   viewport?: unknown;
   ref?: unknown;
   selector?: unknown;

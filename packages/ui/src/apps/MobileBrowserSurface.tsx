@@ -39,6 +39,7 @@ export const MobileBrowserSurface: React.FC<{
       directory={ownDirectory ?? ''}
       siteDirectory={siteDirectory ?? ''}
       tabID="mobile-preview"
+      userPreviewOnly
       ownerSessionId={null}
       showHome
       registerBackHandler={registerBackHandler}

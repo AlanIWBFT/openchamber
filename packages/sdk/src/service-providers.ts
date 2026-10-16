@@ -30,7 +30,8 @@ export const BROWSER_PROVIDER_IDLE_MS = 10 * 60_000;
 
 export type BrowserTabTarget = { tabId?: string };
 
-export type BrowserOpenParameters = BrowserTabTarget & { url: string; viewport?: BrowserViewportMode };
+/** Reuse the session's tab by default; create one if absent. newTab: true and tabId are mutually exclusive. */
+export type BrowserOpenParameters = BrowserTabTarget & { url: string; viewport?: BrowserViewportMode; newTab?: boolean };
 export type BrowserSnapshotParameters = BrowserTabTarget & { selector?: string };
 export type BrowserClickParameters = BrowserTabTarget & { selector?: string; text?: string };
 export type BrowserTypeParameters = BrowserTabTarget & { selector: string; value: string; submit: boolean };
@@ -94,6 +95,8 @@ export type BrowserSnapshotElement = {
 
 export type BrowserOpenData = {
   tabId?: string;
+  /** Whether this call created a tab. Older providers may omit it. */
+  tabCreated?: boolean;
   url: string;
   title: string;
   opened: true;

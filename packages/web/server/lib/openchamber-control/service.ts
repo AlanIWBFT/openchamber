@@ -1050,11 +1050,17 @@ export const createOpenChamberControlService = (dependencies: ControlDependencie
 
   const browserAction = async (browserControl: NonNullable<ControlDependencies['browserControl']>, action: string, input: ControlInput, signal: AbortSignal | undefined, contextDirectory: ControlInput['directory'], contextSessionId: string | undefined) => {
     const parameters: BrowserControlParameters = {};
+    if (input.newTab !== undefined) {
+      if (action !== 'browser.open') throw new OpenChamberControlError('newTab is only supported by browser.open', 400);
+      if (!isBoolean(input.newTab)) throw new OpenChamberControlError('newTab must be a boolean', 400);
+      parameters.newTab = input.newTab;
+    }
     const tabId = asNonEmptyString(input.tabId);
     if (tabId) {
       if (tabId.length > 128) throw new OpenChamberControlError('tabId must be an id from browser.snapshot tabs', 400);
       parameters.tabId = tabId;
     }
+    if (tabId && input.newTab === true) throw new OpenChamberControlError('newTab: true cannot be combined with tabId', 400);
 
     const readViewport = (required: boolean) => {
       const viewport = asNonEmptyString(input.viewport);
