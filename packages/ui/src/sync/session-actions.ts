@@ -2084,8 +2084,8 @@ export async function optimisticSend(input: {
   onMessageID?: (messageID: string) => void
   beforeOptimisticInsert?: () => void
   /**
-   * The actual API call. Receives the optimistic message id and the context
-   * with its optimistic ids, so the server's records reconcile in place.
+   * The actual API call. Receives the user message id for reconciliation and
+   * context with client-local preview ids, omitted at the SDK boundary.
    */
   send: (messageID: string, context: SyntheticContextInput[]) => Promise<void>
 }): Promise<void> {
@@ -2256,6 +2256,13 @@ export async function optimisticSend(input: {
     assertRuntimeUnchanged()
     sendStarted = true
     await input.send(messageID, context)
+    assertRuntimeUnchanged()
+    // These are previews of inline prompt context. Their canonical synthetic
+    // message IDs are assigned by OpenCode when the owning prompt is delivered.
+    for (const optimisticID of optimisticIDs) {
+      if (optimisticID === messageID) continue
+      optimisticRemove({ sessionID: input.sessionId, directory: targetDirectory, messageID: optimisticID })
+    }
   } catch (error) {
     if (sendStarted) {
       assertRuntimeUnchanged()
@@ -2276,6 +2283,10 @@ export async function optimisticSend(input: {
     }
     if (accepted) {
       for (const optimisticID of optimisticIDs) {
+        if (optimisticID !== messageID) {
+          optimisticRemove({ sessionID: input.sessionId, directory: targetDirectory, messageID: optimisticID })
+          continue
+        }
         if (!accepted.includes(optimisticID)) continue
         _optimisticConfirm?.({ sessionID: input.sessionId, directory: targetDirectory, messageID: optimisticID })
       }
