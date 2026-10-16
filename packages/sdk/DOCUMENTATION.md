@@ -29,6 +29,14 @@ Public author pages live in `packages/docs/content/docs/sdk.mdx`, `sdk/host.mdx`
 
 Notification services can receive kind `pull-request` for a GitHub merge the user requested here. It carries no session identity. The fixed event title and repository reference use the ordinary notification text fields; enterprise mode strips the reference at the host boundary. Services that validate notification kinds with an older SDK must update that parser to accept this additive kind.
 
+- Browser providers receive `newTab` in `BrowserOpenParameters`. Default opens
+  reuse the calling session's last-used tab, creating one when absent; explicit
+  `newTab: true` creates a separate tab and cannot accompany `tabId`. A provider
+  without multiple tabs refuses explicit creation rather than navigating its
+  existing page. Open answers can report `tabCreated`; older providers may omit
+  it. The host forwards the option and does not emulate tab ownership for an
+  external provider.
+
 - `scripts/bump-version.mjs` refreshes `bun.lock` after bumping package versions; include both in the release commit. Bun resolves `workspace:*` in published archives from lockfile versions, and a frozen install can succeed with stale versions. `scripts/bump-version.test.mjs` covers the bump, frozen install, and packed dependency versions together.
 
 - Extension activity uses `useConfigStore.isConnected` plus live status records and directory `sessionStatusReady` authority. `useUIStore.eventStreamStatus` is an unmaintained diagnostic field, not a connection gate; its default `idle` must not hide known running or idle sessions as `unknown`.
