@@ -17,7 +17,7 @@ import { ShownPartCard, ShownToolCard } from '../parts/ShownToolCard';
 import { isExecuteTool, isShownInPlace } from '@/lib/opencode/tools';
 import { LiveActivityCollapse } from '../../components/LiveActivityCollapse';
 import { ActivityRowSkipContext, isActivityRowPart, isToolRowShown } from '../../lib/turns/activityRows';
-import { LiveFinalActivityContext, LiveTurnHoistedPagesContext } from '../../components/liveActivityContext';
+import { LiveFinalActivityContext, LiveTurnHoistedCommandsContext, LiveTurnHoistedPagesContext } from '../../components/liveActivityContext';
 import { MessageSliceContext } from '../messageSliceContext';
 import { MessageSelectionMark } from '../../messageSelection/MessageSelectionMark';
 import { useUIStore } from '@/stores/useUIStore';
@@ -66,6 +66,7 @@ export const useAssistantRenderedParts = ({
     const liveFinalActivity = React.useContext(LiveFinalActivityContext);
     const activityRowSkip = React.useContext(ActivityRowSkipContext);
     const hoistedPages = React.useContext(LiveTurnHoistedPagesContext);
+    const hoistedCommands = React.useContext(LiveTurnHoistedCommandsContext);
     const slice = React.useContext(MessageSliceContext);
     const nestedTools = React.useMemo(() => ({ expanded: expandedTools, toggle: onToggleTool }), [expandedTools, onToggleTool]);
 
@@ -105,7 +106,7 @@ export const useAssistantRenderedParts = ({
                 }
             }
             if (slice?.to && (slice.to.offset === 0 ? part.id === slice.to.partId : visibleParts[i - 1]?.id === slice.to.partId)) break;
-            if (rowsToSkip > 0 && isActivityRowPart(part)) {
+            if (rowsToSkip > 0 && (activityRowSkip?.partIds ? activityRowSkip.partIds.has(part.id) : isActivityRowPart(part))) {
                 rowsToSkip -= 1;
                 i += 1;
                 continue;
@@ -229,7 +230,7 @@ export const useAssistantRenderedParts = ({
                     i++;
                     continue;
                 }
-                if (!isToolRowShown(toolPart)) {
+                if (hoistedCommands?.has(toolPart.id) || !isToolRowShown(toolPart)) {
                     i++;
                     continue;
                 }
@@ -300,6 +301,7 @@ export const useAssistantRenderedParts = ({
         activityRowSkip,
         alwaysShowMessageActions,
         hoistedPages,
+        hoistedCommands,
         collapsibleThinkingBlocks,
         expandedTools,
         isMobile,

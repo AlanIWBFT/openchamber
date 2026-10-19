@@ -26,6 +26,7 @@ import { getToolOutput } from '../toolOutput';
 import { toAbsoluteFilePath } from '@/lib/path-utils';
 import { executeOutputTruncation, executeScript, isEditTool, isReadTool, isExecuteTool, isFileChangeTool, isPatchTool, isQuestionTool, isShellTool, isSubagentTool, isTodoWriteTool, isWebSearchTool, todoWriteItems, isWriteTool, isOpenChamberTool, openChamberCallSummary } from '@/lib/opencode/tools';
 import { createScriptToolProjection } from '@/lib/opencode/script';
+import { LiveTurnHoistedCommandsContext } from '../../../components/liveActivityContext';
 import { getUnifiedExecCommand, getUnifiedExecMetadata, getUnifiedExecOutput, isExecCommandTool, isUnifiedExecTool } from '../../unifiedExec';
 import ToolPart from '../ToolPart';
 import { CopyToolOutputButton } from './CopyToolOutputButton';
@@ -126,7 +127,10 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
     const isExecute = isExecuteTool(part.tool);
     const executeCode = React.useMemo(() => (isExecute ? executeScript(input) : undefined), [input, isExecute]);
     const project = React.useMemo(() => createScriptToolProjection({ id: part.id, sessionID: part.sessionID, messageID: part.messageID }), [part.id, part.sessionID, part.messageID]);
-    const executeEntries = React.useMemo(() => isExecute ? project(metadata) : [], [isExecute, project, metadata]);
+    const hoistedCommands = React.useContext(LiveTurnHoistedCommandsContext);
+    const executeEntries = React.useMemo(() => isExecute ? project(metadata).filter((entry) => (
+        entry.kind !== 'part' || !hoistedCommands?.has(entry.part.id)
+    )) : [], [isExecute, project, metadata, hoistedCommands]);
     const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(() => new Set());
     const toggle = React.useCallback((id: string) => setExpanded(previous => {
         const next = new Set(previous);
