@@ -111,6 +111,7 @@ import {
 import { toolContentShellEnvelope } from '@/lib/opencode/toolContentShells';
 import { parseWebSearchOutput, webSearchProviderOf } from '@/lib/opencode/websearch';
 import { createScriptToolProjection, groupScriptTools, type ScriptToolEntry } from '@/lib/opencode/script';
+import { LiveTurnHoistedCommandsContext } from '../../components/liveActivityContext';
 import { ExplorationDisclosure } from './ExplorationDisclosure';
 import { formatDirectoryDisplayPath, getReadToolDisplayType } from './toolRenderUtils';
 import { ApplyPatchFileButtons } from './ApplyPatchFileButtons';
@@ -1384,7 +1385,10 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
         () => createScriptToolProjection({ id: part.id, sessionID: part.sessionID, messageID: part.messageID }),
         [part.id, part.sessionID, part.messageID],
     );
-    const executeEntries = React.useMemo(() => (isExecute ? projectScriptTools(metadata) : []), [isExecute, metadata, projectScriptTools]);
+    const hoistedCommands = React.useContext(LiveTurnHoistedCommandsContext);
+    const executeEntries = React.useMemo(() => (isExecute ? projectScriptTools(metadata).filter((entry) => (
+        entry.kind !== 'part' || !hoistedCommands?.has(entry.part.id)
+    )) : []), [isExecute, metadata, projectScriptTools, hoistedCommands]);
     const executeGroups = React.useMemo(() => groupScriptTools(part.id, executeEntries), [part.id, executeEntries]);
     const childExpansion = React.useMemo(() => ({ expanded: expandedScriptTools, toggle: onToggleScriptTool }), [expandedScriptTools, onToggleScriptTool]);
     const executeTruncation = React.useMemo(
