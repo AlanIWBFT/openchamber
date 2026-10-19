@@ -102,7 +102,7 @@ const sliceKey = (cut: TextCut) => `${cut.partId}:${cut.offset}`;
 const turnRows = (entry: TurnEntry, options: TimelineRowsOptions): TimelineRow[] => {
     const { turn } = entry;
     const underFold = options.collapsedActivity && hasLiveActivity(turn, options.showReasoningTraces);
-    const finalMessage = underFold ? getLiveFinalMessage(turn.assistantMessages) : undefined;
+    const finalMessage = underFold ? getLiveFinalMessage(turn.assistantMessages, !entry.isLastTurn) : undefined;
     const fields = { entry, underFold, finalMessageId: finalMessage?.info.id, gapBelow: false };
     const rows: TimelineRow[] = [{ kind: 'turn-head', key: entry.key, ...fields }];
     const addMessage = (message: ChatMessageEntry, final = false) => {
