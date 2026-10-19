@@ -57,7 +57,7 @@ import { ShownPage } from './parts/HtmlRenderFrame';
 import { renderedPage } from '@/lib/opencode/tools';
 import { LiveActivityCollapse } from '../components/LiveActivityCollapse';
 import { ActivityRowSkipContext, isActivityRowPart, isToolRowShown } from '../lib/turns/activityRows';
-import { LiveFinalActivityContext, LiveTurnHoistedPagesContext } from '../components/liveActivityContext';
+import { LiveFinalActivityContext, LiveTurnHoistedCommandsContext, LiveTurnHoistedPagesContext } from '../components/liveActivityContext';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -1320,6 +1320,7 @@ const AssistantMessageBody = React.memo(({
     const liveFinalActivity = React.useContext(LiveFinalActivityContext);
     const activityRowSkip = React.useContext(ActivityRowSkipContext);
     const hoistedPages = React.useContext(LiveTurnHoistedPagesContext);
+    const hoistedCommands = React.useContext(LiveTurnHoistedCommandsContext);
     const isLastAssistantInTurn = turnGroupingContext?.isLastAssistantInTurn ?? false;
     const hasStopFinish = messageFinish === 'stop';
     const effectiveStreamPhase: StreamPhase = hasStopFinish ? 'completed' : streamPhase;
@@ -1675,7 +1676,7 @@ const AssistantMessageBody = React.memo(({
         let i = 0;
         while (i < visibleParts.length) {
             const part = visibleParts[i];
-            if (rowsToSkip > 0 && isActivityRowPart(part)) {
+            if (rowsToSkip > 0 && (activityRowSkip?.partIds ? activityRowSkip.partIds.has(part.id) : isActivityRowPart(part))) {
                 rowsToSkip -= 1;
                 i += 1;
                 continue;
@@ -1782,7 +1783,7 @@ const AssistantMessageBody = React.memo(({
                     continue;
                 }
 
-                if (!isToolRowShown(toolPart)) {
+                if (hoistedCommands?.has(toolPart.id) || !isToolRowShown(toolPart)) {
                     i++;
                     continue;
                 }
@@ -1862,6 +1863,7 @@ const AssistantMessageBody = React.memo(({
         alwaysShowMessageActions,
         hoistedPages,
         activityRowSkip,
+        hoistedCommands,
         animatedToolIdsLookup,
         collapsibleThinkingBlocks,
         expandedTools,

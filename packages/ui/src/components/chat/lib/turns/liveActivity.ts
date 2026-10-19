@@ -2,6 +2,7 @@ import { isInvisibleText } from '@/lib/invisibleText';
 import { getLastConversationRecord, type ToolPart } from '@/lib/opencode/model';
 import { isSessionNoticePart } from '@/lib/opencode/session-notices';
 import { isExplorationPartDisplayReady, renderedPage } from '@/lib/opencode/tools';
+import { runningCommandParts } from '@/lib/opencode/exec-metadata';
 import { shouldHideExecFollowUp } from '../../message/unifiedExec';
 import type { ChatMessageEntry, TurnRecord } from './types';
 import { isToolRowShown, LIVE_ACTIVITY_VISIBLE_ROWS } from './activityRows';
@@ -35,6 +36,18 @@ export function hasLiveActivity(turn: TurnRecord, showReasoning: boolean): boole
         (activity.part.type === 'tool' && !isSessionNoticePart(activity.part))
         || (showReasoning && activity.kind === 'reasoning')
     ));
+}
+
+/** Only project commands from eligible Activity rows; Script children follow their parent's visibility. */
+export function getRunningCommandMessages(messages: readonly ChatMessageEntry[], hiddenRowIds?: ReadonlySet<string>): ChatMessageEntry[] {
+    return messages.flatMap((message) => {
+        const parts: ToolPart[] = [];
+        for (const part of message.parts) {
+            if (part.type !== 'tool' || (hiddenRowIds && !hiddenRowIds.has(part.id))) continue;
+            parts.push(...runningCommandParts(part));
+        }
+        return parts.length ? [{ ...message, parts }] : [];
+    });
 }
 
 /** Select seven native rows of a running turn, keeping Exploration whole and pinning the latest prose separately. */
@@ -89,7 +102,8 @@ export function projectLiveActivityPreview(turn: TurnRecord, showReasoning: bool
             messages.push(parts.length === message.parts.length ? message : { ...message, parts });
         }
     }
-    return { messages, pinnedText, hiddenCount: Math.max(0, rowIds.length - LIVE_ACTIVITY_VISIBLE_ROWS) };
+    const hiddenRowIds = rowIds.slice(0, Math.max(0, rowIds.length - LIVE_ACTIVITY_VISIBLE_ROWS));
+    return { messages, pinnedText, hiddenCount: hiddenRowIds.length, hiddenRowIds };
 }
 
 /** The pages a turn's `openchamber_render` calls showed, waiting ones included, in the order they ran. */
