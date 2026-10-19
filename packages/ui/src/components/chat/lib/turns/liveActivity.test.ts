@@ -59,7 +59,7 @@ function tool(id: string, name: string, options: {
 const diff = '@@ -1,1 +1,2 @@\n-before\n+after\n+added';
 
 describe('live turn boundaries', () => {
-    test('a queued user message does not collapse the previous turn', () => {
+    test('a pending user prompt does not count as a later assistant response', () => {
         const turns = projectTurnRecords([user(), assistant('a', [tool('read', 'read')]), user('next')]).turns;
         expect(getTurnsWithLaterAssistant(turns).size).toBe(0);
     });
