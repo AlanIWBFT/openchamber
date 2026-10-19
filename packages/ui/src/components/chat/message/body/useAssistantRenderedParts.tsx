@@ -79,9 +79,9 @@ export const useAssistantRenderedParts = ({
         const answerRendered: React.ReactNode[] = [];
         const activityRendered: React.ReactNode[] = [];
         let rendered = answerRendered;
-        const splitLiveActivity = liveFinalActivity?.messageId === messageId && hasStopFinish;
+        const splitLiveActivity = liveFinalActivity?.messageId === messageId;
         let hasRenderedAnswerText = false;
-        const isFinalLiveAnswer = isLastAssistantInTurn && hasStopFinish;
+        const isFinalLiveAnswer = splitLiveActivity || (isLastAssistantInTurn && hasStopFinish);
         const hasEarlierVisibleActivity = isFinalLiveAnswer && Boolean(turnGroupingContext?.activityParts?.some((activity) => {
             if (activity.messageId === messageId) {
                 return false;
