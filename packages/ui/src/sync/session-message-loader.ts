@@ -1,6 +1,7 @@
 import type { Message, Part, StoredMessage } from "@/lib/opencode/model"
 import type { MessagePage, PendingInboxMessage } from "@/lib/opencode/client"
 import { olderMessagesCursor } from "@/lib/opencode/messageCursor"
+import { runningCommandParts } from "@/lib/opencode/exec-metadata"
 import type { ChildStoreManager, DirectoryStore } from "./child-store"
 import { retry } from "./retry"
 import { mergeOptimisticPage, type OptimisticItem } from "./optimistic"
@@ -415,8 +416,19 @@ export class SessionMessageLoader {
     // A pending revert hides the transcript's tail behind its marker; a cut
     // counted over the hidden turns could drop the marker and show them again.
     if (current.session.find((session) => session.id === normalized.sessionID)?.revert) return false
-    const cut = findHistoryTrimIndex(messages)
-    if (cut < 0 || entry.optimistic.has(messages[cut].id)) return false
+    let cut = findHistoryTrimIndex(messages)
+    if (cut < 0) return false
+    // A command's root metadata owns its live card even across later turns.
+    // Keep the earliest such turn and its continuous tail, including context.
+    let turnStart = 0
+    for (let index = 0; index < cut; index += 1) {
+      if (isUserMessage(messages[index])) turnStart = index
+      if (!(current.part[messages[index].id] ?? []).some((part) => part.type === "tool" && runningCommandParts(part).length > 0)) continue
+      cut = turnStart
+      while (cut > 0 && messages[cut - 1].role === "synthetic") cut -= 1
+      break
+    }
+    if (cut <= 0 || messages[cut].seq === undefined || entry.optimistic.has(messages[cut].id)) return false
     const part = { ...current.part }
     for (let index = 0; index < cut; index += 1) delete part[messages[index].id]
     store.setState({ message: { ...current.message, [normalized.sessionID]: messages.slice(cut) }, part })

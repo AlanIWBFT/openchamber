@@ -14,3 +14,6 @@ export const LiveFinalActivityContext = createContext<{
 
 /** Calls whose page the final answer draws, so their own row stays out of the fold. */
 export const LiveTurnHoistedPagesContext = createContext<ReadonlySet<string> | null>(null);
+
+/** Commands shown outside the fold, omitted from their original root or Script position. */
+export const LiveTurnHoistedCommandsContext = createContext<ReadonlySet<string> | null>(null);

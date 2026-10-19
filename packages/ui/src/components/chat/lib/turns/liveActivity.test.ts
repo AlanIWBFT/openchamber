@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { AssistantMessage, Part, ToolPart, ToolStateCompleted } from '@/lib/opencode/model';
 import { attachSyntheticContext } from '../attachSyntheticContext';
-import { getLiveFinalMessage, getTurnsWithLaterAssistant, hasLiveActivity, projectLiveActivityPreview } from './liveActivity';
+import { getLiveFinalMessage, getRunningCommandMessages, getShownPages, getTurnsWithLaterAssistant, hasLiveActivity, projectLiveActivityPreview, splitLiveActivityAtPages } from './liveActivity';
 import { projectTurnRecords } from './projectTurnRecords';
 import { summarizeLiveActivity } from './liveActivitySummary';
 import type { ChatMessageEntry } from './types';
@@ -168,6 +168,51 @@ describe('live turn boundaries', () => {
 });
 
 describe('live collapsed preview', () => {
+    test('workflow cards keep page boundaries and do not spend collapsed preview rows', () => {
+        const workflow = tool('workflow', 'openchamber_workflow');
+        workflow.state = { status: 'completed', input: {}, metadata: {}, time: { start: 1, end: 2 },
+            output: JSON.stringify({ ok: true, action: 'workflow.run', data: { runId: 'wf_test' } }) };
+        const before = tool('before', 'exec_command', { metadata: { processRunning: true } });
+        const after = tool('after', 'read');
+        const record = projectTurnRecords([user(), assistant('step', [before, workflow, text('After the plan'), after])]).turns[0];
+        expect(getShownPages(record.assistantMessages)).toEqual([workflow]);
+        const segments = splitLiveActivityAtPages(record);
+        expect(segments).toHaveLength(2);
+        expect(segments[0].page).toBe(workflow);
+        expect(segments[0].messages.flatMap((message) => message.parts)).toEqual([before]);
+        expect(segments[1].messages.flatMap((message) => message.parts)).toEqual([text('After the plan'), after]);
+        const preview = projectLiveActivityPreview(record, true);
+        expect(preview.messages.flatMap((message) => message.parts)).toEqual([before, after]);
+        expect(preview.pinnedText?.part.text).toBe('After the plan');
+        expect(getRunningCommandMessages(record.assistantMessages)[0].parts).toEqual([before]);
+    });
+    test('running command projection honors terminal metadata and preserves Script child identity', () => {
+        const root = tool('root', 'exec_command', { metadata: { processRunning: true } });
+        const source = assistant('a', [
+            root,
+            tool('exited', 'exec_command', { status: 'running', metadata: { processRunning: false } }),
+            tool('failed', 'exec_command', { status: 'error', metadata: { processRunning: true } }),
+            tool('exec-error', 'exec_command', { metadata: { processRunning: true, execError: 'failed' } }),
+            tool('follow-up', 'poll_exec', { metadata: { processRunning: true } }),
+            tool('starting', 'exec_command', { status: 'running' }),
+            tool('script', 'execute', { metadata: { toolCalls: [
+                { id: 'child', name: 'exec_command', tool: 'functions.exec_command', status: 'completed',
+                    input: { cmd: 'child-command' }, metadata: { processRunning: true }, time: { start: 1, end: 2 } },
+                { id: 'ended', name: 'exec_command', tool: 'functions.exec_command', status: 'completed',
+                    metadata: { processRunning: false }, time: { start: 1, end: 2 } },
+            ] } }),
+        ]);
+        const result = getRunningCommandMessages([source]);
+        expect(result).toHaveLength(1);
+        expect(result[0].info).toBe(source.info);
+        expect(result[0].parts.map((part) => part.id)).toEqual(['root', 'starting', 'script:child:child']);
+        expect(result[0].parts[0]).toBe(root);
+        expect(source.parts).toHaveLength(7);
+        expect(getRunningCommandMessages([source], new Set(['script']))[0].parts.map((part) => part.id)).toEqual(['script:child:child']);
+        expect(getRunningCommandMessages([source], new Set(['root']))[0].parts).toEqual([root]);
+        expect(getRunningCommandMessages([source], new Set())).toEqual([]);
+    });
+
     test('successful pages do not spend rows, while pending and failed pages stay in the preview', () => {
         const commands = Array.from({ length: 6 }, (_, index) => tool(`cmd-${index}`, 'shell'));
         const input = { request: { action: 'render.page', html: '<p>Page</p>', title: 'Page' } };

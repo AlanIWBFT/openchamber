@@ -365,7 +365,20 @@ only the latest 7 top-level rows, counting a cross-message Exploration as one.
 The latest nonempty assistant text is pinned separately below the preview,
 excluded from its row budget, and replaced by newer prose. Original turn
 grouping remains authoritative even when text is pinned. A muted `+N more...`
-control below the header counts earlier rows and opens them all. Hovering the
+control below the header counts earlier rows and opens them all. Running exec
+commands stay in place when their Activity row is visible. Only commands whose
+rows the fold would hide are shown below the control, outside the seven-row
+limit. Script children follow their parent row's visibility and keep their
+ordinary nested presentation while that row is visible. There are no duplicate
+rows in the preview or expanded Scripts. The count excludes commands now shown
+outside the preview; when no rows remain hidden, the control disappears.
+Collapsed settled turns hide all Activity rows, so they show all running commands
+below the summary. Commands leave this list when their process exits; expanded turns keep their original
+row order. Message projections share one tool-expansion snapshot in
+`ChatMessage`, so opening Activity or moving a command back after it exits
+preserves its open output. Subscribers are scoped to the owning message; the
+existing 4,000-message expansion cache retains mounted owners and trims
+unmounted entries on writes and unsubscribe. Hovering the
 running header shows the current view (Latest activity or All activity); touch
 activation shows it for 1.2 seconds. When the cut moves down, `useActivityRowGlide`
 replays the jump as a 220 ms glide of the rows (FLIP, `transform` only, skipped
@@ -374,11 +387,16 @@ when the reader opens it.
 
 A long turn, in either mode, mounts only a window of its rows
 (`lib/turns/turnMessageWindow.ts`, `components/TurnMessageWindow.tsx`): past
-60 rows its newest 40, with the rest behind spacers that mount 40 at a time as
-they near the viewport. It counts rows with the same rule as the fold, and the
-head may end inside a message, whose first rows `MessageBody` skips through
-`ActivityRowSkipContext`. Counting messages left a turn of a few steps with
-dozens of parallel calls each fully mounted.
+60 rows its newest 40 while running, with the rest behind spacers that mount
+40 at a time as they near the viewport. Opening a settled fold holds the clicked
+header in place and starts with its oldest 40 rows below it. Resuming work clears
+the hidden tail so new activity stays visible. Page-separated segments keep their
+own windows. It counts an entire cross-message Exploration group as one row at
+its anchor, excluding separately shown pages and commands. The head may end inside
+a message; `ActivityRowSkipContext` gives `MessageBody` the exact skipped anchor
+and part IDs, so a group is either present in full or absent. The seven-row live
+preview bypasses this window without changing its saved range. Counting messages
+left a turn of a few steps with dozens of parallel calls each fully mounted.
 
 A final assistant message with `finish: stop`
 collapses the earlier messages and the final message's non-text parts, keeping
@@ -397,6 +415,11 @@ its tail; idle or completed turns close fully; resuming restores the preview.
 Opening a running turn mounts its newest messages with no hidden tail. Settled
 turns choose the head or tail window from the reader's position; resuming an
 expanded turn clears the tail limit while preserving its mounted head.
+The seven-row collapsed preview bypasses `TurnMessageWindow`'s history offsets
+and spacer observers without overwriting the saved full-history range. Shared
+message rows keep their mounted React instances across this switch. A preview
+mounted before the first expansion does not initialize a history range from
+its trimmed length.
 The disclosure uses a finite 180ms height transition,
 respects reduced motion, and delegates end pinning to the existing timeline.
 It never calls scroll-to-bottom. Collapsed history does not mount its hidden
