@@ -402,8 +402,16 @@ A final assistant message with `finish: stop`
 collapses the earlier messages and the final message's non-text parts, keeping
 the answer and its existing footer outside. Intermediate-text summary fallback
 and compaction summaries never become final answers. An older turn without a
-final answer collapses once a later visible turn has an assistant response;
-a queued user message alone is not enough. Hidden user continuations retain
+final answer collapses as soon as a later visible turn opens, including an
+optimistic user prompt before the next assistant message arrives,
+keeping the text of its latest assistant message containing prose outside the
+fold through the final-answer disclosure. That message's tools and reasoning
+stay at their original positions among the activity rows. Its finish state is
+unchanged. Removing a failed optimistic prompt restores the previous live
+preview; a prompt still in the composer's queue opens no timeline turn. The row
+owning the active streaming message keeps reading live parts even after a new
+prompt moves the tail, until the stream hands off and its base snapshot catches up.
+Hidden user continuations retain
 the visible-turn mapping established by `projectTurnRecords`. A notice the
 timeline skips that separates a `stop` answer from the next assistant message
 opens a turn there (`createNoticeTurnSplitter`), so each answer keeps its own

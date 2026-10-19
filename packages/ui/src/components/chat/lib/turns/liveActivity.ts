@@ -7,7 +7,7 @@ import { shouldHideExecFollowUp } from '../../message/unifiedExec';
 import type { ChatMessageEntry, TurnRecord } from './types';
 import { isToolRowShown, LIVE_ACTIVITY_VISIBLE_ROWS } from './activityRows';
 
-/** A queued user message alone does not retire the previous turn. */
+/** Turns followed by an assistant response; a pending prompt alone does not qualify. */
 export function getTurnsWithLaterAssistant(turns: readonly TurnRecord[]): Set<string> {
     const retired = new Set<string>();
     let hasLaterAssistant = false;
@@ -19,12 +19,22 @@ export function getTurnsWithLaterAssistant(turns: readonly TurnRecord[]): Set<st
     return retired;
 }
 
-export function getLiveFinalMessage(messages: readonly ChatMessageEntry[]): ChatMessageEntry | undefined {
+export function getLiveFinalMessage(messages: readonly ChatMessageEntry[], hasLaterTurn = false): ChatMessageEntry | undefined {
     // Do not use projectTurnSummary's intermediate-text fallback. Compaction,
     // synthetic prompts, skill and shell records are their own message roles
     // in v2 and can trail the final answer, so the lookup skips them instead
     // of reading the last record.
     const last = getLastConversationRecord(messages);
+    // A following turn moves this activity into history immediately, including
+    // an optimistic prompt before the assistant responds. Preserve its prose
+    // without changing finish; removing the prompt restores the live preview.
+    if (hasLaterTurn) {
+        for (let index = messages.length - 1; index >= 0; index--) {
+            const message = messages[index];
+            if (message.info.role === 'assistant' && message.parts.some((part) => part.type === 'text' && part.text.trim().length > 0)) return message;
+        }
+        return undefined;
+    }
     return last?.info.role === 'assistant' && last.info.finish === 'stop'
         && last.parts.some((part) => part.type === 'text' && !isInvisibleText(part.text))
         ? last : undefined;
