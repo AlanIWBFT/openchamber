@@ -51,21 +51,45 @@ const ToolOutputDialog = lazyWithChunkRecovery(() => import('./message/ToolOutpu
 
 const EXPANDED_TOOLS_CACHE_MAX = 4000;
 const expandedToolsStateCache = new Map<string, Set<string>>();
+const expandedToolsListeners = new Map<string, Set<() => void>>();
+const EMPTY_EXPANDED_TOOLS = new Set<string>();
 
 const readExpandedToolsCache = (messageId: string): Set<string> => {
-    const cached = expandedToolsStateCache.get(messageId);
-    return cached ? new Set(cached) : new Set();
+    return expandedToolsStateCache.get(messageId) ?? EMPTY_EXPANDED_TOOLS;
 };
 
-const writeExpandedToolsCache = (messageId: string, value: Set<string>): void => {
-    if (expandedToolsStateCache.size >= EXPANDED_TOOLS_CACHE_MAX && !expandedToolsStateCache.has(messageId)) {
-        const oldest = expandedToolsStateCache.keys().next().value;
-        if (typeof oldest === 'string') {
-            expandedToolsStateCache.delete(oldest);
-        }
+const trimExpandedToolsCache = (): void => {
+    for (const id of expandedToolsStateCache.keys()) {
+        if (expandedToolsStateCache.size <= EXPANDED_TOOLS_CACHE_MAX) break;
+        if (!expandedToolsListeners.has(id)) expandedToolsStateCache.delete(id);
     }
-    expandedToolsStateCache.set(messageId, new Set(value));
 };
+
+// A message can have rows in both the Activity preview and its running-command
+// list. Both projections read and update the same expansion snapshot.
+function useExpandedTools(messageId: string) {
+    const subscribe = React.useCallback((listener: () => void) => {
+        const listeners = expandedToolsListeners.get(messageId) ?? new Set<() => void>();
+        listeners.add(listener);
+        expandedToolsListeners.set(messageId, listeners);
+        return () => {
+            listeners.delete(listener);
+            if (!listeners.size) expandedToolsListeners.delete(messageId);
+            trimExpandedToolsCache();
+        };
+    }, [messageId]);
+    const snapshot = React.useCallback(() => readExpandedToolsCache(messageId), [messageId]);
+    const expanded = React.useSyncExternalStore(subscribe, snapshot, snapshot);
+    const toggle = React.useCallback((toolId: string) => {
+        const next = new Set(readExpandedToolsCache(messageId));
+        if (next.has(toolId)) next.delete(toolId);
+        else next.add(toolId);
+        expandedToolsStateCache.set(messageId, next);
+        trimExpandedToolsCache();
+        for (const listener of expandedToolsListeners.get(messageId) ?? []) listener();
+    }, [messageId]);
+    return [expanded, toggle] as const;
+}
 
 function useStickyDisplayValue<T>(value: T | null | undefined): T | null | undefined {
     const [stickyValue, setStickyValue] = React.useState<T | null | undefined>(value);
@@ -149,16 +173,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
     const [copiedMessage, setCopiedMessage] = React.useState(false);
     const handleCopyLink = useCopyMessageLink(message.info.sessionID, message.info.id);
-    const [expandedTools, setExpandedTools] = React.useState<Set<string>>(() => readExpandedToolsCache(message.info.id));
+    const [expandedTools, handleToggleTool] = useExpandedTools(message.info.id);
     const [popupContent, setPopupContent] = React.useState<ToolPopupContent>({
         open: false,
         title: '',
         content: '',
     });
-
-    React.useEffect(() => {
-        setExpandedTools(readExpandedToolsCache(message.info.id));
-    }, [message.info.id]);
 
 
 
@@ -568,19 +588,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         if (!sessionId || !message.info.id) return;
         useSessionUIStore.getState().forkFromMessage(sessionId, message.info.id);
     }, [sessionId, message.info.id]);
-
-    const handleToggleTool = React.useCallback((toolId: string) => {
-        setExpandedTools((prev) => {
-            const next = new Set(prev);
-            if (next.has(toolId)) {
-                next.delete(toolId);
-            } else {
-                next.add(toolId);
-            }
-            writeExpandedToolsCache(message.info.id, next);
-            return next;
-        });
-    }, [message.info.id]);
 
     const hasEverStreamedRef = React.useRef(false);
 

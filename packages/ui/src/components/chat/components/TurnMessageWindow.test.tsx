@@ -74,9 +74,9 @@ describe('turn message window', () => {
         restore();
     });
 
-    const render = (store: TurnMessageWindowStore | null, messages: ChatMessageEntry[]) => act(async () => root.render(
+    const render = (store: TurnMessageWindowStore | null, messages: ChatMessageEntry[], windowed = true) => act(async () => root.render(
         <TurnMessageWindowContext.Provider value={store}>
-            <TurnMessageWindow turnId="turn" messages={messages} renderMessage={renderMessage} />
+            <TurnMessageWindow turnId="turn" messages={messages} renderMessage={renderMessage} windowed={windowed} />
         </TurnMessageWindowContext.Provider>,
     ));
     const mountedIds = () => Array.from(container.querySelectorAll('[data-message-id]'), (node) => node.getAttribute('data-message-id'));
@@ -108,6 +108,36 @@ describe('turn message window', () => {
         await render(store, steps(110));
         expect(mountedIds()).toHaveLength(TURN_ROW_WINDOW_SIZE + 10);
         expect(mountedIds().at(-1)).toBe('step-109');
+    });
+
+    test('a projected preview bypasses head and tail limits without changing the history window or remounting shared rows', async () => {
+        const store = createTurnMessageWindowStore();
+        const messages = steps(100);
+        await render(store, messages);
+        const lastRow = container.querySelector('[data-message-id="step-99"]');
+        await render(store, messages.slice(-7), false);
+        expect(mountedIds()).toEqual(messages.slice(-7).map((message) => message.info.id));
+        expect(spacer()).toBeNull();
+        expect(tailSpacer()).toBeNull();
+        expect(lastRow?.isConnected).toBe(true);
+        expect(store.range('turn')).toEqual({ hiddenHead: messages.length - TURN_ROW_WINDOW_SIZE, hiddenTail: 0 });
+        await act(async () => store.setRange('turn', { hiddenHead: 5, hiddenTail: 5 }));
+        expect(mountedIds()).toHaveLength(7);
+        expect(spacer()).toBeNull();
+        expect(tailSpacer()).toBeNull();
+        await render(store, messages);
+        expect(mountedIds()).toEqual(messages.slice(5, -5).map((message) => message.info.id));
+        expect(store.range('turn')).toEqual({ hiddenHead: 5, hiddenTail: 5 });
+    });
+
+    test('starting with a preview does not initialize the full-history range from the preview length', async () => {
+        const store = createTurnMessageWindowStore();
+        const messages = steps(100);
+        await render(store, messages.slice(-7), false);
+        expect(store.range('turn')).toBeUndefined();
+        await render(store, messages);
+        expect(store.range('turn')).toEqual({ hiddenHead: messages.length - TURN_ROW_WINDOW_SIZE, hiddenTail: 0 });
+        expect(mountedIds()).toEqual(messages.slice(-TURN_ROW_WINDOW_SIZE).map((message) => message.info.id));
     });
 
     test('a remounted turn keeps the messages the reader already revealed', async () => {

@@ -1,8 +1,9 @@
 import React from 'react';
 
 import { useUIStore } from '@/stores/useUIStore';
-import type { ChatMessageEntry } from '../lib/turns/types';
-import { ActivityRowSkipContext, activityRowParts } from '../lib/turns/activityRows';
+import type { ChatMessageEntry, TurnExplorationGroup } from '../lib/turns/types';
+import { ActivityRowSkipContext, activityRowParts, createActivityRowPredicate } from '../lib/turns/activityRows';
+import { LiveTurnHoistedPagesContext, LiveTurnHoistedCommandsContext } from './liveActivityContext';
 import {
     TURN_ROW_REVEAL_CHUNK,
     TurnMessageWindowContext,
@@ -17,6 +18,7 @@ import { CHAT_SCROLLER_SELECTOR, holdAnchor } from '../lib/scroll/holdAnchor';
 // Stands in for a not yet mounted row until it mounts and measures.
 const ESTIMATED_ROW_HEIGHT_PX = 40;
 const subscribeNowhere = () => () => {};
+const NO_GROUPS: readonly TurnExplorationGroup[] = [];
 
 /**
  * Mounts the next batch once a spacer comes within a viewport of the
@@ -47,9 +49,12 @@ const useSpacerReveal = (
 };
 
 interface TurnMessageWindowProps {
+    explorationGroups?: readonly TurnExplorationGroup[];
     turnId: string;
     messages: ChatMessageEntry[];
     renderMessage: (message: ChatMessageEntry) => React.ReactNode;
+    /** Already-projected previews mount in full without reading or changing the history window. */
+    windowed?: boolean;
 }
 
 /**
@@ -58,21 +63,27 @@ interface TurnMessageWindowProps {
  * turnMessageWindow). Mounting a batch above the reader keeps the message
  * they were looking at still.
  */
-export function TurnMessageWindow({ turnId, messages, renderMessage }: TurnMessageWindowProps) {
-    const store = React.useContext(TurnMessageWindowContext);
+export function TurnMessageWindow({ turnId, messages, renderMessage, windowed = true, explorationGroups = NO_GROUPS }: TurnMessageWindowProps) {
+    const windowStore = React.useContext(TurnMessageWindowContext);
+    const store = windowed ? windowStore : null;
     const outerRowSkip = React.useContext(ActivityRowSkipContext);
     const showReasoningTraces = useUIStore((state) => state.showReasoningTraces);
+    const hoistedPages = React.useContext(LiveTurnHoistedPagesContext);
+    const hoistedCommands = React.useContext(LiveTurnHoistedCommandsContext);
+    const rowParts = React.useMemo(() => {
+        const isRow = createActivityRowPredicate(explorationGroups, new Set([...(hoistedPages ?? []), ...(hoistedCommands ?? [])]));
+        return messages.map((message) => activityRowParts(message.parts, showReasoningTraces, isRow));
+    }, [messages, showReasoningTraces, explorationGroups, hoistedPages, hoistedCommands]);
     // Rows a folded live activity already skips (its trim cuts into its first
     // shown message) are not rows of this window.
     const rowsPerMessage = React.useMemo(
-        () => messages.map((message) => {
-            const rows = activityRowParts(message.parts, showReasoningTraces).length;
+        () => messages.map((message, index) => {
+            const rows = rowParts[index].length;
             return outerRowSkip?.messageId === message.info.id ? Math.max(0, rows - outerRowSkip.rows) : rows;
         }),
-        [messages, outerRowSkip, showReasoningTraces],
+        [messages, outerRowSkip, rowParts],
     );
-    const [initialRange] = React.useState(() => store?.range(turnId)
-        ?? initialMessageWindow(rowsPerMessage.reduce((total, rows) => total + rows, 0)));
+    const initialRange = React.useMemo(() => initialMessageWindow(rowsPerMessage.reduce((total, rows) => total + rows, 0)), [rowsPerMessage]);
     const storedRange = React.useSyncExternalStore(
         store?.subscribe ?? subscribeNowhere,
         () => store?.range(turnId),
@@ -136,8 +147,12 @@ export function TurnMessageWindow({ turnId, messages, renderMessage }: TurnMessa
     const cutMessageId = mounted.headSkipRows > 0 ? visibleMessages[0]?.info.id : undefined;
     const outerSkipOfCut = outerRowSkip && outerRowSkip.messageId === cutMessageId ? outerRowSkip.rows : 0;
     const headRowSkip = React.useMemo(
-        () => (cutMessageId ? { messageId: cutMessageId, rows: outerSkipOfCut + mounted.headSkipRows } : null),
-        [cutMessageId, mounted.headSkipRows, outerSkipOfCut],
+        () => (cutMessageId ? {
+            messageId: cutMessageId,
+            rows: outerSkipOfCut + mounted.headSkipRows,
+            partIds: new Set(rowParts[mounted.headMessages].slice(0, outerSkipOfCut + mounted.headSkipRows).map((part) => part.id)),
+        } : null),
+        [cutMessageId, mounted.headMessages, mounted.headSkipRows, outerSkipOfCut, rowParts],
     );
     return (
         <>

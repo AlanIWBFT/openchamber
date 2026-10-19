@@ -3,7 +3,7 @@ import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
 import type { ChatMessageEntry, TurnRecord } from '../lib/turns/types';
-import { getLiveFinalMessage, getShownPages, projectLiveActivityPreview, splitLiveActivityAtPages } from '../lib/turns/liveActivity';
+import { getLiveFinalMessage, getRunningCommandMessages, getShownPages, projectLiveActivityPreview, splitLiveActivityAtPages } from '../lib/turns/liveActivity';
 import type { ToolPart } from '@/lib/opencode/model';
 import { summarizeLiveActivity } from '../lib/turns/liveActivitySummary';
 import AssistantTextPart from '../message/parts/AssistantTextPart';
@@ -11,12 +11,12 @@ import type { StreamPhase } from '../message/types';
 import { cn } from '@/lib/utils';
 import { TurnMessageWindow } from './TurnMessageWindow';
 import { LiveActivityCollapse } from './LiveActivityCollapse';
-import { LiveFinalActivityContext, LiveTurnHoistedPagesContext } from './liveActivityContext';
+import { LiveFinalActivityContext, LiveTurnHoistedCommandsContext, LiveTurnHoistedPagesContext } from './liveActivityContext';
 import { ShownToolCard } from '../message/parts/ShownToolCard';
 import { useActivityRowGlide } from './useActivityRowGlide';
 import { TurnMessageWindowContext, initialMessageWindow, openedFoldMessageWindow } from '../lib/turns/turnMessageWindow';
 import { dispatchRowExpand } from '../lib/scroll/timelineScrollIntent';
-import { activityRowParts } from '../lib/turns/activityRows';
+import { activityRowParts, createActivityRowPredicate } from '../lib/turns/activityRows';
 
 interface LiveTurnActivityProps {
     turn: TurnRecord;
@@ -69,6 +69,21 @@ function ActivitySegment({ turn, expanded, isWorking, streamingMessageId, stream
     const preview = React.useMemo(() => !expanded
         ? projectLiveActivityPreview({ ...turn, assistantMessages: activityMessages }, showReasoning) : null,
     [turn, activityMessages, expanded, showReasoning]);
+    const commandRows = React.useMemo(() => {
+        if (expanded || (isRunning && !preview?.hiddenCount)) return null;
+        const messages = getRunningCommandMessages(turn.assistantMessages, isRunning ? new Set(preview?.hiddenRowIds) : undefined);
+        if (!messages.length) return null;
+        const ids = new Set(messages.flatMap((message) => message.parts.map((part) => part.id)));
+        return {
+            messages, ids,
+            hiddenCount: preview?.hiddenRowIds.filter((id) => !ids.has(id)).length ?? 0,
+            previewMessages: preview?.messages.flatMap((message) => {
+                const parts = message.parts.filter((part) => !ids.has(part.id));
+                return parts.length ? [parts.length === message.parts.length ? message : { ...message, parts }] : [];
+            }),
+        };
+    }, [expanded, isRunning, preview, turn.assistantMessages]);
+    const hiddenCount = commandRows?.hiddenCount ?? preview?.hiddenCount ?? 0;
     const rowsRef = React.useRef<HTMLDivElement>(null);
     useActivityRowGlide(rowsRef, preview?.hiddenCount ?? 0, isRunning && !expanded);
     const previouslySettled = React.useRef(settled);
@@ -163,12 +178,13 @@ function ActivitySegment({ turn, expanded, isWorking, streamingMessageId, stream
         if (!expanded) {
             if (!isRunning) dispatchRowExpand(event.currentTarget);
             if (windowStore) {
-                const rowCount = activityMessages.reduce((total, message) => total + activityRowParts(message.parts, showReasoning).length, 0);
+                const isRow = createActivityRowPredicate(turn.explorationGroups, hoistedPages);
+                const rowCount = activityMessages.reduce((total, message) => total + activityRowParts(message.parts, showReasoning, isRow).length, 0);
                 windowStore.setRange(turn.turnId, isRunning ? initialMessageWindow(rowCount) : openedFoldMessageWindow(rowCount));
             }
         }
         onToggle();
-    }, [activityMessages, expanded, isRunning, onToggle, showReasoning, turn.turnId, windowStore]);
+    }, [activityMessages, expanded, isRunning, onToggle, showReasoning, turn.turnId, turn.explorationGroups, hoistedPages, windowStore]);
     const headerClass = 'group/tool w-full justify-start normal-case !ps-px !pe-2 text-[var(--tools-description)] hover:!bg-transparent active:!bg-transparent';
     return (
         <LiveTurnHoistedPagesContext.Provider value={hoistedPages}>
@@ -181,35 +197,43 @@ function ActivitySegment({ turn, expanded, isWorking, streamingMessageId, stream
                         </Button>
                     </div>
                 </div>
-                {isRunning && preview && preview.hiddenCount > 0 ? (
+                {isRunning && hiddenCount > 0 ? (
                     <div className="chat-message-column">
                         <Button variant="ghost" size="xs" onClick={handleToggle} onPointerDown={handlePointerDown} aria-expanded={false} aria-controls={contentId}
                             data-live-activity-more="true"
                             className="typography-meta font-normal normal-case text-muted-foreground/45 hover:text-muted-foreground/65 hover:bg-transparent">
-                            {t('chat.liveActivity.more', { count: preview.hiddenCount })}
+                            {t('chat.liveActivity.more', { count: hiddenCount })}
                         </Button>
                     </div>
                 ) : null}
-                <LiveActivityCollapse expanded={isRunning || expanded} id={contentId}>
-                    <div ref={rowsRef}>
-                        <TurnMessageWindow turnId={turn.turnId} messages={preview?.messages ?? activityMessages} renderMessage={renderMessage} />
-                    </div>
-                </LiveActivityCollapse>
-                {isRunning && preview?.pinnedText ? (
-                    <div className="chat-message-column" data-pinned-activity-text={preview.pinnedText.part.id}>
-                        <div aria-hidden="true" className="mt-1.5 mb-3 h-px w-full bg-border" />
-                        <AssistantTextPart part={preview.pinnedText.part} messageId={preview.pinnedText.message.info.id}
-                            streamPhase={streamingMessageId === preview.pinnedText.message.info.id ? streamPhase : 'completed'} />
+                {commandRows && commandRows.messages.length > 0 ? (
+                    <div data-live-activity-running-commands="true">
+                        {commandRows.messages.map(renderMessage)}
                     </div>
                 ) : null}
-                {!finalMessage && pages.length > 0 ? (
-                    <div className="chat-message-column">
-                        {pages.map((part) => <ShownToolCard key={part.id} part={part} />)}
-                    </div>
-                ) : null}
-                <LiveFinalActivityContext.Provider value={finalContext}>
-                    {finalMessage ? renderMessage(finalMessage) : null}
-                </LiveFinalActivityContext.Provider>
+                <LiveTurnHoistedCommandsContext.Provider value={commandRows?.ids ?? null}>
+                    <LiveActivityCollapse expanded={isRunning || expanded} id={contentId}>
+                        <div ref={rowsRef}>
+                            <TurnMessageWindow turnId={turn.turnId} windowed={preview === null} explorationGroups={turn.explorationGroups}
+                                messages={commandRows?.previewMessages ?? preview?.messages ?? activityMessages} renderMessage={renderMessage} />
+                        </div>
+                    </LiveActivityCollapse>
+                    {isRunning && preview?.pinnedText ? (
+                        <div className="chat-message-column" data-pinned-activity-text={preview.pinnedText.part.id}>
+                            <div aria-hidden="true" className="mt-1.5 mb-3 h-px w-full bg-border" />
+                            <AssistantTextPart part={preview.pinnedText.part} messageId={preview.pinnedText.message.info.id}
+                                streamPhase={streamingMessageId === preview.pinnedText.message.info.id ? streamPhase : 'completed'} />
+                        </div>
+                    ) : null}
+                    {!finalMessage && pages.length > 0 ? (
+                        <div className="chat-message-column">
+                            {pages.map((part) => <ShownToolCard key={part.id} part={part} />)}
+                        </div>
+                    ) : null}
+                    <LiveFinalActivityContext.Provider value={finalContext}>
+                        {finalMessage ? renderMessage(finalMessage) : null}
+                    </LiveFinalActivityContext.Provider>
+                </LiveTurnHoistedCommandsContext.Provider>
             </div>
         </LiveTurnHoistedPagesContext.Provider>
     );
