@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { MessagePage } from "@/lib/opencode/client"
 import { projectInboxMessage, type InboxMessageItem } from "@/lib/opencode/projection"
-import type { Message, Part, Session, TextPart, UserMessage } from "@/lib/opencode/model"
+import type { Session, TextPart, ToolPart, UserMessage } from "@/lib/opencode/model"
 import { recordDirectoryRecoveryEvent } from "./directory-recovery-snapshots"
 import { ChildStoreManager } from "./child-store"
 import { SessionMessageLoader, type SessionMessagePageSource } from "./session-message-loader"
@@ -1610,6 +1610,36 @@ describe("SessionMessageLoader before OpenCode is ready", () => {
 
       expect(ids()).toHaveLength(20)
       expect(loader.getSnapshot(target).complete).toBe(true)
+      loader.dispose()
+      childStores.disposeAll()
+    })
+
+    for (const script of [false, true]) test(`retains the earliest live command turn and context, then trims after exit (Script=${script})`, async () => {
+      const records = conversation("session-a", 25)
+      records.splice(4, 0, createRecord("session-a", "zzz_context", 9, 1, "synthetic"))
+      const { childStores, loader } = createLoader(async () => response(records))
+      const target = { directory: "/repo", sessionID: "session-a" }
+      await loader.ensure(target, { reason: "navigation" })
+      const store = childStores.getChild(target.directory)!
+      const command = (messageID: string, running: boolean): ToolPart => ({
+        id: `call_${messageID}`, callID: `call_${messageID}`, messageID, sessionID: target.sessionID, type: "tool",
+        tool: script ? "execute" : "exec_command",
+        state: { status: "completed", input: {}, output: "", time: { start: 1, end: 2 }, metadata: script
+          ? { toolCalls: [{ id: "child", tool: "exec_command", status: "completed", input: {}, time: { start: 1, end: 2 }, metadata: { processRunning: running } }] }
+          : { processRunning: running } },
+      })
+      const setCommand = (messageID: string, running: boolean) => store.setState({ part: { ...store.getState().part, [messageID]: [command(messageID, running)] } })
+      setCommand("msg_0002_a", true)
+      setCommand("msg_0005_a", true)
+      expect(loader.trimHistory(target)).toBe(true)
+      expect(store.getState().message[target.sessionID].slice(0, 2).map((message) => message.id)).toEqual(["zzz_context", "msg_0002_u"])
+      expect(loader.getSnapshot(target).cursor).toBe(olderMessagesCursor("zzz_context"))
+      setCommand("msg_0002_a", false)
+      expect(loader.trimHistory(target)).toBe(true)
+      expect(store.getState().message[target.sessionID][0].id).toBe("msg_0005_u")
+      setCommand("msg_0005_a", false)
+      expect(loader.trimHistory(target)).toBe(true)
+      expect(store.getState().message[target.sessionID][0].id).toBe("msg_0015_u")
       loader.dispose()
       childStores.disposeAll()
     })

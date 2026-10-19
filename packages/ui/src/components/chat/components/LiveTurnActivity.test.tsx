@@ -64,6 +64,7 @@ const sdk = OpenCode.make({ baseUrl: 'http://localhost', fetch: async () => new 
 // trigger, so the changed-file toggle is the one that opens no popup.
 const changedFilesToggle = () => document.querySelector<HTMLButtonElement>('[data-fixture-message="final"] button[aria-expanded]:not([aria-haspopup])');
 let MessageBody: typeof import('../message/MessageBody').default;
+let ChatMessage: typeof import('../ChatMessage').default;
 
 function assistant(id: string, parts: Part[], finish?: AssistantMessage['finish']): ChatMessageEntry {
     const info: AssistantMessage = {
@@ -87,8 +88,9 @@ function turn(messages: ChatMessageEntry[]): TurnRecord {
     }, ...messages]).turns[0];
 }
 
-function Harness({ record, retired = false, changedFiles, isLatestTurn = true, isWorking = true, showReasoning = true, defaultExpanded = false, onCopyMessage, onCopyTurn }: {
+function Harness({ record, realMessage = false, retired = false, changedFiles, isLatestTurn = true, isWorking = true, showReasoning = true, defaultExpanded = false, onCopyMessage, onCopyTurn }: {
     record: TurnRecord;
+    realMessage?: boolean;
     retired?: boolean;
     changedFiles?: TurnChangedFile[];
     isLatestTurn?: boolean;
@@ -101,7 +103,9 @@ function Harness({ record, retired = false, changedFiles, isLatestTurn = true, i
     const [expanded, setExpanded] = React.useState(defaultExpanded);
     const [segmentExpansion, setSegmentExpansion] = React.useState(new Map<string, boolean>());
     const [expandedTools, setExpandedTools] = React.useState(new Set<string>());
-    const renderMessage = (message: ChatMessageEntry) => (
+    const renderMessage = (message: ChatMessageEntry) => realMessage ? (
+        <ChatMessage key={message.info.id} message={message} assistantHeaderMessageId={record.assistantMessages[0]?.info.id} />
+    ) : (
         <div key={message.info.id} data-fixture-message={message.info.id}>
             <MessageBody
                 messageId={message.info.id} parts={message.parts} isUser={false}
@@ -160,7 +164,7 @@ describe('Activity with the real message body', () => {
             customElements: win.customElements,
             Node: win.Node, NodeList: win.NodeList, Element: win.Element, HTMLElement: win.HTMLElement, SVGElement: win.SVGElement,
             HTMLAnchorElement: win.HTMLAnchorElement,
-            MutationObserver: win.MutationObserver, ResizeObserver: win.ResizeObserver,
+            MutationObserver: win.MutationObserver, ResizeObserver: win.ResizeObserver, IntersectionObserver: win.IntersectionObserver,
             requestAnimationFrame: win.requestAnimationFrame.bind(win), cancelAnimationFrame: win.cancelAnimationFrame.bind(win),
             getComputedStyle: win.getComputedStyle.bind(win), IS_REACT_ACT_ENVIRONMENT: true,
         };
@@ -180,6 +184,7 @@ describe('Activity with the real message body', () => {
         useDirectoryStore.setState({ currentDirectory: '/project' });
         useI18nStore.getState().setLocale('en');
         MessageBody = (await import('../message/MessageBody')).default;
+        ChatMessage = (await import('../ChatMessage')).default;
     });
     afterEach(async () => {
         await act(async () => root.unmount());
@@ -244,7 +249,7 @@ describe('Activity with the real message body', () => {
 
     test('a settled fold still opens at its head, but resuming it reveals the live tail and keeps it through completion', async () => {
         const windowStore = createTurnMessageWindowStore();
-        const messages = Array.from({ length: 40 }, (_, index) => assistant(`step-${index}`, [text(`text-${index}`, `Step ${index}`)], 'tool-calls'));
+        const messages = Array.from({ length: 80 }, (_, index) => assistant(`step-${index}`, [text(`text-${index}`, `Step ${index}`)], 'tool-calls'));
         const final = assistant('final', [text('answer', 'First answer')], 'stop');
         const render = (record: TurnRecord) => (
             <TurnMessageWindowContext.Provider value={windowStore}><Harness record={record} /></TurnMessageWindowContext.Provider>
@@ -253,7 +258,7 @@ describe('Activity with the real message body', () => {
         const header = container.querySelector<HTMLButtonElement>('button[aria-controls]');
         await act(async () => header?.click());
         expect(container.querySelector('[data-fixture-message="step-0"]')).not.toBeNull();
-        expect(container.querySelector('[data-fixture-message="step-39"]')).toBeNull();
+        expect(container.querySelector('[data-fixture-message="step-79"]')).toBeNull();
         expect(container.querySelector('[data-turn-message-spacer="tail"]')).not.toBeNull();
         const resumed = assistant('resumed', [text('resumed-text', 'Resumed work')], 'tool-calls');
         await act(async () => root.render(render(turn([...messages, final, resumed]))));
@@ -263,6 +268,52 @@ describe('Activity with the real message body', () => {
         await act(async () => root.render(render(turn([...messages, final, resumed, assistant('done', [text('done-text', 'Done')], 'stop')]))));
         expect(container.querySelector('[data-fixture-message="resumed"]')).not.toBeNull();
         expect(container.querySelector('[data-turn-message-spacer="tail"]')).toBeNull();
+    });
+
+    test('folding a windowed long turn keeps the whole seven-row preview mounted as new commands arrive', async () => {
+        const windowStore = createTurnMessageWindowStore();
+        const command = (index: number) => assistant(`window-step-${index}`, [{
+            type: 'tool', tool: 'exec_command', id: `window-command-${index}`, callID: `window-command-${index}`,
+            sessionID: 'session', messageID: `window-step-${index}`,
+            state: { status: 'completed', input: { cmd: `window-command-${index};` }, output: '',
+                metadata: { processRunning: index >= 79, execDisplay: 'root' }, time: { start: 1, end: 2 } },
+        }], 'tool-calls');
+        const messages = Array.from({ length: 80 }, (_, index) => command(index));
+        const render = (entries: ChatMessageEntry[]) => (
+            <div data-scrollbar="chat" style={{ height: 240, overflow: 'auto' }}>
+                <TurnMessageWindowContext.Provider value={windowStore}>
+                    <Harness record={turn(entries)} defaultExpanded />
+                </TurnMessageWindowContext.Provider>
+            </div>
+        );
+        await act(async () => root.render(render(messages)));
+        expect(windowStore.range('user')).toEqual({ hiddenHead: 40, hiddenTail: 0 });
+        const runningRow = container.querySelector('[data-fixture-message="window-step-79"]');
+        expect(runningRow?.textContent).toContain('window-command-79;');
+        const toggle = container.querySelector<HTMLButtonElement>('button[aria-controls]');
+        await act(async () => toggle?.click());
+        expect(container.querySelector('[data-live-activity-more]')?.textContent).toBe('+73 more...');
+        expect(container.querySelector('[data-live-activity-running-commands]')).toBeNull();
+        expect(container.querySelector('[data-turn-message-spacer]')).toBeNull();
+        expect(container.querySelectorAll('[data-fixture-message]')).toHaveLength(7);
+        for (let index = 73; index < 80; index++) expect(container.textContent).toContain(`window-command-${index};`);
+        expect(runningRow?.isConnected).toBe(true);
+        expect(windowStore.range('user')).toEqual({ hiddenHead: 40, hiddenTail: 0 });
+        await act(async () => root.render(render([...messages, command(80)])));
+        expect(container.querySelector('[data-live-activity-more]')?.textContent).toBe('+74 more...');
+        expect(container.querySelectorAll('[data-fixture-message]')).toHaveLength(7);
+        expect(container.querySelector('[data-turn-message-spacer]')).toBeNull();
+        for (let index = 74; index < 81; index++) expect(container.textContent).toContain(`window-command-${index};`);
+        expect(runningRow?.isConnected).toBe(true);
+        await act(async () => toggle?.click());
+        expect(windowStore.range('user')).toEqual({ hiddenHead: 41, hiddenTail: 0 });
+        expect(container.querySelector('[data-turn-message-spacer="head"]')).not.toBeNull();
+        expect(container.querySelectorAll('[data-fixture-message]')).toHaveLength(40);
+        expect(container.textContent).toContain('window-command-80;');
+        await act(async () => toggle?.click());
+        expect(container.querySelectorAll('[data-fixture-message]')).toHaveLength(7);
+        expect(container.querySelector('[data-turn-message-spacer]')).toBeNull();
+        expect(runningRow?.isConnected).toBe(true);
     });
 
     test('running Activity folds to seven rows and pins text until a newer note or final answer replaces it', async () => {
@@ -312,6 +363,201 @@ describe('Activity with the real message body', () => {
         expect(container.querySelector('[data-live-activity-content]')?.textContent).toBe('');
         expect(container.textContent).not.toContain('echo 8');
         expect(container.textContent).toContain('Final answer');
+    });
+
+    test('folded activity only hoists hidden commands while running and hoists every running command once settled', async () => {
+        const commands = (running: boolean): Part[] => Array.from({ length: 10 }, (_, index) => ({
+            type: 'tool', tool: 'exec_command', id: `live-${index}`, callID: `live-${index}`, sessionID: 'session', messageID: 'progress',
+            state: { status: 'completed', input: { cmd: `command-${index};` }, output: '',
+                metadata: { processRunning: running, execDisplay: 'root' }, time: { start: 1, end: 2 } },
+        }));
+        const record = (running: boolean, final = false) => turn([
+            assistant('progress', commands(running), 'tool-calls'),
+            ...(final ? [assistant('final', [text('answer', 'Finished answer')], 'stop')] : []),
+        ]);
+        await act(async () => root.render(<Harness record={record(true)} />));
+        const pinned = () => container.querySelector('[data-live-activity-running-commands]');
+        expect(container.querySelector('[data-live-activity-more]')).toBeNull();
+        for (let index = 0; index < 10; index++) {
+            if (index < 3) expect(pinned()?.textContent).toContain(`command-${index};`);
+            else {
+                expect(pinned()?.textContent).not.toContain(`command-${index};`);
+                expect(container.querySelector('[data-live-activity-content]')?.textContent).toContain(`command-${index};`);
+            }
+            expect(container.textContent?.split(`command-${index};`).length).toBe(2);
+        }
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        expect(pinned()).toBeNull();
+        for (let index = 0; index < 10; index++) expect(container.textContent?.split(`command-${index};`).length).toBe(2);
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        await act(async () => root.render(<Harness record={record(true, true)} isWorking={false} />));
+        expect(container.querySelector('[data-live-activity-more]')).toBeNull();
+        expect(container.querySelector('[data-live-activity-content]')?.textContent).toBe('');
+        for (let index = 0; index < 10; index++) expect(pinned()?.textContent).toContain(`command-${index};`);
+        expect(container.textContent).toContain('Finished answer');
+        await act(async () => root.render(<Harness record={record(false, true)} isWorking={false} />));
+        expect(pinned()).toBeNull();
+        expect(container.textContent).not.toContain('command-0;');
+        await act(async () => root.render(<Harness record={turn([assistant('progress', commands(true).slice(0, 7), 'tool-calls')])} />));
+        expect(pinned()).toBeNull();
+        expect(container.querySelector('[data-live-activity-more]')).toBeNull();
+        expect(container.textContent).toContain('command-0;');
+    });
+
+    test('overflow counts only rows still hidden after hoisting a running command', async () => {
+        const parts: Part[] = Array.from({ length: 10 }, (_, index) => ({
+            type: 'tool', tool: 'exec_command', id: `count-${index}`, callID: `count-${index}`, sessionID: 'session', messageID: 'progress',
+            state: { status: 'completed', input: { cmd: `count-command-${index}` }, output: '',
+                metadata: { processRunning: index === 0, execDisplay: 'root' }, time: { start: 1, end: 2 } },
+        }));
+        await act(async () => root.render(<Harness record={turn([assistant('progress', parts, 'tool-calls')])} />));
+        const pinned = container.querySelector('[data-live-activity-running-commands]');
+        expect(pinned?.textContent).toContain('count-command-0');
+        expect(container.textContent).not.toContain('count-command-1');
+        expect(container.textContent).not.toContain('count-command-2');
+        const more = container.querySelector('[data-live-activity-more]');
+        expect(more?.textContent).toBe('+2 more...');
+        expect(more?.parentElement?.nextElementSibling).toBe(pinned);
+    });
+
+    test('a visible running command stays in place until new rows push it behind the fold', async () => {
+        const record = (count: number, running = true) => turn([assistant('moving-boundary', Array.from({ length: count }, (_, index): Part => ({
+            type: 'tool', tool: 'exec_command', id: `boundary-${index}`, callID: `boundary-${index}`, sessionID: 'session', messageID: 'moving-boundary',
+            state: { status: 'completed', input: { cmd: `boundary-command-${index};` }, output: '',
+                metadata: { processRunning: index === 5 && running, execDisplay: 'root' }, time: { start: 1, end: 2 } },
+        })), 'tool-calls')]);
+        const pinned = () => container.querySelector('[data-live-activity-running-commands]');
+        const preview = () => container.querySelector('[data-live-activity-content]');
+        await act(async () => root.render(<Harness record={record(10)} />));
+        expect(pinned()).toBeNull();
+        expect(container.querySelector('[data-live-activity-more]')?.textContent).toBe('+3 more...');
+        expect(preview()?.textContent).toContain('boundary-command-5;');
+        const command = Array.from(container.querySelectorAll<HTMLElement>('[role="button"]')).find((element) => element.textContent?.includes('boundary-command-5;'));
+        expect(command).toBeDefined();
+        await act(async () => root.render(<Harness record={record(12)} />));
+        expect(pinned()).toBeNull();
+        expect(command?.isConnected).toBe(true);
+        expect(preview()?.textContent).toContain('boundary-command-5;');
+        await act(async () => root.render(<Harness record={record(13)} />));
+        expect(pinned()?.textContent).toContain('boundary-command-5;');
+        expect(preview()?.textContent).not.toContain('boundary-command-5;');
+        expect(container.querySelector('[data-live-activity-more]')?.textContent).toBe('+5 more...');
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        expect(pinned()).toBeNull();
+        expect(preview()?.textContent).toContain('boundary-command-5;');
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        expect(pinned()?.textContent).toContain('boundary-command-5;');
+        await act(async () => root.render(<Harness record={record(13, false)} />));
+        expect(pinned()).toBeNull();
+        expect(container.textContent).not.toContain('boundary-command-5;');
+        expect(container.querySelector('[data-live-activity-more]')?.textContent).toBe('+6 more...');
+    });
+
+    test('Script commands stay visible through overflow and completion without duplicating expanded children', async () => {
+        const script = (running: boolean): Part => ({
+            type: 'tool', tool: 'execute', id: 'script', callID: 'script', sessionID: 'session', messageID: 'progress',
+            state: { status: 'completed', input: { code: 'return await tools.exec_command(input)' }, output: '',
+                metadata: { toolCalls: [{ id: 'child', name: 'exec_command', tool: 'functions.exec_command', status: 'completed',
+                    input: { cmd: 'long-running-command' }, metadata: { processRunning: running, execDisplay: 'root' }, time: { start: 1, end: 2 } }] },
+                time: { start: 1, end: 2 } },
+        });
+        const padding: Part[] = Array.from({ length: 7 }, (_, index) => ({
+            ...readPart, id: `pad-${index}`, tool: 'exec_command', callID: `pad-${index}`,
+        }));
+        const record = (running: boolean, final = false, overflowScript = false) => turn([
+            assistant('progress', [...padding, script(running), ...(overflowScript ? padding.map((part) => ({ ...part, id: `tail-${part.id}` })) : [])], 'tool-calls'),
+            ...(final ? [assistant('final', [text('answer', 'Done')], 'stop')] : []),
+        ]);
+        await act(async () => root.render(<Harness record={record(true)} />));
+        const pinned = () => container.querySelector('[data-live-activity-running-commands]');
+        expect(pinned()).toBeNull();
+        const scriptHeader = Array.from(container.querySelectorAll<HTMLElement>('[role="button"]')).find((element) => element.textContent?.includes('Script'));
+        expect(scriptHeader).toBeDefined();
+        await act(async () => scriptHeader?.click());
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+        expect(container.textContent?.split('long-running-command').length).toBe(2);
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        expect(pinned()).toBeNull();
+        expect(container.textContent?.split('long-running-command').length).toBe(2);
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        expect(pinned()).toBeNull();
+        await act(async () => root.render(<Harness record={record(true, false, true)} />));
+        expect(pinned()?.textContent).toContain('long-running-command');
+        expect(container.textContent?.split('long-running-command').length).toBe(2);
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        expect(pinned()).toBeNull();
+        expect(container.textContent?.split('long-running-command').length).toBe(2);
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        await act(async () => root.render(<Harness record={record(true, true, true)} isWorking={false} />));
+        expect(container.querySelector('[role="status"]')?.textContent).toContain('1');
+        expect(pinned()?.textContent).toContain('long-running-command');
+        await act(async () => root.render(<Harness record={record(false, true, true)} isWorking={false} />));
+        expect(pinned()).toBeNull();
+    });
+
+    test('real message owners preserve both command and preview expansion across folds and command exit', async () => {
+        const record = (running: boolean, overflow = false) => turn([assistant('expansion-owner', Array.from({ length: overflow ? 11 : 10 }, (_, index): Part => ({
+            type: 'tool', tool: 'exec_command', id: `state-${index}`, callID: `state-${index}`, sessionID: 'session', messageID: 'expansion-owner',
+            state: { status: 'completed', input: { cmd: `state-command-${index}` }, output: `OUTPUT_SENTINEL_${index}`,
+                metadata: { processRunning: index === 3 && running, execDisplay: 'root', output: `OUTPUT_SENTINEL_${index}` }, time: { start: 1, end: 2 } },
+        })), 'tool-calls')]);
+        await act(async () => root.render(<Harness record={record(true)} realMessage />));
+        const open = async (index: number) => {
+            const command = Array.from(container.querySelectorAll<HTMLElement>('[role="button"]')).find((element) => element.textContent?.includes(`state-command-${index}`));
+            expect(command).toBeDefined();
+            await act(async () => command?.click());
+            await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+        };
+        await open(3);
+        await open(9);
+        const expectOutputs = () => {
+            expect(container.textContent).toContain('OUTPUT_SENTINEL_3');
+            expect(container.textContent).toContain('OUTPUT_SENTINEL_9');
+        };
+        expectOutputs();
+        expect(container.querySelector('[data-live-activity-running-commands]')).toBeNull();
+        await act(async () => root.render(<Harness record={record(true, true)} realMessage />));
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+        expect(container.querySelector('[data-live-activity-running-commands]')?.textContent).toContain('OUTPUT_SENTINEL_3');
+        expectOutputs();
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+        expectOutputs();
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+        expectOutputs();
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        await act(async () => root.render(<Harness record={record(false, true)} realMessage />));
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+        expect(container.querySelector('[data-live-activity-running-commands]')).toBeNull();
+        expectOutputs();
+    });
+
+    test('a row-window boundary keeps a cross-message Exploration whole and skips it as one row', async () => {
+        const windows = createTurnMessageWindowStore();
+        const command = (index: number): Part => ({
+            type: 'tool', tool: 'exec_command', id: `atomic-command-${index}`, callID: `atomic-command-${index}`, sessionID: 'session', messageID: 'commands',
+            state: { status: 'completed', input: { cmd: `atomic-command-${index};` }, output: '', metadata: { processRunning: false, execDisplay: 'root' }, time: { start: 1, end: 2 } },
+        });
+        const reads = Array.from({ length: 6 }, (_, index): Part => ({
+            ...readPart, type: 'tool', id: `atomic-read-${index}`, callID: `atomic-read-${index}`,
+            state: { ...readPart.state, input: { filePath: `/project/atomic-source-${index}.ts` } },
+        }));
+        const record = turn([
+            assistant('first', [...Array.from({ length: 40 }, (_, index) => command(index)), ...reads.slice(0, 3)], 'tool-calls'),
+            assistant('second', [...reads.slice(3), ...Array.from({ length: 39 }, (_, index) => command(index + 40))], 'tool-calls'),
+        ]);
+        await act(async () => root.render(
+            <TurnMessageWindowContext.Provider value={windows}><Harness record={record} defaultExpanded /></TurnMessageWindowContext.Provider>,
+        ));
+        expect(windows.range('user')).toEqual({ hiddenHead: 40, hiddenTail: 0 });
+        expect(container.textContent).not.toContain('atomic-command-39;');
+        expect(container.querySelectorAll('[data-exploration-group]')).toHaveLength(1);
+        await act(async () => container.querySelector<HTMLButtonElement>('[data-exploration-group] button')?.click());
+        for (let index = 0; index < 6; index++) expect(container.textContent).toContain(`atomic-source-${index}.ts`);
+        await act(async () => windows.setRange('user', { hiddenHead: 41, hiddenTail: 0 }));
+        expect(container.querySelector('[data-exploration-group]')).toBeNull();
+        for (let index = 40; index < 79; index++) expect(container.textContent).toContain(`atomic-command-${index};`);
     });
 
     test('a pinned note preserves Exploration boundaries and nested expansion through the outer toggle', async () => {
@@ -469,7 +715,7 @@ describe('Activity with the real message body', () => {
 
     test('page segments keep separate message windows and reveal their tail when a stopped turn resumes', async () => {
         const windows = createTurnMessageWindowStore();
-        const steps = (prefix: string) => Array.from({ length: 40 }, (_, index) => assistant(`${prefix}-${index}`, [text(`${prefix}-text-${index}`, `Step ${prefix} ${index}`)], 'tool-calls'));
+        const steps = (prefix: string) => Array.from({ length: 80 }, (_, index) => assistant(`${prefix}-${index}`, [text(`${prefix}-text-${index}`, `Step ${prefix} ${index}`)], 'tool-calls'));
         const page: Part = { type: 'tool', tool: 'openchamber_render', id: 'boundary', callID: 'boundary', sessionID: 'session', messageID: 'page',
             state: { status: 'completed', input: { title: 'Boundary', html: '<p>Page</p>' }, output: '', metadata: { openchamber: { ok: true } }, time: { start: 1, end: 2 } } };
         const messages = [...steps('before'), assistant('page', [page], 'tool-calls'), ...steps('after')];
@@ -479,7 +725,7 @@ describe('Activity with the real message body', () => {
         const header = container.querySelector<HTMLButtonElement>(`${selector} button[aria-controls]`);
         await act(async () => header?.click());
         expect(container.querySelector(`${selector} [data-fixture-message="after-0"]`)).not.toBeNull();
-        expect(container.querySelector(`${selector} [data-fixture-message="after-39"]`)).toBeNull();
+        expect(container.querySelector(`${selector} [data-fixture-message="after-79"]`)).toBeNull();
         expect(windows.range('user')).toBeUndefined();
         expect(windows.range('user:after-page:boundary')?.hiddenTail).toBeGreaterThan(0);
         await act(async () => root.render(render(true, [...messages, assistant('resumed', [text('resume', 'Resumed tail')], 'tool-calls')])));
