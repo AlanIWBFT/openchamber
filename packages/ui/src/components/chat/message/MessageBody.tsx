@@ -69,8 +69,8 @@ import { isShownInPlace } from '@/lib/opencode/tools';
 import { LiveActivityCollapse } from '../components/LiveActivityCollapse';
 import { dispatchRowExpand } from '../lib/scroll/timelineScrollIntent';
 import { ActivityRowSkipContext, isActivityRowPart, isToolRowShown } from '../lib/turns/activityRows';
-import { LiveFinalActivityContext, LiveTurnHoistedPagesContext } from '../components/liveActivityContext';
 import { MessageSliceContext } from './messageSliceContext';
+import { LiveFinalActivityContext, LiveTurnHoistedCommandsContext, LiveTurnHoistedPagesContext } from '../components/liveActivityContext';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { useSpaceProjectDirectory } from '@/lib/spaces/spaces-store';
@@ -1375,6 +1375,7 @@ const AssistantMessageBody = React.memo(({
     // the first one what comes before the answer, the last one what follows.
     const slice = React.useContext(MessageSliceContext);
     const isSliceEnd = !slice?.to;
+    const hoistedCommands = React.useContext(LiveTurnHoistedCommandsContext);
     const isLastAssistantInTurn = turnGroupingContext?.isLastAssistantInTurn ?? false;
     const hasStopFinish = messageFinish === 'stop';
     const effectiveStreamPhase: StreamPhase = hasStopFinish ? 'completed' : streamPhase;
@@ -1789,7 +1790,7 @@ const AssistantMessageBody = React.memo(({
             }
             // The next row starts at this part, or inside the one just drawn.
             if (slice?.to && (slice.to.offset === 0 ? part.id === slice.to.partId : visibleParts[i - 1]?.id === slice.to.partId)) break;
-            if (rowsToSkip > 0 && isActivityRowPart(part)) {
+            if (rowsToSkip > 0 && (activityRowSkip?.partIds ? activityRowSkip.partIds.has(part.id) : isActivityRowPart(part))) {
                 rowsToSkip -= 1;
                 i += 1;
                 continue;
@@ -1914,7 +1915,7 @@ const AssistantMessageBody = React.memo(({
                     continue;
                 }
 
-                if (!isToolRowShown(toolPart)) {
+                if (hoistedCommands?.has(toolPart.id) || !isToolRowShown(toolPart)) {
                     i++;
                     continue;
                 }
@@ -1991,6 +1992,7 @@ const AssistantMessageBody = React.memo(({
         activityRowSkip,
         alwaysShowMessageActions,
         hoistedPages,
+        hoistedCommands,
         collapsibleThinkingBlocks,
         expandedTools,
         nestedTools,

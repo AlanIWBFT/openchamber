@@ -1,9 +1,24 @@
 import { z } from "zod"
 import type { JsonValue, Metadata, ToolPart } from "./model"
-import { isExecCommandTool, isExecuteTool } from "./tools"
+import { isExecCommandTool, isExecuteTool, readUnifiedExecMetadata } from "./tools"
+import { createScriptToolProjection } from "./script"
 
 export type ExecPreview = { revision: number; childID?: string; metadata: Metadata }
 export type ScriptPreview = { revision: number; toolCalls: Metadata[] }
+
+/** Live root commands and Script children, shared by rendering and history retention. */
+export function runningCommandParts(part: ToolPart): ToolPart[] {
+  const running = (candidate: ToolPart): boolean => {
+    if (!isExecCommandTool(candidate.tool) || candidate.state.status === "error") return false
+    const metadata = readUnifiedExecMetadata(candidate.state.status === "pending" ? undefined : candidate.state.metadata)
+    return !metadata.execError && (metadata.processRunning ?? candidate.state.status === "running")
+  }
+  if (running(part)) return [part]
+  if (!isExecuteTool(part.tool) || part.state.status === "pending") return []
+  return createScriptToolProjection(part)(part.state.metadata).flatMap((entry) => (
+    entry.kind === "part" && running(entry.part) ? [entry.part] : []
+  ))
+}
 
 const revisionSchema = z.number().int().nonnegative().catch(-1)
 const identityFields = z.object({
