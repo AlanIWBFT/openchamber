@@ -459,6 +459,7 @@ const TurnBlock = React.memo(({
                     turn={turn}
                     expanded={isActivityExpanded}
                     isWorking={sessionIsWorking && !hasLaterAssistant}
+                    hasLaterTurn={!isLastTurn}
                     streamingMessageId={activeStreamingMessageId}
                     streamPhase={activeStreamingPhase ?? 'completed'}
                     showReasoning={showReasoningTraces}
@@ -605,8 +606,8 @@ type TimelineRowContextValue = {
     shouldAnimateUserMessage: (message: ChatMessageEntry) => boolean;
     onUserAnimationConsumed: (messageId: string) => void;
     reviewTransferDirection?: ReviewTransferDirection | null;
-    // The live tail row subscribes to streaming parts; every other row renders
-    // statically (see TimelineRowContent).
+    // The tail and the row owning the current stream read live parts. A Steer
+    // prompt can move the tail before that stream finishes.
     streamingTailKey: string | null;
     directory?: string;
     sessionIsWorking: boolean;
@@ -620,7 +621,10 @@ const TimelineRow = React.memo(({ entry }: { entry: RenderEntry }) => {
     const context = React.useContext(TimelineRowContext);
     if (!context) return null;
 
-    const live = context.streamingTailKey === entry.key;
+    const ownsStream = entry.kind === 'turn'
+        ? turnContainsMessageId(entry.turn, context.activeStreamingMessageId)
+        : entry.message.info.id === context.activeStreamingMessageId;
+    const live = context.streamingTailKey === entry.key || ownsStream;
     return (
         <TimelineRowContent
             entry={entry}
@@ -795,7 +799,8 @@ const TimelineRowContent: React.FC<{
     // currently streaming: a finished step message's base record can lag the
     // part store, and rendering it from that stale snapshot briefly unmounts
     // its completed tool parts when the stream hands off to the next message.
-    // A history row subscribes to nothing.
+    // An older row still owning the stream also reads its live parts until the
+    // stream hands off. Other history rows subscribe to nothing.
     const showReasoningTraces = useUIStore((state) => state.showReasoningTraces);
     const tailMessageIds = React.useMemo(() => {
         if (!live) return EMPTY_ROW_MESSAGE_IDS;
@@ -1099,7 +1104,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 return;
             }
             const { turnId, userMessage, assistantMessages } = entry.turn;
-            if (!getLiveFinalMessage(assistantMessages)) {
+            if (!getLiveFinalMessage(assistantMessages, !entry.isLastTurn)) {
                 const segments = splitLiveActivityAtPages(entry.turn);
                 if (segments.some((segment) => segment.page)) {
                     for (const segment of segments) for (const message of segment.messages) {

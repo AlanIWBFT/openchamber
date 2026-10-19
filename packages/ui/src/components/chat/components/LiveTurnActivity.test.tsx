@@ -13,7 +13,7 @@ import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { ThemeSystemContext, type ThemeContextValue } from '@/contexts/theme-system-context';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import type { RuntimeAPIs } from '@/lib/api/types';
-import { SyncProvider } from '@/sync/sync-context';
+import { SyncProvider, useDirectoryStore as useSyncDirectoryStore } from '@/sync/sync-context';
 import { useUIStore } from '@/stores/useUIStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { projectTurnRecords } from '../lib/turns/projectTurnRecords';
@@ -141,6 +141,7 @@ function Harness({ record, realMessage = false, retired = false, changedFiles, i
                             else setSegmentExpansion((current) => new Map(current).set(id, !(current.get(id) ?? defaultExpanded)));
                         }}
                         isWorking={isWorking && !retired} showReasoning={showReasoning} streamPhase="completed"
+                        hasLaterTurn={retired}
                         onToggle={() => setExpanded((value) => !value)} renderMessage={renderMessage} />
                 </I18nProvider>
             </SyncProvider>
@@ -649,8 +650,8 @@ describe('Activity with the real message body', () => {
         };
         const record = turn([assistant('progress', [text('progress-text', 'Still working'), readPart, page], 'tool-calls')]);
         await act(async () => root.render(<Harness record={record} retired />));
-        // The steps fold away; the page stays below the fold, drawn once.
-        expect(container.textContent).not.toContain('Still working');
+        // The tools fold away; the page and latest prose remain, drawn once.
+        expect(container.textContent).toContain('Still working');
         expect([...container.querySelectorAll('iframe')].map((frame) => frame.getAttribute('title'))).toEqual(['Drawn page']);
         await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
         expect(container.textContent).toContain('Still working');
@@ -744,7 +745,7 @@ describe('Activity with the real message body', () => {
         };
         const record = turn([assistant('progress', [text('progress-text', 'Asking'), readPart, page], 'tool-calls')]);
         await act(async () => root.render(<Harness record={record} retired />));
-        expect(container.textContent).not.toContain('Asking');
+        expect(container.textContent).toContain('Asking');
         expect([...container.querySelectorAll('iframe')].map((frame) => frame.getAttribute('title'))).toEqual(['Pick a layout']);
         expect(container.querySelector('[data-html-render-status="waiting"]')).not.toBeNull();
     });
@@ -778,7 +779,7 @@ describe('Activity with the real message body', () => {
         expect(container.querySelector('button[aria-controls]')?.getAttribute('aria-expanded')).toBe('false');
     });
 
-    test('a collapsed interrupted turn fully closes and restores its preview on resume', async () => {
+    test('an idle turn closes, resumes its preview, and retains prose when a later reply retires it', async () => {
         const record = turn([assistant('progress', [text('progress-text', 'Still working'), readPart], 'tool-calls')]);
         await act(async () => root.render(<Harness record={record} />));
         expect(container.textContent).toContain('Still working');
@@ -791,11 +792,131 @@ describe('Activity with the real message body', () => {
         expect(container.textContent).toContain('Still working');
         expect(container.querySelector('button[aria-controls]')?.getAttribute('aria-expanded')).toBe('false');
         await act(async () => root.render(<Harness record={record} retired />));
-        expect(container.textContent).not.toContain('Still working');
+        expect(container.textContent).toContain('Still working');
+        expect(container.querySelector('[data-live-activity-content]')?.textContent).toBe('');
         expect(container.textContent).toContain('Activity');
         expect(container.querySelector('button[aria-controls]')?.getAttribute('aria-expanded')).toBe('false');
         await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
         expect(container.textContent).toContain('Still working');
+    });
+
+    for (const livePartsOnly of [false, true]) test(`the timeline retains prose immediately after a follow-up prompt, live-only parts: ${livePartsOnly}`, async () => {
+        // Happy DOM has no layout; give the real virtualizer a visible viewport.
+        Object.defineProperty(window.HTMLElement.prototype, 'getBoundingClientRect', {
+            configurable: true,
+            value(this: HTMLElement) { return new window.DOMRect(0, 0, 800, this.dataset.scrollbar === 'steer-test' ? 800 : 100); },
+        });
+        const { default: MessageList } = await import('../MessageList');
+        useUIStore.setState({ activityRenderMode: 'collapsed' });
+        const runningRead: Part = {
+            type: 'tool', tool: 'read', id: 'running-read', callID: 'running-read', sessionID: 'session', messageID: 'progress',
+            state: { status: 'running', input: { filePath: '/project/source.ts' }, time: { start: 3 } },
+        };
+        const liveText: Part = { type: 'text', id: 'progress-text', sessionID: 'session', messageID: 'progress',
+            text: 'Still working', time: { start: 2, end: 3 } };
+        const liveParts = [liveText, runningRead];
+        const record = turn([assistant('progress', livePartsOnly ? [] : liveParts)]);
+        const original = [record.userMessage, ...record.assistantMessages];
+        const followUp: ChatMessageEntry = {
+            info: { id: 'follow-up', sessionID: 'session', role: 'user', time: { created: 4 } },
+            parts: [text('follow-up-text', 'Steer the work')],
+        };
+        function LivePartSeed() {
+            const store = useSyncDirectoryStore('/project', { bootstrap: false });
+            React.useLayoutEffect(() => {
+                store.setState((state) => ({ part: { ...state.part, progress: liveParts } }));
+            }, [store]);
+            return null;
+        }
+        function TimelineHarness({ messages, activeMessageId = 'progress' }: { messages: ChatMessageEntry[]; activeMessageId?: string }) {
+            return <RuntimeAPIContext.Provider value={runtimeApis}>
+                <ThemeSystemContext.Provider value={themeContext}>
+                    <SyncProvider sdk={sdk} directory="/project">
+                        {livePartsOnly ? <LivePartSeed /> : null}
+                        <I18nProvider>
+                            <MessageList sessionKey="session" messages={messages} sessionIsWorking isLoadingOlder={false}
+                                activeStreamingMessageId={activeMessageId} activeStreamingPhase="streaming"
+                                scrollContainerProps={{ 'data-scrollbar': 'steer-test' }} />
+                        </I18nProvider>
+                    </SyncProvider>
+                </ThemeSystemContext.Provider>
+            </RuntimeAPIContext.Provider>;
+        }
+        const activity = () => container.querySelector('[data-live-turn-activity="user"]');
+        await act(async () => root.render(<TimelineHarness messages={original} />));
+        expect(activity()?.textContent).toContain('Still working');
+        expect(activity()?.querySelector('[data-pinned-activity-text]')).not.toBeNull();
+        await act(async () => root.render(<TimelineHarness messages={[...original, followUp]} />));
+        expect(container.textContent).toContain('Steer the work');
+        expect(activity()?.textContent).toContain('Still working');
+        expect(activity()?.querySelector('[data-live-activity-content]')?.textContent).toBe('');
+        expect(activity()?.querySelector('[data-pinned-activity-text]')).toBeNull();
+        // Removing a failed optimistic send restores the original live preview.
+        await act(async () => root.render(<TimelineHarness messages={original} />));
+        expect(activity()?.querySelector('[data-pinned-activity-text]')?.textContent).toContain('Still working');
+        // Neither the server echo nor the next assistant's arrival hides the retained text.
+        await act(async () => root.render(<TimelineHarness messages={[...original, followUp]} />));
+        await act(async () => root.render(<TimelineHarness messages={[...original, { ...followUp, info: { ...followUp.info } }]} />));
+        expect(activity()?.textContent).toContain('Still working');
+        const settledOriginal = original.map((message) => message.info.id === 'progress' ? { ...message, parts: liveParts } : message);
+        await act(async () => root.render(<TimelineHarness activeMessageId="next-assistant" messages={[...settledOriginal, followUp,
+            assistant('next-assistant', [text('next-text', 'Continuing with the steer')], 'tool-calls')]} />));
+        expect(activity()?.textContent).toContain('Still working');
+        expect(container.textContent).toContain('Continuing with the steer');
+    });
+
+    test('a retired turn keeps its latest text message outside the fold even when tool-only messages follow', async () => {
+        const record = turn([
+            assistant('earlier', [text('earlier-text', 'Earlier progress')], 'tool-calls'),
+            assistant('latest', [text('latest-text', 'Latest progress'), readPart], 'tool-calls'),
+            assistant('tools', [{ ...readPart, id: 'later-read' }, text('empty', '  ')], 'tool-calls'),
+        ]);
+        await act(async () => root.render(<Harness record={record} retired />));
+        expect(container.textContent).toContain('Latest progress');
+        expect(container.textContent).not.toContain('Earlier progress');
+        expect(container.querySelector('[data-fixture-message="latest"] [data-live-activity-content]')?.textContent).toBe('');
+        expect(container.querySelectorAll('[data-message-text-export-source]')).toHaveLength(1);
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        expect(container.textContent).toContain('Earlier progress');
+        expect(container.textContent?.split('Latest progress')).toHaveLength(2);
+    });
+
+    for (const realMessage of [false, true]) test(`retiring a turn preserves activity order through collapse and expansion, real message: ${realMessage}`, async () => {
+        const reasoning = (id: string): Part => ({
+            type: 'reasoning', id, messageID: id, sessionID: 'session', text: id, time: { start: 1, end: 2 },
+        });
+        const command = (id: string): Part => ({
+            type: 'tool', tool: 'exec_command', id, callID: id, sessionID: 'session', messageID: id,
+            state: { status: 'completed', input: { cmd: id }, output: '',
+                metadata: { processRunning: false, execDisplay: 'root' }, time: { start: 1, end: 2 } },
+        });
+        const record = turn([
+            assistant('latest', [reasoning('First reasoning'), text('latest-text', 'Latest progress'), command('first-command;')], 'tool-calls'),
+            assistant('tail', [reasoning('Second reasoning'), command('second-command;')], 'tool-calls'),
+        ]);
+        const assertActivityOrder = () => {
+            const content = container.textContent ?? '';
+            const labels = ['First reasoning', 'first-command;', 'Second reasoning', 'second-command;'];
+            for (const label of labels) expect(content.split(label)).toHaveLength(2);
+            for (let index = 1; index < labels.length; index++) {
+                expect(content.indexOf(labels[index - 1])).toBeLessThan(content.indexOf(labels[index]));
+            }
+            expect(content.split('Latest progress')).toHaveLength(2);
+        };
+        await act(async () => root.render(<Harness record={record} realMessage={realMessage} defaultExpanded />));
+        assertActivityOrder();
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        await act(async () => root.render(<Harness record={record} realMessage={realMessage} retired />));
+        expect(container.textContent).toContain('Latest progress');
+        expect(container.textContent).not.toContain('First reasoning');
+        expect(container.textContent).not.toContain('second-command;');
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        assertActivityOrder();
+        expect(container.textContent?.indexOf('Latest progress')).toBeGreaterThan(container.textContent?.indexOf('second-command;') ?? -1);
+        await act(async () => root.render(<Harness record={record} realMessage={realMessage} />));
+        assertActivityOrder();
+        await act(async () => root.render(<Harness record={record} realMessage={realMessage} retired />));
+        assertActivityOrder();
     });
 
     test('the answer copies the whole turn while each earlier step copies only itself', async () => {

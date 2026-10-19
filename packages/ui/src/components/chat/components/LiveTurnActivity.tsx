@@ -22,6 +22,7 @@ interface LiveTurnActivityProps {
     turn: TurnRecord;
     expanded: boolean;
     isWorking: boolean;
+    hasLaterTurn?: boolean;
     streamingMessageId?: string | null;
     streamPhase: StreamPhase;
     showReasoning: boolean;
@@ -35,7 +36,7 @@ interface LiveTurnActivityProps {
 export function LiveTurnActivity(props: LiveTurnActivityProps) {
     const { turn, segmentExpansion, onToggleSegment } = props;
     const segments = React.useMemo(() => splitLiveActivityAtPages(turn), [turn]);
-    if (getLiveFinalMessage(turn.assistantMessages) || !segments.some((segment) => segment.page)) return <ActivitySegment {...props} />;
+    if (getLiveFinalMessage(turn.assistantMessages, props.hasLaterTurn) || !segments.some((segment) => segment.page)) return <ActivitySegment {...props} />;
     return <>{segments.map((segment) => (
         <ActivitySegment {...props} key={segment.id} segmented page={segment.page}
             turn={{ ...turn, turnId: segment.id, assistantMessages: segment.messages }}
@@ -44,7 +45,7 @@ export function LiveTurnActivity(props: LiveTurnActivityProps) {
     ))}</>;
 }
 
-function ActivitySegment({ turn, expanded, isWorking, streamingMessageId, streamPhase, showReasoning, onToggle, renderMessage, segmented, page }: LiveTurnActivityProps & { segmented?: boolean; page?: ToolPart }) {
+function ActivitySegment({ turn, expanded, isWorking, hasLaterTurn, streamingMessageId, streamPhase, showReasoning, onToggle, renderMessage, segmented, page }: LiveTurnActivityProps & { segmented?: boolean; page?: ToolPart }) {
     const { t } = useI18n();
     const contentId = React.useId();
     const finalContentId = React.useId();
@@ -57,11 +58,24 @@ function ActivitySegment({ turn, expanded, isWorking, streamingMessageId, stream
     const handlePointerDown = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
         touchActivation.current = event.pointerType === 'touch';
     }, []);
-    const finalMessage = segmented ? undefined : getLiveFinalMessage(turn.assistantMessages);
-    const activityMessages = React.useMemo(
-        () => (finalMessage ? turn.assistantMessages.filter((message) => message !== finalMessage) : turn.assistantMessages),
-        [finalMessage, turn.assistantMessages],
-    );
+    const answerSource = segmented ? undefined : getLiveFinalMessage(turn.assistantMessages, hasLaterTurn);
+    const { finalMessage, activityMessages } = React.useMemo(() => {
+        if (!answerSource) return { finalMessage: undefined, activityMessages: turn.assistantMessages };
+        // An intermediate message can precede later tool-only steps. Hoist its
+        // text, keeping its tools and reasoning at their original position.
+        const keepSourceActivity = answerSource !== getLiveFinalMessage(turn.assistantMessages);
+        return {
+            finalMessage: keepSourceActivity
+                ? { ...answerSource, parts: answerSource.parts.filter((part) => part.type === 'text') }
+                : answerSource,
+            activityMessages: turn.assistantMessages.flatMap((message) => {
+                if (message !== answerSource) return [message];
+                if (!keepSourceActivity) return [];
+                const parts = message.parts.filter((part) => part.type !== 'text');
+                return parts.length ? [{ ...message, parts }] : [];
+            }),
+        };
+    }, [answerSource, turn.assistantMessages]);
     const isRunning = isWorking && !finalMessage;
     const settled = !isRunning;
     // Keep the trimmed rows while a settled fold closes, so its contents do
