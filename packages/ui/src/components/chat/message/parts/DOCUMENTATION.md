@@ -382,6 +382,10 @@ finished with `stop`, so no tool patch is parsed while the turn streams.
 - Text that draws nothing takes no space (#5215). Some models send text parts holding only a zero-width space between steps, and `trim()` keeps those characters, so each became a blank line in Activity. `lib/invisibleText.ts` (`isInvisibleText`: whitespace plus Unicode's default-ignorable characters) is the one test for "empty" text: `isEmptyTextPart`, the assistant text, reasoning and user text renderers, turn projection, the turn summary and the live turn's final-answer check all use it, and the markdown splitter (`markdown/markdownCore.ts`) drops a top-level block whose source is only such characters. Only a whole part or block counts, so a ZWJ inside an emoji or a ZWNJ inside a Persian word stays. A CSS rule cannot do this: `:empty` does not match an element holding a zero-width character.
 - Assistant text parts carry the same part-finalization gate (`assistantTextVisibility.ts`): the block-level reveal (`lib/streamTextCommit.ts`) holds a still-growing part's unfinished block, and the reply takes new text at most every 400 ms, while a part sealed with `time.end` renders in full immediately — including while the turn stays blocked on a pending question or permission ask (#3277).
 
+### Why tool result completion uses the session directory resolver
+
+`useToolContentCompletion` resolves the part's session through `getDirectoryForSession()` before fetching and materializing its full message. Several directory stores can list the same session, so `getSyncSessionDirectory()` can name an unrelated store with no transcript. A successful response written there leaves the visible tool result incomplete. Completion follows the session's own directory, including when the row belongs to a secondary chat column.
+
 ## "I want to change description for Perplexity" (example recipe)
 
 If task is: "change text shown near Skill in compact mode":
