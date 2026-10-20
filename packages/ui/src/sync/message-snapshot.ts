@@ -86,6 +86,10 @@ export function beginMessageSnapshot(source: DirectoryRecoverySource, sessionID:
 
   return {
     isCurrent: () => valid,
+    // Inbox reads can introduce unseen inputs, but cannot undo a cancellation,
+    // delivery or local removal of an input observed before/during this read.
+    canSeedPending: (messageID: string) => valid && !beforeMessages.has(messageID)
+      && !changedMessages.has(messageID) && !removedMessages.has(messageID),
     dispose() {
       valid = false
       pending.delete(token)
