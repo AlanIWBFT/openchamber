@@ -1269,24 +1269,21 @@ export class SessionMessageLoader {
   ): Promise<void> {
     const read = this.sdk.getSessionInbox?.bind(this.sdk)
     if (!read) return
-    let items: readonly PendingInboxMessage[]
+    const snapshot = beginMessageSnapshot(store, target.sessionID)
     try {
-      items = await read(target.sessionID, target.directory)
-    } catch {
-      return
-    }
-    if (!isCurrent()) return
-    entry.inboxSeeded = true
-    if (items.length === 0) return
-    try {
+      const items = await read(target.sessionID, target.directory)
+      if (!isCurrent() || !snapshot.isCurrent()) return
+      entry.inboxSeeded = true
+      if (items.length === 0) return
       const current = store.getState()
       const messages = [...(current.message[target.sessionID] ?? [])]
       const held = new Set(messages.map((message) => message.id))
       const parts = { ...current.part }
       let changed = false
       for (const { info, parts: itemParts } of items) {
-        // A live event (or an earlier seed) already painted this item.
-        if (held.has(info.id)) continue
+        // A live event may have delivered or cancelled an input before its
+        // first paint; absence from the current window alone cannot seed it.
+        if (held.has(info.id) || !snapshot.canSeedPending(info.id)) continue
         messages.push(info)
         if (itemParts) parts[info.id] = itemParts
         entry.inboxSeededIDs.add(info.id)
@@ -1299,8 +1296,10 @@ export class SessionMessageLoader {
         part: parts,
       })
     } catch {
-      // A malformed item must not turn an already loaded transcript into an
-      // error; the read succeeded, so this open does not retry it.
+      // Failed reads preserve the transcript and may retry on the next open.
+      // A malformed item after a successful read does not retry this open.
+    } finally {
+      snapshot.dispose()
     }
   }
 
