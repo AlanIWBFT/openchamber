@@ -2,7 +2,7 @@ import React from 'react';
 
 import type { ToolPart } from '@/lib/opencode/model';
 import { toolContentShellChars } from '@/lib/opencode/toolContentShells';
-import { getSyncSessionDirectory } from '@/sync/sync-refs';
+import { useSessionUIStore } from '@/sync/session-ui-store';
 import { completeToolContent } from '@/sync/tool-content-completion';
 
 type ToolContentCompletion =
@@ -30,7 +30,7 @@ export const useToolContentCompletion = (part: ToolPart, needed: boolean): ToolC
   React.useEffect(() => {
     if (!needed || !isShell) return;
     let active = true;
-    const directory = getSyncSessionDirectory(sessionID);
+    const directory = useSessionUIStore.getState().getDirectoryForSession(sessionID);
     if (!directory) {
       setFailedAttempt(attempt);
       return;
