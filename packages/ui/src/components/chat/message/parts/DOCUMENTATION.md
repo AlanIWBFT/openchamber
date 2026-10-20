@@ -650,6 +650,10 @@ the same owner.
 - Text that draws nothing takes no space (#5215). `lib/invisibleText.ts` supplies the shared test for whitespace and Unicode default-ignorable characters. Part renderers and turn projection use it for whole parts. `MarkdownArrivalBlock` omits an invisible-only streaming block before creating its wrapper; `remarkVisibleBlocks` in `streamdownPlugins.ts` filters top-level source ranges after disclosure reconstruction, including static rendering which bypasses that wrapper. Its source view omits the leading BOM as the parser does, so node offsets still identify the intended text. Both checks use the complete source block, so code fences and joiners inside visible text remain intact. The shared predicate avoids divergent definitions of empty text; CSS `:empty` cannot detect zero-width characters.
 - Assistant text parts carry the same part-finalization gate (`assistantTextVisibility.ts`): the block-level reveal (`lib/streamTextCommit.ts`) holds a still-growing part's unfinished block, and the reply takes new text at most every 400 ms, while a part sealed with `time.end` renders in full immediately — including while the turn stays blocked on a pending question or permission ask (#3277).
 
+### Why tool result completion uses the session directory resolver
+
+`useToolContentCompletion` resolves the part's session through `getDirectoryForSession()` before fetching and materializing its full message. Several directory stores can list the same session, so `getSyncSessionDirectory()` can name an unrelated store with no transcript. A successful response written there leaves the visible tool result incomplete. Completion follows the session's own directory, including when the row belongs to a secondary chat column.
+
 ## "I want to change description for Perplexity" (example recipe)
 
 If task is: "change text shown near Skill in compact mode":
