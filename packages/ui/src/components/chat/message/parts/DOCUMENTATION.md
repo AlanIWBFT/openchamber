@@ -926,7 +926,9 @@ update, with the `shellID`, when the command starts.
   Tool-content completion uses the session's directory for fetching and the
   displayed store's directory for merging. A missing message or a result still
   marked as a shell is a failed completion, and delayed progress feedback avoids
-  flashing a loading message for quick requests.
+  flashing a loading message for quick requests. The SDK can resolve inherited
+  messages through a parent; when a secondary chat column renders a different
+  store, fill that store only while the runtime and snapshot still match.
 - Secret-field reads retry while the server lists the card as waiting, so one
   lost request cannot leave a valid card hidden. Secret values bypass the
   transcript and agent context.
