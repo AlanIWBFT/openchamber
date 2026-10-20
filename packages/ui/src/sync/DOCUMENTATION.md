@@ -53,7 +53,7 @@ Queued input and live records whose creation sequence is not yet known stay
 provisional until a stored read confirms them.
 
 `message-snapshot.ts` owns observations only for an in-flight read, including
-on-demand tool-content completion, through its
+pending-inbox seeding and on-demand tool-content completion, through its
 final publication. It preserves concurrent message/part changes and invalidates
 on destructive lifecycle events. Tool-call IDs are scoped to their message,
 because forks may retain them.
@@ -66,6 +66,16 @@ atomically and does not claim broader history coverage. Requests are deduplicate
 per message and scoped to the current runtime, SDK, store and loader generation.
 Failed reads leave provisional state intact. Completed records never reopen
 because a start event was replayed.
+
+### Why inbox seeding observes events before checking the current window
+
+An inbox response may describe an input cancelled or delivered while the read
+was in flight, before this client ever painted it. Checking only the current
+window would restore cancelled text or paint delivered input without its creation
+sequence. Each inbox read uses the existing message snapshot lifetime, including
+background seeding after prefetch. It only introduces inputs not previously held
+or changed by a message event during that read; canonical delivery recovery keeps
+ownership of delivered inputs. Failed or invalidated reads publish nothing.
 
 ## OpenCode compatibility before bootstrap
 
