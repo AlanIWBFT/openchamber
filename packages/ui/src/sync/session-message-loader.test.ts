@@ -3,6 +3,9 @@ import type { MessagePage } from "@/lib/opencode/client"
 import { projectInboxMessage, type InboxMessageItem } from "@/lib/opencode/projection"
 import type { Session, TextPart, ToolPart, UserMessage } from "@/lib/opencode/model"
 import { recordDirectoryRecoveryEvent } from "./directory-recovery-snapshots"
+import { applyDirectoryEvent } from "./event-reducer"
+import { isSessionMaterializationStillNeeded } from "./materialization"
+import { invalidateMessageSnapshots } from "./message-snapshot"
 import { ChildStoreManager } from "./child-store"
 import { SessionMessageLoader, type SessionMessagePageSource } from "./session-message-loader"
 import { olderMessagesCursor } from "@/lib/opencode/messageCursor"
@@ -1757,6 +1760,125 @@ describe("SessionMessageLoader before OpenCode is ready", () => {
     loader.dispose()
     childStores.disposeAll()
   })
+
+  for (const prefetched of [false, true]) {
+    test(`an inbox read cannot restore cancelled inputs (prefetched: ${prefetched})`, async () => {
+      const target = { directory: "/inbox-cancelled", sessionID: "session-cancelled" }
+      const record = createRecord(target.sessionID, "msg_history", 1)
+      const pending: InboxFixture = {
+        id: "inbox_cancelled", sessionID: target.sessionID, time: { created: 2 }, type: "user",
+        payload: { text: "cancelled prompt", files: [], agents: [] }, delivery: "steer",
+      }
+      const synthetic: InboxFixture = {
+        id: "inbox_synthetic", sessionID: target.sessionID, time: { created: 3 }, type: "synthetic",
+        payload: { text: "cancelled context" }, delivery: "steer",
+      }
+      const kept = { ...pending, id: "inbox_kept" }
+      const started = deferred<void>()
+      const inbox = deferred<readonly InboxFixture[]>()
+      const { childStores, loader } = createLoader(async () => response([record]), () => {
+        started.resolve()
+        return inbox.promise
+      })
+      try {
+        if (prefetched) await loader.ensure(target, { reason: "prefetch" })
+        const opening = loader.ensure(target, { reason: "navigation" })
+        await started.promise
+        const store = childStores.getChild(target.directory)!
+        // Cancellation is authoritative even when this client never saw enqueue.
+        for (const item of [pending, synthetic]) {
+          recordDirectoryRecoveryEvent(store, { type: "message.removed", properties: { sessionID: target.sessionID, messageID: item.id } })
+        }
+        inbox.resolve([pending, synthetic, kept])
+        await opening
+        // Cached opens seed in the background; let that read publish too.
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        const state = store.getState()
+        expect(state.message[target.sessionID]?.map((message) => message.id)).toEqual([record.info.id, kept.id])
+        expect(state.part[pending.id]).toBeUndefined()
+        expect(state.part[synthetic.id]).toBeUndefined()
+        expect(state.part[kept.id]).toHaveLength(1)
+      } finally {
+        loader.dispose()
+        childStores.disposeAll()
+      }
+    })
+  }
+
+  for (const painted of [false, true]) {
+    test(`an inbox read cannot demote a delivered input to pending (painted: ${painted})`, async () => {
+      const target = { directory: "/inbox-delivered", sessionID: "session-delivered" }
+      const record = createRecord(target.sessionID, "msg_history", 1)
+      const pending: InboxFixture = {
+        id: "inbox_delivered", sessionID: target.sessionID, time: { created: 2 }, type: "user",
+        payload: { text: "stale pending body", files: [], agents: [] }, delivery: "steer",
+      }
+      const started = deferred<void>()
+      const inbox = deferred<readonly InboxFixture[]>()
+      const { childStores, loader } = createLoader(async () => response([record]), () => {
+        started.resolve()
+        return inbox.promise
+      })
+      try {
+        const opening = loader.ensure(target)
+        await started.promise
+        const store = childStores.getChild(target.directory)!
+        const delivered = createRecord(target.sessionID, pending.id, 2, 3)
+        const current = store.getState()
+        const draft = { ...current, message: { ...current.message }, part: { ...current.part } }
+        if (painted) {
+          draft.message[target.sessionID] = [...draft.message[target.sessionID], { ...delivered.info, seq: undefined }]
+          draft.part[pending.id] = delivered.parts
+        }
+        const event = { type: "message.patched" as const, properties: { sessionID: target.sessionID, messageID: pending.id, patch: { seq: 2, time: { created: 3 } } } }
+        recordDirectoryRecoveryEvent(store, event)
+        applyDirectoryEvent(draft, event)
+        store.setState(draft)
+        inbox.resolve([pending])
+        await opening
+        const state = store.getState()
+        expect(state.message[target.sessionID]).toEqual(painted ? [record.info, delivered.info] : [record.info])
+        expect(state.part[pending.id]).toBe(painted ? delivered.parts : undefined)
+        // A delivery before first paint still needs the canonical message read.
+        expect(isSessionMaterializationStillNeeded(state, target.sessionID, { reason: "missing-owning-message", messageID: pending.id })).toBe(!painted)
+      } finally {
+        loader.dispose()
+        childStores.disposeAll()
+      }
+    })
+  }
+
+  for (const invalidation of ["session", "runtime"]) {
+    test(`a cached open rejects an inbox read after ${invalidation} invalidation`, async () => {
+      const target = { directory: "/inbox-invalidated", sessionID: "session-invalidated" }
+      const record = createRecord(target.sessionID, "msg_history", 1)
+      const pending: InboxFixture = {
+        id: "inbox_invalidated", sessionID: target.sessionID, time: { created: 2 }, type: "user",
+        payload: { text: "stale prompt", files: [], agents: [] }, delivery: "steer",
+      }
+      const started = deferred<void>()
+      const inbox = deferred<readonly InboxFixture[]>()
+      const { childStores, loader } = createLoader(async () => response([record]), () => {
+        started.resolve()
+        return inbox.promise
+      })
+      try {
+        await loader.ensure(target, { reason: "prefetch" })
+        await loader.ensure(target, { reason: "navigation" })
+        await started.promise
+        const store = childStores.getChild(target.directory)!
+        if (invalidation === "session") invalidateMessageSnapshots(store, target.sessionID)
+        else loader.configure({ runtimeKey: "runtime-b", sdk: { getSessionMessages: async () => response([]) } })
+        inbox.resolve([pending])
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(store.getState().message[target.sessionID]).toEqual([record.info])
+        expect(store.getState().part[pending.id]).toBeUndefined()
+      } finally {
+        loader.dispose()
+        childStores.disposeAll()
+      }
+    })
+  }
 
   test("keeps the loaded transcript when the inbox read fails", async () => {
     const record = createRecord("session-inbox-error", "msg_history", 1)
