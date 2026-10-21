@@ -11,6 +11,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { Button } from '@/components/ui/button';
 import type { ToolPopupContent } from '../../types';
 import { PlainDiffFallback } from '../PlainDiffFallback';
+import { patchInputPreview, PATCH_INPUT_PREVIEW_RAW_LIMIT } from '../patchInputPreview';
 import { formatInputForDisplay, coerceToText } from '../../toolRenderers';
 import { Icon } from '@/components/icon/Icon';
 import { DiffViewToggle, type DiffViewMode } from '../../DiffViewToggle';
@@ -20,7 +21,7 @@ import { prepareTaskToolOutput } from '../taskToolModel';
 import { fenceUiBlocks } from '../../../uiBlocks/taggedBlocks';
 import { HoverTooltip } from '@/components/ui/row-tooltip';
 import { useI18n } from '@/lib/i18n';
-import { extractFirstChangedLineFromDiff, getDiffPatchEntries, getToolFallbackDiff, type DiffPatchEntry } from '../toolDiffUtils';
+import { extractFirstChangedLineFromDiff, getDiffPatchEntries, getPatchText, getToolFallbackDiff, type DiffPatchEntry } from '../toolDiffUtils';
 import { useStreamingTextThrottle } from '../../../hooks/useStreamingTextThrottle';
 import { getToolOutput } from '../toolOutput';
 import { toAbsoluteFilePath } from '@/lib/path-utils';
@@ -117,6 +118,16 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
         [input, part.tool, state.status],
     );
     const showTodoList = todoItems !== null && todoItems.length > 0;
+    const pendingPatch = isPatchTool(part.tool) && state.status === 'pending';
+    const patchRaw = useStreamingTextThrottle({
+        text: pendingPatch && state.status === 'pending' ? state.raw.slice(0, PATCH_INPUT_PREVIEW_RAW_LIMIT) : '',
+        isStreaming: pendingPatch,
+        identityKey: part.id,
+        allowTextReplacement: true,
+    });
+    const patchPreview = React.useMemo(() => pendingPatch ? patchInputPreview(patchRaw)
+        : state.status === 'running' && isPatchTool(part.tool) ? getPatchText(input?.patchText) : undefined,
+    [pendingPatch, patchRaw, state.status, part.tool, input?.patchText]);
     const hideToolInputPreview = isOpenChamberTool(part.tool)
         || showTodoList
         || (opencodeResult !== null && !showRawToolAnswer)
@@ -600,6 +611,10 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
                         </div>
                     ) : null}
 
+                    {patchPreview ? renderScrollableBlock(
+                        <PlainDiffFallback diff={patchPreview} colorLines />,
+                        { maxHeightClass: 'max-h-60', className: 'tool-input-surface', followKey: patchPreview },
+                    ) : null}
                     {hasInputText && !isUnifiedExecTool(part.tool) ? renderScrollableBlock(
                         isWriteLikeTool && writeLikeInputPatch ? (
                             <DiffPreview

@@ -2,7 +2,13 @@ import React from 'react';
 
 import { getToolDiffPreviewText } from './toolDiffPreview';
 
-export const PlainDiffFallback: React.FC<{ diff: string }> = ({ diff }) => {
+/**
+ * Plain-text patch rendering used when the rich `@pierre/diffs` preview is
+ * unavailable: non-diff render modes, preview errors, and while the lazily
+ * loaded diff preview chunk is still downloading. Lives in its own module so
+ * `ToolPart` can render it without importing the @pierre/diffs stack.
+ */
+export const PlainDiffFallback: React.FC<{ diff: string; colorLines?: boolean }> = ({ diff, colorLines = false }) => {
     const preview = React.useMemo(() => getToolDiffPreviewText(diff), [diff]);
 
     return (
@@ -13,7 +19,12 @@ export const PlainDiffFallback: React.FC<{ diff: string }> = ({ diff }) => {
                 color: 'var(--syntax-foreground)',
             }}
         >
-            {preview}
+            {colorLines ? preview.split('\n').map((line, index, lines) => (
+                <span key={index} style={{
+                    backgroundColor: line.startsWith('+') ? 'var(--tools-edit-added-bg)'
+                        : line.startsWith('-') ? 'var(--tools-edit-removed-bg)' : undefined,
+                }}>{line}{index < lines.length - 1 ? '\n' : ''}</span>
+            )) : preview}
         </pre>
     );
 };
