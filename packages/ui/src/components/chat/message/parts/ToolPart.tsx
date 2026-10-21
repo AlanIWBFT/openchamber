@@ -756,10 +756,10 @@ const JsonToolOutput: React.FC<{
     }, []);
 
     const textOutput = jsonViewMode === 'summary' ? unwrapTextBlocks(jsonResult.data) : null;
+    const isStructuredSummary = jsonViewMode === 'summary' && textOutput === null;
 
-    return (
-        <div className="tool-output-surface relative p-2 rounded-xl w-full min-w-0">
-            <div className="absolute inset-e-2 top-2 z-10 flex items-center gap-1">
+    const actions = (
+            <div className="flex items-center justify-end gap-1">
                 <Button
                     variant="ghost"
                     size="icon"
@@ -795,9 +795,14 @@ const JsonToolOutput: React.FC<{
                 </Button>
                 <CopyToolOutputButton output={renderedOutput} />
             </div>
+    );
+
+    return (
+        <div className={cn('min-w-0', isStructuredSummary && '-ms-1')}>
+            {!isStructuredSummary ? actions : null}
             {jsonViewMode === 'summary' ? (
                 textOutput !== null ? (
-                    <div className="typography-code pe-12 text-muted-foreground/90">
+                    <div className="typography-code text-muted-foreground/90">
                         <WorkerHighlightedCode
                             language="text"
                             code={textOutput}
@@ -807,7 +812,7 @@ const JsonToolOutput: React.FC<{
                         />
                     </div>
                 ) : (
-                    <JsonSummaryView data={jsonResult.data} />
+                    <JsonSummaryView data={jsonResult.data} actions={actions} />
                 )
             ) : jsonViewMode === 'formatted' ? (
                 <JsonTreeViewer
@@ -816,7 +821,7 @@ const JsonToolOutput: React.FC<{
                     maxHeight="400px"
                 />
             ) : (
-                <div className="typography-code pe-12 text-muted-foreground/90">
+                <div className="typography-code text-muted-foreground/90">
                     <WorkerHighlightedCode
                         language="json"
                         code={renderedOutput}
@@ -1663,17 +1668,13 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     );
 
     return (
-        <div
-            className={cn(
-                'relative pb-2 pt-2 space-y-2'
-            )}
-        >
+        <div className="relative pb-1 pt-0.5 space-y-1">
             {isQuestionTool(part.tool) ? (
                 renderResultContent()
             ) : (
                 <>
                     {isExecute ? (
-                        <div className="my-1 space-y-2">
+                        <div className="space-y-1">
                             {executeCode ? renderScrollableBlock(
                                 <WorkerHighlightedCode
                                     language="javascript"
@@ -1705,7 +1706,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                     ) : null}
 
                     {hasInputText && !isUnifiedExecTool(part.tool) ? (
-                        <div className="my-1">
+                        <div>
                             {renderScrollableBlock(
                                 isShellTool(part.tool) ? (
                                     <pre className="tool-input-text whitespace-pre-wrap break-words typography-code text-muted-foreground/90 m-0 p-0">
@@ -1717,13 +1718,13 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                                         diffViewMode={diffViewMode}
                                     />
                                 ) : (
-                                    <blockquote className="tool-input-text whitespace-pre-wrap break-words typography-meta italic text-muted-foreground/70">
+                                    <div className="tool-input-text m-0 whitespace-pre-wrap break-words typography-meta italic text-muted-foreground/70">
                                         {inputTextContent}
-                                    </blockquote>
+                                    </div>
                                 ),
                                 {
                                     maxHeightClass: isWriteLikeTool && writeLikeInputPatch && isExpanded ? 'max-h-[50vh]' : 'max-h-60',
-                                    className: isShellTool(part.tool) ? 'tool-input-surface p-0 rounded-none' : 'tool-input-surface',
+                                    className: isShellTool(part.tool) ? 'tool-input-surface p-0 rounded-none' : 'tool-input-surface p-1',
                                 }
                             )}
                         </div>
