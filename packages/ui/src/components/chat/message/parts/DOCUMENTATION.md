@@ -536,6 +536,11 @@ the same owner.
 
 ### Message parts
 
+- A status-only retry before the first assistant message uses a display-only placeholder (`applyRetryOverlay`). Its required agent/model identity fields are empty strings, allowing `ChatMessage` to use its existing selection fallback without attributing the attempt to a guessed model. The placeholder satisfies the message type without a cast, stays out of stored history, and disappears when retry status clears or the real assistant message arrives.
+- Message render comparisons include the immutable error and retry records. Changing or clearing either under the same message ID must refresh the notice; a parent record rebuilt with the same failure references can keep its rendered content.
+
+- Expanded pending `patch` calls preview complete lines from the streamed JSON `patchText` argument. Decoding follows the existing 100 ms text throttle and bounded diff preview limits. Additions and deletions use plain theme-colored spans; this input preview loads no syntax highlighter and reads no workspace files. Running calls retain the input preview until execution settles. Completed and failed calls discard the input preview so proposed edits cannot be mistaken for applied changes. Collapsed calls do no preview decoding.
+
 - Assistant Markdown treats raw HTML as inert visible text, including HTML
   inside link text. `streamdownPlugins.ts` applies the restricted rehype policy
   and sanitizer, retaining Streamdown's hardening plugin. Files previews and

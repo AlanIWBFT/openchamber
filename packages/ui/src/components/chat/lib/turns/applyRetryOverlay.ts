@@ -80,10 +80,15 @@ export const applyRetryOverlay = (
             id: syntheticId,
             sessionID: input.sessionId,
             role: 'assistant',
+            // A status-only notice has no recorded agent/model yet. Empty identity
+            // fields let the renderer use its selection fallback until a real step arrives.
+            agent: '',
+            providerID: '',
+            modelID: '',
             time: { created: eventTime, completed: eventTime },
             finish: 'stop',
             error: retryError,
-        } as unknown as Message,
+        },
         parts: [],
     };
 
