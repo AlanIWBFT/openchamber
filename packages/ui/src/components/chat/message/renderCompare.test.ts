@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { CompactionMessage } from '@/lib/opencode/model';
+import type { AssistantMessage, CompactionMessage } from '@/lib/opencode/model';
 import type { TurnGroupingContext } from '../lib/turns/types';
 import { areRelevantTurnGroupingContextsEqual, areRenderRelevantMessagesEqual } from './renderCompare';
 
@@ -55,6 +55,27 @@ describe('completed-turn changed files', () => {
     const before = { ...finalAnswerContext, changedFiles: files };
     const after = { ...finalAnswerContext, changedFiles: [{ ...files[0] }] };
     expect(areRelevantTurnGroupingContextsEqual(before, after, 'answer', false)).toBe(true);
+  });
+});
+
+describe('message failure state', () => {
+  const message: AssistantMessage = {
+    id: 'reply', sessionID: 'session', role: 'assistant', time: { created: 1 }, agent: 'build', providerID: 'test', modelID: 'test',
+  };
+  const error = { type: 'provider.transport', message: 'WebSocket closed with code 1006' };
+  const same = (left: AssistantMessage, right: AssistantMessage) => areRenderRelevantMessagesEqual({ info: left, parts: [] }, { info: right, parts: [] });
+
+  test('invalidates an error added, replaced or cleared under the same message ID', () => {
+    const failed = { ...message, error };
+    expect(same(message, failed)).toBe(false);
+    expect(same(failed, message)).toBe(false);
+    expect(same(failed, { ...failed, error: { ...error, message: 'Connection recovered' } })).toBe(false);
+  });
+
+  test('preserves rebuilt message records and unrelated usage changes with the same failure state', () => {
+    const retrying = { ...message, error, retry: { attempt: 1, at: 10, error } };
+    expect(same(retrying, { ...retrying })).toBe(true);
+    expect(same(retrying, { ...retrying, cost: 1 })).toBe(true);
   });
 });
 
