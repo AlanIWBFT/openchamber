@@ -4,9 +4,12 @@ import { plugin } from 'bun';
 import { pathToFileURL } from 'node:url';
 import { createRoot } from 'react-dom/client';
 import { Window } from 'happy-dom';
-import { OpenCode } from '@opencode/client';
+import { OpenCode, type OpenCodeEvent } from '@opencode/client';
 import type { ToolPart as ToolPartData } from '@/lib/opencode/model';
 import { SyncProvider, useChildStoreManager } from '@/sync/sync-context';
+import { classifyStreamPayload } from '@/sync/event-pipeline';
+import { applyDirectoryEvent } from '@/sync/event-reducer';
+import { INITIAL_STATE, type State } from '@/sync/types';
 import { I18nProvider } from '@/lib/i18n';
 import { ThemeSystemContext, type ThemeContextValue } from '@/contexts/theme-system-context';
 import { getDefaultTheme } from '@/lib/theme/themes';
@@ -74,7 +77,8 @@ const patchPart = (paths: string[]): ToolPartData => ({
 const withHarness = async (
   toolPart: ToolPartData,
   isExpanded: boolean,
-  run: (store: ReturnType<ReturnType<typeof useChildStoreManager>['ensureChild']>, container: HTMLElement) => Promise<void>,
+  run: (store: ReturnType<ReturnType<typeof useChildStoreManager>['ensureChild']>, container: HTMLElement,
+    render: (part: ToolPartData) => Promise<void>) => Promise<void>,
 ) => {
   const happyWindow = new Window({ url: 'http://localhost' });
   const globals = {
@@ -116,21 +120,22 @@ const withHarness = async (
   try {
     useDirectoryStore.setState({ currentDirectory: '/workspace' });
     useGuestsStore.setState({ status: 'ready', guests: [], runtimeKey: 'test' });
-    await act(async () => {
+    const render = async (part: ToolPartData) => act(async () => {
       root.render(
         <SyncProvider sdk={sdk} directory="/workspace">
           <CaptureManager />
           <I18nProvider>
             <ThemeSystemContext.Provider value={themeContext}>
-              <ToolPart part={toolPart} isExpanded={isExpanded} isMobile={false} onToggle={() => {}} />
+              <ToolPart part={part} isExpanded={isExpanded} isMobile={false} onToggle={() => {}} />
             </ThemeSystemContext.Provider>
           </I18nProvider>
         </SyncProvider>,
       );
     });
 
+    await render(toolPart);
     if (!manager) throw new Error('Sync manager did not mount');
-    await run(manager.ensureChild('/workspace', { bootstrap: false }), container);
+    await run(manager.ensureChild('/workspace', { bootstrap: false }), container, render);
   } finally {
     await act(async () => { root.unmount(); });
     useDirectoryStore.setState({ currentDirectory: previousDirectory });
@@ -158,6 +163,46 @@ const childActivity = (sessionID: string) => ({
 });
 
 const openButton = (container: HTMLElement) => container.querySelector('button[aria-label="Open Explore subtask"]');
+
+for (const terminal of ['success', 'failed'] as const) {
+  test(`patch wire events show a preview before input ends and clear it on ${terminal}`, async () => {
+    const patch = '*** Begin Patch\n*** Add File: example.ts\n+preview-only\n*** End Patch';
+    const raw = JSON.stringify({ patchText: patch });
+    const prefix = raw.slice(0, raw.indexOf('*** End Patch'));
+    const draft: State = { ...structuredClone(INITIAL_STATE), ...childActivity('child'), part: {} };
+    const base = { id: 'evt_patch_preview', created: 1000, location: { directory: '/workspace' } };
+    const durable = { aggregateID: 'child', seq: 1, version: 1 as const };
+    const data = { sessionID: 'child', assistantMessageID: 'child-message', id: 'patch-call' };
+    const apply = (event: OpenCodeEvent): ToolPartData => {
+      const classified = classifyStreamPayload(event, '/workspace');
+      if (classified.kind !== 'events' || classified.events.length === 0) throw new Error('Wire event was dropped');
+      for (const entry of classified.events) {
+        expect(entry.directory).toBe('/workspace');
+        applyDirectoryEvent(draft, entry.event);
+      }
+      const part = draft.part['child-message']?.find((part) => part.id === 'patch-call');
+      if (part?.type !== 'tool') throw new Error('Patch part is missing');
+      return part;
+    };
+    const pending = apply({ ...base, durable, type: 'session.tool.input.started', data: { ...data, name: 'patch' } });
+    await withHarness(pending, true, async (_store, container, render) => {
+      expect(container.querySelector('pre')).toBeNull();
+      for (const delta of [prefix.slice(0, 24), prefix.slice(24)]) {
+        await render(apply({ ...base, type: 'session.tool.input.delta', data: { ...data, delta } }));
+      }
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 120)); });
+      expect(container.querySelector('pre')?.textContent).toContain('+preview-only');
+      expect(container.querySelector('pre span[style*="--tools-edit-added-bg"]')).not.toBeNull();
+      await render(apply({ ...base, durable, type: 'session.tool.input.ended', data: { ...data, text: raw } }));
+      await render(apply({ ...base, durable, type: 'session.tool.called', data: { ...data, input: { patchText: patch }, executed: false } }));
+      expect(container.querySelector('pre')?.textContent).toContain('+preview-only');
+      await render(apply(terminal === 'success'
+        ? { ...base, durable: { ...durable, version: 2 }, type: 'session.tool.success', data: { ...data, content: [{ type: 'text', text: 'Applied' }], executed: false } }
+        : { ...base, durable: { ...durable, version: 2 }, type: 'session.tool.failed', data: { ...data, error: { type: 'tool.execution', message: 'Rejected' }, executed: false } }));
+      expect(container.textContent).not.toContain('+preview-only');
+    });
+  });
+}
 
 test('a finished subagent is one row with its duration and an open action, never its child activity', async () => {
   await withHarness(parent, false, async (store, container) => {
