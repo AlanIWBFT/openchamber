@@ -17,6 +17,7 @@ import { SyncProvider, useDirectoryStore as useSyncDirectoryStore } from '@/sync
 import { useUIStore } from '@/stores/useUIStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { projectTurnRecords } from '../lib/turns/projectTurnRecords';
+import { applyRetryOverlay } from '../lib/turns/applyRetryOverlay';
 import type { ChatMessageEntry, TurnChangedFile, TurnRecord } from '../lib/turns/types';
 import { LiveTurnActivity } from './LiveTurnActivity';
 import { createTurnMessageWindowStore, TurnMessageWindowContext } from '../lib/turns/turnMessageWindow';
@@ -191,6 +192,43 @@ describe('Activity with the real message body', () => {
         await act(async () => root.unmount());
         jest.useRealTimers();
         restore();
+    });
+
+    test('a status-only retry renders before an assistant exists and recovers in the same session', async () => {
+        const user = turn([]).userMessage;
+        const input = { sessionId: 'session', message: 'WebSocket closed with code 1006', fallbackTimestamp: 2 };
+        const retryMessage = (message = input.message) => applyRetryOverlay([user], { ...input, message })[1];
+        const renderMessage = (message: ChatMessageEntry) => (
+            <RuntimeAPIContext.Provider value={runtimeApis}>
+                <ThemeSystemContext.Provider value={themeContext}>
+                    <SyncProvider sdk={sdk} directory="/project">
+                        <I18nProvider><ChatMessage message={message} /></I18nProvider>
+                    </SyncProvider>
+                </ThemeSystemContext.Provider>
+            </RuntimeAPIContext.Provider>
+        );
+
+        await act(async () => root.render(renderMessage(retryMessage())));
+        expect(container.textContent).toContain('WebSocket closed with code 1006');
+        await act(async () => root.render(renderMessage(retryMessage('Retrying the connection'))));
+        expect(container.textContent).toContain('Retrying the connection');
+        expect(container.textContent).not.toContain('WebSocket closed with code 1006');
+
+        const reply = assistant('reply', [text('answer', 'Recovered reply')], 'stop');
+        await act(async () => root.render(renderMessage(reply)));
+        expect(container.textContent).toContain('Recovered reply');
+        expect(container.textContent).not.toContain('Retrying the connection');
+        expect(user.info).not.toHaveProperty('error');
+
+        if (reply.info.role !== 'assistant') throw new Error('Expected an assistant reply');
+        const retrying: ChatMessageEntry = { ...reply, info: { ...reply.info, retry: {
+            attempt: 1, at: 10, error: { type: 'provider.transport', message: 'Connection interrupted again' },
+        } } };
+        await act(async () => root.render(renderMessage(retrying)));
+        expect(container.textContent).toContain('Connection interrupted again');
+        await act(async () => root.render(renderMessage(reply)));
+        expect(container.textContent).not.toContain('Connection interrupted again');
+        expect(container.textContent).toContain('Recovered reply');
     });
 
     test('touch toggles briefly reveal the new view, repeated taps restart the hint, and mouse clicks do not latch it', async () => {

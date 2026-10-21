@@ -27,6 +27,7 @@ import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import type { ToolPopupContent } from '../types';
 import { PlainDiffFallback } from './PlainDiffFallback';
+import { patchInputPreview, PATCH_INPUT_PREVIEW_RAW_LIMIT } from './patchInputPreview';
 import { isToolDiffPreviewOversized } from './toolDiffPreview';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 
@@ -1280,6 +1281,19 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
         [currentDirectory, diffContent, metadata]
     );
     const hasVisualDiffEntry = diffEntries.some((entry) => entry.renderMode === 'diff');
+    const showPatchInput = isPatchTool(part.tool)
+        && (state.status === 'pending' || state.status === 'running');
+    const patchRaw = useStreamingTextThrottle({
+        text: showPatchInput && state.status === 'pending' ? state.raw.slice(0, PATCH_INPUT_PREVIEW_RAW_LIMIT) : '',
+        isStreaming: showPatchInput && state.status === 'pending',
+        identityKey: part.id,
+        allowTextReplacement: true,
+    });
+    const patchPreview = React.useMemo(() => {
+        if (!showPatchInput) return '';
+        if (state.status === 'pending') return patchInputPreview(patchRaw);
+        return getPatchText(input?.patchText) ?? '';
+    }, [showPatchInput, state.status, patchRaw, input?.patchText]);
     // `execute` renders its script and its call list itself, below.
     const hideToolInputPreview = part.tool === 'openchamber'
         || part.tool === 'openchamber_schedule'
@@ -1704,6 +1718,11 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                                 </div>
                             ) : null}
                         </div>
+                    ) : null}
+
+                    {patchPreview ? renderScrollableBlock(
+                        <PlainDiffFallback diff={patchPreview} colorLines />,
+                        { maxHeightClass: 'max-h-60', className: 'tool-input-surface', followKey: patchPreview },
                     ) : null}
 
                     {hasInputText && !isUnifiedExecTool(part.tool) ? (
