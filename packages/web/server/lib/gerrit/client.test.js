@@ -6,6 +6,23 @@ const noDelay = async () => {};
 const basic = (login, password) => `Basic ${Buffer.from(`${login}:${password}`).toString('base64')}`;
 
 describe('Gerrit client', () => {
+  it('aborts an active read without retrying after its caller deadline', async () => {
+    const controller = new AbortController();
+    const reason = Object.assign(new Error('status expired'), { code: 'ETIMEDOUT' });
+    const fetch = vi.fn((_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }));
+    const delay = vi.fn(noDelay);
+    const client = createGerritClient({ origin: ORIGIN, fetch, delay });
+    const pending = client.get('/changes/', {}, { signal: controller.signal });
+    controller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(delay).not.toHaveBeenCalled();
+    await expect(client.get('/changes/', {}, { signal: controller.signal })).rejects.toBe(reason);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('sends Basic credentials to the /a/ API only, never following redirects', async () => {
     const { fetch, calls } = fakeGerrit({ 'GET /accounts/self': fixtures.accountSelf });
     const client = createGerritClient({ origin: ORIGIN, login: 'alice', password: 'http-pw', fetch });

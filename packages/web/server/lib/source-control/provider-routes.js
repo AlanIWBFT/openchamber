@@ -657,31 +657,37 @@ export function registerProviderRoutes(app, {
       // The account is resolved before the cache is consulted, so a removed or
       // rotated credential never receives an answer it did not earn.
       const session = await sessionFor(impl, instance, trustedContext.accountId);
-      const cacheContext = {
-        instance, accountId: session.accountId, credentialRevision: session.credentialRevision,
-        repositoryId: trustedContext.repositoryId, bindingRevision: trustedContext.bindingRevision,
-        directory, branch, remote,
-        // A push-to-create host finds the change by the tip's Change-Id, so
-        // its answer is only as current as the tip it was read for.
-        localTip: descriptor.capabilities.createVia === 'push' ? await readBranchTip(directory, branch) : null,
-      };
-      if (!force) {
-        const fresh = statusCache.fresh(cacheContext);
-        if (fresh) return res.json(fresh);
-      }
-      // A mutation that lands while this read runs keeps the read from storing.
-      const started = statusCache.begin();
+      let cacheContext;
       try {
         const status = await withTimeout(
-          (signal) => impl.resources.changeRequestStatus({ session, context: trustedContext, directory, branch, remote, force }, { signal }),
+          async (signal) => {
+            // The tip probe shares the deadline and worker ownership with the
+            // provider read. A failed probe cannot reuse another tip's answer.
+            const localTip = descriptor.capabilities.createVia === 'push' ? await readBranchTip(directory, branch, { signal }) : null;
+            signal.throwIfAborted();
+            cacheContext = {
+              instance, accountId: session.accountId, credentialRevision: session.credentialRevision,
+              repositoryId: trustedContext.repositoryId, bindingRevision: trustedContext.bindingRevision,
+              directory, branch, remote, localTip,
+            };
+            if (!force) {
+              const fresh = statusCache.fresh(cacheContext);
+              if (fresh) return fresh;
+            }
+            // A mutation that lands while this read runs keeps the read from storing.
+            const started = statusCache.begin();
+            const answer = await impl.resources.changeRequestStatus({ session, context: trustedContext, directory, branch, remote, force }, { signal });
+            signal.throwIfAborted();
+            return statusCache.store(cacheContext, answer, started);
+          },
           STATUS_RESOLVE_TIMEOUT_MS,
           `${label} change request status`,
         );
-        return res.json(statusCache.store(cacheContext, status, started));
+        return res.json(status);
       } catch (error) {
         // The client treats a 503 as "keep what you have" when nothing was seen yet.
         if (isTransientFailure(impl, error)) {
-          const last = statusCache.last(cacheContext);
+          const last = cacheContext ? statusCache.last(cacheContext) : null;
           if (last) return res.json(last);
           return res.status(503).json({ error: error?.message || `${label} is temporarily unavailable` });
         }
