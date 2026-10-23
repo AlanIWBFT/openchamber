@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { readLocalRevision, readUpstreamBranch } from './local-revision.js';
+import { resolveGerritProjectsFromDirectory } from './repo.js';
 
 const directories = [];
 afterEach(async () => {
@@ -49,6 +50,8 @@ describe('Gerrit local revision', () => {
 
     // Not checked out, and a remote with a slash in its name.
     await expect(readUpstreamBranch(directory, 'login', 'team/gerrit')).resolves.toBe('release/1.0');
+    await expect(resolveGerritProjectsFromDirectory(directory, 'https://review.example.com', 'team/gerrit', { branch: 'login' }))
+      .resolves.toMatchObject({ repos: [{ project: 'app', remoteName: 'team/gerrit' }] });
     // Tracks a remote that is not the primary one.
     await expect(readUpstreamBranch(directory, 'other', 'team/gerrit')).resolves.toBeNull();
     // No upstream, no such branch, an argument Git would read as something else.

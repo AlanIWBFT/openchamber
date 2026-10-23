@@ -30,6 +30,24 @@ function fixture() {
 afterEach(() => vi.useRealTimers());
 
 describe('status deadline and worker recovery', () => {
+  it('does not let a late timed-out result replace the last successful status', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { read, status } = fixture();
+    const initial = await status().expect(200);
+    let release;
+    let started;
+    const ready = new Promise((resolve) => { started = resolve; });
+    read.mockImplementation(() => new Promise((resolve) => { release = resolve; started(); }));
+    const pending = status({ force: 'true' }).then((response) => response);
+    await ready;
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect((await pending).body).toEqual(initial.body);
+    release({ connected: true, changeRequest: { number: 99 } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect((await status().expect(200)).body).toEqual(initial.body);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it('aborts provider work at the deadline without putting runtime options into JSON input', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { read, status } = fixture();

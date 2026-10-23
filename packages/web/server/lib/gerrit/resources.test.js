@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createGerritClient } from './client.js';
 import { createGerritResourceService, selectChangeForBranch } from './resources.js';
 import {
@@ -8,7 +8,7 @@ import {
 const context = { repositoryId: 'repo-1', bindingRevision: 2, primaryRemote: 'origin', directory: '/repo' };
 const providerTarget = { project: 'platform/app', number: 42 };
 
-function setup(routes = {}, { local = { sha: PS3, changeId: fixtures.changeId }, upstream = 'master' } = {}) {
+function setup(routes = {}, { local = { sha: PS3, changeId: fixtures.changeId }, upstream = 'master', upstreamError } = {}) {
   const gerrit = fakeGerrit(changeRoutes(routes));
   const client = createGerritClient({ origin: ORIGIN, login: 'alice', password: 'pw', fetch: gerrit.fetch, delay: async () => {} });
   const service = createGerritResourceService({
@@ -16,12 +16,39 @@ function setup(routes = {}, { local = { sha: PS3, changeId: fixtures.changeId },
     client,
     resolveProjects: resolvePlatformApp,
     readLocalRevision: async () => local,
-    readUpstreamBranch: async () => upstream,
+    readUpstreamBranch: async () => { if (upstreamError) throw upstreamError; return upstream; },
   });
   return { ...gerrit, service };
 }
 
 describe('Gerrit change status by Change-Id', () => {
+  it.each(['ETIMEDOUT', 'GIT_READ_WORKER_UNAVAILABLE'])('does not choose the default branch when upstream tracking fails with %s', async (code) => {
+    const upstreamError = Object.assign(new Error('read unavailable'), { code });
+    const { service } = setup({ 'GET /changes/': fixtures.statusQuery }, { upstreamError });
+    await expect(service.changeRequestStatus('/repo', 'login', 'origin')).rejects.toBe(upstreamError);
+  });
+
+  it('does not start local Git reads after cancellation during the default-branch lookup', async () => {
+    const controller = new AbortController();
+    const reason = Object.assign(new Error('status expired'), { code: 'ETIMEDOUT' });
+    const readLocalRevision = vi.fn();
+    const readUpstreamBranch = vi.fn();
+    const service = createGerritResourceService({
+      origin: ORIGIN,
+      resolveProjects: resolvePlatformApp,
+      client: { get: async (_path, _query, { signal }) => {
+        expect(signal).toBe(controller.signal);
+        controller.abort(reason);
+        return 'refs/heads/master';
+      } },
+      readLocalRevision,
+      readUpstreamBranch,
+    });
+    await expect(service.changeRequestStatus('/repo', 'login', 'origin', { signal: controller.signal })).rejects.toBe(reason);
+    expect(readLocalRevision).not.toHaveBeenCalled();
+    expect(readUpstreamBranch).not.toHaveBeenCalled();
+  });
+
   it('finds the open change on the tracked branch among cherry-picks, with its stack and uploaded patchset', async () => {
     const { service, calls } = setup({ 'GET /changes/': fixtures.statusQuery });
 

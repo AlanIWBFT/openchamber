@@ -1,5 +1,7 @@
 import { isString } from '../shared/guards.js';
 import { readBranchChangeIds, runGit } from '../source-control/change-id.js';
+import { isMainThread } from 'node:worker_threads';
+import { runGitReadWorkerTask, throwIfGitReadCancelled } from '../git/service.js';
 
 const COMMIT_SHA = /^[0-9a-f]{40}$/;
 const CHANGE_ID = /^I[0-9a-f]{40}$/;
@@ -12,8 +14,8 @@ const BRANCH_NAME = /^(?!-)(?!.*\.\.)[^\0-\x20\x7f~^:?*[\\{}]+$/;
  * through the shared trailer reader (`source-control/change-id.js`). A Git
  * failure (no such branch) rejects; it never reads as "no Change-Id".
  */
-export async function readLocalRevision(directory, branch) {
-  const { head: tip } = await readBranchChangeIds(directory, branch);
+export async function readLocalRevision(directory, branch, options = {}) {
+  const { head: tip } = await readBranchChangeIds(directory, branch, null, options);
   return {
     sha: isString(tip?.sha) && COMMIT_SHA.test(tip.sha) ? tip.sha : null,
     changeId: isString(tip?.changeId) && CHANGE_ID.test(tip.changeId) ? tip.changeId : null,
@@ -27,11 +29,25 @@ export async function readLocalRevision(directory, branch) {
  * change on that branch. The remote comes from `branch.<b>.remote` and the
  * tracking ref from Git, so a remote named `team/gerrit` is stripped whole.
  */
-export async function readUpstreamBranch(directory, branch, primaryRemote, { git = runGit } = {}) {
+export async function readUpstreamBranch(directory, branch, primaryRemote, options = {}) {
+  throwIfGitReadCancelled(options);
   if (!isString(branch) || !BRANCH_NAME.test(branch) || !isString(primaryRemote) || !primaryRemote) return null;
-  const remote = (await git(directory, ['config', '--get', `branch.${branch}.remote`]).catch(() => '')).trim();
+  if (process.platform === 'win32' && isMainThread && !options.git) {
+    return runGitReadWorkerTask('gerrit-upstream', { directory, branch, remote: primaryRemote }, options);
+  }
+  const read = async (args) => {
+    throwIfGitReadCancelled(options);
+    const value = await (options.git ?? runGit)(directory, args, options).catch((error) => {
+      throwIfGitReadCancelled(options, error);
+      if (error?.code === 'ETIMEDOUT') throw error;
+      return '';
+    });
+    throwIfGitReadCancelled(options);
+    return value.trim();
+  };
+  const remote = await read(['config', '--get', `branch.${branch}.remote`]);
   if (remote !== primaryRemote) return null;
-  const tracking = (await git(directory, ['rev-parse', '--symbolic-full-name', `${branch}@{upstream}`]).catch(() => '')).trim();
+  const tracking = await read(['rev-parse', '--symbolic-full-name', `${branch}@{upstream}`]);
   const prefix = `refs/remotes/${remote}/`;
   return tracking.startsWith(prefix) ? tracking.slice(prefix.length) || null : null;
 }
