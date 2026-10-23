@@ -1,4 +1,4 @@
-import { getRemotes, getStatus } from '../git/index.js';
+import { getPrGitContext, getRemotes, getStatus } from '../git/index.js';
 import { isString } from '../shared/guards.js';
 import { splitProjectPath } from '../source-control/project-path.js';
 import { normalizeGerritInstance } from './instance.js';
@@ -78,13 +78,18 @@ export async function resolveGerritProjectsFromDirectory(directory, instance, ex
   const loadStatus = dependencies.getStatus ?? getStatus;
   const parseRemote = (remote) => parseGerritRemoteUrl(remote.pushUrl || remote.fetchUrl, instance)
     ?? parseGerritRemoteUrl(remote.fetchUrl, instance);
-  const remotes = await loadRemotes(directory);
+  // Status already names its branch. Reuse the narrow worker-backed context
+  // instead of doing repository discovery and remote process launches here.
+  const context = dependencies.branch
+    ? await getPrGitContext(directory, dependencies.branch, { signal: dependencies.signal })
+    : null;
+  const remotes = context?.remotes ?? await loadRemotes(directory);
   if (explicitRemote) {
     const remote = remotes.find((candidate) => candidate?.name === explicitRemote);
     const parsed = remote ? parseRemote(remote) : null;
     return { repos: parsed ? [{ ...parsed, remoteName: explicitRemote }] : [] };
   }
-  const status = await loadStatus(directory, { mode: 'light' });
+  const status = context ?? await loadStatus(directory, { mode: 'light' });
   const ranked = [];
   for (const name of [trackingRemoteName(status?.tracking), 'origin', 'upstream', ...remotes.map((remote) => remote?.name)]) {
     if (isString(name) && name && !ranked.includes(name)) ranked.push(name);

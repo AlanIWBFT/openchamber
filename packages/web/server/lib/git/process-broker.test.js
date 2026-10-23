@@ -35,6 +35,29 @@ describe.runIf(available)('Windows process broker', () => {
     )).rejects.toMatchObject({ code: 7, stderr: 'failed' });
   });
 
+  it('preserves buffered stdin bytes across broker acknowledgements', async () => {
+    const input = Buffer.from('正文\r\n\r\nChange-Id: I0123456789\r\n'.repeat(4096));
+    const result = await execFileWithProcessBroker(process.execPath, ['-e', 'process.stdin.pipe(process.stdout)'], { input, encoding: 'buffer' });
+    expect(result.stdout).toEqual(input);
+    expect(result.stderr.length).toBe(0);
+  });
+
+  it('closes a cancelled command while buffered stdin is blocked', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-broker-input-'));
+    const controller = new AbortController();
+    const reason = Object.assign(new Error('read expired'), { code: 'ETIMEDOUT' });
+    const timer = setTimeout(() => controller.abort(reason), 300);
+    try {
+      await expect(execFileWithProcessBroker(process.execPath, ['-e', 'setInterval(()=>{},60000)'], {
+        cwd: directory, input: Buffer.alloc(1024 * 1024), signal: controller.signal,
+      })).rejects.toBe(reason);
+      fs.rmdirSync(directory);
+    } finally {
+      clearTimeout(timer);
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('waits for process-tree close before rejecting a timed-out probe', async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-broker-timeout-'));
     try {

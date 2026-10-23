@@ -2,6 +2,10 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isString } from '../shared/guards.js';
+import { isMainThread } from 'node:worker_threads';
+import { buildGitEnv, runGitReadWorkerTask, throwIfGitReadCancelled } from '../git/service.js';
+import { resolveGitBinary } from '../git/git-binary.js';
+import { execFileWithProcessBroker } from '../git/process-broker.js';
 
 /**
  * Change-Ids of a branch's commits, for hosts that find a change by the
@@ -32,17 +36,35 @@ const refArgument = (value, name) => {
 };
 
 /** `git <args>` in `directory`, with `input` on stdin; stdout, or a rejection on any failure. */
-export const runGit = (directory, args, { input = '', env = {} } = {}) => new Promise((resolve, reject) => {
-  const child = execFile('git', args, {
+export const runGit = async (directory, args, { input = '', env = {}, signal, cancellationView } = {}) => {
+  const cancellation = { signal, cancellationView };
+  throwIfGitReadCancelled(cancellation);
+  const options = {
     cwd: directory,
     windowsHide: true,
     timeout: 10_000,
     maxBuffer: 8 * 1024 * 1024,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1', ...env },
-  }, (error, stdout) => (error ? reject(error) : resolve(String(stdout))));
-  child.stdin.on('error', () => {});
-  child.stdin.end(input);
-});
+    env: { ...(await buildGitEnv(directory)), GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1', ...env },
+    signal,
+  };
+  throwIfGitReadCancelled(cancellation);
+  const binary = resolveGitBinary();
+  const managed = execFileWithProcessBroker(binary, args, { ...options, input });
+  const result = await (managed ?? new Promise((resolve, reject) => {
+    const child = execFile(binary, args, options, (error, stdout) => (error ? reject(error) : resolve({ stdout })));
+    child.stdin.on('error', () => {});
+    child.stdin.end(input);
+  }));
+  throwIfGitReadCancelled(cancellation);
+  return String(result.stdout);
+};
+
+const gitForRead = (options) => async (directory, args, commandOptions) => {
+  throwIfGitReadCancelled(options);
+  const result = await (options.git ?? runGit)(directory, args, { ...commandOptions, signal: options.signal, cancellationView: options.cancellationView });
+  throwIfGitReadCancelled(options);
+  return result;
+};
 
 /** The last valid `Change-Id` trailer of a commit message, or null. */
 async function changeIdOfMessage(directory, message, git) {
@@ -71,11 +93,17 @@ const refExists = async (directory, ref, git) => {
  * or Git cannot read it. Cheap (one `rev-parse`), for keying a cached answer
  * that was derived from the tip.
  */
-export async function readBranchTip(directory, branch, { git = runGit } = {}) {
+export async function readBranchTip(directory, branch, options = {}) {
+  if (process.platform === 'win32' && isMainThread && !options.git) {
+    return runGitReadWorkerTask('branch-tip', { directory, branch }, options);
+  }
+  const git = gitForRead(options);
   try {
     const sha = (await git(directory, ['rev-parse', '-q', '--verify', '--end-of-options', `refs/heads/${refArgument(branch, 'branch')}^{commit}`])).trim();
     return SHA_RE.test(sha) ? sha : null;
-  } catch {
+  } catch (error) {
+    throwIfGitReadCancelled(options, error);
+    if (error?.code === 'ETIMEDOUT') throw error;
     return null;
   }
 }
@@ -88,7 +116,11 @@ export async function readBranchTip(directory, branch, { git = runGit } = {}) {
  * A Git failure (a missing branch or base) rejects; it never reads as a
  * branch without Change-Ids.
  */
-export async function readBranchChangeIds(directory, branch, base = null, { git = runGit } = {}) {
+export async function readBranchChangeIds(directory, branch, base = null, options = {}) {
+  if (process.platform === 'win32' && isMainThread && !options.git) {
+    return runGitReadWorkerTask('branch-change-ids', { directory, branch, base }, options);
+  }
+  const git = gitForRead(options);
   const branchRef = `refs/heads/${refArgument(branch, 'branch')}`;
   const baseRef = base === null ? null : refArgument(base, 'base');
   if (!(await refExists(directory, `${branchRef}^{commit}`, git))) {
@@ -110,10 +142,15 @@ export async function readBranchChangeIds(directory, branch, base = null, { git 
     truncated = commits.length > CHANGE_STACK_LIMIT;
     commits = commits.slice(0, CHANGE_STACK_LIMIT).reverse();
   }
-  const stack = await Promise.all(commits.map(async (commit) => ({
+  // Every command must close before the worker acknowledges this read, even
+  // when another trailer read failed or cancellation reached all of them.
+  const results = await Promise.allSettled(commits.map(async (commit) => ({
     sha: commit.sha,
     changeId: await changeIdOfMessage(directory, commit.message, git),
   })));
+  const failure = results.find((result) => result.status === 'rejected');
+  if (failure) throw failure.reason;
+  const stack = results.map((result) => result.value);
   const tip = stack.at(-1);
   const head = tip?.sha === sha
     ? tip
@@ -199,4 +236,3 @@ export async function addChangeIdToHead(directory, expectedHead, { git = runGit 
   }
   return { sha, changeId, branch: branchRef.slice('refs/heads/'.length) };
 }
-

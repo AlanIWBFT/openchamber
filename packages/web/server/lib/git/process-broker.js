@@ -128,7 +128,7 @@ export const execFileWithProcessBroker = (command, args, options = {}) => {
       }
       finish(Object.assign(new Error(`Command failed with exit code ${code}`), { code, ...result }));
     });
-    child.stdin.end();
+    child.stdin.end(options.input);
     if (options.timeout > 0) {
       timeout = setTimeout(() => {
         if (failure || settled) return;

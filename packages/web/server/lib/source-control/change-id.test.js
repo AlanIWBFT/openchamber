@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { addChangeIdToHead, CHANGE_STACK_LIMIT, readBranchChangeIds, readBranchTip } from './change-id.js';
+import { configureGitEnvironment } from '../git/service.js';
 
 const ID_A = `I${'a'.repeat(40)}`;
 const ID_B = `I${'b'.repeat(40)}`;
@@ -160,10 +161,27 @@ describe('addChangeIdToHead', () => {
 });
 
 describe('readBranchTip', () => {
+  it.runIf(process.platform === 'win32')('uses the caller directory environment without leaking it across worker reads', async () => {
+    const nested = path.join(directory, 'nested');
+    fs.mkdirSync(nested);
+    const inherited = process.env.GIT_CEILING_DIRECTORIES;
+    let variables = { GIT_CEILING_DIRECTORIES: directory.replaceAll('\\', '/') };
+    const reads = [];
+    configureGitEnvironment({ forDirectory: async (cwd, options) => { reads.push({ cwd, options }); return variables; } });
+    try {
+      await expect(readBranchTip(nested, 'feature')).resolves.toBeNull();
+      variables = null;
+      await expect(readBranchTip(nested, 'feature')).resolves.toBe(git('rev-parse', 'feature'));
+      expect(reads).toEqual([{ cwd: nested, options: { refresh: false } }, { cwd: nested, options: { refresh: false } }]);
+      expect(process.env.GIT_CEILING_DIRECTORIES).toBe(inherited);
+    } finally {
+      configureGitEnvironment(null);
+    }
+  });
+
   it('answers the branch tip, or null for a branch that does not exist', async () => {
     await expect(readBranchTip(directory, 'feature')).resolves.toBe(git('rev-parse', 'feature'));
     await expect(readBranchTip(directory, 'missing')).resolves.toBeNull();
     await expect(readBranchTip(directory, '--all')).resolves.toBeNull();
   });
 });
-
