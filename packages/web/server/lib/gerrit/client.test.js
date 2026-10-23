@@ -6,6 +6,21 @@ const noDelay = async () => {};
 const basic = (login, password) => `Basic ${Buffer.from(`${login}:${password}`).toString('base64')}`;
 
 describe('Gerrit client', () => {
+  it('aborts a pending read without retrying after the caller deadline', async () => {
+    const controller = new AbortController();
+    const reason = Object.assign(new Error('status expired'), { code: 'ETIMEDOUT' });
+    const fetch = vi.fn((_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }));
+    const delay = vi.fn(noDelay);
+    const client = createGerritClient({ origin: ORIGIN, fetch, delay });
+    const pending = client.get('/changes/', {}, { signal: controller.signal });
+    controller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+    await expect(client.get('/changes/', {}, { signal: controller.signal })).rejects.toBe(reason);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(delay).not.toHaveBeenCalled();
+  });
   it('keeps an explicitly undefined fetch body on reads', async () => {
     const fetch = vi.fn(async () => new Response('null'));
     await createGerritClient({ origin: ORIGIN, fetch }).get('/config/server/version');

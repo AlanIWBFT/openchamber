@@ -193,7 +193,7 @@ export function createProvider(options: GerritProviderOptions) {
     auth: accounts.auth,
     transport: Object.freeze({ readCredential: accounts.readCredential }),
     resources: Object.freeze({
-      changeRequestStatus: ({ session, directory, branch, remote }: ReadInput & { branch: string }) => serviceFor(session).changeRequestStatus(directory, branch, remote),
+      changeRequestStatus: ({ session, directory, branch, remote }: ReadInput & { branch: string }, options?: { signal?: AbortSignal }) => serviceFor(session).changeRequestStatus(directory, branch, remote, options),
       listChangeRequests: ({ session, directory, page, query, state, people, remote }: ReadInput & NonNullable<Parameters<Service['listChangeRequests']>[1]>) => serviceFor(session)
         .listChangeRequests(directory, { page, query, state, people, remote }),
       reviewState: ({ session, directory, project, number, remote }: NumberedRead) => serviceFor(session).reviewState(directory, number, project, remote),

@@ -66,7 +66,7 @@ const WORKTREE_INDEX_LOCK_RETRY_DELAY_MS = 250;
 const WORKTREE_INDEX_LOCK_STALE_DELAY_MS = 750;
 const WORKTREE_COMMAND_OUTPUT_MAX_CHARS = 20 * 1024 * 1024;
 
-const throwIfGitReadCancelled = (options: GitReadOptions = {}, fallbackError?: unknown) => {
+export const throwIfGitReadCancelled = (options: GitReadOptions = {}, fallbackError?: unknown) => {
   const sharedCancelled = options.cancellationView
     ? Atomics.load(options.cancellationView, 0) !== 0
     : false;
@@ -297,7 +297,7 @@ const gitReadEnvironment = new AsyncLocalStorage<{ variables: ReadEnvironment }>
 export const withGitReadEnvironment = <T>(variables: ReadEnvironment | undefined, run: () => T) =>
   gitReadEnvironment.run({ variables: variables ?? null }, run);
 
-const runGitReadWorkerTask = async <K extends ReadOperation>(operation: K, payload: GitReadInputs[K], options: GitReadOptions = {}) => {
+export const runGitReadWorkerTask = async <K extends ReadOperation>(operation: K, payload: GitReadInputs[K], options: GitReadOptions = {}) => {
   throwIfGitReadCancelled(options);
   const environment = await directoryEnvironmentForGit(payload.directory, { refresh: false });
   throwIfGitReadCancelled(options);
@@ -350,7 +350,7 @@ const directoryEnvironmentForGit = async (directory: string, options?: { refresh
   return Object.fromEntries(Object.entries(variables).filter(([name]) => !isKeptOutOfGitOverlay(name)));
 };
 
-const buildGitEnv = async (directory: string) => {
+export const buildGitEnv = async (directory: string) => {
   const inherited = stripAppImageLauncherEnv({ ...process.env });
   const variables = await directoryEnvironmentForGit(directory);
   const env = variables ? overlayEnvironment(inherited, variables) : inherited;
@@ -7336,6 +7336,9 @@ const getPrGitContextTaskKey = (directory: string, branch: string) => {
 };
 
 export interface GitReadResults {
+  'branch-tip': string | null;
+  'gerrit-upstream': string | null;
+  'branch-change-ids': import('../source-control/change-id.js').BranchChangeIds;
   status: Awaited<ReturnType<typeof getStatusDirect>>;
   'pr-context': Awaited<ReturnType<typeof getPrGitContextDirect>>;
   ancestor: boolean;

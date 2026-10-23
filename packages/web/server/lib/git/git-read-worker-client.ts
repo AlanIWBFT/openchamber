@@ -22,7 +22,7 @@ const createAbortError = (signal?: AbortSignal): Error => signal?.reason instanc
   ? signal.reason
   : Object.assign(new Error('Git read cancelled'), { code: 'ABORT_ERR' });
 
-const createWorkerError = (payload: ReadFailure) => Object.assign(new Error(payload.message || 'Git read worker failed'), { code: payload.code });
+const createWorkerError = (payload: ReadFailure) => Object.assign(new Error(payload.message || 'Git read worker failed'), { code: payload.code, ...(payload.status !== undefined && { status: payload.status }) });
 
 const defaultCreateWorker = () => new Worker(
   new URL(import.meta.url.endsWith('.ts') ? './git-read-worker.ts' : './git-read-worker.js', import.meta.url),

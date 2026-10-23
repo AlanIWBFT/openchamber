@@ -1,14 +1,22 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { isMainThread } from 'node:worker_threads';
+import { buildGitEnv, runGitReadWorkerTask, throwIfGitReadCancelled } from '../git/service.js';
+import type { GitReadOptions } from '../git/service-contracts.js';
+import { resolveGitBinary } from '../git/git-binary.js';
+import { execFileWithProcessBroker } from '../git/process-broker.js';
 import { hasSourceControlErrorCode, isSourceControlString as isString } from './input-guards.js';
 
-export interface GitCommandOptions {
+export interface GitCommandOptions extends GitReadOptions {
   input?: string;
   env?: NodeJS.ProcessEnv;
 }
 
 export type GitCommand = (directory: string, args: string[], options?: GitCommandOptions) => Promise<string>;
+export type TrailerReadOptions = GitReadOptions & { git?: GitCommand };
+type Revision = { sha: string; changeId: string | null };
+export type BranchChangeIds = { head: Revision; stack: Revision[]; truncated: boolean };
 
 const CHANGE_ID_RE = /^I[0-9a-f]{40}$/;
 const CHANGE_ID_TRAILER_RE = /^change-id:\s*(\S+)\s*$/i;
@@ -25,17 +33,34 @@ const refArgument = (value: string, name: string) => {
   return text;
 };
 
-export const runGit: GitCommand = (directory, args, { input = '', env = {} } = {}) => new Promise<string>((resolve, reject) => {
-  const child = execFile('git', args, {
+export const runGit: GitCommand = async (directory, args, { input = '', env = {}, ...read } = {}) => {
+  throwIfGitReadCancelled(read);
+  const options = {
     cwd: directory,
     windowsHide: true,
     timeout: 10_000,
     maxBuffer: 8 * 1024 * 1024,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1', ...env },
-  }, (error, stdout) => (error ? reject(error) : resolve(String(stdout))));
-  child.stdin?.on('error', () => {});
-  child.stdin?.end(input);
-});
+    env: { ...(await buildGitEnv(directory)), GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1', ...env },
+    signal: read.signal,
+  };
+  throwIfGitReadCancelled(read);
+  const binary = resolveGitBinary();
+  const managed = execFileWithProcessBroker(binary, args, { ...options, input });
+  const stdout = managed ? (await managed).stdout : await new Promise<string>((resolve, reject) => {
+    const child = execFile(binary, args, options, (error, output) => error ? reject(error) : resolve(String(output)));
+    child.stdin?.on('error', () => {});
+    child.stdin?.end(input);
+  });
+  throwIfGitReadCancelled(read);
+  return String(stdout);
+};
+
+export const gitForRead = ({ git = runGit, ...read }: TrailerReadOptions): GitCommand => async (directory, args, options) => {
+  throwIfGitReadCancelled(read);
+  const value = await git(directory, args, { ...options, ...read });
+  throwIfGitReadCancelled(read);
+  return value;
+};
 
 async function changeIdOfMessage(directory: string, message: string, git: GitCommand) {
   const trailers = await git(directory, ['interpret-trailers', '--parse', '--no-divider'], { input: message });
@@ -57,16 +82,22 @@ const refExists = async (directory: string, ref: string, git: GitCommand) => {
   }
 };
 
-export async function readBranchTip(directory: string, branch: string, { git = runGit } = {}) {
+export async function readBranchTip(directory: string, branch: string, options: TrailerReadOptions = {}): Promise<string | null> {
+  if (process.platform === 'win32' && isMainThread && !options.git) return runGitReadWorkerTask('branch-tip', { directory, branch }, options);
+  const git = gitForRead(options);
   try {
     const sha = (await git(directory, ['rev-parse', '-q', '--verify', '--end-of-options', `refs/heads/${refArgument(branch, 'branch')}^{commit}`])).trim();
     return SHA_RE.test(sha) ? sha : null;
-  } catch {
+  } catch (error) {
+    throwIfGitReadCancelled(options, error);
+    if (hasSourceControlErrorCode(error) && error.code === 'ETIMEDOUT') throw error;
     return null;
   }
 }
 
-export async function readBranchChangeIds(directory: string, branch: string, base: string | null = null, { git = runGit } = {}) {
+export async function readBranchChangeIds(directory: string, branch: string, base: string | null = null, options: TrailerReadOptions = {}): Promise<BranchChangeIds> {
+  if (process.platform === 'win32' && isMainThread && !options.git) return runGitReadWorkerTask('branch-change-ids', { directory, branch, base }, options);
+  const git = gitForRead(options);
   const branchRef = `refs/heads/${refArgument(branch, 'branch')}`;
   const baseRef = base === null ? null : refArgument(base, 'base');
   if (!(await refExists(directory, `${branchRef}^{commit}`, git))) {
@@ -88,10 +119,14 @@ export async function readBranchChangeIds(directory: string, branch: string, bas
     truncated = commits.length > CHANGE_STACK_LIMIT;
     commits = commits.slice(0, CHANGE_STACK_LIMIT).reverse();
   }
-  const stack = await Promise.all(commits.map(async (commit) => ({
+  const results = await Promise.allSettled(commits.map(async (commit) => ({
     sha: commit.sha,
     changeId: await changeIdOfMessage(directory, commit.message, git),
   })));
+  const stack = results.map((result) => {
+    if (result.status === 'rejected') throw result.reason;
+    return result.value;
+  });
   const tip = stack.at(-1);
   const head = tip?.sha === sha
     ? tip

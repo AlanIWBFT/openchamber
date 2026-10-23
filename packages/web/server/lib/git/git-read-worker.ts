@@ -2,6 +2,8 @@ import { parentPort } from 'node:worker_threads';
 import { failureCode, type ReadFailure, type WorkerInput, type WorkerRequest } from './git-read-protocol.js';
 
 import { getFileDiff, getPrGitContext, getStatus, isAncestorOfHead, isPatchEquivalentOfHead, readRenameableGeneratedBranch, withGitReadEnvironment } from './service.js';
+import { readBranchChangeIds, readBranchTip } from '../source-control/change-id.js';
+import { readUpstreamBranch } from '../gerrit/local-revision.js';
 
 if (!parentPort) {
   throw new Error('Git read worker requires a parent port');
@@ -17,6 +19,7 @@ const createCancellationError = (reason?: ReadFailure) => Object.assign(
 const serializeError = (error: unknown) => ({
   message: error instanceof Error ? error.message : String(error || 'Git read worker failed'),
   code: failureCode(error),
+  status: error instanceof Error && 'status' in error && typeof error.status === 'number' && Number.isInteger(error.status) ? error.status : undefined,
 });
 
 const port = parentPort;
@@ -51,6 +54,15 @@ const runRequest = async (message: WorkerRequest) => {
       }
       if (message.operation === 'file-diff') {
         return getFileDiff(message.payload.directory, { ...options, path: message.payload.path, staged: message.payload.staged, previousPath: message.payload.previousPath });
+      }
+      if (message.operation === 'branch-tip') {
+        return readBranchTip(message.payload.directory, message.payload.branch, options);
+      }
+      if (message.operation === 'branch-change-ids') {
+        return readBranchChangeIds(message.payload.directory, message.payload.branch, message.payload.base, options);
+      }
+      if (message.operation === 'gerrit-upstream') {
+        return readUpstreamBranch(message.payload.directory, message.payload.branch, message.payload.remote, options);
       }
       if (message.operation === 'renameable-branch') {
         return readRenameableGeneratedBranch(message.payload.directory, message.payload.checkedOutBranch, options);

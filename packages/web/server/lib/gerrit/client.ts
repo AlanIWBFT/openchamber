@@ -10,7 +10,7 @@ export interface GerritClientOptions {
   timeoutMs?: number | undefined;
   delay?: (ms: number) => Promise<void>;
 }
-type SendOptions = { query?: GerritQuery | undefined; body?: GerritJson | undefined; responseType?: 'json' | 'text' };
+type SendOptions = { query?: GerritQuery | undefined; body?: GerritJson | undefined; responseType?: 'json' | 'text'; signal?: AbortSignal | undefined };
 type GerritHeaders = { accept: string; authorization?: string; 'content-type'?: string };
 const stringValue = (value: unknown): value is string => isString(value);
 const errorRecord = (value: unknown): value is Record<string, unknown> => value !== null
@@ -115,7 +115,7 @@ export function createGerritClient({
     return url;
   };
 
-  const send = async (method: string, path: string, { query, body, responseType = 'json' }: SendOptions = {}): Promise<GerritJson> => {
+  const send = async (method: string, path: string, { query, body, responseType = 'json', signal }: SendOptions = {}): Promise<GerritJson> => {
     const url = urlOf(path, query);
     const headers: GerritHeaders = { accept: responseType === 'json' ? 'application/json' : 'text/plain' };
     if (authorization) headers.authorization = authorization;
@@ -126,12 +126,14 @@ export function createGerritClient({
     }
     const attempts = method === 'GET' ? MAX_READ_ATTEMPTS : 1;
     for (let attempt = 1; ; attempt += 1) {
+      signal?.throwIfAborted();
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       timer.unref?.();
       let response;
       try {
-        response = await fetchImpl(url.toString(), { method, headers, body: payload, redirect: 'manual', signal: controller.signal });
+        response = await fetchImpl(url.toString(), { method, headers, body: payload, redirect: 'manual', signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
+        // Node answers a manual redirect with its 3xx; a browser-like fetch with an opaque one.
         if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
           await response.body?.cancel().catch(() => {});
           throw new GerritRequestError('provider-error', 'Gerrit answered with a redirect; requests stay on the instance', response.status || 502);
@@ -139,12 +141,14 @@ export function createGerritClient({
         if (response.ok) {
           if (response.status === 204) return null;
           const text = await response.text();
+          signal?.throwIfAborted();
           if (responseType === 'text') return text;
           return parseGerritJson(text);
         }
         if (attempt >= attempts || !RETRY_STATUSES.has(response.status)) throw await errorFromResponse(response);
         await response.body?.cancel().catch(() => {});
       } catch (error) {
+        signal?.throwIfAborted();
         if (error instanceof GerritRequestError || error instanceof SyntaxError) throw error;
         if (attempt >= attempts) throw error;
       } finally {
@@ -162,7 +166,7 @@ export function createGerritClient({
   };
 
   return Object.freeze({
-    get: (path: string, query?: GerritQuery) => send('GET', path, { query }),
+    get: (path: string, query?: GerritQuery, options?: Pick<SendOptions, 'signal'>) => send('GET', path, { ...options, query }),
     base64: async (path: string, query?: GerritQuery) => {
       const text = await send('GET', path, { query, responseType: 'text' });
       if (!stringValue(text)) throw new GerritRequestError('provider-error', 'Gerrit returned an invalid text answer');

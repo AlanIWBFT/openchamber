@@ -18,8 +18,9 @@ import type { reviewCommentPosition } from '../source-control/review-position.js
 type Input = GerritJson | undefined;
 type JsonObject = { [key: string]: GerritJson };
 type Query = GerritQuery;
+type Deadline = { signal?: AbortSignal | undefined };
 export interface GerritResourceClient {
-  get(path: string, query?: Query): Promise<GerritJson>;
+  get(path: string, query?: Query, options?: Deadline): Promise<GerritJson>;
   page(path: string, query: Query, options: { start: number; limit: number; changes?: boolean }): Promise<{ items: GerritJson[]; hasMore: boolean }>;
   base64(path: string, query?: Query): Promise<Buffer>;
   post(path: string, body: GerritJson): Promise<GerritJson>;
@@ -138,8 +139,8 @@ export function createGerritResourceService({
 }: GerritResourceOptions) {
   const identity = { provider: 'gerrit', instance: origin };
 
-  const primaryProject = async (directory: string, remote: string | undefined) => {
-    const [primary] = (await resolveProjects(directory, origin, remote)).repos;
+  const primaryProject = async (directory: string, remote: string | undefined, options?: Deadline & { branch: string }) => {
+    const [primary] = (await resolveProjects(directory, origin, remote, options)).repos;
     if (!primary) throw malformed('No Gerrit project found for the repository remotes');
     return primary;
   };
@@ -151,11 +152,12 @@ export function createGerritResourceService({
     return primary;
   };
 
-  const readDefaultBranch = async (name: string) => {
+  const readDefaultBranch = async (name: string, options: Deadline = {}) => {
     try {
-      const head = await client.get(`/projects/${enc(name)}/HEAD`);
+      const head = await client.get(`/projects/${enc(name)}/HEAD`, undefined, options);
       return stringValue(head) && head.startsWith('refs/heads/') ? head.slice('refs/heads/'.length) : null;
     } catch (error) {
+      options.signal?.throwIfAborted();
       if (unauthorized(error)) throw error;
       return null;
     }
@@ -190,10 +192,11 @@ export function createGerritResourceService({
     return revision;
   };
 
-  const readStack = async (name: string, number: number, base: string) => {
+  const readStack = async (name: string, number: number, base: string, options: Deadline = {}) => {
     try {
-      return mapGerritRelatedStack(await client.get(`${changePath(name, number)}/revisions/current/related`), { origin, project: name, base });
+      return mapGerritRelatedStack(await client.get(`${changePath(name, number)}/revisions/current/related`, undefined, options), { origin, project: name, base });
     } catch (error) {
+      options.signal?.throwIfAborted();
       if (unauthorized(error)) throw error;
       return undefined;
     }
@@ -255,17 +258,34 @@ export function createGerritResourceService({
   };
 
   return {
-    async changeRequestStatus(directory: string, branch: string, remote?: string) {
-      const primary = await primaryProject(directory, remote);
-      const defaultBranch = await readDefaultBranch(primary.project);
+    /**
+     * A local branch's change, found by the Change-Id trailer of its tip
+     * commit, not by its name: a Gerrit change has no source branch.
+     * `localRevision.uploadedAs` is the patchset whose commit is the local
+     * tip, null when the local commit is not uploaded yet.
+     */
+    async changeRequestStatus(directory: string, branch: string, remote?: string, options: Deadline = {}) {
+      const { signal } = options;
+      signal?.throwIfAborted();
+      const primary = await primaryProject(directory, remote, { branch, signal });
+      signal?.throwIfAborted();
+      const defaultBranch = await readDefaultBranch(primary.project, options);
+      signal?.throwIfAborted();
       const project = projectOf(primary, { defaultBranch, remoteName: primary.remoteName });
       const base = { identity, project, branch, resolvedRemoteName: primary.remoteName ?? null, defaultBranch };
-      const local = await readLocalRevision(directory, branch);
+      const local = await readLocalRevision(directory, branch, options);
+      signal?.throwIfAborted();
       if (!local.changeId) return { ...base, changeRequest: null, localRevision: { sha: local.sha, changeId: null, uploadedAs: null } };
-      const answer = await client.get('/changes/', { q: `change:${local.changeId} project:${primary.project}`, o: STATUS_OPTIONS, n: STATUS_CANDIDATES });
+      const answer = await client.get('/changes/', { q: `change:${local.changeId} project:${primary.project}`, o: STATUS_OPTIONS, n: STATUS_CANDIDATES }, options);
+      signal?.throwIfAborted();
       if (!Array.isArray(answer)) throw malformed('Gerrit returned an invalid change list');
       const candidates = answer.filter((raw): raw is JsonObject => plainObject(raw) && raw.project === primary.project && raw.change_id === local.changeId);
-      const upstreamBranch = await readUpstreamBranch(directory, branch, primary.remoteName).catch(() => null);
+      const upstreamBranch = await readUpstreamBranch(directory, branch, primary.remoteName, options).catch((error) => {
+        signal?.throwIfAborted();
+        if (errorRecord(error) && (error.code === 'GIT_READ_WORKER_UNAVAILABLE' || error.code === 'ETIMEDOUT')) throw error;
+        return null;
+      });
+      signal?.throwIfAborted();
       const selected = selectChangeForBranch(candidates, { upstreamBranch, defaultBranch });
       if (!selected) return { ...base, changeRequest: null, localRevision: { sha: local.sha, changeId: local.changeId, uploadedAs: null } };
       const request = requireChange(selected, project);
@@ -279,7 +299,7 @@ export function createGerritResourceService({
         localRevision: { sha: local.sha, changeId: local.changeId, uploadedAs: isInteger(uploaded) ? uploaded : null },
       };
       if (request.state === 'open') {
-        const stack = await readStack(primary.project, request.number, request.base);
+        const stack = await readStack(primary.project, request.number, request.base, options);
         if (stack !== undefined) status.stack = stack;
       }
       return status;

@@ -31,6 +31,7 @@ const frameType = {
 };
 
 export interface BrokerOptions {
+  input?: string;
   cwd?: string | undefined; env?: NodeJS.ProcessEnv; windowsHide?: boolean; stdio?: 'ignore' | readonly string[];
   encoding?: BufferEncoding | 'buffer'; timeout?: number; signal?: AbortSignal | undefined; maxBuffer?: number; killSignal?: NodeJS.Signals;
 }
@@ -136,7 +137,7 @@ export const execFileWithProcessBroker = (command: string, args: readonly string
       }
       finish(Object.assign(new Error(`Command failed with exit code ${code}`), { code, ...result }));
     });
-    child.stdin.end();
+    child.stdin.end(options.input);
     if (options.timeout && options.timeout > 0) {
       timeout = setTimeout(() => {
         if (failure || settled) return;

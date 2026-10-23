@@ -723,27 +723,36 @@ export function registerProviderRoutes(app: Router, {
       const force = req.query?.force === 'true' || req.query?.force === '1';
       const remote = trustedContext.primaryRemote;
       const session = await sessionFor(impl, instance, trustedContext.accountId);
-      const cacheContext = {
-        instance, accountId: session.accountId, credentialRevision: session.credentialRevision,
-        repositoryId: trustedContext.repositoryId, bindingRevision: trustedContext.bindingRevision,
-        directory, branch, remote,
-        localTip: descriptor.capabilities.createVia === 'push' ? await readBranchTip(directory, branch) : null,
-      };
-      if (!force) {
-        const fresh = statusCache.fresh(cacheContext);
-        if (fresh) return res.json(fresh);
-      }
-      const started = statusCache.begin();
+      let cacheContext: Parameters<StatusCache['last']>[0] | undefined;
       try {
         const status = await withTimeout(
-          (signal) => impl.resources.changeRequestStatus({ session, context: trustedContext, directory, branch, remote, force }, { signal }),
+          async (signal) => {
+            // The tip probe shares the deadline and worker ownership with the
+            // provider read. A failed probe cannot reuse another tip's answer.
+            const localTip = descriptor.capabilities.createVia === 'push' ? await readBranchTip(directory, branch, { signal }) : null;
+            signal.throwIfAborted();
+            cacheContext = {
+              instance, accountId: session.accountId, credentialRevision: session.credentialRevision,
+              repositoryId: trustedContext.repositoryId, bindingRevision: trustedContext.bindingRevision,
+              directory, branch, remote, localTip,
+            };
+            if (!force) {
+              const fresh = statusCache.fresh(cacheContext);
+              if (fresh) return fresh;
+            }
+            // A mutation that lands while this read runs keeps the read from storing.
+            const started = statusCache.begin();
+            const answer = await impl.resources.changeRequestStatus({ session, context: trustedContext, directory, branch, remote, force }, { signal });
+            signal.throwIfAborted();
+            return statusCache.store(cacheContext, answer, started);
+          },
           STATUS_RESOLVE_TIMEOUT_MS,
           `${label} change request status`,
         );
-        return res.json(statusCache.store(cacheContext, status, started));
+        return res.json(status);
       } catch (error) {
         if (isTransientFailure(impl, error)) {
-          const last = statusCache.last(cacheContext);
+          const last = cacheContext ? statusCache.last(cacheContext) : null;
           if (last) return res.json(last);
           return res.status(503).json({ error: routeError(error)?.message || `${label} is temporarily unavailable` });
         }
