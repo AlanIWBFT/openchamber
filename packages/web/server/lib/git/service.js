@@ -48,7 +48,7 @@ const GIT_NULL_REF = '0'.repeat(40);
 const WORKTREE_INDEX_LOCK_RETRY_DELAY_MS = 250;
 const WORKTREE_INDEX_LOCK_STALE_DELAY_MS = 750;
 
-const throwIfGitReadCancelled = (options = {}, fallbackError = null) => {
+export const throwIfGitReadCancelled = (options = {}, fallbackError = null) => {
   const sharedCancelled = options.cancellationView
     ? Atomics.load(options.cancellationView, 0) !== 0
     : false;
@@ -287,7 +287,7 @@ const gitReadEnvironment = new AsyncLocalStorage();
 
 export const withGitReadEnvironment = (variables, run) => gitReadEnvironment.run({ variables }, run);
 
-const runGitReadWorkerTask = async (operation, payload, options = {}) => {
+export const runGitReadWorkerTask = async (operation, payload, options = {}) => {
   throwIfGitReadCancelled(options);
   const environment = await directoryEnvironmentForGit(payload.directory, { refresh: false });
   throwIfGitReadCancelled(options);
@@ -329,7 +329,7 @@ const directoryEnvironmentForGit = async (directory, options) => {
   return Object.fromEntries(Object.entries(variables).filter(([name]) => !isKeptOutOfGitOverlay(name)));
 };
 
-const buildGitEnv = async (directory) => {
+export const buildGitEnv = async (directory) => {
   // Git runs the user's hooks, so they must not see what the AppImage launcher
   // added to LD_LIBRARY_PATH and friends (#4177).
   const inherited = stripAppImageLauncherEnv({ ...process.env });

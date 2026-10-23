@@ -102,8 +102,8 @@ export function createGerritResourceService({
 }) {
   const identity = { provider: 'gerrit', instance: origin };
 
-  const primaryProject = async (directory, remote) => {
-    const [primary] = (await resolveProjects(directory, origin, remote)).repos;
+  const primaryProject = async (directory, remote, options) => {
+    const [primary] = (await resolveProjects(directory, origin, remote, options)).repos;
     if (!primary) throw malformed('No Gerrit project found for the repository remotes');
     return primary;
   };
@@ -116,11 +116,12 @@ export function createGerritResourceService({
   };
 
   /** The branch the project's HEAD names; unknown (null) when it cannot be read, except a refused account. */
-  const readDefaultBranch = async (name) => {
+  const readDefaultBranch = async (name, options = {}) => {
     try {
-      const head = await client.get(`/projects/${enc(name)}/HEAD`);
+      const head = await client.get(`/projects/${enc(name)}/HEAD`, undefined, options);
       return isString(head) && head.startsWith('refs/heads/') ? head.slice('refs/heads/'.length) : null;
     } catch (error) {
+      options.signal?.throwIfAborted();
       if (statusOf(error) === 401) throw error;
       return null;
     }
@@ -158,10 +159,11 @@ export function createGerritResourceService({
   };
 
   /** The relation chain around a change; absent (undefined) when it cannot be read. */
-  const readStack = async (name, number, base) => {
+  const readStack = async (name, number, base, options = {}) => {
     try {
-      return mapGerritRelatedStack(await client.get(`${changePath(name, number)}/revisions/current/related`), { origin, project: name, base });
+      return mapGerritRelatedStack(await client.get(`${changePath(name, number)}/revisions/current/related`, undefined, options), { origin, project: name, base });
     } catch (error) {
+      options.signal?.throwIfAborted();
       if (statusOf(error) === 401) throw error;
       return undefined;
     }
@@ -200,17 +202,28 @@ export function createGerritResourceService({
      * `localRevision.uploadedAs` is the patchset whose commit is the local
      * tip, null when the local commit is not uploaded yet.
      */
-    async changeRequestStatus(directory, branch, remote) {
-      const primary = await primaryProject(directory, remote);
-      const defaultBranch = await readDefaultBranch(primary.project);
+    async changeRequestStatus(directory, branch, remote, options = {}) {
+      const { signal } = options;
+      signal?.throwIfAborted();
+      const primary = await primaryProject(directory, remote, { branch, signal });
+      signal?.throwIfAborted();
+      const defaultBranch = await readDefaultBranch(primary.project, options);
+      signal?.throwIfAborted();
       const project = projectOf(primary, { defaultBranch, remoteName: primary.remoteName });
       const base = { identity, project, branch, resolvedRemoteName: primary.remoteName ?? null, defaultBranch };
-      const local = await readLocalRevision(directory, branch);
+      const local = await readLocalRevision(directory, branch, options);
+      signal?.throwIfAborted();
       if (!local.changeId) return { ...base, changeRequest: null, localRevision: { sha: local.sha, changeId: null, uploadedAs: null } };
-      const answer = await client.get('/changes/', { q: `change:${local.changeId} project:${primary.project}`, o: STATUS_OPTIONS, n: STATUS_CANDIDATES });
+      const answer = await client.get('/changes/', { q: `change:${local.changeId} project:${primary.project}`, o: STATUS_OPTIONS, n: STATUS_CANDIDATES }, options);
+      signal?.throwIfAborted();
       if (!Array.isArray(answer)) throw malformed('Gerrit returned an invalid change list');
       const candidates = answer.filter((raw) => isPlainObject(raw) && raw.project === primary.project && raw.change_id === local.changeId);
-      const upstreamBranch = await readUpstreamBranch(directory, branch, primary.remoteName).catch(() => null);
+      const upstreamBranch = await readUpstreamBranch(directory, branch, primary.remoteName, options).catch((error) => {
+        signal?.throwIfAborted();
+        if (error?.code === 'GIT_READ_WORKER_UNAVAILABLE' || error?.code === 'ETIMEDOUT') throw error;
+        return null;
+      });
+      signal?.throwIfAborted();
       const selected = selectChangeForBranch(candidates, { upstreamBranch, defaultBranch });
       if (!selected) return { ...base, changeRequest: null, localRevision: { sha: local.sha, changeId: local.changeId, uploadedAs: null } };
       const request = requireChange(selected, project);
@@ -224,7 +237,7 @@ export function createGerritResourceService({
         localRevision: { sha: local.sha, changeId: local.changeId, uploadedAs: Number.isInteger(uploaded) ? uploaded : null },
       };
       if (request.state === 'open') {
-        const stack = await readStack(primary.project, request.number, request.base);
+        const stack = await readStack(primary.project, request.number, request.base, options);
         if (stack !== undefined) status.stack = stack;
       }
       return status;
@@ -494,4 +507,3 @@ export function createGerritResourceService({
     },
   };
 }
-

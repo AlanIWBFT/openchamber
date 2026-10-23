@@ -18,6 +18,7 @@ const createWorkerError = (payload) => {
   if (payload?.code) {
     error.code = String(payload.code);
   }
+  if (Number.isInteger(payload?.status)) error.status = payload.status;
   return error;
 };
 

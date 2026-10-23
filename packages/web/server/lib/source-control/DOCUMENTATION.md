@@ -58,8 +58,12 @@ Snapshot writes use unique same-directory temporary files, mode `0600` before re
 Change-request status has a 12-second deadline. The route aborts its runtime
 signal on expiry; local providers receive it as a separate options argument,
 outside their JSON input. GitHub forwards it to its shared Git reads and ancestry
-checks. A recovering Git worker is transient: the route serves the exact
-authority's last-known status, or 503 when there is none.
+checks. Gerrit forwards it to worker-backed local reads and REST requests, and
+never starts another Git command after cancellation. The push-create branch-tip
+probe shares this deadline; an unavailable probe cannot select a cached answer
+for an unknown tip. A recovering Git worker is transient: the route serves the
+exact authority's last-known status, or 503 when there is none. Results arriving
+after the deadline never refill the status cache.
 
 - `GET /api/source-control/repository-context?directory=...` returns canonical repository identity, config revision, and redacted remotes.
 - `GET /api/source-control/binding?directory=...` returns the authoritative binding and its revision with `Cache-Control: no-store`. Managed remote grants keep their opaque reference internally and receive a response-only `presentation`. Revision-pinned HTTPS references resolve to provider, normalized instance, OAuth/PAT source, provider username and provider-user identity only when the exact valid credential revision still exists. Managed SSH references resolve through the exact inventory record and expose only its freshly verified public fingerprint. An HTTPS presentation's instance is HTTPS, or HTTP on a loopback host by the Git transport's rule (`isLoopbackHost`: localhost, 127.0.0.0/8, ::1), which `binding-contract.js` inlines because it is bundled into the web client; `binding-contract.test.js` holds the two equal. Missing, stale, malformed or failed credential lookups produce `{ status: 'unavailable' }` without changing grant readiness or dropping sibling grants. The projection deduplicates references and resolves at most 256 grants in batches of eight during the one binding request. System and anonymous grants are unchanged.

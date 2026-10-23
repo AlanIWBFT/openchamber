@@ -127,7 +127,7 @@ export function createProvider({
     auth: accounts.auth,
     transport: Object.freeze({ readCredential: accounts.readCredential }),
     resources: Object.freeze({
-      changeRequestStatus: ({ session, directory, branch, remote }) => serviceFor(session).changeRequestStatus(directory, branch, remote),
+      changeRequestStatus: ({ session, directory, branch, remote }, options) => serviceFor(session).changeRequestStatus(directory, branch, remote, options),
       listChangeRequests: ({ session, directory, page, query, state, people, remote }) => serviceFor(session)
         .listChangeRequests(directory, { page, query, state, people, remote }),
       changeRequestContext: ({ session, directory, number, project, remote, includeDiff, includeTimeline, revision }) => serviceFor(session)
