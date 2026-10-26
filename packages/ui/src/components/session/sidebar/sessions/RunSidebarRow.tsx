@@ -272,6 +272,7 @@ function RunSidebarRowComponent({
   );
 
   return (
+    <>
     <ContextMenu disabled={renaming}>
       <ContextMenuTrigger render={<div />}>
         <div
@@ -361,6 +362,8 @@ function RunSidebarRowComponent({
         {renderMenuItems(CONTEXT_MENU_SLOTS)}
       </ContextMenuContent>
     </ContextMenu>
+    {work.archiveDialog}
+    </>
   );
 }
 

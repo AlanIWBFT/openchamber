@@ -29,6 +29,17 @@ describe('withoutSecretSettings', () => {
 });
 
 describe('filterPersistableSettingsChanges', () => {
+  test('persists deletion and archive confirmation as independent profile preferences', () => {
+    assert.equal(SETTINGS_REGISTRY_FIELDS.showDeletionDialog.scope, 'profile');
+    assert.equal(SETTINGS_REGISTRY_FIELDS.showArchiveDialog.scope, 'profile');
+    for (const showDeletionDialog of [true, false]) {
+      for (const showArchiveDialog of [true, false]) {
+        const settings = { showDeletionDialog, showArchiveDialog };
+        assert.deepEqual(filterPersistableSettingsChanges(settings), settings);
+      }
+    }
+  });
+
   test('accepts archived-only retention in the shared instance settings', () => {
     assert.equal(SETTINGS_REGISTRY_FIELDS.sessionRetentionOnlyArchived.scope, 'instance');
     for (const sessionRetentionOnlyArchived of [true, false]) {

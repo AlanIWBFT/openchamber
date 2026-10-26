@@ -690,6 +690,10 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.showDeletionDialog === 'boolean') {
       result.showDeletionDialog = candidate.showDeletionDialog;
     }
+    const showArchiveDialog = z.boolean().safeParse(candidate.showArchiveDialog);
+    if (showArchiveDialog.success) {
+      result.showArchiveDialog = showArchiveDialog.data;
+    }
     if (typeof candidate.nativeNotificationsEnabled === 'boolean') {
       result.nativeNotificationsEnabled = candidate.nativeNotificationsEnabled;
     }

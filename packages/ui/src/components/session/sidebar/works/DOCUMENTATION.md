@@ -46,3 +46,9 @@ Invariants:
   folded row.
 - VS Code has no worktree works and no server drafts; it keeps works in work
   in their projects.
+- Manual worktree archive always confirms in `useWorktreeWork`, before Done,
+  leaving the worktree or removing its folder. The dialog is mounted outside
+  the menu or swipe action so closing that action does not dismiss it.
+- Automatic archive on Done or merged PR remains opt-in and does not ask
+  again. Keep that authorization at the UI boundary, not in the shared
+  `finishWorktreeWork` or archive operation used by automation.
