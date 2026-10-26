@@ -1,8 +1,22 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Icon } from "@/components/icon/Icon";
 import type { Session } from '@/lib/opencode/model';
 import { useI18n } from '@/lib/i18n';
+import { SettingsCheckboxRow } from '@/components/sections/shared/SettingsSection';
+import { useUIStore } from '@/stores/useUIStore';
+
+export function SessionConfirmationPreference({ action }: { action: 'archive' | 'delete' }): React.ReactNode {
+  const { t } = useI18n();
+  const showDialog = useUIStore((state) => action === 'delete' ? state.showDeletionDialog : state.showArchiveDialog);
+  const setShowDialog = useUIStore((state) => action === 'delete' ? state.setShowDeletionDialog : state.setShowArchiveDialog);
+  return <SettingsCheckboxRow
+    checked={!showDialog}
+    onChange={(neverAsk) => setShowDialog(!neverAsk)}
+    label={t('sessions.sidebar.dialogs.neverAsk')}
+    ariaLabel={t('sessions.sidebar.dialogs.neverAsk')}
+    className="me-auto"
+  />;
+}
 
 export type DeleteSessionConfirmState = {
   session: Session;
@@ -17,12 +31,10 @@ export type DeleteSessionConfirmState = {
 export function SessionDeleteConfirmDialog(props: {
   value: DeleteSessionConfirmState;
   setValue: (next: DeleteSessionConfirmState) => void;
-  showDeletionDialog: boolean;
-  setShowDeletionDialog: (next: boolean) => void;
   onConfirm: () => Promise<void> | void;
 }): React.ReactNode {
   const { t } = useI18n();
-  const { value, setValue, showDeletionDialog, setShowDeletionDialog, onConfirm } = props;
+  const { value, setValue, onConfirm } = props;
   const untitledSession = t('sessions.sidebar.session.untitled');
 
   return (
@@ -63,15 +75,7 @@ export function SessionDeleteConfirmDialog(props: {
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="w-full sm:items-center sm:justify-between">
-          <button
-            type="button"
-            onClick={() => setShowDeletionDialog(!showDeletionDialog)}
-            className="inline-flex items-center gap-1.5 typography-ui-label text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            aria-pressed={!showDeletionDialog}
-          >
-            {!showDeletionDialog ? <Icon name="checkbox" className="h-4 w-4 text-primary" /> : <Icon name="checkbox-blank" className="h-4 w-4" />}
-            {t('sessions.sidebar.dialogs.neverAsk')}
-          </button>
+          <SessionConfirmationPreference action={value?.archivedBucket ? 'delete' : 'archive'} />
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -103,12 +107,10 @@ export type BulkDeleteSessionsConfirmState = {
 export function BulkSessionDeleteConfirmDialog(props: {
   value: BulkDeleteSessionsConfirmState;
   setValue: (next: BulkDeleteSessionsConfirmState) => void;
-  showDeletionDialog: boolean;
-  setShowDeletionDialog: (next: boolean) => void;
   onConfirm: () => Promise<void> | void;
 }): React.ReactNode {
   const { t } = useI18n();
-  const { value, setValue, showDeletionDialog, setShowDeletionDialog, onConfirm } = props;
+  const { value, setValue, onConfirm } = props;
   const archived = value?.archivedBucket === true;
   const n = value?.sessionCount ?? 0;
   const title = archived
@@ -134,15 +136,7 @@ export function BulkSessionDeleteConfirmDialog(props: {
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <DialogFooter className="w-full sm:items-center sm:justify-between">
-          <button
-            type="button"
-            onClick={() => setShowDeletionDialog(!showDeletionDialog)}
-            className="inline-flex items-center gap-1.5 typography-ui-label text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            aria-pressed={!showDeletionDialog}
-          >
-            {!showDeletionDialog ? <Icon name="checkbox" className="h-4 w-4 text-primary" /> : <Icon name="checkbox-blank" className="h-4 w-4" />}
-            {t('sessions.sidebar.dialogs.neverAsk')}
-          </button>
+          <SessionConfirmationPreference action={archived ? 'delete' : 'archive'} />
           <div className="flex items-center gap-2">
             <button
               type="button"

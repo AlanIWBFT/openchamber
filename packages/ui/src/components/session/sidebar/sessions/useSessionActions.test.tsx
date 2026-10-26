@@ -8,6 +8,11 @@ import type { DeleteSessionConfirmState } from '../shell/ConfirmDialogs';
 import { useSessionActions } from './useSessionActions';
 import { installHookTestDom } from '../test-utils/testDom';
 
+type SessionActionCapture = {
+  actions?: ReturnType<typeof useSessionActions>;
+  confirmation?: DeleteSessionConfirmState;
+};
+
 const session = (id: string): Session => ({
   id,
   projectID: 'project',
@@ -19,6 +24,63 @@ const session = (id: string): Session => ({
 });
 
 describe('explicit session row behavior', () => {
+  const sources: Array<{
+    name: string;
+    source: Parameters<ReturnType<typeof useSessionActions>['handleDeleteSession']>[1];
+    hardDelete: boolean;
+    bypass?: boolean;
+  }> = [
+    { name: 'archive', source: undefined, hardDelete: false },
+    { name: 'archived delete', source: { archivedBucket: true }, hardDelete: true },
+    { name: 'active hard delete', source: { hardDelete: true }, hardDelete: true },
+    { name: 'quick archive', source: { skipConfirm: true }, hardDelete: false, bypass: true },
+    { name: 'quick delete', source: { hardDelete: true, skipConfirm: true }, hardDelete: true, bypass: true },
+  ];
+  for (const { name, source, hardDelete, bypass } of sources) {
+    for (const showDeletionDialog of [true, false]) {
+      for (const showArchiveDialog of [true, false]) {
+        test(`${name} uses its own preference with delete=${showDeletionDialog}, archive=${showArchiveDialog}`, async () => {
+          const dom = installHookTestDom();
+          const root = createRoot(dom.container);
+          const original = useSessionUIStore.getState();
+          const calls: string[] = [];
+          useSessionUIStore.setState({
+            archiveSession: async (id) => { calls.push(`archive:${id}`); return true; },
+            deleteSession: async (id) => { calls.push(`delete:${id}`); return true; },
+          });
+          const capture: SessionActionCapture = {};
+          const Harness = () => {
+            const [confirmation, setConfirmation] = React.useState<DeleteSessionConfirmState>(null);
+            capture.confirmation = confirmation;
+            capture.actions = useSessionActions({
+              mobileVariant: false, allowReselect: false, resetSessionSearch: () => undefined,
+              descendantIds: [], showDeletionDialog, showArchiveDialog,
+              setDeleteSessionConfirm: setConfirmation, deleteSessionConfirm: confirmation,
+              setEditingId: () => undefined, setEditingRowKey: () => undefined, editingSessionId: 'target',
+              editingOccurrenceKey: 'project:target', setEditTitle: () => undefined, editingId: null, editTitle: '',
+            });
+            return null;
+          };
+          try {
+            await act(async () => root.render(<I18nProvider><Harness /></I18nProvider>));
+            await act(async () => capture.actions!.handleDeleteSession(session('target'), source));
+            const needsConfirmation = !bypass && (hardDelete ? showDeletionDialog : showArchiveDialog);
+            expect(capture.confirmation?.archivedBucket ?? null).toBe(needsConfirmation ? hardDelete : null);
+            if (needsConfirmation) {
+              expect(calls).toEqual([]);
+              await act(async () => capture.actions!.confirmDeleteSession());
+            }
+            expect(calls).toEqual([`${hardDelete ? 'delete' : 'archive'}:target`]);
+          } finally {
+            await act(async () => root.unmount());
+            useSessionUIStore.setState(original, true);
+            dom.restore();
+          }
+        });
+      }
+    }
+  }
+
   test('shares edit and menu state across project and Recent render contexts', async () => {
     const dom = installHookTestDom();
     const root = createRoot(dom.container);
@@ -54,6 +116,7 @@ describe('explicit session row behavior', () => {
         resetSessionSearch: () => undefined,
         descendantIds: [],
         showDeletionDialog: true,
+        showArchiveDialog: true,
         setDeleteSessionConfirm: setConfirmation,
         deleteSessionConfirm: confirmation,
         editingId,
@@ -119,6 +182,7 @@ describe('explicit session row behavior', () => {
         resetSessionSearch: () => undefined,
         descendantIds: descendants,
         showDeletionDialog: true,
+        showArchiveDialog: true,
         setDeleteSessionConfirm: setConfirmation,
         deleteSessionConfirm: confirmation,
         editingId,

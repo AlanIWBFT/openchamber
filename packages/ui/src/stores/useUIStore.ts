@@ -1057,6 +1057,7 @@ interface UIStore {
   expandReasoningWhileStreaming: boolean;
   activityRenderMode: ActivityRenderMode;
   showDeletionDialog: boolean;
+  showArchiveDialog: boolean;
   autoDeleteEnabled: boolean;
   /** Global file-editor autosave. Default true for backward compatibility. */
   autoSaveEnabled: boolean;
@@ -1392,6 +1393,7 @@ interface UIStore {
   setExpandReasoningWhileStreaming: (value: boolean) => void;
   setActivityRenderMode: (value: ActivityRenderMode) => void;
   setShowDeletionDialog: (value: boolean) => void;
+  setShowArchiveDialog: (value: boolean) => void;
   setAutoDeleteEnabled: (value: boolean) => void;
   setMergedWorktreeCleanupEnabled: (value: boolean) => void;
   setWorktreeArchiveOnDoneEnabled: (value: boolean) => void;
@@ -1661,6 +1663,7 @@ export const useUIStore = create<UIStore>()(
         expandReasoningWhileStreaming: false,
         activityRenderMode: 'summary',
         showDeletionDialog: true,
+        showArchiveDialog: true,
         autoDeleteEnabled: false,
         autoSaveEnabled: true,
         fileEditorWrapLines: true,
@@ -2801,6 +2804,10 @@ export const useUIStore = create<UIStore>()(
 
         setShowDeletionDialog: (value) => {
           set({ showDeletionDialog: value });
+        },
+
+        setShowArchiveDialog: (value) => {
+          set({ showArchiveDialog: value });
         },
 
         setAutoDeleteEnabled: (value) => {
@@ -3947,6 +3954,7 @@ export const useUIStore = create<UIStore>()(
           expandReasoningWhileStreaming: state.expandReasoningWhileStreaming,
           activityRenderMode: state.activityRenderMode,
           showDeletionDialog: state.showDeletionDialog,
+          showArchiveDialog: state.showArchiveDialog,
           autoDeleteEnabled: state.autoDeleteEnabled,
           autoSaveEnabled: state.autoSaveEnabled,
           fileEditorWrapLines: state.fileEditorWrapLines,
