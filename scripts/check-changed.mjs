@@ -94,14 +94,32 @@ export const parseOxlintReport = (stdout) => {
   return JSON.parse(stdout.slice(start)).diagnostics;
 };
 
-const runOxlint = (files, cwd) => {
-  if (files.length === 0) return [];
-  const result = spawnSync('bunx', ['oxlint', '-c', OXLINT_CONFIG, '-f', 'json', ...files], {
+/** Leave room for the executable/config below Windows' 32,767-character command line limit. */
+export const groupLintFiles = (files, maxLength = 20_000) => {
+  const groups = [];
+  let group = [];
+  let length = 0;
+  for (const file of files) {
+    if (group.length > 0 && length + file.length + 3 > maxLength) {
+      groups.push(group);
+      group = [];
+      length = 0;
+    }
+    group.push(file);
+    length += file.length + 3;
+  }
+  if (group.length > 0) groups.push(group);
+  return groups;
+};
+
+const runOxlint = (files, cwd) => groupLintFiles(files).flatMap((group) => {
+  const result = spawnSync('bunx', ['oxlint', '-c', OXLINT_CONFIG, '-f', 'json', ...group], {
     cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
   });
+  if (result.error) throw result.error;
   if (!result.stdout) throw new Error(`oxlint produced no report: ${result.stderr}`);
   return parseOxlintReport(result.stdout);
-};
+});
 
 const checkAntiSlopRatchet = (base, files) => {
   const current = countFindings(runOxlint(files, REPO_ROOT), (file) => path.relative(REPO_ROOT, path.resolve(REPO_ROOT, file)));
