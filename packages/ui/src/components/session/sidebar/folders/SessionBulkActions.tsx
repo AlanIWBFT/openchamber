@@ -26,7 +26,7 @@ export function SessionBulkActions({ getFolderScopesForProject, isInlineEditing,
   const { t } = useI18n();
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = React.useState<BulkDeleteSessionsConfirmState>(null);
   const showDeletionDialog = useUIStore((state) => state.showDeletionDialog);
-  const setShowDeletionDialog = useUIStore((state) => state.setShowDeletionDialog);
+  const showArchiveDialog = useUIStore((state) => state.showArchiveDialog);
   const foldersMap = useSessionFoldersStore((state) => state.foldersMap);
   const createFolder = useSessionFoldersStore((state) => state.createFolder);
   const addSessionsToFolder = useSessionFoldersStore((state) => state.addSessionsToFolder);
@@ -38,6 +38,7 @@ export function SessionBulkActions({ getFolderScopesForProject, isInlineEditing,
   const bulk = useSidebarBulkActions({
     isInlineEditing,
     showDeletionDialog,
+    showArchiveDialog,
     foldersMap,
     getFolderScopesForProject,
     folderOwnerKeyBySessionId,
@@ -80,8 +81,6 @@ export function SessionBulkActions({ getFolderScopesForProject, isInlineEditing,
     <BulkSessionDeleteConfirmDialog
       value={bulkDeleteConfirm}
       setValue={setBulkDeleteConfirm}
-      showDeletionDialog={showDeletionDialog}
-      setShowDeletionDialog={setShowDeletionDialog}
       onConfirm={bulk.confirmBulkDelete}
     />
   </>;

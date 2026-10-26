@@ -1,5 +1,6 @@
 import React from 'react';
 import { toast } from '@/components/ui';
+import { useRunArchiveConfirmation } from '@/components/multirun/useRunArchiveConfirmation';
 import { useI18n } from '@/lib/i18n';
 import { archiveRun, renameRun } from '@/lib/multirun/runActions';
 import type { MultiRunSummary } from '@/lib/multirun/runs';
@@ -33,6 +34,7 @@ const collectRunWorkSessions = (laneNodes: readonly SessionNode[]): Session[] =>
  */
 export function useRunWork(run: MultiRunSummary, laneNodes: readonly SessionNode[], onNavigate: () => void) {
   const { t } = useI18n();
+  const { confirmArchive, dialog: archiveDialog } = useRunArchiveConfirmation();
   // Selected while the screen shows the run: its overview, or one of its
   // sessions (a click opens the fusion), as a worktree's row is.
   const overviewKey = useUIStore((state) => state.runOverviewKey);
@@ -87,6 +89,7 @@ export function useRunWork(run: MultiRunSummary, laneNodes: readonly SessionNode
     if (failed.length > 0) toast.error(t('multirun.overview.rename.failed'));
   };
   const archive = async (): Promise<void> => {
+    if (busy || !await confirmArchive(run.title)) return;
     setBusy(true);
     try {
       const result = await archiveRun(run);
@@ -97,5 +100,5 @@ export function useRunWork(run: MultiRunSummary, laneNodes: readonly SessionNode
     }
   };
 
-  return { isActive, sessionWorkEnabled, inWork, busy, open, openOverview, toggleWork, rename, archive };
+  return { isActive, sessionWorkEnabled, inWork, busy, open, openOverview, toggleWork, rename, archive, archiveDialog };
 }

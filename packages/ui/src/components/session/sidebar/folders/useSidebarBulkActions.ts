@@ -19,6 +19,7 @@ const EMPTY_LIFECYCLE_BY_ID: ReadonlyMap<string, SessionRowLifecycle> = new Map(
 type Args = {
   isInlineEditing: boolean;
   showDeletionDialog: boolean;
+  showArchiveDialog: boolean;
   foldersMap: Record<string, SessionFolder[]>;
   /**
    * Selection scope is the project id (flat per-project session list); this
@@ -129,6 +130,7 @@ export const useSidebarBulkActions = (args: Args) => {
   const {
     isInlineEditing,
     showDeletionDialog,
+    showArchiveDialog,
     foldersMap,
     getFolderScopesForProject,
     folderOwnerKeyBySessionId,
@@ -280,12 +282,13 @@ export const useSidebarBulkActions = (args: Args) => {
   const requestBulkDestructive = React.useCallback((hardDelete: boolean) => {
     if (!hasSelection) return;
     const sessionIds = Array.from(selectedIds);
-    if (!showDeletionDialog) {
+    const showConfirmation = hardDelete ? showDeletionDialog : showArchiveDialog;
+    if (!showConfirmation) {
       void executeBulkDelete(sessionIds, hardDelete);
       return;
     }
     setBulkDeleteConfirm({ sessionIds, sessionCount: sessionIds.length, archivedBucket: hardDelete });
-  }, [executeBulkDelete, selectedIds, showDeletionDialog, setBulkDeleteConfirm, hasSelection]);
+  }, [executeBulkDelete, selectedIds, showArchiveDialog, showDeletionDialog, setBulkDeleteConfirm, hasSelection]);
   /** Archive active sessions; already-archived ones can only be deleted. */
   const handleBulkDelete = React.useCallback(() => requestBulkDestructive(bulkScopeIsArchived), [bulkScopeIsArchived, requestBulkDestructive]);
   const handleBulkArchive = React.useCallback(() => requestBulkDestructive(false), [requestBulkDestructive]);

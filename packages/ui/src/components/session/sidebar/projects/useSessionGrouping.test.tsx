@@ -238,6 +238,7 @@ describe('useSessionGrouping malformed hierarchy fallbacks', () => {
         allowReselect: false,
         descendantIds: ['active-child', 'archived-child'],
         showDeletionDialog: false,
+        showArchiveDialog: false,
         setDeleteSessionConfirm: () => undefined,
         deleteSessionConfirm: null,
         setEditingId: () => undefined,

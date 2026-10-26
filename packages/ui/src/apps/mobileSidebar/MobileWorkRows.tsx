@@ -234,7 +234,7 @@ export const MobileWorktreeRow: React.FC<{
         </ContextMenuItem>
       ) : null}
       {work.canArchive ? (
-        <ContextMenuItem disabled={finishing} onClick={() => { void work.finish(true); }}>
+        <ContextMenuItem disabled={finishing} onClick={() => { void work.archive(); }}>
           <Icon name="archive" className="me-1 size-4" />
           {t('sessions.sidebar.work.menu.archive')}
         </ContextMenuItem>
@@ -243,6 +243,7 @@ export const MobileWorktreeRow: React.FC<{
   );
 
   return (
+    <>
     <MobileRowMenu disabled={revealed || renaming || worktreeRemoving} menu={menu}>
     <MobileSwipeActionsRow
       actionsWidth={slots * ROW_ACTION_SLOT_WIDTH}
@@ -291,7 +292,7 @@ export const MobileWorktreeRow: React.FC<{
             label={t('sessions.sidebar.work.menu.archive')}
             revealed={revealed}
             disabled={finishing}
-            onClick={after(() => { void work.finish(true); })}
+            onClick={after(() => { void work.archive(); })}
           />
         ) : null}
         {worktree && !worktreeRemoving ? (
@@ -310,6 +311,8 @@ export const MobileWorktreeRow: React.FC<{
       {content}
     </MobileSwipeActionsRow>
     </MobileRowMenu>
+    {work.archiveDialog}
+    </>
   );
 };
 
@@ -417,6 +420,7 @@ export const MobileRunRow: React.FC<{
   }
 
   return (
+    <>
     <MobileSwipeActionsRow
       actionsWidth={(work.sessionWorkEnabled ? 4 : 3) * ROW_ACTION_SLOT_WIDTH}
       revealed={revealed}
@@ -441,6 +445,8 @@ export const MobileRunRow: React.FC<{
     >
       {content}
     </MobileSwipeActionsRow>
+    {work.archiveDialog}
+    </>
   );
 };
 

@@ -822,6 +822,8 @@ export const settingsDict = {
   'settings.openchamber.defaults.field.openFilesPreview': 'Otwieraj pliki z podglądem w trybie podglądu',
   'settings.openchamber.defaults.field.openFilesPreviewAria': 'Otwieraj pliki z podglądem w trybie podglądu',
   'settings.openchamber.defaults.field.showDeletionDialog': 'Pokaż dialog usuwania',
+  'settings.openchamber.defaults.field.showArchiveDialog': 'Pokaż dialog archiwizacji',
+  'settings.openchamber.defaults.field.showArchiveDialogAria': 'Pokaż dialog archiwizacji',
   'settings.openchamber.defaults.field.showDeletionDialogAria': 'Pokaż dialog usuwania',
   'settings.openchamber.defaults.field.sessionWarming': 'Utrzymuj bezczynne sesje w gotowości',
   'settings.openchamber.defaults.field.sessionWarmingInfo': 'Niektórzy dostawcy usuwają kontekst rozmowy z pamięci podręcznej po kilku minutach ciszy, przez co następna wiadomość jest wolniejsza i droższa. Po włączeniu OpenCode wysyła krótką instrukcję co 4 minuty podczas bezczynności sesji, do 30 minut po Twojej ostatniej wiadomości. Każde zapytanie wysyła cały kontekst sesji do modelu i może generować koszty lub zużywać limit subskrypcji. Dotyczy wszystkich projektów.',

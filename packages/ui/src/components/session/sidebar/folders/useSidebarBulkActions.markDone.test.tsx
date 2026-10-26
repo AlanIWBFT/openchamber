@@ -53,6 +53,7 @@ describe('bulk Mark done', () => {
       bulk = useSidebarBulkActions({
         isInlineEditing: false,
         showDeletionDialog: false,
+        showArchiveDialog: false,
         foldersMap: {},
         getFolderScopesForProject: () => [],
         folderOwnerKeyBySessionId: new Map(),
