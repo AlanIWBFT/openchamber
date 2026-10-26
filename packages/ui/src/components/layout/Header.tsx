@@ -24,6 +24,7 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useGitBranchLabel } from '@/stores/useGitStore';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { archiveUndoToastOptions, collectSessionSubtreeIds } from '@/components/session/sidebar/sessions/sessionSubtreeActions';
+import { SessionConfirmationPreference } from '@/components/session/sidebar/shell/ConfirmDialogs';
 import { streamPerfCount } from '@/stores/utils/streamDebug';
 
 import { useDesktopWindowControlsLayout } from '@/hooks/useDesktopWindowControlsLayout';
@@ -370,9 +371,9 @@ export const Header: React.FC = () => {
   const [headerSessionTitleDraft, setHeaderSessionTitleDraft] = React.useState('');
   const [moveSessionTarget, setMoveSessionTarget] = React.useState<{ sessionId: string; directory: string } | null>(null);
   const sessionExport = useSessionMarkdownExport();
-  const [pendingDeleteSessionId, setPendingDeleteSessionId] = React.useState<string | null>(null);
-  const pendingDeleteSessionTitle = useGlobalSessionsStore((state) => (pendingDeleteSessionId
-    ? state.entityById.get(pendingDeleteSessionId)?.title?.trim() || null
+  const [pendingHeaderRetentionAction, setPendingHeaderRetentionAction] = React.useState<{ action: 'archive' | 'delete'; sessionId: string } | null>(null);
+  const pendingRetentionSessionTitle = useGlobalSessionsStore((state) => (pendingHeaderRetentionAction
+    ? state.entityById.get(pendingHeaderRetentionAction.sessionId)?.title?.trim() || null
     : null)) ?? t('sessions.sidebar.session.untitled');
   const headerRenameFormRef = React.useRef<HTMLFormElement | null>(null);
   const headerRenameOpenRef = React.useRef(false);
@@ -445,11 +446,22 @@ export const Header: React.FC = () => {
     toast.success(t('sessions.sidebar.session.archive.success'), archiveUndoToastOptions(archivedIds, reopenId, t));
   }, [archiveSessions, deleteSessions, t]);
 
-  const confirmHeaderDelete = React.useCallback(async () => {
-    if (!pendingDeleteSessionId) return;
-    setPendingDeleteSessionId(null);
-    await runHeaderRetentionAction('delete', pendingDeleteSessionId);
-  }, [pendingDeleteSessionId, runHeaderRetentionAction]);
+  const requestHeaderRetentionAction = React.useCallback((action: 'archive' | 'delete', sessionId: string) => {
+    const settings = useUIStore.getState();
+    const showConfirmation = action === 'delete' ? settings.showDeletionDialog : settings.showArchiveDialog;
+    if (!showConfirmation) {
+      void runHeaderRetentionAction(action, sessionId);
+      return;
+    }
+    setPendingHeaderRetentionAction({ action, sessionId });
+  }, [runHeaderRetentionAction]);
+
+  const confirmHeaderRetentionAction = React.useCallback(async () => {
+    if (!pendingHeaderRetentionAction) return;
+    const { action, sessionId } = pendingHeaderRetentionAction;
+    setPendingHeaderRetentionAction(null);
+    await runHeaderRetentionAction(action, sessionId);
+  }, [pendingHeaderRetentionAction, runHeaderRetentionAction]);
 
   const openGuestPageId = useUIStore((state) => state.openGuestPageId);
   const guestPage = useGuestsStore((state) => state.guests.find((guest) => guest.id === openGuestPageId));
@@ -725,7 +737,7 @@ export const Header: React.FC = () => {
     archive_current_session: () => {
       if (!currentSessionId || isMobile) return false;
       if (useGlobalSessionsStore.getState().entityById.get(currentSessionId)?.time.archived) return false;
-      void runHeaderRetentionAction('archive', currentSessionId);
+      requestHeaderRetentionAction('archive', currentSessionId);
     },
   });
 
@@ -752,12 +764,12 @@ export const Header: React.FC = () => {
           onRename={() => { if (!isActive) select(); pendingHeaderRenameRef.current = session.id; }}
           onExport={exportSession}
           onMoveSession={requestSessionMove}
-          onArchive={() => void runHeaderRetentionAction('archive', session.id)}
-          onDelete={() => setPendingDeleteSessionId(session.id)}
+          onArchive={() => requestHeaderRetentionAction('archive', session.id)}
+          onDelete={() => requestHeaderRetentionAction('delete', session.id)}
         />
       </>
     );
-  }, [exportSession, requestSessionMove, runHeaderRetentionAction, t]);
+  }, [exportSession, requestSessionMove, requestHeaderRetentionAction, t]);
 
   const renderDesktop = () => (
     <div
@@ -926,8 +938,8 @@ export const Header: React.FC = () => {
                       onRename={() => { pendingHeaderRenameRef.current = currentSessionId; }}
                       onExport={exportSession}
                       onMoveSession={requestSessionMove}
-                      onArchive={() => void runHeaderRetentionAction('archive', currentSessionId)}
-                      onDelete={() => setPendingDeleteSessionId(currentSessionId)}
+                      onArchive={() => requestHeaderRetentionAction('archive', currentSessionId)}
+                      onDelete={() => requestHeaderRetentionAction('delete', currentSessionId)}
                     />
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -1076,19 +1088,28 @@ export const Header: React.FC = () => {
         />
       ) : null}
       {sessionExport.dialog}
-      <Dialog open={pendingDeleteSessionId !== null} onOpenChange={(open) => { if (!open) setPendingDeleteSessionId(null); }}>
+      <Dialog open={pendingHeaderRetentionAction !== null} onOpenChange={(open) => { if (!open) setPendingHeaderRetentionAction(null); }}>
         <DialogContent showCloseButton={false} className="max-w-sm gap-5">
           <DialogHeader>
-            <DialogTitle>{t('sessions.sidebar.dialogs.deleteSession.title')}</DialogTitle>
-            <DialogDescription>{t('sessions.sidebar.dialogs.deleteSession.single', { sessionTitle: pendingDeleteSessionTitle })}</DialogDescription>
+            <DialogTitle>{pendingHeaderRetentionAction?.action === 'delete'
+              ? t('sessions.sidebar.dialogs.deleteSession.title')
+              : t('sessions.sidebar.dialogs.archiveSession.title')}</DialogTitle>
+            <DialogDescription>{pendingHeaderRetentionAction?.action === 'delete'
+              ? t('sessions.sidebar.dialogs.deleteSession.single', { sessionTitle: pendingRetentionSessionTitle })
+              : t('sessions.sidebar.dialogs.archiveSession.single', { sessionTitle: pendingRetentionSessionTitle })}</DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setPendingDeleteSessionId(null)}>
-              {t('sessions.sidebar.dialogs.cancel')}
-            </Button>
-            <Button variant="destructive" size="sm" onClick={() => void confirmHeaderDelete()}>
-              {t('sessions.sidebar.bulkActions.delete')}
-            </Button>
+          <DialogFooter className="sm:items-center sm:justify-between">
+            <SessionConfirmationPreference action={pendingHeaderRetentionAction?.action ?? 'archive'} />
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPendingHeaderRetentionAction(null)}>
+                {t('sessions.sidebar.dialogs.cancel')}
+              </Button>
+              <Button variant="destructive" size="sm" onClick={() => void confirmHeaderRetentionAction()}>
+                {pendingHeaderRetentionAction?.action === 'delete'
+                  ? t('sessions.sidebar.bulkActions.delete')
+                  : t('sessions.sidebar.bulkActions.archive')}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

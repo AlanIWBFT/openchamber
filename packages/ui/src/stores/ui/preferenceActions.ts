@@ -23,6 +23,7 @@ export const createPreferenceActions: UIStoreSlice<
   | 'setExpandReasoningWhileStreaming'
   | 'setActivityRenderMode'
   | 'setShowDeletionDialog'
+  | 'setShowArchiveDialog'
   | 'setAutoDeleteEnabled'
   | 'setMergedWorktreeCleanupEnabled'
   | 'setWorktreeArchiveOnDoneEnabled'
@@ -168,6 +169,7 @@ export const createPreferenceActions: UIStoreSlice<
   setShowDeletionDialog: (value) => {
     set({ showDeletionDialog: value });
   },
+  setShowArchiveDialog: (value) => set({ showArchiveDialog: value }),
 
   setAutoDeleteEnabled: (value) => {
     set({ autoDeleteEnabled: value });

@@ -310,6 +310,7 @@ export const uiStorePersistOptions = {
     expandReasoningWhileStreaming: state.expandReasoningWhileStreaming,
     activityRenderMode: state.activityRenderMode,
     showDeletionDialog: state.showDeletionDialog,
+    showArchiveDialog: state.showArchiveDialog,
     autoDeleteEnabled: state.autoDeleteEnabled,
     autoSaveEnabled: state.autoSaveEnabled,
     fileEditorWrapLines: state.fileEditorWrapLines,

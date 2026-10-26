@@ -227,7 +227,7 @@ type BooleanSettingsKey =
   | 'savePastedImagesAsFiles' | 'showOpenCodeRestartConfirm' | 'sessionTabsEnabled' | 'sessionTabsPerWorkspace'
   | 'terminalCloseOnExit' | 'terminalOpenOnProjectAction' | 'sessionRecapEnabled' | 'sessionSuggestionEnabled'
   | 'sessionWorkEnabled' | 'sessionReviewOfferEnabled' | 'sessionGoalEnabled' | 'sessionGoalDefaultBudgetEnabled'
-  | 'collapsibleThinkingBlocks' | 'showTextJustificationActivity' | 'showDeletionDialog' | 'nativeNotificationsEnabled'
+  | 'collapsibleThinkingBlocks' | 'showTextJustificationActivity' | 'showDeletionDialog' | 'showArchiveDialog' | 'nativeNotificationsEnabled'
   | 'notifyOnSubtasks' | 'notifyOnCompletion' | 'notifyOnPullRequests' | 'notifyOnError' | 'notifyOnQuestion'
   | 'summarizeLastMessage' | 'autoDeleteEnabled' | 'sessionRetentionOnlyArchived' | 'sessionRetentionIncludeInWork'
   | 'mergedWorktreeCleanupEnabled' | 'worktreeArchiveOnDoneEnabled' | 'smallModelUseDefault' | 'autoCreateWorktree'
@@ -893,6 +893,9 @@ export const createSettingsHelpers = (dependencies: SettingsHelpersDependencies)
     }
     if (isBoolean(candidate.showDeletionDialog)) {
       result.showDeletionDialog = candidate.showDeletionDialog;
+    }
+    if (isBoolean(candidate.showArchiveDialog)) {
+      result.showArchiveDialog = candidate.showArchiveDialog;
     }
     if (isBoolean(candidate.nativeNotificationsEnabled)) {
       result.nativeNotificationsEnabled = candidate.nativeNotificationsEnabled;

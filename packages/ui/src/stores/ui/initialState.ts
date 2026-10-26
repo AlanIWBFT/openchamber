@@ -96,6 +96,7 @@ export const createInitialUIState = (): Pick<UIStore,
   | 'expandReasoningWhileStreaming'
   | 'activityRenderMode'
   | 'showDeletionDialog'
+  | 'showArchiveDialog'
   | 'autoDeleteEnabled'
   | 'autoSaveEnabled'
   | 'fileEditorWrapLines'
@@ -322,6 +323,7 @@ export const createInitialUIState = (): Pick<UIStore,
   expandReasoningWhileStreaming: false,
   activityRenderMode: 'summary',
   showDeletionDialog: true,
+  showArchiveDialog: true,
   autoDeleteEnabled: false,
   autoSaveEnabled: true,
   fileEditorWrapLines: true,

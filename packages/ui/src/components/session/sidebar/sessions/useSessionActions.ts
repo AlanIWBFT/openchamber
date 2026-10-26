@@ -27,6 +27,7 @@ type Args = {
   onSessionSelected?: (sessionId: string) => void;
   descendantIds: readonly string[];
   showDeletionDialog: boolean;
+  showArchiveDialog: boolean;
   setDeleteSessionConfirm: (value: DeleteSessionConfirmState) => void;
   deleteSessionConfirm: DeleteSessionConfirmState;
   setEditingId: (id: string | null) => void;
@@ -62,6 +63,7 @@ export const useSessionActions = (args: Args) => {
     onSessionSelected,
     descendantIds,
     showDeletionDialog,
+    showArchiveDialog,
     setDeleteSessionConfirm,
     setEditingId,
     setEditingRowKey,
@@ -146,7 +148,8 @@ export const useSessionActions = (args: Args) => {
     (session: Session, source?: DeleteSessionSource) => {
       const shouldHardDelete = source?.archivedBucket === true || source?.hardDelete === true;
       const effectiveDescendantIds = collectSessionSubtreeIds(session.id, descendantIds, shouldHardDelete);
-      if (!showDeletionDialog || source?.skipConfirm === true) {
+      const showConfirmation = shouldHardDelete ? showDeletionDialog : showArchiveDialog;
+      if (!showConfirmation || source?.skipConfirm === true) {
         void executeDeleteSession(session, source, { descendantIds: effectiveDescendantIds });
         return;
       }
@@ -157,7 +160,7 @@ export const useSessionActions = (args: Args) => {
         archivedBucket: shouldHardDelete,
       });
     },
-    [descendantIds, executeDeleteSession, setDeleteSessionConfirm, showDeletionDialog],
+    [descendantIds, executeDeleteSession, setDeleteSessionConfirm, showArchiveDialog, showDeletionDialog],
   );
 
   const confirmDeleteSession = React.useCallback(async () => {

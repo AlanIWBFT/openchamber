@@ -187,6 +187,7 @@ export interface UIStore {
   expandReasoningWhileStreaming: boolean;
   activityRenderMode: ActivityRenderMode;
   showDeletionDialog: boolean;
+  showArchiveDialog: boolean;
   autoDeleteEnabled: boolean;
   autoSaveEnabled: boolean;
   fileEditorWrapLines: boolean;
@@ -447,6 +448,7 @@ export interface UIStore {
   setExpandReasoningWhileStreaming: (value: boolean) => void;
   setActivityRenderMode: (value: ActivityRenderMode) => void;
   setShowDeletionDialog: (value: boolean) => void;
+  setShowArchiveDialog: (value: boolean) => void;
   setAutoDeleteEnabled: (value: boolean) => void;
   setMergedWorktreeCleanupEnabled: (value: boolean) => void;
   setWorktreeArchiveOnDoneEnabled: (value: boolean) => void;
