@@ -1,6 +1,7 @@
 import React from 'react';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Icon } from '@/components/icon/Icon';
 import { FusionIcon } from '@/components/icons/FusionIcon';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
@@ -28,6 +29,7 @@ import { ModelMultiSelect, generateInstanceId, type ModelSelectionWithId } from 
 import { RunLaneCard } from './RunLaneCard';
 import { ModelEffortMenu } from './ModelEffortMenu';
 import { LaneStatusIcon } from './LaneStatusIcon';
+import { useRunArchiveConfirmation } from './useRunArchiveConfirmation';
 import { LANE_STATUS_COUNT_KEYS, LANE_STATUS_ORDER, resolveLaneStatus, type LaneStatus } from '@/lib/multirun/laneStatus';
 import { useGlobalBlockingRequestsStore } from '@/sync/global-blocking-requests';
 import { isSessionUnread } from '@/sync/session-unread';
@@ -117,6 +119,8 @@ function PromptCaption({ prompt, expanded, onToggle }: { prompt: string; expande
 
 function RunOverviewContent({ runKey }: { runKey: string }): React.ReactNode {
   const { t } = useI18n();
+  const { confirmArchive, dialog: archiveDialog } = useRunArchiveConfirmation();
+  const { confirm: confirmMemberArchive, dialog: memberArchiveDialog } = useConfirmDialog();
   const { run, sessionById } = useMultiRun(runKey);
   const providers = useConfigStore((state) => state.providers);
   const currentProviderId = useConfigStore((state) => state.currentProviderId);
@@ -320,6 +324,13 @@ function RunOverviewContent({ runKey }: { runKey: string }): React.ReactNode {
   };
 
   const handleArchiveMember = async (sessionId: string) => {
+    if (useUIStore.getState().showArchiveDialog && !await confirmMemberArchive({
+      title: t('sessions.sidebar.dialogs.archiveSession.title'),
+      message: t('sessions.sidebar.dialogs.archiveSession.single', {
+        sessionTitle: sessionById.get(sessionId)?.title || t('sessions.sidebar.session.untitled'),
+      }),
+      action: t('sessions.sidebar.bulkActions.archive'),
+    })) return;
     setBusyAction('member');
     try {
       const result = await useSessionUIStore.getState().archiveSessions([sessionId]);
@@ -330,6 +341,7 @@ function RunOverviewContent({ runKey }: { runKey: string }): React.ReactNode {
   };
 
   const handleArchive = async () => {
+    if (!await confirmArchive(run.title)) return;
     setBusyAction('archive');
     try {
       const result = await archiveRun(run);
@@ -636,6 +648,8 @@ function RunOverviewContent({ runKey }: { runKey: string }): React.ReactNode {
           )}
         </div>
       </div>
+      {archiveDialog}
+      {memberArchiveDialog}
     </div>
   );
 }
