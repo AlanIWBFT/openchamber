@@ -854,6 +854,18 @@ describe('settings helpers', () => {
 });
 
 describe('settings registry gate', () => {
+  it('keeps deletion and archive confirmation preferences independent, including explicit false', () => {
+    const helpers = createTestHelpers();
+    for (const showDeletionDialog of [true, false]) {
+      for (const showArchiveDialog of [true, false]) {
+        const settings = { showDeletionDialog, showArchiveDialog };
+        expect(helpers.sanitizeSettingsUpdate(settings)).toEqual(settings);
+        expect(helpers.formatSettingsResponse(settings)).toMatchObject(settings);
+      }
+    }
+    expect(helpers.sanitizeSettingsUpdate({ showArchiveDialog: 'false' })).toEqual({});
+  });
+
   const registryPath = join(dirname(testFilePath), 'settings-registry.json');
   const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
   const persistableKeys = Object.entries(registry.fields)
@@ -898,7 +910,7 @@ describe('settings registry gate', () => {
     favoriteModels: [{ providerID: 'anthropic', modelID: 'claude' }], hiddenModels: [{ providerID: 'openai', modelID: 'gpt' }], collapsedModelProviders: ['openai'],
     recentModels: [{ providerID: 'anthropic', modelID: 'claude' }], lastSelectedModel: 'anthropic/claude', recentAgents: ['build'], favoriteAgents: ['build'], recentEfforts: { 'anthropic/claude': ['high'] }, providerOrder: ['anthropic'],
     sessionRecapEnabled: true, sessionSuggestionEnabled: true, sessionWorkEnabled: true, sessionReviewOfferEnabled: true, sessionGoalEnabled: true, sessionGoalChecker: 'small-model', sessionGoalMaxAutoTurns: 50, sessionGoalDefaultBudgetEnabled: true, sessionGoalDefaultBudget: 5,
-    summarizeLastMessage: true, summaryThreshold: 100, summaryLength: 50, maxLastMessageLength: 200, showDeletionDialog: true,
+    summarizeLastMessage: true, summaryThreshold: 100, summaryLength: 50, maxLastMessageLength: 200, showDeletionDialog: true, showArchiveDialog: true,
     nativeNotificationsEnabled: true, notificationMode: 'always', notifyOnSubtasks: true, notifyOnCompletion: true, notifyOnError: true, notifyOnQuestion: true,
     notificationTemplates: { completion: { title: 't', message: 'm' } }, showOpenCodeUpdateNotifications: true, reportUsage: true,
     usageDisplayMode: 'usage', usageDropdownProviders: ['anthropic'], usageSelectedModels: { anthropic: ['claude'] }, usageCollapsedFamilies: { anthropic: ['f'] },

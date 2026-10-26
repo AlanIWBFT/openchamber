@@ -3820,7 +3820,7 @@ export const dict = {
   'diffView.hunk.discardDialogTitle': 'هل تريد تجاهل هذا المقطع؟',
   'diffView.hunk.discardDescription': 'سيؤدي هذا إلى تجاهل هذه التغييرات المحلية في {path}.',
   'sessions.sidebar.project.actions.archiveAll': 'أرشفة كل الجلسات',
-  'sessions.sidebar.project.archiveAll.title': 'هل تريد أرشفة الجلسات في {project}؟',
+  'sessions.sidebar.project.archiveAll.title': 'هل تريد أرشفة جميع المحادثات؟',
   'sessions.sidebar.project.archiveAll.descriptionSingle': 'ستنتقل {count} جلسة إلى الأرشيف. تبقى الجلسات المثبتة والجارية والجلسات قيد العمل.',
   'sessions.sidebar.project.archiveAll.descriptionPlural': 'ستنتقل {count} جلسات إلى الأرشيف. تبقى الجلسات المثبتة والجارية والجلسات قيد العمل.',
   'sessions.sidebar.project.archiveAll.nothing': 'لا يوجد ما يُؤرشف: كل جلسة هنا مثبتة أو جارية أو قيد العمل.',

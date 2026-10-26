@@ -27,6 +27,7 @@ import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
 import { useGitBranchLabel } from '@/stores/useGitStore';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { archiveUndoToastOptions, collectSessionMoveDescendants, collectSessionSubtreeIds } from '@/components/session/sidebar/sessions/sessionSubtreeActions';
+import { SessionConfirmationPreference } from '@/components/session/sidebar/shell/ConfirmDialogs';
 import { streamPerfCount } from '@/stores/utils/streamDebug';
 
 import { useDesktopWindowControlsLayout } from '@/hooks/useDesktopWindowControlsLayout';
@@ -580,6 +581,16 @@ export const Header: React.FC = () => {
     toast.success(t('sessions.sidebar.session.archive.success'), archiveUndoToastOptions(archivedIds, reopenId, t));
   }, [archiveSessions, deleteSessions, t]);
 
+  const requestHeaderRetentionAction = React.useCallback((action: 'archive' | 'delete', sessionId: string) => {
+    const settings = useUIStore.getState();
+    const showConfirmation = action === 'delete' ? settings.showDeletionDialog : settings.showArchiveDialog;
+    if (!showConfirmation) {
+      void runHeaderRetentionAction(action, sessionId);
+      return;
+    }
+    setPendingHeaderRetentionAction({ action, sessionId });
+  }, [runHeaderRetentionAction]);
+
   const confirmHeaderRetentionAction = React.useCallback(async () => {
     if (!pendingHeaderRetentionAction) return;
     const { action, sessionId } = pendingHeaderRetentionAction;
@@ -918,11 +929,7 @@ export const Header: React.FC = () => {
     archive_current_session: () => {
       if (!currentSessionId || isMobile) return false;
       if (useGlobalSessionsStore.getState().entityById.get(currentSessionId)?.time.archived) return false;
-      if (useUIStore.getState().showDeletionDialog) {
-        setPendingHeaderRetentionAction({ action: 'archive', sessionId: currentSessionId });
-        return;
-      }
-      void runHeaderRetentionAction('archive', currentSessionId);
+      requestHeaderRetentionAction('archive', currentSessionId);
     },
   });
 
@@ -1002,16 +1009,16 @@ export const Header: React.FC = () => {
         <HeaderSessionArchiveMenuItem
           sessionId={session.id}
           Item={Item}
-          onArchive={() => setPendingHeaderRetentionAction({ action: 'archive', sessionId: session.id })}
+          onArchive={() => requestHeaderRetentionAction('archive', session.id)}
         />
         <SessionMenuItemHint hint={t('sessions.sidebar.session.menuHint.delete')}>
-          <Item className="text-destructive focus:text-destructive" onClick={() => setPendingHeaderRetentionAction({ action: 'delete', sessionId: session.id })}>
+          <Item className="text-destructive focus:text-destructive" onClick={() => requestHeaderRetentionAction('delete', session.id)}>
             <Icon name="delete-bin" className="me-1 size-4" />{t('sessions.sidebar.bulkActions.delete')}
           </Item>
         </SessionMenuItemHint>
       </>
     );
-  }, [copySessionIdFor, currentSession, currentSessionOpenDirectory, exportCurrentSession, hasElectronDesktopIPC, hasProjects, isChatContext, isCurrentSessionActive, isCurrentSessionMovingToWorktree, isVSCode, moveCurrentSessionToWorktree, openSessionInMiniChat, renderGuestSessionActionItems, sessionDirectory, t]);
+  }, [copySessionIdFor, currentSession, currentSessionOpenDirectory, exportCurrentSession, hasElectronDesktopIPC, hasProjects, isChatContext, isCurrentSessionActive, isCurrentSessionMovingToWorktree, isVSCode, moveCurrentSessionToWorktree, openSessionInMiniChat, renderGuestSessionActionItems, requestHeaderRetentionAction, sessionDirectory, t]);
 
   const renderDesktop = () => (
     <div
@@ -1230,9 +1237,9 @@ export const Header: React.FC = () => {
                     <HeaderSessionArchiveMenuItem
                       sessionId={currentSessionId}
                       Item={DropdownMenuItem}
-                      onArchive={() => setPendingHeaderRetentionAction({ action: 'archive', sessionId: currentSessionId })}
+                      onArchive={() => requestHeaderRetentionAction('archive', currentSessionId)}
                     />
-                    <SessionMenuItemHint hint={t('sessions.sidebar.session.menuHint.delete')}><DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => { if (currentSessionId) setPendingHeaderRetentionAction({ action: 'delete', sessionId: currentSessionId }); }}><Icon name="delete-bin" className="me-1 size-4" />{t('sessions.sidebar.bulkActions.delete')}</DropdownMenuItem></SessionMenuItemHint>
+                    <SessionMenuItemHint hint={t('sessions.sidebar.session.menuHint.delete')}><DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => { if (currentSessionId) requestHeaderRetentionAction('delete', currentSessionId); }}><Icon name="delete-bin" className="me-1 size-4" />{t('sessions.sidebar.bulkActions.delete')}</DropdownMenuItem></SessionMenuItemHint>
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : null}
@@ -1385,15 +1392,18 @@ export const Header: React.FC = () => {
               ? t('sessions.sidebar.dialogs.deleteSession.single', { sessionTitle: currentSessionTitle })
               : t('sessions.sidebar.dialogs.archiveSession.single', { sessionTitle: currentSessionTitle })}</DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setPendingHeaderRetentionAction(null)}>
-              {t('sessions.sidebar.dialogs.cancel')}
-            </Button>
-            <Button variant="destructive" size="sm" onClick={() => void confirmHeaderRetentionAction()}>
-              {pendingHeaderRetentionAction?.action === 'delete'
-                ? t('sessions.sidebar.bulkActions.delete')
-                : t('sessions.sidebar.bulkActions.archive')}
-            </Button>
+          <DialogFooter className="sm:items-center sm:justify-between">
+            <SessionConfirmationPreference action={pendingHeaderRetentionAction?.action ?? 'archive'} />
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPendingHeaderRetentionAction(null)}>
+                {t('sessions.sidebar.dialogs.cancel')}
+              </Button>
+              <Button variant="destructive" size="sm" onClick={() => void confirmHeaderRetentionAction()}>
+                {pendingHeaderRetentionAction?.action === 'delete'
+                  ? t('sessions.sidebar.bulkActions.delete')
+                  : t('sessions.sidebar.bulkActions.archive')}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

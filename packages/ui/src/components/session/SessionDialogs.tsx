@@ -13,6 +13,7 @@ import {
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { Icon } from "@/components/icon/Icon";
 import { DirectoryExplorerDialog } from './DirectoryExplorerDialog';
+import { SessionConfirmationPreference } from './sidebar/shell/ConfirmDialogs';
 import { cn, formatPathForDisplay } from '@/lib/utils';
 import type { Session } from '@/lib/opencode/model';
 import type { WorktreeMetadata } from '@/types/worktree';
@@ -75,7 +76,6 @@ export const SessionDialogs: React.FC = () => {
     const archiveSessions = useSessionUIStore((s) => s.archiveSessions);
     const unarchiveSessions = useSessionUIStore((s) => s.unarchiveSessions);
     const showDeletionDialog = useUIStore((state) => state.showDeletionDialog);
-    const setShowDeletionDialog = useUIStore((state) => state.setShowDeletionDialog);
     const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
     const homeDirectory = useDirectoryStore((s) => s.homeDirectory);
     const projects = useProjectsStore((s) => s.projects);
@@ -774,15 +774,7 @@ export const SessionDialogs: React.FC = () => {
         </div>
     ) : (
         <div className="flex w-full items-center justify-between gap-3">
-            <button
-                type="button"
-                onClick={() => setShowDeletionDialog(!showDeletionDialog)}
-                className="inline-flex items-center gap-1.5 typography-meta text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                aria-pressed={!showDeletionDialog}
-            >
-                {!showDeletionDialog ? <Icon name="checkbox" className="size-4 text-primary" /> : <Icon name="checkbox-blank" className="size-4" />}
-                {t('sessions.sidebar.dialogs.neverAsk')}
-            </button>
+            <SessionConfirmationPreference action="delete" />
             <div className="flex items-center gap-2">
                 <Button variant="ghost" onClick={closeDeleteDialog} disabled={isProcessingDelete}>
                     {t('sessions.sidebar.dialogs.cancel')}

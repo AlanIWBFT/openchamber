@@ -733,6 +733,9 @@
     "showDeletionDialog": {
       "scope": "profile"
     },
+    "showArchiveDialog": {
+      "scope": "profile"
+    },
     "nativeNotificationsEnabled": {
       "scope": "profile"
     },

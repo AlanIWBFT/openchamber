@@ -24,6 +24,15 @@ const runtimeCtx = {
 };
 
 describe('settings search', () => {
+  test('finds separate deletion and archive confirmation controls on every shared surface', () => {
+    for (const context of [runtimeCtx, { ...runtimeCtx, isDesktop: true }, { ...runtimeCtx, isVSCode: true }, { ...runtimeCtx, isMobile: true }]) {
+      for (const [query, id] of [['delete confirmation', 'sessions.deletion-dialog'], ['archive confirmation', 'sessions.archive-dialog']]) {
+        const results = buildSettingsSearchResults({ query, runtimeCtx: context, t, getPageTitle: (page) => page });
+        expect(results.find((result) => result.id === id)?.page).toBe('sessions');
+      }
+    }
+  });
+
   test('finds double-paste on every shared Settings surface', () => {
     for (const query of ['double paste', 'ctrl v', 'cmd v']) {
       for (const context of [runtimeCtx, { ...runtimeCtx, isDesktop: true }, { ...runtimeCtx, isVSCode: true }, { ...runtimeCtx, isMobile: true }]) {

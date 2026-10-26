@@ -1975,6 +1975,8 @@ export const settingsDict = {
   'settings.openchamber.defaults.walkthroughModel.description': '변경 사항의 AI 리뷰에는 구조화된 출력과 전체 diff를 담을 여유가 필요한데, 저렴한 스몰 모델로는 부족할 때가 많습니다. 카탈로그가 구조화된 출력을 지원하지 않는다고 알리는 모델은 이 목록에서 숨겨집니다. 선택하지 않으면 스몰 모델이 사용됩니다.',
   'settings.openchamber.defaults.walkthroughModel.usesSmallModel': '스몰 모델',
   'settings.openchamber.defaults.field.showDeletionDialog': '삭제 확인 대화상자 표시',
+  'settings.openchamber.defaults.field.showArchiveDialog': '보관 확인 대화상자 표시',
+  'settings.openchamber.defaults.field.showArchiveDialogAria': '보관 확인 대화상자 표시',
   'settings.openchamber.defaults.field.openFilesPreviewAria': '미리보기 가능한 파일을 미리보기 모드로 열기',
   'settings.openchamber.defaults.field.openFilesPreview': '미리보기 가능한 파일을 미리보기 모드로 열기',
   'settings.openchamber.defaults.option.default': '기본값',

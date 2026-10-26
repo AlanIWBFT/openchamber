@@ -1991,6 +1991,8 @@ export const settingsDict = {
   'settings.openchamber.defaults.field.sessionWarming': 'Inactieve sessies warm houden',
   'settings.openchamber.defaults.field.sessionWarmingInfo': 'Sommige providers vergeten na een paar minuten stilte de gecachte context van een gesprek, waardoor het volgende bericht langzamer is en meer kost. Met deze instelling aan stuurt OpenCode elke 4 minuten een klein "OK"-verzoek zolang een sessie inactief is, tot 30 minuten na uw laatste bericht. Elke ping wordt als klein verzoek in rekening gebracht. Geldt voor alle projecten.',
   'settings.openchamber.defaults.field.showDeletionDialog': 'Verwijderdialoog tonen',
+  'settings.openchamber.defaults.field.showArchiveDialog': 'Archiveringsdialoog tonen',
+  'settings.openchamber.defaults.field.showArchiveDialogAria': 'Archiveringsdialoog tonen',
   'settings.openchamber.defaults.smallModel.title': 'Klein model',
   'settings.openchamber.defaults.smallModel.description': 'Een goedkoop model voor snelle hulptaken zoals korte overzichten en samenvattingen.',
   'settings.openchamber.defaults.smallModel.useDefault': 'Standaard klein model gebruiken',

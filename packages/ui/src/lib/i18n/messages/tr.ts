@@ -3886,7 +3886,7 @@ export const dict = {
   'diffView.hunk.discardDialogTitle': 'Bu parça silinsin mi?',
   'diffView.hunk.discardDescription': '{path} içindeki bu yerel değişiklikler silinecek.',
   'sessions.sidebar.project.actions.archiveAll': 'Tüm oturumları arşivle',
-  'sessions.sidebar.project.archiveAll.title': '{project} içindeki oturumlar arşivlensin mi?',
+  'sessions.sidebar.project.archiveAll.title': 'Tüm konuşmalar arşivlensin mi?',
   'sessions.sidebar.project.archiveAll.descriptionSingle': '{count} oturum arşive taşınacak. Sabitlenmiş, çalışan ve "Devam eden" oturumları kalır.',
   'sessions.sidebar.project.archiveAll.descriptionPlural': '{count} oturum arşive taşınacak. Sabitlenmiş, çalışan ve "Devam eden" oturumları kalır.',
   'sessions.sidebar.project.archiveAll.nothing': 'Arşivlenecek bir şey yok: buradaki her oturum sabitlenmiş, çalışıyor ya da "Devam eden" bölümünde.',

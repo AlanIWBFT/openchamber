@@ -40,6 +40,26 @@ kept at this root in `types.ts` and `utils.tsx`.
   may have moved server-side, and the toast points the user at the destination.
   Existing destinations are never removed; they get the same guidance.
 
+## Session confirmations
+
+Archive and permanent-delete confirmations are independent profile preferences.
+"Don't ask again" changes only the preference for the dialog's action, including
+a permanent delete requested from an active session. Existing deletion choices
+stay in force; a missing archive preference starts enabled. Explicit quick-action
+bypasses, mobile swipe confirmation and worktree-removal safety checks keep their
+own behavior.
+
+"Archive all" always requires confirmation and offers no "Don't ask again"
+option, regardless of the archive confirmation preference.
+
+### Why archive and delete confirmations are separate
+
+Skipping the prompt for a reversible archive must not also silence the warning
+before permanent deletion. The action, rather than the list the session appears
+in, selects which preference is read and changed.
+
+## Session synchronization
+
 `MainLayout` and `VSCodeLayout` call `useSessionListSync({ isVSCode })`
 unconditionally. The hook is the only bootstrap demand owner and publishes
 only the current directory and the selected session's directory; it also
@@ -379,12 +399,17 @@ all by default: the worktree stays where it is, out of In work. With "Archive
 a worktree when you mark it done" on (`worktreeArchiveOnDoneEnabled`,
 Settings → Sessions → Finished worktrees, off by default; maintainer decision
 2026-10-24, as archiving on every Done removed folders people expected to keep)
-Done then archives it too. Archive worktree in the menu, and the row's
-new-chat button, which turns into Archive while Shift is held (as a session
-row's archive turns into delete), always archive. Archiving goes through
+Done then archives it too, without another confirmation: enabling the setting
+authorizes that automatic action, as does the merged-PR cleanup setting.
+Archive worktree in the menu, the phone's swipe action, and the row's new-chat
+button, which turns into Archive while Shift is held, always ask first in
+`useWorktreeWork`. The dialog explains that every session is archived, a
+snapshot is kept and the folder removed; cancel changes no work state, tabs
+or navigation. Ordinary session confirmation preferences never bypass it.
+Archiving goes through
 `archiveWorktreeWork` in `lib/worktrees/worktreeArchive.ts` (the server side
-is in `web/server/lib/git`). An archive keeps every change and the branch, so
-nothing has to be confirmed; a session still running there, or one whose
+is in `web/server/lib/git`). An archive keeps the branch and a snapshot of
+tracked and untracked-but-not-ignored files; a session still running there, or one whose
 state cannot be read, keeps the worktree and says so. Delete in the menu stays the way to remove a worktree
 for good. The work has left In work in every case. Archives exist where the
 runtime's git offers them (web, desktop); VS Code keeps its own list without

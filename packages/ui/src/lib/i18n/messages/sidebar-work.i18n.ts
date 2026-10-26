@@ -1,6 +1,7 @@
 /** Sidebar works: the In work block, worktree task rows, task names, drafts and the drafts picker of a new session, merged into each locale's main dictionary. */
 export const sidebarWorkI18n = {
   en: {
+    "multirun.overview.archive.confirmMessage": "All model and fusion sessions in \"{label}\" will be archived. Their worktree folders will remain.",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "Also show in work under projects",
     "sessions.sidebar.work.rename.failed": "Couldn't rename the task",
     "sessions.sidebar.work.rename.placeholder": "Task name",
@@ -27,6 +28,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "{count} drafts",
   },
   de: {
+    "multirun.overview.archive.confirmMessage": "Alle Modell- und Fusionssitzungen in „{label}“ werden archiviert. Ihre Worktree-Ordner bleiben erhalten.",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "In Arbeit auch unter Projekten zeigen",
     "sessions.sidebar.work.rename.failed": "Die Aufgabe konnte nicht umbenannt werden",
     "sessions.sidebar.work.rename.placeholder": "Name der Aufgabe",
@@ -53,6 +55,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "{count} Entwürfe",
   },
   fr: {
+    "multirun.overview.archive.confirmMessage": "Toutes les sessions de modèles et de fusion de « {label} » seront archivées. Leurs dossiers de worktree seront conservés.",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "Afficher aussi le travail en cours sous les projets",
     "sessions.sidebar.work.rename.failed": "Impossible de renommer la tâche",
     "sessions.sidebar.work.rename.placeholder": "Nom de la tâche",
@@ -79,6 +82,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "{count} brouillons",
   },
   nl: {
+    "multirun.overview.archive.confirmMessage": "Alle model- en fusiesessies in ‘{label}’ worden gearchiveerd. Hun worktree-mappen blijven behouden.",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "Werk in uitvoering ook onder projecten tonen",
     "sessions.sidebar.work.rename.failed": "De taak kon niet worden hernoemd",
     "sessions.sidebar.work.rename.placeholder": "Naam van de taak",
@@ -105,6 +109,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "{count} concepten",
   },
   es: {
+    "multirun.overview.archive.confirmMessage": "Se archivarán todas las sesiones de modelos y de fusión de «{label}». Sus carpetas de worktree se conservarán.",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "Mostrar también lo que está en curso bajo los proyectos",
     "sessions.sidebar.work.rename.failed": "No se pudo cambiar el nombre de la tarea",
     "sessions.sidebar.work.rename.placeholder": "Nombre de la tarea",
@@ -131,6 +136,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "{count} borradores",
   },
   ja: {
+    "multirun.overview.archive.confirmMessage": "「{label}」のすべてのモデルセッションと統合セッションをアーカイブします。ワークツリーのフォルダーは残ります。",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "作業中の項目もプロジェクトの下に表示",
     "sessions.sidebar.work.rename.failed": "タスク名を変更できませんでした",
     "sessions.sidebar.work.rename.placeholder": "タスク名",
@@ -157,6 +163,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "下書き {count} 件",
   },
   'pt-BR': {
+    "multirun.overview.archive.confirmMessage": "Todas as sessões de modelos e de fusão de “{label}” serão arquivadas. As pastas dos worktrees serão mantidas.",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "Mostrar também o que está em andamento nos projetos",
     "sessions.sidebar.work.rename.failed": "Não foi possível renomear a tarefa",
     "sessions.sidebar.work.rename.placeholder": "Nome da tarefa",
@@ -183,6 +190,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "{count} rascunhos",
   },
   uk: {
+    "multirun.overview.archive.confirmMessage": "Усі сесії моделей і злиття в «{label}» буде заархівовано. Їхні теки worktree залишаться.",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "Також показувати роботу в проєктах",
     "sessions.sidebar.work.rename.failed": "Не вдалося перейменувати задачу",
     "sessions.sidebar.work.rename.placeholder": "Назва задачі",
@@ -209,6 +217,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "Чернетки: {count}",
   },
   ko: {
+    "multirun.overview.archive.confirmMessage": "‘{label}’의 모든 모델 세션과 통합 세션을 보관합니다. 워크트리 폴더는 유지됩니다.",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "진행 중인 작업을 프로젝트 아래에도 표시",
     "sessions.sidebar.work.rename.failed": "작업 이름을 바꿀 수 없습니다",
     "sessions.sidebar.work.rename.placeholder": "작업 이름",
@@ -235,6 +244,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "초안 {count}개",
   },
   pl: {
+    "multirun.overview.archive.confirmMessage": "Wszystkie sesje modeli i scalania w „{label}” zostaną zarchiwizowane. Ich foldery worktree pozostaną.",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "Pokazuj też prace w toku pod projektami",
     "sessions.sidebar.work.rename.failed": "Nie udało się zmienić nazwy zadania",
     "sessions.sidebar.work.rename.placeholder": "Nazwa zadania",
@@ -261,6 +271,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "Szkice: {count}",
   },
   'zh-CN': {
+    "multirun.overview.archive.confirmMessage": "将归档“{label}”中的全部模型会话和融合会话，保留各工作树文件夹。",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "在项目下也显示进行中的工作",
     "sessions.sidebar.work.rename.failed": "无法重命名任务",
     "sessions.sidebar.work.rename.placeholder": "任务名称",
@@ -287,6 +298,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "{count} 个草稿",
   },
   'zh-TW': {
+    "multirun.overview.archive.confirmMessage": "將封存「{label}」中的所有模型工作階段與融合作業階段，保留各工作樹資料夾。",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "在專案下也顯示進行中的工作",
     "sessions.sidebar.work.rename.failed": "無法重新命名任務",
     "sessions.sidebar.work.rename.placeholder": "任務名稱",
@@ -313,6 +325,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "{count} 個草稿",
   },
   tr: {
+    "multirun.overview.archive.confirmMessage": "“{label}” içindeki tüm model ve birleştirme oturumları arşivlenecek. Worktree klasörleri korunacak.",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "Devam eden işleri projelerin altında da göster",
     "sessions.sidebar.work.rename.failed": "Görev yeniden adlandırılamadı",
     "sessions.sidebar.work.rename.placeholder": "Görev adı",
@@ -339,6 +352,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "{count} taslak",
   },
   ar: {
+    "multirun.overview.archive.confirmMessage": "ستتم أرشفة جميع جلسات النماذج والدمج في «{label}». ستبقى مجلدات أشجار العمل الخاصة بها.",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "إظهار العمل الجاري تحت المشاريع أيضًا",
     "sessions.sidebar.work.rename.failed": "تعذّرت إعادة تسمية المهمة",
     "sessions.sidebar.work.rename.placeholder": "اسم المهمة",
@@ -365,6 +379,7 @@ export const sidebarWorkI18n = {
     "chat.draftTarget.drafts.triggerPlural": "المسودات: {count}",
   },
   he: {
+    "multirun.overview.archive.confirmMessage": "כל הפעלות המודלים והמיזוג ב־„{label}” יועברו לארכיון. תיקיות עצי העבודה שלהן יישארו.",
     "sessions.sidebar.header.displayMode.keepWorkInPlace": "להציג עבודה פעילה גם תחת הפרויקטים",
     "sessions.sidebar.work.rename.failed": "לא ניתן לשנות את שם המשימה",
     "sessions.sidebar.work.rename.placeholder": "שם המשימה",

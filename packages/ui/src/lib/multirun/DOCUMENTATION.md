@@ -140,6 +140,14 @@ deletes the membership marker with a `null` merge patch and renames the lane to
 the run title, so it is an ordinary session in its own directory or worktree.
 A run left with one active member stops being a run on its own.
 
+Manual Archive run always confirms through
+`components/multirun/useRunArchiveConfirmation.ts`, shared by the sidebar,
+phone swipe action and overview. It archives all model and fusion sessions
+but keeps their worktree folders. The ordinary session archive preference
+cannot bypass this group confirmation; archiving one overview card follows
+that preference. Confirmation is a UI boundary, not part of `archiveRun`,
+which other operations can use without opening a dialog.
+
 Each card's state comes from `laneStatus.resolveLaneStatus`, over live and
 recorded facts only: a pending permission or question (the global blocking
 index) wins over busy, then the live busy set, then OpenCode's recorded outcome
@@ -160,11 +168,10 @@ the session metadata button.
 
 ## Mobile lists
 
-`MobileSessionsSheet` builds its own lists instead of the sidebar row model, so
-each one collapses runs itself: the grouped tree and Recent (`MobileRunRow`) and
-the timeline (`TimelineEntry` of kind `run`, `MobileTimelineRows`) put one run
-row at the first lane's position, with the lanes' combined activity. Search
-results and the header switcher list lanes as sessions.
+The phone consumes the same Works row model as the desktop. `MobileRunRow`
+in `apps/mobileSidebar/MobileWorkRows.tsx` draws the run and its combined
+activity; `useRunWork` owns its actions for both surfaces. Search results and
+the header switcher list lanes as sessions.
 
 ## Legacy sessions
 

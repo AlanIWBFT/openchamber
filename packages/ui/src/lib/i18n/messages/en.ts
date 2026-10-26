@@ -3857,7 +3857,7 @@ export const dict = {
   'diffView.hunk.discardDialogTitle': 'Discard this hunk?',
   'diffView.hunk.discardDescription': 'This will discard these local changes in {path}.',
   'sessions.sidebar.project.actions.archiveAll': 'Archive all sessions',
-  'sessions.sidebar.project.archiveAll.title': 'Archive sessions in {project}?',
+  'sessions.sidebar.project.archiveAll.title': 'Archive all conversations?',
   'sessions.sidebar.project.archiveAll.descriptionSingle': '{count} session moves to the archive. Pinned, running and In work sessions stay.',
   'sessions.sidebar.project.archiveAll.descriptionPlural': '{count} sessions move to the archive. Pinned, running and In work sessions stay.',
   'sessions.sidebar.project.archiveAll.nothing': 'Nothing to archive: every session here is pinned, running or In work.',
