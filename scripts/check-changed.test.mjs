@@ -6,10 +6,19 @@ import { createServer } from 'node:net';
 import path from 'node:path';
 import { test } from 'node:test';
 
-import { findOversizedGrowth, findRatchetViolations, parseOxlintReport, parseRenames, withKnipSnapshot } from './check-changed.mjs';
+import { findOversizedGrowth, findRatchetViolations, groupLintFiles, parseOxlintReport, parseRenames, withKnipSnapshot } from './check-changed.mjs';
 
 const counts = (entries) => new Map(entries.map(([file, rule, count]) => [`${file}\0${rule}`, count]));
 const testTempRoot = process.platform === 'win32' ? tmpdir() : '/tmp';
+
+test('large changes lint every file in order without exceeding the Windows argument budget', () => {
+  const files = Array.from({ length: 500 }, (_, index) => `C:\\workspace with spaces\\${'nested\\'.repeat(12)}${index}.tsx`);
+  const groups = groupLintFiles(files);
+  assert.ok(groups.length > 1);
+  assert.deepEqual(groups.flat(), files);
+  assert.ok(groups.every((group) => group.reduce((length, file) => length + file.length + 3, 0) <= 20_000));
+  assert.deepEqual(groupLintFiles([]), []);
+});
 
 test('old findings may stay or shrink', () => {
   const base = counts([['a.ts', 'anti-slop(no-runtime-typeof)', 3]]);
