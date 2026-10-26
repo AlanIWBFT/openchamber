@@ -22,6 +22,55 @@ import { renderSettingsRegistrySnapshot, SETTINGS_REGISTRY_SNAPSHOT_PATHS } from
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', '..');
 
 describe('settings registry', () => {
+  test('session confirmation preferences default on and apply independently to legacy and partial settings', () => {
+    const original = useUIStore.getState();
+    try {
+      expect(useUIStore.getInitialState()).toMatchObject({ showDeletionDialog: true, showArchiveDialog: true });
+      useUIStore.setState({ showDeletionDialog: true, showArchiveDialog: true });
+      applySettingsToStores(parseSettingsDocument({ showDeletionDialog: false }) ?? {});
+      expect(useUIStore.getState()).toMatchObject({ showDeletionDialog: false, showArchiveDialog: true });
+      useUIStore.getState().setShowArchiveDialog(false);
+      applySettingsToStores({ showDeletionDialog: true });
+      expect(useUIStore.getState()).toMatchObject({ showDeletionDialog: true, showArchiveDialog: false });
+      applySettingsToStores({});
+      expect(useUIStore.getState()).toMatchObject({ showDeletionDialog: true, showArchiveDialog: false });
+      expect(parseSettingsDocument({ showDeletionDialog: 'false', showArchiveDialog: 0 })).toEqual({});
+      for (const key of ['showDeletionDialog', 'showArchiveDialog'] as const) {
+        expect(SETTINGS_REGISTRY[key].scope).toBe('profile');
+        expect(AUTO_SAVE_KEYS).toContain(key);
+        expect(MIRRORED_KEYS).toContain(key);
+      }
+    } finally {
+      useUIStore.setState(original, true);
+    }
+  });
+
+  test('round-trips every combination of session confirmation preferences through settings and local hydration', async () => {
+    const options = useUIStore.persist.getOptions();
+    const original = useUIStore.getState();
+    let saved: Parameters<NonNullable<typeof options.storage>['setItem']>[1] = { state: original, version: options.version };
+    try {
+      for (const showDeletionDialog of [true, false]) {
+        for (const showArchiveDialog of [true, false]) {
+          useUIStore.persist.setOptions({ storage: { getItem: () => saved, setItem: (_name, value) => { saved = value; }, removeItem: () => undefined } });
+          const expected = { showDeletionDialog, showArchiveDialog };
+          applySettingsToStores(parseSettingsDocument(JSON.parse(JSON.stringify(expected))) ?? {});
+          expect(readAutoSaveSnapshot()).toMatchObject(expected);
+          const persisted = saved;
+          expect(persisted.state).toMatchObject(expected);
+          useUIStore.persist.setOptions({ storage: { getItem: () => persisted, setItem: () => undefined, removeItem: () => undefined } });
+          useUIStore.getState().setShowDeletionDialog(!showDeletionDialog);
+          useUIStore.getState().setShowArchiveDialog(!showArchiveDialog);
+          await useUIStore.persist.rehydrate();
+          expect(useUIStore.getState()).toMatchObject(expected);
+        }
+      }
+    } finally {
+      useUIStore.persist.setOptions(options);
+      useUIStore.setState(original, true);
+    }
+  });
+
   test('round-trips all large text paste modes through settings and local persistence', async () => {
     const options = useUIStore.persist.getOptions();
     const original = useUIStore.getState();

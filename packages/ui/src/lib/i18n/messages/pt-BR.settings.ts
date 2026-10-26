@@ -1975,6 +1975,8 @@ export const settingsDict = {
   "settings.openchamber.defaults.walkthroughModel.description": "A revisão das suas mudanças por IA precisa de saída estruturada e espaço para um diff inteiro, o que um modelo pequeno e barato muitas vezes não oferece. Modelos que o catálogo indica como incapazes de saída estruturada ficam ocultos aqui. Sem escolha, o modelo pequeno é usado.",
   "settings.openchamber.defaults.walkthroughModel.usesSmallModel": "Modelo pequeno",
   "settings.openchamber.defaults.field.showDeletionDialog": "Mostrar diálogo de eliminación",
+  "settings.openchamber.defaults.field.showArchiveDialog": "Mostrar diálogo de arquivamento",
+  "settings.openchamber.defaults.field.showArchiveDialogAria": "Mostrar diálogo de arquivamento",
   "settings.openchamber.defaults.field.openFilesPreviewAria": "Abrir arquivos com visualização em modo de prévia",
   "settings.openchamber.defaults.field.openFilesPreview": "Abrir arquivos com visualização em modo de prévia",
   "settings.openchamber.defaults.option.default": "Padrão",

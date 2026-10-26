@@ -3859,7 +3859,7 @@ export const dict: Record<I18nKey, string> = {
   'diffView.hunk.discardDialogTitle': 'Odrzucić ten fragment?',
   'diffView.hunk.discardDescription': 'Te lokalne zmiany w {path} zostaną odrzucone.',
   'sessions.sidebar.project.actions.archiveAll': 'Archiwizuj wszystkie sesje',
-  'sessions.sidebar.project.archiveAll.title': 'Zarchiwizować sesje w {project}?',
+  'sessions.sidebar.project.archiveAll.title': 'Zarchiwizować wszystkie rozmowy?',
   'sessions.sidebar.project.archiveAll.descriptionSingle': '{count} sesja trafi do archiwum. Przypięte, działające i oznaczone „W toku” zostają.',
   'sessions.sidebar.project.archiveAll.descriptionPlural': 'Do archiwum trafi sesji: {count}. Przypięte, działające i oznaczone „W toku” zostają.',
   'sessions.sidebar.project.archiveAll.nothing': 'Nic do archiwizacji: każda sesja jest przypięta, działa albo jest „W toku”.',

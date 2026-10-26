@@ -31,6 +31,8 @@ export const SessionRetentionSettings: React.FC = () => {
   const { t } = useI18n();
   const showDeletionDialog = useUIStore((state) => state.showDeletionDialog);
   const setShowDeletionDialog = useUIStore((state) => state.setShowDeletionDialog);
+  const showArchiveDialog = useUIStore((state) => state.showArchiveDialog);
+  const setShowArchiveDialog = useUIStore((state) => state.setShowArchiveDialog);
   const autoDeleteEnabled = useUIStore((state) => state.autoDeleteEnabled);
   const autoDeleteAfterDays = useUIStore((state) => state.autoDeleteAfterDays);
   const onlyArchived = useUIStore((state) => state.sessionRetentionOnlyArchived);
@@ -96,6 +98,13 @@ export const SessionRetentionSettings: React.FC = () => {
           onChange={setShowDeletionDialog}
           label={t('settings.openchamber.defaults.field.showDeletionDialog')}
           ariaLabel={t('settings.openchamber.defaults.field.showDeletionDialogAria')}
+        />
+        <SettingsCheckboxRow
+          settingsItem="sessions.archive-dialog"
+          checked={showArchiveDialog}
+          onChange={setShowArchiveDialog}
+          label={t('settings.openchamber.defaults.field.showArchiveDialog')}
+          ariaLabel={t('settings.openchamber.defaults.field.showArchiveDialogAria')}
         />
         <SettingsCheckboxRow
           settingsItem="sessions.auto-cleanup"

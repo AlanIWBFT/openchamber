@@ -77,9 +77,9 @@ export type FinishWorktreeWorkOutcome =
  * `archive` the worktree is then archived with its sessions. Done alone only
  * takes it out of In work, unless the user turned archiving on Done on
  * (`worktreeArchiveOnDoneEnabled`); Archive in its menu and the row's
- * Shift action always archive. An archive keeps every change, so nothing
- * needs the user's word; only a session still running there keeps the
- * worktree. The work has left In work either way.
+ * Shift action confirm before calling this function. Automatic archive on
+ * Done does not ask again. A running session or an unreadable live state keeps
+ * the worktree. The work has left In work either way.
  */
 export async function finishWorktreeWork(input: {
   sessions: readonly Session[];

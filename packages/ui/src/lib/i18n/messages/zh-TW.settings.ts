@@ -1862,6 +1862,8 @@ export const settingsDict = {
   'settings.openchamber.defaults.walkthroughModel.description': 'AI 審閱變更需要結構化輸出與容納整份差異的空間，便宜的小模型常常做不到。目錄標示為不支援結構化輸出的模型不會出現在這份清單中。 未選擇時將使用小模型。',
   'settings.openchamber.defaults.walkthroughModel.usesSmallModel': '小模型',
   'settings.openchamber.defaults.field.showDeletionDialog': '顯示刪除對話方塊',
+  'settings.openchamber.defaults.field.showArchiveDialog': '顯示封存對話方塊',
+  'settings.openchamber.defaults.field.showArchiveDialogAria': '顯示封存對話方塊',
   'settings.openchamber.defaults.field.openFilesPreviewAria': '以預覽模式開啟可預覽檔案',
   'settings.openchamber.defaults.field.openFilesPreview': '以預覽模式開啟可預覽檔案',
   'settings.openchamber.defaults.option.default': '預設',

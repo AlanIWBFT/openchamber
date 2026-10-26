@@ -35,6 +35,31 @@ const localeDictionaries = {
 } as const;
 
 describe('i18n dictionaries', () => {
+  test('whole-group archive confirmations are translated and retain the group label', () => {
+    for (const key of ['sessions.sidebar.work.archive.confirmMessage', 'multirun.overview.archive.confirmMessage'] as const) {
+      for (const [locale, dictionary] of Object.entries(localeDictionaries)) {
+        expect(dictionary[key]).toContain('{label}');
+        if (locale !== 'en') expect(dictionary[key]).not.toBe(enDict[key]);
+      }
+    }
+  });
+  test('archive-all confirmation explicitly asks about all conversations', () => {
+    expect(enDict['sessions.sidebar.project.archiveAll.title']).toBe('Archive all conversations?');
+    expect(zhCnDict['sessions.sidebar.project.archiveAll.title']).toBe('是否归档全部对话？');
+    for (const dictionary of Object.values(localeDictionaries)) {
+      expect(dictionary['sessions.sidebar.project.archiveAll.title']).not.toContain('{project}');
+    }
+  });
+
+  test('archive confirmation settings have translated visible and accessible labels in every locale', () => {
+    for (const key of ['settings.openchamber.defaults.field.showArchiveDialog', 'settings.openchamber.defaults.field.showArchiveDialogAria'] as const) {
+      for (const [locale, dictionary] of Object.entries(localeDictionaries)) {
+        expect(dictionary[key]).toBeTruthy();
+        if (locale !== 'en') expect(dictionary[key]).not.toBe(enDict[key]);
+      }
+    }
+  });
+
   test('repository links name either provider in every locale', () => {
     for (const dictionary of Object.values(localeDictionaries)) {
       expect(dictionary['gitView.header.openRepository']).toContain('{provider}');

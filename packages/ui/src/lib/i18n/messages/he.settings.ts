@@ -1986,6 +1986,8 @@ export const settingsDict = {
   'settings.openchamber.defaults.field.sessionWarming': 'שמור הפעלות לא פעילות חמות',
   'settings.openchamber.defaults.field.sessionWarmingInfo': "יש ספקים ששוכחים את ההקשר השמור של שיחה אחרי כמה דקות של שקט, ולכן ההודעה הבאה איטית ויקרה יותר. כשאפשרות זו פעילה, OpenCode שולח בקשת \"OK\" זעירה כל 4 דקות כל עוד ההפעלה לא פעילה, עד 30 דקות אחרי ההודעה האחרונה. כל פינג מחויב כבקשה קטנה. חל על כל הפרויקטים.",
   'settings.openchamber.defaults.field.showDeletionDialog': 'הצג תיבת דו-שיח למחיקה',
+  'settings.openchamber.defaults.field.showArchiveDialog': 'הצג תיבת דו-שיח לארכוב',
+  'settings.openchamber.defaults.field.showArchiveDialogAria': 'הצג תיבת דו-שיח לארכוב',
   'settings.openchamber.defaults.smallModel.title': 'מודל קטן',
   'settings.openchamber.defaults.smallModel.description': 'מודל זול למשימות עזר מהירות, כמו סיכומים ותקצירים קצרים.',
   'settings.openchamber.defaults.smallModel.useDefault': 'השתמש במודל הקטן המוגדר כברירת מחדל',

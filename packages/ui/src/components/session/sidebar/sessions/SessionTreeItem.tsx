@@ -107,7 +107,7 @@ function SessionTreeItemComponent({
   const createFolder = useSessionFoldersStore((state) => state.createFolder);
   const toggleFolderCollapse = useSessionFoldersStore((state) => state.toggleFolderCollapse);
   const showDeletionDialog = useUIStore((state) => state.showDeletionDialog);
-  const setShowDeletionDialog = useUIStore((state) => state.setShowDeletionDialog);
+  const showArchiveDialog = useUIStore((state) => state.showArchiveDialog);
   // Keyed by the descendant ids themselves, not by node identity: the sidebar
   // rebuilds a project's node tree whenever one of its session records
   // changes, and a fresh array here would give every row in that project a
@@ -139,6 +139,7 @@ function SessionTreeItemComponent({
     resetSessionSearch,
     descendantIds,
     showDeletionDialog,
+    showArchiveDialog,
     setDeleteSessionConfirm,
     deleteSessionConfirm,
     editingId,
@@ -237,8 +238,6 @@ function SessionTreeItemComponent({
     {deleteSessionConfirm?.session.id === node.session.id ? <SessionDeleteConfirmDialog
       value={deleteSessionConfirm}
       setValue={setDeleteSessionConfirm}
-      showDeletionDialog={showDeletionDialog}
-      setShowDeletionDialog={setShowDeletionDialog}
       onConfirm={sessionActions.confirmDeleteSession}
     /> : null}
   </>;

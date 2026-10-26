@@ -1523,6 +1523,28 @@ describe('unload lifecycle flush (#2197)', () => {
     }
   });
 
+  test('persists an archive confirmation toggle on immediate unload without changing deletion confirmation', async () => {
+    const originalDeletion = useUIStore.getState().showDeletionDialog;
+    const originalArchive = useUIStore.getState().showArchiveDialog;
+    const saveCalls: Array<Partial<SettingsPayload>> = [];
+    useUIStore.getState().setShowArchiveDialog(true);
+    registerSettingsSave(async (changes) => {
+      saveCalls.push(changes);
+      return {};
+    });
+    startAppearanceAutoSave();
+    try {
+      useUIStore.getState().setShowArchiveDialog(false);
+      getWindow().dispatchEvent(new Event('pagehide'));
+      expect(saveCalls.some((changes) => changes.showArchiveDialog === false)).toBe(true);
+      expect(useUIStore.getState().showDeletionDialog).toBe(originalDeletion);
+      expect(saveCalls.every((changes) => changes.showDeletionDialog === undefined)).toBe(true);
+    } finally {
+      useUIStore.getState().setShowArchiveDialog(originalArchive);
+      await delay(300);
+    }
+  });
+
   test('persists a first model preference followed by an immediate unload', async () => {
     const saveCalls: Array<Partial<SettingsPayload>> = [];
     registerSettingsSave(async (changes) => {

@@ -3818,7 +3818,7 @@ export const dict = {
   'diffView.hunk.discardDialogTitle': 'למחוק את הקטע הזה?',
   'diffView.hunk.discardDescription': 'פעולה זו תמחק את השינויים המקומיים האלה ב-{path}.',
   'sessions.sidebar.project.actions.archiveAll': 'העבר את כל ההפעלות לארכיון',
-  'sessions.sidebar.project.archiveAll.title': 'להעביר לארכיון את ההפעלות ב-{project}?',
+  'sessions.sidebar.project.archiveAll.title': 'להעביר לארכיון את כל השיחות?',
   'sessions.sidebar.project.archiveAll.descriptionSingle': 'הפעלה {count} תועבר לארכיון. הפעלות מוצמדות, פעילות והפעלות שנמצאות בעבודה יישארו.',
   'sessions.sidebar.project.archiveAll.descriptionPlural': '{count} הפעלות יועברו לארכיון. הפעלות מוצמדות, פעילות והפעלות שנמצאות בעבודה יישארו.',
   'sessions.sidebar.project.archiveAll.nothing': 'אין מה להעביר לארכיון: כל ההפעלות כאן מוצמדות, פעילות או בעבודה.',

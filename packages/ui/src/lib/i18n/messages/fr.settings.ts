@@ -1878,6 +1878,8 @@ export const settingsDict = {
   'settings.openchamber.defaults.walkthroughModel.description': 'La revue par IA de vos modifications exige une sortie structurée et de la place pour un diff entier, ce qu’un petit modèle économique ne fournit pas toujours. Les modèles que le catalogue déclare incapables de sortie structurée sont masqués ici. Sans choix explicite, le petit modèle est utilisé.',
   'settings.openchamber.defaults.walkthroughModel.usesSmallModel': 'Petit modèle',
   'settings.openchamber.defaults.field.showDeletionDialog': 'Afficher la boîte de dialogue de suppression',
+  'settings.openchamber.defaults.field.showArchiveDialog': "Afficher la boîte de dialogue d'archivage",
+  'settings.openchamber.defaults.field.showArchiveDialogAria': "Afficher la boîte de dialogue d'archivage",
   'settings.openchamber.defaults.field.openFilesPreviewAria': 'Ouvrir les fichiers prévisualisables en mode aperçu',
   'settings.openchamber.defaults.field.openFilesPreview': 'Ouvrir les fichiers prévisualisables en mode aperçu',
   'settings.openchamber.defaults.option.default': 'Défaut',

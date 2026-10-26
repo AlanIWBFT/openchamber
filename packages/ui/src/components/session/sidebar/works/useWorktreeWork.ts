@@ -1,5 +1,6 @@
 import React from 'react';
 import { toast } from '@/components/ui';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { canArchiveWorktrees, setGitWorktreeTitle } from '@/lib/gitApi';
 import { useI18n } from '@/lib/i18n';
 import { useWorktreeRemoving } from '@/lib/worktrees/worktreeRemovalState';
@@ -35,6 +36,7 @@ type Args = {
  */
 export function useWorktreeWork({ group, projectId, collapsed, onNavigate }: Args) {
   const { t } = useI18n();
+  const { confirm, dialog: archiveDialog } = useConfirmDialog();
   const worktree = group.worktree;
   const directory = normalizePath(group.directory ?? null);
   const worktreeRemoving = useWorktreeRemoving(worktree ? worktree.path : null);
@@ -133,6 +135,17 @@ export function useWorktreeWork({ group, projectId, collapsed, onNavigate }: Arg
       setFinishing(false);
     }
   };
+  // Manual archive asks before Done or navigation. Enabled automatic archive
+  // on Done deliberately goes straight to finish instead.
+  const archive = async (): Promise<void> => {
+    if (!canArchive || !project || finishing) return;
+    if (!await confirm({
+      title: t('sessions.sidebar.work.menu.archive'),
+      message: t('sessions.sidebar.work.archive.confirmMessage', { label }),
+      action: t('sessions.sidebar.bulkActions.archive'),
+    })) return;
+    await finish(true);
+  };
   /** Done or Track: present while the feature is on and there is a session to track. */
   const workAction = sessionWorkEnabled && (inWork || sessions.length > 0);
   const toggleWork = (): void => {
@@ -182,7 +195,8 @@ export function useWorktreeWork({ group, projectId, collapsed, onNavigate }: Arg
     open,
     newChat,
     saveTitle,
-    finish,
+    archive,
+    archiveDialog,
     toggleWork,
   };
 }

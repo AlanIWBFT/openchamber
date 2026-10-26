@@ -2,6 +2,7 @@
 export const worktreeArchiveI18n = {
   en: {
     "sessions.sidebar.work.menu.archive": "Archive worktree",
+    "sessions.sidebar.work.archive.confirmMessage": "All sessions in \"{label}\" will be archived. Its changes will be saved in a snapshot and its worktree folder removed. You can restore the sessions and worktree from Archive.",
     "sessions.sidebar.work.archive.done": "Worktree archived",
     "sessions.sidebar.work.archive.kept": "Worktree not archived",
     "sessions.sidebar.work.archive.keptRunning": "A session there is still running.",
@@ -35,6 +36,7 @@ export const worktreeArchiveI18n = {
   },
   de: {
     "sessions.sidebar.work.menu.archive": "Worktree archivieren",
+    "sessions.sidebar.work.archive.confirmMessage": "Alle Sitzungen in „{label}“ werden archiviert. Änderungen werden in einem Snapshot gespeichert und der Worktree-Ordner entfernt. Sitzungen und Worktree lassen sich aus dem Archiv wiederherstellen.",
     "sessions.sidebar.work.archive.done": "Worktree archiviert",
     "sessions.sidebar.work.archive.kept": "Worktree nicht archiviert",
     "sessions.sidebar.work.archive.keptRunning": "Dort läuft noch eine Sitzung.",
@@ -68,6 +70,7 @@ export const worktreeArchiveI18n = {
   },
   fr: {
     "sessions.sidebar.work.menu.archive": "Archiver le worktree",
+    "sessions.sidebar.work.archive.confirmMessage": "Toutes les sessions de « {label} » seront archivées. Ses modifications seront enregistrées dans un instantané et son dossier de worktree sera supprimé. Vous pourrez restaurer les sessions et le worktree depuis les Archives.",
     "sessions.sidebar.work.archive.done": "Worktree archivé",
     "sessions.sidebar.work.archive.kept": "Worktree non archivé",
     "sessions.sidebar.work.archive.keptRunning": "Une session y tourne encore.",
@@ -101,6 +104,7 @@ export const worktreeArchiveI18n = {
   },
   nl: {
     "sessions.sidebar.work.menu.archive": "Worktree archiveren",
+    "sessions.sidebar.work.archive.confirmMessage": "Alle sessies in ‘{label}’ worden gearchiveerd. De wijzigingen worden in een momentopname opgeslagen en de worktree-map wordt verwijderd. U kunt de sessies en worktree vanuit het Archief herstellen.",
     "sessions.sidebar.work.archive.done": "Worktree gearchiveerd",
     "sessions.sidebar.work.archive.kept": "Worktree niet gearchiveerd",
     "sessions.sidebar.work.archive.keptRunning": "Er loopt daar nog een sessie.",
@@ -134,6 +138,7 @@ export const worktreeArchiveI18n = {
   },
   es: {
     "sessions.sidebar.work.menu.archive": "Archivar el worktree",
+    "sessions.sidebar.work.archive.confirmMessage": "Se archivarán todas las sesiones de «{label}». Sus cambios se guardarán en una instantánea y se eliminará la carpeta del worktree. Puedes restaurar las sesiones y el worktree desde Archivo.",
     "sessions.sidebar.work.archive.done": "Worktree archivado",
     "sessions.sidebar.work.archive.kept": "Worktree sin archivar",
     "sessions.sidebar.work.archive.keptRunning": "Todavía hay una sesión en marcha allí.",
@@ -167,6 +172,7 @@ export const worktreeArchiveI18n = {
   },
   ja: {
     "sessions.sidebar.work.menu.archive": "ワークツリーをアーカイブ",
+    "sessions.sidebar.work.archive.confirmMessage": "「{label}」内のすべてのセッションをアーカイブします。変更はスナップショットに保存され、ワークツリーのフォルダーは削除されます。セッションとワークツリーはアーカイブから復元できます。",
     "sessions.sidebar.work.archive.done": "ワークツリーをアーカイブしました",
     "sessions.sidebar.work.archive.kept": "ワークツリーはアーカイブされませんでした",
     "sessions.sidebar.work.archive.keptRunning": "セッションがまだ実行中です。",
@@ -200,6 +206,7 @@ export const worktreeArchiveI18n = {
   },
   'pt-BR': {
     "sessions.sidebar.work.menu.archive": "Arquivar o worktree",
+    "sessions.sidebar.work.archive.confirmMessage": "Todas as sessões de “{label}” serão arquivadas. As alterações serão salvas em um snapshot e a pasta do worktree será removida. Você pode restaurar as sessões e o worktree pelo Arquivo.",
     "sessions.sidebar.work.archive.done": "Worktree arquivado",
     "sessions.sidebar.work.archive.kept": "Worktree não arquivado",
     "sessions.sidebar.work.archive.keptRunning": "Uma sessão ainda está rodando nele.",
@@ -233,6 +240,7 @@ export const worktreeArchiveI18n = {
   },
   uk: {
     "sessions.sidebar.work.menu.archive": "Архівувати worktree",
+    "sessions.sidebar.work.archive.confirmMessage": "Усі сесії в «{label}» буде заархівовано. Зміни буде збережено у знімку, а теку worktree видалено. Сесії та worktree можна відновити з «Архіву».",
     "sessions.sidebar.work.archive.done": "Worktree заархівовано",
     "sessions.sidebar.work.archive.kept": "Worktree не заархівовано",
     "sessions.sidebar.work.archive.keptRunning": "Там ще працює сесія.",
@@ -266,6 +274,7 @@ export const worktreeArchiveI18n = {
   },
   ko: {
     "sessions.sidebar.work.menu.archive": "워크트리 보관",
+    "sessions.sidebar.work.archive.confirmMessage": "‘{label}’의 모든 세션을 보관합니다. 변경 사항은 스냅샷에 저장되고 워크트리 폴더는 삭제됩니다. 세션과 워크트리는 보관함에서 복원할 수 있습니다.",
     "sessions.sidebar.work.archive.done": "워크트리를 보관했습니다",
     "sessions.sidebar.work.archive.kept": "워크트리를 보관하지 않았습니다",
     "sessions.sidebar.work.archive.keptRunning": "아직 실행 중인 세션이 있습니다.",
@@ -299,6 +308,7 @@ export const worktreeArchiveI18n = {
   },
   pl: {
     "sessions.sidebar.work.menu.archive": "Zarchiwizuj worktree",
+    "sessions.sidebar.work.archive.confirmMessage": "Wszystkie sesje w „{label}” zostaną zarchiwizowane. Zmiany zostaną zapisane w migawce, a folder worktree usunięty. Sesje i worktree można przywrócić z Archiwum.",
     "sessions.sidebar.work.archive.done": "Zarchiwizowano worktree",
     "sessions.sidebar.work.archive.kept": "Nie zarchiwizowano worktree",
     "sessions.sidebar.work.archive.keptRunning": "Wciąż działa w nim sesja.",
@@ -332,6 +342,7 @@ export const worktreeArchiveI18n = {
   },
   'zh-CN': {
     "sessions.sidebar.work.menu.archive": "归档工作树",
+    "sessions.sidebar.work.archive.confirmMessage": "将归档“{label}”中的全部会话，保存更改快照并移除工作树文件夹。会话和工作树可以从归档中还原。",
     "sessions.sidebar.work.archive.done": "工作树已归档",
     "sessions.sidebar.work.archive.kept": "工作树未归档",
     "sessions.sidebar.work.archive.keptRunning": "仍有会话在运行。",
@@ -365,6 +376,7 @@ export const worktreeArchiveI18n = {
   },
   'zh-TW': {
     "sessions.sidebar.work.menu.archive": "封存工作樹",
+    "sessions.sidebar.work.archive.confirmMessage": "將封存「{label}」中的所有工作階段，儲存變更快照並移除工作樹資料夾。工作階段與工作樹可以從封存中還原。",
     "sessions.sidebar.work.archive.done": "工作樹已封存",
     "sessions.sidebar.work.archive.kept": "工作樹未封存",
     "sessions.sidebar.work.archive.keptRunning": "仍有工作階段在執行。",
@@ -398,6 +410,7 @@ export const worktreeArchiveI18n = {
   },
   tr: {
     "sessions.sidebar.work.menu.archive": "Worktree’yi arşivle",
+    "sessions.sidebar.work.archive.confirmMessage": "“{label}” içindeki tüm oturumlar arşivlenecek. Değişiklikleri bir anlık görüntüye kaydedilecek ve worktree klasörü kaldırılacak. Oturumları ve worktree’yi Arşiv’den geri yükleyebilirsiniz.",
     "sessions.sidebar.work.archive.done": "Worktree arşivlendi",
     "sessions.sidebar.work.archive.kept": "Worktree arşivlenmedi",
     "sessions.sidebar.work.archive.keptRunning": "Orada hâlâ çalışan bir oturum var.",
@@ -431,6 +444,7 @@ export const worktreeArchiveI18n = {
   },
   ar: {
     "sessions.sidebar.work.menu.archive": "أرشفة شجرة العمل",
+    "sessions.sidebar.work.archive.confirmMessage": "ستتم أرشفة جميع الجلسات في «{label}». ستُحفظ تغييراتها في لقطة وسيُزال مجلد شجرة العمل. يمكنك استعادة الجلسات وشجرة العمل من الأرشيف.",
     "sessions.sidebar.work.archive.done": "تمت أرشفة شجرة العمل",
     "sessions.sidebar.work.archive.kept": "لم تتم أرشفة شجرة العمل",
     "sessions.sidebar.work.archive.keptRunning": "ما زالت جلسة فيها تعمل.",
@@ -464,6 +478,7 @@ export const worktreeArchiveI18n = {
   },
   he: {
     "sessions.sidebar.work.menu.archive": "העברת עץ העבודה לארכיון",
+    "sessions.sidebar.work.archive.confirmMessage": "כל ההפעלות ב־„{label}” יועברו לארכיון. השינויים יישמרו בתמונת מצב ותיקיית עץ העבודה תוסר. אפשר לשחזר את ההפעלות ואת עץ העבודה מהארכיון.",
     "sessions.sidebar.work.archive.done": "עץ העבודה הועבר לארכיון",
     "sessions.sidebar.work.archive.kept": "עץ העבודה לא הועבר לארכיון",
     "sessions.sidebar.work.archive.keptRunning": "עדיין רצה בו הפעלה.",

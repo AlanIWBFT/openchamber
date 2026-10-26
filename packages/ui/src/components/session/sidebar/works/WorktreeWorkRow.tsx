@@ -171,7 +171,7 @@ export function WorktreeWorkRow(props: Props): React.ReactNode {
     setRenaming(false);
     await work.saveTitle(renameDraft);
   };
-  const finish = work.finish;
+  const archive = work.archive;
   const shiftArchive = shiftHeld && canArchive;
   const toggleWork = (event: React.MouseEvent): void => {
     event.stopPropagation();
@@ -347,7 +347,7 @@ export function WorktreeWorkRow(props: Props): React.ReactNode {
       {worktree && !worktreeRemoving ? <>
         <Slots.Separator />
         {canArchive ? (
-          <Slots.Item onClick={() => { void finish(true); }}>
+          <Slots.Item onClick={() => { void archive(); }}>
             <Icon name="archive" className="h-4 w-4" />
             <span>{t('sessions.sidebar.work.menu.archive')}</span>
           </Slots.Item>
@@ -421,6 +421,7 @@ export function WorktreeWorkRow(props: Props): React.ReactNode {
   );
 
   return (
+    <>
     <ContextMenu disabled={renaming}>
     <ContextMenuTrigger render={<div className={cn(worktreeRemoving && 'opacity-60')} aria-busy={worktreeRemoving || undefined} />}>
       <div
@@ -536,8 +537,8 @@ export function WorktreeWorkRow(props: Props): React.ReactNode {
                 </TooltipContent>
               </Tooltip>
             ) : null}
-            {/* With Shift held the new-chat button archives the worktree on
-                the spot, as a session row's archive turns into delete. */}
+            {/* With Shift held the new-chat button requests worktree archive,
+                as a session row's archive turns into delete. */}
             {shiftArchive ? (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -549,7 +550,7 @@ export function WorktreeWorkRow(props: Props): React.ReactNode {
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
-                      void finish(true);
+                      void archive();
                     }}
                     onKeyDown={(event) => event.stopPropagation()}
                   >
@@ -600,5 +601,7 @@ export function WorktreeWorkRow(props: Props): React.ReactNode {
       {renderMenuItems(CONTEXT_MENU_SLOTS)}
     </ContextMenuContent>
     </ContextMenu>
+    {work.archiveDialog}
+    </>
   );
 }

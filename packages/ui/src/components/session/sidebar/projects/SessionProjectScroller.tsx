@@ -170,7 +170,7 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
 
   const archiveAllConfirm = useConfirmDialog();
   const { confirm: confirmArchiveAll } = archiveAllConfirm;
-  const requestArchiveAll = React.useCallback(async (projectLabel: string, groups: SessionGroup[]) => {
+  const requestArchiveAll = React.useCallback(async (groups: SessionGroup[]) => {
     const pinnedIds = useSessionPinnedStore.getState().ids;
     const targets = withArchiveAllSubtrees(
       selectArchiveAllSessionIds(groups, (session) =>
@@ -185,7 +185,7 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
       return;
     }
     const confirmed = await confirmArchiveAll({
-      title: t('sessions.sidebar.project.archiveAll.title', { project: projectLabel }),
+      title: t('sessions.sidebar.project.archiveAll.title'),
       message: targets.length === 1
         ? t('sessions.sidebar.project.archiveAll.descriptionSingle', { count: targets.length })
         : t('sessions.sidebar.project.archiveAll.descriptionPlural', { count: targets.length }),
@@ -339,7 +339,7 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
         onOpenSourceBoard={openProjectOnBoard ? () => openProjectOnBoard(project.id) : undefined}
         onOpenFolder={project.normalizedPath && files.revealPath ? () => openProjectFolder(project.normalizedPath) : undefined}
         onRenameStart={() => actions.openProjectEditDialog(project.id)}
-        onArchiveAll={() => void requestArchiveAll(label, row.section.groups)}
+        onArchiveAll={() => void requestArchiveAll(row.section.groups)}
         onClose={() => actions.removeProject(project.id)}
         showCreateButtons
       />;

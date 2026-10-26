@@ -593,6 +593,12 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['delete', 'confirmation'],
   },
   {
+    id: 'sessions.archive-dialog',
+    page: 'sessions',
+    titleKey: 'settings.openchamber.defaults.field.showArchiveDialog',
+    keywords: ['archive', 'confirmation'],
+  },
+  {
     id: 'sessions.warming',
     page: 'sessions',
     titleKey: 'settings.openchamber.defaults.field.sessionWarming',

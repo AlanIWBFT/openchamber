@@ -1975,6 +1975,8 @@ export const settingsDict = {
   "settings.openchamber.defaults.walkthroughModel.description": "AI-розбір ваших змін потребує structured output і місця під увесь diff, чого дешева small model часто дати не може. Моделі, які за каталогом не вміють structured output, у цьому списку приховані. Якщо нічого не обрано, використовується small model.",
   "settings.openchamber.defaults.walkthroughModel.usesSmallModel": "Small model",
   "settings.openchamber.defaults.field.showDeletionDialog": "Показати діалогове вікно видалення",
+  "settings.openchamber.defaults.field.showArchiveDialog": "Показати діалогове вікно архівування",
+  "settings.openchamber.defaults.field.showArchiveDialogAria": "Показати діалогове вікно архівування",
   "settings.openchamber.defaults.field.openFilesPreviewAria": "Відкривати файли з підтримкою перегляду в режимі попереднього перегляду",
   "settings.openchamber.defaults.field.openFilesPreview": "Відкривати файли з підтримкою перегляду в режимі попереднього перегляду",
   "settings.openchamber.defaults.option.default": "За замовчуванням",

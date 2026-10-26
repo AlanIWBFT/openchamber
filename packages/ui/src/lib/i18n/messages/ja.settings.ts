@@ -2008,6 +2008,8 @@ export const settingsDict = {
   'settings.openchamber.defaults.walkthroughModel.description': '変更の AI レビューには構造化出力と差分全体が収まる余裕が必要で、安価なスモールモデルでは足りないことがあります。カタログが構造化出力に非対応と示すモデルは、この一覧から除外されます。 未選択のままならスモールモデルが使われます。',
   'settings.openchamber.defaults.walkthroughModel.usesSmallModel': 'スモールモデル',
   'settings.openchamber.defaults.field.showDeletionDialog': '削除ダイアログを表示',
+  'settings.openchamber.defaults.field.showArchiveDialog': 'アーカイブ確認ダイアログを表示',
+  'settings.openchamber.defaults.field.showArchiveDialogAria': 'アーカイブ確認ダイアログを表示',
   'settings.openchamber.defaults.field.openFilesPreviewAria': 'プレビュー可能なファイルをプレビューモードで開く',
   'settings.openchamber.defaults.field.openFilesPreview': 'プレビュー可能なファイルをプレビューモードで開く',
   'settings.openchamber.defaults.option.default': 'デフォルト',
