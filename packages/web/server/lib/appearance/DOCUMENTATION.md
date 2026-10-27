@@ -65,6 +65,7 @@ This module owns what the server keeps and serves for how OpenChamber looks: cus
   - `POST /api/projects/:projectId/icon/discover`: writes the icon through `persistResolvedSettings`, so a save that lands during the file search keeps its projects.
 
 ## Public exports (pwa-manifest-routes.ts)
+- Image entries remain file paths so uncached metadata stays small. The main page supplies icon bytes from its immutable script before creating a Blob manifest; see `packages/web/DOCUMENTATION.md`.
 - `registerPwaManifestRoute(app, dependencies)`: registers PWA manifest endpoint with dynamic app-name resolution and recent-session shortcuts:
   - `GET /manifest.webmanifest`: served without API auth (the browser fetches it with cookies, `crossorigin="use-credentials"`). Session shortcuts, which carry session titles, are added only for an authorized caller, and their directory is the one the UI last used, never one named in the request.
 

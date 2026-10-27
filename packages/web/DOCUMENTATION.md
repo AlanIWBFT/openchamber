@@ -88,3 +88,9 @@ Shiki languages and themes, CodeMirror legacy modes and highlight themes load in
 ### Why diagnostic output lives outside the package and not beside production assets
 
 Electron copies this package into its ASAR, so diagnostic assets inside it enlarge the shipped app. Diagnostic builds identify work through maps and probes; production builds supply timing measurements, and an unmatched store transform fails the diagnostic build so notification counts cannot silently read zero.
+
+### Why Firefox Android gets icon data from a cached script
+
+Firefox Android can fail to present the page's mTLS credential when fetching tab and home-screen icons separately. A parser-blocking classic script supplies their data URLs before icon collection. Vite reads the original `public/` icons and emits one content-hashed asset; different page URLs reuse its immutable bytes. Safari touch icons and mask icons keep file URLs. The VS Code and Capacitor entrypoints are independent.
+
+The main page fetches manifest metadata once with credentials and supplies its icons from that script. Launch, scope, identity and shortcut URLs must be absolute in the resulting Blob manifest. Authorized recent-session titles belong only to the uncached metadata response.
