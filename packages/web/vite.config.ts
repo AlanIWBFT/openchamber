@@ -10,6 +10,7 @@ import { SHARE_DOCUMENT_FILE, shareDocumentPlugin } from './vite-share-document'
 import { localeSlicesPlugins } from './vite-locale-slices';
 import { oneByteChunksPlugin } from './vite-one-byte-chunks';
 import { preloadAppGraph } from './vite-preload-app-graph';
+import { webIconsPlugin } from './vite-web-icons';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
@@ -58,6 +59,7 @@ export default defineConfig({
   // dependency cache; see the note there.
   cacheDir: process.env.OPENCHAMBER_VITE_CACHE_DIR || undefined,
   plugins: [
+    webIconsPlugin(),
     // The React Compiler is most of a cold dev start; its output is kept on
     // disk for every checkout of the repository, so a restart or a new
     // worktree compiles only what changed.

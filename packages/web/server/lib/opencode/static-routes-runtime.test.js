@@ -32,6 +32,7 @@ const createServingRuntime = (distPath) => createStaticRoutesRuntime({
   readSettingsFromDiskMigrated: async () => ({}),
   normalizePwaAppName: (value) => value,
   normalizePwaOrientation: (value) => value,
+  isRequestAuthorized: async () => false,
 });
 
 describe('static file caching', () => {
@@ -44,6 +45,7 @@ describe('static file caching', () => {
     fs.writeFileSync(path.join(distPath, 'sw.js'), '');
     fs.writeFileSync(path.join(distPath, 'favicon.png'), '');
     fs.writeFileSync(path.join(distPath, 'assets', 'SettingsView-DkrERrCE.js'), 'export {}');
+    fs.writeFileSync(path.join(distPath, 'assets', 'web-icons-ContentHash.js'), 'const openChamberWebIcons = new Map();');
   });
 
   afterAll(() => {
@@ -63,6 +65,17 @@ describe('static file caching', () => {
     expect(response.headers['cache-control']).toBe('public, max-age=31536000, immutable');
   });
 
+  it('shares an immutable icon script across different document URLs and supports revalidation', async () => {
+    const app = serve();
+    const initial = await request(app).get('/assets/web-icons-ContentHash.js').set('Referer', 'https://app.test/?session=one');
+    expect(initial.status).toBe(200);
+    expect(initial.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    const next = await request(app).get('/assets/web-icons-ContentHash.js')
+      .set('Referer', 'https://app.test/?session=two').set('If-None-Match', initial.headers.etag);
+    expect(next.status).toBe(304);
+    expect(next.text).toBe('');
+  });
+
   it('keeps unhashed files revalidated and the service worker uncached', async () => {
     const app = serve();
 
@@ -71,6 +84,19 @@ describe('static file caching', () => {
 
     expect(favicon.headers['cache-control']).toBe('public, max-age=0');
     expect(serviceWorker.headers['cache-control']).toBe('no-store');
+  });
+
+  it('keeps dynamic manifests small and private metadata uncached', async () => {
+    const response = await request(serve()).get('/manifest.webmanifest');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store, must-revalidate');
+    const manifest = JSON.parse(response.text);
+    expect(manifest.icons[0].src).toBe('/pwa-192.png');
+    expect(manifest.shortcuts.map((shortcut) => shortcut.url)).toEqual(['/?settings=appearance']);
+    expect(manifest.shortcuts[0].icons[0].src).toBe(manifest.icons[0].src);
+    expect(response.text).not.toContain('data:image/');
+    expect(Buffer.byteLength(response.text)).toBeLessThan(3000);
   });
 });
 

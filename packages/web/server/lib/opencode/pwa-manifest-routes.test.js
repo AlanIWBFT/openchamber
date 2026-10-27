@@ -172,6 +172,10 @@ describe('PWA manifest route', () => {
       expect(fetchCalls).toEqual([]);
       expect(resolvedFrom).toEqual([]);
       expect(manifest.shortcuts.map((shortcut) => shortcut.url)).toEqual(['/?settings=appearance']);
+      for (const icon of [...manifest.icons, ...manifest.shortcuts.flatMap((shortcut) => shortcut.icons)]) {
+        expect(icon.src).toMatch(/^\/[\w-]+\.png$/);
+      }
+      expect(Buffer.byteLength(res.body)).toBeLessThan(3000);
     } finally {
       globalThis.fetch = originalFetch;
     }
