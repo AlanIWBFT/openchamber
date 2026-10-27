@@ -998,6 +998,7 @@ within a ten-minute overall deadline.
 ## Public exports (pwa-manifest-routes.js)
 - `registerPwaManifestRoute(app, dependencies)`: registers PWA manifest endpoint with dynamic app-name resolution and recent-session shortcuts:
   - `GET /manifest.webmanifest`: served without API auth (the browser fetches it with cookies, `crossorigin="use-credentials"`). Session shortcuts, which carry session titles, are added only for an authorized caller, and their directory is the one the UI last used, never one named in the request.
+  - Image entries remain file paths so uncached metadata stays small. The page replaces those paths with data URLs from a separate immutable icon script and exposes a local Blob manifest, avoiding both background mTLS image downloads and duplicate manifest HTTP requests. See `packages/web/DOCUMENTATION.md` for the cache and browser bootstrap invariants.
 
 ## Public exports (project-icon-routes.js)
 - `registerProjectIconRoutes(app, dependencies)`: registers project icon routes and owns icon storage/discovery flow:
