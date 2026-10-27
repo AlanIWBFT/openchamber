@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync, realpathSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
 import { cacheReactBabel } from './vite-react-babel-cache';
+import { webIconsPlugin } from './vite-web-icons';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
@@ -45,6 +46,7 @@ export default defineConfig({
   cacheDir: hmrCacheScope ? path.resolve(__dirname, `node_modules/.vite-${hmrCacheScope}`) : undefined,
   root: path.resolve(__dirname, '.'),
   plugins: [
+    webIconsPlugin(),
     // The React Compiler is most of a cold dev start; its output is kept on
     // disk for every checkout of the repository, so a restart or a new
     // worktree compiles only what changed.
