@@ -11,7 +11,7 @@ const runSchema = z.object({
   originalSessionID: z.string().min(1),
   reviewSessionID: z.string().min(1),
   directory: z.string().min(1),
-  status: z.enum(['running', 'clean', 'disputed', 'limit', 'failed', 'stopped']),
+  status: z.enum(['running', 'stopping', 'stop_failed', 'clean', 'disputed', 'limit', 'failed', 'stopped']),
   step: z.enum(['handoff', 'review', 'implement']),
   round: z.number(),
   maxRounds: z.number(),
@@ -83,7 +83,7 @@ interface AutoReviewState {
   resetForRuntimeSwitch: () => void;
 }
 
-export const useAutoReviewStore = create<AutoReviewState>()((set, get) => {
+export const useAutoReviewStore = create<AutoReviewState>()((set) => {
   const applyRun = (owner: string, revision: number, originalSessionID: string, directory: string, run: AutoReviewRun | null) => {
     if (ownerOf(directory) !== owner) return;
     if (run && (run.originalSessionID !== originalSessionID || ownerOf(run.directory) !== owner)) return;
@@ -158,20 +158,13 @@ export const useAutoReviewStore = create<AutoReviewState>()((set, get) => {
     removeRun: async (originalSessionID, directory) => {
       const runtimeKey = getRuntimeKey();
       const owner = ownerOf(directory);
-      const key = runKey(owner, originalSessionID);
-      const previous = get().runs[key];
-      set((state) => {
-        const runs = { ...state.runs };
-        delete runs[key];
-        return { runs };
-      });
       try {
         const result = await requestJson(mutationSchema, runPath(originalSessionID), { method: 'DELETE', directory });
         if (runtimeKey !== getRuntimeKey()) return;
         applyRun(owner, result.revision, originalSessionID, directory, result.run);
       } catch (error) {
         if (runtimeKey !== getRuntimeKey()) return;
-        if (previous) set((state) => ({ runs: { ...state.runs, [key]: previous } }));
+        // Keep the row and any newer live Stop state; never restore an old run.
         await readOwner(owner).catch(() => undefined);
         throw error;
       }
@@ -191,7 +184,10 @@ export const selectAutoReviewRun = (sessionID: string | null | undefined, direct
 
 export const selectAutoReviewRunning = (sessionID: string | null | undefined, directory: string | null | undefined) => {
   const selectRun = selectAutoReviewRun(sessionID, directory);
-  return (state: AutoReviewState): boolean => selectRun(state)?.status === 'running';
+  return (state: AutoReviewState): boolean => {
+    const status = selectRun(state)?.status;
+    return status === 'running' || status === 'stopping' || status === 'stop_failed';
+  };
 };
 
 export const applyAutoReviewUpdatedEvent = (event: AutoReviewUpdatedEvent, expectedRuntimeKey: string): void => {

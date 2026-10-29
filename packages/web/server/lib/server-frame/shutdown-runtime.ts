@@ -30,7 +30,7 @@ interface ShutdownDependencies {
   contextObligatoryRuntime?: OptionalStop;
   sessionWarmingRuntime?: OptionalStop;
   sessionTodosRuntime?: OptionalStop;
-  autoReviewRuntime?: OptionalStop;
+  autoReviewRuntime?: (Partial<Stop> & { flush?: () => Promise<void> }) | null;
   prWatchRuntime?: OptionalStop;
   extensionWaitsRuntime?: OptionalStop;
   mergeFollowRuntime?: OptionalStop;
@@ -184,7 +184,24 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
       () => contextObligatoryRuntime?.stop?.(),
       () => sessionWarmingRuntime?.stop?.(),
       () => sessionTodosRuntime?.stop?.(),
-      () => autoReviewRuntime?.stop?.(),
+      async () => {
+        autoReviewRuntime?.stop?.();
+        if (!autoReviewRuntime?.flush) return;
+        // Stop only disarms the loop. Join in-flight Stop work and its writes so
+        // restart cannot mistake an unpersisted stopping run for a running one.
+        // Share the host budget: a stuck send must not hold daemon exit forever.
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            autoReviewRuntime.flush(),
+            new Promise((_, reject) => {
+              timeout = setTimeout(() => reject(new Error('Auto-review shutdown timed out')), Math.max(0, remaining() - SHUTDOWN_FINALIZATION_RESERVE_MS));
+            }),
+          ]);
+        } finally {
+          clearTimeout(timeout);
+        }
+      },
       () => prWatchRuntime?.stop?.(),
       () => mergeFollowRuntime?.stop?.(),
       () => messageQueueRuntime?.stop?.(),
