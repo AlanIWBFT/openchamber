@@ -617,11 +617,13 @@ describe("createEventPipeline over the WebSocket transport", () => {
     adoptRelayTunnel({ relayUrl: "wss://relay.test", serverId: "fixture", hostEncPubJwk: {} }, tunnel)
     const delivered: SyncEvent[] = []
     let activity = 0
+    const connections: boolean[] = []
     const pipeline = createEventPipeline({
       sdk: createSdk([], () => undefined),
       onEvents: (_directory, batch) => { delivered.push(...batch) },
       onStreamActivity: () => { activity += 1 },
       transport: "ws",
+      onReconnect: ({ replayReset }) => { connections.push(replayReset) },
       heartbeatTimeoutMs: 1_000,
     })
     try {
@@ -630,6 +632,7 @@ describe("createEventPipeline over the WebSocket transport", () => {
       expect(paths[0]).toContain("/api/global/event/ws")
       const socket = sockets[0]
       socket.onmessage?.({ data: JSON.stringify({ type: "ready" }) })
+      socket.onmessage?.({ data: JSON.stringify({ type: "ready", replayReset: true }) })
       socket.onmessage?.({
         data: JSON.stringify({ type: "event", payload: { type: "openchamber:heartbeat", timestamp: 1 }, directory: "global" }),
       })
@@ -638,7 +641,8 @@ describe("createEventPipeline over the WebSocket transport", () => {
       pipeline.cleanup()
     }
     // The ready frame and the heartbeat frame both prove the socket is alive. Neither is an event.
-    expect(activity).toBe(2)
+    expect(activity).toBe(3)
+    expect(connections).toEqual([false, true])
     expect(delivered).toEqual([])
   })
 })
