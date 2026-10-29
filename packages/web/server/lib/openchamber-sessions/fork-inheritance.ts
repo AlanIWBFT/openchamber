@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { OPERATOR_CHILD_KIND } from '../session-lineage.js';
 import { withoutOperatorChildDenials } from './create-session.js';
 import { hasMessage } from './contracts.js';
+import type { MetadataDecider } from './session-metadata-store.js';
 import type { SessionInfo, SessionUpdateInput } from '@opencode/client';
 
 const NamespaceSchema = z.looseObject({
@@ -13,7 +14,7 @@ const NamespaceSchema = z.looseObject({
 });
 const FileBackedGoalSchema = z.looseObject({ id: z.string().min(1), objectiveFile: z.literal(true) });
 
-const openChamberNamespace = (metadata: SessionInfo['metadata']) => {
+const openChamberNamespace = (metadata: unknown) => {
   const parsed = z.looseObject({ openchamber: NamespaceSchema }).safeParse(metadata);
   return parsed.success ? parsed.data.openchamber : null;
 };
@@ -37,10 +38,10 @@ export const sourceOwnedLinksPatch = (metadata: SessionInfo['metadata']) => {
   const namespace = openChamberNamespace(metadata);
   if (!namespace) return null;
   const patch: ForkNamespacePatch = {};
-  for (const key of ['btwSessionID', 'reviewSessionID']) {
+  for (const key of ['btwSessionID', 'reviewSessionID', 'workTitle', 'btwPromoted']) {
     if (key in namespace) patch[key] = null;
   }
-  if (namespace.kind === 'btw') {
+  if (namespace.kind === 'btw' || namespace.kind === 'review') {
     for (const key of ['kind', 'originalSessionID', 'btwBoundaryMessageID']) {
       if (key in namespace) patch[key] = null;
     }
@@ -67,11 +68,11 @@ interface ForkInheritanceOptions<ObjectiveResult, MetadataResult, PermissionsRes
   fork: Pick<SessionInfo, 'id' | 'metadata' | 'permissions'>;
   readObjective: (sessionID: string) => Promise<string | null>;
   writeObjective: (sessionID: string, content: string) => Promise<ObjectiveResult>;
-  writeMetadata: (sessionID: string, patch: { openchamber: ForkNamespacePatch }) => Promise<MetadataResult>;
+  updateMetadata: (sessionID: string, decide: MetadataDecider) => Promise<MetadataResult>;
   writePermissions?: ((sessionID: string, permissions: SessionUpdateInput['permissions']) => Promise<PermissionsResult>) | null;
 }
 
-export const applyForkInheritance = async <ObjectiveResult, MetadataResult, PermissionsResult>({ sourceSessionID, fork, readObjective, writeObjective, writeMetadata, writePermissions = null }: ForkInheritanceOptions<ObjectiveResult, MetadataResult, PermissionsResult>) => {
+export const applyForkInheritance = async <ObjectiveResult, MetadataResult, PermissionsResult>({ sourceSessionID, fork, readObjective, writeObjective, updateMetadata, writePermissions = null }: ForkInheritanceOptions<ObjectiveResult, MetadataResult, PermissionsResult>) => {
   const metadata = fork?.metadata;
   const goal = fileBackedGoal(metadata);
   let inlineObjective: string | null = null;
@@ -103,7 +104,11 @@ export const applyForkInheritance = async <ObjectiveResult, MetadataResult, Perm
   }
   if (Object.keys(namespacePatch).length === 0) return;
   try {
-    await writeMetadata(fork.id, { openchamber: namespacePatch });
+    await updateMetadata(fork.id, (current) => {
+      const patch = { ...namespacePatch };
+      if (JSON.stringify(openChamberNamespace(current)?.workTitle) !== JSON.stringify(openChamberNamespace(metadata)?.workTitle)) delete patch.workTitle;
+      return Object.keys(patch).length ? { openchamber: patch } : null;
+    });
   } catch (error) {
     console.warn('[fork] failed to update the fork metadata', (hasMessage(error) ? error.message : undefined) ?? error);
   }

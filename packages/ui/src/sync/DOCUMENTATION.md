@@ -79,6 +79,8 @@ When every global bootstrap request fails, the OpenChamber health endpoint can r
 
 ## Session data scopes
 
+Ordinary forks remove source-owned work-title protection, review identity and promoted-BTW identity. Cleanup sends individual key changes and the work title at fork creation. The metadata owner (server or VS Code host) compares the title inside its serialized write so a later cleanup cannot erase a new user name. Existing forks are not retroactively repaired.
+
 There are **two distinct session data scopes** in the UI:
 
 1. **Directory-scoped sync stores**

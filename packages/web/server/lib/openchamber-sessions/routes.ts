@@ -69,6 +69,7 @@ export interface SessionPayload {
   worktree?: unknown;
   setUpstream?: unknown;
   patch?: unknown;
+  forkCleanup?: unknown;
   title?: unknown;
   prompt?: unknown;
   agent?: unknown;
@@ -1124,7 +1125,22 @@ export const createOpenChamberSessionService = (dependencies: SessionServiceDepe
       throw new OpenChamberControlError('patch must be an object', 400);
     }
 
-    return { metadata: await writeMetadata(id, patch, asNonEmptyString(payload?.directory) || '') };
+    const directory = asNonEmptyString(payload?.directory) || '';
+    if (Object.hasOwn(payload, 'forkCleanup')) {
+      const cleanup = z.object({ workTitle: z.json() }).safeParse(payload.forkCleanup);
+      const namespacePatch = z.record(z.string(), z.json()).safeParse(patch.openchamber);
+      if (!cleanup.success || !namespacePatch.success) {
+        throw new OpenChamberControlError('forkCleanup requires workTitle and a key-by-key openchamber patch', 400);
+      }
+      const { metadata } = await updateMetadata(id, (current) => {
+        const namespace = { ...namespacePatch.data };
+        const currentTitle = isMetadata(current?.openchamber) ? current.openchamber.workTitle ?? null : null;
+        if (namespace.workTitle === null && JSON.stringify(currentTitle) !== JSON.stringify(cleanup.data.workTitle)) delete namespace.workTitle;
+        return { ...patch, openchamber: namespace };
+      }, directory);
+      return { metadata };
+    }
+    return { metadata: await writeMetadata(id, patch, directory) };
   };
 
   const getMetadata = async (sessionID: string | undefined, directory = '') => {
@@ -1451,7 +1467,7 @@ export const createOpenChamberSessionService = (dependencies: SessionServiceDepe
           fork: targetSession,
           readObjective,
           writeObjective,
-          writeMetadata: (sessionID, patch) => writeMetadata(sessionID, patch, resolvedDirectory.directory),
+          updateMetadata: (sessionID, decide) => updateMetadata(sessionID, decide, resolvedDirectory.directory),
           writePermissions: (sessionID, permissions) => client.session.update({ sessionID, permissions }),
         });
       }

@@ -11,13 +11,17 @@ const asRecord = (value: JsonValue | undefined): Metadata | null => {
   return parsed.success ? parsed.data : null;
 };
 
-export function withoutSourceOwnedLinks(metadata: Metadata): Metadata {
+/** Source-owned keys removed from the fork; everything else is kept as copied. */
+export function withoutSourceOwnedLinks(metadata: Metadata, inherited: Metadata = metadata): Metadata {
   const namespace = asRecord(metadata.openchamber);
   if (!namespace) return metadata;
   const next: Metadata = { ...namespace };
   delete next.btwSessionID;
   delete next.reviewSessionID;
-  if (next.kind === 'btw') {
+  // The fresh fork can already have a new user title while its goal is copied.
+  if (JSON.stringify(next.workTitle) === JSON.stringify(asRecord(inherited.openchamber)?.workTitle)) delete next.workTitle;
+  delete next.btwPromoted;
+  if (next.kind === 'btw' || next.kind === 'review') {
     delete next.kind;
     delete next.originalSessionID;
     delete next.btwBoundaryMessageID;
@@ -92,7 +96,7 @@ export async function applyForkInheritance(
   if (!hasSourceOwnedLinks(fork) && inlineObjective === null) return;
   try {
     await deps.patchMetadata(fork.id, (metadata) => {
-      const cleaned = withoutSourceOwnedLinks(metadata);
+      const cleaned = withoutSourceOwnedLinks(metadata, fork.metadata ?? {});
       return goal && inlineObjective !== null ? withInlineGoalObjective(cleaned, goal.id, inlineObjective) : cleaned;
     });
   } catch (error) {

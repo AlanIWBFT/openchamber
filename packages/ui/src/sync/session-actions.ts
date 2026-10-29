@@ -1145,6 +1145,7 @@ export async function patchSessionMetadata(
   directory: string | null | undefined,
   updater: (metadata: SessionMetadataRecord) => SessionMetadataRecord,
   expectedRuntimeKey?: string,
+  forkCleanup?: { workTitle: JsonValue },
 ): Promise<Session> {
   if (isStaleRuntime(expectedRuntimeKey)) throw new Error("runtime changed")
   const targetDirectory = directory ?? getSessionDirectory(sessionId)
@@ -1152,7 +1153,19 @@ export async function patchSessionMetadata(
   if (isStaleRuntime(expectedRuntimeKey)) throw new Error("runtime changed")
   const currentMetadata = getSessionMetadata(current)
   const nextMetadata = updater(currentMetadata)
-  const result = await requestSessionMetadataUpdate(sessionId, buildMetadataMergePatch(currentMetadata, nextMetadata), targetDirectory)
+  // A fork cleanup deletes specific inherited keys, never a whole namespace:
+  // another window may have added a title or unrelated metadata since this read.
+  if (forkCleanup && isMetadataRecord(currentMetadata.openchamber) && !Object.hasOwn(nextMetadata, "openchamber")) {
+    nextMetadata.openchamber = {}
+  }
+  // OpenCode 2.x only accepts metadata at session creation, so OpenChamber
+  // keeps it (see session-archive-batch). The store applies a merge patch, so
+  // only the difference travels and a key the updater dropped is deleted
+  // explicitly. A runtime without that route cannot persist the change, and
+  // reporting success would strand a review or btw link that the next load
+  // silently drops.
+  const patch = buildMetadataMergePatch(currentMetadata, nextMetadata)
+  const result = await requestSessionMetadataUpdate(sessionId, patch, targetDirectory, isMetadataRecord(patch.openchamber) ? forkCleanup : undefined)
   if (result.outcome !== "updated") throw new Error(`session metadata update failed: ${result.reason}`)
   const updated = withSessionMetadata(current, result.metadata)
   if (isStaleRuntime(expectedRuntimeKey)) throw new Error("runtime changed")
@@ -2862,8 +2875,12 @@ async function inheritForkState(sourceSessionId: string, forkedSession: Session,
     readGoalId: async (sessionId) => getSessionGoal(await opencodeClient.getSession(sessionId, directory))?.id ?? null,
     readObjective: fetchGoalObjectiveContent,
     writeObjective: writeGoalObjectiveFile,
-    patchMetadata: async (sessionId, updater) => { await patchSessionMetadata(sessionId, directory, updater, expectedRuntimeKey) },
     setPermissions: (sessionId, permissions) => opencodeClient.setSessionPermissions(sessionId, permissions, directory),
+    patchMetadata: async (sessionId, updater) => {
+      const namespace = forkedSession.metadata?.openchamber
+      const workTitle = isMetadataRecord(namespace) ? namespace.workTitle ?? null : null
+      await patchSessionMetadata(sessionId, directory, updater, expectedRuntimeKey, { workTitle })
+    },
   })
 }
 
