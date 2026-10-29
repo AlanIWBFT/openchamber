@@ -114,6 +114,7 @@ import { setHostTurnStartRequester } from "./session-activity-timing"
 import { applyBackgroundShellEvents, directoriesWithRunningShells, refreshBackgroundShells } from "./background-shells"
 import { applyBackgroundImageEvents, refreshBackgroundImages } from "./background-images"
 import { applyReplyCommandEvents } from "./reply-commands"
+import { refreshRunningExecs } from "./running-execs"
 import {
   CHAT_LOCATION_RELEASE_DELAY_MS,
   PROJECT_LOCATION_RELEASE_DELAY_MS,
@@ -3361,6 +3362,9 @@ export function SyncProvider(props: {
         void usePermissionStore.getState().refreshSpaceModes(spaceId)
       },
       onReconnect: ({ replayReset }) => {
+        // WS ready frames and SSE connections both reach this callback, even
+        // when the host's upstream connection predates this page.
+        void runBackgroundNetworkTask(() => refreshRunningExecs(() => opencodeClient.listRunningExecs())).catch(() => undefined)
         // The first connection and every one after a gap: spaces being made or whose making failed
         // are known only to the journey list, and a step announced during the gap was missed.
         if (useUIStore.getState().isolatedSpacesEnabled && !isVSCodeRuntime()) {
