@@ -11,7 +11,7 @@ import { z } from 'zod';
  *
  * - Source-owned links: the source's btw fork (`btwSessionID`), its review
  *   session (`reviewSessionID`), and the btw marker when the source is itself a
- *   btw side thread.
+ *   btw/review side thread, its promoted-BTW identity, and its work-title owner.
  * - A file-backed goal objective: the text lives in a file keyed by the session
  *   id, so the fork needs its own copy. When the copy cannot be written the
  *   fork's goal carries the text inline instead.
@@ -35,10 +35,10 @@ export const sourceOwnedLinksPatch = (metadata) => {
   const namespace = openChamberNamespace(metadata);
   if (!namespace) return null;
   const patch = {};
-  for (const key of ['btwSessionID', 'reviewSessionID']) {
+  for (const key of ['btwSessionID', 'reviewSessionID', 'workTitle', 'btwPromoted']) {
     if (key in namespace) patch[key] = null;
   }
-  if (namespace.kind === 'btw') {
+  if (namespace.kind === 'btw' || namespace.kind === 'review') {
     for (const key of ['kind', 'originalSessionID', 'btwBoundaryMessageID']) {
       if (key in namespace) patch[key] = null;
     }
@@ -68,9 +68,9 @@ const fileBackedGoal = (metadata) => {
  * @param {{ id: string, metadata?: object }} options.fork The fork record OpenCode returned.
  * @param {(sessionID: string) => Promise<string | null>} options.readObjective
  * @param {(sessionID: string, content: string) => Promise<unknown>} options.writeObjective Throws on failure.
- * @param {(sessionID: string, patch: object) => Promise<unknown>} options.writeMetadata
+ * @param {(sessionID: string, decide: (metadata: object) => object|null) => Promise<unknown>} options.updateMetadata Serial metadata-owner update.
  */
-export const applyForkInheritance = async ({ sourceSessionID, fork, readObjective, writeObjective, writeMetadata }) => {
+export const applyForkInheritance = async ({ sourceSessionID, fork, readObjective, writeObjective, updateMetadata }) => {
   const metadata = fork?.metadata;
   const goal = fileBackedGoal(metadata);
   let inlineObjective = null;
@@ -98,7 +98,11 @@ export const applyForkInheritance = async ({ sourceSessionID, fork, readObjectiv
   }
   if (Object.keys(namespacePatch).length === 0) return;
   try {
-    await writeMetadata(fork.id, { openchamber: namespacePatch });
+    await updateMetadata(fork.id, (current) => {
+      const patch = { ...namespacePatch };
+      if (JSON.stringify(openChamberNamespace(current)?.workTitle) !== JSON.stringify(openChamberNamespace(metadata)?.workTitle)) delete patch.workTitle;
+      return Object.keys(patch).length > 0 ? { openchamber: patch } : null;
+    });
   } catch (error) {
     console.warn('[fork] failed to update the fork metadata', error?.message ?? error);
   }

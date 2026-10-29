@@ -60,6 +60,31 @@ const createMemoryFs = (initial: Record<string, string> = {}) => {
 };
 
 describe('openchamber session state store', () => {
+  it('serializes a user rename before a late conditional fork cleanup, preserving the new protection', async () => {
+    const memory = createMemoryFs();
+    const store = createSessionStateStore({ dataDir: '/data', fsPromises: memory.fsPromises });
+    const inherited = { title: 'Source', by: 'agent' };
+    const fake = createFakeOpenCode({ ses_fork: { openchamber: { workTitle: inherited } } });
+    let releaseWrite: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    let entered: () => void = () => {};
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const write = fake.openCode.write;
+    fake.openCode.write = async (id, metadata) => {
+      entered();
+      await gate;
+      return write(id, metadata);
+    };
+    const renaming = store.setMetadata('ses_fork', { openchamber: { workTitle: { title: 'My fork', by: 'user' } } }, fake.openCode);
+    await started;
+    const cleaning = store.setMetadata('ses_fork', { openchamber: { workTitle: null } }, fake.openCode, { workTitle: inherited });
+    releaseWrite();
+    await Promise.all([renaming, cleaning]);
+    assert.deepEqual(fake.sessions.get('ses_fork'), { openchamber: { workTitle: { title: 'My fork', by: 'user' } } });
+    await store.setMetadata('ses_fork', { openchamber: { workTitle: null } }, fake.openCode, { workTitle: { title: 'My fork', by: 'user' } });
+    assert.deepEqual(fake.sessions.get('ses_fork'), { openchamber: {} });
+  });
+
   it('creates the unread baseline once and reads it back, sharing the web server file', async () => {
     const memory = createMemoryFs();
     const store = createSessionStateStore({ dataDir: '/data', fsPromises: memory.fsPromises, now: () => 1000 });

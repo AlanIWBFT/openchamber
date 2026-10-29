@@ -139,7 +139,8 @@ export const createWorkNamer = ({
     const session = await getSession(sessionId);
     const current = asText(session?.title);
     if (!current) return null;
-    const by = readWorkTitle(session)?.by === 'user' ? 'user' : 'agent';
+    const recorded = readWorkTitle(session);
+    const by = recorded && (recorded.by === 'user' || recorded.title !== current) ? 'user' : 'agent';
     return setWorktreeTaskTitle(worktree, { title: current, by });
   };
 

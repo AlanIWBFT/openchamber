@@ -11,7 +11,7 @@ import { getSessionGoal } from '@/lib/sessionGoalMetadata';
  *
  * - Links that belong to the source, not to its content: the source's active
  *   btw fork (`btwSessionID`), its review session (`reviewSessionID`), and a
- *   btw marker when the source itself is a btw side thread. A fork that kept
+ *   btw/review marker, promoted-BTW identity and work-title ownership. A fork that kept
  *   them would open the source's btw panel, delete the source's btw fork with
  *   itself, or hide from the sidebar as a btw thread. A scheduled run's marker
  *   goes too: the fork is the user's own work and belongs in In work.
@@ -30,13 +30,16 @@ const asRecord = (value: JsonValue | undefined): Metadata | null => {
 };
 
 /** Source-owned keys removed from the fork; everything else is kept as copied. */
-export function withoutSourceOwnedLinks(metadata: Metadata): Metadata {
+export function withoutSourceOwnedLinks(metadata: Metadata, inherited: Metadata = metadata): Metadata {
   const namespace = asRecord(metadata.openchamber);
   if (!namespace) return metadata;
   const next: Metadata = { ...namespace };
   delete next.btwSessionID;
   delete next.reviewSessionID;
-  if (next.kind === 'btw') {
+  // The fresh fork can already have a new user title while its goal is copied.
+  if (JSON.stringify(next.workTitle) === JSON.stringify(asRecord(inherited.openchamber)?.workTitle)) delete next.workTitle;
+  delete next.btwPromoted;
+  if (next.kind === 'btw' || next.kind === 'review') {
     delete next.kind;
     delete next.originalSessionID;
     delete next.btwBoundaryMessageID;
@@ -115,7 +118,7 @@ export async function applyForkInheritance(
   if (!hasSourceOwnedLinks(fork) && inlineObjective === null) return;
   try {
     await deps.patchMetadata(fork.id, (metadata) => {
-      const cleaned = withoutSourceOwnedLinks(metadata);
+      const cleaned = withoutSourceOwnedLinks(metadata, fork.metadata ?? {});
       return goal && inlineObjective !== null ? withInlineGoalObjective(cleaned, goal.id, inlineObjective) : cleaned;
     });
   } catch (error) {
