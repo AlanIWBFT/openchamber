@@ -69,9 +69,15 @@ describe('withoutSourceOwnedLinks', () => {
     expect(withoutSourceOwnedLinks({ other: 1, openchamber: { kind: 'scheduled' } })).toEqual({ other: 1 });
   });
 
-  test('keeps a review marker and returns the same object when nothing changes', () => {
-    const metadata: Metadata = { openchamber: { kind: 'review', originalSessionID: 'ses_parent', goal: goal(false) } };
-    expect(withoutSourceOwnedLinks(metadata)).toBe(metadata);
+  test('drops review and promoted-BTW identity and inherited title ownership without mutating the source', () => {
+    const metadata: Metadata = { openchamber: {
+      kind: 'review', originalSessionID: 'ses_parent', goal: goal(false), workTitle: { title: 'Source', by: 'user' }, btwPromoted: true,
+    } };
+    const original = structuredClone(metadata);
+    expect(withoutSourceOwnedLinks(metadata)).toEqual({ openchamber: { goal: goal(false) } });
+    expect(metadata).toEqual(original);
+    const unchanged = { openchamber: { goal: goal(false) } };
+    expect(withoutSourceOwnedLinks(unchanged)).toBe(unchanged);
   });
 });
 
@@ -129,5 +135,16 @@ describe('applyForkInheritance', () => {
       console.warn = warn;
     }
     expect(h.writes).toEqual([]);
+  });
+
+  test('keeps a new user work title written before the inheritance update gets its metadata-owner turn', async () => {
+    const fork = forkWith({ openchamber: { goal: goal(true), workTitle: { title: 'Source', by: 'agent' } } });
+    const current: Metadata = { openchamber: { goal: goal(true), workTitle: { title: 'My fork', by: 'user' } } };
+    let result: Metadata | undefined;
+    const h = harness(fork, { patchMetadata: async (_id, updater) => { result = updater(current); } });
+    await applyForkInheritance('ses_source', fork, h.deps);
+    expect(result).toBe(current);
+    expect(result).toEqual(current);
+    expect(current.openchamber).toMatchObject({ workTitle: { title: 'My fork', by: 'user' } });
   });
 });
