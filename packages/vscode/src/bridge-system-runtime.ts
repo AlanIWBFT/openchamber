@@ -431,13 +431,19 @@ export async function handleSystemBridgeMessage(
     }
 
     case 'api:sessions/metadata:set': {
-      const body = (payload || {}) as { sessionId?: JsonValue; patch?: JsonValue };
+      const body = (payload || {}) as { sessionId?: JsonValue; patch?: JsonValue; forkCleanup?: JsonValue };
       const sessionId = asSessionId(body.sessionId);
       if (!sessionId) return { id, type, success: false, error: 'a session id is required' };
       const patch = asSessionMetadata(body.patch);
       if (!patch) return { id, type, success: false, error: 'patch must be an object' };
+      const cleanup = Object.hasOwn(body, 'forkCleanup') ? asSessionMetadata(body.forkCleanup) : undefined;
+      if (Object.hasOwn(body, 'forkCleanup') && (!cleanup || !Object.hasOwn(cleanup, 'workTitle'))) {
+        return { id, type, success: false, error: 'forkCleanup requires workTitle' };
+      }
       try {
-        return { id, type, success: true, data: { metadata: await deps.sessionState.setMetadata(sessionId, patch, sessionMetadataOnOpenCode(ctx?.manager)) } };
+        return { id, type, success: true, data: { metadata: await deps.sessionState.setMetadata(
+          sessionId, patch, sessionMetadataOnOpenCode(ctx?.manager), cleanup ? { workTitle: cleanup.workTitle } : undefined,
+        ) } };
       } catch (error) {
         return { id, type, success: false, error: error instanceof Error ? error.message : String(error) };
       }

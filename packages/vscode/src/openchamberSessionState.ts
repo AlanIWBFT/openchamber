@@ -91,7 +91,7 @@ const pushArchiveState = async (openCode: SessionArchiveOnOpenCode, ids: string[
     }
   };
   await Promise.all(Array.from({ length: Math.min(ARCHIVE_CONCURRENCY, ids.length) }, lane));
-  return took;
+  return outcomes;
 };
 
 type SessionStateStoreOptions = {
@@ -188,6 +188,7 @@ export const createSessionStateStore = ({
   const metadataPath = path.join(dataDir, METADATA_FILE_NAME);
   const unreadBaselinePath = path.join(dataDir, UNREAD_BASELINE_FILE_NAME);
   let writeChain: Promise<unknown> = Promise.resolve();
+  const metadataWrites = new Map<string, Promise<SessionMetadata>>();
   let unreadBaseline: number | null = null;
 
   /**
@@ -337,27 +338,41 @@ export const createSessionStateStore = ({
      * metadata afterwards. A legacy entry is folded in and then dropped from
      * the file, since OpenCode now holds it.
      */
-    setMetadata: async (sessionID: string, patch: SessionMetadata, openCode: SessionMetadataOnOpenCode): Promise<SessionMetadata> => {
-      const stored = await readMetadata();
-      if (!stored) throw new Error('session metadata is unavailable: its file could not be read');
-      const upstream = await openCode.read(sessionID);
-      if (!upstream) throw new Error(`session ${sessionID} was not found`);
-      const legacy = stored[sessionID];
-      const merged = mergeMetadataPatch(legacy ? { ...upstream, ...legacy } : upstream, patch);
-      await openCode.write(sessionID, merged);
-      if (legacy) {
-        // Re-read: the web server or another window may have changed the file.
-        const latest = await readMetadata();
-        if (latest && latest[sessionID]) {
-          const next = { ...latest };
-          delete next[sessionID];
-          await writeJsonObjectFile(metadataPath, next).catch((error) => {
-            // OpenCode holds the record; a stale entry is pushed again later.
-            console.warn('[openchamber-sessions] could not update the legacy metadata file:', describeError(error));
-          });
+    setMetadata: (sessionID: string, patch: SessionMetadata, openCode: SessionMetadataOnOpenCode, forkCleanup?: { workTitle: JsonValue }): Promise<SessionMetadata> => {
+      const write = (metadataWrites.get(sessionID) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+        const stored = await readMetadata();
+        if (!stored) throw new Error('session metadata is unavailable: its file could not be read');
+        const upstream = await openCode.read(sessionID);
+        if (!upstream) throw new Error(`session ${sessionID} was not found`);
+        const legacy = stored[sessionID];
+        const current = legacy ? { ...upstream, ...legacy } : upstream;
+        let appliedPatch = patch;
+        if (forkCleanup) {
+          if (!isJsonObject(patch.openchamber)) throw new Error('forkCleanup requires a key-by-key openchamber patch');
+          const namespace = { ...patch.openchamber };
+          const currentTitle = isJsonObject(current.openchamber) ? current.openchamber.workTitle ?? null : null;
+          if (namespace.workTitle === null && JSON.stringify(currentTitle) !== JSON.stringify(forkCleanup.workTitle)) delete namespace.workTitle;
+          appliedPatch = { ...patch, openchamber: namespace };
         }
-      }
-      return merged;
+        const merged = mergeMetadataPatch(current, appliedPatch);
+        await openCode.write(sessionID, merged);
+        if (legacy) {
+          // Re-read: the web server or another window may have changed the file.
+          const latest = await readMetadata();
+          if (latest && latest[sessionID]) {
+            const next = { ...latest };
+            delete next[sessionID];
+            await writeJsonObjectFile(metadataPath, next).catch((error) => {
+              // OpenCode holds the record; a stale entry is pushed again later.
+              console.warn('[openchamber-sessions] could not update the legacy metadata file:', describeError(error));
+            });
+          }
+        }
+        return merged;
+      });
+      metadataWrites.set(sessionID, write);
+      void write.finally(() => { if (metadataWrites.get(sessionID) === write) metadataWrites.delete(sessionID); }).catch(() => undefined);
+      return write;
     },
   };
 };

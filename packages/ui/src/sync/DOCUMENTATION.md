@@ -4,6 +4,16 @@
 
 This document covers the current client-side session/data architecture in `packages/ui/src/sync` and the rules for updating stores safely.
 
+### Fork metadata ownership
+
+Ordinary forks remove source-owned work-title protection, review identity and
+promoted-BTW identity, not their content or goal inheritance. Existing forks are
+not retroactively repaired. Cleanup sends key-by-key metadata changes and
+`forkCleanup: { workTitle }` from the creation snapshot. The OpenChamber server
+or VS Code host compares the title inside its serialized metadata write turn;
+a frontend comparison alone cannot prevent a late cleanup from erasing a new
+user name. Normal metadata patches retain their existing semantics.
+
 There are **two distinct session data scopes** in the UI:
 
 1. **Directory-scoped sync stores**

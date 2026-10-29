@@ -2688,6 +2688,17 @@ describe("forkFromMessage composer restore", () => {
   })
 })
 
+describe("fork cleanup transport", () => {
+  test("sends the inherited title guard and key-by-key deletion instead of deleting the namespace", async () => {
+    const { patchSessionMetadata } = await import("./session-actions")
+    const workTitle = { title: "Source", by: "agent" }
+    sessionRecords.set("ses-fork", liveSession("ses-fork", { openchamber: { workTitle } }))
+    archiveBatchResponse = { status: 200, body: { metadata: { openchamber: {} } } }
+    await patchSessionMetadata("ses-fork", "/test/project", () => ({}), undefined, { workTitle })
+    expect(openchamberRouteRequests.at(-1)?.body).toEqual({ patch: { openchamber: { workTitle: null } }, forkCleanup: { workTitle } })
+  })
+})
+
 describe("forkAfterMessage", () => {
   const sourceSession: Session = {
     id: "session-a",

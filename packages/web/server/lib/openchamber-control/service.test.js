@@ -263,6 +263,23 @@ describe('OpenChamber control service', () => {
     ]);
   });
 
+  it.each([false, true])('names the fork through work.name with explicit sessionId=%s', async (explicit) => {
+    const source = { id: 'ses_source', title: 'Source', location: { directory: '/repo' }, metadata: { openchamber: { keep: 'source metadata' } } };
+    const fork = { id: 'ses_fork', title: 'Fork', location: { directory: '/repo' }, fork: { sessionID: 'ses_source' } };
+    const updateMetadata = vi.fn();
+    const { service, client } = createService({ workNaming: { listWorktrees: async () => [{ path: '/repo' }], setWorktreeTaskTitle: vi.fn(), updateMetadata } });
+    client.session.get = vi.fn(async ({ sessionID }) => sessionID === fork.id ? fork : source);
+    client.session.update = vi.fn(async () => fork);
+    const input = { title: 'Own task' };
+    if (explicit) input.sessionId = fork.id;
+    const result = await service.execute('work.name', input, '/repo', { contextSessionId: fork.id });
+    expect(result).toMatchObject({ task: 'session', sessionId: fork.id, named: true });
+    expect(client.session.get.mock.calls.map(([input]) => input.sessionID)).not.toContain(source.id);
+    expect(client.session.update).toHaveBeenCalledWith(expect.objectContaining({ sessionID: fork.id, title: 'Own task' }));
+    expect(updateMetadata.mock.calls.map(([id]) => id)).toEqual([fork.id]);
+    expect(source).toMatchObject({ title: 'Source', metadata: { openchamber: { keep: 'source metadata' } } });
+  });
+
   it('refuses a pull request number on a send or fork, which would ignore it', async () => {
     const { service, sessionService } = createService();
     await expect(service.execute('session.send', { sessionId: 'ses_1', prompt: 'Go', pullRequest: 42 }, '/repo'))

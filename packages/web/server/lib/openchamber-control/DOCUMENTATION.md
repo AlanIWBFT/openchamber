@@ -225,6 +225,16 @@ other.
   the branch description (`setWorktreeTaskTitle` in `../git`); in the main
   checkout it renames the task's root session, found through the same lineage
   the sidebar nests by, and records `metadata.openchamber.workTitle`. A name
+  is local to a plain fork: traversal stops there, including from its reviews,
+  BTW threads and children, rather than renaming an earlier source session.
+  Fresh ordinary forks strip inherited work-title ownership and review/BTW
+  identities in both creation paths; existing metadata is not retroactively repaired. A name
+  written on the fork after creation is not inherited ownership: cleanup compares
+  with the creation snapshot within the metadata owner's serialized update and
+  retains a newer title marker. UI cleanup carries `forkCleanup: { workTitle }`
+  through the metadata route (or VS Code bridge); it never deletes an entire
+  namespace. The comparison occurs when the owner applies the patch, not when
+  the UI computed it. A name
   the user gave stays: the call changes nothing and answers `named: false`
   with the current name. When to call it is in the session context, next to
   the linking guidance (`WORK_NAME_GUIDANCE`). While the worktree's branch is

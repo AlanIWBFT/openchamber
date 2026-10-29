@@ -311,4 +311,16 @@ describe('VS Code system bridge api:sessions/metadata:set', () => {
 
     expect(response).toEqual({ id: 'meta', type: 'api:sessions/metadata:set', success: false, error: 'OpenCode is down' });
   });
+
+  test('passes a fork cleanup guard to the metadata owner, and rejects a malformed guard', async () => {
+    const setMetadata = mock(async () => ({}));
+    const dependencies = { ...deps, sessionState: { setMetadata } };
+    const forkCleanup = { workTitle: { title: 'Source', by: 'agent' } };
+    const result = await handleSystemBridgeMessage({ ...message, payload: { ...message.payload, forkCleanup } }, { manager }, dependencies);
+    expect(result.success).toBe(true);
+    expect(setMetadata.mock.calls[0][3]).toEqual(forkCleanup);
+    const bad = await handleSystemBridgeMessage({ ...message, payload: { ...message.payload, forkCleanup: {} } }, { manager }, dependencies);
+    expect(bad.success).toBe(false);
+    expect(setMetadata).toHaveBeenCalledTimes(1);
+  });
 });

@@ -436,6 +436,12 @@ features sharing the `openchamber` namespace do not erase each other. An entry
 an older version left in `sessions-metadata.json` is laid over the record on
 reads and pushed to OpenCode on that session's next write, then dropped from
 the file; the web server sweeps the rest.
+The extension host serializes same-session metadata writes. A fork cleanup
+carries `forkCleanup: { workTitle }` from the creation snapshot through the
+webview and bridge, and compares it with the current marker inside that write
+turn before deleting inherited ownership. A later user name is kept. Ordinary
+patches retain their semantics; conditional cleanup never deletes a whole
+namespace, only the inherited keys.
 
 The webview answers `POST /api/openchamber/sessions/archive|unarchive` and
 `GET|POST /api/openchamber/sessions/:id/metadata` through the

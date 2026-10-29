@@ -436,6 +436,25 @@ describe('openchamber session routes', () => {
       expect(response.body).toEqual({ metadata: { openchamber: { goal: { id: 'g1' } } } });
     });
 
+    it('checks inherited title ownership at the server write turn, not at the UI read', async () => {
+      const { app, sessionMetadataStore } = createApp();
+      const inherited = { title: 'Source', by: 'agent' };
+      const cleanup = { patch: { openchamber: { workTitle: null, btwPromoted: null } }, forkCleanup: { workTitle: inherited } };
+      await request(app).post('/api/openchamber/sessions/ses_fork/metadata')
+        .send({ patch: { openchamber: { workTitle: { title: 'My fork', by: 'user' }, keep: 1 } } }).expect(200);
+      const result = await request(app).post('/api/openchamber/sessions/ses_fork/metadata').send(cleanup).expect(200);
+      expect(result.body.metadata).toEqual({ openchamber: { workTitle: { title: 'My fork', by: 'user' }, keep: 1 } });
+      await sessionMetadataStore.setSessionMetadata('ses_fork', { openchamber: { workTitle: inherited } });
+      const stillInherited = await request(app).post('/api/openchamber/sessions/ses_fork/metadata').send(cleanup).expect(200);
+      expect(stillInherited.body.metadata).toEqual({ openchamber: { keep: 1 } });
+    });
+
+    it('rejects a conditional cleanup that would delete the entire metadata namespace', async () => {
+      const { app } = createApp();
+      await request(app).post('/api/openchamber/sessions/ses_fork/metadata')
+        .send({ patch: { openchamber: null }, forkCleanup: { workTitle: null } }).expect(400);
+    });
+
     it('reads back what it stored, per session', async () => {
       const { app } = createApp();
       await request(app).post('/api/openchamber/sessions/ses_a/metadata').send({ patch: { a: 1 } }).expect(200);
