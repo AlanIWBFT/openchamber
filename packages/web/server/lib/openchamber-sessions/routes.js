@@ -1040,7 +1040,22 @@ export const createOpenChamberSessionService = (dependencies) => {
       throw new OpenChamberControlError('patch must be an object', 400);
     }
 
-    return { metadata: await writeMetadata(id, patch, asNonEmptyString(payload?.directory) || '') };
+    const directory = asNonEmptyString(payload?.directory) || '';
+    if (Object.hasOwn(payload, 'forkCleanup')) {
+      const cleanup = z.object({ workTitle: z.json() }).safeParse(payload.forkCleanup);
+      const namespacePatch = z.record(z.string(), z.json()).safeParse(patch.openchamber);
+      if (!cleanup.success || !namespacePatch.success) {
+        throw new OpenChamberControlError('forkCleanup requires workTitle and a key-by-key openchamber patch', 400);
+      }
+      const { metadata } = await updateMetadata(id, (current) => {
+        const namespace = { ...namespacePatch.data };
+        const currentTitle = current.openchamber?.workTitle ?? null;
+        if (namespace.workTitle === null && JSON.stringify(currentTitle) !== JSON.stringify(cleanup.data.workTitle)) delete namespace.workTitle;
+        return { ...patch, openchamber: namespace };
+      }, directory);
+      return { metadata };
+    }
+    return { metadata: await writeMetadata(id, patch, directory) };
   };
 
   const getMetadata = async (sessionID, directory = '') => {
@@ -1412,7 +1427,7 @@ export const createOpenChamberSessionService = (dependencies) => {
           fork: targetSession,
           readObjective,
           writeObjective,
-          writeMetadata: (sessionID, patch) => writeMetadata(sessionID, patch, directory),
+          updateMetadata: (sessionID, decide) => updateMetadata(sessionID, decide, directory),
         });
       }
 

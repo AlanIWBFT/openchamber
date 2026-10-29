@@ -75,6 +75,35 @@ describe('work.name', () => {
     await expect(namer.name({ sessionId: 'fork', title: '  ' })).rejects.toMatchObject({ status: 400 });
   });
 
+  it.each(['fork', 'fork2', 'review', 'child', 'btw', 'promoted'])('keeps %s within its plain-fork task, leaving older titles and metadata untouched', async (sessionId) => {
+    const source = { id: 'source', title: 'Source task', location: { directory: '/repo' }, metadata: { openchamber: { workTitle: { title: 'Source task', by: 'agent' } }, other: 1 } };
+    const fork = { id: 'fork', title: 'Fork task', location: { directory: '/repo' }, fork: { sessionID: 'source' } };
+    const { namer, records, renameSession, updateMetadata } = setup({ sessions: [
+      source, fork,
+      { id: 'fork2', title: 'Second fork', location: { directory: '/repo' }, fork: { sessionID: 'fork' } },
+      { id: 'review', title: 'Review', location: { directory: '/repo' }, metadata: { openchamber: { kind: 'review', originalSessionID: 'fork' } } },
+      { id: 'child', parentID: 'fork', title: 'Child', location: { directory: '/repo' } },
+      { id: 'btw', title: 'BTW', location: { directory: '/repo' }, metadata: { openchamber: { kind: 'btw', originalSessionID: 'fork' } } },
+      { id: 'promoted', title: 'Promoted', location: { directory: '/repo' }, fork: { sessionID: 'fork' }, metadata: { openchamber: { btwPromoted: true } } },
+    ] });
+    const target = sessionId === 'fork2' ? 'fork2' : 'fork';
+    expect(await namer.name({ sessionId, title: 'Independent task' })).toMatchObject({ task: 'session', sessionId: target, named: true });
+    expect(renameSession).toHaveBeenCalledWith(target, 'Independent task', '/repo');
+    expect(updateMetadata.mock.calls.map(([id]) => id)).toEqual([target]);
+    expect(records.get('source')).toEqual(source);
+    if (target === 'fork2') expect(records.get('fork')).toEqual(fork);
+  });
+
+  it('keeps a title the user gave the fork itself', async () => {
+    const { namer, renameSession, updateMetadata } = setup({ sessions: [
+      { id: 'source', title: 'Source', location: { directory: '/repo' } },
+      { id: 'fork', title: 'My fork', location: { directory: '/repo' }, fork: { sessionID: 'source' }, metadata: { openchamber: { workTitle: { title: 'My fork', by: 'user' } } } },
+    ] });
+    expect(await namer.name({ sessionId: 'fork', title: 'Agent task' })).toMatchObject({ sessionId: 'fork', title: 'My fork', named: false });
+    expect(renameSession).not.toHaveBeenCalled();
+    expect(updateMetadata).not.toHaveBeenCalled();
+  });
+
   describe('a placeholder branch', () => {
     const placeholderSetup = ({ placeholder }) => {
       const base = setup({

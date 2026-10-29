@@ -4,7 +4,8 @@
  *
  * A task is what the sidebar lists as one entry: a linked worktree with all
  * its sessions, or a session in the main checkout together with the sessions
- * that grew out of it there (an auto-review, a fork). A worktree's name is its branch description (see
+ * that belong to it there (an auto-review, a BTW thread). A plain fork is its
+ * own task. A worktree's name is its branch description (see
  * `setWorktreeTaskTitle` in `lib/git`); a main-checkout task's name is its
  * root session's title, with `metadata.openchamber.workTitle` recording who
  * gave it.
@@ -44,7 +45,10 @@ const originOf = (session) => {
   if (parentID) return parentID;
   const openchamber = openchamberOf(session);
   if (openchamber.kind === 'review' && asText(openchamber.originalSessionID)) return asText(openchamber.originalSessionID);
-  return asText(session?.fork?.sessionID) || null;
+  if (openchamber.kind === 'btw' || openchamber.btwPromoted === true) {
+    return (openchamber.kind === 'btw' ? asText(openchamber.originalSessionID) : '') || asText(session?.fork?.sessionID) || null;
+  }
+  return null;
 };
 
 const workTitleSchema = z.object({ title: z.string().trim().min(1), by: z.string().optional() });
