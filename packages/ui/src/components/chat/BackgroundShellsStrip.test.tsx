@@ -11,6 +11,7 @@ import type { Session } from '@/lib/opencode/model';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { applyBackgroundShellEvents, resetBackgroundShells } from '@/sync/background-shells';
 import { BackgroundShellsStrip } from './BackgroundShellsStrip';
+import { applyRunningExecEvents } from '@/sync/running-execs';
 
 const session = (id: string, parentID?: string): Session => ({
   id, parentID, projectID: 'project', directory: '/repo', title: id, cost: 0,
@@ -101,6 +102,36 @@ describe('BackgroundShellsStrip', () => {
     expect(host.textContent).toContain('bun run dev --port 5391');
     expect(host.textContent).toContain('1m 5s');
     expect(button('Stop')).toBeDefined();
+  });
+
+  test('exec commands join shells and subagents in stop all, excluding other sessions', async () => {
+    const stopShells = spyOn(opencodeClient, 'stopBackgroundShells').mockResolvedValue(undefined);
+    const stopExecs = spyOn(opencodeClient, 'stopRunningExecs').mockResolvedValue(undefined);
+    const list = spyOn(opencodeClient, 'listRunningExecs').mockResolvedValue([]);
+    try {
+      await start(shell('sh_1', 'ses_root', 'native shell'));
+      await act(async () => {
+        applyRunningExecEvents(['ses_child', 'ses_other'].map((sessionID, index): SyncEvent => ({
+          type: 'message.tool.transition', properties: {
+            sessionID, messageID: 'msg_1', partID: `call_${index}`,
+            transition: { kind: 'exec', live: true, revision: 1, metadata: {
+              execID: index + 1, command: `exec ${sessionID}`, processRunning: true, sessionExposed: true, startedAt: 100,
+            } },
+          },
+        })));
+      });
+      expect(host.textContent).toContain('Background commands: 2');
+      await act(async () => button('Background commands: 2')?.click());
+      expect(host.textContent).toContain('exec ses_child');
+      expect(host.textContent).not.toContain('exec ses_other');
+      await act(async () => button('Stop all')?.click());
+      expect(stopShells.mock.calls).toHaveLength(1);
+      expect(stopExecs.mock.calls[0][0].sessionID).toBe('ses_child');
+      expect(stopExecs.mock.calls[0][0].commands.map((entry) => entry.execID)).toEqual([1]);
+      expect(host.textContent).not.toContain('exec ses_child');
+    } finally {
+      stopShells.mockRestore(); stopExecs.mockRestore(); list.mockRestore();
+    }
   });
 
   test('several commands collapse into a count that expands in place', async () => {

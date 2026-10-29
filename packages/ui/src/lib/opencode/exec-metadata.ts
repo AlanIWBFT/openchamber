@@ -4,6 +4,9 @@ import { isExecCommandTool, isExecuteTool, readUnifiedExecMetadata } from "./too
 import { createScriptToolProjection } from "./script"
 
 export type ExecPreview = { revision: number; childID?: string; metadata: Metadata }
+const runningExecSchema = z.object({ sessionID: z.string(), execID: z.number().int().nonnegative(), command: z.string(), startedAt: z.number() })
+export type RunningExec = z.infer<typeof runningExecSchema>
+export const runningExecsSchema = z.array(runningExecSchema)
 export type ScriptPreview = { revision: number; toolCalls: Metadata[] }
 
 /** Live root commands and Script children, shared by rendering and history retention. */

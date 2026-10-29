@@ -68,6 +68,7 @@ import {
 } from "./model"
 import { ascendingId } from "./ids"
 import { runningShellFromWire, shellCancellationNote, type RunningShell, type ShellToStop } from "./background-shell"
+import { runningExecsSchema, type RunningExec } from "./exec-metadata"
 import { subagentCancellationNote } from "./subagent-run"
 import { toJsonRecord } from "./json"
 import {
@@ -1811,6 +1812,28 @@ class OpencodeService {
 
   // -------------------------------------------------------------------------
   // Shell commands the agent started (background commands)
+  async listRunningExecs(): Promise<RunningExec[]> {
+    return runningExecsSchema.parse(await call("session.exec.list", () => this.getSdkClient().session.exec.list()))
+  }
+
+  async stopRunningExecs(params: {
+    sessionID: string
+    sessionDirectory?: string | null
+    commands: readonly RunningExec[]
+  }): Promise<void> {
+    const client = this.clientFor(params.sessionDirectory)
+    await call("session.synthetic", () => client.session.synthetic({
+      sessionID: params.sessionID,
+      text: ["The user requested stopping these exec commands:", ...params.commands.map((entry) => `- exec ${entry.execID}: ${entry.command}`),
+        "Treat their termination as intentional. Do not restart them unless the user asks."].join("\n"),
+      description: "User stopped exec commands",
+      resume: false,
+    }))
+    const result = await call("session.exec.stop", () => client.session.exec.stop({
+      sessionID: params.sessionID, execIDs: params.commands.map((entry) => entry.execID),
+    }))
+    if (result.failed > 0) throw new Error(`Failed to stop ${result.failed} exec commands`)
+  }
   // -------------------------------------------------------------------------
 
   /**

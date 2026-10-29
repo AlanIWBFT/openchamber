@@ -238,6 +238,26 @@ once settled.
 
 ## Unified exec previews
 
+`running-execs.ts` owns the runtime-local index used by the composer's background
+command strip alongside native shells. It includes current-session and descendant
+commands after their initial wait returned with `sessionExposed: true`; commands
+still in that first wait stay hidden. A server connection reads the process-wide `session.exec.list`; live
+exec preview events maintain membership without polling or scanning transcripts.
+Output-only previews preserve row identities. Failed reads preserve the index,
+events observed during a read win, and runtime reset invalidates pending reads.
+Both WebSocket ready frames and SSE connections refresh this index through the
+pipeline's connection callback. Refresh requests arriving during a read coalesce
+into a fresh trailing read, including after failure; runtime reset drops that queue.
+Stops post a non-resuming cancellation note before calling `session.exec.stop`;
+the selected IDs alone stop, with a fresh authoritative read after success.
+
+### Why the command strip reads live owners instead of message history
+
+History may retain a running preview after a server restart or a fork. Durable
+exec captures therefore update transcript presentation only; they never enter the
+running-command index. The process-wide list also recovers commands whose tool
+rows are outside the loaded history window, without bootstrapping directories.
+
 The local `session.exec.updated` and durable `session.exec.captured` events update
 presentation metadata on an existing tool call. `session.script.captured` updates
 the parent's child-call list. The wire translator converts them to tool transitions;

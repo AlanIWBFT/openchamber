@@ -77,7 +77,7 @@ export type MessagePatch = {
 
 /** State transitions of a tool call that need the part's existing state to apply. */
 export type ToolTransition =
-  | ({ kind: "exec" } & ExecPreview)
+  | ({ kind: "exec"; live?: boolean } & ExecPreview)
   | ({ kind: "script" } & ScriptPreview)
   | { kind: "input"; raw: string }
   | { kind: "called"; input: Record<string, JsonValue>; executed: boolean; start: number }
@@ -723,6 +723,7 @@ export function translateWireEvent(event: OpenCodeEvent): SyncEvent[] {
     case "session.exec.captured":
       return [toolTransition(event.data.sessionID, event.data.assistantMessageID, event.data.id, compact({
         kind: "exec",
+        live: event.type === "session.exec.updated",
         revision: event.data.revision,
         childID: event.data.childID,
         metadata: compact({ ...event.data.metadata, interactions: event.data.metadata.interactions.map((item) => ({ ...item })) }),

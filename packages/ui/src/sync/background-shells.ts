@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { readBackgroundShellIDFromMetadata, readShellCancellation, type RunningShell, type ShellEnd } from '@/lib/opencode/background-shell';
 import type { SyncEvent } from '@/lib/opencode/events';
 import { normalizeProjectPath } from '@/lib/projectResolution';
+import { applyRunningExecEvents, resetRunningExecs } from './running-execs';
 
 // Cross-directory index of the shell commands OpenCode is running on behalf of
 // a session. A background command outlives the turn that started it: the
@@ -169,6 +170,7 @@ const sameShell = (left: TrackedShell | undefined, right: TrackedShell): boolean
 
 /** Applies shell lifecycle events for one directory. Other event types are ignored cheaply. */
 export const applyBackgroundShellEvents = (rawDirectory: string, payloads: readonly SyncEvent[]): void => {
+  applyRunningExecEvents(payloads);
   let draft: Map<string, TrackedShell> | null = null;
   const ended: EndedShell[] = [];
   const current = (): ReadonlyMap<string, TrackedShell> => draft ?? useBackgroundShellsStore.getState().byId;
@@ -272,6 +274,7 @@ export const hasRunningShell = (sessionId: string): boolean => (
 );
 
 export const resetBackgroundShells = (): void => {
+  resetRunningExecs();
   generation += 1;
   revision = 0;
   touchedAt.clear();
