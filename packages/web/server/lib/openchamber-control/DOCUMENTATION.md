@@ -302,6 +302,15 @@ other.
   prompt goes out; a failed read records the id alone. A slash-command
   prompt goes through `session.command`, which takes no metadata, so it
   carries no link.
+- Fresh ordinary forks strip inherited work-title ownership and review/BTW
+  identities in both creation paths. Cleanup compares the creation snapshot
+  within the metadata owner's serialized update, preserving later user edits;
+  UI cleanup carries `forkCleanup: { workTitle }` through the metadata route
+  or VS Code bridge, without deleting an entire namespace. This identity cleanup
+  is independent of `work.name`, which never renames sessions.
+- A session moved into a worktree carries any nonempty title. Explicit user
+  ownership and a title differing from its recorded agent title stay user-owned;
+  an unrecorded title follows the agent-owned default.
 - `work.name` names the task the session (default: the calling one) works on
   (`../openchamber-sessions/work-naming.js`, wired through the `workNaming`
   dependency; without it the action answers 503). In a linked worktree it sets

@@ -149,13 +149,14 @@ export async function requestSessionMetadataUpdate(
   sessionID: string,
   patch: Metadata,
   directory?: string | null,
+  forkCleanup?: { workTitle: JsonValue },
 ): Promise<SessionMetadataUpdateResult> {
   let response: Response;
   try {
     response = await runtimeFetch(`/api/openchamber/sessions/${encodeURIComponent(sessionID)}/metadata`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ patch }),
+      body: JSON.stringify({ patch, forkCleanup }),
       directory,
     });
   } catch (error) {

@@ -460,8 +460,8 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     const sessionId = decodeURIComponent(sessionMetadataMatch[1]);
     if (method === 'GET') return bridgeJsonRoute('api:sessions/metadata:get', { sessionId });
     const body = await extractJsonBody(input, init, method);
-    const patch = body && typeof body === 'object' && !Array.isArray(body) ? (body as { patch?: unknown }).patch : undefined;
-    return bridgeJsonRoute('api:sessions/metadata:set', { sessionId, patch });
+    const fields = z.object({ patch: z.unknown().optional(), forkCleanup: z.unknown().optional() }).safeParse(body);
+    return bridgeJsonRoute('api:sessions/metadata:set', fields.success ? { sessionId, ...fields.data } : { sessionId });
   }
 
   if (/^\/api\/projects\/[^/]+\/scheduled-tasks(?:\/[^/]+)?$/.test(normalizedPathname)) {
