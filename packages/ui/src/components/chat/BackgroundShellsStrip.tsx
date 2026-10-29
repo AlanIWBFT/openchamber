@@ -10,6 +10,7 @@ import { useI18n } from '@/lib/i18n';
 import { opencodeClient } from '@/lib/opencode/client';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
+import { refreshRunningExecs, useRunningExecsStore, type TrackedExec } from '@/sync/running-execs';
 import {
   sessionsInTree,
   backgroundShellsOfSessions,
@@ -26,6 +27,7 @@ interface BackgroundShellsStripProps {
 }
 
 const COMMAND_TOOLTIP_DELAY_MS = 500;
+type BackgroundCommand = TrackedShell | TrackedExec;
 
 const useTreeIds = (sessionId: string, workingSessionIds: ReadonlySet<string>): ReadonlySet<string> => {
   const treeKey = useGlobalSessionsStore(React.useCallback((state) => (
@@ -36,11 +38,19 @@ const useTreeIds = (sessionId: string, workingSessionIds: ReadonlySet<string>): 
   return React.useMemo(() => new Set(treeKey ? treeKey.split('\n') : []), [treeKey]);
 };
 
-const useSessionTreeShells = (sessionId: string): TrackedShell[] => {
-  const treeIds = useTreeIds(sessionId, useBackgroundShellsStore((state) => state.sessionIds));
-  return useBackgroundShellsStore(useShallow(React.useCallback((state) => (
+/** Commands of this session and of its subagents. */
+const useSessionTreeShells = (sessionId: string): BackgroundCommand[] => {
+  const shellSessionIds = useBackgroundShellsStore((state) => state.sessionIds);
+  const execSessionIds = useRunningExecsStore((state) => state.sessionIds);
+  const sessionIds = React.useMemo(() => new Set([...shellSessionIds, ...execSessionIds]), [shellSessionIds, execSessionIds]);
+  const treeIds = useTreeIds(sessionId, sessionIds);
+  const shells = useBackgroundShellsStore(useShallow(React.useCallback((state) => (
     treeIds.size === 0 ? [] : backgroundShellsOfSessions(state.byId, treeIds)
   ), [treeIds])));
+  const execs = useRunningExecsStore(useShallow(React.useCallback((state) => (
+    [...state.byId.values()].filter((entry) => treeIds.has(entry.sessionID))
+  ), [treeIds])));
+  return React.useMemo(() => [...shells, ...execs].sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id)), [shells, execs]);
 };
 
 const useSessionTreeImages = (sessionId: string): RunningImageJob[] => {
@@ -67,11 +77,12 @@ const useStopShells = (rootSessionId: string, rootDirectory: string | undefined)
   const { t } = useI18n();
   const [stoppingIds, setStoppingIds] = React.useState<ReadonlySet<string>>(() => new Set());
 
-  const stop = React.useCallback((shells: readonly TrackedShell[]) => {
+  const stop = React.useCallback((shells: readonly BackgroundCommand[]) => {
+    // A command its chat row is stopping already gets no second note.
     const pending = shells.filter((shell) => !stoppingIds.has(shell.id) && !isForegroundShellStopping(shell.id));
     if (pending.length === 0) return;
     setStoppingIds((current) => new Set([...current, ...pending.map((shell) => shell.id)]));
-    const bySession = new Map<string, [TrackedShell, ...TrackedShell[]]>();
+    const bySession = new Map<string, [BackgroundCommand, ...BackgroundCommand[]]>();
     for (const shell of pending) {
       const group = bySession.get(shell.sessionID);
       if (group) group.push(shell);
@@ -80,13 +91,20 @@ const useStopShells = (rootSessionId: string, rootDirectory: string | undefined)
     for (const [sessionID, [first, ...rest]] of bySession) {
       const sessionDirectory = sessionID === rootSessionId
         ? rootDirectory
-        : useGlobalSessionsStore.getState().entityById.get(sessionID)?.directory ?? first.directory;
+        : useGlobalSessionsStore.getState().entityById.get(sessionID)?.directory ?? ('directory' in first ? first.directory : undefined);
       const toStop = (shell: TrackedShell) => ({ shellID: shell.id, shellDirectory: shell.directory, command: shell.command });
-      opencodeClient.stopBackgroundShells({
-        sessionID,
-        sessionDirectory,
-        shells: [toStop(first), ...rest.map(toStop)],
-      }).catch(() => {
+      const group = [first, ...rest];
+      const nativeShells = group.filter((entry): entry is TrackedShell => !('execID' in entry));
+      const execs = group.filter((entry): entry is TrackedExec => 'execID' in entry);
+      const operations: Promise<void>[] = [];
+      if (nativeShells.length) operations.push(opencodeClient.stopBackgroundShells({
+        sessionID, sessionDirectory, shells: [toStop(nativeShells[0]), ...nativeShells.slice(1).map(toStop)],
+      }));
+      if (execs.length) operations.push(opencodeClient.stopRunningExecs({ sessionID, sessionDirectory, commands: execs })
+        .then(() => refreshRunningExecs(() => opencodeClient.listRunningExecs())));
+      Promise.all(operations).catch(() => {
+        // A command whose kill went through leaves the list on its own; the
+        // rest become stoppable again.
         setStoppingIds((current) => {
           const next = new Set(current);
           for (const shell of [first, ...rest]) next.delete(shell.id);
@@ -101,10 +119,10 @@ const useStopShells = (rootSessionId: string, rootDirectory: string | undefined)
 };
 
 const ShellRow: React.FC<{
-  shell: TrackedShell;
+  shell: BackgroundCommand;
   fromSubagent: boolean;
   stopping: boolean;
-  onStop: (shell: TrackedShell) => void;
+  onStop: (shell: BackgroundCommand) => void;
 }> = ({ shell, fromSubagent, stopping, onStop }) => {
   const { t } = useI18n();
   const stoppingFromRow = useForegroundShellStopping(shell.id);
@@ -186,7 +204,9 @@ export const BackgroundShellsStrip: React.FC<BackgroundShellsStripProps> = React
   const [expanded, setExpanded] = React.useState(false);
   const listId = React.useId();
   const { stoppingIds, stop } = useStopShells(sessionId ?? '', directory);
-  const stopOne = React.useCallback((shell: TrackedShell) => stop([shell]), [stop]);
+  const stopOne = React.useCallback((shell: BackgroundCommand) => stop([shell]), [stop]);
+  // Stops started from a command's chat row count too, so Stop all is off
+  // while it would stop nothing and comes back when such a stop fails.
   const foregroundStoppingIds = useForegroundShellStoppingIds();
 
   const count = shells.length + images.length;

@@ -3,6 +3,8 @@ import { create } from 'zustand';
 import { readBackgroundShellIDFromMetadata, readShellCancellation, type RunningShell, type ShellEnd } from '@/lib/opencode/background-shell';
 import type { SyncEvent } from '@/lib/opencode/events';
 import { normalizeProjectPath } from '@/lib/projectResolution';
+import { applyRunningExecEvents, resetRunningExecs } from './running-execs';
+import { isSpaceDirectory } from '@/lib/spaces/space-route';
 
 
 export type TrackedShell = RunningShell & {
@@ -149,6 +151,7 @@ export const waitForShellSettle = (shellID: string, timeoutMs: number): ShellSet
 };
 
 export const applyBackgroundShellEvents = (rawDirectory: string, payloads: readonly SyncEvent[]): void => {
+  if (!isSpaceDirectory(rawDirectory)) applyRunningExecEvents(payloads);
   let draft: Map<string, TrackedShell> | null = null;
   const ended: EndedShell[] = [];
   const settled: Array<[string, SettleOutcome]> = [];
@@ -245,6 +248,7 @@ export const hasRunningShell = (sessionId: string): boolean => (
 );
 
 export const resetBackgroundShells = (): void => {
+  resetRunningExecs();
   generation += 1;
   revision = 0;
   touchedAt.clear();

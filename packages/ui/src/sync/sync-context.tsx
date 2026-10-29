@@ -46,6 +46,7 @@ import { settledPageKeys, useGlobalBlockingRequestsStore } from "./global-blocki
 import { requestHostTurnStarts, seedGlobalSessionStatusFromHost } from "./host-session-status-seed"
 import { setHostTurnStartRequester } from "./session-activity-timing"
 import { refreshBackgroundImages } from "./background-images"
+import { refreshRunningExecs } from "./running-execs"
 import { CHAT_LOCATION_RELEASE_DELAY_MS, PROJECT_LOCATION_RELEASE_DELAY_MS, WORKTREE_LOCATION_RELEASE_DELAY_MS, createRealLocationRelease, directoryUse, isWorktreeDirectory, type LocationRelease } from "./location-release"
 import { subscribeSessionAssistSettled } from "./pending-session-assists"
 import { useWorkflowRunsStore } from "@/lib/workflows/store"
@@ -607,6 +608,11 @@ export function SyncProvider(props: {
         void usePermissionStore.getState().refreshSpaceModes(spaceId)
       },
       onReconnect: ({ replayReset, replayed }) => {
+        // WS ready frames and SSE connections both reach this callback, even
+        // when the host's upstream connection predates this page.
+        void runBackgroundNetworkTask(() => refreshRunningExecs(() => opencodeClient.listRunningExecs())).catch(() => undefined)
+        // The first connection and every one after a gap: spaces being made or whose making failed
+        // are known only to the journey list, and a step announced during the gap was missed.
         if (useUIStore.getState().isolatedSpacesEnabled && !isVSCodeRuntime()) {
           void refreshSpacesJourney().catch(() => undefined)
         }

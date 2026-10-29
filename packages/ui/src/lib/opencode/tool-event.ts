@@ -4,7 +4,7 @@ import type { ExecPreview, ScriptPreview } from "./exec-metadata"
 import type { SyncEvent } from "./events"
 
 export type ToolTransition =
-  | ({ kind: "exec" } & ExecPreview)
+  | ({ kind: "exec"; live?: boolean } & ExecPreview)
   | ({ kind: "script" } & ScriptPreview)
   | { kind: "input"; raw: string }
   | { kind: "called"; input: Record<string, JsonValue>; executed: boolean; start: number }
@@ -21,7 +21,7 @@ export function execEvent(event: Extract<OpenCodeEvent, {type: "session.exec.upd
   if (event.type !== "session.script.captured") {
     const { sessionID, assistantMessageID, id, childID, revision, metadata } = event.data
     return toolTransition(sessionID, assistantMessageID, id, compact({
-      kind: "exec", revision, childID, metadata: compact({ ...metadata, interactions: metadata.interactions.map((item) => ({ ...item })) }),
+      kind: "exec", live: event.type === "session.exec.updated", revision, childID, metadata: compact({ ...metadata, interactions: metadata.interactions.map((item) => ({ ...item })) }),
     }))
   }
   const { sessionID, assistantMessageID, id, revision, toolCalls } = event.data
