@@ -190,6 +190,9 @@ The runtime takes `isDeliveryHeld(sessionId)`, the auto-review runtime's
 (the auto-review's `startupLoad`) gates the first `reconcileAll` after start:
 until the auto-review has loaded its runs every session is held, and a tick
 that bailed then has nothing to re-arm it.
+Only a successful auto-review load resolves that gate. An unreadable file holds
+all automatic queues; an incomplete Stop holds its original session until both
+sessions and the run's own pending admission IDs are confirmed cleaned up.
 
 ## Routes (`/api/message-queue`)
 

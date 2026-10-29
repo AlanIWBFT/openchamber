@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolver } from '@/lib/runtime-url';
 import { getRuntimeKey } from '@/lib/runtime-switch';
-import { selectAutoReviewRun, useAutoReviewStore, type AutoReviewRun } from './useAutoReviewStore';
+import { selectAutoReviewRun, selectAutoReviewRunning, useAutoReviewStore, type AutoReviewRun } from './useAutoReviewStore';
 
 const SPACE = '0123456789ab';
 const SPACE_DIRECTORY = `/spaces/${SPACE}/repo`;
@@ -102,14 +102,14 @@ describe('auto-review projection', () => {
     expect(shown('ses_host')?.status).toBe('clean');
   });
 
-  test('a stop that the server refuses puts the run back and reports it', async () => {
+  test('a refused Stop keeps its row and reports it', async () => {
     useAutoReviewStore.getState().applyUpdate(update(2, 'ses_a', run('ses_a')), getRuntimeKey());
     answer = (request) => (request.method === 'DELETE'
       ? Response.json({ error: 'busy' }, { status: 500 })
       : Response.json({ revision: 2, runs: [run('ses_a')] }));
 
     const removing = useAutoReviewStore.getState().removeRun('ses_a', '/repo');
-    expect(shown('ses_a')).toBeNull();
+    expect(shown('ses_a')?.status).toBe('running');
     await expect(removing).rejects.toThrow('busy');
     expect(shown('ses_a')?.status).toBe('running');
     expect(seen.map((call) => `${call.method} ${call.path}`)).toEqual(['DELETE /api/auto-review/runs/ses_a', 'GET /api/auto-review']);
@@ -124,5 +124,19 @@ describe('auto-review projection', () => {
       prompts: { reviewStart: 'r', reviewRules: 'rules', feedbackToImplementer: 'f', responseToReviewer: 'i' },
     })).rejects.toThrow('already running');
     expect(useAutoReviewStore.getState().runs).toEqual({});
+  });
+
+  test('a failed Stop cannot roll back newer live state, even if its refresh also fails', async () => {
+    const store = useAutoReviewStore.getState();
+    store.applyUpdate(update(2, 'ses_a', run('ses_a')), getRuntimeKey());
+    answer = (request) => {
+      if (request.method === 'DELETE') {
+        store.applyUpdate(update(3, 'ses_a', run('ses_a', { status: 'stop_failed', error: 'commands still running' })), getRuntimeKey());
+      }
+      return Response.json({ error: 'unavailable' }, { status: 503 });
+    };
+    await expect(store.removeRun('ses_a', '/repo')).rejects.toThrow('unavailable');
+    expect(shown('ses_a')?.status).toBe('stop_failed');
+    expect(selectAutoReviewRunning('ses_a', '/repo')(useAutoReviewStore.getState())).toBe(true);
   });
 });

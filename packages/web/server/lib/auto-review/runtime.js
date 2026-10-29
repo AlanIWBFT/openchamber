@@ -16,13 +16,14 @@
 import fs from 'fs';
 import path from 'path';
 import { z } from 'zod';
+import { OpenCode } from '@opencode/client';
 import { assertOpenCodeApiResponse } from '../opencode/prompt-response.js';
 import { unwrapOpenCodeResponse } from '../opencode/response-envelope.js';
 import { createSessionActivityProbe } from '../opencode/session-activity.js';
 import { createMessageId, readDispatchOutcome } from '../dispatch-results/runtime.js';
 
 const FILE_NAME = 'auto-review.json';
-const FILE_VERSION = 1;
+const FILE_VERSION = 2;
 const MAX_RUNS = 100;
 // Re-reviews after the first. A loop that has not settled by then is going in
 // circles, and more rounds mostly grow the change.
@@ -67,7 +68,8 @@ const messageIdSchema = z.string().regex(/^msg_[A-Za-z0-9]{8,64}$/);
 const timeSchema = z.number().finite().nonnegative();
 const promptSchema = z.string().max(PROMPT_CHAR_LIMIT);
 
-const STATUSES = ['running', 'clean', 'disputed', 'limit', 'failed', 'stopped'];
+const STATUSES = ['running', 'stopping', 'stop_failed', 'clean', 'disputed', 'limit', 'failed', 'stopped'];
+const holdsQueue = (run) => run && ['running', 'stopping', 'stop_failed'].includes(run.status);
 const STEPS = ['handoff', 'review', 'implement'];
 
 const templatesSchema = z.object({
@@ -93,7 +95,6 @@ const sendSchema = z.object({
   context: z.array(z.string()),
   // Minted with the baseline before the first attempt.
   messageID: messageIdSchema.optional(),
-  contextIDs: z.array(messageIdSchema).optional(),
   afterIdleID: z.string().min(1).nullable().optional(),
   // Delivered as the run's last word: the run settles without a reply.
   settle: z.literal('clean').optional(),
@@ -109,15 +110,17 @@ const runSchema = z.object({
   prompts: templatesSchema,
   send: sendSchema.nullable(),
   awaiting: z.object({ sessionID: sessionIdSchema, afterIdleID: z.string().min(1).nullable() }).nullable(),
+  // Keep every attempted prompt, including ones whose HTTP response was lost.
+  ownedMessages: z.array(z.object({ sessionID: sessionIdSchema, messageID: messageIdSchema })),
   error: z.string().optional(),
   dispute: z.string().optional(),
   startedAt: timeSchema,
   updatedAt: timeSchema,
 });
 
-const storedFileSchema = z.object({ revision: z.number().int().nonnegative().optional(), runs: z.array(z.unknown()) });
-// Enough of a stored run to tell its user it could not be restored.
-const runIdentitySchema = z.object({ originalSessionID: sessionIdSchema, reviewSessionID: sessionIdSchema, directory: z.string().min(1) });
+const storedFileSchema = z.object({ version: z.literal(FILE_VERSION), revision: z.number().int().nonnegative().optional(), runs: z.array(runSchema) });
+const closeResultSchema = z.object({ state: z.enum(['closed', 'cancelled', 'delivered']) });
+const stopResultSchema = z.object({ matched: z.number().int().nonnegative(), terminated: z.number().int().nonnegative(), failed: z.number().int().nonnegative() });
 const recordTypeSchema = z.object({ type: z.string(), id: z.string().optional() });
 const messagePageSchema = z.object({ data: z.array(z.unknown()) });
 const statusEventSchema = z.object({
@@ -228,7 +231,7 @@ export function createAutoReviewRuntime({
   let loadPromise = null;
   let writePromise = Promise.resolve();
   let stopped = false;
-  // Until the first load settles, nobody knows which sessions a run holds.
+  // Only a successful load establishes which queues may deliver.
   let startupLoadSettled = false;
   let markStartupLoadSettled = () => {};
   const startupLoad = new Promise((resolve) => { markStartupLoadSettled = resolve; });
@@ -238,7 +241,8 @@ export function createAutoReviewRuntime({
   const readFailures = new Map(); // originalSessionID → consecutive failed reads
   const sendFailures = new Map(); // originalSessionID → consecutive failed sends
   const settleChecks = new Map(); // originalSessionID → rechecks spent waiting for the idle record
-  const ticking = new Set();
+  const ticking = new Map(); // originalSessionID → in-flight tick
+  const stopping = new Map(); // originalSessionID → server-owned Stop
 
   // --- persistence ---------------------------------------------------------
 
@@ -250,43 +254,28 @@ export function createAutoReviewRuntime({
       if (parse(errorCodeSchema, error)?.code === 'ENOENT') return { runs: [], revision: 0 };
       throw error;
     }
-    let stored = null;
-    let reason = 'not an auto-review file';
-    try {
-      stored = parse(storedFileSchema, JSON.parse(raw));
-    } catch (error) {
-      reason = error?.message ?? String(error);
+    // Unknown ownership must not become a terminal row that releases a queue.
+    const stored = storedFileSchema.parse(JSON.parse(raw));
+    const identities = new Set();
+    for (const run of stored.runs) {
+      if (identities.has(run.originalSessionID)) throw new Error('Duplicate saved auto-review session');
+      identities.add(run.originalSessionID);
+      if (run.ownedMessages.some((message) => ![run.originalSessionID, run.reviewSessionID].includes(message.sessionID))) {
+        throw new Error('Invalid saved auto-review message ownership');
+      }
+      if (run.send && ![run.originalSessionID, run.reviewSessionID].includes(run.send.sessionID)) throw new Error('Invalid saved auto-review send target');
+      if (run.send?.messageID && !run.ownedMessages.some((message) => message.sessionID === run.send.sessionID && message.messageID === run.send.messageID)) {
+        throw new Error('Missing saved auto-review prompt ownership');
+      }
+      if (run.awaiting && !run.ownedMessages.some((message) => message.sessionID === run.awaiting.sessionID)) {
+        throw new Error('Missing saved auto-review turn ownership');
+      }
+      if (run.status === 'stopping') {
+        run.status = 'stop_failed';
+        run.error = 'Review stop was interrupted by a restart. Retry Stop to finish cleanup.';
+      }
     }
-    if (!stored) {
-      // Malformed is a failure, not "no runs": keep the bytes rather than
-      // overwrite them on the next write.
-      const backup = `${filePath}.corrupt-${now()}`;
-      await fs.promises.rename(filePath, backup).catch(() => undefined);
-      console.warn(`[auto-review] file was unreadable and moved to ${backup}: ${reason}`);
-      return { runs: [], revision: 0 };
-    }
-    // One unreadable run fails alone, and shows as failed when it still says
-    // whose it is, instead of vanishing along with its queue hold.
-    const restored = stored.runs.map((value) => parse(runSchema, value) ?? unreadableRun(value)).filter(Boolean);
-    return { runs: restored, revision: stored.revision ?? 0 };
-  };
-
-  const unreadableRun = (value) => {
-    const identity = parse(runIdentitySchema, value);
-    if (!identity) return null;
-    const at = now();
-    return {
-      ...identity,
-      status: 'failed',
-      step: 'review',
-      round: 0,
-      prompts: { reviewStart: '', reviewRules: '', feedbackToImplementer: '', responseToReviewer: '' },
-      send: null,
-      awaiting: null,
-      error: 'The saved review could not be read after a restart.',
-      startedAt: at,
-      updatedAt: at,
-    };
+    return { runs: stored.runs, revision: stored.revision ?? 0 };
   };
 
   const load = () => {
@@ -295,6 +284,9 @@ export function createAutoReviewRuntime({
         .then((stored) => {
           for (const run of stored.runs) if (!runs.has(run.originalSessionID)) runs.set(run.originalSessionID, run);
           revision = Math.max(revision, stored.revision);
+          startupLoadSettled = true;
+          markStartupLoadSettled();
+          reconcileAll();
         })
         .catch((error) => {
           // A failed read must not pass for "no runs": the next write would
@@ -322,19 +314,21 @@ export function createAutoReviewRuntime({
   };
 
   /** Every change a client can see: bump, persist, broadcast. */
-  const commit = (originalSessionID, directory) => {
+  const commit = async (originalSessionID, directory) => {
     revision += 1;
     const run = runs.get(originalSessionID) ?? null;
-    broadcastUiEvent?.({
+    const event = {
       type: 'openchamber:auto-review.updated',
       properties: { revision, originalSessionID, directory, run: run ? toPublicRun(run) : null },
-    });
-    return persist();
+    };
+    await persist();
+    broadcastUiEvent?.(event);
   };
 
   const snapshot = () => ({ revision, runs: Array.from(runs.values(), toPublicRun) });
 
   const isRunning = (sessionID) => runs.get(sessionID)?.status === 'running';
+  const isHeld = (sessionID) => Boolean(holdsQueue(runs.get(sessionID)));
 
   /**
    * Whether a turn of `sessionID` that ended at `turnEndedAt` is a step of a
@@ -346,7 +340,7 @@ export function createAutoReviewRuntime({
   const speaksFor = (sessionID, turnEndedAt) => {
     for (const run of runs.values()) {
       if (run.originalSessionID !== sessionID && run.reviewSessionID !== sessionID) continue;
-      if (run.status === 'running' || run.updatedAt >= turnEndedAt) return true;
+      if (holdsQueue(run) || run.updatedAt >= turnEndedAt) return true;
     }
     return false;
   };
@@ -404,16 +398,18 @@ export function createAutoReviewRuntime({
     return idle?.id ?? null;
   };
 
-  /** Admits a record; true when it is there, now or from an earlier attempt. */
-  const admit = async (sessionID, route, body) => {
-    try {
-      await openCodeRequest(`/api/session/${encodeURIComponent(sessionID)}/${route}`, { method: 'POST', body });
-    } catch (error) {
-      // The id is ours and was admitted before: an earlier attempt landed.
-      if (error?.status === 409) return;
-      throw error;
-    }
-  };
+  // Resolve transport/auth at the operation boundary, never across backend restarts.
+  const openCodeClient = () => OpenCode.make({
+    baseUrl: buildOpenCodeUrl('', ''),
+    headers: getOpenCodeAuthHeaders(),
+    fetch: async (...args) => {
+      const response = await fetchImpl(...args);
+      if (response.ok) assertOpenCodeApiResponse(response);
+      return response;
+    },
+  });
+  const requestOptions = () => ({ signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  const sessionGone = (error, sessionID) => error?._tag === 'SessionNotFoundError' && error.sessionID === sessionID;
 
   // --- loop ----------------------------------------------------------------
 
@@ -453,6 +449,7 @@ export function createAutoReviewRuntime({
     run.updatedAt = now();
     forgetLoopState(run.originalSessionID);
     await commit(run.originalSessionID, run.directory);
+    if (runs.get(run.originalSessionID) !== run || run.status !== status) return;
     Promise.resolve().then(() => onRunSettled?.(run.originalSessionID)).catch(() => undefined);
     if (status !== 'stopped') {
       const ended = { sessionId: run.originalSessionID, directory: run.directory, status, error: run.error };
@@ -465,30 +462,31 @@ export function createAutoReviewRuntime({
   const watchedSessionOf = (run) => run.send?.sessionID ?? run.awaiting?.sessionID ?? null;
 
   /** The run may have been stopped, replaced or settled while a tick awaited. */
-  const stillCurrent = (run) => runs.get(run.originalSessionID) === run && run.status === 'running';
+  const stillCurrent = (run) => !stopped && runs.get(run.originalSessionID) === run && run.status === 'running';
 
   /** Delivers the run's pending send into an idle session. */
   const deliver = async (run, records) => {
     const send = run.send;
     if (!send.messageID) {
-      // Minted with the baseline and saved before the first attempt, so a
-      // retry reuses them and OpenCode refuses a second admission.
-      // One millisecond apart, so the ids sort in the order the records are
-      // admitted: the context first, the prompt last.
-      const mintedAt = now();
+      // One atomic user prompt owns its context and its stable admission ID.
       send.afterIdleID = newestIdleID(records);
-      send.contextIDs = send.context.map((_, index) => createMessageId(mintedAt + index));
-      send.messageID = createMessageId(mintedAt + send.context.length);
-      await persist();
+      send.messageID = createMessageId(now());
+      run.ownedMessages.push({ sessionID: send.sessionID, messageID: send.messageID });
     }
+    // Also retry a previously failed write before retrying network admission.
+    await persist();
+    if (!stillCurrent(run)) return;
     // Before anything is admitted: a routing failure fails the whole attempt.
     if (routeSend) await routeSend({ sessionId: send.sessionID, directory: run.directory, text: send.text });
+    if (!stillCurrent(run)) return;
     if (sessionKnowledgeRuntime) await sessionKnowledgeRuntime.sync(send.sessionID, run.directory);
-    for (const [index, text] of send.context.entries()) {
-      if (!text.trim()) continue;
-      await admit(send.sessionID, 'synthetic', { id: send.contextIDs[index], text, resume: false });
-    }
-    await admit(send.sessionID, 'prompt', { id: send.messageID, text: send.text });
+    if (!stillCurrent(run)) return;
+    await openCodeClient().session.prompt({
+      sessionID: send.sessionID,
+      id: send.messageID,
+      text: send.text,
+      context: send.context.filter((text) => text.trim()).map((text) => ({ text })),
+    }, requestOptions());
     if (!stillCurrent(run)) return;
     sendFailures.delete(run.originalSessionID);
     if (send.settle) {
@@ -547,66 +545,67 @@ export function createAutoReviewRuntime({
     if (stopped || !isRunning(originalSessionID)) return;
     // An idle event that lands while a tick reads must not be lost.
     if (ticking.has(originalSessionID)) return arm(originalSessionID);
-    ticking.add(originalSessionID);
+    const pending = tickRun(originalSessionID).finally(() => ticking.delete(originalSessionID));
+    ticking.set(originalSessionID, pending);
+    return pending;
+  }
+
+  async function tickRun(originalSessionID) {
     const run = runs.get(originalSessionID);
-    try {
-      const sessionID = watchedSessionOf(run);
-      if (!sessionID) return;
-      const watched = await readSession(sessionID);
-      if (!stillCurrent(run)) return;
-      if (watched === null) {
-        const count = (readFailures.get(originalSessionID) ?? 0) + 1;
-        readFailures.set(originalSessionID, count);
+    const sessionID = watchedSessionOf(run);
+    if (!sessionID) return;
+    const watched = await readSession(sessionID);
+    if (!stillCurrent(run)) return;
+    if (watched === null) {
+      const count = (readFailures.get(originalSessionID) ?? 0) + 1;
+      readFailures.set(originalSessionID, count);
+      return arm(originalSessionID, retryDelayMs(count));
+    }
+    readFailures.delete(originalSessionID);
+    if (watched.kind === 'deleted') {
+      return settle(run, 'failed', sessionID === run.reviewSessionID ? 'The review session was deleted.' : 'The reviewed session was deleted.');
+    }
+    // Running: its next idle event re-arms the tick.
+    if (watched.kind === 'running') return;
+    if (watched.kind === 'subagents') return arm(originalSessionID, subagentRecheckMs);
+
+    if (run.send) {
+      try {
+        await deliver(run, watched.records);
+      } catch (error) {
+        if (!stillCurrent(run)) return;
+        const count = (sendFailures.get(originalSessionID) ?? 0) + 1;
+        sendFailures.set(originalSessionID, count);
+        console.warn(`[auto-review] sending to ${sessionID} failed (attempt ${count}):`, error?.message ?? error);
+        if (sessionGone(error, sessionID)) return settle(run, 'failed', `The ${WHO[run.step]} session is gone.`);
+        if (count >= MAX_SEND_FAILURES) return settle(run, 'failed', `Could not send to the ${WHO[run.step]}: ${error?.message ?? error}`);
         return arm(originalSessionID, retryDelayMs(count));
       }
-      readFailures.delete(originalSessionID);
-      if (watched.kind === 'deleted') {
-        return settle(run, 'failed', sessionID === run.reviewSessionID ? 'The review session was deleted.' : 'The reviewed session was deleted.');
-      }
-      // Running: its next idle event re-arms the tick.
-      if (watched.kind === 'running') return;
-      if (watched.kind === 'subagents') return arm(originalSessionID, subagentRecheckMs);
-
-      if (run.send) {
-        try {
-          await deliver(run, watched.records);
-        } catch (error) {
-          if (!stillCurrent(run)) return;
-          const count = (sendFailures.get(originalSessionID) ?? 0) + 1;
-          sendFailures.set(originalSessionID, count);
-          console.warn(`[auto-review] sending to ${sessionID} failed (attempt ${count}):`, error?.message ?? error);
-          if (error?.status === 404) return settle(run, 'failed', `The ${WHO[run.step]} session is gone.`);
-          if (count >= MAX_SEND_FAILURES) return settle(run, 'failed', `Could not send to the ${WHO[run.step]}: ${error?.message ?? error}`);
-          return arm(originalSessionID, retryDelayMs(count));
-        }
-        // A turn short enough to end inside the send leaves no idle event
-        // for later; this tick finds it running or reads its end.
-        return arm(originalSessionID);
-      }
-
-      const outcome = readDispatchOutcome(watched.records, 0, run.awaiting.afterIdleID, { withText: true });
-      if (!outcome) {
-        // Idle without the run's idle record: it trails the event briefly, or
-        // the prompt has not started. Short rechecks, then events take over.
-        const spent = settleChecks.get(originalSessionID) ?? 0;
-        if (spent < SETTLE_RECHECKS) {
-          settleChecks.set(originalSessionID, spent + 1);
-          arm(originalSessionID, settleRecheckMs);
-        }
-        return;
-      }
-      settleChecks.delete(originalSessionID);
-      // The user stopped the turn: that stops the review too, and the row
-      // says so instead of vanishing.
-      if (outcome.state === 'cancelled') return settle(run, 'stopped');
-      if (outcome.state === 'error') {
-        return settle(run, 'failed', outcome.errorMessage ? `The ${WHO[run.step]}'s turn failed: ${outcome.errorMessage}` : `The ${WHO[run.step]}'s turn failed.`);
-      }
-      if (!outcome.text) return settle(run, 'failed', `The ${WHO[run.step]} finished without a text reply.`);
-      await advance(run, outcome.text);
-    } finally {
-      ticking.delete(originalSessionID);
+      // A turn short enough to end inside the send leaves no idle event
+      // for later; this tick finds it running or reads its end.
+      return arm(originalSessionID);
     }
+
+    const outcome = readDispatchOutcome(watched.records, 0, run.awaiting.afterIdleID, { withText: true });
+    if (!outcome) {
+      // Idle without the run's idle record: it trails the event briefly, or
+      // the prompt has not started. Short rechecks, then events take over.
+      const spent = settleChecks.get(originalSessionID) ?? 0;
+      if (spent < SETTLE_RECHECKS) {
+        settleChecks.set(originalSessionID, spent + 1);
+        arm(originalSessionID, settleRecheckMs);
+      }
+      return;
+    }
+    settleChecks.delete(originalSessionID);
+    // The user stopped the turn: that stops the review too, and the row
+    // says so instead of vanishing.
+    if (outcome.state === 'cancelled') return settle(run, 'stopped');
+    if (outcome.state === 'error') {
+      return settle(run, 'failed', outcome.errorMessage ? `The ${WHO[run.step]}'s turn failed: ${outcome.errorMessage}` : `The ${WHO[run.step]}'s turn failed.`);
+    }
+    if (!outcome.text) return settle(run, 'failed', `The ${WHO[run.step]} finished without a text reply.`);
+    await advance(run, outcome.text);
   }
 
   const reconcileAll = () => {
@@ -627,7 +626,8 @@ export function createAutoReviewRuntime({
     const { originalSessionID, reviewSessionID, directory, handoff, prompts } = parsed.data;
     if (originalSessionID === reviewSessionID) throw new TypeError('a session cannot review itself');
     await load();
-    if (isRunning(originalSessionID)) throw httpError('an auto-review is already running for this session', 409);
+    if (isHeld(originalSessionID) || stopping.has(originalSessionID)) throw httpError('an auto-review is running or not fully stopped for this session', 409);
+    const previous = runs.get(originalSessionID);
     const run = {
       originalSessionID,
       reviewSessionID,
@@ -640,13 +640,14 @@ export function createAutoReviewRuntime({
         ? { sessionID: originalSessionID, text: handoff.text, context: [handoff.instructions] }
         : { sessionID: reviewSessionID, text: prompts.reviewStart, context: [prompts.reviewRules, LOOP_RULES] },
       awaiting: null,
+      ownedMessages: [],
       startedAt: now(),
       updatedAt: now(),
     };
     runs.set(originalSessionID, run);
     if (runs.size > MAX_RUNS) {
       const oldest = Array.from(runs.values())
-        .filter((candidate) => candidate.status !== 'running')
+        .filter((candidate) => !holdsQueue(candidate))
         .sort((left, right) => left.updatedAt - right.updatedAt)
         .slice(0, runs.size - MAX_RUNS);
       for (const stale of oldest) runs.delete(stale.originalSessionID);
@@ -656,7 +657,8 @@ export function createAutoReviewRuntime({
       await commit(originalSessionID, directory);
     } catch (error) {
       // Not on disk: a restart would lose it, so it does not start at all.
-      runs.delete(originalSessionID);
+      if (previous) runs.set(originalSessionID, previous);
+      else runs.delete(originalSessionID);
       await commit(originalSessionID, directory).catch(() => undefined);
       throw error;
     }
@@ -666,18 +668,79 @@ export function createAutoReviewRuntime({
     return { revision, run: toPublicRun(run) };
   };
 
-  /** Stops a running run or dismisses a finished one; either way it is gone. */
+  const stopRun = async (run) => {
+    const { originalSessionID } = run;
+    run.status = 'stopping';
+    delete run.error;
+    run.updatedAt = now();
+    forgetLoopState(originalSessionID);
+    try {
+      // Durable intent first: a restart must not restart the loop or release its queue.
+      await commit(originalSessionID, run.directory);
+      await ticking.get(originalSessionID);
+      const failures = [];
+      // An aborted HTTP request may still be preparing in OpenCode. Closing the
+      // persisted ID seals future admission and waits for same-ID wake ownership.
+      for (const { sessionID, messageID } of run.ownedMessages) {
+        try {
+          closeResultSchema.parse(await openCodeClient().session.inbox.close({ sessionID, inboxID: messageID }, requestOptions()));
+        } catch (error) {
+          if (!sessionGone(error, sessionID)) failures.push(`${sessionID}: ${error?.message ?? error}`);
+        }
+      }
+      // Stop exactly these sessions, not their independent background children.
+      for (const sessionID of [originalSessionID, run.reviewSessionID]) {
+        try {
+          const result = stopResultSchema.parse(await openCodeClient().session.stop({ sessionID }, requestOptions()));
+          if (result.failed > 0) failures.push(`${sessionID}: ${result.failed} command termination(s) failed`);
+        } catch (error) {
+          if (!sessionGone(error, sessionID)) failures.push(`${sessionID}: ${error?.message ?? error}`);
+        }
+      }
+      if (failures.length > 0) throw new Error(failures.join('; '));
+      runs.delete(originalSessionID);
+      try {
+        await commit(originalSessionID, run.directory);
+      } catch (error) {
+        runs.set(originalSessionID, run);
+        throw error;
+      }
+    } catch (error) {
+      run.status = 'stop_failed';
+      run.error = cut(`Review not fully stopped: ${error?.message ?? error}`, ERROR_CHAR_LIMIT);
+      run.updatedAt = now();
+      await commit(originalSessionID, run.directory).catch(() => undefined);
+      throw httpError(run.error, 503);
+    }
+    return { revision, run: null };
+  };
+
+  /** Joins an active Stop; finished results are only dismissed, never stopped. */
   async function remove(originalSessionIDInput) {
     const originalSessionID = parse(sessionIdSchema, originalSessionIDInput);
     if (!originalSessionID) throw new TypeError('originalSessionID is invalid');
     await load();
+    if (stopping.has(originalSessionID)) return stopping.get(originalSessionID);
     const run = runs.get(originalSessionID);
     if (!run) return { revision, run: null };
-    const wasRunning = run.status === 'running';
+    if (holdsQueue(run)) {
+      const pending = stopRun(run)
+        .finally(() => stopping.delete(originalSessionID))
+        .then(async (result) => {
+          await onRunSettled?.(originalSessionID);
+          return result;
+        });
+      stopping.set(originalSessionID, pending);
+      return pending;
+    }
     runs.delete(originalSessionID);
     forgetLoopState(originalSessionID);
-    await commit(originalSessionID, run.directory);
-    if (wasRunning) Promise.resolve().then(() => onRunSettled?.(originalSessionID)).catch(() => undefined);
+    try {
+      await commit(originalSessionID, run.directory);
+    } catch (error) {
+      runs.set(originalSessionID, run);
+      throw error;
+    }
     return { revision, run: null };
   }
 
@@ -728,13 +791,8 @@ export function createAutoReviewRuntime({
         reconcileAll();
       })
       .catch((error) => {
-        // Holding every queue until a later read succeeds would strand them;
-        // the runs in this file stay unknown instead.
+        // Unknown ownership holds all automatic delivery until a successful reread.
         console.warn('[auto-review] failed to load runs:', error?.message ?? error);
-      })
-      .finally(() => {
-        startupLoadSettled = true;
-        markStartupLoadSettled();
       });
     return () => {
       unsubscribeEvent();
@@ -759,13 +817,16 @@ export function createAutoReviewRuntime({
      * Whether the session's queue must wait: a run holds it, or the runs are
      * not loaded yet after a start. `startupLoad` resolves when they are.
      */
-    holdsDelivery: (sessionID) => !startupLoadSettled || isRunning(sessionID),
+    holdsDelivery: (sessionID) => !startupLoadSettled || isHeld(sessionID) || stopping.has(sessionID),
     startupLoad,
     processPayload,
     start: startRuntime,
     stop,
-    /** Drains the pending write; tests and shutdown use it. */
-    flush: () => writePromise,
+    /** Shutdown drains server-owned work before its final persisted snapshot. */
+    flush: async () => {
+      await Promise.allSettled([...ticking.values(), ...stopping.values()]);
+      await writePromise;
+    },
   };
 }
 

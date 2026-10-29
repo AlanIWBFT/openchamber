@@ -106,7 +106,24 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       () => sessionGoalRuntime?.stop?.(),
       () => contextObligatoryRuntime?.stop?.(),
       () => sessionWarmingRuntime?.stop?.(),
-      () => autoReviewRuntime?.stop?.(),
+      async () => {
+        autoReviewRuntime?.stop?.();
+        if (!autoReviewRuntime?.flush) return;
+        // Stop only disarms the loop. Join in-flight Stop work and its writes so
+        // restart cannot mistake an unpersisted stopping run for a running one.
+        // Share the host budget: a stuck send must not hold daemon exit forever.
+        let timeout;
+        try {
+          await Promise.race([
+            autoReviewRuntime.flush(),
+            new Promise((_, reject) => {
+              timeout = setTimeout(() => reject(new Error('Auto-review shutdown timed out')), Math.max(0, remaining() - SHUTDOWN_FINALIZATION_RESERVE_MS));
+            }),
+          ]);
+        } finally {
+          clearTimeout(timeout);
+        }
+      },
       () => prWatchRuntime?.stop?.(),
       () => messageQueueRuntime?.stop?.(),
       () => dispatchResultsRuntime?.stop?.(),

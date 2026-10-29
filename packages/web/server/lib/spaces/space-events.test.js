@@ -274,6 +274,9 @@ describe('createSpaceEventSources: the queue connection', () => {
     write(update('s1', run('s1', 's2', { status: 'failed', error: 'x'.repeat(3_000) })));
     expect(await until(() => broadcast.filter((event) => event.type === 'openchamber:auto-review.updated').length === 2)).toBe(true);
     expect(broadcast.at(-1).properties.run).toMatchObject({ status: 'failed', error: 'x'.repeat(2_000) });
+    for (const status of ['stopping', 'stop_failed']) write(update('s1', run('s1', 's2', { status })));
+    expect(await until(() => broadcast.filter((event) => event.type === 'openchamber:auto-review.updated').length === 4)).toBe(true);
+    expect(broadcast.slice(-2).map((event) => event.properties.run.status)).toEqual(['stopping', 'stop_failed']);
   });
 
   it('keeps a quiet connection that hears the heartbeat, and remakes one that falls silent past its timeout', async () => {

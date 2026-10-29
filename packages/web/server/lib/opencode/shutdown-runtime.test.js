@@ -2,8 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import http from 'node:http';
 import net from 'node:net';
 import { once } from 'node:events';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 import { createGracefulShutdownRuntime, createShutdownFence } from './shutdown-runtime.js';
+import { createAutoReviewRuntime } from '../auto-review/runtime.js';
 
 const createRuntime = (server, overrides = {}) => {
   const runtime = createGracefulShutdownRuntime({
@@ -72,6 +76,119 @@ describe('graceful shutdown runtime', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it.each([false, true])('waits for an in-flight review Stop to persist before exit (cleanup fails: %s)', async (stopFails) => {
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-review-shutdown-'));
+    const filePath = path.join(dataDir, 'auto-review.json');
+    const writePaused = Promise.withResolvers();
+    const resumeWrite = Promise.withResolvers();
+    const rename = fs.rename.bind(fs);
+    let pauseNextWrite = false;
+    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (to === filePath && pauseNextWrite) {
+        pauseNextWrite = false;
+        writePaused.resolve();
+        await resumeWrite.promise;
+      }
+      return rename(from, to);
+    });
+    const fetchImpl = vi.fn(async (url) => {
+      expect(new URL(url).pathname).toMatch(/^\/api\/session\/ses_(original|review)\/stop$/);
+      return Response.json({ matched: 1, terminated: stopFails ? 0 : 1, failed: stopFails ? 1 : 0 });
+    });
+    const dependencies = {
+      dataDir,
+      buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchImpl,
+    };
+    const autoReviewRuntime = createAutoReviewRuntime(dependencies);
+    const exit = vi.fn();
+    const stopManagedOpenCode = vi.fn(async () => {});
+    const runtime = createRuntime(null, { autoReviewRuntime, process: { exit }, stopManagedOpenCode, shutdownTimeoutMs: 35000 });
+    let stopping;
+    let shutdown;
+    let restarted;
+    try {
+      await autoReviewRuntime.startRun({
+        originalSessionID: 'ses_original',
+        reviewSessionID: 'ses_review',
+        directory: '/repo',
+        prompts: { reviewStart: 'Review.', reviewRules: 'Rules.', feedbackToImplementer: '{{review_feedback}}', responseToReviewer: '{{implementation_response}}' },
+      });
+      pauseNextWrite = true;
+      stopping = autoReviewRuntime.removeRun('ses_original').then(() => null, (error) => error);
+      await writePaused.promise;
+      shutdown = runtime.gracefulShutdown({ exitProcess: true });
+      // Let shutdown's other cleanup promises settle while the real rename is held.
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(stopManagedOpenCode).toHaveBeenCalledOnce();
+      expect(exit).not.toHaveBeenCalled();
+      expect(autoReviewRuntime.snapshot().runs[0].status).toBe('stopping');
+      expect(JSON.parse(await fs.readFile(filePath, 'utf8')).runs[0].status).toBe('running');
+
+      resumeWrite.resolve();
+      await shutdown;
+      expect(exit).toHaveBeenCalledExactlyOnceWith(0);
+      expect(Boolean(await stopping)).toBe(stopFails);
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      const saved = JSON.parse(await fs.readFile(filePath, 'utf8'));
+      expect(saved.runs.map((run) => run.status)).toEqual(stopFails ? ['stop_failed'] : []);
+      restarted = createAutoReviewRuntime(dependencies);
+      await restarted.load();
+      expect(restarted.isRunning('ses_original')).toBe(false);
+      expect(restarted.holdsDelivery('ses_original')).toBe(stopFails);
+    } finally {
+      resumeWrite.resolve();
+      autoReviewRuntime.stop();
+      restarted?.stop();
+      await stopping;
+      await autoReviewRuntime.flush();
+      await shutdown;
+      await fs.rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('bounds the review drain by the shared deadline and keeps HTTP finalization time', async () => {
+    vi.useFakeTimers();
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const start = Date.now();
+    const pending = Promise.withResolvers();
+    const autoReviewRuntime = { stop: vi.fn(), flush: vi.fn(() => pending.promise) };
+    const stopManagedOpenCode = vi.fn(async () => {});
+    const server = { close: vi.fn((callback) => callback()) };
+    const runtime = createRuntime(server, { autoReviewRuntime, stopManagedOpenCode });
+    let finished = false;
+    const shutdown = runtime.gracefulShutdown({ deadline: start + 35000 }).then(() => { finished = true; });
+    expect(autoReviewRuntime.stop).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(34499);
+    expect(stopManagedOpenCode).toHaveBeenCalledExactlyOnceWith({ deadline: start + 34500 });
+    expect(autoReviewRuntime.flush).toHaveBeenCalledOnce();
+    expect(finished).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await shutdown;
+    expect(server.close).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledWith('Error stopping backend resources:', expect.objectContaining({ message: 'Auto-review shutdown timed out' }));
+    expect(vi.getTimerCount()).toBe(0);
+    // Late failure of a timed-out drain is still observed, not an unhandled rejection.
+    pending.reject(new Error('late review failure'));
+    await Promise.resolve();
+  });
+
+  it.each([false, true])('clears the review drain timer and completes shutdown (flush rejects: %s)', async (rejects) => {
+    vi.useFakeTimers();
+    const failure = new Error('review drain failed');
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const flush = vi.fn(async () => { if (rejects) throw failure; });
+    const exit = vi.fn();
+    const runtime = createRuntime(null, { autoReviewRuntime: { stop: vi.fn(), flush }, process: { exit } });
+    await runtime.gracefulShutdown({ exitProcess: true });
+    expect(flush).toHaveBeenCalledOnce();
+    expect(exit).toHaveBeenCalledExactlyOnceWith(0);
+    if (rejects) expect(warning).toHaveBeenCalledWith('Error stopping backend resources:', failure);
+    else expect(warning).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('rejects new requests after shutdown begins', () => {

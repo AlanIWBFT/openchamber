@@ -10,7 +10,7 @@ import { selectAutoReviewRun, useAutoReviewStore, type AutoReviewRun } from '@/s
 import { useUIStore } from '@/stores/useUIStore';
 import { useChatSessionSelection } from './chatColumnSession';
 
-type SettledStatus = Exclude<AutoReviewRun['status'], 'running'>;
+type SettledStatus = Exclude<AutoReviewRun['status'], 'running' | 'stopping' | 'stop_failed'>;
 
 const RESULT = {
   clean: { icon: 'checkbox-circle', className: 'text-status-success', labelKey: 'chat.autoReview.result.clean' },
@@ -72,16 +72,21 @@ export const AutoReviewStrip = memo(() => {
     </Button>
   );
 
-  if (run.status === 'running') {
-    const statusLabel = run.step === 'review'
+  if (run.status === 'running' || run.status === 'stopping' || run.status === 'stop_failed') {
+    const statusLabel = run.status === 'stopping' ? t('chat.autoReview.status.stopping')
+      : run.status === 'stop_failed' ? t('chat.autoReview.status.stopFailed')
+      : run.step === 'review'
       ? t('chat.autoReview.status.waitingForReviewer')
       : t('chat.autoReview.status.waitingForImplementer');
     return (
-      <div role="status" className="flex oc-composer-row min-w-0 items-center gap-2 border-b border-border/60 ps-3 pe-1.5">
-        <Spinner className="size-3.5 text-muted-foreground" aria-hidden="true" />
+      <div role="status" title={run.error} className="flex oc-composer-row min-w-0 items-center gap-2 border-b border-border/60 ps-3 pe-1.5">
+        {run.status === 'stop_failed'
+          ? <Icon name="error-warning" className="size-3.5 shrink-0 text-status-error" aria-hidden="true" />
+          : <Spinner className="size-3.5 text-muted-foreground" aria-hidden="true" />}
         <span className="min-w-0 flex-1 truncate text-sm text-foreground">
           {t('chat.autoReview.title')}
           <span className="text-muted-foreground"> · {statusLabel}</span>
+          {run.error ? <span className="text-muted-foreground"> · {run.error}</span> : null}
         </span>
         {openButton}
         <Button
@@ -89,10 +94,11 @@ export const AutoReviewStrip = memo(() => {
           variant="ghost"
           size="sm"
           onClick={handleRemove}
+          disabled={run.status === 'stopping'}
           onMouseDown={(event) => event.preventDefault()}
           className="shrink-0 text-status-error/80 hover:bg-transparent hover:text-status-error"
         >
-          {t('chat.autoReview.actions.stop')}
+          {t(run.status === 'stop_failed' ? 'chat.autoReview.actions.retryStop' : 'chat.autoReview.actions.stop')}
         </Button>
       </div>
     );
