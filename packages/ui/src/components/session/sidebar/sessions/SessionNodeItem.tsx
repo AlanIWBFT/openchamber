@@ -1734,7 +1734,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                 className={cn(
                   'group relative my-0.5 flex cursor-pointer items-center rounded-md pe-2.5',
                   !isTwoLineRow && 'gap-1.5',
-                  'py-1.5',
+                  'py-1',
                   !(isActive || isRowSelected) && 'hover:bg-interactive-hover/60',
                   (isActive || isRowSelected) && 'bg-interactive-selection/70 text-interactive-selection-foreground',
                   isRowSelected && 'ring-1 ring-inset ring-border',
