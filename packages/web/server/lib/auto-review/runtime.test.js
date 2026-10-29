@@ -51,6 +51,9 @@ const createOpenCode = () => {
     synthetic: [],
     seenIds: new Set(),
     failPrompts: 0,
+    closed: [],
+    stops: [],
+    stopFailures: {},
     counter: 0,
   };
   const runTurn = (sessionID) => {
@@ -76,6 +79,16 @@ const createOpenCode = () => {
     const method = init.method ?? 'GET';
     if (pathname === '/api/session/active') return json({ data: state.active });
     if (pathname === '/api/session' && method === 'GET') return json({ data: [], cursor: {} });
+    const close = pathname.match(/^\/api\/session\/([^/]+)\/inbox\/([^/]+)\/close$/);
+    if (close) {
+      state.closed.push({ sessionID: close[1], messageID: close[2] });
+      return json({ data: { state: 'closed' } });
+    }
+    const stop = pathname.match(/^\/api\/session\/([^/]+)\/stop$/);
+    if (stop) {
+      state.stops.push(stop[1]);
+      return json({ matched: 1, terminated: 1, failed: state.stopFailures[stop[1]] ?? 0 });
+    }
     const match = pathname.match(/^\/api\/session\/([^/]+)\/(message|prompt|synthetic)$/);
     if (!match) return json({ error: 'not found' }, 404);
     const sessionID = decodeURIComponent(match[1]);
@@ -86,7 +99,7 @@ const createOpenCode = () => {
       state.failPrompts -= 1;
       return json({ error: 'boom' }, 500);
     }
-    if (state.seenIds.has(body.id)) return json({ error: 'conflict' }, 409);
+    if (state.seenIds.has(body.id)) return json({ data: { id: body.id } });
     state.seenIds.add(body.id);
     if (match[2] === 'synthetic') {
       state.synthetic.push({ sessionID, ...body });
@@ -194,16 +207,15 @@ describe('createAutoReviewRuntime', () => {
       [REVIEW, 'Response:\nFixed the blocker.'],
       [ORIGINAL, 'Feedback:\nNit: a name.'],
     ]);
-    expect(openCode.state.synthetic.map((item) => [item.sessionID, item.text])).toEqual([
-      [ORIGINAL, 'Handoff rules.'],
-      [REVIEW, 'Review rules.'],
-      [REVIEW, LOOP_RULES],
-      [REVIEW, LOOP_RULES],
+    expect(openCode.state.prompts.map((item) => item.context)).toEqual([
+      [{ text: 'Handoff rules.' }],
+      [{ text: 'Review rules.' }, { text: LOOP_RULES }],
+      [],
+      [{ text: LOOP_RULES }],
+      [],
     ]);
-    // Context is admitted ahead of its prompt, and its ids sort that way too.
-    const reviewStart = openCode.state.prompts[1];
-    const [rules, loop] = openCode.state.synthetic.slice(1, 3);
-    expect([rules.id, loop.id, reviewStart.id]).toEqual([rules.id, loop.id, reviewStart.id].sort());
+    // There are no independently admitted context messages to orphan on Stop.
+    expect(openCode.state.synthetic).toEqual([]);
     expect(runOf(runtime)).toMatchObject({ status: 'clean', round: 1, maxRounds: MAX_ROUNDS });
     // The queue is released once the settled run is on disk.
     expect(await until(() => settled.length > 0)).toBe(true);
@@ -300,7 +312,7 @@ describe('createAutoReviewRuntime', () => {
     second.runtime.start();
     expect(await until(() => openCode.state.prompts.length === 2)).toBe(true);
     expect(openCode.state.prompts.map((prompt) => prompt.text)).toEqual(['Write a handoff.', 'Review this.\n\nThe handoff.']);
-    expect(openCode.state.synthetic.filter((item) => item.text === 'Handoff rules.')).toHaveLength(1);
+    expect(openCode.state.prompts.filter((item) => item.context.some((entry) => entry.text === 'Handoff rules.'))).toHaveLength(1);
   });
 
   it('routes a session on Auto before each prompt, and a routing failure sends nothing', async () => {
@@ -334,7 +346,7 @@ describe('createAutoReviewRuntime', () => {
     expect(runtime.holdsDelivery(ORIGINAL)).toBe(false);
   });
 
-  it('keeps a reply of any length across a restart, and shows a run it cannot read as failed', async () => {
+  it('keeps a reply of any length across a restart', async () => {
     const dataDir = await makeDataDir();
     const openCode = createOpenCode();
     openCode.state.replies[ORIGINAL].push('h'.repeat(150_000));
@@ -347,20 +359,11 @@ describe('createAutoReviewRuntime', () => {
     first.runtime.stop();
     await first.runtime.flush();
 
-    const file = path.join(dataDir, 'auto-review.json');
-    const stored = JSON.parse(await fs.readFile(file, 'utf8'));
-    stored.runs.push({ originalSessionID: 'ses_broken', reviewSessionID: 'ses_broken_review', directory: DIRECTORY, status: 'nonsense' });
-    await fs.writeFile(file, JSON.stringify(stored));
-
     openCode.state.active = {};
     const second = await createRuntime({ dataDir, openCode });
     second.runtime.start();
     expect(await until(() => openCode.state.prompts.length === 2)).toBe(true);
     expect(openCode.state.prompts[1].text).toHaveLength('Review this.\n\n'.length + 150_000);
-    expect(second.runtime.snapshot().runs.find((run) => run.originalSessionID === 'ses_broken')).toMatchObject({
-      status: 'failed',
-      error: 'The saved review could not be read after a restart.',
-    });
   });
 
   it('cuts a long failure to one line for the row', async () => {
@@ -389,6 +392,7 @@ describe('createAutoReviewRuntime', () => {
     expect(runtime.isRunning(ORIGINAL)).toBe(true);
 
     await runtime.removeRun(ORIGINAL);
+    expect(openCode.state.stops).toEqual([ORIGINAL, REVIEW]);
     expect(runtime.isRunning(ORIGINAL)).toBe(false);
     expect(runtime.snapshot().runs).toEqual([]);
     expect(await until(() => settled.length === 1)).toBe(true);
@@ -396,5 +400,206 @@ describe('createAutoReviewRuntime', () => {
       type: 'openchamber:auto-review.updated',
       properties: { originalSessionID: ORIGINAL, directory: DIRECTORY, run: null },
     });
+  });
+
+  it('retains a failed Stop and its queue hold across a restart, then retries both sessions', async () => {
+    const dataDir = await makeDataDir();
+    const openCode = createOpenCode();
+    openCode.state.active = { [ORIGINAL]: { type: 'running' } };
+    openCode.state.stopFailures[REVIEW] = 1;
+    const first = await createRuntime({ dataDir, openCode });
+    first.runtime.start();
+    await first.runtime.startRun(startInput());
+    await expect(first.runtime.removeRun(ORIGINAL)).rejects.toThrow();
+    expect(runOf(first.runtime)?.status).toBe('stop_failed');
+    expect(first.runtime.holdsDelivery(ORIGINAL)).toBe(true);
+    expect(first.settled).toEqual([]);
+    await expect(first.runtime.startRun(startInput())).rejects.toMatchObject({ status: 409 });
+    first.runtime.stop();
+    await first.runtime.flush();
+
+    const second = await createRuntime({ dataDir, openCode });
+    second.runtime.start();
+    await second.runtime.startupLoad;
+    expect(second.runtime.holdsDelivery(ORIGINAL)).toBe(true);
+    expect(runOf(second.runtime)?.status).toBe('stop_failed');
+    openCode.state.stopFailures[REVIEW] = 0;
+    await second.runtime.removeRun(ORIGINAL);
+    expect(openCode.state.stops).toEqual([ORIGINAL, REVIEW, ORIGINAL, REVIEW]);
+    expect(second.runtime.holdsDelivery(ORIGINAL)).toBe(false);
+    expect(second.settled).toEqual([ORIGINAL]);
+  });
+
+  it('keeps malformed bytes and holds all queue auto-delivery until a successful reread', async () => {
+    const dataDir = await makeDataDir();
+    const file = path.join(dataDir, 'auto-review.json');
+    await fs.writeFile(file, '{broken');
+    const { runtime } = await createRuntime({ dataDir });
+    runtime.start();
+    await expect(runtime.load()).rejects.toThrow();
+    expect(await fs.readFile(file, 'utf8')).toBe('{broken');
+    expect(runtime.holdsDelivery('ses_unrelated')).toBe(true);
+    await fs.writeFile(file, JSON.stringify({ version: 2, runs: [] }));
+    await runtime.load();
+    await runtime.startupLoad;
+    expect(runtime.holdsDelivery('ses_unrelated')).toBe(false);
+  });
+
+  it('waits for an in-flight send, closes only persisted review IDs, then stops and releases once', async () => {
+    let enterSend;
+    const entered = new Promise((resolve) => { enterSend = resolve; });
+    let finishSend;
+    const sending = new Promise((resolve) => { finishSend = resolve; });
+    const openCode = createOpenCode();
+    const actual = openCode.fetchImpl.getMockImplementation();
+    openCode.fetchImpl.mockImplementation(async (url, init) => {
+      if (String(url).endsWith('/prompt')) {
+        enterSend();
+        await sending;
+      }
+      return actual(url, init);
+    });
+    const dataDir = await makeDataDir();
+    const { runtime, settled } = await createRuntime({ dataDir, openCode });
+    runtime.start();
+    await runtime.startRun(startInput());
+    await entered;
+    const firstStop = runtime.removeRun(ORIGINAL);
+    const secondStop = runtime.removeRun(ORIGINAL);
+    expect(await until(() => runOf(runtime)?.status === 'stopping')).toBe(true);
+    expect(runtime.holdsDelivery(ORIGINAL)).toBe(true);
+    expect(openCode.state.stops).toEqual([]);
+    expect(openCode.state.closed).toEqual([]);
+    const stored = JSON.parse(await fs.readFile(path.join(dataDir, 'auto-review.json'), 'utf8'));
+    const owned = stored.runs[0].ownedMessages;
+    expect(owned).toHaveLength(1);
+    expect(owned[0]).toMatchObject({ sessionID: ORIGINAL });
+    finishSend();
+    await Promise.all([firstStop, secondStop]);
+    expect(openCode.state.closed).toEqual(owned);
+    expect(openCode.state.stops).toEqual([ORIGINAL, REVIEW]);
+    expect(openCode.state.prompts).toHaveLength(1);
+    expect(settled).toEqual([ORIGINAL]);
+    const methods = openCode.fetchImpl.mock.calls.map(([url]) => new URL(url).pathname.split('/').at(-1));
+    expect(methods.lastIndexOf('prompt')).toBeLessThan(methods.indexOf('close'));
+    expect(methods.indexOf('close')).toBeLessThan(methods.indexOf('stop'));
+  });
+
+  it('prevents a send paused in routing from admitting after Stop', async () => {
+    let finishRouting;
+    const routing = new Promise((resolve) => { finishRouting = resolve; });
+    let entered;
+    const routed = new Promise((resolve) => { entered = resolve; });
+    const { runtime, openCode } = await createRuntime({ routeSend: () => { entered(); return routing; } });
+    runtime.start();
+    await runtime.startRun(startInput());
+    await routed;
+    const stopping = runtime.removeRun(ORIGINAL);
+    expect(await until(() => runOf(runtime)?.status === 'stopping')).toBe(true);
+    finishRouting();
+    await stopping;
+    expect(openCode.state.prompts).toEqual([]);
+    expect(openCode.state.closed).toHaveLength(1);
+  });
+
+  it('keeps ownership after awaiting a reply and restarting, and treats closure uncertainty as a failed Stop', async () => {
+    const dataDir = await makeDataDir();
+    const openCode = createOpenCode();
+    const first = await createRuntime({ dataDir, openCode });
+    first.runtime.start();
+    await first.runtime.startRun(startInput());
+    expect(await until(() => openCode.state.prompts.length === 1)).toBe(true);
+    first.runtime.stop();
+    await first.runtime.flush();
+    const originalFetch = openCode.fetchImpl.getMockImplementation();
+    openCode.fetchImpl.mockImplementation((url, init) => String(url).endsWith('/close')
+      ? Promise.reject(new Error('lost response')) : originalFetch(url, init));
+    const second = await createRuntime({ dataDir, openCode });
+    second.runtime.start();
+    await second.runtime.startupLoad;
+    await expect(second.runtime.removeRun(ORIGINAL)).rejects.toThrow('lost response');
+    expect(openCode.state.stops).toEqual([ORIGINAL, REVIEW]);
+    expect(second.runtime.holdsDelivery(ORIGINAL)).toBe(true);
+    expect(second.settled).toEqual([]);
+    openCode.fetchImpl.mockImplementation(originalFetch);
+    await second.runtime.removeRun(ORIGINAL);
+    expect(openCode.state.closed).toEqual([{ sessionID: ORIGINAL, messageID: openCode.state.prompts[0].id }]);
+    expect(second.settled).toEqual([ORIGINAL]);
+  });
+
+  it('dismisses a finished result without stopping either session', async () => {
+    const { runtime, openCode } = await createRuntime();
+    openCode.state.replies[REVIEW].push(FINAL_MARKER_CLEAN);
+    runtime.start();
+    await runtime.startRun(startInput({ handoff: undefined }));
+    expect(await until(() => runOf(runtime)?.status === 'clean')).toBe(true);
+    await runtime.removeRun(ORIGINAL);
+    expect(openCode.state.closed).toEqual([]);
+    expect(openCode.state.stops).toEqual([]);
+    expect(runtime.snapshot().runs).toEqual([]);
+  });
+
+  it('offers retry for a Stop interrupted by a restart instead of restoring a disabled stopping row', async () => {
+    const dataDir = await makeDataDir();
+    const first = await createRuntime({ dataDir });
+    first.openCode.state.active = { [ORIGINAL]: { type: 'running' } };
+    await first.runtime.startRun(startInput());
+    first.runtime.stop();
+    await first.runtime.flush();
+    const file = path.join(dataDir, 'auto-review.json');
+    const stored = JSON.parse(await fs.readFile(file, 'utf8'));
+    stored.runs[0].status = 'stopping';
+    await fs.writeFile(file, JSON.stringify(stored));
+    const second = await createRuntime({ dataDir });
+    second.runtime.start();
+    await second.runtime.startupLoad;
+    expect(runOf(second.runtime)).toMatchObject({ status: 'stop_failed', error: expect.stringContaining('Retry Stop') });
+    expect(second.runtime.holdsDelivery(ORIGINAL)).toBe(true);
+    await second.runtime.removeRun(ORIGINAL);
+    expect(second.openCode.state.stops).toEqual([ORIGINAL, REVIEW]);
+  });
+
+  it.each([false, true])('holds delivery throughout the final Stop write (write fails=%s)', async (failWrite) => {
+    const dataDir = await makeDataDir();
+    const file = path.join(dataDir, 'auto-review.json');
+    const { runtime, openCode, settled } = await createRuntime({ dataDir });
+    openCode.state.active = { [ORIGINAL]: { type: 'running' } };
+    await runtime.startRun(startInput());
+    const rename = fs.rename;
+    let enterWrite;
+    const entered = new Promise((resolve) => { enterWrite = resolve; });
+    let finishWrite;
+    const gate = new Promise((resolve) => { finishWrite = resolve; });
+    let paused = false;
+    const spy = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (to === file && !paused && JSON.parse(await fs.readFile(from, 'utf8')).runs.length === 0) {
+        paused = true;
+        enterWrite();
+        await gate;
+        if (failWrite) throw new Error('disk unavailable');
+      }
+      return rename(from, to);
+    });
+    try {
+      const stopping = runtime.removeRun(ORIGINAL);
+      await entered;
+      // This is the queue tick's admission gate, including idle-event ticks.
+      expect(runtime.holdsDelivery(ORIGINAL)).toBe(true);
+      expect(settled).toEqual([]);
+      finishWrite();
+      if (failWrite) {
+        await expect(stopping).rejects.toThrow('disk unavailable');
+        expect(runtime.holdsDelivery(ORIGINAL)).toBe(true);
+        expect(runOf(runtime)?.status).toBe('stop_failed');
+        expect(settled).toEqual([]);
+      } else {
+        await stopping;
+        expect(runtime.holdsDelivery(ORIGINAL)).toBe(false);
+        expect(settled).toEqual([ORIGINAL]);
+      }
+    } finally {
+      finishWrite();
+      spy.mockRestore();
+    }
   });
 });
