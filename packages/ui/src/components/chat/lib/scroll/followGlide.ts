@@ -8,7 +8,7 @@
 // See DOCUMENTATION.md, "Why the follow draws its own glide".
 
 // ω² of the spring, in 1/s². Settles a one-screen step in about 600 ms; a
-// block of 60 px that lands 400 ms after the last (lib/streamTextCommit.ts)
+// block of 60 px that lands 400 ms after the last
 // finds the glide still moving.
 const STIFFNESS = 250;
 const OMEGA = Math.sqrt(STIFFNESS);

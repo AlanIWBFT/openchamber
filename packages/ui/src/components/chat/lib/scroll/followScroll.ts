@@ -1,7 +1,7 @@
 // How the chat follows a live reply, and the rules that decide it.
 //
 // The viewport trails the growing tail with one glide (followGlide.ts) that
-// each landed block (lib/streamTextCommit.ts) re-aims. Pure: no DOM, no React.
+// streamed text growth re-aims. Pure: no DOM, no React.
 
 /**
  * Where a follow glide should go, or null to hold still: the true end (the
