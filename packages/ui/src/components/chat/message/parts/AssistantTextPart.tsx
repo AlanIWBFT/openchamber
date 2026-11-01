@@ -13,8 +13,6 @@ import { useGuestLinkRules } from '@/lib/guests/links';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string; time?: { start?: number; end?: number } };
 
-const REPLY_REVEAL_INTERVAL_MS = 400;
-
 interface AssistantTextPartProps {
     part: Part;
     sessionId?: string;
@@ -55,7 +53,6 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
     const throttledTextContent = useStreamingTextThrottle({
         text: textContent,
         isStreaming,
-        throttleMs: REPLY_REVEAL_INTERVAL_MS,
         identityKey: `${messageId}:${part.id ?? 'text'}`,
     });
 

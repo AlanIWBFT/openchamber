@@ -2,6 +2,8 @@ import React, { useRef, useCallback } from "react"
 import type { StoreApi } from "zustand"
 import type { Message, Part } from "@/lib/opencode/model"
 import { isVSCodeRuntime } from "@/lib/desktop"
+import { isShownInPlace } from "@/lib/opencode/tools"
+import { isUiBlockTextPart } from "@/lib/messages/uiBlockText"
 import { isMobileSurfaceRuntime } from "@/lib/runtimeSurface"
 import { subscribeDirectorySessionMessages, type DirectoryStore } from "./child-store"
 import { countSyncPerformance } from "./performance-diagnostics"
@@ -153,13 +155,27 @@ const hasTaskSessionIdentityChange = (previous: Part[], current: Part[] | undefi
   return previousTaskCount !== currentTaskCount
 }
 
+const isShownPart = (part: Part): boolean => isUiBlockTextPart(part) || (part.type === "tool" && isShownInPlace(part.tool, part.state))
+
+const hasMessageStructureChange = (previous: Part[], current: Part[] | undefined): boolean => {
+  if (previous === current) return false
+  if (hasTaskSessionIdentityChange(previous, current)) return true
+  const before = previous.filter(isShownPart)
+  const after = (current ?? EMPTY_PARTS).filter(isShownPart)
+  return before.length !== after.length || before.some((part, index) => {
+    const next = after[index]
+    return part.id !== next.id || part.type !== next.type
+      || (part.type === "tool" && next.type === "tool" && part.state.status !== next.state.status)
+  })
+}
+
 const snapshotPartsMatchState = (snapshot: SessionMessageRecordsSnapshot, state: State): boolean => {
   for (const record of snapshot.list) {
     if (snapshot.suspendPartUpdates) {
       const suspendedID = snapshot.suspendedPartUpdatesMessageID
       if (
         (!suspendedID || record.info.id === suspendedID)
-        && !hasTaskSessionIdentityChange(record.parts, state.part[record.info.id])
+        && !hasMessageStructureChange(record.parts, state.part[record.info.id])
       ) {
         continue
       }
@@ -241,7 +257,7 @@ export function buildSessionMessageRecordsSnapshot(
     const shouldSuspendParts = suspendPartUpdates
       && previousRecord
       && (!suspendedPartUpdatesMessageID || message.id === suspendedPartUpdatesMessageID)
-      && !hasTaskSessionIdentityChange(previousRecord.parts, state.part[message.id])
+      && !hasMessageStructureChange(previousRecord.parts, state.part[message.id])
     const parts = shouldSuspendParts
       ? previousRecord.parts
       : (state.part[message.id] ?? EMPTY_PARTS)
@@ -357,7 +373,7 @@ export function useSessionMessageRecords(
           const previousParts = snapshot?.byId.get(messageID)?.parts
           return Boolean(
             previousParts
-            && !hasTaskSessionIdentityChange(previousParts, state.part[messageID]),
+            && !hasMessageStructureChange(previousParts, state.part[messageID]),
           )
         })
         if (allChangesSuspended) {

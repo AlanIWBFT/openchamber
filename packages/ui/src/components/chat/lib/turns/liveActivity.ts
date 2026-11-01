@@ -1,9 +1,9 @@
 import { isInvisibleText } from '@/lib/invisibleText';
-import { runningCommandParts } from '@/lib/opencode/exec-metadata';
+import { isUiBlockTextPart } from '@/lib/messages/uiBlockText';
 import { getLastConversationRecord, type TextPart, type ToolPart } from '@/lib/opencode/model';
 import { isExplorationPartDisplayReady, isShownInPlace, openChamberToolCall, renderedPage } from '@/lib/opencode/tools';
 import { isSessionNoticePart } from '@/lib/opencode/session-notices';
-import { fenceUiBlocks } from '../../uiBlocks/taggedBlocks';
+import { runningCommandParts } from '@/lib/opencode/exec-metadata';
 import { shouldHideExecFollowUp } from '../../message/unifiedExec';
 import type { ChatMessageEntry, TurnRecord } from './types';
 import { isToolRowShown, LIVE_ACTIVITY_VISIBLE_ROWS } from './activityRows';
@@ -49,8 +49,11 @@ export function hasLiveActivity(turn: TurnRecord, showReasoning: boolean): boole
 
 export type ShownPart = ToolPart | TextPart;
 
-const UI_BLOCK_FENCE = /^ {0,3}(`{3,}|~{3,})openui-lang[ \t]*$/m;
-
+/**
+ * A form or secret card that asked the user and no longer waits: answered,
+ * answered in the chat instead, or stopped. Like the question tool's card it
+ * is a step from then on, so a collapsed Activity folds it.
+ */
 export const isSettledAsk = (part: ToolPart): boolean => (
     part.state.status !== 'running' && part.state.status !== 'pending'
     && openChamberToolCall(part.tool, part.state.input)?.awaitsAnswer === true
@@ -68,7 +71,7 @@ export function getShownPages(messages: readonly ChatMessageEntry[], finalMessag
             if (part.type === 'tool') {
                 const inView = isShownInPlace(part.tool, part.state) && !isSettledAsk(part);
                 if (inView || continuesShownText(part, shown.at(-1))) shown.push(part);
-            } else if (part.type === 'text' && message !== finalMessage && UI_BLOCK_FENCE.test(fenceUiBlocks(part.text))) {
+            } else if (message !== finalMessage && isUiBlockTextPart(part)) {
                 shown.push(part);
             }
         }

@@ -1,4 +1,3 @@
-import { commitStreamedText } from '../../lib/streamTextCommit';
 import type { StreamPhase } from '../types';
 
 // external: #3277 Part finalization releases text even while the message waits on a question or permission.
@@ -17,7 +16,6 @@ export const resolveAssistantDisplayText = (input: {
     throttledTextContent: string;
     isStreaming: boolean;
 }): string => {
-    return input.isStreaming
-        ? commitStreamedText(input.throttledTextContent)
-        : input.textContent;
+    // Streamdown owns incomplete Markdown; settlement flushes the throttle.
+    return input.isStreaming ? input.throttledTextContent : input.textContent;
 };
