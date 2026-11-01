@@ -1,4 +1,5 @@
 import { isInvisibleText } from '@/lib/invisibleText';
+import { isUiBlockTextPart } from '@/lib/messages/uiBlockText';
 import { getLastConversationRecord, type TextPart, type ToolPart } from '@/lib/opencode/model';
 import { openChamberToolCall } from '@/lib/opencode/tools';
 import { isSessionNoticePart } from '@/lib/opencode/session-notices';
@@ -52,9 +53,6 @@ export function hasLiveActivity(turn: TurnRecord, showReasoning: boolean): boole
 /** Something the turn showed the user that a collapsed Activity never folds away. */
 export type ShownPart = ToolPart | TextPart;
 
-// An opening `openui-lang` fence; `openui-lang literal` is a code sample and stays text.
-const UI_BLOCK_FENCE = /^ {0,3}(`{3,}|~{3,})openui-lang[ \t]*$/m;
-
 /**
  * A form or secret card that asked the user and no longer waits: answered,
  * answered in the chat instead, or stopped. Like the question tool's card it
@@ -75,7 +73,7 @@ const isSettledAsk = (part: ToolPart): boolean => (
 export function getShownPages(messages: readonly ChatMessageEntry[], finalMessage?: ChatMessageEntry): ShownPart[] {
     return messages.flatMap((message) => message.parts.filter((part): part is ShownPart => (
         (part.type === 'tool' && isShownInPlace(part.tool, part.state) && !isSettledAsk(part))
-        || (part.type === 'text' && message !== finalMessage && UI_BLOCK_FENCE.test(part.text))
+        || (message !== finalMessage && isUiBlockTextPart(part))
     )));
 }
 

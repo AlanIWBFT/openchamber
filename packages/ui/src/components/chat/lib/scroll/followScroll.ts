@@ -1,8 +1,7 @@
 // How the chat follows a live reply, and the rules that decide it.
 //
-// The viewport trails the growing tail with one native smooth scroll after
-// another; the reply lands a block at a time (lib/streamTextCommit.ts), so
-// each landing reads as one short glide. Pure: no DOM, no React.
+// The viewport trails the growing tail with native smooth scrolling,
+// re-aiming as streamed text changes its end. Pure: no DOM, no React.
 
 // How long a just-issued follow glide counts as moving before it has moved:
 // a smooth scroll starts a frame or two after it is issued.
