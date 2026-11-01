@@ -16,6 +16,8 @@ import type {
 } from "@/lib/opencode/model"
 import { createEventPipeline } from "./event-pipeline"
 import { isVSCodeRuntime } from "@/lib/desktop"
+import { isShownInPlace } from "@/lib/opencode/tools"
+import { isUiBlockTextPart } from "@/lib/messages/uiBlockText"
 import { isSurfaceAttended } from "@/lib/surfaceAttention"
 import { isMobileSurfaceRuntime } from "@/lib/runtimeSurface"
 import { reduceGlobalEvent, applyDirectoryEvent, type SessionMaterializationReason } from "./event-reducer"
@@ -4428,13 +4430,29 @@ const hasTaskSessionIdentityChange = (previous: Part[], current: Part[] | undefi
   return previousTaskCount !== currentTaskCount
 }
 
+// LiveTailSource updates existing rows only. Cards and UI-block text need the parent snapshot
+// to publish when their membership or waiting/settled state changes, so the
+// timeline can add/remove their dedicated rows while the message stays open.
+const hasMessageStructureChange = (previous: Part[], current: Part[] | undefined): boolean => {
+  if (previous === current) return false
+  if (hasTaskSessionIdentityChange(previous, current)) return true
+  const shown = (part: Part): boolean => isUiBlockTextPart(part) || (part.type === "tool" && isShownInPlace(part.tool, part.state))
+  const before = previous.filter(shown)
+  const after = (current ?? EMPTY_PARTS).filter(shown)
+  return before.length !== after.length || before.some((part, index) => {
+    const next = after[index]
+    return part.id !== next.id || part.type !== next.type
+      || (part.type === "tool" && next.type === "tool" && part.state.status !== next.state.status)
+  })
+}
+
 const snapshotPartsMatchState = (snapshot: SessionMessageRecordsSnapshot, state: State): boolean => {
   for (const record of snapshot.list) {
     if (snapshot.suspendPartUpdates) {
       const suspendedID = snapshot.suspendedPartUpdatesMessageID
       if (
         (!suspendedID || record.info.id === suspendedID)
-        && !hasTaskSessionIdentityChange(record.parts, state.part[record.info.id])
+        && !hasMessageStructureChange(record.parts, state.part[record.info.id])
       ) {
         continue
       }
@@ -4518,7 +4536,7 @@ export function buildSessionMessageRecordsSnapshot(
     const shouldSuspendParts = suspendPartUpdates
       && previousRecord
       && (!suspendedPartUpdatesMessageID || message.id === suspendedPartUpdatesMessageID)
-      && !hasTaskSessionIdentityChange(previousRecord.parts, state.part[message.id])
+      && !hasMessageStructureChange(previousRecord.parts, state.part[message.id])
     const parts = shouldSuspendParts
       ? previousRecord.parts
       : (state.part[message.id] ?? EMPTY_PARTS)
@@ -4733,7 +4751,7 @@ export function useSessionMessageRecords(
           const previousParts = snapshot?.byId.get(messageID)?.parts
           return Boolean(
             previousParts
-            && !hasTaskSessionIdentityChange(previousParts, state.part[messageID]),
+            && !hasMessageStructureChange(previousParts, state.part[messageID]),
           )
         })
         if (allChangesSuspended) {

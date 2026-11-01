@@ -192,8 +192,7 @@ const REPLY_START_GAP_PX = 16;
 // How long after a send growth glides before the session reports working.
 const SEND_GLIDE_WINDOW_MS = 2000;
 // How long after a turn ends its growth still follows with the follow stops.
-// Covers the last block landing after the idle report (REPLY_REVEAL_INTERVAL_MS
-// is 400 ms).
+// Covers final text, layout and footer updates landing after the idle report.
 const TURN_END_GLIDE_WINDOW_MS = 1000;
 // How close to the start of the content, in viewport heights, the reader has
 // to be for the "Load older" button to show.
