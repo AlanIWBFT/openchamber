@@ -3,7 +3,9 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { OpenCode } from '@opencode/client'
 import { opencodeClient } from '@/lib/opencode/client'
-import type { Message, Session } from '@/lib/opencode/model'
+import type { Message, Part, Session } from '@/lib/opencode/model'
+import { buildTimelineRows } from '@/components/chat/lib/turns/timelineRows'
+import { projectTurnRecords } from '@/components/chat/lib/turns/projectTurnRecords'
 import {
   areModelChoicesEqual,
   extractSessionRecordModelChoice,
@@ -17,9 +19,11 @@ import {
   useLiveSessionsExcluding,
   useSessionDirectory,
   useSessionMessagesSelector,
+  useSessionMessageRecords,
   useSessionSelector,
 } from './sync-context'
 import { installHookTestDom } from '../components/session/sidebar/test-utils/testDom'
+import { markDirectorySessionPartChanged } from './child-store'
 
 // The leaf subscriptions the header, the composer's model controls and the
 // sidebar collection read through. A streamed step replaces the session record
@@ -141,6 +145,46 @@ describe('session leaf subscriptions', () => {
     restoreSpies.forEach((restore) => restore())
     window.__OPENCHAMBER_SURFACE__ = previousSurface
     dom.restore()
+  })
+
+  for (const inlineText of [false, true]) test(`a live ${inlineText ? 'UI block' : 'waiting page'} adds a timeline row through the suspended subscription without a reload`, async () => {
+    let recordRenders = 0
+    let pageKeys: string[] = []
+    const Timeline = () => {
+      store = useDirectoryStore(DIR, { bootstrap: false })
+      const records = useSessionMessageRecords(SESSION_ID, DIR, { suspendPartUpdates: true, suspendPartUpdatesForMessageId: 'msg_1' })
+      recordRenders++
+      const projection = projectTurnRecords(records, { showTurnChangedFiles: false, showReasoningTraces: false })
+      const rows = buildTimelineRows(projection.turns.map(turn => ({ kind: 'turn' as const, key: `turn:${turn.turnId}`, turn, isLastTurn: true })),
+        { collapsedActivity: true, expandedTurns: new Map(), showReasoningTraces: false }, [])
+      pageKeys = rows.filter(row => row.kind === 'turn-pages').map(row => row.key)
+      return null
+    }
+    await act(async () => root.render(<SyncProvider sdk={createSdk()} directory=""><Timeline /></SyncProvider>))
+    const text: Part = { id: 'text', sessionID: SESSION_ID, messageID: 'msg_1', type: 'text', text: 'Before page' }
+    const read: Part = { id: 'read', sessionID: SESSION_ID, messageID: 'msg_1', type: 'tool', callID: 'read', tool: 'read',
+      state: { status: 'completed', input: {}, output: 'done', metadata: {}, time: { start: 1, end: 2 } } }
+    await act(async () => store!.setState({
+      message: { [SESSION_ID]: [{ id: 'user', sessionID: SESSION_ID, role: 'user', time: { created: 1 } }, assistant('msg_1', 0)] },
+      part: { msg_1: [read, text] },
+    }))
+    const publish = async (parts: Part[]) => act(async () => {
+      markDirectorySessionPartChanged(store!, SESSION_ID, 'msg_1')
+      store!.setState({ part: { msg_1: [read, ...parts] } })
+    })
+    const before = recordRenders
+    await publish([{ ...text, text: 'Before page, more text' }])
+    expect(recordRenders).toBe(before)
+    const page: Part = { id: 'page', sessionID: SESSION_ID, messageID: 'msg_1', type: 'tool', callID: 'page', tool: 'openchamber_render',
+      state: { status: 'running', input: { request: { html: '<p>Choose</p>', awaitAnswer: true } }, time: { start: 1 } } }
+    const block = { ...text, text: text.text + '\n\n```openui-lang\nroot = Stack([' }
+    await publish(inlineText ? [block] : [text, page])
+    expect(pageKeys).toEqual([inlineText ? 'page:text' : 'page:page'])
+    const shown = recordRenders
+    await publish(inlineText ? [{ ...block, text: block.text + 'Text("Result")])\n```' }] : [{ ...text, text: 'Text keeps growing' }, page])
+    expect(recordRenders).toBe(shown)
+    await publish([text])
+    expect(pageKeys).toEqual([])
   })
 
   test('a time-only session update and a re-sent message list do not re-render', async () => {
