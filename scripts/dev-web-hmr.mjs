@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,8 +66,25 @@ function signalChild(child, signal) {
   }
 }
 
+function killWindowsProcessTree(pid) {
+  if (!pid) return;
+  try {
+    spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+  } catch {
+  }
+}
+
 async function stopChildTree(child) {
   if (!child || child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    killWindowsProcessTree(child.pid);
+    await waitForExit(child, 1000);
     return;
   }
 
@@ -89,6 +105,7 @@ async function stopChildTree(child) {
 const uiPort = process.env.OPENCHAMBER_HMR_UI_PORT || '5180';
 const backendPort = process.env.OPENCHAMBER_HMR_API_PORT || '3902';
 const hmrHost = process.env.OPENCHAMBER_HMR_HOST || '127.0.0.1';
+const viteOnly = process.env.OPENCHAMBER_HMR_VITE_ONLY === '1';
 
 function getLanAddresses() {
   const addresses = [];
@@ -117,22 +134,16 @@ function clearViteCache() {
 
 clearViteCache();
 
-const api = run(
-  'api',
-  bunExecutable,
-  [
-    'run',
-    '--cwd',
-    'packages/web',
-    'dev:server:watch',
-  ],
-  {
-    OPENCHAMBER_PORT: backendPort,
-    // Dev backends share the relay identity with the production instance; never
-    // let them capture the machine's relay host on their own.
-    OPENCHAMBER_RELAY_HOST: process.env.OPENCHAMBER_RELAY_HOST || 'off',
-  },
-);
+// Electron owns API readiness and may intentionally skip its local server.
+// Start Vite independently so remote-only development can still load the UI.
+const api = viteOnly
+  ? null
+  : run('api', bunExecutable, ['run', '--cwd', 'packages/web', 'dev:server:watch'], {
+      OPENCHAMBER_PORT: backendPort,
+      // Dev backends share the relay identity with the production instance; never
+      // let them capture the machine's relay host on their own.
+      OPENCHAMBER_RELAY_HOST: process.env.OPENCHAMBER_RELAY_HOST || 'off',
+    });
 let vite = null;
 let shuttingDown = false;
 
@@ -216,8 +227,8 @@ function onChildExit(label) {
   };
 }
 
-api.on('exit', onChildExit('api'));
-void waitForApi().then(() => {
+api?.on('exit', onChildExit('api'));
+void (viteOnly ? Promise.resolve() : waitForApi()).then(() => {
   if (!shuttingDown) startVite();
 });
 
