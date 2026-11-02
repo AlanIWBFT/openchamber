@@ -292,6 +292,14 @@ cases only, which is the honest expectation.
 there is no tool, the routes answer "disabled", sessions get no index, and the
 panel has no tab. It defaults to off, so nobody gets a store written about them
 without turning it on.
+## Availability gate
+
+Agent memory is available by default. `OPENCHAMBER_MEMORY_ENABLE` remains a
+process-level kill switch: set it to `0`, `false`, `no`, or `off` to remove the
+tool, routes, session index, settings row and panel tab together. Desktop startup
+also skips the periodic memory organizer, even if previously enabled. The user
+setting itself still defaults to off, so default availability does not enable
+memory or inject its tool by itself.
 
 Sessions get the index only while their agent has the tool
 (`isMemoryToolAvailable`): the switch is on and OpenChamber launched OpenCode.

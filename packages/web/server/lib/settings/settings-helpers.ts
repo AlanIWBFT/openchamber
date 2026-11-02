@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { createRequire } from 'node:module';
 
 import { isOverviewFeatureAvailable } from '../overview/feature-flag.js';
+import { isAgentMemoryFeatureAvailable } from '../agent-memory/feature-flag.js';
 import { isPermissionMode } from '../permission-auto-accept/modes.js';
 import type { PermissionMode } from '../permission-auto-accept/modes.js';
 import { asNonEmptyString } from '../shared/guards.js';
@@ -1557,7 +1558,7 @@ export const createSettingsHelpers = (dependencies: SettingsHelpersDependencies)
       ...sanitized,
       hasManagedRemoteTunnelToken,
       hasDesktopUiPassword,
-      agentMemoryFeatureAvailable: true,
+      agentMemoryFeatureAvailable: isAgentMemoryFeatureAvailable(),
       agentWorkflowFeatureAvailable: true,
       overviewFeatureAvailable: isOverviewFeatureAvailable(),
       routingFeatureAvailable: true,

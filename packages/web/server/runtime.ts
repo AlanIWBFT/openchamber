@@ -107,6 +107,7 @@ import { createTrackerSessionStatus } from './lib/trackers/session-status.js';
 import { sourceControlProviderDescriptors } from './lib/source-control/provider-descriptors.js';
 import { createSessionKnowledgeRuntime, measureMemoryIndex } from './lib/session-knowledge/runtime.js';
 import { createMemoryDreaming } from './lib/agent-memory/dreaming.js';
+import { isAgentMemoryFeatureAvailable } from './lib/agent-memory/feature-flag.js';
 import { isAutoModel, JEV_BACKGROUND_TIMEOUT_MS } from './lib/routing/defaults.js';
 import { createMessageSearchRuntime } from './lib/message-search/runtime.js';
 import { applyOwnedArchiveState } from './lib/opencode/proxy.js';
@@ -785,6 +786,7 @@ const agentMemoryRuntime = createAgentMemoryRuntime({
 });
 
 const isAgentMemoryEnabled = async () => {
+  if (!isAgentMemoryFeatureAvailable()) return false;
   const settings = await readSettingsFromDiskMigrated().catch(() => null);
   return settings?.agentMemoryToolEnabled === true;
 };
@@ -3135,7 +3137,7 @@ async function main(options: WebUiServerOptions = {}) {
     console.warn('[ScheduledTasks] Failed to start runtime:', (isRecord(error) && error.message) || error);
   }
   checkStartupAdmission();
-  memoryDreaming.start();
+  if (isAgentMemoryFeatureAvailable()) memoryDreaming.start();
 
   void relayService.reconcile();
 
