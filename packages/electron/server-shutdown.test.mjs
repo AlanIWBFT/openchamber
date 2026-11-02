@@ -6,6 +6,7 @@ test('waits for backend-owned children before allowing Electron to exit', async 
   let release;
   let stopped = false;
   let options;
+  const startedAt = Date.now();
   const cleanup = new Promise((resolve) => { release = resolve; });
   const stopping = stopEmbeddedServer({ stop(input) { options = input; return cleanup; } }, {
     launchFallback() { assert.fail('normal shutdown must not launch another process'); },
@@ -13,7 +14,9 @@ test('waits for backend-owned children before allowing Electron to exit', async 
   }).then(() => { stopped = true; });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(stopped, false);
-  assert.deepEqual(options, { exitProcess: false });
+  assert.equal(options.exitProcess, false);
+  assert.ok(options.deadline >= startedAt + 35_000);
+  assert.ok(options.deadline <= Date.now() + 35_000);
   release();
   await stopping;
   assert.equal(stopped, true);

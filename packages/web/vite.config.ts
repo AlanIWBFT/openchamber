@@ -39,8 +39,10 @@ const themeJsonHmrPlugin = () => ({
     }
   },
 });
+const hmrCacheScope = (process.env.OPENCHAMBER_HMR_UI_PORT || '').replace(/[^0-9A-Za-z_-]/g, '_');
 
 export default defineConfig({
+  cacheDir: hmrCacheScope ? path.resolve(__dirname, `node_modules/.vite-${hmrCacheScope}`) : undefined,
   root: path.resolve(__dirname, '.'),
   plugins: [
     // The React Compiler is most of a cold dev start; its output is kept on
@@ -92,6 +94,7 @@ export default defineConfig({
     }),
   ],
   resolve: {
+    dedupe: ['react', 'react-dom'],
     alias: [
       { find: '@openchamber/sdk/schemas', replacement: path.resolve(__dirname, '../sdk/src/schemas.ts') },
       { find: '@openchamber/sdk', replacement: path.resolve(__dirname, '../sdk/src/index.ts') },
@@ -109,7 +112,15 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },
   optimizeDeps: {
-    include: ['@opencode/client'],
+    include: [
+      '@opencode/client',
+      'react',
+      'react-dom',
+      'react-dom/client',
+      'react/jsx-dev-runtime',
+      'react/jsx-runtime',
+      'react/compiler-runtime',
+    ],
   },
   server: {
     port: 5173,
