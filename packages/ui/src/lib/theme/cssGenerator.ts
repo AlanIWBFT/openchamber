@@ -447,7 +447,7 @@ const sidebarBaseRgb = hexToRgb(theme.colors.surface.muted);
     vars.push('  --code-inline-font-weight: 400;');
     // Tool and Markdown code output can stream. Keep its used line height on
     // the pixel grid so incremental content growth cannot accumulate remainders.
-    vars.push('  --code-block-line-height: round(1.4rem, 1px);');
+    vars.push('  --code-block-line-height: round(1.5em, 1px);');
     vars.push('  --code-block-letter-spacing: 0;');
     vars.push('  --code-block-font-weight: 400;');
     vars.push('  --code-line-numbers-line-height: 1.25rem;');
