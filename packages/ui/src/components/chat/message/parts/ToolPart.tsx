@@ -752,10 +752,10 @@ const JsonToolOutput: React.FC<{
     }, []);
 
     const textOutput = jsonViewMode === 'summary' ? unwrapTextBlocks(jsonResult.data) : null;
+    const isStructuredSummary = jsonViewMode === 'summary' && textOutput === null;
 
-    return (
-        <div className="relative w-full min-w-0">
-            <div className="absolute inset-e-0 top-0 z-10 flex items-center gap-1">
+    const actions = (
+            <div className="flex items-center justify-end gap-1">
                 <Button
                     variant="ghost"
                     size="icon"
@@ -791,9 +791,14 @@ const JsonToolOutput: React.FC<{
                 </Button>
                 <CopyToolOutputButton output={renderedOutput} />
             </div>
+    );
+
+    return (
+        <div className={cn('min-w-0', isStructuredSummary && '-ms-1')}>
+            {!isStructuredSummary ? actions : null}
             {jsonViewMode === 'summary' ? (
                 textOutput !== null ? (
-                    <div className="typography-code pe-12 text-muted-foreground">
+                    <div className="typography-code text-muted-foreground">
                         <WorkerHighlightedCode
                             language="text"
                             code={textOutput}
@@ -803,7 +808,7 @@ const JsonToolOutput: React.FC<{
                         />
                     </div>
                 ) : (
-                    <JsonSummaryView data={jsonResult.data} />
+                    <JsonSummaryView data={jsonResult.data} actions={actions} />
                 )
             ) : jsonViewMode === 'formatted' ? (
                 <JsonTreeViewer
@@ -812,7 +817,7 @@ const JsonToolOutput: React.FC<{
                     maxHeight="400px"
                 />
             ) : (
-                <div className="typography-code pe-12 text-muted-foreground">
+                <div className="typography-code text-muted-foreground">
                     <WorkerHighlightedCode
                         language="json"
                         code={renderedOutput}
@@ -1663,13 +1668,13 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     );
 
     return (
-        <div className="relative space-y-2">
+        <div className="relative space-y-1">
             {isQuestionTool(part.tool) ? (
                 renderResultContent()
             ) : (
                 <>
                     {isExecute ? (
-                        <div className="space-y-2">
+                        <div className="space-y-1">
                             {executeCode ? renderScrollableBlock(
                                 <WorkerHighlightedCode
                                     language="javascript"
