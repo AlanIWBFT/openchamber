@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { createRequire } from 'node:module';
 
 import { isOverviewFeatureAvailable } from '../overview/feature-flag.js';
+import { isAgentMemoryFeatureAvailable } from '../agent-memory/feature-flag.js';
 import { isPermissionMode } from '../permission-auto-accept/modes.js';
 import { asNonEmptyString } from '../shared/guards.js';
 import { idleStopSchema } from '../spaces/idle-stop.js';
@@ -1364,7 +1365,7 @@ export const createSettingsHelpers = (dependencies) => {
       hasManagedRemoteTunnelToken,
       hasDesktopUiPassword,
       // Agent memory needs the OpenChamber server, like routing below.
-      agentMemoryFeatureAvailable: true,
+      agentMemoryFeatureAvailable: isAgentMemoryFeatureAvailable(),
       // The same for agent workflows.
       agentWorkflowFeatureAvailable: true,
       // The overview page ships dark until `OPENCHAMBER_OVERVIEW_ENABLED` is set.

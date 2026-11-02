@@ -2,6 +2,7 @@ import { appendManagedPermissions, appendManagedPlugin } from './managed-plugin-
 import { managedPermissionRules } from '../agent-tool/runtime.js';
 import { isLimitFailoverConfigured } from '../limit-failover/policy.js';
 import { materializeSessionTitlePlugin } from './session-title-plugin.js';
+import { isAgentMemoryFeatureAvailable } from '../agent-memory/feature-flag.js';
 
 export const MANAGED_CONFIG_FILE_NAME = 'opencode.managed.json';
 
@@ -96,7 +97,7 @@ export const createManagedConfigRuntime = ({
     const includeControl = settings?.agentControlToolEnabled !== false;
     const includeSchedule = settings?.agentScheduleToolEnabled !== false;
     const includeWeb = settings?.agentWebToolEnabled !== false;
-    const includeMemory = settings?.agentMemoryToolEnabled === true;
+    const includeMemory = isAgentMemoryFeatureAvailable() && settings?.agentMemoryToolEnabled === true;
     const includeKnowledge = settings?.agentKnowledgeToolEnabled !== false;
     const includeNotify = settings?.agentNotifyToolEnabled === true;
     const includeRender = settings?.agentRenderToolEnabled !== false;
