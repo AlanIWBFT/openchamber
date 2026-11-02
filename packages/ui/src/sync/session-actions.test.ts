@@ -3134,7 +3134,7 @@ describe("forkAfterMessage", () => {
             expect(objectiveRequests).toEqual([])
             expect(source.getState().session).toEqual([sourceSession, inheritedFork])
           } else {
-            expect(metadataRequest?.body).toEqual({ patch: { openchamber: {
+            expect(metadataRequest?.body).toEqual({ forkCleanup: { workTitle: null }, patch: { openchamber: {
               kind: null, btwSessionID: null, reviewSessionID: null,
               goal: { status: "paused", statusReason: "paused in fork" },
             } } })
@@ -3455,7 +3455,7 @@ describe("revertToMessage passes session directory", () => {
       messageID: "msg_2",
       directory: "/test/project",
     })
-    expect(inputState.pendingInputText).toBe("recovered text")
+    expect(inputState.pendingSessionRestores.get("session-a")).toBe("recovered text")
     expect(sessionStore.getState().part.msg_2).toBe(undefined)
     expect(replyCalls.findIndex((call) => call.method === "session.stop"))
       .toBeLessThan(replyCalls.findIndex((call) => call.method === "session.message"))
@@ -4884,7 +4884,7 @@ describe("sendRecoveredFormAnswer", () => {
     const { sendRecoveredFormAnswer, setActionRefs } = await import("./session-actions")
     setActionRefs(createChildStores([["/test/project", questionStore()]]), () => "/test/project")
 
-    await sendRecoveredFormAnswer(question, "the answer")
+    await sendRecoveredFormAnswer(question, "the answer", { q0: "the answer" })
 
     expect(sendMessageCalls).toEqual([{
       content: "the answer",
@@ -4906,7 +4906,8 @@ describe("sendRecoveredFormAnswer", () => {
       q0: { text: '', number: null, boolean: false, selected: ['Red'], custom: false, acknowledged: false },
     }
 
-    await sendRecoveredFormAnswer(question, serializeFormAnswerAsMarkdown(recoveredForm, buildFormAnswer(recoveredForm.fields, values)))
+    const answer = buildFormAnswer(recoveredForm.fields, values)
+    await sendRecoveredFormAnswer(question, serializeFormAnswerAsMarkdown(recoveredForm, answer), answer)
 
     expect(sendMessageCalls).toHaveLength(1)
     expect(sendMessageCalls[0]?.content).toContain('# Questions')
@@ -4921,7 +4922,7 @@ describe("sendRecoveredFormAnswer", () => {
       throw new Error("send failed")
     }
 
-    await expect(sendRecoveredFormAnswer(question, "the answer")).rejects.toThrow("send failed")
+    await expect(sendRecoveredFormAnswer(question, "the answer", { q0: "the answer" })).rejects.toThrow("send failed")
 
     // No tombstone: the card and the draft the surface keeps stay for a retry.
     expect(useRecoverableQuestionsStore.getState().outcomes.has("frm_recovered")).toBe(false)
@@ -4938,8 +4939,8 @@ describe("sendRecoveredFormAnswer", () => {
       await gate
     }
 
-    const first = sendRecoveredFormAnswer(question, "the answer")
-    const second = sendRecoveredFormAnswer(question, "the answer")
+    const first = sendRecoveredFormAnswer(question, "the answer", { q0: "the answer" })
+    const second = sendRecoveredFormAnswer(question, "the answer", { q0: "the answer" })
     await Promise.resolve()
     expect(sendMessageCalls).toHaveLength(1)
     release()
@@ -4954,7 +4955,7 @@ describe("sendRecoveredFormAnswer", () => {
       runtimeKey = "runtime-b"
     }
 
-    await sendRecoveredFormAnswer(question, "the answer")
+    await sendRecoveredFormAnswer(question, "the answer", { q0: "the answer" })
 
     expect(sendMessageCalls).toHaveLength(1)
     expect(useRecoverableQuestionsStore.getState().outcomes.has("frm_recovered")).toBe(false)

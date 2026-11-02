@@ -71,8 +71,8 @@ describe('buildTimelineRows', () => {
             assistant('step', [readPart, textPart('note', 'Reading')], 'tool-calls'),
             assistant('answer', [textPart('final', 'Done')], 'stop'),
         ])], summary, []);
-        expect(rows.map((row) => row.key)).toEqual(['turn:user', 'step:step', 'step:answer']);
-        expect(rows.map((row) => row.kind !== 'ungrouped' && row.gapBelow)).toEqual([false, false, true]);
+        expect(rows.map((row) => row.key)).toEqual(['turn:user', 'fold:user', 'step:step', 'step:answer']);
+        expect(rows.map((row) => row.kind !== 'ungrouped' && row.gapBelow)).toEqual([false, false, false, true]);
     });
 
     test('cuts a finished long answer into rows that name their slice', () => {
@@ -89,8 +89,8 @@ describe('buildTimelineRows', () => {
     test('cuts a step that ran dozens of calls into rows of parts, while it still runs', () => {
         const calls: Part[] = Array.from({ length: 30 }, (_, index) => ({ ...readPart, id: `read-${index}`, callID: `read-${index}` }));
         const rows = buildTimelineRows([turnEntry([assistant('step', calls)])], summary, []);
-        expect(rows.map((row) => row.key)).toEqual(['turn:user', 'step:step', 'step:step:read-24:0']);
-        expect(rows[1]?.kind === 'turn-message' && rows[1].slice).toEqual({ to: { partId: 'read-24', offset: 0 }, index: 0, count: 2 });
+        expect(rows.map((row) => row.key)).toEqual(['turn:user', 'fold:user', 'step:step', 'step:step:read-24:0']);
+        expect(rows[2]?.kind === 'turn-message' && rows[2].slice).toEqual({ to: { partId: 'read-24', offset: 0 }, index: 0, count: 2 });
     });
 
     test('keeps an answer still being written in one row', () => {

@@ -42,6 +42,22 @@ export function getLiveFinalMessage(messages: readonly ChatMessageEntry[], hasLa
         ? last : undefined;
 }
 
+/** Keep an intermediate answer's non-text work in sequence when a later prompt retires the turn. */
+export function projectFoldMessages(turn: TurnRecord, finalMessageId: string | undefined) {
+    const source = finalMessageId ? turn.assistantMessages.find((message) => message.info.id === finalMessageId) : undefined;
+    if (!source) return { finalMessage: undefined, activityMessages: turn.assistantMessages };
+    const intermediate = source !== getLiveFinalMessage(turn.assistantMessages);
+    return {
+        finalMessage: intermediate ? { ...source, parts: source.parts.filter((part) => part.type === 'text') } : source,
+        activityMessages: turn.assistantMessages.flatMap((message) => {
+            if (message !== source) return [message];
+            if (!intermediate) return [];
+            const parts = message.parts.filter((part) => part.type !== 'text');
+            return parts.length ? [{ ...message, parts }] : [];
+        }),
+    };
+}
+
 /** A notice alone stays above the answer; tool calls and reasoning form Activity. */
 export function hasLiveActivity(turn: TurnRecord, showReasoning: boolean): boolean {
     return turn.activityParts.some((activity) => (
@@ -118,11 +134,12 @@ export function getRunningCommandMessages(messages: readonly ChatMessageEntry[],
 
 /** Select seven native rows of a running turn, keeping Exploration whole and pinning the latest prose separately. */
 export function projectLiveActivityPreview(turn: TurnRecord, showReasoning: boolean) {
+    const shownIds = new Set(getShownPages(turn.assistantMessages).map((part) => part.id));
     let pinnedText: { message: ChatMessageEntry; part: Extract<ChatMessageEntry['parts'][number], { type: 'text' }> } | undefined;
     for (const message of turn.assistantMessages) {
         if (message.info.role !== 'assistant') continue;
         for (const part of message.parts) {
-            if (part.type === 'text' && !isInvisibleText(part.text)) pinnedText = { message, part };
+            if (part.type === 'text' && !isInvisibleText(part.text) && !shownIds.has(part.id)) pinnedText = { message, part };
         }
     }
 
@@ -140,13 +157,13 @@ export function projectLiveActivityPreview(turn: TurnRecord, showReasoning: bool
     const rowIds: string[] = [];
     for (const message of turn.assistantMessages) {
         for (const part of message.parts) {
+            if (shownIds.has(part.id)) continue;
             if (part.type === 'text') {
                 if (part === pinnedText?.part || isInvisibleText(part.text)) continue;
             } else if (part.type === 'reasoning') {
                 if (!showReasoning || !part.text.trim()) continue;
             } else if (part.type === 'tool') {
                 if (shouldHideExecFollowUp(part)) continue;
-                if (isShownInPlace(part.tool, part.state)) continue;
                 const anchor = explorationAnchors.get(part.id);
                 if (anchor) {
                     if (anchor !== part.id || !visibleExplorations.has(anchor)) continue;

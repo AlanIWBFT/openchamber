@@ -57,7 +57,7 @@ test('the pull request diff on a host without change-request diffs says so and o
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
     paths.push(url.pathname);
     if (url.pathname === '/api/source-control/binding') return Response.json(BINDING);
-    if (url.pathname === '/api/git/status') return Response.json(STATUS);
+    if (url.pathname === '/api/git/status' || url.pathname === '/api/git/status/passive') return Response.json(STATUS);
     if (url.pathname === '/api/git/projects') return Response.json({ projects: [{ directory: '/repo', isGitRepository: true, status: STATUS }] });
     if (url.pathname === '/api/source-control/github/pulls/list') {
       return Response.json({ items: [PR], page: 1, hasMore: false } satisfies PageResult<ChangeRequest>);

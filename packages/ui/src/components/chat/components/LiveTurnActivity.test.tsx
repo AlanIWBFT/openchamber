@@ -20,8 +20,9 @@ import { projectTurnRecords } from '../lib/turns/projectTurnRecords';
 import type { ChatMessageEntry, TurnChangedFile, TurnRecord } from '../lib/turns/types';
 import { TurnFold, TurnPagesRow } from './LiveTurnActivity';
 import { useTurnFoldContexts } from './useTurnFold';
-import { LiveFinalActivityContext, LiveTurnHoistedPagesContext } from './liveActivityContext';
+import { LiveFinalActivityContext, LiveTurnHoistedCommandsContext, LiveTurnHoistedPagesContext } from './liveActivityContext';
 import { buildTimelineRows } from '../lib/turns/timelineRows';
+import { getRunningCommandMessages, projectFoldMessages, splitLiveActivityAtPages } from '../lib/turns/liveActivity';
 import { MessageSliceContext } from '../message/messageSliceContext';
 import { useWorkflowRunsStore } from '@/lib/workflows/store';
 import type { WorkflowRun } from '@/lib/workflows/model';
@@ -98,44 +99,54 @@ function turn(messages: ChatMessageEntry[]): TurnRecord {
 }
 
 // The rows a turn under a fold becomes in the list, drawn the way MessageList draws them.
-function TurnRows({ record, retired, expanded, onToggle, renderMessage }: {
+function TurnRows({ record, retired, expansion, defaultExpanded, isWorking, onToggle, renderMessage }: {
     record: TurnRecord;
     retired: boolean;
-    expanded: boolean;
-    onToggle: () => void;
+    expansion: ReadonlyMap<string, boolean>;
+    defaultExpanded: boolean;
+    isWorking: boolean;
+    onToggle: (id: string) => void;
     renderMessage: (message: ChatMessageEntry) => React.ReactNode;
 }) {
-    const rows = buildTimelineRows([{ kind: 'turn', key: 'turn', turn: record, isLastTurn: true, hasLaterAssistant: retired }], {
-        collapsedActivity: true, expandedTurns: new Map([[record.turnId, expanded]]), showReasoningTraces: true,
+    const rows = buildTimelineRows([{ kind: 'turn', key: 'turn', turn: record, isLastTurn: !retired, hasLaterAssistant: retired }], {
+        collapsedActivity: !defaultExpanded, expandedTurns: expansion, showReasoningTraces: true,
     }, []);
     const finalMessageId = rows.find((row) => row.kind === 'turn-fold')?.finalMessageId;
+    const expanded = expansion.get(record.turnId) ?? defaultExpanded;
+    const commands = !expanded && finalMessageId ? new Set(getRunningCommandMessages(record.assistantMessages).flatMap((message) => message.parts.map((part) => part.id))) : null;
     const { hoistedPages, finalContext } = useTurnFoldContexts(record, retired, expanded, finalMessageId);
     return <LiveTurnHoistedPagesContext.Provider value={hoistedPages}>
         {rows.map((row) => {
+            if (row.kind === 'ungrouped') return null;
+            const segment = row.segmentId ? splitLiveActivityAtPages(record).find((item) => item.id === row.segmentId) : undefined;
+            const foldTurn = segment ? { ...record, turnId: segment.id, assistantMessages: segment.messages } : record;
+            const projected = projectFoldMessages(foldTurn, row.finalMessageId);
             if (row.kind === 'turn-fold') {
-                return <TurnFold key={row.key} turn={record} hasLaterAssistant={retired} expanded={expanded}
-                    finalMessageId={row.finalMessageId} onToggle={onToggle} renderMessage={renderMessage} />;
+                return <TurnFold key={row.key} turn={foldTurn} hasLaterAssistant={retired} expanded={row.expanded} isWorking={isWorking && !retired}
+                    finalMessageId={row.finalMessageId} onToggle={() => onToggle(row.foldId)} renderMessage={renderMessage} />;
             }
-            if (row.kind === 'turn-pages') return <TurnPagesRow key={row.key} turn={record} />;
+            if (row.kind === 'turn-pages') return <TurnPagesRow key={row.key} turn={record} pageId={row.pageId} />;
             if (row.kind !== 'turn-message') return null;
-            const message = record.assistantMessages.find((candidate) => candidate.info.id === row.messageId);
+            const message = row.final ? projected.finalMessage : projected.activityMessages.find((candidate) => candidate.info.id === row.messageId);
             if (!message) return null;
             return <MessageSliceContext.Provider key={row.key} value={row.slice}>
-                {row.final ? <LiveFinalActivityContext.Provider value={finalContext}>{renderMessage(message)}</LiveFinalActivityContext.Provider> : renderMessage(message)}
+                {row.final ? <LiveFinalActivityContext.Provider value={finalContext}><LiveTurnHoistedCommandsContext.Provider value={commands}>{renderMessage(message)}</LiveTurnHoistedCommandsContext.Provider></LiveFinalActivityContext.Provider> : renderMessage(message)}
             </MessageSliceContext.Provider>;
         })}
     </LiveTurnHoistedPagesContext.Provider>;
 }
 
-function Harness({ record, retired = false, changedFiles, isLatestTurn = true, onCopyMessage, onCopyTurn }: {
+function Harness({ record, retired = false, isWorking = true, defaultExpanded = false, changedFiles, isLatestTurn = true, onCopyMessage, onCopyTurn }: {
     record: TurnRecord;
     retired?: boolean;
+    isWorking?: boolean;
+    defaultExpanded?: boolean;
     changedFiles?: TurnChangedFile[];
     isLatestTurn?: boolean;
     onCopyMessage?: (messageId: string) => boolean;
     onCopyTurn?: () => Promise<boolean>;
 }) {
-    const [expanded, setExpanded] = React.useState(false);
+    const [expansion, setExpansion] = React.useState<ReadonlyMap<string, boolean>>(new Map());
     const renderMessage = (message: ChatMessageEntry) => (
         <div key={message.info.id} data-fixture-message={message.info.id}>
             <MessageBody
@@ -159,8 +170,8 @@ function Harness({ record, retired = false, changedFiles, isLatestTurn = true, o
         <ThemeSystemContext.Provider value={themeContext}>
             <SyncProvider sdk={sdk} directory="/project">
                 <I18nProvider>
-                    <TurnRows record={record} retired={retired} expanded={expanded}
-                        onToggle={() => setExpanded((value) => !value)} renderMessage={renderMessage} />
+                    <TurnRows record={record} retired={retired} expansion={expansion} defaultExpanded={defaultExpanded} isWorking={isWorking}
+                        onToggle={(id) => setExpansion((value) => new Map(value).set(id, !(value.get(id) ?? defaultExpanded)))} renderMessage={renderMessage} />
                 </I18nProvider>
             </SyncProvider>
         </ThemeSystemContext.Provider>
@@ -319,6 +330,49 @@ describe('live Activity with the real message body', () => {
         geometry.mockRestore();
     });
 
+    test('the real timeline keeps live-only prose when a follow-up prompt retires its turn', async () => {
+        const geometry = spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+            return new window.DOMRect(0, 0, 720, 600);
+        });
+        const { default: MessageList } = await import('../MessageList');
+        const liveSdk = OpenCode.make({ baseUrl: 'http://steering.test', fetch: () => new Promise<Response>(() => {}) });
+        useUIStore.setState({ activityRenderMode: 'collapsed' });
+        const step = assistant('progress', []);
+        const record = turn([step]);
+        const original = [record.userMessage, step];
+        let messages = original;
+        const draw = () => <RuntimeAPIContext.Provider value={runtimeApis}>
+            <ThemeSystemContext.Provider value={themeContext}>
+                <SyncProvider sdk={liveSdk} directory="/project">
+                    <I18nProvider>
+                        <ChatColumnSessionContext.Provider value={{ sessionId: 'session', directory: '/project' }}>
+                            <MessageList sessionKey="session" directory="/project" messages={messages}
+                                sessionIsWorking activeStreamingMessageId="progress" activeStreamingPhase="streaming" isLoadingOlder={false} />
+                        </ChatColumnSessionContext.Provider>
+                    </I18nProvider>
+                </SyncProvider>
+            </ThemeSystemContext.Provider>
+        </RuntimeAPIContext.Provider>;
+        await act(async () => root.render(draw()));
+        const store = getSyncChildStores().getChild('/project');
+        if (!store) throw new Error('Expected mounted directory store');
+        const parts: Part[] = [text('progress-text', 'Still working'), { ...readPart, state: { status: 'running', input: { filePath: '/project/source.ts' }, time: { start: 3 } } }];
+        await act(async () => store.setState({ part: { progress: parts } }));
+        expect(container.textContent).toContain('Still working');
+        messages = [...original, {
+            info: { id: 'follow-up', sessionID: 'session', role: 'user', time: { created: 4 } },
+            parts: [text('follow-up-text', 'Steer the work')],
+        }];
+        await act(async () => root.render(draw()));
+        expect(container.textContent).toContain('Steer the work');
+        expect(container.textContent?.split('Still working')).toHaveLength(2);
+        expect(container.querySelector('[data-pinned-activity-text]')).toBeNull();
+        messages = original;
+        await act(async () => root.render(draw()));
+        expect(container.textContent?.split('Still working')).toHaveLength(2);
+        geometry.mockRestore();
+    });
+
     test('the panel declines through the same endpoint and holds both approval buttons during the request', async () => {
         useUIStore.setState({ agentWorkflowFeatureAvailable: true, agentWorkflowToolEnabled: true });
         useSessionUIStore.setState({ currentSessionId: 'session' });
@@ -411,13 +465,97 @@ describe('live Activity with the real message body', () => {
             },
         };
         const record = turn([assistant('progress', [text('progress-text', 'Still working'), readPart, page], 'tool-calls')]);
-        await act(async () => root.render(<Harness record={record} retired />));
+        await act(async () => root.render(<Harness record={record} isWorking={false} />));
         // The steps fold away; the page stays below the fold, drawn once.
         expect(container.textContent).not.toContain('Still working');
         expect([...container.querySelectorAll('iframe')].map((frame) => frame.getAttribute('title'))).toEqual(['Drawn page']);
         await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
         expect(container.textContent).toContain('Still working');
         expect(container.querySelectorAll('iframe')).toHaveLength(1);
+    });
+
+    test('keeps seven activity rows plus the latest prose, then fully folds when stopped', async () => {
+        const messages = [assistant('tools', [readPart], 'tool-calls'),
+            ...Array.from({ length: 10 }, (_, index) => assistant(`note-${index}`, [text(`text-${index}`, `Progress note ${index}.`)], 'tool-calls'))];
+        const record = turn(messages);
+        await act(async () => root.render(<Harness record={record} />));
+        expect(container.querySelectorAll('[data-fixture-message]')).toHaveLength(7);
+        expect(container.textContent).not.toContain('Progress note 1.');
+        expect(container.textContent).toContain('Progress note 2.');
+        expect(container.querySelector('[data-pinned-activity-text="text-9"]')?.textContent).toContain('Progress note 9.');
+        await act(async () => root.render(<Harness record={record} isWorking={false} />));
+        expect(container.querySelectorAll('[data-fixture-message]')).toHaveLength(0);
+        expect(container.querySelector('[data-pinned-activity-text]')).toBeNull();
+    });
+
+    test('hoists only hidden running commands, then keeps all of them visible after the turn stops', async () => {
+        const record = (running: boolean, final = false) => turn([
+            assistant('progress', Array.from({ length: 10 }, (_, index): Part => ({
+                type: 'tool', tool: 'exec_command', id: `live-${index}`, callID: `live-${index}`, sessionID: 'session', messageID: 'progress',
+                state: { status: 'completed', input: { cmd: `command-${index};` }, output: '',
+                    metadata: { processRunning: running, execDisplay: 'root' }, time: { start: 1, end: 2 } },
+            })), 'tool-calls'),
+            ...(final ? [assistant('final', [text('answer', 'Finished answer')], 'stop')] : []),
+        ]);
+        await act(async () => root.render(<Harness record={record(true)} />));
+        const pinned = () => container.querySelector('[data-live-activity-running-commands]');
+        for (let index = 0; index < 10; index++) {
+            expect(container.textContent?.split(`command-${index};`)).toHaveLength(2);
+            if (index < 3) expect(pinned()?.textContent).toContain(`command-${index};`);
+            else expect(pinned()?.textContent).not.toContain(`command-${index};`);
+        }
+        expect(container.querySelector('[data-live-activity-more]')).toBeNull();
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        expect(pinned()).toBeNull();
+        for (let index = 0; index < 10; index++) expect(container.textContent?.split(`command-${index};`)).toHaveLength(2);
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        await act(async () => root.render(<Harness record={record(true, true)} isWorking={false} />));
+        for (let index = 0; index < 10; index++) expect(pinned()?.textContent).toContain(`command-${index};`);
+        expect(container.textContent).toContain('Finished answer');
+        await act(async () => root.render(<Harness record={record(false, true)} isWorking={false} />));
+        expect(pinned()).toBeNull();
+        expect(container.textContent).not.toContain('command-0;');
+    });
+
+    test('a hidden Script command remains visible after completion until its process exits', async () => {
+        const record = (running: boolean, final = false) => turn([
+            assistant('progress', [{
+                type: 'tool', tool: 'execute', id: 'script', callID: 'script', sessionID: 'session', messageID: 'progress',
+                state: { status: 'completed', input: { code: 'return await tools.exec_command(input)' }, output: '',
+                    metadata: { toolCalls: [{ id: 'child', name: 'exec_command', tool: 'functions.exec_command', status: 'completed',
+                        input: { cmd: 'long-running-command' }, metadata: { processRunning: running, execDisplay: 'root' }, time: { start: 1, end: 2 } }] },
+                    time: { start: 1, end: 2 } },
+            }, ...Array.from({ length: 7 }, (_, index): Part => ({ ...readPart, id: `pad-${index}`, tool: 'exec_command', callID: `pad-${index}` }))], 'tool-calls'),
+            ...(final ? [assistant('final', [text('answer', 'Done')], 'stop')] : []),
+        ]);
+        const pinned = () => container.querySelector('[data-live-activity-running-commands]');
+        await act(async () => root.render(<Harness record={record(true)} />));
+        expect(pinned()?.textContent).toContain('long-running-command');
+        expect(container.textContent?.split('long-running-command')).toHaveLength(2);
+        await act(async () => root.render(<Harness record={record(true, true)} isWorking={false} />));
+        expect(pinned()?.textContent).toContain('long-running-command');
+        expect(container.textContent?.split('long-running-command')).toHaveLength(2);
+        await act(async () => root.render(<Harness record={record(false, true)} isWorking={false} />));
+        expect(pinned()).toBeNull();
+    });
+
+    test('keeps separate folds at page boundaries even within one message and with expanded defaults', async () => {
+        const page = (id: string): Part => ({
+            type: 'tool', tool: 'openchamber_render', id, callID: id, sessionID: 'session', messageID: 'progress',
+            state: { status: 'completed', input: { action: 'render.page', html: '<p>chart</p>', title: id },
+                output: '{}', metadata: { openchamber: { ok: true } }, time: { start: 1, end: 2 } },
+        });
+        const record = turn([assistant('progress', [readPart, text('before', 'Before first page'), page('first'),
+            text('between', 'Between pages'), page('second'), text('after', 'After second page')], 'tool-calls')]);
+        await act(async () => root.render(<Harness record={record} defaultExpanded isWorking={false} />));
+        const folds = container.querySelectorAll<HTMLButtonElement>('[data-live-turn-activity] button[aria-controls]');
+        expect(folds).toHaveLength(3);
+        expect([...folds].every((button) => button.getAttribute('aria-expanded') === 'true')).toBe(true);
+        await act(async () => folds[1].click());
+        expect(container.textContent).toContain('Before first page');
+        expect(container.textContent).not.toContain('Between pages');
+        expect(container.textContent).toContain('After second page');
+        expect([...container.querySelectorAll('iframe')].map((frame) => frame.title)).toEqual(['first', 'second']);
     });
 
     test('draws what the agent does after a page below it while the turn works', async () => {
@@ -450,7 +588,7 @@ describe('live Activity with the real message body', () => {
             },
         };
         const record = turn([assistant('progress', [text('progress-text', 'Asking'), readPart, page], 'tool-calls')]);
-        await act(async () => root.render(<Harness record={record} retired />));
+        await act(async () => root.render(<Harness record={record} isWorking={false} />));
         expect(container.textContent).not.toContain('Asking');
         expect([...container.querySelectorAll('iframe')].map((frame) => frame.getAttribute('title'))).toEqual(['Pick a layout']);
         expect(container.querySelector('[data-html-render-status="waiting"]')).not.toBeNull();
@@ -490,11 +628,23 @@ describe('live Activity with the real message body', () => {
         await act(async () => root.render(<Harness record={record} />));
         expect(container.textContent).toContain('Still working');
         expect(container.textContent).toContain('Activity');
-        await act(async () => root.render(<Harness record={record} retired />));
+        await act(async () => root.render(<Harness record={record} isWorking={false} />));
         expect(container.textContent).not.toContain('Still working');
         expect(container.textContent).toContain('Activity');
         await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
         expect(container.textContent).toContain('Still working');
+    });
+
+    test('a later prompt preserves the latest prose while keeping its tools before later steps', async () => {
+        const record = turn([assistant('progress', [readPart, text('latest', 'Latest explanation')], 'tool-calls'),
+            assistant('later-tools', [{ ...readPart, id: 'later-read', callID: 'later-read' }], 'tool-calls')]);
+        await act(async () => root.render(<Harness record={record} retired />));
+        expect(container.textContent).toContain('Latest explanation');
+        expect(container.querySelectorAll('[data-fixture-message="progress"]')).toHaveLength(1);
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-controls]')?.click());
+        expect([...container.querySelectorAll('[data-fixture-message]')].map((element) => element.getAttribute('data-fixture-message')))
+            .toEqual(['progress', 'later-tools', 'progress']);
+        expect(container.textContent?.match(/Latest explanation/g)).toHaveLength(1);
     });
 
     test('the answer copies the whole turn while each earlier step copies only itself', async () => {

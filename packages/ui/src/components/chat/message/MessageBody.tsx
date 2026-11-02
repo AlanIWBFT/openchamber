@@ -64,7 +64,7 @@ import { ShownPartCard, ShownToolCard } from './parts/ShownToolCard';
 import { isShownInPlace } from '@/lib/opencode/tools';
 import { LiveActivityCollapse } from '../components/LiveActivityCollapse';
 import { dispatchRowExpand } from '../lib/scroll/timelineScrollIntent';
-import { ActivityRowSkipContext, isActivityRowPart, isToolRowShown } from '../lib/turns/activityRows';
+import { isToolRowShown } from '../lib/turns/activityRows';
 import { MessageSliceContext } from './messageSliceContext';
 import { LiveFinalActivityContext, LiveTurnHoistedCommandsContext, LiveTurnHoistedPagesContext } from '../components/liveActivityContext';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -1341,7 +1341,6 @@ const AssistantMessageBody = React.memo(({
     const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
     const vscodeApi = useRuntimeAPIs().vscode;
     const liveFinalActivity = React.useContext(LiveFinalActivityContext);
-    const activityRowSkip = React.useContext(ActivityRowSkipContext);
     const hoistedPages = React.useContext(LiveTurnHoistedPagesContext);
     // A long answer spans several rows; each draws its slice of the message,
     // the first one what comes before the answer, the last one what follows.
@@ -1743,9 +1742,6 @@ const AssistantMessageBody = React.memo(({
         // Group consecutive static tools (read, grep, glob, etc.) into compact rows.
         // Expandable tools (bash, edit, task) get individual rows.
         // Text renders inline at its natural position.
-        // A working turn with Activity collapsed shows only its latest rows;
-        // the first rows of the message it cuts into are left out here.
-        let rowsToSkip = activityRowSkip?.messageId === messageId ? activityRowSkip.rows : 0;
         // A slice starts at a part or inside a text, and ends at or inside
         // another (or the same) one; the parts outside it are other rows'.
         let sliceStarted = !slice?.from;
@@ -1762,11 +1758,6 @@ const AssistantMessageBody = React.memo(({
             }
             // The next row starts at this part, or inside the one just drawn.
             if (slice?.to && (slice.to.offset === 0 ? part.id === slice.to.partId : visibleParts[i - 1]?.id === slice.to.partId)) break;
-            if (rowsToSkip > 0 && (activityRowSkip?.partIds ? activityRowSkip.partIds.has(part.id) : isActivityRowPart(part))) {
-                rowsToSkip -= 1;
-                i += 1;
-                continue;
-            }
             rendered = splitLiveActivity && part.type !== 'text' ? activityRendered : answerRendered;
 
             if (part.type === 'text') {
@@ -1961,7 +1952,6 @@ const AssistantMessageBody = React.memo(({
         }
         return answerRendered;
     }, [
-        activityRowSkip,
         alwaysShowMessageActions,
         hoistedPages,
         hoistedCommands,

@@ -122,30 +122,26 @@ describe('session archive', () => {
   it('reports a backend refusal without moving the session or creating an archive overlay', async () => {
     const store = makeStore();
     const announce = vi.fn();
-    const openCode = fakeOpenCode({ places: { ses_wt: { directory: '/repo-wt', projectID: 'proj' } }, deleted: ['/repo-wt'] });
+    const openCode = fakeOpenCode({ failures: { ses_wt: 'Unavailable' } });
     const archive = createSessionArchive({ store, openCode, announce });
 
     await expect(archive.archive(['ses_wt'])).resolves.toEqual({ archived: [], failedIds: ['ses_wt'] });
     expect(announce).not.toHaveBeenCalled();
-    expect(openCode.move).not.toHaveBeenCalled();
+    expect(openCode.log).toEqual([]);
     await expect(store.getAll()).resolves.toEqual({});
   });
 
   it('restores by ID without reading or changing session placement', async () => {
     const store = makeStore({ ses_wt: 500, ses_orphan: 600 });
     const announce = vi.fn();
-    const openCode = fakeOpenCode({
-      places: { ses_wt: { directory: '/repo-wt', projectID: 'proj' }, ses_orphan: { directory: '/gone', projectID: 'gone_proj' } },
-    });
+    const openCode = fakeOpenCode();
     const archive = createSessionArchive({ store, openCode, announce });
 
     await expect(archive.unarchive(['ses_wt', 'ses_orphan'])).resolves.toEqual({
       restored: [{ id: 'ses_wt', archivedAt: null }, { id: 'ses_orphan', archivedAt: null }],
       failedIds: [],
     });
-    expect(openCode.move).not.toHaveBeenCalled();
-    expect(openCode.readPlace).not.toHaveBeenCalled();
-    expect(openCode.log).toContainEqual(['set', 'ses_wt', false]);
+    expect(openCode.log).toEqual([['set', 'ses_wt', false], ['set', 'ses_orphan', false]]);
     await expect(store.getAll()).resolves.toEqual({});
     expect(announce).not.toHaveBeenCalled();
   });
@@ -153,12 +149,7 @@ describe('session archive', () => {
   it('migrates legacy flags without loading locations and retains failed entries', async () => {
     const store = makeStore({ ses_live: 100, ses_restored: null, ses_closed: 200, ses_wt: 300, ses_missing: 400, ses_flaky: 500 });
     const openCode = fakeOpenCode({
-      places: {
-        ses_closed: { directory: '/closed', projectID: 'proj' },
-        ses_wt: { directory: '/repo-wt', projectID: 'proj' },
-      },
       failures: { ses_missing: 'SessionNotFoundError', ses_flaky: 'UnknownError' },
-      loaded: ['/live'],
     });
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const archive = createSessionArchive({ store, openCode });
@@ -171,9 +162,6 @@ describe('session archive', () => {
       ['set', 'ses_closed', true],
       ['set', 'ses_wt', true],
     ]));
-    expect(openCode.unload).not.toHaveBeenCalled();
-    expect(openCode.listLoadedDirectories).not.toHaveBeenCalled();
-    expect(openCode.readPlace).not.toHaveBeenCalled();
     await expect(store.getAll()).resolves.toEqual({ ses_flaky: 500 });
   });
 

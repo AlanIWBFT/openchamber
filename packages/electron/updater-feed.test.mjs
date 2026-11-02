@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  CANARY_UPDATER_FEED,
   PRODUCTION_UPDATER_FEED,
   isCanaryVersion,
   isUpdateChannel,
@@ -25,20 +24,19 @@ test('production updater feed is immutable GitHub configuration', () => {
   });
 });
 
-test('the Canary channel reads the canary pre-release; on a release build every other stored value is Stable', () => {
-  assert.equal(resolveUpdaterFeed({ channel: 'canary' }), CANARY_UPDATER_FEED);
-  assert.equal(CANARY_UPDATER_FEED.url, 'https://github.com/openchamber/openchamber/releases/download/canary/');
+test('legacy Canary selections always resolve to fork Stable', () => {
+  assert.equal(resolveUpdaterFeed({ channel: 'canary' }), PRODUCTION_UPDATER_FEED);
   assert.equal(resolveUpdaterFeed({ channel: 'stable' }), PRODUCTION_UPDATER_FEED);
-  assert.equal(normalizeUpdateChannel('canary', '2.6.1'), 'canary');
-  for (const value of ['stable', undefined, null, 'beta', 'Canary', 1]) assert.equal(normalizeUpdateChannel(value, '2.6.1'), 'stable');
+  assert.equal(normalizeUpdateChannel('canary'), 'stable');
+  for (const value of ['stable', undefined, null, 'beta', 'Canary', 1]) assert.equal(normalizeUpdateChannel(value), 'stable');
   assert.deepEqual(['stable', 'canary', 'beta', undefined].map(isUpdateChannel), [true, true, false, false]);
   // The loopback feed wins on either channel.
   assert.equal(resolveUpdaterFeed({ environment: overrideEnvironment, testBuild: true, channel: 'canary' }).url, overrideEnvironment.OPENCHAMBER_UPDATER_E2E_URL);
 });
 
-test('a Canary build nobody picked a channel for stays on Canary; a stored pick wins', () => {
+test('a Canary build without a channel pick still follows fork Stable', () => {
   const canaryBuild = '2.6.2-canary.20261105.7';
-  for (const value of [undefined, null, 'beta']) assert.equal(normalizeUpdateChannel(value, canaryBuild), 'canary');
+  for (const value of [undefined, null, 'beta']) assert.equal(normalizeUpdateChannel(value, canaryBuild), 'stable');
   assert.equal(normalizeUpdateChannel('stable', canaryBuild), 'stable');
 });
 

@@ -83,6 +83,7 @@ let sendCalls: Array<{
   model: ModelSelection | undefined
   text: string
   context: string[]
+  metadata: Parameters<typeof opencodeClient.sendMessage>[0]["metadata"]
   pendingAtSend: PendingDraftSend | undefined
   statusAtSend: SessionStatus | undefined
 }> = []
@@ -110,16 +111,20 @@ test("a recovered answer uses the real send path without consuming the main comp
   resetRecoverableQuestions()
   try {
     await sendRecoveredFormAnswer({
-      form: { id: "frm_question", sessionID: session.id, title: "Question", fields: [{ key: "q0", type: "string" }] },
+      form: { id: "frm_question", sessionID: session.id, title: "Question", fields: [{ key: "q0", type: "string" }],
+        metadata: { kind: "question", tool: { messageID: "msg_question", id: "tool_question" } } },
       directory: DIRECTORY,
       sessionID: session.id,
       toolMessageID: "msg_question",
       evidence: "tool-interrupted",
-    }, "the recovered answer")
+    }, "the recovered answer", { q0: "the recovered answer" })
 
     expect(sendCalls).toHaveLength(1)
     expect(sendCalls[0]?.id).toBe(session.id)
     expect(sendCalls[0]?.text).toBe("the recovered answer")
+    expect(sendCalls[0]?.metadata).toMatchObject({ openchamberRecoveredQuestionAnswer: {
+      messageId: "msg_question", toolId: "tool_question", answers: [["the recovered answer"]],
+    } })
     expect(useSessionGoalArmStore.getState().armed).toBe(true)
     expect(useSessionGoalArmStore.getState().objectiveOverride).toBe("main composer objective")
   } finally {
@@ -204,6 +209,7 @@ beforeEach(() => {
       id: params.id,
       model: params.model,
       text: params.text,
+      metadata: params.metadata,
       context: (params.context ?? []).map((item) => item.text),
       pendingAtSend: useSessionUIStore.getState().pendingDraftSends.get(params.id),
       statusAtSend: childStores.getChild(DIRECTORY)?.getState().session_status[params.id],

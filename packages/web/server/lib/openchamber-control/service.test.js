@@ -1149,6 +1149,25 @@ describe('OpenChamber control service', () => {
     expect(sessionService.fork).not.toHaveBeenCalled();
   });
 
+  it('reads inline UI submissions without treating skipped decisions or synthetic prompts as consent', async () => {
+    const { service, client, sessionService } = createService();
+    const answer = { picks: [{ button: 'Keep', value: 'feature', note: 'Only for this project' }], values: { targets: ['web', 'desktop'] }, skipped: ['migration'] };
+    client.message.list.mockResolvedValue({ data: [
+      { id: 'ordinary', type: 'synthetic', seq: 1, time: { created: 1 }, text: 'Continue working' },
+      { id: 'reply', type: 'synthetic', seq: 2, time: { created: 2 }, metadata: { openchamberUiBlockAnswer: { messageId: 'source', block: 'layout', answer } } },
+      { id: 'malformed', type: 'synthetic', seq: 3, time: { created: 3 }, metadata: { openchamberUiBlockAnswer: { answer } } },
+    ] });
+    const result = await service.execute('session.messages', { sessionId: 'ses_1', directory: '/repo', role: 'user', all: true });
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0]).toMatchObject({ id: 'page-answer:reply:layout', role: 'user', createdAt: 2 });
+    expect(result.messages[0].text).toContain(JSON.stringify(answer));
+    expect(result.messages[0].text).toContain('skipped items are not approval');
+    expect((await service.execute('session.messages', { sessionId: 'ses_1', directory: '/repo', role: 'assistant', all: true })).messages).toEqual([]);
+    await expect(service.execute('session.fork', { sessionId: 'ses_1', directory: '/repo', messageId: result.messages[0].id }))
+      .rejects.toThrow('page-answer IDs are synthetic');
+    expect(sessionService.fork).not.toHaveBeenCalled();
+  });
+
   it.each([true, false])('pages past filtered records and preserves durable order (all=%s)', async (all) => {
     const { service, client } = createService();
     client.message.list

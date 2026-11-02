@@ -20,6 +20,14 @@ const MAX_WAIT_TIMEOUT_SECONDS = 86_400;
 const WAIT_POLL_INTERVAL_MS = 500;
 const questionAnswersSchema = z.array(z.array(z.string()));
 const pageReplySchema = z.object({ ok: z.literal(true), action: z.literal('render.page'), title: z.string().optional(), answer: z.object({ answered: z.literal(true), summary: z.string(), data: z.json() }) });
+const uiBlockReplySchema = z.object({
+  messageId: z.string(), block: z.string(),
+  answer: z.object({
+    picks: z.array(z.object({ button: z.string().optional(), value: z.string().optional(), note: z.string().optional() })),
+    values: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
+    skipped: z.array(z.string()),
+  }),
+});
 // One service, both capabilities: which tool asked is the caller's concern.
 const CONTROL_ACTIONS = new Set(OPENCHAMBER_ALL_ACTIONS);
 // models.search ranks a favorite 2 and a recent model 1.
@@ -64,6 +72,14 @@ const projectSessionMessages = (messages, role = 'all') => {
   const result = [];
   for (const record of [...messages].sort((left, right) => left.seq - right.seq)) {
     const messageRole = record.type;
+    if (messageRole === 'synthetic' && (role === 'all' || role === 'user')) {
+      const reply = uiBlockReplySchema.safeParse(record.metadata?.openchamberUiBlockAnswer);
+      if (reply.success) result.push({
+        id: `page-answer:${record.id}:${reply.data.block}`,
+        role: 'user', createdAt: record.time.created, completedAt: null, model: null,
+        text: `User submitted UI block choices (button labels and field keys are UI-generated; notes are user text; skipped items are not approval).\nSource message: ${reply.data.messageId}\nBlock: ${reply.data.block}\nSubmitted data: ${JSON.stringify(reply.data.answer)}`,
+      });
+    }
     if (messageRole !== 'user' && messageRole !== 'assistant') continue;
     if (role === 'all' || role === messageRole) {
       const text = messageText(record);

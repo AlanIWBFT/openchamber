@@ -103,7 +103,6 @@ import {
     isOpenChamberTool,
     normalizeToolName,
     openChamberCallSummary,
-    soleNamedCall,
     executeNamespace,
     toolDescription, type ToolDescription,
     toolInputPath,
@@ -111,7 +110,7 @@ import {
 } from '@/lib/opencode/tools';
 import { toolContentShellEnvelope } from '@/lib/opencode/toolContentShells';
 import { parseWebSearchOutput, webSearchProviderOf } from '@/lib/opencode/websearch';
-import { createScriptToolProjection, groupScriptTools, type ScriptToolEntry } from '@/lib/opencode/script';
+import { createScriptToolProjection, groupScriptTools, namedScriptToolPart, type ScriptToolEntry } from '@/lib/opencode/script';
 import { LiveTurnHoistedCommandsContext } from '../../components/liveActivityContext';
 import { ExplorationDisclosure } from './ExplorationDisclosure';
 import { formatDirectoryDisplayPath, getReadToolDisplayType } from './toolRenderUtils';
@@ -161,6 +160,7 @@ interface ToolPartProps {
     /** Why a failed row failed, shown while it stays collapsed. Only `!command` rows pass one. */
     failureReason?: string;
     nestedTools?: ToolExpansionState;
+    scriptPart?: ToolPartType;
 }
 
 const getLocalizedToolDisplayName = (toolName: string, t: ReturnType<typeof useI18n>['t']): string => {
@@ -1037,7 +1037,7 @@ const UnifiedExecOutput: React.FC<{
             >
                 <Icon name={copied ? 'check' : 'file-copy'} className="h-3.5 w-3.5" />
             </Button>
-            <ScrollShadow
+            <ScrollableOverlay useScrollShadow fillContainer={false}
                 ref={scrollRef}
                 className="tool-output-surface max-h-[46vh] w-full min-w-0 overflow-auto rounded-xl p-2 pe-10"
                 onScroll={(event) => {
@@ -1056,7 +1056,7 @@ const UnifiedExecOutput: React.FC<{
                 <pre dir="ltr" className="m-0 whitespace-pre-wrap break-words typography-code text-muted-foreground/90">
                     {command}{command && output ? '\n\n' : ''}<span className="text-foreground">{output}</span>
                 </pre>
-            </ScrollShadow>
+            </ScrollableOverlay>
         </div>
     );
 };
@@ -1348,7 +1348,6 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
         allowTextReplacement: isStreamingBash,
     });
     const outputString = isStreamingBash ? throttledOutputString : rawOutputString;
-    const isMobile = useUIStore((store) => store.isMobile);
     // OpenChamber's own tools answer an envelope the chat can show in their
     // own terms; the plain answer stays one click away.
     const openChamberEnvelope = React.useMemo(
@@ -1925,6 +1924,7 @@ type ToolRowHeader = {
 
 const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subagentSessionId?: string }> = ({
     nestedTools,
+    scriptPart,
     part,
     isExpanded,
     onToggle: toggleRow,
@@ -2304,7 +2304,7 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
     const shouldRenderExpandedContent = useDeferredExpandedContent(isExpanded);
     const storeDirectory = useChatTranscriptDirectory();
     const contentCompletion = useToolContentCompletion(
-        part,
+        scriptPart ?? part,
         shouldRenderExpandedContent || (presentation !== null && guestToolHeaderReadsOutput(presentation)),
         storeDirectory ?? undefined,
     );
@@ -2566,8 +2566,8 @@ const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader; subage
                                 isMobile={isMobile}
                                 expandedScriptTools={nestedTools?.expanded ?? expandedScriptTools}
                                 onToggleScriptTool={onToggleScriptTool}
-                                part={part}
-                                state={state}
+                                part={scriptPart ?? part}
+                                state={scriptPart?.state ?? state}
                                 currentDirectory={currentDirectory}
                                 isExpanded={isExpanded}
                                 onShowPopup={onShowPopup}
@@ -2783,24 +2783,20 @@ const SubagentToolPartContent: React.FC<ToolPartProps> = (props) => {
  * Most of OpenChamber's own tools run behind Code Mode, so their calls arrive
  * as `execute` parts. A script that made just one of those calls reads as that
  * tool's own row: its action, detail and icon, instead of "execute" and a
- * list of tool names. Everything else about the part stays the script's.
+ * list of tool names. Its state comes from the child; expanded details retain
+ * the script, all child results and the script's final output.
  */
 const useShownToolPart = (part: ToolPartProps['part']): ToolPartProps['part'] => {
-    const metadata = 'metadata' in part.state ? part.state.metadata : undefined;
-    const sole = React.useMemo(
-        () => (isExecuteTool(part.tool) ? soleNamedCall(metadata) : undefined),
-        [metadata, part.tool],
-    );
     return React.useMemo(
-        () => (sole ? { ...part, tool: sole.tool, state: { ...part.state, input: sole.input } } : part),
-        [part, sole],
+        () => (isExecuteTool(part.tool) ? namedScriptToolPart(part) : part),
+        [part],
     );
 };
 
 const ToolPart: React.FC<ToolPartProps> = (incoming) => {
     const { t } = useI18n();
     const part = useShownToolPart(incoming.part);
-    const props = part === incoming.part ? incoming : { ...incoming, part };
+    const props = part === incoming.part ? incoming : { ...incoming, part, scriptPart: incoming.part };
     const toolName = normalizeToolName(props.part.tool) || 'tool';
     const backgroundShellID = isShellTool(toolName) && !isUnifiedExecTool(toolName) ? readBackgroundShellID(props.part) : undefined;
     const displayName = getLocalizedToolDisplayName(toolName, t);
@@ -2831,7 +2827,8 @@ const MemoToolPart = React.memo(ToolPart, (prev, next) => {
         && prev.onShowPopup === next.onShowPopup
         && prev.animateTailText === next.animateTailText
         && prev.failureReason === next.failureReason
-        && prev.nestedTools === next.nestedTools;
+        && prev.nestedTools === next.nestedTools
+        && prev.scriptPart === next.scriptPart;
 });
 
 export default MemoToolPart;

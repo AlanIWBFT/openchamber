@@ -445,7 +445,7 @@ export const Header: React.FC = () => {
 
   React.useEffect(() => {
     setIsHeaderSessionMenuOpen(false);
-    setPendingDeleteSessionId(null);
+    setPendingHeaderRetentionAction(null);
     if (currentSessionId && pendingHeaderRenameRef.current === currentSessionId) {
       // Rename on an inactive tab activates it first; the switch itself is
       // when the rename can begin (the menu may close before or after it).

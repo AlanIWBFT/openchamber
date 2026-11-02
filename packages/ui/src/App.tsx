@@ -53,7 +53,7 @@ import {
 } from '@/lib/desktopBoot';
 import type { RecoveryVariant } from '@/components/onboarding/DesktopConnectionRecovery';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { openSession, openSessionLink } from '@/lib/router/openSessionFromRoute';
+import { openSession } from '@/lib/router/openSessionFromRoute';
 import { parseRoute } from '@/lib/router';
 import { beginLastSessionRestore, type LastSessionRestoreResult } from '@/sync/last-session-restore';
 import { markSessionViewed } from '@/sync/notification-store';

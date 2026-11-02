@@ -12,10 +12,10 @@ import TurnItem from './components/TurnItem';
 import { turnHeaderCanStick } from './lib/turns/stickyPrompt';
 import { TurnFold, TurnPagesRow } from './components/LiveTurnActivity';
 import { useTurnFoldContexts } from './components/useTurnFold';
-import { LiveFinalActivityContext, LiveTurnHoistedPagesContext } from './components/liveActivityContext';
+import { LiveFinalActivityContext, LiveTurnHoistedCommandsContext, LiveTurnHoistedPagesContext } from './components/liveActivityContext';
 import { MessageSliceContext } from './message/messageSliceContext';
 import { PendingWorkflowApprovals } from './workflows/PendingWorkflowApprovals';
-import { getTurnsWithLaterAssistant, uiPageMessageId } from './lib/turns/liveActivity';
+import { getRunningCommandMessages, getTurnsWithLaterAssistant, projectFoldMessages, splitLiveActivityAtPages, uiPageMessageId } from './lib/turns/liveActivity';
 import type { ChatMessageEntry, TurnExplorationGroup, TurnRecord, TurnGroupingContext } from './lib/turns/types';
 import { useTurnRecords } from './hooks/useTurnRecords';
 import { buildHistoryEntries, findFirstVisibleMessageId, type TimelineEntry } from './lib/turns/timelineEntries';
@@ -471,12 +471,18 @@ const TurnRow = React.memo(({
         isLastTurn: entry.isLastTurn,
         nextEntryFirstMessage: entry.nextEntryFirstMessage,
     });
-    const isActivityExpanded = turnExpansion.get(turn.turnId) === true;
+    const isActivityExpanded = turnExpansion.get(row.foldId) ?? row.expanded;
+    const segment = React.useMemo(() => row.segmentId ? splitLiveActivityAtPages(turn).find((item) => item.id === row.segmentId) : undefined, [turn, row.segmentId]);
+    const foldTurn = React.useMemo(() => segment ? { ...turn, turnId: segment.id, assistantMessages: segment.messages } : turn, [turn, segment]);
+    const projected = React.useMemo(() => projectFoldMessages(foldTurn, row.finalMessageId), [foldTurn, row.finalMessageId]);
+    const hoistedCommands = React.useMemo(() => !isActivityExpanded && row.finalMessageId
+        ? new Set(getRunningCommandMessages(turn.assistantMessages).flatMap((message) => message.parts.map((part) => part.id))) : null,
+    [isActivityExpanded, row.finalMessageId, turn.assistantMessages]);
     const hasLaterAssistant = entry.hasLaterAssistant === true;
     const foldContexts = useTurnFoldContexts(turn, hasLaterAssistant, isActivityExpanded, row.finalMessageId);
     const handleToggleActivity = React.useCallback(() => {
-        onToggleTurnActivity(turn.turnId);
-    }, [onToggleTurnActivity, turn.turnId]);
+        onToggleTurnActivity(row.foldId);
+    }, [onToggleTurnActivity, row.foldId]);
 
     if (row.kind === 'turn-head') {
         return <TurnItem turn={turn} gapBelow={row.gapBelow} renderMessage={renderMessage} />;
@@ -485,19 +491,21 @@ const TurnRow = React.memo(({
     let content: React.ReactNode = null;
     if (row.kind === 'turn-fold') {
         content = (
-            <TurnFold turn={turn} hasLaterAssistant={hasLaterAssistant} expanded={isActivityExpanded}
+            <TurnFold turn={foldTurn} hasLaterAssistant={hasLaterAssistant} expanded={isActivityExpanded}
+                isWorking={rendererInput.sessionIsWorking && entry.isLastTurn}
+                streamingMessageId={rendererInput.activeStreamingMessageId} streamPhase={rendererInput.activeStreamingPhase}
                 finalMessageId={row.finalMessageId} onToggle={handleToggleActivity} renderMessage={renderMessage} />
         );
     } else if (row.kind === 'turn-pages') {
-        content = <TurnPagesRow turn={turn} />;
+        content = <TurnPagesRow turn={turn} pageId={row.pageId} />;
     } else {
-        const message = turn.assistantMessages.find((candidate) => candidate.info.id === row.messageId);
+        const message = row.final ? projected.finalMessage : projected.activityMessages.find((candidate) => candidate.info.id === row.messageId);
         if (message) {
             content = (
                 <MessageSliceContext.Provider value={row.slice}>
                     {row.final ? (
                         <LiveFinalActivityContext.Provider value={foldContexts.finalContext}>
-                            {renderMessage(message)}
+                            <LiveTurnHoistedCommandsContext.Provider value={hoistedCommands}>{renderMessage(message)}</LiveTurnHoistedCommandsContext.Provider>
                         </LiveFinalActivityContext.Provider>
                     ) : renderMessage(message)}
                 </MessageSliceContext.Provider>
@@ -608,6 +616,7 @@ const LiveTailSource: React.FC<{
     showTurnChangedFiles: boolean;
     store: LiveTailStore;
 }> = ({ entry, directory, showTurnChangedFiles, store }) => {
+    const showReasoningTraces = useUIStore((state) => state.showReasoningTraces);
     // Overlay live parts on every message of the tail, not only the one
     // currently streaming: a finished step message's base record can lag the
     // part store, and rendering it from that stale snapshot briefly unmounts
@@ -621,8 +630,9 @@ const LiveTailSource: React.FC<{
     const liveEntry = React.useMemo(() => (entry ? buildLiveStreamingEntry(entry, {
         livePartsByMessageId,
         showTurnChangedFiles,
+        showReasoningTraces,
         mergeHiddenUserTurns: true,
-    }) : null), [entry, livePartsByMessageId, showTurnChangedFiles]);
+    }) : null), [entry, livePartsByMessageId, showTurnChangedFiles, showReasoningTraces]);
     // Set while rendering, before the rows of this pass read it; the rows a
     // publish alone changes hear it after the commit.
     store.set(liveEntry);
@@ -972,11 +982,11 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
     const toggleTurnActivity = React.useCallback((turnId: string) => {
         setTurnExpansion((previous) => {
-            const expanded = previous.get(turnId) !== true;
+            const expanded = !(previous.get(turnId) ?? defaultActivityExpanded);
             writeTurnExpansionCache(turnId, expanded);
             return new Map(previous).set(turnId, expanded);
         });
-    }, []);
+    }, [defaultActivityExpanded]);
 
 
     const runningSubagentRuns = useRunningSubagentRuns(sessionKey, directory);
@@ -1079,11 +1089,13 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     }, [displayMessages, projection.lastTurnId, projection.ungroupedMessageIds, streamingTurn]);
 
     const approvalLiveMessageIds = React.useMemo(() => {
+        const activeTurn = activeStreamingMessageId ? staticTurns.find((turn) => turn.assistantMessageIds.includes(activeStreamingMessageId)) : undefined;
+        if (activeTurn) return activeTurn.assistantMessageIds;
         if (!trailingStreamingEntry) return EMPTY_ROW_MESSAGE_IDS;
         return trailingStreamingEntry.kind === 'turn'
             ? trailingStreamingEntry.turn.assistantMessageIds
             : [trailingStreamingEntry.message.info.id];
-    }, [trailingStreamingEntry]);
+    }, [trailingStreamingEntry, activeStreamingMessageId, staticTurns]);
     const footerWithApprovals = React.useMemo(() => (
         <>
             <PendingWorkflowApprovals sessionId={sessionKey} messages={baseDisplayMessages}
@@ -1129,6 +1141,13 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const allEntries = React.useMemo(() => {
         return trailingStreamingEntry ? [...historyEntries, trailingStreamingEntry] : historyEntries;
     }, [historyEntries, trailingStreamingEntry]);
+    // A steering prompt can become the tail while the preceding assistant is
+    // still streaming. Keep its live-part subscription on the actual owner.
+    const liveSourceEntry = React.useMemo(() => activeStreamingMessageId
+        ? allEntries.find((entry) => entry.kind === 'turn'
+            ? entry.turn.assistantMessageIds.includes(activeStreamingMessageId)
+            : entry.message.info.id === activeStreamingMessageId) ?? trailingStreamingEntry
+        : trailingStreamingEntry, [activeStreamingMessageId, allEntries, trailingStreamingEntry]);
 
     const previousRowsRef = React.useRef<RenderRow[]>([]);
     const rows = React.useMemo(() => streamPerfMeasure('ui.message_list.render_rows_ms', () => {
@@ -1230,8 +1249,8 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         const messageIndexes = new Map<string, number>();
         const turnIndexes = new Map<string, number>();
         const rowIndexes = new Map<string, number>();
-        const collapsible = new Map<string, string>();
-        const all = new Map<string, string>();
+        const collapsible = new Map<string, string[]>();
+        const all = new Map<string, string[]>();
         const foldIndexes = new Map<string, number>();
         rows.forEach((row, index) => {
             rowIndexes.set(row.key, index);
@@ -1244,20 +1263,26 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 turnIndexes.set(turnId, index);
                 messageIndexes.set(row.entry.turn.userMessage.info.id, index);
             } else if (row.kind === 'turn-fold') {
-                foldIndexes.set(turnId, index);
-            } else if (row.kind === 'turn-message' && !row.slice?.from) {
-                messageIndexes.set(row.messageId, index);
+                if (!foldIndexes.has(turnId)) foldIndexes.set(turnId, index);
+                const segment = row.segmentId ? splitLiveActivityAtPages(row.entry.turn).find((item) => item.id === row.segmentId) : undefined;
+                const messages = segment?.messages ?? projectFoldMessages(row.entry.turn, row.finalMessageId).activityMessages;
+                for (const message of messages) {
+                    collapsible.set(message.info.id, [...(collapsible.get(message.info.id) ?? []), row.foldId]);
+                    if (!messageIndexes.has(message.info.id)) messageIndexes.set(message.info.id, index);
+                }
+            } else if (row.kind === 'turn-message') {
+                if (!row.slice?.from && (row.final || !messageIndexes.has(row.messageId) || rows[messageIndexes.get(row.messageId)!]?.kind === 'turn-fold')) messageIndexes.set(row.messageId, index);
+                if (row.slice?.from) rowIndexes.set(`step:${row.messageId}:${row.slice.from.partId}:${row.slice.from.offset}`, index);
             }
         });
         for (const entry of allEntries) {
             if (entry.kind !== 'turn') continue;
             const { turnId, assistantMessages } = entry.turn;
             const fallback = foldIndexes.get(turnId) ?? turnIndexes.get(turnId);
-            assistantMessages.forEach((message, assistantIndex) => {
+            assistantMessages.forEach((message) => {
                 const messageId = message.info.id;
                 if (!messageIndexes.has(messageId) && fallback !== undefined) messageIndexes.set(messageId, fallback);
-                all.set(messageId, turnId);
-                if (assistantIndex < assistantMessages.length - 1) collapsible.set(messageId, turnId);
+                all.set(messageId, collapsible.get(messageId) ?? [turnId]);
             });
         }
         return {
@@ -1283,15 +1308,19 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
      * the row renders the message on a later frame.
      */
     const revealFoldedMessage = React.useCallback((messageId: string): boolean => {
-        const turnId = isReasoningRevealTarget(messageId)
+        const turnIds = isReasoningRevealTarget(messageId)
             ? turnByAssistantMessageId.get(messageId)
             : collapsibleTurnByMessageId.get(messageId);
-        if (!turnId) return false;
-        if (turnExpansionRef.current.get(turnId) === true) return false;
-        writeTurnExpansionCache(turnId, true);
-        setTurnExpansion((previous) => new Map(previous).set(turnId, true));
+        const folded = turnIds?.filter((id) => !(turnExpansionRef.current.get(id) ?? defaultActivityExpanded));
+        if (!folded?.length) return false;
+        for (const id of folded) writeTurnExpansionCache(id, true);
+        setTurnExpansion((previous) => {
+            const next = new Map(previous);
+            for (const id of folded) next.set(id, true);
+            return next;
+        });
         return true;
-    }, [collapsibleTurnByMessageId, turnByAssistantMessageId]);
+    }, [collapsibleTurnByMessageId, turnByAssistantMessageId, defaultActivityExpanded]);
 
     const findMessageElement = React.useCallback((messageId: string): HTMLElement | null => {
         const container = resolveScrollContainer();
@@ -1561,7 +1590,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         shouldAnimateUserMessage,
         onUserAnimationConsumed,
         reviewTransferDirection,
-        streamingTailKey: trailingStreamingEntry?.key ?? null,
+        streamingTailKey: liveSourceEntry?.key ?? null,
         liveTail,
         sessionIsWorking,
         activeStreamingMessageId,
@@ -1576,7 +1605,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         shouldAnimateUserMessage,
         stableScrollToBottom,
         toggleTurnActivity,
-        trailingStreamingEntry?.key,
+        liveSourceEntry?.key,
         turnExpansion,
     ]);
 
@@ -1586,7 +1615,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         // list's point of view, so fade-in is disabled for them — content
         // arriving inside the streaming tail keeps its own animations.
         <FadeInDisabledProvider disabled>
-            <LiveTailSource entry={trailingStreamingEntry} directory={directory}
+            <LiveTailSource entry={liveSourceEntry} directory={directory}
                 showTurnChangedFiles={showTurnChangedFiles} store={liveTail} />
             <TimelineList
                     key={sessionKey}

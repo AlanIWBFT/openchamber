@@ -67,7 +67,7 @@ const loader = new SessionMessageLoader(childStores, {
   runtimeKey: getRuntimeKey(),
   sdk: { getSessionMessages: async (id, _options, directory) => {
     reads.push({ id, directory });
-    return { items: [{ info: { id: `msg_${id}`, sessionID: id, role: 'user', time: { created: 1 } }, parts: [
+    return { items: [{ info: { id: `msg_${id}`, seq: 1, sessionID: id, role: 'user', time: { created: 1 } }, parts: [
       { id: `part_${id}`, sessionID: id, messageID: `msg_${id}`, type: 'text', text: `${id} Chat transcript` },
     ] }], cursor: {} };
   } },

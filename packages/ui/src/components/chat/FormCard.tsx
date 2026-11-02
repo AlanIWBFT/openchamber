@@ -125,7 +125,7 @@ const GenericFormCard: React.FC<FormCardProps> = ({ form, recovered }) => {
         try {
             const answer = buildFormAnswer(fields, values);
             if (recovered) {
-                await sessionActions.sendRecoveredFormAnswer(recovered, serializeFormAnswerAsMarkdown(form, answer));
+                await sessionActions.sendRecoveredFormAnswer(recovered, serializeFormAnswerAsMarkdown(form, answer), answer);
                 if (draftScope) dropFormDraft(draftScope);
             } else {
                 await sessionActions.replyToForm(form.sessionID, form.id, answer);

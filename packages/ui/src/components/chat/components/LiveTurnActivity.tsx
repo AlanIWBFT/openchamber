@@ -3,14 +3,12 @@ import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
-import {
-    ActivityRowSkipContext,
-    LIVE_ACTIVITY_VISIBLE_ROWS,
-    activityRowParts,
-    planActivityTrim,
-} from '../lib/turns/activityRows';
+import { cn } from '@/lib/utils';
 import type { ChatMessageEntry, TurnRecord } from '../lib/turns/types';
-import { getShownPages } from '../lib/turns/liveActivity';
+import { getRunningCommandMessages, getShownPages, projectLiveActivityPreview } from '../lib/turns/liveActivity';
+import AssistantTextPart from '../message/parts/AssistantTextPart';
+import type { StreamPhase } from '../message/types';
+import { LiveTurnHoistedCommandsContext } from './liveActivityContext';
 import { summarizeLiveActivity } from '../lib/turns/liveActivitySummary';
 import { LiveActivityCollapse } from './LiveActivityCollapse';
 import { ShownPartCard } from '../message/parts/ShownToolCard';
@@ -20,13 +18,13 @@ import { dispatchRowExpand } from '../lib/scroll/timelineScrollIntent';
 import { renderedPage } from '@/lib/opencode/tools';
 import type { ShownPart } from '../lib/turns/liveActivity';
 
-const NO_MESSAGES: ChatMessageEntry[] = [];
-
-
 interface TurnFoldProps {
     turn: TurnRecord;
     hasLaterAssistant: boolean;
     expanded: boolean;
+    isWorking: boolean;
+    streamingMessageId?: string | null;
+    streamPhase?: StreamPhase | null;
     finalMessageId: string | undefined;
     onToggle: () => void;
     renderMessage: (message: ChatMessageEntry) => React.ReactNode;
@@ -36,46 +34,39 @@ interface TurnFoldProps {
  * The fold's header. Folded, it also draws what stays in view: a working
  * turn's latest steps, then the pages it showed and the steps after them.
  */
-export function TurnFold({ turn, hasLaterAssistant, expanded, finalMessageId, onToggle, renderMessage }: TurnFoldProps) {
+export function TurnFold({ turn, hasLaterAssistant, expanded, isWorking, streamingMessageId, streamPhase, finalMessageId, onToggle, renderMessage }: TurnFoldProps) {
     const { t } = useI18n();
-    const { finalMessage, activityMessages, settled, isExpanded, pages } = useTurnFold(turn, hasLaterAssistant, expanded, finalMessageId);
+    const { finalMessage, activityMessages } = useTurnFold(turn, hasLaterAssistant, expanded, finalMessageId);
+    const isRunning = isWorking && !finalMessage;
+    const settled = !isRunning;
+    const [showTouchHint, setShowTouchHint] = React.useState(false);
+    const touchActivation = React.useRef(false);
+    const hintTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    React.useEffect(() => () => {
+        if (hintTimeout.current !== null) clearTimeout(hintTimeout.current);
+    }, []);
+    const handlePointerDown = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+        touchActivation.current = event.pointerType === 'touch';
+    }, []);
     // Folded, a working turn shows only its latest rows (the header counts
     // the earlier ones) and a settled one shows none.
     const showReasoningTraces = useUIStore((state) => state.showReasoningTraces);
-    const trim = React.useMemo(() => (expanded
-        ? null
-        : planActivityTrim(
-            activityMessages.map((message) => activityRowParts(message.parts, showReasoningTraces).length),
-            LIVE_ACTIVITY_VISIBLE_ROWS,
-        )), [activityMessages, expanded, showReasoningTraces]);
-    const shownMessages = React.useMemo(
-        () => (trim && trim.hiddenMessages > 0 ? activityMessages.slice(trim.hiddenMessages) : activityMessages),
-        [activityMessages, trim],
-    );
-    const skippedMessageId = trim && trim.skipRows > 0 ? shownMessages[0]?.info.id : undefined;
-    const skippedRows = trim?.skipRows ?? 0;
-    const rowSkip = React.useMemo(
-        () => (skippedMessageId ? { messageId: skippedMessageId, rows: skippedRows } : null),
-        [skippedMessageId, skippedRows],
-    );
-    const hiddenRows = trim?.hiddenRows ?? 0;
+    const preview = React.useMemo(() => expanded ? null
+        : projectLiveActivityPreview({ ...turn, assistantMessages: activityMessages }, showReasoningTraces),
+    [turn, activityMessages, expanded, showReasoningTraces]);
+    const commandRows = React.useMemo(() => {
+        if (expanded || (isRunning && !preview?.hiddenCount)) return null;
+        const messages = getRunningCommandMessages(turn.assistantMessages, isRunning ? new Set(preview?.hiddenRowIds) : undefined);
+        if (!messages.length) return null;
+        const ids = new Set(messages.flatMap((message) => message.parts.map((part) => part.id)));
+        return { messages, ids, hiddenCount: preview?.hiddenRowIds.filter((id) => !ids.has(id)).length ?? 0 };
+    }, [expanded, isRunning, preview, turn.assistantMessages]);
+    const hiddenRows = commandRows?.hiddenCount ?? preview?.hiddenCount ?? 0;
     const rowsRef = React.useRef<HTMLDivElement>(null);
     const previewFloorRef = React.useRef<HTMLDivElement>(null);
     const previewRef = React.useRef<HTMLDivElement>(null);
     useActivityRowGlide(rowsRef, hiddenRows, !settled && !expanded);
     useLiveRowsFloor(previewFloorRef, previewRef, !settled && !expanded);
-    // While the turn works, what the agent does after its last page (more
-    // steps, the reply it is still writing) is drawn below the page, in the
-    // order it happened.
-    const lastPageMessageId = !finalMessage && pages.length > 0 ? pages[pages.length - 1]?.messageID : undefined;
-    const [messagesAbovePages, messagesBelowPages] = React.useMemo(() => {
-        const pageIndex = lastPageMessageId ? activityMessages.findIndex((message) => message.info.id === lastPageMessageId) : -1;
-        if (pageIndex < 0) return [shownMessages, NO_MESSAGES];
-        // The fold shows the tail of the turn, so the page's message may
-        // already be trimmed away; everything still shown then came after it.
-        const split = Math.max(0, pageIndex + 1 - (activityMessages.length - shownMessages.length));
-        return [shownMessages.slice(0, split), shownMessages.slice(split)];
-    }, [activityMessages, lastPageMessageId, shownMessages]);
     // No diff parsing at token frequency. The report is only shown once the
     // turn settles; later authoritative tool metadata can refine it.
     const summary = React.useMemo(() => settled ? summarizeLiveActivity(turn.assistantMessages) : null,
@@ -91,9 +82,27 @@ export function TurnFold({ turn, hasLaterAssistant, expanded, finalMessageId, on
     ].filter(Boolean).join(' · ') : '';
     const label = (
         <>
-            <Icon name="stack" className="size-3.5 shrink-0 text-[var(--tools-icon)]" />
+            <span className="relative size-3.5 shrink-0 text-[var(--tools-icon)]">
+                <span className={cn('absolute inset-0 transition-opacity', expanded ? 'opacity-0' : 'group-hover/tool:opacity-0')}>
+                    <Icon name="stack" className="size-3.5" />
+                </span>
+                <span className={cn('absolute inset-0 transition-opacity', expanded ? 'opacity-100' : 'opacity-0 group-hover/tool:opacity-100')}>
+                    <Icon name={expanded ? 'arrow-down-s' : 'arrow-right-s'} className="size-3.5" />
+                </span>
+            </span>
             <span className="shrink-0 font-semibold text-[var(--tools-title)]">{t('chat.liveActivity.title')}</span>
-            <Icon name={expanded ? 'arrow-down-s' : 'arrow-right-s'} className="size-3 shrink-0" />
+            {isRunning ? (
+                <span aria-hidden="true" data-live-activity-view-hint="true"
+                    className={cn('grid min-w-0 flex-1 text-start typography-meta text-[var(--tools-description)] transition-opacity group-hover/tool:opacity-100 motion-reduce:transition-none',
+                        showTouchHint ? 'opacity-100' : 'opacity-0')}>
+                    <span className={cn('col-start-1 row-start-1 truncate transition-opacity motion-reduce:transition-none', expanded ? 'opacity-0' : 'opacity-100')}>
+                        {t('chat.liveActivity.latestActivity')}
+                    </span>
+                    <span className={cn('col-start-1 row-start-1 truncate transition-opacity motion-reduce:transition-none', expanded ? 'opacity-100' : 'opacity-0')}>
+                        {t('chat.liveActivity.allActivity')}
+                    </span>
+                </span>
+            ) : null}
             {summary && summary.runningCommands > 0 ? (
                 <span className="shrink-0 typography-meta text-[var(--tools-description)]" role="status">
                     {t('chat.liveActivity.runningCommands', { count: summary.runningCommands })}
@@ -112,49 +121,62 @@ export function TurnFold({ turn, hasLaterAssistant, expanded, finalMessageId, on
                 </span>
             ) : null}
             {details ? <span className="hidden min-w-0 flex-1 truncate text-start typography-meta @min-[560px]:inline" title={details}>{fileLabel ? '· ' : ''}{details}</span> : null}
-            {!settled && hiddenRows > 0 ? (
-                <span className="shrink-0 typography-meta">{t('chat.liveActivity.moreRows', { count: hiddenRows })}</span>
-            ) : null}
         </>
     );
     // The fold opens below its header, which stays where the reader clicked it.
     const handleToggle = React.useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-        if (!expanded) dispatchRowExpand(event.currentTarget);
+        if (isRunning && touchActivation.current && event.detail > 0) {
+            if (hintTimeout.current !== null) clearTimeout(hintTimeout.current);
+            setShowTouchHint(true);
+            hintTimeout.current = setTimeout(() => {
+                hintTimeout.current = null;
+                setShowTouchHint(false);
+            }, 1200);
+        }
+        touchActivation.current = false;
+        if (!expanded && !isRunning) dispatchRowExpand(event.currentTarget);
         onToggle();
-    }, [expanded, onToggle]);
-    const headerClass = 'w-full justify-start normal-case !ps-px !pe-2 text-[var(--tools-description)] hover:!bg-transparent active:!bg-transparent';
+    }, [expanded, isRunning, onToggle]);
+    const headerClass = 'group/tool w-full justify-start normal-case !ps-px !pe-2 text-[var(--tools-description)] hover:!bg-transparent active:!bg-transparent';
     const contentId = foldContentId(turn.turnId);
     return (
         <div className="relative z-0" data-live-turn-activity={turn.turnId}>
             <div className="chat-message-column @container">
                 <div className="mt-1">
-                    <Button variant="ghost" size="sm" className={headerClass} onClick={handleToggle}
+                    <Button variant="ghost" size="sm" className={headerClass} onClick={handleToggle} onPointerDown={handlePointerDown}
                         aria-expanded={expanded} aria-controls={finalMessage ? `${contentId} ${finalActivityContentId(turn.turnId)}` : contentId}>
                         {label}
                     </Button>
                 </div>
             </div>
+            {isRunning && hiddenRows > 0 ? (
+                <div className="chat-message-column">
+                    <Button variant="ghost" size="xs" onClick={handleToggle} onPointerDown={handlePointerDown} aria-expanded={false} aria-controls={contentId}
+                        data-live-activity-more="true"
+                        className="typography-meta font-normal normal-case text-muted-foreground/45 hover:text-muted-foreground/65 hover:bg-transparent">
+                        {t('chat.liveActivity.more', { count: hiddenRows })}
+                    </Button>
+                </div>
+            ) : null}
             {expanded ? null : (
-                // What stays in view, its rows above and below the pages, as
-                // one window: the latest rows of the turn.
                 <div ref={previewFloorRef}>
                     <div ref={previewRef}>
-                        <LiveActivityCollapse expanded={isExpanded} id={contentId}>
-                            <div ref={rowsRef}>
-                                <ActivityRowSkipContext.Provider value={rowSkip}>
-                                    {messagesAbovePages.map((message) => (
-                                        <React.Fragment key={message.info.id}>{renderMessage(message)}</React.Fragment>
-                                    ))}
-                                </ActivityRowSkipContext.Provider>
+                        {commandRows ? <div data-live-activity-running-commands="true">
+                            {commandRows.messages.map((message) => <React.Fragment key={message.info.id}>{renderMessage(message)}</React.Fragment>)}
+                        </div> : null}
+                        <LiveTurnHoistedCommandsContext.Provider value={commandRows?.ids ?? null}>
+                            <LiveActivityCollapse expanded={isRunning} id={contentId}>
+                                <div ref={rowsRef}>
+                                    {preview?.messages.map((message) => <React.Fragment key={message.info.id}>{renderMessage(message)}</React.Fragment>)}
+                                </div>
+                            </LiveActivityCollapse>
+                        </LiveTurnHoistedCommandsContext.Provider>
+                        {isRunning && preview?.pinnedText ? (
+                            <div className="chat-message-column" data-pinned-activity-text={preview.pinnedText.part.id}>
+                                <div aria-hidden="true" className="mt-1.5 mb-3 h-px w-full bg-border" />
+                                <AssistantTextPart part={preview.pinnedText.part} messageId={preview.pinnedText.message.info.id}
+                                    streamPhase={streamingMessageId === preview.pinnedText.message.info.id ? streamPhase ?? 'completed' : 'completed'} />
                             </div>
-                        </LiveActivityCollapse>
-                        {!finalMessage && pages.length > 0 ? <TurnPages pages={pages} /> : null}
-                        {messagesBelowPages.length > 0 ? (
-                            <ActivityRowSkipContext.Provider value={rowSkip}>
-                                {messagesBelowPages.map((message) => (
-                                    <React.Fragment key={message.info.id}>{renderMessage(message)}</React.Fragment>
-                                ))}
-                            </ActivityRowSkipContext.Provider>
                         ) : null}
                     </div>
                 </div>
@@ -183,7 +205,7 @@ function TurnPage({ part }: { part: ShownPart }) {
 }
 
 /** The pages row of an opened fold. */
-export function TurnPagesRow({ turn }: { turn: TurnRecord }) {
-    const pages = React.useMemo(() => getShownPages(turn.assistantMessages), [turn.assistantMessages]);
+export function TurnPagesRow({ turn, pageId }: { turn: TurnRecord; pageId?: string }) {
+    const pages = React.useMemo(() => getShownPages(turn.assistantMessages).filter((part) => !pageId || part.id === pageId), [turn.assistantMessages, pageId]);
     return pages.length > 0 ? <TurnPages pages={pages} /> : null;
 }
