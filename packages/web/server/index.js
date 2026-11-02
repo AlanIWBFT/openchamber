@@ -1,4 +1,5 @@
 import { installOpenCodeV2, supportsOpenCodeV2Install } from './lib/opencode/v2-install.js';
+import { isAgentMemoryFeatureAvailable } from './lib/agent-memory/feature-flag.js';
 import { describeOpenCodeCompatibility, readOpenCodeCliVersion, readExternalOpenCodeVersion } from './lib/opencode/compatibility.js';
 import 'reflect-metadata';
 import express from 'express';
@@ -783,6 +784,11 @@ const agentMemoryRuntime = createAgentMemoryRuntime({
  * tool, which only an OpenCode we launched has.
  */
 const isAgentMemoryEnabled = async () => {
+  // The process-level availability gate comes first, so no stored setting can
+  // bring memory back when an operator explicitly hides the whole surface.
+  if (!isAgentMemoryFeatureAvailable()) {
+    return false;
+  }
   const settings = await readSettingsFromDiskMigrated().catch(() => null);
   return settings?.agentMemoryToolEnabled === true;
 };
