@@ -8,6 +8,10 @@
     font-size: var(--text-code);
   }
 
+  pre.typography-code {
+    line-height: var(--code-block-line-height);
+  }
+
   .typography-ui-header {
     font-size: var(--text-ui-header);
     line-height: round(1.45em, 1px);
