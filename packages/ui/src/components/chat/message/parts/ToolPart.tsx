@@ -968,7 +968,7 @@ const UnifiedExecOutput: React.FC<{
             >
                 <Icon name={copied ? 'check' : 'file-copy'} className="h-3.5 w-3.5" />
             </Button>
-            <ScrollShadow
+            <ScrollableOverlay useScrollShadow fillContainer={false}
                 ref={scrollRef}
                 className="tool-output-surface max-h-[46vh] w-full min-w-0 overflow-auto rounded-xl p-2 pe-10"
                 onScroll={(event) => {
@@ -987,7 +987,7 @@ const UnifiedExecOutput: React.FC<{
                 <pre dir="ltr" className="m-0 whitespace-pre-wrap break-words typography-code text-muted-foreground/90">
                     {command}{command && output ? '\n\n' : ''}<span className="text-foreground">{output}</span>
                 </pre>
-            </ScrollShadow>
+            </ScrollableOverlay>
         </div>
     );
 };

@@ -150,6 +150,11 @@ other.
   when present, falling back to the legacy request/parameters/flat input title.
   The resolved title comes from `render-page.js`, so pages named from their HTML
   remain readable after the turn and after OpenCode compaction.
+  Inline reply-block submissions are read from synthetic-message
+  `openchamberUiBlockAnswer` metadata, including picks, notes, field values and
+  explicitly skipped decisions. They use the same non-forkable `page-answer:`
+  row identity; ordinary synthetic instructions are not user answers. Recovered
+  question follow-ups remain real user messages and retain their normal IDs.
 
 - Browser opens accept optional boolean `newTab`, forwarded to the selected
   browser provider. `newTab: true` with `tabId`, non-boolean values, and use on

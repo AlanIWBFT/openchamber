@@ -760,7 +760,8 @@ export const createSessionGoalRuntime = ({
     const assistantText = messagePartsToText(lastAssistant);
 
     // A command the agent left running in the background this round (tests,
-    // a build) is part of the turn: OpenCode wakes the session with its result.
+    // a build) is part of the turn. Shell completion wakes the model; local
+    // persistent exec completion is observed by the next Goal recheck.
     // Auditing now reads "waiting for the tests" as unfinished and nudges the
     // agent over a running command. Commands from earlier rounds, such as a dev
     // server, are not waited for. After an explicit Resume nothing is waited
@@ -769,13 +770,16 @@ export const createSessionGoalRuntime = ({
       const shellDirectory = typeof session.location?.directory === 'string' && session.location.directory
         ? session.location.directory
         : directory;
-      const shells = shellDirectory ? await activityProbe.fetchRunningShells(shellDirectory) : null;
-      if (!shells) {
+      const [shells, execs] = await Promise.all([
+        shellDirectory ? activityProbe.fetchRunningShells(shellDirectory) : null,
+        activityProbe.fetchRunningExecs(),
+      ]);
+      if (!shells || !execs) {
         armTimer(sessionId, directory, recheckMs);
         return;
       }
       const roundStartedAt = lastUserMessageCreatedAt(messages, goal.createdAt);
-      const waitingOn = shells.filter((shell) => shell.sessionID === sessionId && shell.startedAt >= roundStartedAt);
+      const waitingOn = [...shells, ...execs].filter((command) => command.sessionID === sessionId && command.startedAt >= roundStartedAt);
       // Past the wait the command is most likely a server left running: the
       // turn is audited as it stands instead of stopping the goal over it.
       const stillWaiting = waitingOn.some((shell) => Date.now() - shell.startedAt < BACKGROUND_SHELL_WAIT_MS);

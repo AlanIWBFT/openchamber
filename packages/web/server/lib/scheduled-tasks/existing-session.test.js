@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { OpenCode } from '@opencode/client';
 import { createExistingSessionTasks } from './existing-session.js';
 import { createScheduledTaskService } from './service.js';
@@ -58,8 +58,11 @@ describe('existing session scheduling', () => {
       buildOpenCodeUrl: (route) => `http://opencode.test${route}`, getOpenCodeAuthHeaders: () => ({}),
       readSessionDefaults,
     });
-    await scheduler.syncProject('project-1');
-    expect(await scheduler.runNow('project-1', 'task-1')).toMatchObject({ ok: true, sessionID: 'ses_target' });
+    onTestFinished(() => scheduler.stop());
+    await scheduler.start();
+    const result = await scheduler.runNow('project-1', 'task-1');
+    expect(result.error).toBeUndefined();
+    expect(result).toMatchObject({ ok: true, sessionID: 'ses_target' });
     expect(createChatDirectory).not.toHaveBeenCalled();
     expect(readSessionDefaults).not.toHaveBeenCalled();
     expect(fetchImpl).toHaveBeenCalledOnce();
@@ -202,7 +205,8 @@ describe('existing session scheduling', () => {
       chatsScope: { id: 'project-1', root: '/repo', contains: () => true },
       buildOpenCodeUrl: (route) => `http://opencode.test${route}`, getOpenCodeAuthHeaders: () => ({}),
     });
-    await scheduler.syncProject('project-1');
+    onTestFinished(() => scheduler.stop());
+    await scheduler.start();
     await scheduler.runNow('project-1', task.id);
     const item = messageQueueRuntime.enqueue.mock.calls[0][2];
     expect(item.scheduledTask).toEqual({ projectId: 'project-1', taskId: 'task-1' });

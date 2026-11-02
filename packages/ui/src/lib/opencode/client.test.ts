@@ -1132,6 +1132,7 @@ describe("a subagent transcript showing a message its parent stores", () => {
   const messageID = "msg_parent_owned"
   const wire = {
     id: messageID,
+    seq: 1,
     type: "assistant",
     time: { created: 1000, completed: 1500 },
     agent: "build",
