@@ -68,7 +68,17 @@ The tool row is the one place that already turns terminal bytes into text (`rend
 
 OpenCode drops the output when the shell is removed and records "output is no longer available". The block keeps what it had read, and after a reload shows the status alone.
 
-# Markdown code spacing
+# Markdown rendering
+
+## CJK emphasis
+
+`streamdownPlugins.ts` supplies the upstream `@streamdown/cjk` plugin so emphasis
+such as `前文**你好。**后文` renders without adding spaces or invisible characters.
+Streaming, settled, clipboard and image rendering share that plugin. Regression
+coverage includes punctuation-adjacent emphasis, incremental closing markers,
+literal code, and CJK URL boundaries.
+
+## Code spacing
 
 `codeCellSpacing.ts` splits syntax-token text into continuous runs of narrow and
 wide graphemes. `MarkdownCode.tsx` renders `data-md-code-wide` spans around the
