@@ -39,7 +39,7 @@ const sessionID = "ses_child"
 const messageID = "msg_parent_owned"
 const target = { directory, sessionID }
 const wire = (shell: boolean) => ({
-  id: messageID, type: "assistant", time: { created: 1000, completed: 1500 },
+  id: messageID, seq: 1, type: "assistant", time: { created: 1000, completed: 1500 },
   agent: "build", model: { id: "test-model", providerID: "test-provider" },
   finish: "stop", cost: 0,
   tokens: { input: 1, output: 2, reasoning: 0, cache: { read: 0, write: 0 } },

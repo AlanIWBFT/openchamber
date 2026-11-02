@@ -33,6 +33,11 @@ const backgroundJobsSchema = z.array(z.object({
   command: z.string().optional(),
   time: z.object({ started: z.number() }),
 }));
+const runningExecsSchema = z.array(z.object({
+  sessionID: z.string().min(1),
+  command: z.string(),
+  startedAt: z.number(),
+}));
 
 export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, timeoutMs = 10_000, fetchImpl = fetch, signal: parentSignal }) => {
   const requestSignal = () => {
@@ -101,7 +106,7 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
    * A chain deeper than `MAX_SUBAGENT_DEPTH` counts as unrelated, as in the
    * UI's ancestor walk, so a deep tree elsewhere cannot hold every queue.
    */
-  const hasWorkingDescendants = async (sessionId, statuses) => {
+  const hasWorkingDescendants = async (sessionId, statuses, maxDepth = MAX_SUBAGENT_DEPTH) => {
     const parents = new Map();
     const signal = requestSignal();
     let unknown = false;
@@ -109,7 +114,7 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
       if (activeId === sessionId) continue;
       let current = activeId;
       const visited = new Set();
-      for (let depth = 0; current && depth < MAX_SUBAGENT_DEPTH; depth += 1) {
+      for (let depth = 0; current && depth < maxDepth; depth += 1) {
         if (signal.aborted) return null;
         if (visited.has(current)) {
           unknown = true;
@@ -192,6 +197,11 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
       .map((job) => ({ kind: job.kind, sessionID: job.sessionID, command: job.command, startedAt: job.time.started }));
   };
 
+  const fetchRunningExecs = async () => {
+    const parsed = runningExecsSchema.safeParse(await openCodeGet('/api/session/exec').catch(() => null));
+    return parsed.success ? parsed.data : null;
+  };
+
   return {
     fetchActiveSessionStatuses,
     fetchChildSessionIds,
@@ -199,5 +209,6 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
     hasWorkingDescendants,
     fetchRunningShells,
     fetchRunningBackgroundJobs,
+    fetchRunningExecs,
   };
 };

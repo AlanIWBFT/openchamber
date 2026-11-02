@@ -23,7 +23,7 @@ const createProbe = (sessions, { failureId, timeoutMs = 10_000, delayMs = 0 } = 
 describe('queue descendant activity', () => {
   const running = { type: 'running' };
 
-  it.each(['statuses', 'descendants', 'shells'])('cancels a hanging %s read with its caller', async (operation) => {
+  it.each(['statuses', 'descendants', 'shells', 'execs'])('cancels a hanging %s read with its caller', async (operation) => {
     const controller = new AbortController();
     const entered = Promise.withResolvers();
     const probe = createSessionActivityProbe({
@@ -36,6 +36,7 @@ describe('queue descendant activity', () => {
     });
     const result = operation === 'statuses' ? probe.fetchActiveSessionStatuses()
       : operation === 'shells' ? probe.fetchRunningShells('/repo/run')
+        : operation === 'execs' ? probe.fetchRunningExecs()
         : probe.hasWorkingDescendants('root', { child: running });
     const signal = await entered.promise;
     controller.abort(new DOMException('Cleanup timed out', 'TimeoutError'));

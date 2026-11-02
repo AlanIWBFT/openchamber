@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 import { OpenCode } from '@opencode/client';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import type { Message, Metadata, Part, Session, ToolPart as ToolPartData } from '@/lib/opencode/model';
+import type { StoredMessage, Metadata, Part, Session, ToolPart as ToolPartData } from '@/lib/opencode/model';
 import { opencodeClient } from '@/lib/opencode/client';
 import { toolContentShellChars } from '@/lib/opencode/toolContentShells';
 import { SyncProvider } from '@/sync/sync-context';
@@ -77,8 +77,9 @@ const session: Session = {
   time: { created: 1, updated: 2 },
 };
 
-const info: Message = {
+const info: StoredMessage = {
   id: MESSAGE_ID,
+  seq: 1,
   sessionID: FORK_ID,
   role: 'assistant',
   time: { created: 1, completed: 2 },
@@ -149,7 +150,7 @@ afterEach(async () => {
 const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
 
 /** The parent's column shows the fork, whose records live in another directory's store. */
-const renderFork = async () => {
+const renderFork = async (part: ToolPartData = shelled) => {
   const sdk = OpenCode.make({
     baseUrl: 'http://localhost',
     fetch: async () => new Response('[]', { headers: { 'Content-Type': 'application/json' } }),
@@ -175,7 +176,7 @@ const renderFork = async () => {
   fork.setState({
     session: [session],
     message: { [FORK_ID]: [info] },
-    part: { [MESSAGE_ID]: [shelled] },
+    part: { [MESSAGE_ID]: [part] },
   });
   await act(async () => { root.render(tree(true)); });
   return { parent, fork };
@@ -199,7 +200,7 @@ test('a fork in another directory completes its row in its own store', async () 
 });
 
 test('a message removed from the fork while its result loads does not come back', async () => {
-  let answer: (record: { info: Message; parts: Part[] }) => void = () => {};
+  let answer: (record: { info: StoredMessage; parts: Part[] }) => void = () => {};
   const read = spyOn(opencodeClient, 'getToolContentMessage').mockImplementation(
     () => new Promise((resolve) => { answer = resolve; }),
   );
@@ -217,4 +218,27 @@ test('a message removed from the fork while its result loads does not come back'
   } finally {
     read.mockRestore();
   }
+});
+
+test('a named Code Mode row completes its original script before showing expanded results', async () => {
+  const script: ToolPartData = { ...shelled, tool: 'execute', state: {
+    status: 'completed', input: { code: 'return await tools.openchamber_memory({action:"memory.read",parameters:{}})' },
+    output: '', time: { start: 1, end: 4 }, metadata: {
+      openchamberContentShell: { chars: 19 }, toolCalls: [{
+        tool: 'openchamber_memory', status: 'completed', input: { action: 'memory.read', parameters: {} },
+      }],
+    },
+  } };
+  const complete: ToolPartData = { ...script, state: {
+    ...script.state, status: 'completed', output: 'script final result', time: { start: 1, end: 4 },
+    metadata: { toolCalls: 'metadata' in script.state ? script.state.metadata?.toolCalls ?? [] : [] },
+  } };
+  const read = spyOn(opencodeClient, 'getToolContentMessage').mockResolvedValue({ info, parts: [complete] });
+  try {
+    const { fork } = await renderFork(script);
+    await settle();
+    expect(read.mock.calls).toEqual([[FORK_ID, MESSAGE_ID, FORK_DIRECTORY]]);
+    expect(fork.getState().part[MESSAGE_ID]).toEqual([complete]);
+    expect(container.textContent).toContain('script final result');
+  } finally { read.mockRestore(); }
 });

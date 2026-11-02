@@ -774,7 +774,8 @@ export const createSessionGoalRuntime = ({
     const assistantText = messagePartsToText(lastAssistant);
 
     // A command the agent left running in the background this round (tests,
-    // a build) is part of the turn: OpenCode wakes the session with its result.
+    // a build) is part of the turn. Shell completion wakes the model; local
+    // persistent exec completion is observed by the next Goal recheck.
     // Auditing now reads "waiting for the tests" as unfinished and nudges the
     // agent over a running command. Commands from earlier rounds, such as a dev
     // server, are not waited for. After an explicit Resume nothing is waited
@@ -787,15 +788,23 @@ export const createSessionGoalRuntime = ({
         ? jobs && jobs.filter((job) => job.kind === 'shell')
         : await fetchOwnRunningShells(session, sessionId, directory);
       // A subagent or image the turn just read started holds the audit as well.
-      if (!shells || jobs?.some((job) => job.kind !== 'shell')) {
+      const execs = await activityProbe.fetchRunningExecs();
+      if (!shells || !execs || jobs?.some((job) => job.kind !== 'shell')) {
         armTimer(sessionId, directory, recheckMs);
         return;
       }
       const roundStartedAt = lastUserMessageCreatedAt(messages, goal.createdAt);
       const waitingOn = shells.filter((shell) => shell.startedAt >= roundStartedAt);
+      const currentExecs = execs.filter((command) => command.startedAt >= roundStartedAt && Date.now() - command.startedAt < BACKGROUND_SHELL_WAIT_MS);
+      const waitingForExec = currentExecs.some((command) => command.sessionID === sessionId)
+        || await activityProbe.hasWorkingDescendants(sessionId, Object.fromEntries(currentExecs.map((command) => [command.sessionID, true])), Infinity);
+      if (waitingForExec === null) {
+        armTimer(sessionId, directory, recheckMs);
+        return;
+      }
       // Past the wait the command is most likely a server left running: the
       // turn is audited as it stands instead of stopping the goal over it.
-      const stillWaiting = waitingOn.some((shell) => Date.now() - shell.startedAt < BACKGROUND_SHELL_WAIT_MS);
+      const stillWaiting = waitingForExec || waitingOn.some((shell) => Date.now() - shell.startedAt < BACKGROUND_SHELL_WAIT_MS);
       if (stillWaiting) {
         armTimer(sessionId, directory, recheckMs);
         return;

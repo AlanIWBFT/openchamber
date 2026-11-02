@@ -111,6 +111,7 @@ describe('opening a page before any view exists', () => {
           describe: () => ({ title: '', url: '' }),
           run: async (action, parameters) => {
             ran.push({ action, parameters });
+            if (action === 'browser.settle') return { title: 'Example', settled: true };
             return { viewport: { mode: 'mobile', width: 390, height: 844 } };
           },
         }));
@@ -122,7 +123,9 @@ describe('opening a page before any view exists', () => {
     await wait(400);
 
     expect(opened).toEqual(['https://example.test']);
-    expect(ran).toEqual([{ action: 'browser.resize', parameters: { viewport: 'mobile' } }]);
+    expect(ran.map((call) => call.action)).toEqual(['browser.resize', 'browser.settle']);
+    expect(ran[0].parameters).toEqual({ viewport: 'mobile' });
+    expect(Number.isFinite(ran[1].parameters.budgetMs)).toBe(true);
     expect(posted[0]?.data).toEqual({
       url: 'https://example.test',
       opened: true,
@@ -130,6 +133,8 @@ describe('opening a page before any view exists', () => {
       tabCreated: true,
       viewportApplied: true,
       viewport: { mode: 'mobile', width: 390, height: 844 },
+      title: 'Example',
+      settled: true,
       drivable: true,
     });
   });

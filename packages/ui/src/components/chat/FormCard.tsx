@@ -160,7 +160,7 @@ const GenericFormCard: React.FC<FormCardProps> = ({ form, recovered, inChat = fa
         try {
             const answer = buildFormAnswer(fields, values);
             if (recovered) {
-                await sessionActions.sendRecoveredFormAnswer(recovered, serializeFormAnswerAsMarkdown(form, answer));
+                await sessionActions.sendRecoveredFormAnswer(recovered, serializeFormAnswerAsMarkdown(form, answer), answer);
             } else {
                 await sessionActions.replyToForm(form.sessionID, form.id, answer);
             }

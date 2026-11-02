@@ -35,7 +35,7 @@ const session: Session = {
   tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
   time: { created: 0, updated: 1 },
 };
-const user = (id: string, created: number): UserMessage => ({ id, sessionID: sessionId, role: 'user', time: { created } });
+const user = (id: string, created: number): UserMessage & { seq: number } => ({ id, seq: created, sessionID: sessionId, role: 'user', time: { created } });
 
 // Counts every read of a part's text: the timeline reads it to build each
 // row's preview, so the count is the work the dialog does on a store update.

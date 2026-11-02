@@ -38,7 +38,6 @@ const makeRuntime = ({
   settings = {},
   endpoint = ENDPOINT,
   lineage = null,
-  isSessionArchived = async () => false,
   isWorktreePinned = async () => false,
   doneHintDelayMs = 5,
   activityProbe = null,
@@ -63,7 +62,6 @@ const makeRuntime = ({
     jev,
     readMetadata,
     updateMetadata,
-    isSessionArchived,
     isWorktreePinned,
     chatRoots: ['/home/me/.config/openchamber/chats'],
     lineage,
@@ -272,9 +270,9 @@ describe('session work runtime: recovering an open that failed', () => {
   });
 
   it('opens a session a message reached while archived once it is restored', async () => {
-    stubOpenCode();
     let archived = true;
-    const { runtime, updateMetadata, records } = makeRuntime({ isSessionArchived: async () => archived });
+    stubOpenCode({ session: { get time() { return { archived: archived ? 1 : undefined }; } } });
+    const { runtime, updateMetadata, records } = makeRuntime();
 
     runtime.processPayload(sent('msg_archived'));
     await new Promise((resolve) => setTimeout(resolve, 30));
@@ -292,9 +290,9 @@ describe('session work runtime: recovering an open that failed', () => {
   });
 
   it('keeps a session closed when the user closed it after the message, even once restored', async () => {
-    stubOpenCode();
     let archived = true;
-    const { runtime, records } = makeRuntime({ isSessionArchived: async () => archived });
+    stubOpenCode({ session: { get time() { return { archived: archived ? 1 : undefined }; } } });
+    const { runtime, records } = makeRuntime();
 
     runtime.processPayload(sent('msg_archived'));
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -307,10 +305,10 @@ describe('session work runtime: recovering an open that failed', () => {
   });
 
   it('opens nothing on a restore once In work was turned off', async () => {
-    stubOpenCode();
     let archived = true;
+    stubOpenCode({ session: { get time() { return { archived: archived ? 1 : undefined }; } } });
     const settings = { enabled: true };
-    const { runtime, records } = makeRuntime({ settings, isSessionArchived: async () => archived });
+    const { runtime, records } = makeRuntime({ settings });
     runtime.processPayload(sent('msg_archived'));
     await new Promise((resolve) => setTimeout(resolve, 20));
     archived = false;
@@ -321,15 +319,13 @@ describe('session work runtime: recovering an open that failed', () => {
   });
 
   it('writes nothing once stopped while it read the archive state', async () => {
-    stubOpenCode();
     let answerArchived;
-    const { runtime, updateMetadata } = makeRuntime({
-      isSessionArchived: () => new Promise((resolve) => { answerArchived = resolve; }),
-    });
+    stubOpenCode().mockImplementationOnce(() => new Promise((resolve) => { answerArchived = resolve; }));
+    const { runtime, updateMetadata } = makeRuntime();
     runtime.processPayload(sent('msg_stop'));
     await settle(() => answerArchived !== undefined);
     runtime.stop();
-    answerArchived(false);
+    answerArchived(Response.json({ data: { id: 'ses_1', time: {} } }));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(updateMetadata).not.toHaveBeenCalled();
   });

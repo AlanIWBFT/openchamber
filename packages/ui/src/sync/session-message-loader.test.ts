@@ -416,7 +416,7 @@ describe("SessionMessageLoader", () => {
   test("records only completed replies from older pages and retains their provenance after a trim", async () => {
     const target = { directory: "/repo", sessionID: "session-a" }
     const answer = (id: string, created: number) => ({
-      info: { id, sessionID: target.sessionID, role: "assistant" as const, time: { created, completed: created + 1 }, finish: "stop" as const, agent: "build", providerID: "test", modelID: "test" },
+      info: { id, seq: created, sessionID: target.sessionID, role: "assistant" as const, time: { created, completed: created + 1 }, finish: "stop" as const, agent: "build", providerID: "test", modelID: "test" },
       parts: [{ id: `part_${id}`, messageID: id, sessionID: target.sessionID, type: "text" as const, text: id }],
     })
     const older = answer("old-answer", 2)

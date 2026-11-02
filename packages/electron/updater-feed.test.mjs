@@ -2,11 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  CANARY_MIRROR_UPDATER_FEED,
-  CANARY_UPDATER_FEED,
-  MIRROR_FAILURE_BACKOFF_MS,
   PRODUCTION_UPDATER_FEED,
-  STABLE_MIRROR_UPDATER_FEED,
   pickUpdaterSource,
   isCanaryVersion,
   isUpdateChannel,
@@ -29,20 +25,32 @@ test('production updater feed is immutable GitHub configuration', () => {
   });
 });
 
-test('the Canary channel reads the canary pre-release; on a release build every other stored value is Stable', () => {
-  assert.equal(resolveUpdaterFeed({ channel: 'canary' }), CANARY_UPDATER_FEED);
-  assert.equal(CANARY_UPDATER_FEED.url, 'https://github.com/openchamber/openchamber/releases/download/canary/');
+test('legacy Canary selections always resolve to fork Stable', () => {
+  assert.equal(resolveUpdaterFeed({ channel: 'canary' }), PRODUCTION_UPDATER_FEED);
   assert.equal(resolveUpdaterFeed({ channel: 'stable' }), PRODUCTION_UPDATER_FEED);
-  assert.equal(normalizeUpdateChannel('canary', '2.6.1'), 'canary');
-  for (const value of ['stable', undefined, null, 'beta', 'Canary', 1]) assert.equal(normalizeUpdateChannel(value, '2.6.1'), 'stable');
+  assert.equal(normalizeUpdateChannel('canary'), 'stable');
+  for (const value of ['stable', undefined, null, 'beta', 'Canary', 1]) assert.equal(normalizeUpdateChannel(value), 'stable');
   assert.deepEqual(['stable', 'canary', 'beta', undefined].map(isUpdateChannel), [true, true, false, false]);
   // The loopback feed wins on either channel.
   assert.equal(resolveUpdaterFeed({ environment: overrideEnvironment, testBuild: true, channel: 'canary' }).url, overrideEnvironment.OPENCHAMBER_UPDATER_E2E_URL);
 });
 
-test('a Canary build nobody picked a channel for stays on Canary; a stored pick wins', () => {
+test('every source and legacy channel stays on fork Stable', () => {
+  for (const channel of ['stable', 'canary', undefined]) {
+    for (const source of ['mirror', 'github', undefined]) {
+      assert.equal(resolveUpdaterFeed({ channel, source }), PRODUCTION_UPDATER_FEED);
+    }
+  }
+  for (const mirrorFailedAt of [null, 0, Date.now()]) {
+    assert.equal(pickUpdaterSource({ mirrorFailedAt }), 'github');
+  }
+  assert.equal(resolveUpdaterFeed({ environment: overrideEnvironment, testBuild: true, channel: 'canary', source: 'mirror' }).url,
+    overrideEnvironment.OPENCHAMBER_UPDATER_E2E_URL);
+});
+
+test('a Canary build without a channel pick still follows fork Stable', () => {
   const canaryBuild = '2.6.2-canary.20261105.7';
-  for (const value of [undefined, null, 'beta']) assert.equal(normalizeUpdateChannel(value, canaryBuild), 'canary');
+  for (const value of [undefined, null, 'beta']) assert.equal(normalizeUpdateChannel(value, canaryBuild), 'stable');
   assert.equal(normalizeUpdateChannel('stable', canaryBuild), 'stable');
 });
 
@@ -101,18 +109,4 @@ test('invalid URLs fall back to the production feed even with both test gates', 
       testBuild: true,
     }), PRODUCTION_UPDATER_FEED);
   }
-});
-
-test('both channels read the mirror, and GitHub for an hour after the mirror failed', () => {
-  const now = 10 * MIRROR_FAILURE_BACKOFF_MS;
-  assert.equal(pickUpdaterSource({ now }), 'mirror');
-  assert.equal(pickUpdaterSource({ mirrorFailedAt: now - 1000, now }), 'github');
-  assert.equal(pickUpdaterSource({ mirrorFailedAt: now - MIRROR_FAILURE_BACKOFF_MS, now }), 'mirror');
-  assert.equal(resolveUpdaterFeed({ channel: 'stable', source: 'mirror' }), STABLE_MIRROR_UPDATER_FEED);
-  assert.equal(resolveUpdaterFeed({ channel: 'canary', source: 'mirror' }), CANARY_MIRROR_UPDATER_FEED);
-  assert.equal(resolveUpdaterFeed({ channel: 'stable', source: 'github' }), PRODUCTION_UPDATER_FEED);
-  assert.equal(resolveUpdaterFeed({ channel: 'canary', source: 'github' }), CANARY_UPDATER_FEED);
-  assert.equal(STABLE_MIRROR_UPDATER_FEED.url, 'https://downloads.openchamber.dev/desktop/stable/');
-  assert.equal(CANARY_MIRROR_UPDATER_FEED.url, 'https://downloads.openchamber.dev/desktop/canary/');
-  assert.equal(resolveUpdaterFeed({ environment: overrideEnvironment, testBuild: true, channel: 'stable', source: 'mirror' }).url, overrideEnvironment.OPENCHAMBER_UPDATER_E2E_URL);
 });
