@@ -1683,6 +1683,10 @@ A local mark would show the card only on the page that sent. The call's failure 
 
 A missing form can have been answered on another client. Recovery therefore requires request-specific turn-death evidence; missing forms, idle status and disconnects alone cannot re-ask a question.
 
+### Why submitted recovery answers carry structured metadata
+
+The new user message carries `openchamberRecoveredQuestionAnswer`: the original message/tool link, questions and options, and ordered answers. OpenCode uses that explicit record to restore the answer verbatim after compaction; it never infers a formal answer from Markdown. The interrupted tool stays failed, and the recovery card's memory-only lifetime does not limit the submitted answer's persistence.
+
 ### Restore (unarchive) contract
 
 An explicitly user-initiated composer send restores an archived top-level

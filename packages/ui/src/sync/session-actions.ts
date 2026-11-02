@@ -1,13 +1,12 @@
 
 import type { FilePart, FormRequest, JsonValue, Message, Metadata, ModelSelection, Part, PermissionRequest, Session, SyntheticMessage, TextPart, UserMessage } from "@/lib/opencode/model"
+import type { FormValue } from "@opencode/client"
 import { compact, partIds } from "@/lib/opencode/model"
 import { attachmentBasename, withMissingCitations } from "@/lib/attachmentIdentity"
 import { isAutoModel } from "@/lib/routing/autoModel"
 import { Binary } from "./binary"
 import { dropSessionCaches } from "./session-cache"
 import { forkAtTranscriptCut, isTurnBoundary, transcriptCutAfterMessage, transcriptCutForMessage } from "./transcript-cut"
-import { readDispatchedSessionResult } from "@/lib/opencode/dispatched-session"
-import { readWorkflowReport } from "@/lib/workflows/report"
 import { isRunningSubagentRunMessage, readSubagentRun } from "@/lib/opencode/subagent-run"
 import { useSessionUIStore, type SentMessage } from "./session-ui-store"
 import { useSelectionStore } from "./selection-store"
@@ -24,6 +23,7 @@ import {
   noteLocalFormReplied,
   submitRecoveredAnswer,
   useRecoverableQuestionsStore,
+  recoveredQuestionAnswerMetadata,
   type RecoveredQuestion,
 } from "./recoverable-questions"
 import { resolveCheckedSendSelection, resolveSendSelection } from "./session-selection"
@@ -91,7 +91,7 @@ import { beginSessionStatusRequest, readDirectoryStatusSnapshot } from "./direct
 import { applyForkInheritance } from "@/lib/sessionForkInheritance"
 import { getSessionGoal } from "@/lib/sessionGoalMetadata"
 import { fetchGoalObjectiveContent, writeGoalObjectiveFile } from "@/lib/goalObjectiveFiles"
-import { selectRevertedMessages, selectVisibleMessages } from "./message-boundary"
+import { selectRevertedMessages } from "./message-boundary"
 
 const SEND_CONFIRMATION_REFETCH_LIMIT = 30
 const MESSAGE_REFETCH_LIMIT = 100
@@ -1909,6 +1909,7 @@ export async function optimisticSend(input: {
   const optimisticAdd = _optimisticAdd
   const optimisticRemove = _optimisticRemove
   const expectedRuntimeKey = input.runtimeKey ?? getRuntimeKey()
+  const isCurrentRuntime = captureRuntimeInstance()
 
   const assertRuntimeUnchanged = () => {
     if (expectedRuntimeKey !== getRuntimeKey()) {
@@ -2048,7 +2049,9 @@ export async function optimisticSend(input: {
     assertRuntimeUnchanged()
     requestSent = true
     await input.send(messageID, context)
-    assertRuntimeUnchanged()
+    // A completed send still succeeded at its original runtime. Its previews
+    // must not be removed from a replacement store, including a round-trip switch.
+    if (!isCurrentRuntime() || opencodeClient.getSdkClient() !== sdk || (targetDirectory && _childStores?.getChild(targetDirectory) !== store)) return
     // These are previews of inline prompt context. Their canonical synthetic
     // message IDs are assigned by OpenCode when the owning prompt is delivered.
     for (const optimisticID of optimisticIDs) {
@@ -2464,7 +2467,8 @@ function recoveredAnswerSelection(question: RecoveredQuestion): RecoveredAnswerS
   throw new Error("No model is recorded for this question")
 }
 
-export async function sendRecoveredFormAnswer(question: RecoveredQuestion, text: string): Promise<void> {
+/** Uses the normal send path for rollback and ambiguous-failure confirmation. */
+export async function sendRecoveredFormAnswer(question: RecoveredQuestion, text: string, answer: Record<string, FormValue>): Promise<void> {
   const runtimeKey = getRuntimeKey()
   const isCurrentRuntime = captureRuntimeInstance()
   const deferred = question.evidence === "deferred-on-send"
@@ -2484,7 +2488,7 @@ export async function sendRecoveredFormAnswer(question: RecoveredQuestion, text:
         userInitiated: true,
         queuedGoal: null,
         target: { runtimeKey, sessionId: question.sessionID, directory: question.directory },
-        metadata: deferred ? deferredAnswerMetadata(question.form.id) : undefined,
+        metadata: { ...recoveredQuestionAnswerMetadata(question, answer), ...(deferred && deferredAnswerMetadata(question.form.id)) },
       },
     )
     if (isCurrentRuntime()) noteLocalFormReplied(question.sessionID, question.form.id)

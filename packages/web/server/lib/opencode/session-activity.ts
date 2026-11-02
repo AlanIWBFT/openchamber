@@ -53,6 +53,7 @@ const backgroundJobsSchema = z.array(z.object({
   command: z.string().optional(),
   time: z.object({ started: z.number() }),
 }));
+const runningExecsSchema = z.array(z.object({ sessionID: z.string().min(1), command: z.string(), startedAt: z.number() }));
 
 export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, timeoutMs = 10_000, fetchImpl = fetch, signal: parentSignal }: SessionActivityOptions) => {
   const requestSignal = () => {
@@ -160,8 +161,19 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
 
   return {
     fetchActiveSessionStatuses,
+    fetchRunningExecs: async () => {
+      const response = await fetchImpl(buildOpenCodeUrl('/api/session/exec', ''), {
+        headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() }, signal: requestSignal(),
+      }).catch(() => null);
+      if (!response) return null;
+      const body: JsonValue = await response.json().catch(() => null);
+      if (response.status === 404 && !(hasTag(body) ? body._tag : undefined)) return [];
+      if (!response.ok) return null;
+      const parsed = runningExecsSchema.safeParse(unwrapOpenCodeResponse(body));
+      return parsed.success ? parsed.data : null;
+    },
     hasWorkingChildren: (sessionId: string, statuses: NonNullable<Awaited<ReturnType<typeof fetchActiveSessionStatuses>>>) => hasWorkingWithinDepth(sessionId, statuses, MAX_SUBAGENT_DEPTH, true),
-    hasWorkingDescendants: (sessionId: string, statuses: NonNullable<Awaited<ReturnType<typeof fetchActiveSessionStatuses>>>) => hasWorkingWithinDepth(sessionId, statuses, MAX_SUBAGENT_DEPTH),
+    hasWorkingDescendants: (sessionId: string, statuses: NonNullable<Awaited<ReturnType<typeof fetchActiveSessionStatuses>>>, maxDepth = MAX_SUBAGENT_DEPTH) => hasWorkingWithinDepth(sessionId, statuses, maxDepth),
     fetchRunningShells,
     fetchRunningBackgroundJobs,
   };

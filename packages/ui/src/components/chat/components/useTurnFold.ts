@@ -1,18 +1,27 @@
 import React from 'react';
-import { getShownPages } from '../lib/turns/liveActivity';
+import { getShownPages, projectFoldMessages } from '../lib/turns/liveActivity';
 import type { TurnRecord } from '../lib/turns/types';
 
 export const foldContentId = (turnId: string) => `turn-activity-${turnId}`;
 export const finalActivityContentId = (turnId: string) => `turn-final-activity-${turnId}`;
 
+/**
+ * A turn's foldable work in either default mode, as list rows split it
+ * (`timelineRows.ts`): the fold's header row, the steps (rows of their own
+ * once opened), the pages a turn without an answer showed, and the final
+ * answer, whose own non-text parts fold with the rest.
+ */
 export const useTurnFold = (turn: TurnRecord, hasLaterAssistant: boolean, expanded: boolean, finalMessageId: string | undefined) => {
-    const finalMessage = finalMessageId ? turn.assistantMessages.find((message) => message.info.id === finalMessageId) : undefined;
-    const activityMessages = React.useMemo(
-        () => (finalMessage ? turn.assistantMessages.filter((message) => message !== finalMessage) : turn.assistantMessages),
-        [finalMessage, turn.assistantMessages],
-    );
+    // Named by the rows (`timelineRows.ts`), which are built from the turn's
+    // record: a live turn's newest parts may already finish an answer the
+    // record does not have yet, and the answer has no row of its own until it does.
+    const { finalMessage, activityMessages } = React.useMemo(() => projectFoldMessages(turn, finalMessageId), [turn, finalMessageId]);
     const settled = Boolean(finalMessage) || hasLaterAssistant;
-    const pages = React.useMemo(() => getShownPages(turn.assistantMessages, finalMessage), [turn.assistantMessages, finalMessage]);
+    // A page the agent showed is never folded away: it sits below the fold,
+    // above the answer once one arrives, and stays there in a turn that ended
+    // without one.
+    // The final answer's own text is the answer, so it is never hoisted.
+    const pages = React.useMemo(() => getShownPages(turn.assistantMessages, turn.assistantMessages.find((message) => message.info.id === finalMessageId)), [turn.assistantMessages, finalMessageId]);
     return { finalMessage, activityMessages, settled, isExpanded: !settled || expanded, pages };
 };
 

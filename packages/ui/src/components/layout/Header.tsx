@@ -398,7 +398,7 @@ export const Header: React.FC = () => {
 
   React.useEffect(() => {
     setIsHeaderSessionMenuOpen(false);
-    setPendingDeleteSessionId(null);
+    setPendingHeaderRetentionAction(null);
     if (currentSessionId && pendingHeaderRenameRef.current === currentSessionId) {
       pendingHeaderRenameRef.current = null;
       beginHeaderSessionRenameRef.current();

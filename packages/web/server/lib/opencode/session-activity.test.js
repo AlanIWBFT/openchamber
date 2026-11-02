@@ -50,7 +50,7 @@ describe('direct child activity', () => {
 describe('queue descendant activity', () => {
   const running = { type: 'running' };
 
-  it.each(['statuses', 'descendants', 'shells'])('cancels a hanging %s read with its caller', async (operation) => {
+  it.each(['statuses', 'descendants', 'shells', 'execs'])('cancels a hanging %s read with its caller', async (operation) => {
     const controller = new AbortController();
     const entered = Promise.withResolvers();
     const probe = createSessionActivityProbe({
@@ -63,6 +63,7 @@ describe('queue descendant activity', () => {
     });
     const result = operation === 'statuses' ? probe.fetchActiveSessionStatuses()
       : operation === 'shells' ? probe.fetchRunningShells('/repo/run')
+        : operation === 'execs' ? probe.fetchRunningExecs()
         : probe.hasWorkingDescendants('root', { child: running });
     const signal = await entered.promise;
     controller.abort(new DOMException('Cleanup timed out', 'TimeoutError'));
@@ -209,6 +210,9 @@ describe('running background jobs', () => {
   });
 
   it('tells an OpenCode without the route from one that could not answer', async () => {
+    expect(await probeAnswering(() => new Response(null, { status: 404 })).fetchRunningExecs()).toEqual([]);
+    expect(await probeAnswering(() => new Response(null, { status: 403 })).fetchRunningExecs()).toBeNull();
+    expect(await probeAnswering(() => Response.json({ data: {} })).fetchRunningExecs()).toBeNull();
     expect(await probeAnswering(() => new Response(null, { status: 404 })).fetchRunningBackgroundJobs('root')).toBeUndefined();
     const gone = () => Response.json({ _tag: 'SessionNotFoundError', message: 'Session not found' }, { status: 404 });
     expect(await probeAnswering(gone).fetchRunningBackgroundJobs('root')).toBeNull();

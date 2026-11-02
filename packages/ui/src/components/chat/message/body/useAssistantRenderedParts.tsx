@@ -16,7 +16,7 @@ import { isExpandableTool } from '../parts/toolRenderUtils';
 import { ShownPartCard, ShownToolCard } from '../parts/ShownToolCard';
 import { isExecuteTool, isShownInPlace } from '@/lib/opencode/tools';
 import { LiveActivityCollapse } from '../../components/LiveActivityCollapse';
-import { ActivityRowSkipContext, isActivityRowPart, isToolRowShown } from '../../lib/turns/activityRows';
+import { isToolRowShown } from '../../lib/turns/activityRows';
 import { LiveFinalActivityContext, LiveTurnHoistedCommandsContext, LiveTurnHoistedPagesContext } from '../../components/liveActivityContext';
 import { MessageSliceContext } from '../messageSliceContext';
 import { MessageSelectionMark } from '../../messageSelection/MessageSelectionMark';
@@ -64,7 +64,6 @@ export const useAssistantRenderedParts = ({
 }) => {
     const collapsibleThinkingBlocks = useUIStore((state) => state.collapsibleThinkingBlocks);
     const liveFinalActivity = React.useContext(LiveFinalActivityContext);
-    const activityRowSkip = React.useContext(ActivityRowSkipContext);
     const hoistedPages = React.useContext(LiveTurnHoistedPagesContext);
     const hoistedCommands = React.useContext(LiveTurnHoistedCommandsContext);
     const slice = React.useContext(MessageSliceContext);
@@ -92,7 +91,6 @@ export const useAssistantRenderedParts = ({
             return showReasoningTraces && !isEmptyTextPart(activity.part);
         }));
 
-        let rowsToSkip = activityRowSkip?.messageId === messageId ? activityRowSkip.rows : 0;
         let sliceStarted = !slice?.from;
         const firstTextPartId = visibleParts.find((candidate) => candidate.type === 'text')?.id;
         let i = 0;
@@ -106,11 +104,6 @@ export const useAssistantRenderedParts = ({
                 }
             }
             if (slice?.to && (slice.to.offset === 0 ? part.id === slice.to.partId : visibleParts[i - 1]?.id === slice.to.partId)) break;
-            if (rowsToSkip > 0 && (activityRowSkip?.partIds ? activityRowSkip.partIds.has(part.id) : isActivityRowPart(part))) {
-                rowsToSkip -= 1;
-                i += 1;
-                continue;
-            }
             rendered = splitLiveActivity && part.type !== 'text' ? activityRendered : answerRendered;
 
             if (part.type === 'text') {
@@ -298,7 +291,6 @@ export const useAssistantRenderedParts = ({
         }
         return answerRendered;
     }, [
-        activityRowSkip,
         alwaysShowMessageActions,
         hoistedPages,
         hoistedCommands,

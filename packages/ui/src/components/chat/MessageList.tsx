@@ -92,7 +92,10 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         defaultActivityExpanded,
         turnExpansion,
     });
-    const footerWithApprovals = useApprovalFooter(sessionKey, directory, baseDisplayMessages, trailingStreamingEntry, listFooter);
+    const liveSourceEntry = React.useMemo(() => activeStreamingMessageId
+        ? allEntries.find((entry) => entry.kind === 'turn' ? entry.turn.assistantMessageIds.includes(activeStreamingMessageId) : entry.message.info.id === activeStreamingMessageId) ?? trailingStreamingEntry
+        : trailingStreamingEntry, [activeStreamingMessageId, allEntries, trailingStreamingEntry]);
+    const footerWithApprovals = useApprovalFooter(sessionKey, directory, baseDisplayMessages, liveSourceEntry, listFooter);
 
     const [liveTail] = React.useState(createLiveTailStore);
     const {
@@ -122,7 +125,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         shouldAnimateUserMessage,
         onUserAnimationConsumed,
         reviewTransferDirection,
-        streamingTailKey: trailingStreamingEntry?.key ?? null,
+        streamingTailKey: liveSourceEntry?.key ?? null,
         liveTail,
         sessionIsWorking,
         activeStreamingMessageId,
@@ -137,13 +140,13 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         shouldAnimateUserMessage,
         stableScrollToBottom,
         toggleTurnActivity,
-        trailingStreamingEntry?.key,
+        liveSourceEntry?.key,
         turnExpansion,
     ]);
 
     return (
         <FadeInDisabledProvider disabled>
-            <LiveTailSource entry={trailingStreamingEntry} directory={directory}
+            <LiveTailSource entry={liveSourceEntry} directory={directory}
                 showTurnChangedFiles={showTurnChangedFiles} showReasoningTraces={showReasoningTraces} store={liveTail} />
             <TimelineList
                 key={sessionKey}

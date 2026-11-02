@@ -9,10 +9,21 @@ const pageReply = z.object({
   answer: z.object({ answered: z.literal(true), summary: z.string(), data: z.json() }),
 });
 const questionAnswers = z.array(z.array(z.string()));
+const uiBlockReply = z.object({ messageId: z.string(), block: z.string(), answer: z.object({
+  picks: z.array(z.object({ button: z.string().optional(), value: z.string().optional(), note: z.string().optional() })),
+  values: z.record(z.string(), z.union([z.string(), z.array(z.string())])), skipped: z.array(z.string()),
+}) });
 
 export function projectSessionMessages(records: Iterable<StoredRecord>, role: string): TextMessage[] {
   const result: TextMessage[] = [];
   for (const record of [...records].sort((a, b) => a.seq - b.seq)) {
+    if (record.type === 'synthetic' && (role === 'all' || role === 'user')) {
+      const reply = uiBlockReply.safeParse(record.metadata?.openchamberUiBlockAnswer);
+      if (reply.success) result.push({
+        id: `page-answer:${record.id}:${reply.data.block}`, role: 'user', createdAt: record.time.created, completedAt: null, model: null,
+        text: `User submitted UI block choices (button labels and field keys are UI-generated; notes are user text; skipped items are not approval).\nSource message: ${reply.data.messageId}\nBlock: ${reply.data.block}\nSubmitted data: ${JSON.stringify(reply.data.answer)}`,
+      });
+    }
     if (record.type !== 'user' && record.type !== 'assistant') continue;
     if (role === 'all' || role === record.type) {
       const text = (record.type === 'user' ? record.text : record.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('')).trim();

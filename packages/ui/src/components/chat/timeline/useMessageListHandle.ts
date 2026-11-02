@@ -32,7 +32,7 @@ export const useMessageListHandle = (
         projection: TurnProjection;
         defaultActivityExpanded: boolean;
         indexes: ReturnType<typeof useTimelineRowIndexes>;
-        expandTurnActivity: (turnId: string) => boolean;
+        expandTurnActivity: (foldIds: string[]) => boolean;
     },
 ) => {
     const { messageIndexMap, turnIndexMap, rowIndexByKey, collapsibleTurnByMessageId, turnByAssistantMessageId } = indexes;

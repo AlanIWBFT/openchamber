@@ -67,6 +67,7 @@ const apis = {
     ...base.git,
     checkIsGitRepository: async () => true,
     getGitStatus: async () => ({ current: 'main', tracking: null, ahead: 0, behind: 0, files: [], isClean: true }),
+    getPassiveGitStatus: async () => ({ current: 'main', tracking: null, ahead: 0, behind: 0, files: [], isClean: true }),
   },
   sourceControl: {
     ...base.sourceControl,
