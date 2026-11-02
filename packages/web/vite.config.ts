@@ -108,6 +108,7 @@ export default defineConfig({
     }),
   ],
   resolve: {
+    dedupe: ['react', 'react-dom'],
     alias: aliases,
   },
   worker: {
@@ -119,7 +120,15 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },
   optimizeDeps: {
-    include: ['@opencode/client'],
+    include: [
+      '@opencode/client',
+      'react',
+      'react-dom',
+      'react-dom/client',
+      'react/jsx-dev-runtime',
+      'react/jsx-runtime',
+      'react/compiler-runtime',
+    ],
   },
   server: {
     port: 5173,

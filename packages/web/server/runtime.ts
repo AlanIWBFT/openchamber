@@ -300,7 +300,7 @@ const uiNotificationClients = new Set<Response>();
 const uiNotificationWsClients = new Set<StreamSocket>();
 const uiOpenChamberEventClients = new Set<ScheduledTaskEventClient>();
 const HEALTH_CHECK_INTERVAL = 15000;
-const SHUTDOWN_TIMEOUT = 10000;
+const SHUTDOWN_TIMEOUT = 35000;
 const MODELS_DEV_API_URL = 'https://models.dev/api.json';
 const MODELS_METADATA_CACHE_TTL = 5 * 60 * 1000;
 const CLIENT_RELOAD_DELAY_MS = 800;
@@ -3170,7 +3170,7 @@ async function main(options: WebUiServerOptions = {}) {
         port: managed ? openCodePort : null,
       };
     },
-    stop: (shutdownOptions: { exitProcess?: boolean } = {}) => gracefulShutdown({ exitProcess: shutdownOptions.exitProcess ?? false }),
+    stop: (shutdownOptions: { exitProcess?: boolean; deadline?: number } = {}) => gracefulShutdown({ ...shutdownOptions, exitProcess: shutdownOptions.exitProcess ?? false }),
   };
 }
 

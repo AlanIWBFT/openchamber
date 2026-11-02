@@ -1415,7 +1415,11 @@ const spawnLocalServer = async () => {
     log.warn('[desktop] LAN access was requested without a desktop UI password; starting on loopback only.');
   }
 
-  const candidates = [storedPort, DEFAULT_DESKTOP_PORT].filter((v) => Number.isFinite(v) && v > 0);
+  const configuredHmrApiPort = Number.parseInt(process.env.OPENCHAMBER_HMR_API_PORT || '', 10);
+  const hmrApiPort = isDev && Number.isInteger(configuredHmrApiPort) && configuredHmrApiPort > 0 && configuredHmrApiPort <= 65535
+    ? configuredHmrApiPort
+    : null;
+  const candidates = [hmrApiPort, storedPort, DEFAULT_DESKTOP_PORT].filter((v) => Number.isFinite(v) && v > 0);
   let chosenPort = 0;
   for (const candidate of candidates) {
     if (await isPortFree(candidate, bindHost)) {
@@ -1425,6 +1429,9 @@ const spawnLocalServer = async () => {
   }
   if (chosenPort === 0) {
     chosenPort = await pickUnusedPort(bindHost);
+  }
+  if (hmrApiPort && chosenPort !== hmrApiPort) {
+    throw new Error(`HMR API port ${hmrApiPort} is unavailable`);
   }
 
   if (!lanAccessBlockedByEnterprise && !lanAccessBlockedByMissingPassword) {
@@ -1598,6 +1605,7 @@ const killSidecar = async () => {
 const buildInitScript = (localOrigin, bootOutcome, apiBaseUrl = '', clientToken = '', requestHeaders = {}) => {
   const home = JSON.stringify(os.homedir() || '');
   const local = JSON.stringify(localOrigin || '');
+  const localUi = JSON.stringify(state.localUiUrl || '');
   const apiBase = JSON.stringify(apiBaseUrl || '');
   const token = JSON.stringify(clientToken || '');
   const headers = JSON.stringify(sanitizeRuntimeRequestHeaders(requestHeaders));
@@ -1607,7 +1615,7 @@ const buildInitScript = (localOrigin, bootOutcome, apiBaseUrl = '', clientToken 
   const sshForwardedApiUrl = JSON.stringify(sshManager.isForwardedApiUrl(apiBaseUrl) ? apiBaseUrl : '');
   return [
     '(function(){',
-    `try{var __oc_local=${local};var __oc_api=${apiBase};var __oc_headers=${headers};var __oc_packaged=${packagedOrigin};var __oc_origin=window.location&&window.location.origin||'';var __oc_is_packaged=__oc_origin===__oc_packaged;var __oc_is_local=__oc_local&&__oc_origin===new URL(__oc_local).origin;window.__OPENCHAMBER_MACOS_MAJOR__=${macVersion};window.__OPENCHAMBER_LOCAL_ORIGIN__=__oc_local;window.__OPENCHAMBER_API_BASE_URL__=__oc_api;window.__OPENCHAMBER_SSH_FORWARD_API_URL__=${sshForwardedApiUrl};if(__oc_is_local||__oc_is_packaged){window.__OPENCHAMBER_HOME__=${home};window.__OPENCHAMBER_RUNTIME_HEADERS__=__oc_headers;}if((__oc_is_local||__oc_is_packaged)&&${token}){window.__OPENCHAMBER_CLIENT_TOKEN__=${token};}var __oc_bo=${outcome};if(__oc_bo){window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__=__oc_bo;}}catch(_e){}`,
+    `try{var __oc_local=${local};var __oc_local_ui=${localUi};var __oc_api=${apiBase};var __oc_headers=${headers};var __oc_packaged=${packagedOrigin};var __oc_origin=window.location&&window.location.origin||'';var __oc_is_packaged=__oc_origin===__oc_packaged;var __oc_is_local=__oc_origin!=='null'&&((__oc_local&&__oc_origin===new URL(__oc_local).origin)||(__oc_local_ui&&__oc_origin===new URL(__oc_local_ui).origin));window.__OPENCHAMBER_MACOS_MAJOR__=${macVersion};window.__OPENCHAMBER_LOCAL_ORIGIN__=__oc_local;window.__OPENCHAMBER_API_BASE_URL__=__oc_api;window.__OPENCHAMBER_SSH_FORWARD_API_URL__=${sshForwardedApiUrl};if(__oc_is_local||__oc_is_packaged){window.__OPENCHAMBER_HOME__=${home};window.__OPENCHAMBER_RUNTIME_HEADERS__=__oc_headers;}if((__oc_is_local||__oc_is_packaged)&&${token}){window.__OPENCHAMBER_CLIENT_TOKEN__=${token};}var __oc_bo=${outcome};if(__oc_bo){window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__=__oc_bo;}}catch(_e){}`,
     '}())',
   ].join('');
 };
@@ -1906,7 +1914,7 @@ const switchToHostById = async (rawId) => {
   let clientToken = '';
   let requestHeaders = {};
   if (id === LOCAL_HOST_ID) {
-    targetUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.sidecarUrl || state.localOrigin);
+    targetUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.localUiUrl || state.sidecarUrl || state.localOrigin);
     apiBaseUrl = state.sidecarUrl;
     clientToken = readDesktopLocalClientToken();
     requestHeaders = {};
@@ -2541,7 +2549,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
     try {
       const url = new URL(raw);
       if (url.protocol === 'devtools:') return true;
-      if (url.protocol === `${UI_PROTOCOL}:`) return true;
+      if (url.protocol === `${UI_PROTOCOL}:` && url.hostname === 'app') return true;
       if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
       try {
         if (new URL(browserWindow.webContents.getURL()).origin === url.origin) return true;
@@ -2556,6 +2564,12 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
       if (state.sidecarUrl) {
         try {
           if (new URL(state.sidecarUrl).origin === url.origin) return true;
+        } catch {
+        }
+      }
+      if (state.localUiUrl) {
+        try {
+          if (new URL(state.localUiUrl).origin === url.origin) return true;
         } catch {
         }
       }
@@ -2767,7 +2781,7 @@ const openMainWindow = async () => {
   }
 
   const config = readDesktopHostsConfig();
-  const localUiUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.sidecarUrl || state.localOrigin);
+  const localUiUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.localUiUrl || state.sidecarUrl || state.localOrigin);
   const host = config.defaultHostId && config.defaultHostId !== LOCAL_HOST_ID
     ? config.hosts.find((entry) => entry.id === config.defaultHostId)
     : null;
@@ -2879,7 +2893,7 @@ const openHostWindow = async (host, route = null, { reuseOpenWindow = false } = 
   let windowUrl;
   let runtimeConfig;
   if (host.relay) {
-    windowUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.sidecarUrl || state.localOrigin);
+    windowUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.localUiUrl || state.sidecarUrl || state.localOrigin);
     runtimeConfig = {
       apiBaseUrl: '',
       clientToken: host.clientToken || '',
@@ -3089,7 +3103,7 @@ const setMiniChatPinned = (browserWindow, pinned) => {
   const nextPinned = pinned === true;
   browserWindow.__ocPinned = nextPinned;
   if (nextPinned) {
-    browserWindow.setAlwaysOnTop(true, 'floating');
+    browserWindow.setAlwaysOnTop(true, 'normal');
   } else {
     browserWindow.setAlwaysOnTop(false);
     if (process.platform === 'darwin') {
@@ -3164,9 +3178,7 @@ const isPlainLocalBoot = () => {
 };
 
 const resolveInitialUrl = async ({ onPlainLocalBoot = null } = {}) => {
-  const hmrApiPort = process.env.OPENCHAMBER_HMR_API_PORT || '3901';
   const hmrUiPort = process.env.OPENCHAMBER_HMR_UI_PORT || '5173';
-  const hmrApiUrl = `http://127.0.0.1:${hmrApiPort}`;
   const hmrUiUrl = `http://127.0.0.1:${hmrUiPort}`;
   const usePackagedUi = shouldUsePackagedUi();
   const skipLocalServer = await shouldSkipLocalServer();
@@ -3186,16 +3198,13 @@ const resolveInitialUrl = async ({ onPlainLocalBoot = null } = {}) => {
   }
   const localUrl = skipLocalServer
     ? null
-    : startupProbePlan.probeHmrApi && await waitForHealth(hmrApiUrl, 5_000, 100)
-      ? hmrApiUrl
-      : await spawnLocalServer();
+    : await spawnLocalServer();
 
   const localUiUrl = usePackagedUi
     ? buildPackagedUiUrl('/index.html')
     : startupProbePlan.probeHmrUi && await waitForHealth(hmrUiUrl, 8_000, 100)
     ? hmrUiUrl
     : localUrl;
-
   if (localUiUrl === hmrUiUrl) {
     await session.defaultSession.clearCache();
   }
@@ -4746,7 +4755,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
 
     case 'desktop_new_window': {
       const config = readDesktopHostsConfig();
-      const localUiUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.sidecarUrl || state.localOrigin);
+      const localUiUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.localUiUrl || state.sidecarUrl || state.localOrigin);
       let targetUrl = localUiUrl;
       let runtimeConfig = {
         apiBaseUrl: state.sidecarUrl || state.localOrigin || '',
@@ -5360,6 +5369,13 @@ const isLocalSender = (webContents) => {
       } catch {
       }
     }
+    if (state.localUiUrl) {
+      try {
+        const allowed = new URL(state.localUiUrl);
+        if (allowed.origin === url.origin) return true;
+      } catch {
+      }
+    }
     return false;
   } catch {
     return false;
@@ -5856,5 +5872,5 @@ app.whenReady().then(async () => {
 }).catch((error) => {
   if (state.quitInProgress) return;
   log.error('[electron] startup failed:', error);
-  app.exit(1);
+  void shutdownBackgroundServices().finally(() => app.exit(1));
 });

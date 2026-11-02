@@ -92,7 +92,7 @@ app.whenReady().then(async () => {
   if (!app.isPackaged && hmrStartFile) {
     const deadline = Date.now() + 75_000;
     while (!fs.existsSync(hmrStartFile)) {
-      if (Date.now() >= deadline) throw new Error('Timed out waiting for the HMR server to start');
+      if (Date.now() >= deadline) throw new Error('Timed out waiting for the HMR data directory');
       await delay(50);
     }
     const data = JSON.parse(fs.readFileSync(hmrStartFile, 'utf8'));

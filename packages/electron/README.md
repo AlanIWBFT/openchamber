@@ -284,7 +284,11 @@ bun install
 bun run electron:dev
 ```
 
-`bun run electron:dev` starts the web dev server with HMR, then launches Electron against `packages/electron/entry.mjs`. An in-app restart under this script skips `app.relaunch()`: Electron exits with the code the script passes in `OPENCHAMBER_ELECTRON_DEV_RELAUNCH_EXIT_CODE`, and the script starts Electron again while the HMR server keeps running. On Windows, the HMR launcher resolves npm's `bun.cmd` shim to the underlying `bun.exe` before spawning Bun child processes.
+`bun run electron:dev` launches Electron directly against `packages/electron/entry.mjs` after checking its installation. Electron keeps the OpenChamber API server in-process while Vite starts independently and proxies API requests to it. Electron waits for its API before opening the HMR application; remote-only development can skip that API without blocking Vite. An external browser opened on Vite earlier may briefly see an unavailable API. On Windows, the HMR launcher resolves npm's `bun.cmd` shim to the underlying `bun.exe` before spawning Bun child processes.
+
+An in-app restart under this script skips `app.relaunch()`: Electron exits with the code the script passes in `OPENCHAMBER_ELECTRON_DEV_RELAUNCH_EXIT_CODE`, and the script starts Electron again while the HMR server keeps running.
+
+Exiting Electron stops the development launcher and its Vite process. Closing to the tray keeps them running; use **Quit** from the tray menu to exit. `Ctrl+C` in the launcher terminal stops the complete Electron/Vite process tree.
 
 Unpackaged desktop and its HMR server default to `~/.config/openchamber-dev` for OpenChamber data. An explicit `OPENCHAMBER_DATA_DIR` takes precedence. OpenCode's own data is unchanged. The existing custom-data-directory migration copies projects, themes and speech models when they are absent from the new directory; it does not copy `settings.json`.
 

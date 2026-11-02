@@ -8,7 +8,10 @@ type OptionalStop = Partial<Stop> | null;
 type Close = { close: Cleanup };
 type Timer = ReturnType<typeof setInterval>;
 
+const SHUTDOWN_FINALIZATION_RESERVE_MS = 500;
+
 export interface ShutdownOptions {
+  deadline?: number;
   exitProcess?: boolean;
 }
 
@@ -45,9 +48,9 @@ interface ShutdownDependencies {
   setMessageStreamRuntime: (value: null) => void;
   shouldSkipOpenCodeStop: () => boolean;
   getOpenCodePort: () => number | null;
-  getOpenCodeProcess: () => Close | null;
+  getOpenCodeProcess: () => { close: (options?: Pick<ShutdownOptions, 'deadline'>) => Promise<void> } | null;
   setOpenCodeProcess: (value: null) => void;
-  killProcessOnPort: (port: number | null) => void;
+  killProcessOnPort: (port: number | null, timeoutMs: number) => void;
   waitForPortRelease: (port: number | null, timeoutMs: number) => Promise<boolean>;
   getServer: () => Server | null;
   getUiAuthController: () => { dispose: Cleanup } | null;
@@ -153,6 +156,10 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
     syncToHmrState();
     console.log('Starting graceful shutdown...');
     const exitProcess = isBoolean(options.exitProcess) ? options.exitProcess : getExitOnShutdown();
+    const deadline = typeof options.deadline === 'number' && Number.isFinite(options.deadline)
+      ? options.deadline
+      : Date.now() + shutdownTimeoutMs;
+    const remaining = () => Math.max(0, deadline - Date.now());
 
     const cleanupOperations = [
       () => clearInterval(getRelayReconcileTimer() ?? undefined),
@@ -195,26 +202,14 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
     }
 
     const terminalRuntime = getTerminalRuntime();
-    if (terminalRuntime) {
-      try {
-        await terminalRuntime.shutdown();
-      } catch {
-        void 0;
-      } finally {
-        setTerminalRuntime(null);
-      }
-    }
-
     const messageStreamRuntime = getMessageStreamRuntime();
-    if (messageStreamRuntime) {
-      try {
-        await messageStreamRuntime.close();
-      } catch {
-        void 0;
-      } finally {
-        setMessageStreamRuntime(null);
-      }
-    }
+    await Promise.allSettled([
+      Promise.resolve().then(() => terminalRuntime?.shutdown()),
+      Promise.resolve().then(() => messageStreamRuntime?.close()),
+    ]).finally(() => {
+      if (terminalRuntime) setTerminalRuntime(null);
+      if (messageStreamRuntime) setMessageStreamRuntime(null);
+    });
 
     if (!shouldSkipOpenCodeStop()) {
       const portToKill = getOpenCodePort();
@@ -223,15 +218,17 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
       if (openCodeProcess) {
         console.log('Stopping OpenCode process...');
         try {
-          await openCodeProcess.close();
+          await openCodeProcess.close({
+            deadline: Math.max(Date.now(), deadline - SHUTDOWN_FINALIZATION_RESERVE_MS),
+          });
         } catch (error) {
           console.warn('Error closing OpenCode process:', error);
         }
         setOpenCodeProcess(null);
       }
 
-      killProcessOnPort(portToKill);
-      if (!(await waitForPortRelease(portToKill, 5000))) {
+      killProcessOnPort(portToKill, remaining());
+      if (!(await waitForPortRelease(portToKill, Math.min(5000, remaining())))) {
         console.warn(`Timed out waiting for OpenCode port ${portToKill} to be released during shutdown`);
       }
     } else {
@@ -256,7 +253,7 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
             closeTimeout = setTimeout(() => {
               console.warn('Server close timeout reached, forcing shutdown');
               resolve();
-            }, shutdownTimeoutMs);
+            }, remaining());
           }),
         ]);
       } finally {

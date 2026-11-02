@@ -684,17 +684,18 @@ health-probe errors close that child before retrying. Shutdown cancels further
 startup attempts. Closing a process is single-flight and unregisters it only
 after it exits.
 
-On Windows, the managed OpenCode runs as `opencode serve --stdio` with a piped
-stdin, and teardown first closes that stdin (`managed-process-stop.js`).
-OpenCode reads EOF as the end of its ownership lease and shuts down the way
-SIGTERM makes it on POSIX: running turns end as cancelled, so a chat waiting on
-a question does not reopen as still working (#4988), and OpenCode stops its MCP
-servers with their process trees. If OpenCode has not exited within 5 seconds,
-teardown falls back to the tree termination command, which runs before the root
-is terminated: calling `child.kill()` first loses the ancestry needed to find
-Git, shell, and MCP descendants. `--stdio` prints its readiness line as
-`{"url":"..."}`; the lifecycle accepts it next to `server listening on`. On
-POSIX, the managed child
+Managed launch uses `serve --stdio` and reads the official newline-delimited
+JSON URL announcement, including announcements split across stdout chunks. The
+parent holds stdin open for the lifetime of the child. Closing stdin ends the
+server's scope, letting OpenCode release its runtime and database before exit.
+A direct close has a 15-second budget; host shutdown passes its shared absolute
+deadline instead. Up to two seconds are reserved inside that budget for forced
+tree cleanup and exit confirmation. An unconfirmed exit preserves the owned
+handle and prevents startup retry or replacement by a second managed process.
+
+On Windows, managed teardown invokes the existing tree termination command
+before terminating the root. Calling `child.kill()` first loses the ancestry
+needed to find Git, shell, and MCP descendants. On POSIX, the managed child
 starts in its own process group and teardown escalates against that group even
 if the root has already exited. A tool ignoring SIGTERM must not survive just
 because the server closed its own pipes. The

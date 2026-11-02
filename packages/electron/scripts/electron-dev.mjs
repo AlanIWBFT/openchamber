@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,7 +10,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { configureDevDataDir } from '../dev-data-dir.mjs';
 import { createShellEnvironmentLoader } from '../shell-environment.mjs';
 import { injectedEnvKeys } from '@openchamber/web/server/lib/injected-env.js';
-import { waitForHmrApi } from './hmr-readiness.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +18,7 @@ const electronDir = path.join(repoRoot, 'packages/electron');
 const bundledOpenCodeServerDir = path.join(electronDir, 'resources', 'opencode-server');
 const preferredHmrUiPort = Number(process.env.OPENCHAMBER_HMR_UI_PORT || '5173');
 const preferredHmrApiPort = Number(process.env.OPENCHAMBER_HMR_API_PORT || '3901');
+const WINDOWS_CONTROL_C_EXIT = 0xC000013A;
 
 const quoteWindowsCommandArg = (value) => `"${String(value).replace(/"/g, '""')}"`;
 
@@ -194,13 +195,14 @@ async function stopChildTree(child) {
     return;
   }
 
-  signalChild(child, 'SIGINT');
-  await waitForExit(child, 2500);
-
-  if (process.platform === 'win32' && child.exitCode === null && child.signalCode === null) {
+  if (process.platform === 'win32') {
     killWindowsProcessTree(child.pid);
     await waitForExit(child, 1000);
+    return;
   }
+
+  signalChild(child, 'SIGINT');
+  await waitForExit(child, 2500);
 
   if (child.exitCode === null && child.signalCode === null) {
     signalChild(child, 'SIGTERM');
@@ -225,6 +227,7 @@ async function main() {
 
   ensureElectronInstalled();
   const bundledOpenCodeServerEnv = resolveBundledOpenCodeServerEnv();
+  const electronBinary = createRequire(import.meta.url)('electron');
 
   if (useBundledUi) {
     await runProcess('bun', ['run', '--cwd', 'packages/electron', 'build:web-assets']);
@@ -234,7 +237,7 @@ async function main() {
   }
 
   const relaunchExitCode = 75;
-  const startElectron = () => spawnProcess('bun', ['x', 'electron', './entry.mjs'], {
+  const startElectron = () => spawnProcess(electronBinary, ['./entry.mjs'], {
     cwd: electronDir,
     env: {
       ...process.env,
@@ -267,6 +270,13 @@ async function main() {
   };
 
   const onChildExit = (label) => (code, signal) => {
+    if (cleaning) {
+      return;
+    }
+    if (code === 130 || code === WINDOWS_CONTROL_C_EXIT || signal === 'SIGINT') {
+      void teardown(0);
+      return;
+    }
     if (code !== 0 || signal) {
       console.warn(`[electron:dev] ${label} exited with code ${code ?? 'null'} signal ${signal ?? 'none'}.`);
     }
@@ -292,7 +302,7 @@ async function main() {
 
   launchElectron();
 
-  for (const [signal, exitCode] of Object.entries({ SIGINT: 130, SIGTERM: 143, SIGQUIT: 131, SIGHUP: 129 })) {
+  for (const [signal, exitCode] of Object.entries({ SIGINT: 0, SIGTERM: 143, SIGQUIT: 131, SIGHUP: 129 })) {
     process.on(signal, () => {
       void teardown(exitCode);
     });
@@ -311,6 +321,7 @@ async function main() {
         ...bundledOpenCodeServerEnv,
         OPENCHAMBER_ELECTRON_DEV: '1',
         OPENCHAMBER_ELECTRON_DEV_DATA_DIR: process.env.OPENCHAMBER_DATA_DIR,
+        OPENCHAMBER_HMR_VITE_ONLY: '1',
         OPENCHAMBER_HMR_UI_PORT: hmrUiPort,
         OPENCHAMBER_HMR_API_PORT: hmrApiPort,
         OPENCHAMBER_DISABLE_PWA_DEV: '1',
@@ -322,7 +333,6 @@ async function main() {
       void teardown(1);
     });
     try {
-      await waitForHmrApi(hmrApiPort);
       if (cleaning) return;
       fs.writeFileSync(`${hmrStartFile}.tmp`, JSON.stringify({
         directory: process.env.OPENCHAMBER_DATA_DIR,
