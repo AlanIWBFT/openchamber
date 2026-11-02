@@ -62,8 +62,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Thinking block UI (`ReasoningTimelineBlock`), summary + optional duration.
 
 - `components/LiveTurnActivity.tsx` (relative to the chat folder)
-  - Owns the optional turn disclosure. `MessageList` enables it when Activity
-    Default is Collapsed and the turn has visible Activity content.
+  - Owns the turn disclosure whenever the turn has visible Activity content.
+    Activity Default chooses its initial expansion; either mode can toggle it.
   - The turn's rows (`lib/turns/timelineRows.ts`) are the fold's header,
     the steps once it is opened, and the final answer; `TurnFold` draws the
     header and, folded, what stays in view. `components/LiveActivityCollapse.tsx`
@@ -97,7 +97,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Full screen opens the page in a dialog, inset from its edges and as tall as the page up to the window, past which the page scrolls. Download saves the page with the theme it was viewed in; on Capacitor it goes through the native share sheet, and VS Code shows no download because its bridge has no save route for HTML.
   - A page can name an image file on the machine by its absolute path (`renderPageImages.ts`). The page cannot read files, so before drawing it the chat asks the image grant route for the paths the page names (the server checks them against the call's stored HTML; see `packages/web/server/lib/markdown-image-grants/`), reads each through `/api/fs/raw` as a data URL and puts it in place of the path. A data URL, not the asset URL: the asset URL carries the URL auth token, which the page's script would see. The page is drawn once its images are in, never before and again after, since a second draw reloads it; its space stays reserved meanwhile. The chat sends every path the page names in one request with the page's call id, and the server shows them in page order while their files add up to 25 MB; the agent's tool result names the rest. An image that does not load keeps its path. VS Code reads workspace images through its file bridge, one by one in page order up to the same 25 MB, since no server weighs the page there, and has no temporary-directory images. A page that scrolls away is remembered with its images in place so it comes back without reading them again; remembered pages are bounded by their total length, 100 MB of characters (about a byte each), and past it the oldest go and read their images again when scrolled back to.
   - VS Code's webview CSP allows inline scripts but no remote ones, and a `srcdoc` page inherits that policy, so the tool description tells agents to draw with inline SVG or their own script.
-  - With Activity collapsed, a page is never folded away, and neither is the text of an earlier step that holds a UI block (`ShownPartCard` draws either). `LiveTurnActivity` collects the turn's pages (`getShownPages`) and `LiveTurnHoistedPagesContext` keeps their rows out of the fold, so an opened fold does not draw them twice. While the turn works, and in a turn that ended without a final answer (stopped, failed), the pages sit right below the fold, and what the agent did after the last page (more steps, the reply it is still writing) is drawn below them, so the page stays put while new work appears under it; once the final answer arrives, the final message draws them above its first answer text. With Activity expanded there is no fold, and a page sits where its call ran.
+  - A page is never folded away, and neither is the text of an earlier step that holds a UI block (`ShownPartCard` draws either). `getShownPages` and `LiveTurnHoistedPagesContext` keep these parts out of message rows so they are not drawn twice. Before a final answer, `splitLiveActivityAtPages` creates independently expandable segments at exact part boundaries, including multiple pages within one message. `timelineRows` keeps each page as its own virtual row between those segments. Once the final answer arrives, its message draws the pages above its first answer text.
 
 - `BlockLine.tsx`
   - The vertical connector line left of a collapsible block's body. It is also a click target: clicking it folds/expands the block via its header toggle handler (`onToggle`), or toggles the nearest native `<details>` when no handler is passed (JSON summary sections). Geometry is inline-styled (12px hit strip centered on the 1px line) so it does not depend on compiled Tailwind classes.
@@ -408,19 +408,19 @@ the bounded recent results.
 The chat has one render mode: parts stream in and stay in the order they ran.
 The Sorted mode, which folded a turn's work into one block above its answers,
 was removed; a stored `chatRenderMode: 'sorted'` reads as Collapsed Activity
-(`lib/settings/parsers.ts`, `parseActivityRenderMode`). Expanded preserves the
-timeline without a turn disclosure. Collapsed adds one Activity header after
-completion or interruption while preserving the original rows, their order, and
-their individual controls. It adds no tool subgroups, side line, height cap, or
-inner scroller. Subagent calls alone do not make a turn collapsible.
+(`lib/settings/parsers.ts`, `parseActivityRenderMode`). Both defaults use the
+same Activity disclosure and preserve the original rows, their order and their
+individual controls. Expanded opens it initially; Collapsed starts folded.
+There is no inner scroller or separate message-window virtualization.
 
 The active turn has its Activity header from the first step. Folded, it shows
-only the latest 7 rows (a text, a reasoning block or a tool call each;
-`lib/turns/activityRows.ts`); the header counts the earlier ones ("+N more")
-and opens them all. `LiveTurnActivity` leaves out the messages entirely above
-the cut and tells the message it cuts into, through
-`ActivityRowSkipContext`, how many of its first rows `MessageBody` skips; both
-count with the same rule. When the cut moves down, `useActivityRowGlide`
+only the latest 7 rows, counting an Exploration group once and keeping it whole.
+The latest prose is pinned separately below those rows. `projectLiveActivityPreview`
+projects visible parts without modifying the durable messages. Hidden running
+commands (including Script children) remain visible above the preview and are
+excluded from the overflow count; after the turn stops, all running commands
+remain visible while the rest folds completely. The more button opens the fold.
+When the cut moves down, `useActivityRowGlide`
 replays the jump as a 220 ms glide of the rows (FLIP, `transform` only, skipped
 with reduced motion). While the turn works what stays in view (the rows
 above and below its pages) never shrinks (`useLiveRowsFloor`): it keeps the

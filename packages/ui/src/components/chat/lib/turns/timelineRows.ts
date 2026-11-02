@@ -1,7 +1,7 @@
 import { isHiddenUserMessage } from '../../message/hiddenUserMessage';
 import { filterVisibleParts, isEmptyTextPart } from '../../message/partUtils';
 import { answerChunkCuts } from './answerChunks';
-import { getLiveFinalMessage, getShownPages, hasLiveActivity } from './liveActivity';
+import { getLiveFinalMessage, hasLiveActivity, projectFoldMessages, splitLiveActivityAtPages } from './liveActivity';
 import type { TimelineEntry } from './timelineEntries';
 import type { ChatMessageEntry } from './types';
 
@@ -58,6 +58,10 @@ type TurnRowFields = {
     /** Under a fold, the answer it leaves outside, from the same record. */
     finalMessageId: string | undefined;
     gapBelow: boolean;
+    foldId: string;
+    expanded: boolean;
+    segmentId?: string;
+    pageId?: string;
 };
 
 export type TimelineRowsOptions = {
@@ -101,22 +105,24 @@ const sliceKey = (cut: TextCut) => `${cut.partId}:${cut.offset}`;
 
 const turnRows = (entry: TurnEntry, options: TimelineRowsOptions): TimelineRow[] => {
     const { turn } = entry;
-    const underFold = options.collapsedActivity && hasLiveActivity(turn, options.showReasoningTraces);
+    const underFold = hasLiveActivity(turn, options.showReasoningTraces);
     const finalMessage = underFold ? getLiveFinalMessage(turn.assistantMessages, !entry.isLastTurn) : undefined;
-    const fields = { entry, underFold, finalMessageId: finalMessage?.info.id, gapBelow: false };
+    let fields: TurnRowFields = { entry, underFold, finalMessageId: finalMessage?.info.id, gapBelow: false,
+        foldId: turn.turnId, expanded: underFold && (options.expandedTurns.get(turn.turnId) ?? !options.collapsedActivity) };
     const rows: TimelineRow[] = [{ kind: 'turn-head', key: entry.key, ...fields }];
     const addMessage = (message: ChatMessageEntry, final = false) => {
         const messageId = message.info.id;
+        const key = `step:${messageId}${fields.segmentId ? `:segment:${fields.segmentId}` : !final && messageId === fields.finalMessageId ? ':activity' : ''}`;
         const cuts = messageCuts(message, options.showReasoningTraces);
         if (cuts.length === 0) {
-            rows.push({ kind: 'turn-message', key: `step:${messageId}`, ...fields, messageId, slice: null, final });
+            rows.push({ kind: 'turn-message', key, ...fields, messageId, slice: null, final });
             return;
         }
         cuts.forEach((cut, index) => {
             const from = index === 0 ? undefined : cuts[index - 1];
             rows.push({
                 kind: 'turn-message',
-                key: from ? `step:${messageId}:${sliceKey(from)}` : `step:${messageId}`,
+                key: from ? `${key}:${sliceKey(from)}` : key,
                 ...fields,
                 messageId,
                 slice: from ? { from, to: cut, index, count: cuts.length + 1 } : { to: cut, index, count: cuts.length + 1 },
@@ -124,26 +130,25 @@ const turnRows = (entry: TurnEntry, options: TimelineRowsOptions): TimelineRow[]
             });
         });
         const last = cuts[cuts.length - 1];
-        rows.push({ kind: 'turn-message', key: `step:${messageId}:${sliceKey(last)}`, ...fields, messageId, slice: { from: last, index: cuts.length, count: cuts.length + 1 }, final });
+        rows.push({ kind: 'turn-message', key: `${key}:${sliceKey(last)}`, ...fields, messageId, slice: { from: last, index: cuts.length, count: cuts.length + 1 }, final });
     };
 
     if (underFold) {
-        // The rows LiveTurnActivity drew inside one turn row, in the same order.
-        const activityMessages = finalMessage ? turn.assistantMessages.filter((message) => message !== finalMessage) : turn.assistantMessages;
-        // Folded, the fold row itself draws what stays in view: a working
-        // turn's latest steps, the pages and the steps after them. Opened,
-        // every step is a row of its own.
-        rows.push({ kind: 'turn-fold', key: `fold:${turn.turnId}`, ...fields });
-        if (options.expandedTurns.get(turn.turnId) === true) {
-            const pages = finalMessage ? [] : getShownPages(turn.assistantMessages);
-            // A working turn draws what came after its last page below it.
-            const lastPageMessageId = pages[pages.length - 1]?.messageID;
-            const split = lastPageMessageId ? activityMessages.findIndex((message) => message.info.id === lastPageMessageId) + 1 : 0;
-            activityMessages.slice(0, split > 0 ? split : activityMessages.length).forEach((message) => addMessage(message));
-            if (pages.length > 0) rows.push({ kind: 'turn-pages', key: `pages:${turn.turnId}`, ...fields });
-            if (split > 0) activityMessages.slice(split).forEach((message) => addMessage(message));
+        const projected = projectFoldMessages(turn, finalMessage?.info.id);
+        const segments = finalMessage ? [] : splitLiveActivityAtPages(turn);
+        if (segments.some((segment) => segment.page)) {
+            for (const segment of segments) {
+                fields = { ...fields, foldId: segment.id, segmentId: segment.id, pageId: segment.page?.id,
+                    expanded: options.expandedTurns.get(segment.id) ?? !options.collapsedActivity };
+                rows.push({ kind: 'turn-fold', key: `fold:${segment.id}`, ...fields });
+                if (fields.expanded) segment.messages.forEach((message) => addMessage(message));
+                if (segment.page) rows.push({ kind: 'turn-pages', key: `page:${segment.page.id}`, ...fields });
+            }
+        } else {
+            rows.push({ kind: 'turn-fold', key: `fold:${turn.turnId}`, ...fields });
+            if (fields.expanded) projected.activityMessages.forEach((message) => addMessage(message));
+            if (projected.finalMessage) addMessage(projected.finalMessage, true);
         }
-        if (finalMessage) addMessage(finalMessage, true);
     } else {
         turn.assistantMessages.forEach((message) => addMessage(message));
     }
@@ -165,6 +170,7 @@ const isSameRow = (previous: TimelineRow, next: TimelineRow): boolean => {
     if (previous.kind !== next.kind || previous.entry !== next.entry) return false;
     if (previous.kind === 'ungrouped' || next.kind === 'ungrouped') return true;
     if (previous.gapBelow !== next.gapBelow || previous.underFold !== next.underFold || previous.finalMessageId !== next.finalMessageId) return false;
+    if (previous.foldId !== next.foldId || previous.expanded !== next.expanded || previous.segmentId !== next.segmentId || previous.pageId !== next.pageId) return false;
     if (previous.kind === 'turn-message' && next.kind === 'turn-message') {
         return previous.messageId === next.messageId && previous.final === next.final && isSameSlice(previous.slice, next.slice);
     }

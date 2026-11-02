@@ -235,7 +235,7 @@ for (const hardDelete of [true, false]) {
           const [confirmation, setConfirmation] = React.useState<BulkDeleteSessionsConfirmState>(null);
           capture.confirmation = confirmation;
           capture.actions = useSidebarBulkActions({
-            isInlineEditing: false, showDeletionDialog, showArchiveDialog, foldersMap: {}, getFolderScopesForProject: () => [],
+            isInlineEditing: false, showDeletionDialog, showArchiveDialog, foldersMap: {}, folderOwnerKeyBySessionId: new Map(), getFolderScopesForProject: () => [],
             addSessionsToFolder: () => undefined, removeSessionsFromFolders: () => undefined, createFolderAndStartRename: () => null,
             archiveSessions: async (ids) => { calls.push('archive'); return { archivedIds: ids, failedIds: [] }; },
             deleteSessions: async (ids) => { calls.push('delete'); return { deletedIds: ids, failedIds: [] }; },

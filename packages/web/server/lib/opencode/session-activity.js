@@ -24,6 +24,11 @@ const runningShellsSchema = z.array(z.object({
   metadata: z.record(z.string(), z.unknown()).nullish(),
   time: z.object({ started: z.number() }),
 }));
+const runningExecsSchema = z.array(z.object({
+  sessionID: z.string().min(1),
+  command: z.string(),
+  startedAt: z.number(),
+}));
 
 export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, timeoutMs = 10_000, fetchImpl = fetch, signal: parentSignal }) => {
   const requestSignal = () => {
@@ -151,5 +156,10 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
     });
   };
 
-  return { fetchActiveSessionStatuses, fetchChildSessionIds, hasWorkingChildren, hasWorkingDescendants, fetchRunningShells };
+  const fetchRunningExecs = async () => {
+    const parsed = runningExecsSchema.safeParse(await openCodeGet('/api/session/exec').catch(() => null));
+    return parsed.success ? parsed.data : null;
+  };
+
+  return { fetchActiveSessionStatuses, fetchChildSessionIds, hasWorkingChildren, hasWorkingDescendants, fetchRunningShells, fetchRunningExecs };
 };

@@ -125,12 +125,14 @@ before touching the filesystem). Rationale: metadata rides every
      plumbing roles are dropped from the view;
    - quiescence check via the message tail (trailing user message or
      unfinished assistant reply → bail; the next idle transition re-arms);
-   - background commands: `shell.list` for the session's directory (the
+    - background commands: `shell.list` for the session's directory and the local
+      process-wide `session.exec.list`, filtered to the current session (the
      header-scoped read in `../opencode/session-activity.js`; that location is
      already running). A command the session started in this round, at or
      after its newest non-synthetic user message (the goal's start when none
      is in the window), holds the audit: OpenCode wakes the session with the
-     result, and auditing earlier reads "waiting for the tests" as unfinished
+      shell result; local exec completion is observed by the next 15-second Goal
+      recheck without waking ordinary sessions. Auditing earlier reads "waiting for the tests" as unfinished
      and nudges the agent over a running command. Commands from earlier rounds,
      such as a dev server, are not waited for. The goal instructions tell the
      agent to stop every command that does not finish on its own before ending

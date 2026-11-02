@@ -704,8 +704,8 @@ describe('managed agent tool runtime', () => {
     const tool = await loadTools(dataDir, 'image');
 
     expect(Object.keys(tool)).toEqual(['openchamber', 'openchamber_image']);
-    expect(Object.keys(tool.openchamber_image.input.properties.parameters.properties).sort())
-      .toEqual(['aspect', 'count', 'images', 'path', 'prompt', 'resolution']);
+    expect(Object.keys(tool.openchamber_image.input.properties.request.properties).sort())
+      .toEqual(['action', 'aspect', 'count', 'images', 'path', 'prompt', 'resolution']);
     expect(tool.openchamber_image.options).toEqual({ codemode: false });
     expect(tool.openchamber_image.description.length).toBeLessThanOrEqual(2048);
   });
@@ -734,7 +734,7 @@ describe('managed agent tool runtime', () => {
     const tools = await loadTools(dataDir, 'secret', hooks);
 
     expect(Object.keys(tools)).toEqual(['openchamber_secret']);
-    expect(Object.keys(tools.openchamber_secret.input.properties.parameters.properties).sort()).toEqual(['label', 'placeholder', 'reason']);
+    expect(Object.keys(tools.openchamber_secret.input.properties.request.properties).sort()).toEqual(['action', 'label', 'placeholder', 'reason']);
     expect(tools.openchamber_secret.options).toEqual({ codemode: false });
     expect(tools.openchamber_secret.description.length).toBeLessThanOrEqual(2048);
     // A chat message ends the wait, like a page's.

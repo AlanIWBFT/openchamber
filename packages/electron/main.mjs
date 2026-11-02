@@ -102,7 +102,6 @@ import {
 import { createContextMenuLabels, menuLabel, normalizeMenuLocale, roleMenuItem } from './menu-locales.mjs';
 import { createCopyLinkMenuHook } from './context-menu-clipboard.mjs';
 import {
-  CANARY_UPDATER_FEED,
   PRODUCTION_UPDATER_FEED,
   isCanaryVersion,
   isUpdateChannel,
@@ -3611,13 +3610,14 @@ const readUpdateChannel = () => normalizeUpdateChannel(readSettingsRoot().deskto
  * release, which is the way back; a release build never downgrades.
  */
 const applyUpdaterChannel = (channel) => {
+  channel = normalizeUpdateChannel(channel);
   if (state.updaterChannel === channel) return;
   // An update found on the other channel is not this channel's; the next
   // check starts clean (a failed feed otherwise keeps it, #5921).
   if (state.updaterChannel !== null) state.pendingUpdate = null;
   const feed = resolveUpdaterFeed({ testBuild: UPDATER_E2E_BUILD, channel });
-  // Both published feeds carry the Windows ARM64 manifest; the E2E fixture does not.
-  const updaterChannel = feed === PRODUCTION_UPDATER_FEED || feed === CANARY_UPDATER_FEED
+  // The published feed carries the Windows ARM64 manifest; the E2E fixture does not.
+  const updaterChannel = feed === PRODUCTION_UPDATER_FEED
     ? resolveUpdaterChannel({ platform: process.platform, architecture: process.arch })
     : null;
   if (updaterChannel) {
@@ -3645,6 +3645,10 @@ const setupAutoUpdater = () => {
   autoUpdater.fullChangelog = true;
   autoUpdater.disableWebInstaller = false;
   autoUpdater.logger = log;
+  if (readSettingsRoot().desktopUpdateChannel !== 'stable') {
+    void mutateSettingsRoot((root) => { root.desktopUpdateChannel = 'stable'; })
+      .catch((error) => log.warn('[electron] could not persist Stable update channel', error));
+  }
   applyUpdaterChannel(readUpdateChannel());
 
   autoUpdater.on('download-progress', (progress) => {
@@ -5006,7 +5010,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (!isUpdateChannel(args?.channel)) {
         throw new Error('Unknown update channel');
       }
-      const channel = args.channel;
+      const channel = normalizeUpdateChannel(args.channel);
       await mutateSettingsRoot((root) => {
         root.desktopUpdateChannel = channel;
       });

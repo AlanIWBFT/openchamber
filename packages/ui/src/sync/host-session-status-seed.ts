@@ -164,7 +164,7 @@ export const seedGlobalSessionStatusFromHost = (force = false): Promise<void> =>
     const readStatuses = () => (statusRead ??= runBackgroundNetworkTask(() => {
       if (!isCurrent()) throw new Error('Stale host recovery');
       return opencodeClient.getActiveSessionStatuses();
-    }, 'active-session'));
+    }, 'active-session').then((statuses) => statuses ?? null));
     await Promise.all([...candidates].map(async ([directory, hints]) => {
       const store = stores.getChild(directory);
       if (!store) return;
@@ -172,10 +172,14 @@ export const seedGlobalSessionStatusFromHost = (force = false): Promise<void> =>
       if (owner.confirmed.get(store) === signature || !isCurrent()) return;
       stores.pin(directory);
       const current = () => isCurrent() && stores.getChild(directory) === store;
-      const read = <T,>(load: () => Promise<T>) => runBackgroundNetworkTask(() => {
+      const read = async <T,>(load: () => Promise<T>): Promise<T> => {
+        const result = await runBackgroundNetworkTask(() => {
         if (!current()) throw new Error('Stale directory recovery');
         return load();
-      }, 'active-session');
+        }, 'active-session');
+        if (result === undefined) throw new Error('Stale directory recovery');
+        return result;
+      };
       try {
         const acceptStatus = beginSessionStatusRequest(store);
         const results = await Promise.allSettled([

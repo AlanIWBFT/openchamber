@@ -1730,6 +1730,11 @@ describe('openchamber session routes', () => {
       { id: 'ses_active_child', parentID: 'ses_root', time: { created: 1 } },
     ];
     const useTree = (tree) => {
+      sessionUpdateMock.mockImplementation(async ({ sessionID, archived }) => {
+        const session = tree.find((entry) => entry.id === sessionID);
+        if (archived !== undefined) session.time.archived = archived ? 1700 : undefined;
+        return session;
+      });
       sessionGetMock.mockImplementation(async ({ sessionID }) => ({
         ...tree.find((session) => session.id === sessionID),
         location: { directory: '/repo/app' },
@@ -1747,7 +1752,7 @@ describe('openchamber session routes', () => {
       .map(([input]) => input.sessionID);
 
     it('brings a top-level session back with its archived subsessions once the prompt is accepted', async () => {
-      useTree(archivedTree);
+      useTree(structuredClone(archivedTree));
       const { app } = createApp();
 
       const response = await send(app, 'ses_root');

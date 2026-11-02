@@ -1282,7 +1282,7 @@ class OpencodeService {
     return { info: projected.message, parts: projected.parts }
   }
 
-  async getToolContentMessage(id: string, messageID: string, directory: string): Promise<{ info: Message; parts: Part[] }> {
+  async getToolContentMessage(id: string, messageID: string, directory: string): Promise<{ info: StoredMessage; parts: Part[] }> {
     const runtimeKey = getRuntimeKey()
     const info = await readMessageThroughAncestors(id, {
       readMessage: (sessionID) => call("session.message.get", () => this.clientFor(directory).session.message.get({ sessionID, messageID })),

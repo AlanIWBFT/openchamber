@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  CANARY_UPDATER_FEED,
   PRODUCTION_UPDATER_FEED,
   isCanaryVersion,
   isUpdateChannel,
@@ -25,11 +24,10 @@ test('production updater feed is immutable GitHub configuration', () => {
   });
 });
 
-test('the Canary channel reads the canary pre-release; every other stored value is Stable', () => {
-  assert.equal(resolveUpdaterFeed({ channel: 'canary' }), CANARY_UPDATER_FEED);
-  assert.equal(CANARY_UPDATER_FEED.url, 'https://github.com/openchamber/openchamber/releases/download/canary/');
+test('legacy Canary selections always resolve to fork Stable', () => {
+  assert.equal(resolveUpdaterFeed({ channel: 'canary' }), PRODUCTION_UPDATER_FEED);
   assert.equal(resolveUpdaterFeed({ channel: 'stable' }), PRODUCTION_UPDATER_FEED);
-  assert.equal(normalizeUpdateChannel('canary'), 'canary');
+  assert.equal(normalizeUpdateChannel('canary'), 'stable');
   for (const value of ['stable', undefined, null, 'beta', 'Canary', 1]) assert.equal(normalizeUpdateChannel(value), 'stable');
   assert.deepEqual(['stable', 'canary', 'beta', undefined].map(isUpdateChannel), [true, true, false, false]);
   // The loopback feed wins on either channel.

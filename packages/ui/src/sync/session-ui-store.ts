@@ -154,6 +154,7 @@ export function expandSlashCommandGoalObjective(content: string, commands: GoalC
 // ---------------------------------------------------------------------------
 
 export async function routeMessage(params: {
+  metadata?: Metadata
   runtimeKey?: string
   sessionId: string
   directory?: string | null
@@ -350,6 +351,7 @@ export async function routeMessage(params: {
         model: selection.model,
         agent: selection.agent,
         text: params.content,
+        metadata: params.metadata,
         agentMentions: params.agentMentionName ? [{ name: params.agentMentionName }] : undefined,
         files: sendFiles,
         context: context.length > 0 ? context : undefined,
@@ -371,6 +373,8 @@ type CapturedSendTarget = {
 }
 
 type SendMessageOptions = {
+  /** Structured provenance for explicit answers submitted as a new user turn. */
+  metadata?: Metadata
   /** Explicit composer intent; automated continuations must not restore archives. */
   userInitiated?: boolean
   target?: CapturedSendTarget
@@ -2490,6 +2494,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         : null
       if (carriedPick) useSelectionStore.getState().settleSessionAgentPick(carriedPick.sessionId, carriedPick.agent)
       const routed = await routeMessage({
+        metadata: options?.metadata,
         runtimeKey: capturedRuntimeKey,
         sessionId: targetSessionId || "",
         directory: currentSessionDirectory,

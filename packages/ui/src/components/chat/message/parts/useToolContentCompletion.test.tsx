@@ -36,7 +36,7 @@ test('tool completion updates the owning transcript when another directory also 
   other.setState({ session: [session] });
   setSyncRefs(OpenCode.make({ baseUrl: 'http://localhost' }), manager, 'D:/git-gc-opt');
   expect(getSyncSessionDirectory(session.id)).toBe('G:/BitdefenderUpdateAnalysis/Endpoint Security');
-  const fetchMessage = spyOn(opencodeClient, 'getSessionMessage').mockResolvedValue({ info: message, parts: [whole] });
+  const fetchMessage = spyOn(opencodeClient, 'getToolContentMessage').mockResolvedValue({ info: message, parts: [whole] });
   const container = document.createElement('div');
   const root = createRoot(container);
   function Result() {

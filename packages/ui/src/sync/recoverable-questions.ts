@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import type { FormValue } from "@opencode/client"
 import type { SyncEvent } from "@/lib/opencode/events"
 import type { FormRequest, Part, ToolPart } from "@/lib/opencode/model"
 
@@ -47,6 +48,27 @@ export function questionToolLink(form: FormRequest): QuestionToolLink | null {
   const { messageID, id } = tool
   if (typeof messageID !== "string" || !messageID || typeof id !== "string" || !id) return null
   return { messageID, toolID: id }
+}
+
+/** Preserve the form's original question fields and submitted values, never parsed Markdown. */
+export function recoveredQuestionAnswerMetadata(question: RecoveredQuestion, answer: Record<string, FormValue>) {
+  const link = questionToolLink(question.form)
+  if (!link) throw new Error("Recovered question has no source tool")
+  const questions = question.form.fields.map((field) => {
+    if (field.type !== "string" && field.type !== "multiselect") throw new Error("Unsupported recovered question field")
+    return {
+      header: field.title ?? field.key,
+      question: field.description ?? field.title ?? field.key,
+      options: (field.options ?? []).map((option) => ({ label: option.label, description: option.description ?? "" })),
+      multiple: field.type === "multiselect",
+      custom: field.custom ?? true,
+    }
+  })
+  const answers = question.form.fields.map((field) => {
+    const value = answer[field.key]
+    return value === undefined ? [] : Array.isArray(value) ? [...value] : [String(value)]
+  })
+  return { openchamberRecoveredQuestionAnswer: { messageId: link.messageID, toolId: link.toolID, questions, answers } }
 }
 
 // Unknown wording fails closed. Shutdown keeps OpenCode's turn resumable.

@@ -1,4 +1,5 @@
 import { createVSCodeAPIs } from './api';
+import { z } from 'zod';
 import { createRemovalTombstones } from './inlineCommentRemovals';
 import { resolveCommentTarget } from './inlineCommentTarget';
 import { fetchLastAssistantMessageText } from './notificationMessage';
