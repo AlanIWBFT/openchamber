@@ -9,7 +9,7 @@ export interface WebUiServerController {
   isReady: () => boolean;
   getManagedOpenCodePreflight: () => Promise<boolean>;
   restartOpenCode: () => Promise<void>;
-  stop: (options?: { exitProcess?: boolean }) => Promise<void>;
+  stop: (options?: { exitProcess?: boolean; deadline?: number }) => Promise<void>;
 }
 
 export interface DesktopUpdateInfo {
@@ -41,7 +41,7 @@ export declare function startWebUiServer(
   options?: StartWebUiServerOptions
 ): Promise<WebUiServerController>;
 
-export declare function gracefulShutdown(options?: { exitProcess?: boolean }): Promise<void>;
+export declare function gracefulShutdown(options?: { exitProcess?: boolean; deadline?: number }): Promise<void>;
 export declare function setupProxy(app: Express): void;
 export declare function restartOpenCode(): Promise<void>;
 export declare function parseArgs(argv?: string[]): {
