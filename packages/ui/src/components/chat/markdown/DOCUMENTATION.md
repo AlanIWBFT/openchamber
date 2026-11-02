@@ -191,7 +191,17 @@ An `svg` fence in the Files Markdown preview draws as an image (`MarkdownSvg`). 
 
 Inline markup needs a sanitizer, and the app has none for SVG: `rehype-sanitize` strips `svg`, and a hand-written allowlist would be code to keep current against new attack forms. An image load gives the same picture for the case asked for (a static diagram) with no sanitizer, at the cost that the figure does not inherit page fonts or `currentColor`.
 
-# Markdown code spacing
+# Markdown rendering
+
+## CJK emphasis
+
+`streamdownPlugins.ts` supplies the upstream `@streamdown/cjk` plugin so emphasis
+such as `前文**你好。**后文` renders without adding spaces or invisible characters.
+Streaming, settled, clipboard and image rendering share that plugin. Regression
+coverage includes punctuation-adjacent emphasis, incremental closing markers,
+literal code, and CJK URL boundaries.
+
+## Code spacing
 
 `codeCellSpacing.ts` splits syntax-token text into continuous runs of narrow and
 wide graphemes. `MarkdownCode.tsx` renders `data-md-code-wide` spans around the
