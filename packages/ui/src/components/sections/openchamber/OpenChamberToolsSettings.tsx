@@ -83,6 +83,8 @@ export const OpenChamberToolsSettings: React.FC = () => {
   const guests = useGuestsStore((state) => state.guests);
   const agentMemoryToolEnabled = useUIStore((state) => state.agentMemoryToolEnabled);
   // Absent where no OpenChamber server answers settings (VS Code).
+  // Server-owned availability can hide the entire surface independently of
+  // the user's persisted tool setting.
   const agentMemoryAvailable = useUIStore((state) => state.agentMemoryFeatureAvailable);
   const setAgentMemoryToolEnabled = useUIStore((state) => state.setAgentMemoryToolEnabled);
   const agentKnowledgeToolEnabled = useUIStore((state) => state.agentKnowledgeToolEnabled);
