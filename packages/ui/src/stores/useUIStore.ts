@@ -1167,7 +1167,7 @@ interface UIStore {
   permissionDefaultMode: PermissionMode;
   /**
    * Whether an OpenChamber server backs agent memory here; false in VS Code.
-   * Server-owned and not persisted.
+   * Server-owned and not persisted, so an environment override cannot be masked by a stale cache.
    */
   agentMemoryFeatureAvailable: boolean;
   /**
