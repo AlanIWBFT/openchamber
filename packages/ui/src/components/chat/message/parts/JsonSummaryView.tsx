@@ -54,7 +54,7 @@ const JsonSummarySection = React.memo(({
             open={expanded}
             onToggle={(event) => setExpanded(event.currentTarget.open)}
         >
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1.5 typography-meta text-foreground hover:text-muted-foreground">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 py-0.5 typography-meta text-foreground hover:text-muted-foreground">
                 <Icon
                     name="arrow-right-s"
                     className={cn(
@@ -87,7 +87,7 @@ const JsonSummaryValue = React.memo(({
         const summary = label ? `${formatKey(label)} (${value.length})` : `(${value.length})`;
         return (
             <JsonSummarySection summary={summary} initiallyOpen={depth < 2}>
-                <div className="space-y-1">
+                <div>
                 {value.map((item, index) => <JsonSummaryValue key={index} value={item} depth={depth + 1} />)}
                 </div>
             </JsonSummarySection>
@@ -99,13 +99,13 @@ const JsonSummaryValue = React.memo(({
         const entries = Object.entries(value).filter(([key]) => !IDENTITY_KEYS.has(key));
         const summary = label ? `${formatKey(label)}${identity ? ` · ${identity}` : ''}` : identity;
         const content = (
-            <div className="space-y-1">
+            <div>
                 {entries.map(([key, entry]) => <JsonSummaryValue key={key} label={key} value={entry} depth={depth + 1} />)}
             </div>
         );
 
         if (!label && depth === 0) {
-            return <div className="space-y-2">{identity ? <div className="typography-meta font-medium text-foreground">{identity}</div> : null}{content}</div>;
+            return <div>{identity ? <div className="typography-meta font-medium text-foreground">{identity}</div> : null}{content}</div>;
         }
 
         return (
@@ -126,7 +126,7 @@ const JsonSummaryValue = React.memo(({
     );
 
     return (
-        <div className="grid grid-cols-[minmax(6rem,auto)_minmax(0,1fr)] gap-x-2 py-1 typography-meta">
+        <div className="grid grid-cols-[minmax(6rem,auto)_minmax(0,1fr)] gap-x-2 py-0.5 typography-meta">
             {label ? <span className="truncate text-muted-foreground" title={label}>{formatKey(label)}</span> : <span />}
             {renderedValue}
         </div>
