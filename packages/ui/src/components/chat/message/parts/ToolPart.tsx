@@ -1813,13 +1813,13 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     );
 
     return (
-        <div className="relative space-y-2">
+        <div className="relative space-y-1">
             {isQuestionTool(part.tool) ? (
                 renderResultContent()
             ) : (
                 <>
                     {isExecute ? (
-                        <div className="space-y-2">
+                        <div className="space-y-1">
                             {executeCode ? renderScrollableBlock(
                                 <WorkerHighlightedCode
                                     language="javascript"
