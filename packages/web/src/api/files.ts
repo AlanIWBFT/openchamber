@@ -17,6 +17,8 @@ import {
 import { runtimeFetch } from '@openchamber/ui/lib/runtime-fetch';
 import { spaceIdOfDirectory, spaceRootDirectory } from '@openchamber/ui/lib/spaces/space-route';
 import { shareFileFromNativeApp } from '@openchamber/ui/lib/nativeFileShare';
+import { hasDesktopInvoke, invokeDesktop, isDesktopLocalOriginActive } from '@openchamber/ui/lib/desktop';
+import { isWindows } from '@openchamber/ui/lib/utils';
 
 const normalizePath = (path: string): string => path.replace(/\\/g, '/');
 
@@ -408,9 +410,15 @@ export const createWebFilesAPI = ({ getDirectory, searchFiles = defaultSearchFil
   },
 
   async revealPath(targetPath: string): Promise<{ success: boolean }> {
+    const headers = directoryHeaders(getDirectory, undefined, targetPath);
+    // Share Explorer's native selection path; an isolated space still belongs to its server.
+    if (isWindows() && hasDesktopInvoke() && isDesktopLocalOriginActive() && spaceIdOfDirectory(headers?.['x-opencode-directory']) === null) {
+      await invokeDesktop('desktop_reveal_path', { path: targetPath });
+      return { success: true };
+    }
     const response = await runtimeFetch('/api/fs/reveal', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...directoryHeaders(getDirectory, undefined, targetPath) },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify({ path: normalizePath(targetPath) }),
     });
 
