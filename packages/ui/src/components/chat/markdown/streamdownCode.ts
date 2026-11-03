@@ -55,18 +55,23 @@ function annotateCodePaths(result: HighlightResult, paths: readonly ConfirmedCod
       return offsets.slice(0, -1).map((offset, index) => {
         const next = offsets[index + 1];
         const path = matches.find((candidate) => candidate.start <= offset && candidate.end >= next);
-        return {
-          ...token,
-          offset,
-          content: token.content.slice(offset - start, next - start),
-          htmlAttrs: path ? {
+        let htmlAttrs = token.htmlAttrs;
+        if (path) {
+          htmlAttrs = {
             ...token.htmlAttrs,
             'data-openchamber-file-link': 'true',
             'data-openchamber-file-ref': path.raw,
             'data-openchamber-file-path': path.path,
             role: 'button',
             tabIndex: '0',
-          } : token.htmlAttrs,
+          };
+          if (next === path.end) htmlAttrs['data-openchamber-file-end'] = 'true';
+        }
+        return {
+          ...token,
+          offset,
+          content: token.content.slice(offset - start, next - start),
+          htmlAttrs,
         };
       });
     });

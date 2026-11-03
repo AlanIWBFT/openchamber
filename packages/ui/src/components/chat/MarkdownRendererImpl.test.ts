@@ -199,6 +199,133 @@ test('a file:// folder link opens in the file manager in the desktop app only, a
   }
 });
 
+test('local desktop file references reveal their files and offer one default-app button per reference', async () => {
+  const { RuntimeAPIContext } = await import('@/contexts/runtimeAPIContext');
+  const { createWebAPIs } = await import('../../../../web/src/api/index');
+  const { serializeRenderedMarkdown } = await import('./markdown/selectionMarkdown');
+  const web = createWebAPIs();
+  const revealed: string[] = [];
+  type OpenPathArgs = { path?: string; app?: string };
+  const invoked: Array<{ command: string; args: OpenPathArgs }> = [];
+  const open = spyOn(state, 'openContextFile');
+  const atLine = spyOn(state, 'openContextFileAtLine');
+  const fetch = spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}', { status: 404 }));
+  const apis = { ...web, files: { ...web.files, revealPath: async (path: string) => { revealed.push(path); return { success: true }; } } };
+  const source = '[file](/outside/report.ts#L42C3) and `/outside/inline.ts:12` and [`/outside/nested.ts`](/outside/nested.ts)\n\n```ts\n/outside/code.ts:20:3\n```';
+  try {
+    Object.assign(window, {
+      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
+      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://localhost',
+      __OPENCHAMBER_API_BASE_URL__: 'http://localhost',
+      __OPENCHAMBER_DESKTOP__: { invoke: async (command: string, args: OpenPathArgs) => { if (command === 'desktop_open_path') invoked.push({ command, args }); } },
+    });
+    const draw = (enabled: boolean, settled: boolean) => act(async () => root.render(React.createElement(I18nProvider, null, React.createElement(RuntimeAPIContext.Provider, { value: apis },
+      React.createElement(Renderer.MarkdownContent, { content: source, directory: '/project', enableFileReferences: enabled, settled })))));
+    await draw(false, true);
+    expect(host.querySelector('[data-openchamber-file-open]')).toBeNull();
+    await draw(true, false);
+    expect(host.querySelector('[data-openchamber-file-open]')).toBeNull();
+    await draw(true, true);
+    for (let i = 0; i < 50 && !host.querySelector('pre [data-openchamber-file-open]'); i++) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    }
+    const buttons = host.querySelectorAll<HTMLButtonElement>('[data-openchamber-file-open]');
+    expect(buttons).toHaveLength(4);
+    expect(host.querySelector('a button')).toBeNull();
+    const targets = [host.querySelector('a'), host.querySelector('code[data-openchamber-file-ref="/outside/inline.ts:12"]'), host.querySelector('pre [data-openchamber-file-ref]')];
+    for (const target of targets) {
+      await act(async () => target?.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
+    }
+    expect(revealed).toEqual(['/outside/report.ts', '/outside/inline.ts', '/outside/code.ts']);
+    expect(invoked).toHaveLength(0);
+    await act(async () => buttons[0].click());
+    expect(invoked).toEqual([{ command: 'desktop_open_path', args: { path: '/outside/report.ts', app: undefined } }]);
+    expect(revealed).toHaveLength(3);
+    expect(open.mock.calls).toHaveLength(0);
+    expect(atLine.mock.calls).toHaveLength(0);
+    expect(serializeRenderedMarkdown(host.querySelector('[data-markdown-content]')!, 'markdown')).toContain('`/outside/inline.ts:12`');
+    expect(serializeRenderedMarkdown(host.querySelector('[data-markdown-content]')!, 'plain')).not.toContain('Open in default app');
+    const { renderMarkdownForExport } = await import('./markdown/renderMarkdownForExport');
+    let exported: HTMLElement | undefined;
+    await act(async () => { exported = await renderMarkdownForExport(source, { purpose: 'copy' }); });
+    expect(exported?.querySelector('[data-openchamber-file-open]')).toBeNull();
+    await act(async () => {
+      Object.assign(window, { __OPENCHAMBER_API_BASE_URL__: 'https://remote.example' });
+      window.dispatchEvent(new window.CustomEvent('openchamber:runtime-endpoint-changed', { detail: {
+        apiBaseUrl: 'https://remote.example', previousApiBaseUrl: 'http://localhost', runtimeKey: 'url:https://remote.example', previousRuntimeKey: 'local',
+      } }));
+    });
+    expect(host.querySelector('[data-openchamber-file-open]')).toBeNull();
+    await act(async () => host.querySelector<HTMLElement>('a')?.click());
+    expect(atLine.mock.calls).toEqual([['/project', '/outside/report.ts', 42, 3]]);
+    expect(revealed).toHaveLength(3);
+  } finally {
+    Object.assign(window, { __OPENCHAMBER_ELECTRON__: undefined, __OPENCHAMBER_DESKTOP__: undefined, __OPENCHAMBER_LOCAL_ORIGIN__: undefined, __OPENCHAMBER_API_BASE_URL__: undefined });
+    open.mockRestore();
+    atLine.mockRestore();
+    fetch.mockRestore();
+  }
+});
+
+test('remote desktop, browser and VS Code preserve file navigation without native buttons', async () => {
+  const { RuntimeAPIContext } = await import('@/contexts/runtimeAPIContext');
+  const { createWebAPIs } = await import('../../../../web/src/api/index');
+  const web = createWebAPIs();
+  const open = spyOn(state, 'openContextFileAtLine');
+  let nativeCalls = 0;
+  const native = async (command: string) => { if (command === 'desktop_open_path') nativeCalls += 1; };
+  const editorCalls: unknown[][] = [];
+  const editorOpen = async (path: string, line?: number, column?: number) => { editorCalls.push([path, line, column]); };
+  try {
+    for (const surface of ['remote', 'browser', 'vscode'] as const) {
+      Object.assign(window, {
+        __OPENCHAMBER_ELECTRON__: surface === 'remote' ? { runtime: 'electron' } : undefined,
+        __OPENCHAMBER_DESKTOP__: { invoke: native },
+        __OPENCHAMBER_LOCAL_ORIGIN__: 'http://localhost',
+        __OPENCHAMBER_API_BASE_URL__: surface === 'remote' ? 'https://remote.example' : 'http://localhost',
+      });
+      const apis = { ...web, runtime: { ...web.runtime, isVSCode: surface === 'vscode' }, editor: { openFile: editorOpen, openDiff: async () => undefined } };
+      await act(async () => root.render(React.createElement(I18nProvider, null, React.createElement(RuntimeAPIContext.Provider, { value: apis },
+        React.createElement(Renderer.MarkdownContent, { content: '[file](/outside/report.ts:42:3)', directory: '/project', enableFileReferences: true, settled: true })))));
+      expect(host.querySelector('[data-openchamber-file-open]')).toBeNull();
+      await act(async () => host.querySelector<HTMLElement>('a')?.click());
+    }
+    expect(open.mock.calls).toEqual([['/project', '/outside/report.ts', 42, 3], ['/project', '/outside/report.ts', 42, 3]]);
+    expect(editorCalls).toEqual([['/outside/report.ts', 42, 3]]);
+    expect(nativeCalls).toBe(0);
+  } finally {
+    Object.assign(window, { __OPENCHAMBER_ELECTRON__: undefined, __OPENCHAMBER_DESKTOP__: undefined, __OPENCHAMBER_LOCAL_ORIGIN__: undefined, __OPENCHAMBER_API_BASE_URL__: undefined });
+    open.mockRestore();
+  }
+});
+
+test('failed local desktop actions show errors without opening the internal viewer', async () => {
+  const { RuntimeAPIContext } = await import('@/contexts/runtimeAPIContext');
+  const { createWebAPIs } = await import('../../../../web/src/api/index');
+  const { toast } = await import('@/components/ui');
+  const error = spyOn(toast, 'error').mockImplementation(() => 'test');
+  const open = spyOn(state, 'openContextFile');
+  const warn = spyOn(console, 'warn').mockImplementation(() => undefined);
+  const web = createWebAPIs();
+  const apis = { ...web, files: { ...web.files, revealPath: async () => { throw new Error('missing'); } } };
+  try {
+    Object.assign(window, {
+      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
+      __OPENCHAMBER_DESKTOP__: { invoke: async () => { throw new Error('no default app'); } },
+      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://localhost', __OPENCHAMBER_API_BASE_URL__: 'http://localhost',
+    });
+    await act(async () => root.render(React.createElement(I18nProvider, null, React.createElement(RuntimeAPIContext.Provider, { value: apis },
+      React.createElement(Renderer.MarkdownContent, { content: '[file](/outside/report.ts)', directory: '/project', enableFileReferences: true, settled: true })))));
+    await act(async () => host.querySelector<HTMLElement>('a')?.click());
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-openchamber-file-open]')?.click());
+    expect(error.mock.calls).toHaveLength(2);
+    expect(open.mock.calls).toHaveLength(0);
+  } finally {
+    Object.assign(window, { __OPENCHAMBER_ELECTRON__: undefined, __OPENCHAMBER_DESKTOP__: undefined, __OPENCHAMBER_LOCAL_ORIGIN__: undefined, __OPENCHAMBER_API_BASE_URL__: undefined });
+    error.mockRestore(); open.mockRestore(); warn.mockRestore();
+  }
+});
+
 test('remote media labels use chat navigation and retain modified-click defaults', async () => {
   openedLinks.length = 0;
   await render('![remote](https://example.com/image.png)');

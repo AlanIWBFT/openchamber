@@ -637,7 +637,7 @@ export const registerFsRoutes = (app, dependencies) => {
     realpath: fsPromises.realpath.bind(fsPromises),
   });
 
-  const spawnDetached = (command, args) => new Promise((resolve, reject) => {
+  const launchFileBrowser = (command, args) => new Promise((resolve, reject) => {
     let child;
     try {
       child = spawn(command, args, { windowsHide: true, stdio: 'ignore', detached: true });
@@ -650,12 +650,18 @@ export const registerFsRoutes = (app, dependencies) => {
       reject(new Error('Failed to launch file browser', { cause: error }));
     };
     const onSpawn = () => {
-      child.removeListener('error', onError);
       child.unref();
-      resolve();
+      // xdg-open can stay attached to the file manager for its whole lifetime.
+      if (platform !== 'darwin') resolve();
     };
     child.once('error', onError);
     child.once('spawn', onSpawn);
+    if (platform === 'darwin') {
+      child.once('close', (code, signal) => {
+        if (code === 0) resolve();
+        else reject(new Error(`File browser launcher failed with ${signal ? `signal ${signal}` : `exit code ${code}`}`));
+      });
+    }
   });
 
   const execJobs = new Map();
@@ -1816,15 +1822,15 @@ export const registerFsRoutes = (app, dependencies) => {
     }
 
     try {
-      const resolved = path.resolve(targetPath.trim());
+      const resolved = path.resolve(path.isAbsolute(targetPath) ? targetPath : targetPath.trim());
       await fsPromises.access(resolved);
 
       if (platform === 'darwin') {
         const stat = await fsPromises.stat(resolved);
         if (stat.isDirectory()) {
-          await spawnDetached('open', [resolved]);
+          await launchFileBrowser('open', [resolved]);
         } else {
-          await spawnDetached('open', ['-R', resolved]);
+          await launchFileBrowser('open', ['-R', resolved]);
         }
       } else if (platform === 'win32') {
         const stat = await fsPromises.stat(resolved);
@@ -1851,7 +1857,7 @@ export const registerFsRoutes = (app, dependencies) => {
       } else {
         const stat = await fsPromises.stat(resolved);
         const dir = stat.isDirectory() ? resolved : path.dirname(resolved);
-        await spawnDetached('xdg-open', [dir]);
+        await launchFileBrowser('xdg-open', [dir]);
       }
 
       return res.json({ success: true, path: resolved });

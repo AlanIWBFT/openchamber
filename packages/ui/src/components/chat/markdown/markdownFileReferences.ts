@@ -5,13 +5,14 @@ import type { ConfirmedCodePath } from './streamdownCode';
 import React from 'react';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
-import { isBrowserClientRuntime, isDesktopLocalOriginActive, openDesktopPath } from '@/lib/desktop';
+import { hasDesktopInvoke, isBrowserClientRuntime, isDesktopLocalOriginActive, openDesktopPath } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import { toast } from '@/components/ui';
 import { useUIStore } from '@/stores/useUIStore';
 import { useMarkdownPresentation, type FileReferenceSource } from './MarkdownPresentationContext';
 import { HighlightResultCache } from './highlightResultCache';
 import { hasTextSelectionInside } from '@/lib/textSelection';
+import { subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
 /** A selection-ending click is consumed without navigating, as before migration. */
 export function activateMarkdownFile(event: React.MouseEvent | React.KeyboardEvent, open: (external: boolean) => void): void {
@@ -27,17 +28,38 @@ export function activateMarkdownFile(event: React.MouseEvent | React.KeyboardEve
 // directory/runtime-bound and continue through the caller's confirmation path.
 const codePathCandidates = new HighlightResultCache<Array<{ raw: string; start: number }>>({ maxEntries: 64, maxBytes: 1024 * 1024 });
 
+export function useNativeMarkdownFiles(): boolean {
+  const { fileNavigation } = useMarkdownPresentation();
+  const apis = React.useContext(RuntimeAPIContext);
+  // The native bridge can stay present when the active instance becomes remote.
+  const localDesktop = React.useSyncExternalStore(subscribeRuntimeEndpointChanged, isDesktopLocalOriginActive, () => false);
+  return fileNavigation && !apis?.runtime.isVSCode && hasDesktopInvoke() && localDesktop;
+}
+
 export function useOpenMarkdownFile() {
   const { directory } = useMarkdownPresentation();
   const apis = React.useContext(RuntimeAPIContext);
   const editor = apis?.editor;
   const isVSCode = apis?.runtime.isVSCode;
   const mobileActions = useMobileAppActions();
+  const { t } = useI18n();
   return React.useCallback(async (raw: string, path?: string, external = false, inputKind: FileReferenceSource = 'path') => {
     const reference = resolveMarkdownFile(raw, directory, 'click', inputKind);
     if (!reference) return;
     const target = path ?? reference.resolvedPath;
-    if (external && isDesktopLocalOriginActive() && await openDesktopPath(target)) return;
+    if (!isVSCode && hasDesktopInvoke() && isDesktopLocalOriginActive()) {
+      if (external) {
+        if (!await openDesktopPath(target)) toast.error(t('contextFileOpen.failure.unreadable', { name: target }));
+      } else {
+        try {
+          const result = await apis?.files.revealPath?.(target);
+          if (!result?.success) toast.error(t('sidebarFilesTree.toast.revealFailed'));
+        } catch {
+          toast.error(t('sidebarFilesTree.toast.revealFailed'));
+        }
+      }
+      return;
+    }
     if (isVSCode && editor) { void editor.openFile(target, reference.line, reference.column); return; }
     const ui = useUIStore.getState();
     if (reference.line) ui.openContextFileAtLine(directory, target, reference.line, reference.column ?? 1);
@@ -45,7 +67,7 @@ export function useOpenMarkdownFile() {
     // On the phone the viewer lives in the workspace drawer; the staged file
     // shows only once the drawer is open on Files (#5486).
     mobileActions?.openFiles();
-  }, [directory, editor, isVSCode, mobileActions]);
+  }, [directory, editor, isVSCode, mobileActions, apis, t]);
 }
 
 // A `file:` link the click rules do not take as a file is usually a folder.

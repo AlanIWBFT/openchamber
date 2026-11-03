@@ -4749,12 +4749,11 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return null;
 
     case 'desktop_open_path': {
-      const targetPath = typeof args.path === 'string' ? args.path.trim() : '';
+      const targetPath = typeof args.path === 'string' ? args.path : '';
       const appName = typeof args.app === 'string' ? args.app.trim() : '';
       const validated = await validateLocalPath(targetPath);
-      if (process.platform === 'darwin') {
-        const openArgs = appName ? ['-a', appName, validated.path] : [validated.path];
-        spawn('open', openArgs, { detached: true, stdio: 'ignore' }).unref();
+      if (process.platform === 'darwin' && appName) {
+        spawn('open', ['-a', appName, validated.path], { detached: true, stdio: 'ignore' }).unref();
         return null;
       }
       if (appName && process.platform !== 'linux' && process.platform !== 'win32') {

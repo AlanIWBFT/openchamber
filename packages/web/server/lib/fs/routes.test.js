@@ -4,7 +4,7 @@ import path from 'path';
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import * as nativeFs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn as spawnProcess } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -1313,11 +1313,13 @@ describe('fs reveal', () => {
     error.mockRestore();
   });
 
-  it('unrefs a detached launcher only after it spawns successfully', async () => {
+  it('waits for the macOS launcher handoff to finish before reporting success', async () => {
     const child = new EventEmitter();
     child.unref = vi.fn();
+    let spawned;
+    const ready = new Promise((resolve) => { spawned = resolve; });
     const spawn = vi.fn(() => {
-      queueMicrotask(() => child.emit('spawn'));
+      queueMicrotask(() => { child.emit('spawn'); spawned(); });
       return child;
     });
     const handler = registerReveal({
@@ -1326,12 +1328,119 @@ describe('fs reveal', () => {
         stat: vi.fn(async () => ({ isDirectory: () => false })),
       },
       spawn,
+      platform: 'darwin',
     });
 
-    const res = await callReveal(handler, { path: '/repo/file.txt' });
+    let completed = false;
+    const pending = callReveal(handler, { path: '/repo/file.txt' }).then((res) => { completed = true; return res; });
+    await ready;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(completed).toBe(false);
+    child.emit('close', 0, null);
+    const res = await pending;
 
     expect(res.body).toEqual({ success: true, path: '/repo/file.txt' });
     expect(child.unref).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['darwin', 3, null, '3'],
+    ['darwin', null, 'SIGTERM', 'SIGTERM'],
+  ])('reports a %s launcher that starts but fails with %s/%s', async (platform, code, signal, detail) => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const child = new EventEmitter();
+    child.unref = vi.fn();
+    const handler = registerReveal({
+      fsPromises: { access: vi.fn(async () => undefined), stat: vi.fn(async () => ({ isDirectory: () => false })) },
+      spawn: vi.fn(() => {
+        queueMicrotask(() => { child.emit('spawn'); child.emit('close', code, signal); });
+        return child;
+      }),
+      platform,
+    });
+    try {
+      const res = await callReveal(handler, { path: '/repo/file.txt' });
+      expect(res.statusCode).toBe(500);
+      expect(res.body.success).not.toBe(true);
+      expect(res.body.error).toContain(detail);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('observes a real launcher process that exits unsuccessfully after spawning', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const handler = registerReveal({
+      fsPromises: { access: vi.fn(async () => undefined), stat: vi.fn(async () => ({ isDirectory: () => false })) },
+      spawn: (_command, _args, options) => spawnProcess(process.execPath, ['-e', 'process.exit(3)'], options),
+      platform: 'darwin',
+    });
+    try {
+      const res = await callReveal(handler, { path: '/repo/file.txt' });
+      expect(res.statusCode).toBe(500);
+      expect(res.body.error).toContain('3');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('returns on Linux when the directory handler stays running after the launcher spawns', async () => {
+    const child = new EventEmitter();
+    child.unref = vi.fn();
+    const handler = registerReveal({
+      fsPromises: { access: vi.fn(async () => undefined), stat: vi.fn(async () => ({ isDirectory: () => false })) },
+      spawn: vi.fn(() => {
+        queueMicrotask(() => child.emit('spawn'));
+        return child;
+      }),
+    });
+    const res = await callReveal(handler, { path: '/repo/file.txt' });
+    expect(res.body).toEqual({ success: true, path: '/repo/file.txt' });
+    expect(child.unref).toHaveBeenCalledOnce();
+  });
+
+  it('completes a Linux reveal before a real long-running handler is stopped', async () => {
+    let child;
+    let closed;
+    let completed = false;
+    let completedBeforeStop = false;
+    const handler = registerReveal({
+      fsPromises: { access: vi.fn(async () => undefined), stat: vi.fn(async () => ({ isDirectory: () => false })) },
+      spawn: (_command, _args, options) => {
+        child = spawnProcess(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], options);
+        closed = new Promise((resolve) => child.once('close', resolve));
+        child.once('spawn', () => setImmediate(() => {
+          completedBeforeStop = completed;
+          child.kill();
+        }));
+        return child;
+      },
+    });
+    try {
+      const res = await callReveal(handler, { path: '/repo/file.txt' }).then((response) => { completed = true; return response; });
+      await closed;
+      expect(completedBeforeStop).toBe(true);
+      expect(res.body).toEqual({ success: true, path: '/repo/file.txt' });
+    } finally {
+      if (child && child.exitCode === null && child.signalCode === null) child.kill();
+      await closed;
+    }
+  });
+
+  it.each(['linux', 'darwin'])('preserves absolute filename whitespace in the %s reveal chain', async (platform) => {
+    const target = '/repo/report.md  ';
+    const access = vi.fn(async () => undefined);
+    const spawn = vi.fn(() => {
+      const child = new EventEmitter();
+      child.unref = vi.fn();
+      queueMicrotask(() => { child.emit('spawn'); child.emit('close', 0, null); });
+      return child;
+    });
+    const handler = registerReveal({ fsPromises: { access, stat: vi.fn(async () => ({ isDirectory: () => false })) }, spawn, platform });
+    const res = await callReveal(handler, { path: target });
+    expect(access).toHaveBeenCalledWith(target);
+    expect(res.body).toEqual({ success: true, path: target });
+    expect(spawn.mock.calls[0][1]).toEqual(platform === 'darwin' ? ['-R', target] : ['/repo']);
   });
 
   it('returns a controlled error when the launcher throws synchronously', async () => {

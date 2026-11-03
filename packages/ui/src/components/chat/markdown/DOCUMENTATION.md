@@ -12,8 +12,15 @@ The shared renderer classifies and confirms local references before opening them
 - Existing file-URL handling, file classification, and final-path containment checks remain in place.
 - Ordinary local hrefs bypass prose-only filename filters. External schemes and protocol-relative URLs are rejected before decoding.
 - Encoded edge spaces remain part of the filename during resolution, existence checks, and file-tab navigation.
+- On Electron's local instance, file references reveal the file in its folder and a trailing button opens it with the default application. Remote instances, browsers, hosted/Capacitor mobile, and VS Code retain their file viewer/editor navigation.
+- Native action failures show an error without opening the internal viewer. Default-application buttons are excluded from copied/exported content and appear once per fenced-code reference, even when highlighting splits the path across tokens.
+- Linux reveal confirms that `xdg-open` started, not that its handler succeeded. It does not wait for the file manager to close; failures after launch are outside the request's feedback contract.
 
 ## Decisions
+
+### Why local desktop references reveal files
+
+The narrow internal file pane makes desktop file inspection awkward. The system file manager and default application provide full-sized views; line/column suffixes remain parsed but native opening does not navigate to them. Remote paths stay in the active runtime's viewer because they do not identify files on the desktop machine.
 
 ### Why explicit href input and not decoding every reference
 

@@ -6,6 +6,7 @@ import { getRuntimeApiBaseUrl, getRuntimeKey } from '@/lib/runtime-switch';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { isVSCodeBootstrapPresent } from '@/lib/vscodeBootstrap';
 import { isUpdateChannel, type UpdateChannel } from '@/lib/updateChannel';
+import { isAbsoluteFilePath } from '@/lib/path-utils';
 
 export type UpdateInfo = {
   available: boolean;
@@ -966,14 +967,14 @@ export const openDesktopPath = async (path: string, app?: string | null): Promis
     return false;
   }
 
-  const trimmed = path?.trim();
-  if (!trimmed) {
+  const target = isAbsoluteFilePath(path, { preserveWhitespace: true }) ? path : path?.trim();
+  if (!target) {
     return false;
   }
 
   try {
     await invokeDesktop('desktop_open_path', {
-      path: trimmed,
+      path: target,
       app: typeof app === 'string' && app.trim().length > 0 ? app.trim() : undefined,
     });
     return true;
