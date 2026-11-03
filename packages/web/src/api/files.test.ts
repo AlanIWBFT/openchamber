@@ -31,6 +31,82 @@ const urls: RuntimeUrlResolver = {
   websocket: toUrl,
 };
 
+describe('revealing files on Windows desktop', () => {
+  const installDesktop = (platform = 'win32') => {
+    const invoke = vi.fn(async () => null);
+    const desktop = {
+      location: { origin: 'openchamber-ui://app' },
+      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
+      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://localhost:3917',
+      __OPENCHAMBER_API_BASE_URL__: 'http://localhost:3917',
+      __OPENCHAMBER_DESKTOP__: { invoke },
+    };
+    vi.stubGlobal('window', desktop);
+    vi.stubGlobal('navigator', { userAgent: platform === 'win32' ? 'Windows NT 10.0' : platform });
+    return { desktop, invoke };
+  };
+
+  it('uses native selection for local files and directories without an HTTP reveal', async () => {
+    const { createWebFilesAPI } = await import('./files');
+    const { invoke } = installDesktop();
+    const api = createWebFilesAPI({ getDirectory: () => 'C:/repo' });
+    for (const path of ['C:/repo/example.user.js', 'C:/repo/folder']) {
+      await expect(api.revealPath?.(path)).resolves.toEqual({ success: true });
+      expect(invoke).toHaveBeenLastCalledWith('desktop_reveal_path', { path });
+    }
+    expect(runtimeFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('propagates native failures without opening the file or falling back to HTTP', async () => {
+    const { createWebFilesAPI } = await import('./files');
+    const { invoke } = installDesktop();
+    invoke.mockRejectedValueOnce(new Error('Path does not exist'));
+    const api = createWebFilesAPI({ getDirectory: () => 'C:/repo' });
+    await expect(api.revealPath?.('C:/repo/missing.js')).rejects.toThrow('Path does not exist');
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(runtimeFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the active server after switching the same adapter to a remote instance', async () => {
+    const { createWebFilesAPI } = await import('./files');
+    const { desktop, invoke } = installDesktop();
+    const api = createWebFilesAPI({ getDirectory: () => '/repo' });
+    await api.revealPath?.('C:/repo/file.js');
+    desktop.__OPENCHAMBER_API_BASE_URL__ = 'http://localhost:3000';
+    runtimeFetchMock.mockResolvedValueOnce(Response.json({ success: true }));
+    await expect(api.revealPath?.('/repo/file.js')).resolves.toEqual({ success: true });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(runtimeFetchMock).toHaveBeenCalledWith('/api/fs/reveal', expect.objectContaining({ body: JSON.stringify({ path: '/repo/file.js' }) }));
+  });
+
+  it('keeps isolated-space paths and requests on their owning server', async () => {
+    const { createWebFilesAPI } = await import('./files');
+    const { invoke } = installDesktop();
+    let directory = 'C:/repo';
+    const api = createWebFilesAPI({ getDirectory: () => directory });
+    runtimeFetchMock.mockImplementation(async () => Response.json({ success: true }));
+    await api.revealPath?.('/spaces/a1b2c3d4e5f6/repo/file.js');
+    directory = '/spaces/a1b2c3d4e5f6/repo';
+    await api.revealPath?.('/tmp/file.js');
+    expect(invoke).not.toHaveBeenCalled();
+    expect(runtimeFetchMock.mock.calls.map((call) => call[1].headers['x-opencode-directory'])).toEqual([
+      '/spaces/a1b2c3d4e5f6', '/spaces/a1b2c3d4e5f6/repo',
+    ]);
+    runtimeFetchMock.mockReset();
+  });
+
+  it.each(['darwin', 'linux', 'browser'])('keeps %s reveal behavior on the server', async (platform) => {
+    const { createWebFilesAPI } = await import('./files');
+    const { invoke } = installDesktop(platform);
+    if (platform === 'browser') vi.stubGlobal('window', { location: { origin: 'http://localhost:3917' } });
+    const api = createWebFilesAPI({ getDirectory: () => '/repo' });
+    runtimeFetchMock.mockResolvedValueOnce(Response.json({ success: true }));
+    await expect(api.revealPath?.('/repo/file.js')).resolves.toEqual({ success: true });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(runtimeFetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('createWebFilesAPI', () => {
   it('sends a request for a path inside a space to that space, whichever folder is open', async () => {
     const { createWebFilesAPI } = await import('./files');

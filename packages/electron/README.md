@@ -672,6 +672,20 @@ The local `native/windows-shell` N-API module calls `ShellExecuteExW` with the d
 Registered file managers such as Directory Opus receive the request. The promise settles after dispatch, without waiting for the file manager to close.
 Main-process IPC and path validation remain the entry boundary.
 
+Windows local-desktop `FilesAPI.revealPath` uses `desktop_reveal_path`, so chat links,
+the file panel, and "Open in Explorer" share `revealValidatedPath` in main. Files use
+Electron's `shell.showItemInFolder`; directories use the native default-handler
+module above. The renderer adapter checks the active runtime at call time and
+keeps isolated-space paths on their owning server. Native failures reject without
+an HTTP or default-application fallback. macOS/Linux and other runtime surfaces
+keep the server reveal transport.
+
+### Why Windows desktop reveal uses IPC
+
+The HTTP route's PowerShell/Explorer command is a separate shell handoff from the
+working "Open in Explorer" action. Reusing that action's native implementation
+keeps file selection and registered directory handlers consistent across entrypoints.
+
 `rebuild:native` compiles this module against the installed Electron headers using the existing node-gyp and node-addon-api toolchain.
 Windows packages place it in `resources/native`; `after-pack.cjs` checks it against the packaged executable's architecture.
 Development loads it from `native/windows-shell/build/Release`.

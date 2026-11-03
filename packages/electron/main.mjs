@@ -3849,6 +3849,14 @@ const openValidatedPath = async (validated) => {
   if (errorMessage) throw new Error(`Failed to open path: ${errorMessage}`);
 };
 
+const revealValidatedPath = async (validated) => {
+  if (validated.stats.isDirectory()) {
+    await openValidatedPath(validated);
+    return;
+  }
+  shell.showItemInFolder(validated.path);
+};
+
 const spawnDetachedLinux = (program, args) => new Promise((resolve, reject) => {
   const child = spawn(program, args, {
     detached: true,
@@ -4781,13 +4789,8 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     }
 
     case 'desktop_reveal_path': {
-      const validated = await validateLocalPath(typeof args.path === 'string' ? args.path.trim() : '');
-      if (validated.stats.isDirectory()) {
-        await openValidatedPath(validated);
-        return null;
-      }
-
-      shell.showItemInFolder(validated.path);
+      const validated = await validateLocalPath(typeof args.path === 'string' ? args.path : '');
+      await revealValidatedPath(validated);
       return null;
     }
 
@@ -4801,7 +4804,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       const validated = await validateLocalPath(projectPath, 'Project path');
       if (process.platform === 'win32') {
         if (appId === 'finder') {
-          await openValidatedPath(validated);
+          await revealValidatedPath(validated);
           return null;
         }
         await runSpecChain(await buildWindowsOpenProjectSpecs({ projectPath: validated.path, appId, appName }), appName);
@@ -4826,7 +4829,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     }
 
     case 'desktop_open_file_in_app': {
-      const filePath = typeof args.filePath === 'string' ? args.filePath.trim() : '';
+      const filePath = typeof args.filePath === 'string' ? args.filePath : '';
       const appId = typeof args.appId === 'string' ? args.appId.trim().toLowerCase() : '';
       const appName = typeof args.appName === 'string' ? args.appName.trim() : '';
       if (!filePath || !appId || !appName) {
@@ -4835,11 +4838,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       const validated = await validateLocalPath(filePath, 'File path');
       if (process.platform === 'win32') {
         if (appId === 'finder') {
-          if (validated.stats.isDirectory()) {
-            await openValidatedPath(validated);
-          } else {
-            shell.showItemInFolder(validated.path);
-          }
+          await revealValidatedPath(validated);
           return null;
         }
         await runSpecChain(await buildWindowsOpenFileSpecs({ filePath: validated.path, appId, appName }), appName);
