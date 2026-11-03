@@ -554,13 +554,13 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
         || (isShellTool(part.tool) && hasVisibleOutput) || isExecCommandTool(part.tool) || Boolean(exec.execError);
 
     return (
-        <div className="relative space-y-2">
+        <div className="relative space-y-1">
             {isQuestionTool(part.tool) ? (
                 renderResultContent()
             ) : (
                 <>
                     {isExecute ? (
-                        <div className="space-y-2">
+                        <div className="space-y-1">
                             {executeCode ? renderScrollableBlock(
                                 <HighlightedCode
                                     language="javascript"
