@@ -13,7 +13,7 @@ const accessErrorMessage = (label, targetPath, error) => {
 };
 
 const normalizeRequiredPath = (rawPath, label = 'Path') => {
-  const targetPath = typeof rawPath === 'string' ? rawPath.trim() : '';
+  const targetPath = typeof rawPath === 'string' ? (path.isAbsolute(rawPath) ? rawPath : rawPath.trim()) : '';
   if (!targetPath) {
     throw new Error(`${label} is required`);
   }

@@ -25,6 +25,7 @@ import { activateMarkdownFile, resolveMarkdownFile, useOpenMarkdownFile, useOpen
 import { localPathFromFileUrl } from '../fileReferenceParser';
 import { MarkdownMediaLinkContext, useMarkdownMedia } from './markdown-media-context';
 import { openMarkdownDocumentLink } from '@/components/views/files/previews/useMarkdownLocalAssets';
+import { MarkdownFileOpenButton } from './MarkdownFileOpenButton';
 
 function useConfirmedInlineFile(raw: string, inputKind: FileReferenceSource = 'path'): string | null {
   const { directory, fileReferences, confirmFile } = useMarkdownPresentation();
@@ -59,6 +60,7 @@ export function MarkdownInlineCode({ children, node: _node, ...props }: React.Co
     activateMarkdownFile(event, () => { void openTapped(raw); });
   };
   return (
+    <>
     <code
       {...props}
       dir="ltr"
@@ -73,6 +75,8 @@ export function MarkdownInlineCode({ children, node: _node, ...props }: React.Co
     >
       {children}
     </code>
+      {path && <MarkdownFileOpenButton raw={raw} path={path} />}
+    </>
   );
 }
 
@@ -155,6 +159,7 @@ function ScreenMarkdownHref({ href, children: originalChildren, node, ...props }
   const probe = probeHref ? href : text;
   const path = useConfirmedInlineFile(probe, probeHref ? 'href' : 'path');
   const textFile = Boolean(path && !probeHref);
+  const filePath = path ?? (file ? file.resolvedPath : null);
   const external = isExternalHttpUrl(href);
   // A host's own reference (`#12`, a commit) reads as part of the text, without the site's mark.
   const reference = node?.properties.dataOcReference !== undefined;
@@ -273,6 +278,9 @@ function ScreenMarkdownHref({ href, children: originalChildren, node, ...props }
         {skill && <Icon name="book-open" className="size-[1.1em] shrink-0" />}
         {skill ? <span className={REFERENCE_CHIP_LABEL_CLASS}>{skill}</span> : children}
       </a>
+      {!media?.documentAssets && (file || textFile) && filePath && (
+        <MarkdownFileOpenButton raw={probe} path={filePath} inputKind={probeHref ? 'href' : 'path'} />
+      )}
       {showPreview && (
         <HoverTooltip label={t('terminalView.preview.openTitle')}>
           <Button

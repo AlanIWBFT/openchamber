@@ -662,6 +662,10 @@ The server (`packages/web/server/lib/fs/ripgrep.js`) looks for ripgrep in this o
   Popups close with the window that opened them and do not count as app windows
   when closing the last one hides the app on macOS.
 
+## Local file actions
+
+`desktop_open_path` retains whitespace in resolved absolute filenames through the renderer bridge and local path validation; relative pasted paths still get their surrounding whitespace trimmed. Default file opening uses Electron's `shell.openPath` and propagates its error to the renderer, including on macOS. A successful handoff does not promise that the application will keep running or navigate to a source line.
+
 ## Windows fonts and directory actions
 
 The code-font picker discovers local Windows monospace families through DirectWrite

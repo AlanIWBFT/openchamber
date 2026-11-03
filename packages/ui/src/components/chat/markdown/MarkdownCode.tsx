@@ -25,6 +25,7 @@ import { isRunnableLanguage } from '@/lib/opencode/reply-command';
 import { onDemand } from '../uiBlocks/useUiBlockComponent';
 import type { RenderedCommand } from './ReplyCommand';
 import { splitCodeCellRuns } from './codeCellSpacing';
+import { MarkdownFileOpenButton } from './MarkdownFileOpenButton';
 
 // Complete prefix rows keep their identity in the worker client, so appending
 // code only renders changed rows. React owns every node; no HTML patching.
@@ -39,9 +40,16 @@ const CodeLine = React.memo(function CodeLine({ tokens }: { tokens: HighlightTok
           backgroundColor: token.bgColor,
         };
         const runs = splitCodeCellRuns(token.content);
-        return <span key={index} style={style} {...token.htmlAttrs}>{typeof runs === 'string' ? runs : runs.map((run, runIndex) => (
-          run.wide ? <span key={runIndex} data-md-code-wide="">{run.text}</span> : run.text
-        ))}</span>;
+        const raw = token.htmlAttrs?.['data-openchamber-file-ref'];
+        const path = token.htmlAttrs?.['data-openchamber-file-path'];
+        return (
+          <React.Fragment key={index}>
+            <span style={style} {...token.htmlAttrs}>{typeof runs === 'string' ? runs : runs.map((run, runIndex) => (
+              run.wide ? <span key={runIndex} data-md-code-wide="">{run.text}</span> : run.text
+            ))}</span>
+            {raw && path && token.htmlAttrs?.['data-openchamber-file-end'] === 'true' && <MarkdownFileOpenButton raw={raw} path={path} />}
+          </React.Fragment>
+        );
       })}
     </span>
   );

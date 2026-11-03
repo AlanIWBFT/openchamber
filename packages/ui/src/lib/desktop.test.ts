@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { clearDesktopSessionNotifications, createDesktopClipboardAPI, isBrowserClientRuntime, isDesktopLocalOriginActive, openSessionInOwningHostWindow, takePendingDesktopSessionLinks } from './desktop';
+import { clearDesktopSessionNotifications, createDesktopClipboardAPI, isBrowserClientRuntime, isDesktopLocalOriginActive, openDesktopPath, openSessionInOwningHostWindow, takePendingDesktopSessionLinks } from './desktop';
 
 describe('clearing session notifications', () => {
   const originalWindow = globalThis.window;
@@ -157,6 +157,26 @@ describe('pending desktop session links', () => {
     expect(await takePendingDesktopSessionLinks()).toEqual([
       { sessionId: 'ses_jump', messageId: null, runtimeKey: null, requireKnownSession: true },
     ]);
+  });
+});
+
+describe('opening desktop files', () => {
+  afterEach(() => { Reflect.deleteProperty(globalThis, 'window'); });
+
+  test('passes resolved absolute filenames to the native bridge without trimming', async () => {
+    type OpenPathArgs = { path: string; app?: string };
+    const calls: Array<{ command: string; args: OpenPathArgs }> = [];
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+      location: { origin: 'openchamber-ui://app' },
+      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
+      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://localhost:51761',
+      __OPENCHAMBER_API_BASE_URL__: 'http://localhost:51761',
+      __OPENCHAMBER_DESKTOP__: { invoke: async (command: string, args: OpenPathArgs) => { calls.push({ command, args }); } },
+    } });
+    for (const path of ['/repo/report.md  ', 'C:/repo/report.md  ']) {
+      expect(await openDesktopPath(path)).toBe(true);
+      expect(calls[calls.length - 1]).toEqual({ command: 'desktop_open_path', args: { path, app: undefined } });
+    }
   });
 });
 
