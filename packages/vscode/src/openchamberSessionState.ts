@@ -338,7 +338,7 @@ export const createSessionStateStore = ({
      * metadata afterwards. A legacy entry is folded in and then dropped from
      * the file, since OpenCode now holds it.
      */
-    setMetadata: (sessionID: string, patch: SessionMetadata, openCode: SessionMetadataOnOpenCode, forkCleanup?: { workTitle: JsonValue }): Promise<SessionMetadata> => {
+    setMetadata: (sessionID: string, patch: SessionMetadata, openCode: SessionMetadataOnOpenCode, forkCleanup?: { workTitle: JsonValue; goal?: JsonValue }): Promise<SessionMetadata> => {
       const write = (metadataWrites.get(sessionID) ?? Promise.resolve()).catch(() => undefined).then(async () => {
         const stored = await readMetadata();
         if (!stored) throw new Error('session metadata is unavailable: its file could not be read');
@@ -352,6 +352,8 @@ export const createSessionStateStore = ({
           const namespace = { ...patch.openchamber };
           const currentTitle = isJsonObject(current.openchamber) ? current.openchamber.workTitle ?? null : null;
           if (namespace.workTitle === null && JSON.stringify(currentTitle) !== JSON.stringify(forkCleanup.workTitle)) delete namespace.workTitle;
+          const currentGoal = isJsonObject(current.openchamber) ? current.openchamber.goal ?? null : null;
+          if (Object.hasOwn(forkCleanup, 'goal') && JSON.stringify(currentGoal) !== JSON.stringify(forkCleanup.goal)) delete namespace.goal;
           appliedPatch = { ...patch, openchamber: namespace };
         }
         const merged = mergeMetadataPatch(current, appliedPatch);

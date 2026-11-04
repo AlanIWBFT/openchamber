@@ -1,5 +1,5 @@
 import type { Metadata } from '@/lib/opencode/model';
-import { patchSessionMetadata, stopSessionExecution } from '@/sync/session-actions';
+import { patchSessionGoalMetadata as writeGoal, stopSessionExecution } from '@/sync/session-actions';
 import { distillGoalObjective } from '@/lib/smallModel';
 import { formatMessage, useI18nStore } from '@/lib/i18n';
 import { toast } from '@/components/ui';
@@ -11,30 +11,8 @@ import {
   type SessionGoalStatus,
 } from '@/lib/sessionGoalMetadata';
 
-const isRecord = (value: unknown): value is Metadata =>
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
 const createGoalId = (): string =>
   `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-
-const writeGoal = (
-  sessionId: string,
-  directory: string | undefined,
-  update: (currentGoal: Metadata | null) => Metadata | null,
-  expectedRuntimeKey?: string,
-) =>
-  patchSessionMetadata(sessionId, directory, (metadata) => {
-    const namespace = isRecord(metadata.openchamber) ? metadata.openchamber : {};
-    const currentGoal = isRecord(namespace.goal) ? namespace.goal : null;
-    const nextGoal = update(currentGoal);
-    const nextNamespace = { ...namespace };
-    if (nextGoal) {
-      nextNamespace.goal = nextGoal;
-    } else {
-      delete nextNamespace.goal;
-    }
-    return { ...metadata, openchamber: nextNamespace };
-  }, expectedRuntimeKey);
 
 export interface SetSessionGoalInput {
   objective: string;
@@ -118,7 +96,6 @@ export async function setSessionGoal(
     if (existing && currentGoal && currentGoal.id === existing.id && existing.status !== 'complete') {
       // Edit in place: keep accounting, reactivate, clear stale audit state.
       return {
-        ...currentGoal,
         objective: objectiveFile ? '' : objective,
         objectiveFile,
         tokenBudget,
@@ -154,7 +131,6 @@ export async function setSessionGoalStatus(
   await writeGoal(sessionId, directory, (currentGoal) => {
     if (!currentGoal) return null;
     return {
-      ...currentGoal,
       status,
       // 'resumed' is the server's kickoff signal for an already-idle session.
       statusReason: status === 'active' ? 'resumed' : (status === 'complete' ? 'marked by user' : ''),
@@ -175,7 +151,7 @@ export async function setSessionGoalStatus(
 
 export async function clearSessionGoal(sessionId: string, directory: string | undefined): Promise<void> {
   await writeGoal(sessionId, directory, (currentGoal) => currentGoal
-    ? { ...currentGoal, status: 'paused', statusReason: '', updatedAt: Date.now() }
+    ? { status: 'paused', statusReason: '', updatedAt: Date.now() }
     : null);
   await stopSessionExecution(sessionId, directory);
   await writeGoal(sessionId, directory, () => null);

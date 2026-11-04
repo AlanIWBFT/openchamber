@@ -56,6 +56,19 @@ describe('a fork of an agent\'s worker session', () => {
 });
 
 describe('applyForkInheritance', () => {
+  it.each([false, true])('keeps a new goal created during the inherited objective read (copy failure: %s)', async (copyFails) => {
+    const inherited = { openchamber: { goal: { ...goal(true), status: 'active' }, reviewSessionID: 'source-review' } };
+    const current = { openchamber: { goal: { id: 'new-goal', objectiveFile: true, status: 'active' } } };
+    let patch;
+    const h = harness(inherited, {
+      writeObjective: async () => { if (copyFails) throw new Error('disk unavailable'); },
+      updateMetadata: async (_id, decide) => { patch = decide(current); },
+    });
+    await h.run();
+    expect(patch).toEqual({ openchamber: { reviewSessionID: null } });
+    expect(current.openchamber.goal).toEqual({ id: 'new-goal', objectiveFile: true, status: 'active' });
+  });
+
   it('does nothing for an inline goal without source links', async () => {
     const h = harness({ openchamber: { goal: goal(false) } });
     await h.run();

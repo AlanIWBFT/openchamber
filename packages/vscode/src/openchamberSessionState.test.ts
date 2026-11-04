@@ -60,6 +60,14 @@ const createMemoryFs = (initial: Record<string, string> = {}) => {
 };
 
 describe('openchamber session state store', () => {
+  it('leaves the user goal in place while cleaning the inherited review identity', async () => {
+    const store = createSessionStateStore({ dataDir: '/data', fsPromises: createMemoryFs().fsPromises });
+    const goal = { id: 'new', status: 'active' };
+    const fake = createFakeOpenCode({ ses_fork: { openchamber: { goal, kind: 'review' } } });
+    await store.setMetadata('ses_fork', { openchamber: { goal: { status: 'paused' }, kind: null } }, fake.openCode,
+      { workTitle: null, goal: { id: 'old', status: 'active' } });
+    assert.deepEqual(fake.sessions.get('ses_fork'), { openchamber: { goal } });
+  });
   it('serializes a user rename before a late conditional fork cleanup, preserving the new protection', async () => {
     const memory = createMemoryFs();
     const store = createSessionStateStore({ dataDir: '/data', fsPromises: memory.fsPromises });

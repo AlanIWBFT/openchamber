@@ -1,4 +1,4 @@
-import { deleteObjective, readObjective, writeObjective } from './objectives.js';
+import { copyObjectiveIfAbsent, deleteObjective, readObjective, writeObjective } from './objectives.js';
 import type { ObjectiveContent } from './objectives.js';
 import type { Request, Router } from '../shared/http-contracts.js';
 
@@ -16,7 +16,8 @@ export function registerSessionGoalRoutes(app: GoalApp) {
     try {
       const body = req.body || {};
       const content = isObjectiveBody(body) ? body.content : undefined;
-      await writeObjective(req.params.sessionId, content);
+      const write = isObjectiveBody(body) && body.ifAbsent === true ? copyObjectiveIfAbsent : writeObjective;
+      await write(req.params.sessionId, content);
       res.json({ ok: true });
     } catch (error) {
       const statusCode = Number(isRouteError(error) ? error.statusCode : undefined) || 500;

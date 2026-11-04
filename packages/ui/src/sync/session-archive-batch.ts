@@ -118,7 +118,7 @@ export async function requestSessionMetadataUpdate(
   sessionID: string,
   patch: Metadata,
   directory?: string | null,
-  forkCleanup?: { workTitle: JsonValue },
+  forkCleanup?: { workTitle: JsonValue; goal?: JsonValue },
 ): Promise<SessionMetadataUpdateResult> {
   let response: Response;
   try {

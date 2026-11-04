@@ -81,6 +81,8 @@ When every global bootstrap request fails, the OpenChamber health endpoint can r
 
 Ordinary forks remove source-owned work-title protection, review identity and promoted-BTW identity. Cleanup sends individual key changes and the work title at fork creation. The metadata owner (server or VS Code host) compares the title inside its serialized write so a later cleanup cannot erase a new user name. Existing forks are not retroactively repaired.
 
+The same write compares the inherited goal before pausing it or restoring inline text. A fork publishes an objective file only if absent. User goal edits send the fields they own, so a late pause cannot undo a new goal and a status edit cannot replay stale token accounting.
+
 There are **two distinct session data scopes** in the UI:
 
 1. **Directory-scoped sync stores**

@@ -449,7 +449,9 @@ export async function handleSystemBridgeMessage(
       }
       try {
         return { id, type, success: true, data: { metadata: await deps.sessionState.setMetadata(
-          sessionId, patch, sessionMetadataOnOpenCode(ctx?.manager), cleanup ? { workTitle: cleanup.workTitle } : undefined,
+          sessionId, patch, sessionMetadataOnOpenCode(ctx?.manager), cleanup ? {
+            workTitle: cleanup.workTitle, ...(Object.hasOwn(cleanup, 'goal') && { goal: cleanup.goal }),
+          } : undefined,
         ) } };
       } catch (error) {
         return { id, type, success: false, error: error instanceof Error ? error.message : String(error) };

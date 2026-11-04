@@ -107,6 +107,7 @@ export const applyForkInheritance = async <ObjectiveResult, MetadataResult, Perm
     await updateMetadata(fork.id, (current) => {
       const patch = { ...namespacePatch };
       if (JSON.stringify(openChamberNamespace(current)?.workTitle) !== JSON.stringify(openChamberNamespace(metadata)?.workTitle)) delete patch.workTitle;
+      if (JSON.stringify(openChamberNamespace(current)?.goal) !== JSON.stringify(openChamberNamespace(metadata)?.goal)) delete patch.goal;
       return Object.keys(patch).length ? { openchamber: patch } : null;
     });
   } catch (error) {

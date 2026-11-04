@@ -23,7 +23,7 @@ const isValidObjectiveKey = (sessionId: unknown): sessionId is string =>
 
 const clampContent = (content: ObjectiveContent | undefined) => String(content ?? '').trim().slice(0, GOAL_OBJECTIVE_CHAR_LIMIT);
 
-export const writeObjective = async (sessionId: string, content: ObjectiveContent | undefined) => {
+const validateObjective = (sessionId: string, content: ObjectiveContent | undefined) => {
   if (!isValidObjectiveKey(sessionId)) {
     throw Object.assign(new Error('invalid session id'), { statusCode: 400 });
   }
@@ -31,11 +31,38 @@ export const writeObjective = async (sessionId: string, content: ObjectiveConten
   if (!text) {
     throw Object.assign(new Error('objective content is required'), { statusCode: 400 });
   }
+  return text;
+};
+
+/** Write (or overwrite — a new goal replaces the old one) the session's objective. */
+export const writeObjective = async (sessionId: string, content: ObjectiveContent | undefined) => {
+  const text = validateObjective(sessionId, content);
   await fs.promises.mkdir(goalsDir(), { recursive: true });
   await fs.promises.writeFile(objectiveFilePath(sessionId), text, 'utf8');
   return { content: text };
 };
 
+/** Publish a fork's inherited objective only if nobody has written its own yet. */
+export const copyObjectiveIfAbsent = async (sessionId: string, content: ObjectiveContent | undefined) => {
+  const text = validateObjective(sessionId, content);
+  await fs.promises.mkdir(goalsDir(), { recursive: true });
+  const temporary = await fs.promises.mkdtemp(path.join(goalsDir(), '.fork-'));
+  try {
+    const source = path.join(temporary, 'objective.md');
+    await fs.promises.writeFile(source, text, 'utf8');
+    // Publish a closed, complete file with no replacement. Writing directly
+    // with wx would still allow a newer writer to race our remaining bytes.
+    try {
+      await fs.promises.link(source, objectiveFilePath(sessionId));
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
+    }
+  } finally {
+    await fs.promises.rm(temporary, { recursive: true, force: true });
+  }
+};
+
+/** Returns the objective text, or null when missing/invalid. */
 export const readObjective = async (sessionId: string) => {
   if (!isValidObjectiveKey(sessionId)) return null;
   try {
