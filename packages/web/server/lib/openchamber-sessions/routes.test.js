@@ -461,6 +461,32 @@ describe('openchamber session routes', () => {
         .send({ patch: { openchamber: null }, forkCleanup: { workTitle: null } }).expect(400);
     });
 
+    it('preserves a goal replaced after the UI read but before fork cleanup reaches the metadata owner', async () => {
+      const { app } = createApp();
+      const goal = { id: 'new-goal', status: 'active', objectiveFile: true };
+      await request(app).post('/api/openchamber/sessions/ses_fork/metadata')
+        .send({ patch: { openchamber: { goal, reviewSessionID: 'source-review' } } }).expect(200);
+      const result = await request(app).post('/api/openchamber/sessions/ses_fork/metadata').send({
+        forkCleanup: { workTitle: null, goal: { id: 'source-goal', status: 'active', objectiveFile: true } },
+        patch: { openchamber: { reviewSessionID: null, goal: { status: 'paused', statusReason: 'paused in fork' } } },
+      }).expect(200);
+      expect(result.body.metadata).toEqual({ openchamber: { goal } });
+    });
+
+    it('lets a later explicit Goal intent override an earlier fork pause', async () => {
+      const { app } = createApp();
+      const inherited = { id: 'source-goal', status: 'active', statusReason: '', tokensUsed: 0 };
+      const endpoint = '/api/openchamber/sessions/ses_fork/metadata';
+      await request(app).post(endpoint).send({ patch: { openchamber: { goal: inherited } } }).expect(200);
+      await request(app).post(endpoint).send({
+        forkCleanup: { workTitle: null, goal: inherited },
+        patch: { openchamber: { goal: { status: 'paused', statusReason: 'paused in fork' } } },
+      }).expect(200);
+      const goal = { ...inherited, id: 'new-goal' };
+      const result = await request(app).post(endpoint).send({ patch: { openchamber: { goal } } }).expect(200);
+      expect(result.body.metadata).toEqual({ openchamber: { goal } });
+    });
+
     it('reads back what it stored, per session', async () => {
       const { app } = createApp();
       await request(app).post('/api/openchamber/sessions/ses_a/metadata').send({ patch: { a: 1 } }).expect(200);

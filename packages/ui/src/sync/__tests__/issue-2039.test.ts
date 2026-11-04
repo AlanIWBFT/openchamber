@@ -367,6 +367,7 @@ mock.module("../session-actions", () => ({
   fetchMessagesForSession: mock(async () => undefined),
   getSessionLastAssistantModel: () => null,
   patchSessionMetadata: mock(async () => undefined),
+  patchSessionGoalMetadata: mock(async () => undefined),
   abortCurrentOperation: mock(async () => undefined),
   stopSessionExecution: mock(async () => undefined),
 }))

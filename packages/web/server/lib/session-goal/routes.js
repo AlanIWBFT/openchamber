@@ -1,4 +1,4 @@
-import { deleteObjective, readObjective, writeObjective } from './objectives.js';
+import { copyObjectiveIfAbsent, deleteObjective, readObjective, writeObjective } from './objectives.js';
 
 // OpenChamber-owned routes for file-backed goal objectives, keyed by session
 // id (one goal per session; a new goal overwrites the old file). The UI
@@ -8,8 +8,8 @@ import { deleteObjective, readObjective, writeObjective } from './objectives.js'
 export function registerSessionGoalRoutes(app) {
   app.put('/api/goals/objective/:sessionId', async (req, res) => {
     try {
-      const { content } = req.body || {};
-      await writeObjective(req.params.sessionId, content);
+      const { content, ifAbsent } = req.body || {};
+      await (ifAbsent === true ? copyObjectiveIfAbsent : writeObjective)(req.params.sessionId, content);
       res.json({ ok: true });
     } catch (error) {
       const statusCode = Number(error?.statusCode) || 500;

@@ -29,8 +29,7 @@ const isValidObjectiveKey = (sessionId) =>
 
 const clampContent = (content) => String(content ?? '').trim().slice(0, GOAL_OBJECTIVE_CHAR_LIMIT);
 
-/** Write (or overwrite — a new goal replaces the old one) the session's objective. */
-export const writeObjective = async (sessionId, content) => {
+const validateObjective = (sessionId, content) => {
   if (!isValidObjectiveKey(sessionId)) {
     throw Object.assign(new Error('invalid session id'), { statusCode: 400 });
   }
@@ -38,9 +37,35 @@ export const writeObjective = async (sessionId, content) => {
   if (!text) {
     throw Object.assign(new Error('objective content is required'), { statusCode: 400 });
   }
+  return text;
+};
+
+/** Write (or overwrite — a new goal replaces the old one) the session's objective. */
+export const writeObjective = async (sessionId, content) => {
+  const text = validateObjective(sessionId, content);
   await fs.promises.mkdir(goalsDir(), { recursive: true });
   await fs.promises.writeFile(objectiveFilePath(sessionId), text, 'utf8');
   return { content: text };
+};
+
+/** Publish a fork's inherited objective only if nobody has written its own yet. */
+export const copyObjectiveIfAbsent = async (sessionId, content) => {
+  const text = validateObjective(sessionId, content);
+  await fs.promises.mkdir(goalsDir(), { recursive: true });
+  const temporary = await fs.promises.mkdtemp(path.join(goalsDir(), '.fork-'));
+  try {
+    const source = path.join(temporary, 'objective.md');
+    await fs.promises.writeFile(source, text, 'utf8');
+    // Publish a closed, complete file with no replacement. Writing directly
+    // with wx would still allow a newer writer to race our remaining bytes.
+    try {
+      await fs.promises.link(source, objectiveFilePath(sessionId));
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+    }
+  } finally {
+    await fs.promises.rm(temporary, { recursive: true, force: true });
+  }
 };
 
 /** Returns the objective text, or null when missing/invalid. */

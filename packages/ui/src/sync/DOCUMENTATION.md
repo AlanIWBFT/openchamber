@@ -11,10 +11,19 @@ This document covers the current client-side session/data architecture in `packa
 Ordinary forks remove source-owned work-title protection, review identity and
 promoted-BTW identity, not their content or goal inheritance. Existing forks are
 not retroactively repaired. Cleanup sends key-by-key metadata changes and
-`forkCleanup: { workTitle }` from the creation snapshot. The OpenChamber server
+`forkCleanup: { workTitle, goal }` from the creation snapshot. The OpenChamber server
 or VS Code host compares the title inside its serialized metadata write turn;
 a frontend comparison alone cannot prevent a late cleanup from erasing a new
 user name. Normal metadata patches retain their existing semantics.
+The server also compares the inherited goal in that write turn before applying
+its pause or inline fallback, preserving a goal created after the UI's read.
+Inherited objective files are published only if absent; a concurrent new goal's
+file is never replaced by the copy.
+Goal actions use explicit field intents (`patchSessionGoalMetadata`) rather than
+diffing state against their earlier read. A new goal sends all of its initial
+values; edit/resume/pause send only the fields the action owns. Thus a fork pause
+that lands before the user's save cannot survive as an omitted `active` field,
+and a status action does not replay stale token accounting.
 
 There are **two distinct session data scopes** in the UI:
 

@@ -12,12 +12,12 @@ const objectiveUrl = (sessionId: string): string =>
   `/api/goals/objective/${encodeURIComponent(sessionId)}`;
 
 /** Write the session's objective file; false when the write did not land. */
-export async function writeGoalObjectiveFile(sessionId: string, content: string): Promise<boolean> {
+export async function writeGoalObjectiveFile(sessionId: string, content: string, options: { ifAbsent?: boolean } = {}): Promise<boolean> {
   try {
     const response = await runtimeFetch(objectiveUrl(sessionId), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(options.ifAbsent ? { content, ifAbsent: true } : { content }),
     });
     return response.ok;
   } catch {

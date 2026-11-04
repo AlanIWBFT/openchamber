@@ -49,7 +49,7 @@ export function withoutSourceOwnedLinks(metadata: Metadata, inherited: Metadata 
   // A fork usually tries another path; it must not pursue the source's goal in
   // parallel, so an active goal arrives paused and the user resumes it.
   const goal = asRecord(next.goal);
-  const pausedGoal = goal?.status === 'active';
+  const pausedGoal = goal?.status === 'active' && JSON.stringify(goal) === JSON.stringify(asRecord(inherited.openchamber)?.goal);
   if (goal && pausedGoal) {
     next.goal = { ...goal, status: 'paused', statusReason: 'paused in fork' };
   }
@@ -119,7 +119,8 @@ export async function applyForkInheritance(
   try {
     await deps.patchMetadata(fork.id, (metadata) => {
       const cleaned = withoutSourceOwnedLinks(metadata, fork.metadata ?? {});
-      return goal && inlineObjective !== null ? withInlineGoalObjective(cleaned, goal.id, inlineObjective) : cleaned;
+      const unchangedGoal = JSON.stringify(asRecord(metadata.openchamber)?.goal) === JSON.stringify(asRecord(fork.metadata?.openchamber)?.goal);
+      return goal && inlineObjective !== null && unchangedGoal ? withInlineGoalObjective(cleaned, goal.id, inlineObjective) : cleaned;
     });
   } catch (error) {
     console.warn('[fork] failed to update the fork metadata', error);

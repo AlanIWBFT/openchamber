@@ -67,7 +67,7 @@ const fileBackedGoal = (metadata) => {
  * @param {string} options.sourceSessionID
  * @param {{ id: string, metadata?: object }} options.fork The fork record OpenCode returned.
  * @param {(sessionID: string) => Promise<string | null>} options.readObjective
- * @param {(sessionID: string, content: string) => Promise<unknown>} options.writeObjective Throws on failure.
+ * @param {(sessionID: string, content: string) => Promise<unknown>} options.writeObjective Publishes only if absent; throws on failure.
  * @param {(sessionID: string, decide: (metadata: object) => object|null) => Promise<unknown>} options.updateMetadata Serial metadata-owner update.
  */
 export const applyForkInheritance = async ({ sourceSessionID, fork, readObjective, writeObjective, updateMetadata }) => {
@@ -101,6 +101,7 @@ export const applyForkInheritance = async ({ sourceSessionID, fork, readObjectiv
     await updateMetadata(fork.id, (current) => {
       const patch = { ...namespacePatch };
       if (JSON.stringify(openChamberNamespace(current)?.workTitle) !== JSON.stringify(openChamberNamespace(metadata)?.workTitle)) delete patch.workTitle;
+      if (JSON.stringify(openChamberNamespace(current)?.goal) !== JSON.stringify(openChamberNamespace(metadata)?.goal)) delete patch.goal;
       return Object.keys(patch).length > 0 ? { openchamber: patch } : null;
     });
   } catch (error) {
