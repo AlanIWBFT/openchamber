@@ -976,19 +976,22 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   const restartOpenCode = async (reason = 'managed-restart', { whileStopped } = {}) => {
     if (state.isShuttingDown) return;
     if (whileStopped && state.isExternalOpenCode) throw new Error('An external OpenCode server cannot be stopped by OpenChamber.');
-    if (state.currentRestartPromise) {
-      if (!whileStopped) {
-        await state.currentRestartPromise;
-        return;
+    // Recheck both owners after every wait: several callers can be released
+    // by the same retry, but only one may claim the next restart.
+    while (state.currentRestartPromise || bootstrapRetryRun) {
+      if (state.currentRestartPromise) {
+        if (!whileStopped) {
+          await state.currentRestartPromise;
+          return;
+        }
+        // A restart already in flight never ran this task; restart once more for it.
+        await state.currentRestartPromise.catch(() => {});
+      } else {
+        // The retry may have read the old configuration, so still restart after it.
+        await bootstrapRetryRun;
       }
-      // A restart already in flight never ran this task; restart once more for it.
-      await state.currentRestartPromise.catch(() => {});
       if (state.isShuttingDown) return;
     }
-    // A startup retry in flight may have read the state this restart is for,
-    // and two starts at once would orphan a process: wait, then really restart.
-    while (bootstrapRetryRun) await bootstrapRetryRun;
-    if (state.isShuttingDown) return;
 
     let whileStoppedError = null;
     state.currentRestartPromise = (async () => {
