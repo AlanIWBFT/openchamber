@@ -6,6 +6,7 @@ import { runAsUserAction } from '../environment/refresh-scope.js';
 import { isDiskPathRemoteUrl, redactRemoteUrl } from '../source-control/url-redaction.js';
 import { parsePublicGitIdentityProfile, toPublicGitIdentityProfile } from './identity-storage.js';
 import { WorktreeCreationError, createWorktreeCreation, hasClientContributorAuthority } from './worktree-creation.js';
+import { fetchMissingRangeRef } from './range-fetch.js';
 
 const NETWORK_OPERATION_ID = /^[A-Za-z0-9_-]{1,200}$/;
 const toGitIdentitySummary = (identity) => identity ? {
@@ -190,6 +191,7 @@ export function registerGitRoutes(app, {
       'STALE_REPOSITORY', 'STALE_BINDING', 'STALE_CONFIG', 'REMOTE_CHANGED',
       'AUTHENTICATION_REQUIRED', 'TIMEOUT', 'RUNTIME_UNSUPPORTED',
       'DESTINATION_SELECTION_REQUIRED', 'CONTRIBUTOR_MANAGED_TRANSPORT_REQUIRED',
+      'SOURCE_CONTROL_BINDING_REQUIRED',
     ];
     let publicCode;
     if (code === 'GIT_NETWORK_OPERATION_NOT_FOUND') publicCode = 'NOT_FOUND';
@@ -213,6 +215,7 @@ export function registerGitRoutes(app, {
       REMOTE_CHANGED: 'Git remote or transport binding changed',
       REMOTE_URL_USERINFO: 'Remove the name before @ from remote URL',
       AUTHENTICATION_REQUIRED: 'Git authentication is required',
+      SOURCE_CONTROL_BINDING_REQUIRED: 'Configure the repository connection before fetching the missing comparison branch.',
       DESTINATION_SELECTION_REQUIRED: 'Contributor push destination selection is required',
       CONTRIBUTOR_MANAGED_TRANSPORT_REQUIRED: 'Contributor transfers require managed credentials',
       TIMEOUT: 'Git network operation timed out',
@@ -1078,10 +1081,12 @@ export function registerGitRoutes(app, {
         includeWorkingTree: req.query.includeWorkingTree === 'true',
         path: pathParam,
         contextLines: Number.isFinite(context) ? context : 3,
+        fetchMissingRef: (ref) => fetchMissingRangeRef({ ...ref, response: res, getSourceControlBinding, networkOperations }),
       });
 
       res.json({ diff });
     } catch (error) {
+      if (error?.rangeFetch) return sendNetworkOperationError(req, res, error);
       console.error('Failed to get git range diff:', error);
       res.status(500).json({ error: error.message || 'Failed to get git range diff' });
     }
@@ -1099,8 +1104,12 @@ export function registerGitRoutes(app, {
         return res.status(400).json({ error: 'base, head and path parameters are required' });
       }
       const previousPath = String(req.query.previousPath ?? '') || undefined;
-      res.json(await getRangeFileVersions(directory, { base, head, path: filePath, previousPath, includeWorkingTree: req.query.includeWorkingTree === 'true' }));
+      res.json(await getRangeFileVersions(directory, {
+        base, head, path: filePath, previousPath, includeWorkingTree: req.query.includeWorkingTree === 'true',
+        fetchMissingRef: (ref) => fetchMissingRangeRef({ ...ref, response: res, getSourceControlBinding, networkOperations }),
+      }));
     } catch (error) {
+      if (error?.rangeFetch) return sendNetworkOperationError(req, res, error);
       console.error('Failed to read file versions:', error);
       res.status(500).json({ error: error.message || 'Failed to read file versions' });
     }
@@ -1141,9 +1150,13 @@ export function registerGitRoutes(app, {
         return res.status(400).json({ error: 'base and head parameters are required' });
       }
 
-      const files = await getRangeFiles(directory, { base, head, includeWorkingTree: req.query.includeWorkingTree === 'true' });
+      const files = await getRangeFiles(directory, {
+        base, head, includeWorkingTree: req.query.includeWorkingTree === 'true',
+        fetchMissingRef: (ref) => fetchMissingRangeRef({ ...ref, response: res, getSourceControlBinding, networkOperations }),
+      });
       res.json({ files });
     } catch (error) {
+      if (error?.rangeFetch) return sendNetworkOperationError(req, res, error);
       console.error('Failed to get git range files:', error);
       res.status(500).json({ error: error.message || 'Failed to get git range files' });
     }

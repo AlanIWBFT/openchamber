@@ -1266,7 +1266,8 @@ export async function getGitRangeDiff(
       path: path || undefined,
       context: contextLines,
       includeWorkingTree,
-    })
+    }),
+    { signal: options.signal }
   );
 
   if (!response.ok) {
@@ -1297,7 +1298,8 @@ export async function getGitRangeFiles(
   }
 
   const response = await runtimeFetch(
-    buildUrl(`${API_BASE}/range-files`, directory, { base, head, includeWorkingTree })
+    buildUrl(`${API_BASE}/range-files`, directory, { base, head, includeWorkingTree }),
+    { signal: options.signal }
   );
 
   if (!response.ok) {

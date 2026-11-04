@@ -6709,9 +6709,14 @@ describe.runIf(canRunGit())('getRangeDiff', () => {
     runGit(repository, ['add', 'child.txt']);
     runGit(repository, ['commit', '-m', 'child']);
 
-    const files = await getRangeFiles(repository, { base: 'origin/parent', head: 'child' });
+    await expect(getRangeFiles(repository, { base: 'origin/parent', head: 'child' })).rejects.toThrow(/is not available locally/);
+    const fetchMissingRef = vi.fn(async ({ directory, remote, branch }) => {
+      runGit(directory, ['fetch', '--', remote, `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`]);
+    });
+    const files = await getRangeFiles(repository, { base: 'origin/parent', head: 'child', fetchMissingRef });
 
     expect(files.map((file) => file.path)).toEqual(['child.txt']);
+    expect(fetchMissingRef).toHaveBeenCalledWith({ directory: await fs.promises.realpath(repository), remote: 'origin', branch: 'parent' });
     expect(await getRangeDiff(repository, { base: 'origin/parent', head: 'child' })).not.toContain('parent.txt');
   });
 });
@@ -7402,6 +7407,34 @@ describe('worktree task titles', () => {
 });
 
 describe.runIf(canRunGit())('getRangeFileVersions', () => {
+  it('fetches a missing remote base through the comparison request before reading binary versions', async () => {
+    const { repository } = createRepositoryWithRemote({ defaultBranch: 'react' });
+    const before = Buffer.from([0x50, 0x4b, 0, 0xff, 1]);
+    const after = Buffer.from([0x50, 0x4b, 0, 0xff, 2]);
+    runGit(repository, ['checkout', '-b', 'parent']);
+    fs.writeFileSync(path.join(repository, 'book.xlsx'), before);
+    runGit(repository, ['add', 'book.xlsx']);
+    runGit(repository, ['commit', '-m', 'parent document']);
+    runGit(repository, ['push', 'origin', 'parent']);
+    runGit(repository, ['update-ref', '-d', 'refs/remotes/origin/parent']);
+    runGit(repository, ['checkout', '-b', 'child']);
+    runGit(repository, ['branch', '-D', 'parent']);
+    fs.writeFileSync(path.join(repository, 'book.xlsx'), after);
+    runGit(repository, ['commit', '-am', 'child document']);
+    const options = { base: 'origin/parent', head: 'child', path: 'book.xlsx' };
+    await expect(getRangeFileVersions(repository, options)).rejects.toThrow(/is not available locally/);
+    const failure = Object.assign(new Error('cancelled'), { rangeFetch: true, code: 'CANCELLED' });
+    await expect(getRangeFileVersions(repository, { ...options, fetchMissingRef: async () => { throw failure; } })).rejects.toBe(failure);
+    const fetchMissingRef = vi.fn(async ({ directory, remote, branch }) => {
+      runGit(directory, ['fetch', '--', remote, `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`]);
+    });
+    expect(await getRangeFileVersions(repository, { ...options, fetchMissingRef })).toEqual({
+      original: `data:application/octet-stream;base64,${before.toString('base64')}`,
+      modified: `data:application/octet-stream;base64,${after.toString('base64')}`,
+    });
+    expect(fetchMissingRef).toHaveBeenCalledWith({ directory: await fs.promises.realpath(repository), remote: 'origin', branch: 'parent' });
+  });
+
   it('reads a binary file at the merge base and at the head, untouched', async () => {
     const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-range-versions-'));
     const run = (...args) => execFileSync('git', args, { cwd: repository });

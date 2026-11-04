@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const gitLibraries = {
   getPathDiff: vi.fn(),
   getPathDiffs: vi.fn(),
+  getRangeFileVersions: vi.fn(),
   getFileDiff: vi.fn(),
   getLog: vi.fn(),
   stageFiles: vi.fn(),
@@ -44,6 +45,7 @@ afterEach(() => {
 vi.mock('./index.js', () => ({
   getPathDiff: gitLibraries.getPathDiff,
   getPathDiffs: gitLibraries.getPathDiffs,
+  getRangeFileVersions: gitLibraries.getRangeFileVersions,
   getFileDiff: gitLibraries.getFileDiff,
   getLog: gitLibraries.getLog,
   stageFiles: gitLibraries.stageFiles,
@@ -128,6 +130,36 @@ const createMockResponse = () => {
     },
   };
 };
+
+describe('range document versions', () => {
+  it('keeps binary versions intact and supplies the planned-fetch seam', async () => {
+    const { app, getRoute } = createRouteRegistry();
+    registerGitRoutes(app);
+    const versions = { original: 'data:application/octet-stream;base64,UEsA/wE=', modified: 'data:application/octet-stream;base64,UEsA/wI=' };
+    gitLibraries.getRangeFileVersions.mockResolvedValueOnce(versions);
+    const response = createMockResponse();
+    await getRoute('GET', '/api/git/range-file-versions')({ query: { directory: '/repo', base: 'origin/parent', head: 'child', path: 'book.xlsx' } }, response);
+    expect(response.body).toEqual(versions);
+    expect(gitLibraries.getRangeFileVersions).toHaveBeenLastCalledWith('/repo', expect.objectContaining({
+      base: 'origin/parent', head: 'child', path: 'book.xlsx', fetchMissingRef: expect.any(Function),
+    }));
+  });
+
+  it('reports a planned comparison fetch refusal through the network error contract', async () => {
+    const { app, getRoute } = createRouteRegistry();
+    registerGitRoutes(app);
+    gitLibraries.getRangeFileVersions.mockImplementationOnce(async (directory, options) => {
+      await options.fetchMissingRef({ directory, remote: 'origin', branch: 'parent' });
+    });
+    const response = createMockResponse();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await getRoute('GET', '/api/git/range-file-versions')({ query: { directory: '/repo', base: 'origin/parent', head: 'child', path: 'book.xlsx' } }, response);
+      expect(response.statusCode).toBe(501);
+      expect(response.body).toEqual({ error: 'Git network operations are unavailable', code: 'RUNTIME_UNSUPPORTED' });
+    } finally { error.mockRestore(); }
+  });
+});
 
 describe('worktree title ownership', () => {
   it.each([[undefined, 'user'], ['user', 'user'], ['agent', 'agent']])('accepts %s ownership as %s', async (by, expected) => {

@@ -25,15 +25,15 @@ test('comparison reads preserve scope, report failures, retry, and stop while hi
     Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
   }
   const originalFetch = globalThis.fetch;
-  const requests: Array<{ url: URL; resolve: (response: Response) => void }> = [];
-  globalThis.fetch = Object.assign((input: RequestInfo | URL) => {
+  const requests: Array<{ url: URL; signal?: AbortSignal | null; resolve: (response: Response) => void }> = [];
+  globalThis.fetch = Object.assign((input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
     // Hold unrelated app-store bootstrap outside this fixture. Only explicitly
     // resolved comparison requests should publish data during these transitions.
     if (url.pathname === '/api/fs/home' || url.pathname === '/api/session-folders') {
       return new Promise<Response>(() => {});
     }
-    return new Promise<Response>((resolve) => { requests.push({ url, resolve }); });
+    return new Promise<Response>((resolve) => { requests.push({ url, signal: init?.signal, resolve }); });
   }, originalFetch);
   const { createRoot } = await import('react-dom/client');
   const { I18nProvider } = await import('@/lib/i18n');
@@ -111,8 +111,10 @@ test('comparison reads preserve scope, report failures, retry, and stop while hi
 
     source = { kind: 'branch', baseRef: 'main', headRef: 'feature' };
     await render();
+    expect(requests[6].signal?.aborted).toBe(false);
     directory = '/repo-b';
     await render();
+    expect(requests[6].signal?.aborted).toBe(true);
     await finish(7, Response.json({ files: [{ path: 'b.ts', status: 'A' }] }));
     await finish(6, Response.json({ files: [{ path: 'stale.ts', status: 'D' }] }));
     expect(current().files?.map((file) => file.path)).toEqual(['b.ts']);
