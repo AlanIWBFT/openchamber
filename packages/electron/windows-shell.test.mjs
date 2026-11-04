@@ -202,16 +202,17 @@ test('packaging includes a loadable matching Windows shell module and rejects mi
   const resourcesPath = path.join(appOutDir, 'resources');
   const web = 'node_modules/@openchamber/web';
   const helpers = ['credential-helper.js', 'ssh-wrapper.js', 'repository-credential-helper.js'].map((name) => `${web}/server/lib/git/${name}`);
+  const unpackedFiles = [...helpers, `node_modules/7zip-bin/win/${process.arch}/7za.exe`];
   const files = ['dist-bundle/entry.mjs', 'dist-bundle/main.mjs', 'dist-bundle/early-startup.mjs', 'preload.mjs', 'browser-panel-preload.cjs', 'package.json',
-    `${web}/package.json`, `${web}/server/index.js`, ...helpers];
+    `${web}/package.json`, `${web}/server/index.js`, ...unpackedFiles];
   const archive = { files: {} };
   for (const file of files) {
     const segments = file.split('/');
     let parent = archive;
     for (const segment of segments.slice(0, -1)) parent = parent.files[segment] ??= { files: {} };
-    parent.files[segments.at(-1)] = { size: 0, offset: '0', unpacked: helpers.includes(file) };
+    parent.files[segments.at(-1)] = { size: 0, offset: '0', unpacked: unpackedFiles.includes(file) };
   }
-  for (const helper of helpers) {
+  for (const helper of unpackedFiles) {
     const target = path.join(resourcesPath, 'app.asar.unpacked', helper);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, '');

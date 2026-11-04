@@ -338,6 +338,7 @@ describe('dispatch results runtime', () => {
 
   it('reports one result to a parent that sent several prompts into one run', async () => {
     const { runtime, openCode, emit } = await createRuntime();
+    openCode.state.sessions.ses_other = { id: 'ses_other', time: {} };
     openCode.state.active.ses_child = { type: 'running' };
     openCode.state.records.ses_child.push(user(1), assistant('Earlier run', 2), idle('succeeded', 3));
     // Seen live: eight sends steered into the running turn, eight identical results.
