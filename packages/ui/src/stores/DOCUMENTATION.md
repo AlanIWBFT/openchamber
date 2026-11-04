@@ -235,6 +235,9 @@ The hook also resolves per-file patch requests, including a commit rename's
 previous path. Views own their lazy patch caches through `useRangeKeyedCache`.
 Mobile requests only the active detail path and suspends reads while its
 keep-alive workspace pane is hidden.
+Branch comparison requests carry abort signals. Refreshing, replacing or hiding
+the comparison aborts its outstanding range reads, so the server can cancel any
+planned fetch needed for a missing remote base.
 
 `usePullRequestSelectionStore.ts` shares session-only PR choices across desktop,
 mobile Changes and walkthrough, keyed by runtime, directory, checked-out branch

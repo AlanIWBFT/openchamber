@@ -336,12 +336,14 @@ export interface GetGitRangeDiffOptions {
   path?: string;
   contextLines?: number;
   includeWorkingTree?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface GetGitRangeFilesOptions {
   base: string;
   head: string;
   includeWorkingTree?: boolean;
+  signal?: AbortSignal;
 }
 
 /** One changed file in a `base...head` range, with its change letter (A/M/D/R/C). */

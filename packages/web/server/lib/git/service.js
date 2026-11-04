@@ -3624,19 +3624,18 @@ const refResolvesToCommit = async (git, ref) => git
  * the repository never fetched (#2098), so a comparison can name a ref that does
  * not exist locally: typically the base of a stacked pull request in a fresh
  * worktree. A `<remote>/<branch>` ref on a configured remote is fetched as that
- * single branch, the way `checkoutBranch` does. Anything still unresolved is
+ * single branch through the caller's planned-network owner. Without that owner,
+ * this read never starts a transfer. Anything still unresolved is
  * named plainly instead of letting git's "ambiguous argument" surface as an
  * opaque failure.
  */
-async function assertRangeRefsResolve(git, repoRoot, refs) {
+async function assertRangeRefsResolve(git, repoRoot, refs, fetchMissingRef) {
   for (const ref of refs) {
     if (await refResolvesToCommit(git, ref)) continue;
     const remoteRef = parseRemoteBranchRef(ref);
     const remotes = remoteRef ? await git.getRemotes().catch(() => []) : [];
-    if (remoteRef && remoteRef.branch !== 'HEAD' && remotes.some((entry) => entry?.name === remoteRef.remote)) {
-      // A failed fetch (offline, branch deleted on the remote) falls through to
-      // the error below; a concurrent fetch of the same ref may already have won.
-      await fetchRemoteBranchRef(repoRoot, remoteRef.remote, remoteRef.branch).catch(() => undefined);
+    if (fetchMissingRef && remoteRef && remoteRef.branch !== 'HEAD' && remotes.some((entry) => entry?.name === remoteRef.remote)) {
+      await fetchMissingRef({ directory: repoRoot, remote: remoteRef.remote, branch: remoteRef.branch });
       if (await refResolvesToCommit(git, ref)) continue;
     }
     throw new Error(`Ref "${ref}" is not available locally. Fetch it before comparing.`);
@@ -3688,7 +3687,7 @@ async function runWorkingTreeRangeDiff(context, baseRef, headRef, args, paths = 
   }
 }
 
-export async function getRangeDiff(directory, { base, head, path: filePath, contextLines = 3, includeWorkingTree = false } = {}) {
+export async function getRangeDiff(directory, { base, head, path: filePath, contextLines = 3, includeWorkingTree = false, fetchMissingRef } = {}) {
   const { directoryPath, directoryGit, repoRoot, git } = await createRepositoryGitContext(directory);
   const baseRef = typeof base === 'string' ? base.trim() : '';
   const headRef = typeof head === 'string' ? head.trim() : '';
@@ -3696,7 +3695,7 @@ export async function getRangeDiff(directory, { base, head, path: filePath, cont
     throw new Error('base and head are required');
   }
 
-  await assertRangeRefsResolve(git, repoRoot, [baseRef, headRef]);
+  await assertRangeRefsResolve(git, repoRoot, [baseRef, headRef], fetchMissingRef);
 
   const args = ['diff', '--no-color', '--no-ext-diff'];
   if (typeof contextLines === 'number' && !Number.isNaN(contextLines)) {
@@ -3867,7 +3866,7 @@ export async function getBranchBase(directory, branch) {
   return { base: source };
 }
 
-export async function getRangeFiles(directory, { base, head, includeWorkingTree = false } = {}) {
+export async function getRangeFiles(directory, { base, head, includeWorkingTree = false, fetchMissingRef } = {}) {
   const { git, repoRoot } = await createRepositoryGitContext(directory);
   const baseRef = typeof base === 'string' ? base.trim() : '';
   const headRef = typeof head === 'string' ? head.trim() : '';
@@ -3875,7 +3874,7 @@ export async function getRangeFiles(directory, { base, head, includeWorkingTree 
     throw new Error('base and head are required');
   }
 
-  await assertRangeRefsResolve(git, repoRoot, [baseRef, headRef]);
+  await assertRangeRefsResolve(git, repoRoot, [baseRef, headRef], fetchMissingRef);
 
   // `-C` (copy detection among changed files only, so cheap) makes copies
   // surface as C entries instead of plain additions; rename detection is on

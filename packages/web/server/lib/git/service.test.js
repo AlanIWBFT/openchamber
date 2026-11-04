@@ -6366,9 +6366,14 @@ describe.runIf(canRunGit())('getRangeDiff', () => {
     runGit(repository, ['add', 'child.txt']);
     runGit(repository, ['commit', '-m', 'child']);
 
-    const files = await getRangeFiles(repository, { base: 'origin/parent', head: 'child' });
+    await expect(getRangeFiles(repository, { base: 'origin/parent', head: 'child' })).rejects.toThrow(/is not available locally/);
+    const fetchMissingRef = vi.fn(async ({ directory, remote, branch }) => {
+      runGit(directory, ['fetch', '--', remote, `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`]);
+    });
+    const files = await getRangeFiles(repository, { base: 'origin/parent', head: 'child', fetchMissingRef });
 
     expect(files.map((file) => file.path)).toEqual(['child.txt']);
+    expect(fetchMissingRef).toHaveBeenCalledWith({ directory: await fs.promises.realpath(repository), remote: 'origin', branch: 'parent' });
     expect(await getRangeDiff(repository, { base: 'origin/parent', head: 'child' })).not.toContain('parent.txt');
   });
 });

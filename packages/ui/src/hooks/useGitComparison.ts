@@ -53,6 +53,11 @@ export function useGitComparison(
   sourceRef.current = { key, source, enabled, pushScope, readContext, authority };
   const [result, setResult] = useState<ComparisonFiles | null>(null);
   const generation = useRef(0);
+  const requests = useRef(new Set<AbortController>());
+  const abortComparisons = useCallback(() => {
+    for (const request of requests.current) request.abort();
+    requests.current.clear();
+  }, []);
   const [prCache] = useState(() => new PullRequestSnapshotCache());
   const [pushRevision, setPushRevision] = useState(0);
   useEffect(() => subscribeGitPush((scope) => {
@@ -66,6 +71,9 @@ export function useGitComparison(
     const { key: targetKey, source: target, enabled: active, readContext: context, authority: targetAuthority } = sourceRef.current;
     if (!enabled || !active || !key || targetKey !== key || !directory || !target) return;
     const request = ++generation.current;
+    abortComparisons();
+    const controller = new AbortController();
+    requests.current.add(controller);
     const runtime = getRuntimeKey();
     setResult((previous) => previous?.key === key && previous.status === 'ready' ? { ...previous, refreshing: true } : { key, status: 'loading' });
     try {
@@ -74,7 +82,7 @@ export function useGitComparison(
         if (!context) throw new Error(t(changeRequestCopy('session.githubPrPicker.empty.notConnected', changeRequestTerm)));
         files = await prCache.load(pushScope, target, () => fetchPullRequestDiff(directory, target, context), force, targetAuthority);
       } else if (target.kind === 'branch') {
-        files = (await getGitRangeFiles(directory, { base: target.baseRef, head: target.headRef, includeWorkingTree: true }))
+        files = (await getGitRangeFiles(directory, { base: target.baseRef, head: target.headRef, includeWorkingTree: true, signal: controller.signal }))
           .map((file) => ({ ...file, insertions: 0, deletions: 0 }));
       } else {
         files = (await getCommitFiles(directory, target.hash)).files
@@ -87,14 +95,16 @@ export function useGitComparison(
     } catch (error) {
       if (generation.current !== request || getRuntimeKey() !== runtime) return;
       setResult({ key, status: 'error', message: error instanceof Error ? error.message : t('diffView.state.failedToLoadDiff') });
+    } finally {
+      requests.current.delete(controller);
     }
-  }, [changeRequestTerm, directory, enabled, key, prCache, pushScope, t]);
+  }, [abortComparisons, changeRequestTerm, directory, enabled, key, prCache, pushScope, t]);
   const refresh = useCallback(() => read(true), [read]);
 
   useEffect(() => {
     void read(false);
-    return () => { generation.current += 1; };
-  }, [read, revision, pushRevision]);
+    return () => { generation.current += 1; abortComparisons(); };
+  }, [abortComparisons, read, revision, pushRevision]);
 
   const current = result?.key === key ? result : null;
   const files = current?.status === 'ready' ? current.files : null;
@@ -107,9 +117,14 @@ export function useGitComparison(
       if (file.patch === undefined) throw new Error(t('diffView.state.failedToLoadDiff'));
       return { diff: file.patch };
     }
-    return target.kind === 'branch'
-      ? getGitRangeDiff(directory, { base: target.baseRef, head: target.headRef, path: filePath, contextLines, includeWorkingTree: true })
-      : getGitCommitDiff(directory, { hash: target.hash, path: filePath, previousPath: file.previousPath, contextLines });
+    if (target.kind !== 'branch') return getGitCommitDiff(directory, { hash: target.hash, path: filePath, previousPath: file.previousPath, contextLines });
+    const controller = new AbortController();
+    requests.current.add(controller);
+    try {
+      return await getGitRangeDiff(directory, { base: target.baseRef, head: target.headRef, path: filePath, contextLines, includeWorkingTree: true, signal: controller.signal });
+    } finally {
+      requests.current.delete(controller);
+    }
   }, [directory, enabled, filesByPath, key, t]);
 
   // PR patches come from GitHub at fixed context, so expanding one file means
