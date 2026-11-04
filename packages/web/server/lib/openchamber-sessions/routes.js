@@ -24,8 +24,8 @@ import { parseScheduledCommandPrompt } from '../scheduled-tasks/runtime.js';
 import { CHATS_SCOPE_PUBLIC_ID } from '../scheduled-tasks/chats-scope.js';
 import { buildGoalIntroText, createSessionGoal } from '../session-goal/create.js';
 import { OpenChamberControlError, asControlError } from '../openchamber-control/error.js';
-import { readObjective, writeObjective } from '../session-goal/objectives.js';
 import { worktreeSetupOf } from '../projects/worktree-setup.js';
+import { readObjective, copyObjectiveIfAbsent } from '../session-goal/objectives.js';
 import { createArchiveStore } from './archive-store.js';
 import { createOpenCodeSessionArchive, createSessionArchive } from './session-archive.js';
 import { applyForkInheritance } from './fork-inheritance.js';
@@ -1086,7 +1086,7 @@ export const createOpenChamberSessionService = (dependencies) => {
 
     const directory = asNonEmptyString(payload?.directory) || '';
     if (Object.hasOwn(payload, 'forkCleanup')) {
-      const cleanup = z.object({ workTitle: z.json() }).safeParse(payload.forkCleanup);
+      const cleanup = z.object({ workTitle: z.json(), goal: z.json().optional() }).safeParse(payload.forkCleanup);
       const namespacePatch = z.record(z.string(), z.json()).safeParse(patch.openchamber);
       if (!cleanup.success || !namespacePatch.success) {
         throw new OpenChamberControlError('forkCleanup requires workTitle and a key-by-key openchamber patch', 400);
@@ -1095,6 +1095,7 @@ export const createOpenChamberSessionService = (dependencies) => {
         const namespace = { ...namespacePatch.data };
         const currentTitle = current.openchamber?.workTitle ?? null;
         if (namespace.workTitle === null && JSON.stringify(currentTitle) !== JSON.stringify(cleanup.data.workTitle)) delete namespace.workTitle;
+        if (Object.hasOwn(cleanup.data, 'goal') && JSON.stringify(current.openchamber?.goal ?? null) !== JSON.stringify(cleanup.data.goal)) delete namespace.goal;
         return { ...patch, openchamber: namespace };
       }, directory);
       return { metadata };
@@ -1481,7 +1482,7 @@ export const createOpenChamberSessionService = (dependencies) => {
           sourceSessionID,
           fork: targetSession,
           readObjective,
-          writeObjective,
+          writeObjective: copyObjectiveIfAbsent,
           updateMetadata: (sessionID, decide) => updateMetadata(sessionID, decide, directory),
         });
       }

@@ -2868,6 +2868,33 @@ describe("forkFromMessage composer restore", () => {
 })
 
 describe("fork cleanup transport", () => {
+  test("a new Goal explicitly reasserts active state when fork cleanup pauses the earlier snapshot", async () => {
+    const { setSessionGoal } = await import("@/lib/sessionGoalActions")
+    const inherited = { id: "source-goal", status: "active", statusReason: "", tokensUsed: 0, turnsUsed: 0, auditFailStreak: 3 }
+    sessionRecords.set("ses-fork", liveSession("ses-fork", { openchamber: { goal: inherited } }))
+    archiveBatchResponse = { status: 200, body: { metadata: { openchamber: {} } } }
+    await setSessionGoal("ses-fork", "/test/project", { objective: "new target", tokenBudget: null }, null)
+    expect(openchamberRouteRequests.at(-1)?.body).toHaveProperty("patch.openchamber.goal.id")
+    expect(openchamberRouteRequests.at(-1)?.body).toMatchObject({ patch: { openchamber: { goal: {
+      status: "active", statusReason: "", tokensUsed: 0, turnsUsed: 0, auditFailStreak: null,
+    } } } })
+  })
+
+  test("resume sends explicit state without replaying accounting from its earlier snapshot", async () => {
+    const { setSessionGoalStatus } = await import("@/lib/sessionGoalActions")
+    sessionRecords.set("ses-fork", liveSession("ses-fork", { openchamber: {
+      goal: { id: "source-goal", status: "active", statusReason: "resumed", tokensUsed: 10, turnsUsed: 0 },
+    } }))
+    archiveBatchResponse = { status: 200, body: { metadata: { openchamber: {} } } }
+    await setSessionGoalStatus("ses-fork", "/test/project", "active")
+    expect(openchamberRouteRequests.at(-1)?.body).toHaveProperty("patch.openchamber.goal.updatedAt")
+    expect(openchamberRouteRequests.at(-1)?.body).not.toHaveProperty("patch.openchamber.goal.tokensUsed")
+    expect(openchamberRouteRequests.at(-1)?.body).not.toHaveProperty("patch.openchamber.goal.id")
+    expect(openchamberRouteRequests.at(-1)?.body).toMatchObject({ patch: { openchamber: { goal: {
+      status: "active", statusReason: "resumed", turnsUsed: 0, blockedStreak: 0,
+    } } } })
+  })
+
   test("sends the inherited title guard and key-by-key deletion instead of deleting the namespace", async () => {
     const { patchSessionMetadata } = await import("./session-actions")
     const workTitle = { title: "Source", by: "agent" }
@@ -3134,13 +3161,14 @@ describe("forkAfterMessage", () => {
             expect(objectiveRequests).toEqual([])
             expect(source.getState().session).toEqual([sourceSession, inheritedFork])
           } else {
-            expect(metadataRequest?.body).toEqual({ forkCleanup: { workTitle: null }, patch: { openchamber: {
+            expect(metadataRequest?.body).toEqual({ forkCleanup: { workTitle: null,
+              goal: { id: "goal-1", objective: "fallback", objectiveFile: true, status: "active" } }, patch: { openchamber: {
               kind: null, btwSessionID: null, reviewSessionID: null,
               goal: { status: "paused", statusReason: "paused in fork" },
             } } })
             expect(objectiveRequests).toEqual([
               { path: `/api/goals/objective/${sourceSession.id}`, body: {} },
-              { path: `/api/goals/objective/${forkedSession.id}`, body: { content: "fork objective" } },
+              { path: `/api/goals/objective/${forkedSession.id}`, body: { content: "fork objective", ifAbsent: true } },
             ])
             expect(goalObjectives.get(forkedSession.id)).toBe("fork objective")
             expect(source.getState().session[1]?.metadata).toEqual(repairedMetadata)

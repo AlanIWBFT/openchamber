@@ -81,6 +81,13 @@ before touching the filesystem). Rationale: metadata rides every
   dispatched (`openchamber-sessions/fork-inheritance.js`); UI forks call
   OpenCode directly, so both implementations exist. `/btw` forks drop the goal
   with the rest of the inherited namespace.
+- Inherited file copies use `copyObjectiveIfAbsent`: a complete temporary file
+  is hard-linked into the absent destination, so publication cannot overwrite
+  a new goal or race its bytes. The UI requests this with `ifAbsent: true` on
+  the objective PUT route. Existing destinations count as successful preservation;
+  other write failures retain the inline fallback. Both metadata repair paths
+  compare the goal against the fork-creation snapshot before pausing or inlining;
+  UI cleanup repeats that comparison in the server's serialized metadata owner.
 
 ## Flow
 

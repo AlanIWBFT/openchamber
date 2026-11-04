@@ -82,6 +82,18 @@ describe('withoutSourceOwnedLinks', () => {
 });
 
 describe('applyForkInheritance', () => {
+  for (const copied of [true, false]) test(`preserves a new goal when the metadata owner runs (copy success: ${copied})`, async () => {
+    const fork = forkWith({ openchamber: { goal: { ...goal(true), status: 'active' }, reviewSessionID: 'source-review' } });
+    const current: Metadata = { openchamber: { goal: { ...goal(true), id: 'new-goal', status: 'active' }, reviewSessionID: 'source-review' } };
+    let result: Metadata | undefined;
+    const h = harness(fork, {
+      writeObjective: async () => copied,
+      patchMetadata: async (_id, updater) => { result = updater(current); },
+    });
+    await applyForkInheritance('ses_source', fork, h.deps);
+    expect(result).toEqual({ openchamber: { goal: { ...goal(true), id: 'new-goal', status: 'active' } } });
+  });
+
   test('does nothing for a fork with an inline goal and no source links', async () => {
     const h = harness(forkWith({ openchamber: { goal: goal(false) } }));
     await applyForkInheritance('ses_source', forkWith({ openchamber: { goal: goal(false) } }), h.deps);
