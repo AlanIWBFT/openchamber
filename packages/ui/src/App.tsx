@@ -530,8 +530,9 @@ function App({ apis }: AppProps) {
 
     window.addEventListener('openchamber:open-session', handler as EventListener);
     // A link that launched the app arrived before this listener existed; the
-    // desktop shell keeps it until the window asks. Taking is one-shot, so a
-    // cleanup must not drop links already taken (Strict Mode re-runs this).
+    // desktop shell keeps it until the window asks, then dispatches its queue.
+    // Older shells return links instead; cleanup must not drop links already
+    // taken (Strict Mode re-runs this).
     void takePendingDesktopSessionLinks().then((links) => {
       for (const link of links) {
         if (openSessionInOwningHostWindow(link.sessionId, link.runtimeKey, link.messageId)) continue;
