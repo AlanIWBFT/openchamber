@@ -639,8 +639,10 @@ type PendingDesktopSessionLink = { sessionId: string; messageId: string | null; 
  * Session links (`openchamber://session/...`) that reached the desktop app
  * before this window could listen for them — the link that launched the app,
  * or "open in main window" from a closed main window. A link that names its
- * host (`?host=<id>`) carries that host's runtime key. Taking them removes
- * them; outside the desktop local page there are none.
+ * host (`?host=<id>`) carries that host's runtime key. The local shell uses
+ * this request as the listener-ready handshake and dispatches its single
+ * queue through events. Returned links support shells that drain on request;
+ * outside the desktop local page there are none.
  */
 export const takePendingDesktopSessionLinks = async (): Promise<PendingDesktopSessionLink[]> => {
   if (!isDesktopShell() || !isDesktopLocalOriginActive()) return [];

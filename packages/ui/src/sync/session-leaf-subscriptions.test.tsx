@@ -147,7 +147,8 @@ describe('session leaf subscriptions', () => {
     dom.restore()
   })
 
-  for (const inlineText of [false, true]) test(`a live ${inlineText ? 'UI block' : 'waiting page'} adds a timeline row through the suspended subscription without a reload`, async () => {
+  for (const opening of [null, '```openui-lang', '```openui', '<openui-lang>']) test(`a live ${opening ?? 'waiting page'} adds a timeline row through the suspended subscription without a reload`, async () => {
+    const inlineText = opening !== null
     let recordRenders = 0
     let pageKeys: string[] = []
     const Timeline = () => {
@@ -177,11 +178,11 @@ describe('session leaf subscriptions', () => {
     expect(recordRenders).toBe(before)
     const page: Part = { id: 'page', sessionID: SESSION_ID, messageID: 'msg_1', type: 'tool', callID: 'page', tool: 'openchamber_render',
       state: { status: 'running', input: { request: { html: '<p>Choose</p>', awaitAnswer: true } }, time: { start: 1 } } }
-    const block = { ...text, text: text.text + '\n\n```openui-lang\nroot = Stack([' }
+    const block = { ...text, text: text.text + `\n\n${opening}\nroot = Stack([` }
     await publish(inlineText ? [block] : [text, page])
     expect(pageKeys).toEqual([inlineText ? 'page:text' : 'page:page'])
     const shown = recordRenders
-    await publish(inlineText ? [{ ...block, text: block.text + 'Text("Result")])\n```' }] : [{ ...text, text: 'Text keeps growing' }, page])
+    await publish(inlineText ? [{ ...block, text: block.text + `Text("Result")])\n${opening === '<openui-lang>' ? '</openui-lang>' : '```'}` }] : [{ ...text, text: 'Text keeps growing' }, page])
     expect(recordRenders).toBe(shown)
     await publish([text])
     expect(pageKeys).toEqual([])
