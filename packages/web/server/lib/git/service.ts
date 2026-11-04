@@ -3471,13 +3471,13 @@ const refResolvesToCommit = async (git: SimpleGit, ref: string) => git
   .then((value) => Boolean(String(value || '').trim()))
   .catch(() => false);
 
-async function assertRangeRefsResolve(git: SimpleGit, repoRoot: string, refs: string[]) {
+async function assertRangeRefsResolve(git: SimpleGit, repoRoot: string, refs: string[], fetchMissingRef?: RangeOptions['fetchMissingRef']) {
   for (const ref of refs) {
     if (await refResolvesToCommit(git, ref)) continue;
     const remoteRef = parseRemoteBranchRef(ref);
     const remotes = remoteRef ? await git.getRemotes().catch(() => []) : [];
-    if (remoteRef && remoteRef.branch !== 'HEAD' && remotes.some((entry) => entry?.name === remoteRef.remote)) {
-      await fetchRemoteBranchRef(repoRoot, remoteRef.remote, remoteRef.branch).catch(() => undefined);
+    if (fetchMissingRef && remoteRef && remoteRef.branch !== 'HEAD' && remotes.some((entry) => entry?.name === remoteRef.remote)) {
+      await fetchMissingRef({ directory: repoRoot, remote: remoteRef.remote, branch: remoteRef.branch });
       if (await refResolvesToCommit(git, ref)) continue;
     }
     throw new Error(`Ref "${ref}" is not available locally. Fetch it before comparing.`);
@@ -3525,7 +3525,7 @@ async function runWorkingTreeRangeDiff(context: RepositoryGitContext, baseRef: s
   }
 }
 
-export async function getRangeDiff(directory: string, { base, head, path: filePath, previousPath, contextLines = 3, includeWorkingTree = false }: RangeOptions = {}) {
+export async function getRangeDiff(directory: string, { base, head, path: filePath, previousPath, contextLines = 3, includeWorkingTree = false, fetchMissingRef }: RangeOptions = {}) {
   const { directoryPath, directoryGit, repoRoot, git } = await createRepositoryGitContext(directory);
   const baseRef = isPrimitiveString(base) ? base.trim() : '';
   const headRef = isPrimitiveString(head) ? head.trim() : '';
@@ -3533,7 +3533,7 @@ export async function getRangeDiff(directory: string, { base, head, path: filePa
     throw new Error('base and head are required');
   }
 
-  await assertRangeRefsResolve(git, repoRoot, [baseRef, headRef]);
+  await assertRangeRefsResolve(git, repoRoot, [baseRef, headRef], fetchMissingRef);
 
   const args = ['--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/'];
   if (!Number.isNaN(contextLines)) {
@@ -3568,12 +3568,12 @@ export async function getRangeDiff(directory: string, { base, head, path: filePa
   return diff;
 }
 
-export async function getRangeFileVersions(directory: string, { base, head, path: filePath, previousPath, includeWorkingTree = false }: RangeOptions = {}) {
+export async function getRangeFileVersions(directory: string, { base, head, path: filePath, previousPath, includeWorkingTree = false, fetchMissingRef }: RangeOptions = {}) {
   const { directoryPath, repoRoot, git } = await createRepositoryGitContext(directory);
   const baseRef = String(base ?? '').trim();
   const headRef = String(head ?? '').trim();
   if (!baseRef || !headRef || !filePath) throw new Error('base, head and path are required');
-  await assertRangeRefsResolve(git, repoRoot, [baseRef, headRef]);
+  await assertRangeRefsResolve(git, repoRoot, [baseRef, headRef], fetchMissingRef);
   const headCommit = (await git.raw(['rev-parse', '--verify', '--end-of-options', `${headRef}^{commit}`])).trim();
   const mergeBase = (await git.raw(['merge-base', baseRef, headCommit])).trim();
   const absolutePath = path.resolve(directoryPath, filePath);
@@ -3767,7 +3767,7 @@ export async function getBranchBase(directory: string, branch: string) {
   return { base: rebased ? null : source };
 }
 
-export async function getRangeFiles(directory: string, { base, head, includeWorkingTree = false }: RangeOptions = {}) {
+export async function getRangeFiles(directory: string, { base, head, includeWorkingTree = false, fetchMissingRef }: RangeOptions = {}) {
   const { git, repoRoot } = await createRepositoryGitContext(directory);
   const baseRef = isPrimitiveString(base) ? base.trim() : '';
   const headRef = isPrimitiveString(head) ? head.trim() : '';
@@ -3775,7 +3775,7 @@ export async function getRangeFiles(directory: string, { base, head, includeWork
     throw new Error('base and head are required');
   }
 
-  await assertRangeRefsResolve(git, repoRoot, [baseRef, headRef]);
+  await assertRangeRefsResolve(git, repoRoot, [baseRef, headRef], fetchMissingRef);
 
   const args = ['diff', '--name-status', '-z', '-C'];
   const workingTree = includeWorkingTree

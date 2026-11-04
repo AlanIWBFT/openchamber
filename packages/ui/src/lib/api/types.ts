@@ -295,12 +295,14 @@ export interface GetGitRangeDiffOptions {
   contextLines?: number;
   includeWorkingTree?: boolean;
   previousPath?: string;
+  signal?: AbortSignal;
 }
 
 export interface GetGitRangeFilesOptions {
   base: string;
   head: string;
   includeWorkingTree?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface GitRangeFileEntry {

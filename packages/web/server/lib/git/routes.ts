@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { registerGitStatusBatchRoute } from './status-batch.js';
+import { fetchMissingRangeRef } from './range-fetch.js';
 import { isPlainObject, isString } from '../shared/guards.js';
 import { OpenCode } from '@opencode/client';
 import { createGitRedactor } from './redaction.js';
@@ -62,6 +63,7 @@ type UncheckedFields = {
   readonly login?: unknown; readonly username?: unknown;
 };
 type ErrorFields = {
+  rangeFetch?: unknown;
   readonly message?: unknown; readonly code?: unknown; readonly status?: unknown; readonly statusCode?: unknown;
   readonly reason?: unknown; readonly stderr?: unknown; readonly stdout?: unknown; readonly remoteName?: unknown;
 };
@@ -259,6 +261,7 @@ export function registerGitRoutes(app: Application, {
     REMOTE_CHANGED: 'Git remote or transport binding changed',
     REMOTE_URL_USERINFO: 'Remove the name before @ from remote URL',
     AUTHENTICATION_REQUIRED: 'Git authentication is required',
+    SOURCE_CONTROL_BINDING_REQUIRED: 'Configure the repository connection before fetching the missing comparison branch.',
     DESTINATION_SELECTION_REQUIRED: 'Contributor push destination selection is required',
     CONTRIBUTOR_MANAGED_TRANSPORT_REQUIRED: 'Contributor transfers require managed credentials',
     TIMEOUT: 'Git network operation timed out',
@@ -270,6 +273,7 @@ export function registerGitRoutes(app: Application, {
     'STALE_REPOSITORY', 'STALE_BINDING', 'STALE_CONFIG', 'REMOTE_CHANGED',
     'AUTHENTICATION_REQUIRED', 'TIMEOUT', 'RUNTIME_UNSUPPORTED',
     'DESTINATION_SELECTION_REQUIRED', 'CONTRIBUTOR_MANAGED_TRANSPORT_REQUIRED',
+    'SOURCE_CONTROL_BINDING_REQUIRED',
   ];
   const sendNetworkOperationError = <Cause>(req: Request, res: Response, error: Cause) => {
     const fields = errorFields(error);
@@ -1149,10 +1153,12 @@ export function registerGitRoutes(app: Application, {
         path: pathParam,
         previousPath,
         contextLines: Number.isFinite(context) ? context : 3,
+        fetchMissingRef: (ref) => fetchMissingRangeRef({ ...ref, response: res, getSourceControlBinding, networkOperations }),
       });
 
       res.json({ diff });
     } catch (error) {
+      if (errorFields(error)?.rangeFetch === true) return sendNetworkOperationError(req, res, error);
       console.error('Failed to get git range diff:', error);
       res.status(500).json({ error: messageOf(error) || 'Failed to get git range diff' });
     }
@@ -1170,8 +1176,12 @@ export function registerGitRoutes(app: Application, {
         return res.status(400).json({ error: 'base, head and path parameters are required' });
       }
       const previousPath = String(req.query.previousPath ?? '') || undefined;
-      res.json(await getRangeFileVersions(directory, { base, head, path: filePath, previousPath, includeWorkingTree: req.query.includeWorkingTree === 'true' }));
+      res.json(await getRangeFileVersions(directory, {
+        base, head, path: filePath, previousPath, includeWorkingTree: req.query.includeWorkingTree === 'true',
+        fetchMissingRef: (ref) => fetchMissingRangeRef({ ...ref, response: res, getSourceControlBinding, networkOperations }),
+      }));
     } catch (error) {
+      if (errorFields(error)?.rangeFetch === true) return sendNetworkOperationError(req, res, error);
       console.error('Failed to read file versions:', error);
       res.status(500).json({ error: messageOf(error) || 'Failed to read file versions' });
     }
@@ -1212,9 +1222,13 @@ export function registerGitRoutes(app: Application, {
         return res.status(400).json({ error: 'base and head parameters are required' });
       }
 
-      const files = await getRangeFiles(directory, { base, head, includeWorkingTree: req.query.includeWorkingTree === 'true' });
+      const files = await getRangeFiles(directory, {
+        base, head, includeWorkingTree: req.query.includeWorkingTree === 'true',
+        fetchMissingRef: (ref) => fetchMissingRangeRef({ ...ref, response: res, getSourceControlBinding, networkOperations }),
+      });
       res.json({ files });
     } catch (error) {
+      if (errorFields(error)?.rangeFetch === true) return sendNetworkOperationError(req, res, error);
       console.error('Failed to get git range files:', error);
       res.status(500).json({ error: messageOf(error) || 'Failed to get git range files' });
     }

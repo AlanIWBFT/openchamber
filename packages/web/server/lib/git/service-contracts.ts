@@ -211,6 +211,7 @@ export interface DiffOptions extends GitReadOptions {
   previousPath?: string | undefined;
 }
 export interface RangeOptions extends DiffOptions {
+  fetchMissingRef?: (ref: { directory: string; remote: string; branch: string }) => Promise<void>;
   base?: string;
   head?: string;
   includeWorkingTree?: boolean;
