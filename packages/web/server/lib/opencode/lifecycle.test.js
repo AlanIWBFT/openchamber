@@ -799,7 +799,7 @@ describe('OpenCode lifecycle', () => {
       expect(bootstrap).toHaveBeenCalledTimes(5);
     });
 
-    it('makes a restart asked for during a retry wait for it and then really restart', async () => {
+    it.each([1, 2])('makes %i restart requests during a retry wait for it and share one restart', async (count) => {
       vi.useFakeTimers();
       const runtime = failingBootstrapRuntime(new Error('listener unavailable'));
       const retryRun = Promise.withResolvers();
@@ -809,10 +809,10 @@ describe('OpenCode lifecycle', () => {
 
       const child = createMockChild();
       spawnMock.mockImplementationOnce(() => {
-        queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
+        queueMicrotask(() => child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n'));
         return child;
       });
-      const restart = runtime.restartOpenCode();
+      const restart = Promise.all(Array.from({ length: count }, () => runtime.restartOpenCode()));
       await vi.advanceTimersByTimeAsync(0);
       expect(spawnMock).not.toHaveBeenCalled();
 
