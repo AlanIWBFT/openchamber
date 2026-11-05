@@ -97,7 +97,7 @@ describe('buildSessionMessageRecordsSnapshot', () => {
 
   for (const [tool, input, output] of [
     ['openchamber_render', { html: '<p>Pick</p>', awaitAnswer: true }, undefined],
-    ['openchamber_secret', { label: 'Token', reason: 'Connect' }, undefined],
+    ['openchamber_secret', { request: { label: 'Token', reason: 'Connect' } }, undefined],
     ['openchamber_workflow', {}, { ok: true, action: 'workflow.run', data: { runId: 'run_1' } }],
     ['openchamber_image', {}, { ok: true, action: 'image.generate', data: { images: [{ path: '/image.png' }] } }],
   ] as const) test(`publishes ${tool} card appearance, state changes and removal`, () => {

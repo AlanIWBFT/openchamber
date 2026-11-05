@@ -570,9 +570,12 @@ const secretRequestFields = z.object({
   placeholder: optionalText,
 })
 
-// Read like a page's input: inside `parameters` or beside `action`.
+// Match page inputs: the current request wrapper takes precedence over legacy inputs.
 const secretRequestInputSchema = secretRequestFields
-  .extend({ parameters: secretRequestFields.optional().catch(undefined) })
+  .extend({
+    request: secretRequestFields.optional().catch(undefined),
+    parameters: secretRequestFields.optional().catch(undefined),
+  })
   .catch({})
 
 /** Where a secret request stands. `not-given`: the user wrote in the chat, or the turn ended first. */
@@ -602,10 +605,10 @@ export type RequestedSecret = { label: string; reason: string; placeholder: stri
 export function requestedSecret(toolName: ToolName, state: ToolState): RequestedSecret | null {
   if (toolName !== OPENCHAMBER_SECRET_TOOL) return null
   const parsed = secretRequestInputSchema.parse(state.input ?? {})
-  const label = parsed.parameters?.label ?? parsed.label
-  const reason = parsed.parameters?.reason ?? parsed.reason
+  const label = parsed.request?.label ?? parsed.parameters?.label ?? parsed.label
+  const reason = parsed.request?.reason ?? parsed.parameters?.reason ?? parsed.reason
   if (!label || !reason) return null
-  const request = { label, reason, placeholder: parsed.parameters?.placeholder ?? parsed.placeholder }
+  const request = { label, reason, placeholder: parsed.request?.placeholder ?? parsed.parameters?.placeholder ?? parsed.placeholder }
   if (state.status === "running") return { ...request, state: "waiting" }
   if (state.status === "error") return { ...request, state: "not-given" }
   if (state.status !== "completed") return null
