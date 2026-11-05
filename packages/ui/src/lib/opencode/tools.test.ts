@@ -356,8 +356,19 @@ describe("renderedPage", () => {
 describe("requestedSecret", () => {
   const completed = (input: ToolInput, metadata?: Metadata): ToolState => ({ status: "completed", input, output: "", metadata, time: { start: 1, end: 2 } })
   const running = (input: ToolInput): ToolState => ({ status: "running", input, time: { start: 1 } })
-  const input = { action: "secret.request", parameters: { label: "Cloudflare API token", reason: "To deploy the worker.", placeholder: "cf-..." } }
+  const input = { request: { action: "secret.request", label: "Cloudflare API token", reason: "To deploy the worker.", placeholder: "cf-..." } }
   const request = { label: "Cloudflare API token", reason: "To deploy the worker.", placeholder: "cf-..." }
+
+  test("reads the request wrapper before legacy parameters and flat fields", () => {
+    expect(requestedSecret("openchamber_secret", running({
+      label: "Flat", reason: "Flat reason", placeholder: "flat",
+      parameters: { label: "Legacy", reason: "Legacy reason", placeholder: "legacy" },
+      request: { label: "Current", reason: "Current reason", placeholder: "current" },
+    }))).toEqual({ label: "Current", reason: "Current reason", placeholder: "current", state: "waiting" })
+    expect(requestedSecret("openchamber_secret", running({ action: "secret.request", parameters: request })))
+      .toEqual({ ...request, state: "waiting" })
+    expect(requestedSecret("openchamber_secret", running({ request: { label: "Key" } }))).toBeNull()
+  })
 
   test("asks while its call runs and folds to how it ended", () => {
     expect(requestedSecret("openchamber_secret", running(input))).toEqual({ ...request, state: "waiting" })

@@ -594,6 +594,24 @@ describe('live Activity with the real message body', () => {
         expect(container.querySelector('[data-html-render-status="waiting"]')).not.toBeNull();
     });
 
+    test('draws the masked secret form from the current request wrapper outside collapsed Activity', async () => {
+        const secret: Part = {
+            type: 'tool', tool: 'openchamber_secret', id: 'secret', callID: 'secret', sessionID: 'session', messageID: 'progress',
+            state: { status: 'running', input: { request: { action: 'secret.request', label: 'Test token', reason: 'Render check', placeholder: 'dummy-only' } },
+                time: { start: 1 } },
+        };
+        await act(async () => root.render(<Harness record={turn([assistant('progress', [readPart, secret])])} />));
+        const card = container.querySelector('[data-secret-request-status="waiting"]');
+        expect(card).not.toBeNull();
+        expect(card?.getAttribute('data-waiting-page')).toBe('secret');
+        expect(card?.textContent).toContain('Test token');
+        expect(card?.textContent).toContain('Render check');
+        const input = card?.querySelector<HTMLInputElement>('input[type="password"]');
+        expect(input?.placeholder).toBe('dummy-only');
+        expect(input?.value).toBe('');
+        expect(card?.closest('[data-live-turn-activity]')).toBeNull();
+    });
+
     test('keeps thinking in the final message inside Activity, not outside with the answer', async () => {
         const thinking: Part = { type: 'reasoning', id: 'thinking', messageID: 'final', sessionID: 'session', text: 'Private reasoning content', time: { start: 1, end: 2 } };
         const final = assistant('final', [thinking, text('final-text', 'Public answer')], 'stop');
