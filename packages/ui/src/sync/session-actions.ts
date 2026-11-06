@@ -5,6 +5,7 @@
 
 import type { FilePart, FormRequest, JsonValue, Message, Metadata, ModelSelection, Part, PermissionRequest, Session, SyntheticMessage, TextPart, UserMessage } from "@/lib/opencode/model"
 import type { FormValue } from "@opencode/client"
+import { recordSessionRouting } from "@/lib/diagnostics/session-routing"
 import { compact, partIds } from "@/lib/opencode/model"
 import { isAutoModel } from "@/lib/routing/autoModel"
 import { Binary } from "./binary"
@@ -369,7 +370,15 @@ export async function moveSessionToDirectory(
   destinationDirectory: string,
   expectedRuntimeKey?: string,
 ): Promise<void> {
-  await opencodeClient.moveSession(session.id, destinationDirectory)
+  const routing = { sessionId: session.id, directory: destinationDirectory, previousDirectory: sourceDirectory, runtimeKey: getRuntimeKey() }
+  recordSessionRouting({ ...routing, action: "move", source: "move-request", outcome: "started" })
+  try {
+    await opencodeClient.moveSession(session.id, destinationDirectory)
+  } catch (error) {
+    recordSessionRouting({ ...routing, action: "move", source: "move-request", outcome: "failed" })
+    throw error
+  }
+  recordSessionRouting({ ...routing, action: "move", source: "move-request", outcome: "completed" })
 
   // If the runtime changed during the move request, the server move
   // already happened, but we must not publish stale local state to the UI/stores.
@@ -387,6 +396,7 @@ export async function moveSessionToDirectory(
  * The global list already took the directory from the same event.
  */
 export function adoptSessionMove(sessionId: string, sourceDirectory: string, destinationDirectory: string): void {
+  recordSessionRouting({ action: "move", source: "move-event", sessionId, directory: destinationDirectory, previousDirectory: sourceDirectory })
   // A session created under a path the server then canonicalized has its
   // record in the destination already and only its first message at the source.
   const session = _childStores?.getChild(sourceDirectory)?.getState().session.find((candidate) => candidate.id === sessionId)

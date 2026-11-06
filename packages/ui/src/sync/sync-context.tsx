@@ -67,6 +67,7 @@ import { useUIStore } from "@/stores/useUIStore"
 import { useBtwStore } from "@/stores/useBtwStore"
 import { selectNewChildSessions } from "./child-session-discovery"
 import { syncDebug } from "./debug"
+import { recordSessionRouting } from "@/lib/diagnostics/session-routing"
 import { normalizePath } from "@/lib/pathNormalization"
 import { Binary } from "./binary"
 import { getReconnectCandidateSessionIds, mergeBootstrapSessions } from "./reconnect-recovery"
@@ -1112,6 +1113,10 @@ const setIndexedSessionDirectory = (routingIndex: EventRoutingIndex, sessionID: 
   if (!sessionID || !directory || directory === "global") {
     return
   }
+  const previousDirectory = routingIndex.sessionDirectoryById.get(sessionID)
+  if (previousDirectory && previousDirectory !== directory) {
+    recordSessionRouting({ action: "index-replace", source: "event-index", sessionId: sessionID, directory, previousDirectory, captureSite: true })
+  }
   routingIndex.sessionDirectoryById.set(sessionID, directory)
 }
 
@@ -1653,11 +1658,15 @@ async function resyncDirectoryAfterReconnect(
 
   await Promise.all(candidateSessionIds.map(async (sessionId) => {
     syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })
+    const runtimeKey = getRuntimeKey()
+    const request = recordSessionRouting({ action: "fetch-start", source: "reconnect", runtimeKey, sessionId, directory, captureSite: true })
     const loader = getImperativeSessionMessageLoader()
     const [session] = await Promise.all([
       retry(() => opencodeClient.getSession(sessionId, directory)).catch(() => null),
       loader?.refreshTail({ directory, sessionID: sessionId }, RECONNECT_MESSAGE_LIMIT) ?? Promise.resolve(),
     ])
+    recordSessionRouting({ action: "fetch-result", source: "reconnect", runtimeKey, request, sessionId, directory, ownerDirectory: session?.directory,
+      model: session?.model, updated: session?.time.updated, outcome: isStale() ? "stale" : session ? "accepted" : "failed" })
     if (isStale()) return
     if (!session || loader?.getSnapshot({ directory, sessionID: sessionId }).status === "error") succeeded = false
     markRecordedInterruptedTurn(store, sessionId)
@@ -2117,6 +2126,11 @@ export function handleEvent(
   if (shouldConsumeBulkArchiveEcho(payload, expectedRuntimeKey)) return
 
   const directory = resolveDirectoryFromRoutingIndex(routingIndex, rawDirectory, payload, childStores, batch)
+  if (payload.type === "session.created" || payload.type === "session.deleted"
+    || (payload.type === "session.patched" && (payload.properties.patch.model || payload.properties.patch.directory))) {
+    recordSessionRouting({ action: "event-route", source: "event", eventType: payload.type, runtimeKey: expectedRuntimeKey, sessionId: syncEventSessionID(payload),
+      directory, previousDirectory: rawDirectory, ownerDirectory: payload.type === "session.created" ? payload.properties.info.directory : undefined })
+  }
 
   // OpenCode dropped this directory's in-memory services (an hour idle, or an
   // explicit reload). Session records and messages live in its database and
@@ -3098,6 +3112,7 @@ export function SyncProvider(props: {
                   onPage: (page) => {
                     if (!isCurrent()) return
                     const { active } = splitGlobalSessionsByArchived(page)
+                    recordSessionRouting({ action: "bootstrap-page", source: "bootstrap", directory: dir, count: active.length, revision: baselineRevision })
                     const current = store.getState()
                     const { sessions } = mergeBootstrapSessions(
                       active.filter((session) => !session.parentID), active, current.session, {
@@ -3134,6 +3149,7 @@ export function SyncProvider(props: {
                 sessionListSource: "authoritative",
                 limit: Math.max(sessions.length, 50),
               })
+              recordSessionRouting({ action: "bootstrap-complete", source: "bootstrap", directory: dir, count: sessions.length, revision: baselineRevision })
               ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
             },
           })

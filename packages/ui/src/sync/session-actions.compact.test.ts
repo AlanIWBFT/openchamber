@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 
 import { createRuntimeOpencodeClient, opencodeClient } from "@/lib/opencode/client"
 import type { ModelRef, ModelSelection, Session } from "@/lib/opencode/model"
+import { toModelRef } from "@/lib/opencode/model"
 import { getRuntimeApiBaseUrl, getRuntimeKey, switchRuntimeEndpoint } from "@/lib/runtime-switch"
 import { compactSession } from "./session-actions"
 import { ChildStoreManager } from "./child-store"
@@ -31,6 +32,7 @@ const sessionOn = (model: ModelRef): Session => ({
 let manager: ChildStoreManager
 let calls: ClientCall[]
 let switchError: Error | null
+let serverSession: Session
 const originalBase = getRuntimeApiBaseUrl()
 const originalRuntime = getRuntimeKey()
 
@@ -42,10 +44,13 @@ beforeEach(() => {
   })
   calls = []
   switchError = null
+  serverSession = sessionOn({ providerID: "provider", id: "model-a", variant: "high" })
+  spyOn(opencodeClient, "getSession").mockImplementation(async () => serverSession)
   useSelectionStore.setState({ sessionPickedModels: new Map() })
   spyOn(opencodeClient, "switchSessionModel").mockImplementation(async (_id, model, directory) => {
     calls.push({ method: "switchModel", model, directory })
     if (switchError) throw switchError
+    serverSession = { ...serverSession, model: toModelRef(model) }
   })
   spyOn(opencodeClient, "compactSession").mockImplementation(async (_id, directory) => {
     calls.push({ method: "compact", directory })
@@ -109,6 +114,7 @@ describe("compactSession", () => {
   })
 
   test("treats an explicit Default as the effort the session already records", async () => {
+    serverSession = sessionOn({ providerID: "provider", id: "model-a", variant: "default" })
     manager.getChild(DIRECTORY)?.setState({
       session: [sessionOn({ providerID: "provider", id: "model-a", variant: "default" })],
     })
@@ -133,10 +139,13 @@ describe("compactSession", () => {
   for (const returnToOriginal of [false, true]) {
     test(`a runtime switch during model reconciliation cancels compaction, return to original: ${returnToOriginal}`, async () => {
       let finishSwitch = () => {}
+      let switchStarted = () => {}
+      const started = new Promise<void>((resolve) => { switchStarted = resolve })
       const pendingSwitch = new Promise<void>((resolve) => { finishSwitch = resolve })
-      spyOn(opencodeClient, "switchSessionModel").mockImplementation(() => pendingSwitch)
+      spyOn(opencodeClient, "switchSessionModel").mockImplementation(() => { switchStarted(); return pendingSwitch })
 
       const result = compactSession(SESSION_ID, { providerID: "provider", modelID: "model-b", variant: "high" }, DIRECTORY)
+      await started
       switchRuntimeEndpoint({ apiBaseUrl: "https://compact-other.test", runtimeKey: "compact-other" })
       if (returnToOriginal) {
         switchRuntimeEndpoint({ apiBaseUrl: originalBase, runtimeKey: originalRuntime })

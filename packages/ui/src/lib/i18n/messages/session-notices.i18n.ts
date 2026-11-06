@@ -1,6 +1,8 @@
 /** Session notice rows in the chat (`@/lib/opencode/session-notices`) — merged into each locale's main dictionary. */
 export const sessionNoticesI18n = {
   en: {
+    'chat.sessionNotice.cacheMismatch': 'Session cache mismatch detected',
+    'chat.sessionNotice.cacheMismatchDescription': 'The stale cache was bypassed. Diagnostic details have been recorded.',
     'chat.sessionNotice.restart': 'Continuing after restart',
     'chat.sessionNotice.commandFailed': 'Command failed to start: {command}',
     'chat.sessionNotice.moved': 'Moved to {folder}',
@@ -21,6 +23,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': 'New comment or review from {names}',
   },
   nl: {
+    'chat.sessionNotice.cacheMismatch': 'Afwijking in sessiecache gedetecteerd',
+    'chat.sessionNotice.cacheMismatchDescription': 'De verouderde cache is omzeild. Diagnostische gegevens zijn vastgelegd.',
     'chat.sessionNotice.restart': 'Gaat verder na herstart',
     'chat.sessionNotice.commandFailed': 'Opdracht kon niet starten: {command}',
     'chat.sessionNotice.moved': 'Verplaatst naar {folder}',
@@ -41,6 +45,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': 'Nieuwe reactie of review van {names}',
   },
   de: {
+    'chat.sessionNotice.cacheMismatch': 'Abweichung im Sitzungscache erkannt',
+    'chat.sessionNotice.cacheMismatchDescription': 'Der veraltete Cache wurde umgangen. Diagnosedaten wurden aufgezeichnet.',
     'chat.sessionNotice.restart': 'Fortsetzung nach Neustart',
     'chat.sessionNotice.commandFailed': 'Befehl konnte nicht starten: {command}',
     'chat.sessionNotice.moved': 'Verschoben nach {folder}',
@@ -61,6 +67,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': 'Neuer Kommentar oder neues Review von {names}',
   },
   es: {
+    'chat.sessionNotice.cacheMismatch': 'Se detectó una discrepancia en la caché de la sesión',
+    'chat.sessionNotice.cacheMismatchDescription': 'Se omitió la caché desactualizada. Se han registrado los datos de diagnóstico.',
     'chat.sessionNotice.restart': 'Continuando tras el reinicio',
     'chat.sessionNotice.commandFailed': 'El comando no pudo iniciarse: {command}',
     'chat.sessionNotice.moved': 'Movida a {folder}',
@@ -81,6 +89,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': 'Nuevo comentario o revisión de {names}',
   },
   fr: {
+    'chat.sessionNotice.cacheMismatch': 'Incohérence détectée dans le cache de la session',
+    'chat.sessionNotice.cacheMismatchDescription': 'Le cache obsolète a été contourné. Les données de diagnostic ont été enregistrées.',
     'chat.sessionNotice.restart': 'Reprise après redémarrage',
     'chat.sessionNotice.commandFailed': 'La commande n\'a pas pu démarrer : {command}',
     'chat.sessionNotice.moved': 'Déplacée vers {folder}',
@@ -101,6 +111,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': 'Nouveau commentaire ou nouvelle revue de {names}',
   },
   pl: {
+    'chat.sessionNotice.cacheMismatch': 'Wykryto niezgodność pamięci podręcznej sesji',
+    'chat.sessionNotice.cacheMismatchDescription': 'Pominięto nieaktualną pamięć podręczną. Zapisano dane diagnostyczne.',
     'chat.sessionNotice.restart': 'Kontynuacja po restarcie',
     'chat.sessionNotice.commandFailed': 'Nie udało się uruchomić polecenia: {command}',
     'chat.sessionNotice.moved': 'Przeniesiono do {folder}',
@@ -121,6 +133,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': 'Nowy komentarz lub recenzja od {names}',
   },
   'pt-BR': {
+    'chat.sessionNotice.cacheMismatch': 'Inconsistência detectada no cache da sessão',
+    'chat.sessionNotice.cacheMismatchDescription': 'O cache desatualizado foi ignorado. Os dados de diagnóstico foram registrados.',
     'chat.sessionNotice.restart': 'Continuando após reiniciar',
     'chat.sessionNotice.commandFailed': 'O comando não pôde iniciar: {command}',
     'chat.sessionNotice.moved': 'Movida para {folder}',
@@ -141,6 +155,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': 'Novo comentário ou revisão de {names}',
   },
   tr: {
+    'chat.sessionNotice.cacheMismatch': 'Oturum önbelleğinde tutarsızlık algılandı',
+    'chat.sessionNotice.cacheMismatchDescription': 'Eski önbellek atlandı. Tanılama ayrıntıları kaydedildi.',
     'chat.sessionNotice.restart': 'Yeniden başlatmadan sonra devam ediliyor',
     'chat.sessionNotice.commandFailed': 'Komut başlatılamadı: {command}',
     'chat.sessionNotice.moved': '{folder} klasörüne taşındı',
@@ -161,6 +177,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': '{names} yeni yorum veya inceleme ekledi',
   },
   uk: {
+    'chat.sessionNotice.cacheMismatch': 'Виявлено невідповідність кешу сесії',
+    'chat.sessionNotice.cacheMismatchDescription': 'Застарілий кеш обійдено. Діагностичні дані записано.',
     'chat.sessionNotice.restart': 'Продовження після перезапуску',
     'chat.sessionNotice.commandFailed': 'Команда не змогла запуститися: {command}',
     'chat.sessionNotice.moved': 'Перенесено в {folder}',
@@ -181,6 +199,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': 'Новий коментар або ревʼю від {names}',
   },
   ar: {
+    'chat.sessionNotice.cacheMismatch': 'تم اكتشاف عدم تطابق في ذاكرة الجلسة المؤقتة',
+    'chat.sessionNotice.cacheMismatchDescription': 'تم تجاوز الذاكرة المؤقتة القديمة وتسجيل تفاصيل التشخيص.',
     'chat.sessionNotice.restart': 'المتابعة بعد إعادة التشغيل',
     'chat.sessionNotice.commandFailed': 'تعذّر بدء الأمر: {command}',
     'chat.sessionNotice.moved': 'نُقلت إلى {folder}',
@@ -201,6 +221,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': 'تعليق أو مراجعة جديدة من {names}',
   },
   he: {
+    'chat.sessionNotice.cacheMismatch': 'זוהתה אי־התאמה במטמון השיחה',
+    'chat.sessionNotice.cacheMismatchDescription': 'המטמון הישן נעקף. פרטי האבחון נרשמו.',
     'chat.sessionNotice.restart': 'ממשיך אחרי הפעלה מחדש',
     'chat.sessionNotice.commandFailed': 'הפקודה לא הצליחה לפעול: {command}',
     'chat.sessionNotice.moved': 'הועבר אל {folder}',
@@ -221,6 +243,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': 'תגובה או סקירה חדשה מאת {names}',
   },
   ja: {
+    'chat.sessionNotice.cacheMismatch': 'セッションキャッシュの不一致を検出しました',
+    'chat.sessionNotice.cacheMismatchDescription': '古いキャッシュを回避しました。診断情報を記録しました。',
     'chat.sessionNotice.restart': '再起動後に続行しています',
     'chat.sessionNotice.commandFailed': 'コマンドを開始できませんでした: {command}',
     'chat.sessionNotice.moved': '{folder} に移動しました',
@@ -241,6 +265,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': '{names} からの新しいコメントまたはレビュー',
   },
   ko: {
+    'chat.sessionNotice.cacheMismatch': '세션 캐시 불일치가 감지되었습니다',
+    'chat.sessionNotice.cacheMismatchDescription': '오래된 캐시를 우회했습니다. 진단 정보가 기록되었습니다.',
     'chat.sessionNotice.restart': '재시작 후 계속 진행 중',
     'chat.sessionNotice.commandFailed': '명령을 시작하지 못했습니다: {command}',
     'chat.sessionNotice.moved': '{folder}(으)로 이동함',
@@ -261,6 +287,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': '{names}의 새 댓글 또는 리뷰',
   },
   'zh-CN': {
+    'chat.sessionNotice.cacheMismatch': '检测到会话缓存不一致',
+    'chat.sessionNotice.cacheMismatchDescription': '已绕过旧缓存，诊断现场已记录。',
     'chat.sessionNotice.restart': '重启后继续',
     'chat.sessionNotice.commandFailed': '命令无法启动：{command}',
     'chat.sessionNotice.moved': '已移至 {folder}',
@@ -281,6 +309,8 @@ export const sessionNoticesI18n = {
     'chat.sessionNotice.pullRequest.activityNames': '来自 {names} 的新评论或审查',
   },
   'zh-TW': {
+    'chat.sessionNotice.cacheMismatch': '偵測到工作階段快取不一致',
+    'chat.sessionNotice.cacheMismatchDescription': '已略過舊快取，診斷現場已記錄。',
     'chat.sessionNotice.restart': '重新啟動後繼續',
     'chat.sessionNotice.commandFailed': '指令無法啟動：{command}',
     'chat.sessionNotice.moved': '已移至 {folder}',

@@ -251,7 +251,9 @@ So on the desktop a file past `MAX_INLINE_ATTACHMENT_BYTES`, or one `attachment-
 
 ### Why sends read the server's agent
 
-`resolveSendSelection` reads the session through the runtime-aware SDK before comparing a requested agent. A directory sync record can miss an agent switch and already match the picker while the server still runs another agent. The server read makes that send recover and skips switch records when the server already matches. Failed reads are definite pre-send failures and roll back without prompt-confirmation reads; a runtime instance change discards the response, including a switch away and back. Model and effort comparisons use the current sync record after the read, so events received during it remain visible. Sends without an agent make no extra read.
+`resolveSendSelection` checks a requested agent through the runtime-aware SDK, then compares model and effort with the latest cache, including updates received during that read. Sends without an agent need no extra read. Failed reads are definite pre-send failures and roll back without prompt-confirmation reads; a runtime instance change discards the response, including a switch away and back. Routing diagnostics reuse an existing agent read without changing the selection strategy or adding reads.
+
+The send directory comes from the session record's ownership resolver. The directory of a store containing that record can be a parent project or a stale copy and grants no ownership. Routing diagnostics retain the containing-store comparison so repairing sends does not hide recurring pollution. The recorder and its notification contract are documented in `../lib/diagnostics/DOCUMENTATION.md`.
 
 ## Catalog changes apply live
 

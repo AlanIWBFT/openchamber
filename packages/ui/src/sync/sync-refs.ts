@@ -10,6 +10,7 @@ import type { Config } from "@/lib/opencode/model"
 import type { ChildStoreManager } from "./child-store"
 import { getSessionMaterializationStatus } from "./materialization"
 import type { State } from "./types"
+import { recordSessionRouting } from "@/lib/diagnostics/session-routing"
 
 let _childStores: ChildStoreManager | null = null
 let _directory: string = ""
@@ -112,14 +113,29 @@ export function getAllSyncSessionMap(): ReadonlyMap<string, State["session"][num
   const nextSlices = new Map<string, State["session"]>()
   const nextSessionsById = new Map<string, State["session"][number]>()
   const nextDirectoriesById = new Map<string, string>()
+  const displaced = new Map<string, { directory: string; session: State["session"][number] }>()
   for (const [directory, store] of stores.children) {
     const sessions = store.getState().session
     nextSlices.set(directory, sessions)
     for (const session of sessions) {
       if (!session?.id) continue
+      const replaced = nextSessionsById.get(session.id)
+      if (replaced) displaced.set(session.id, { directory: nextDirectoriesById.get(session.id)!, session: replaced })
       nextSessionsById.set(session.id, session)
       nextDirectoriesById.set(session.id, directory)
     }
+  }
+  for (const [id, earlier] of displaced) {
+    const session = nextSessionsById.get(id)!
+    const directory = nextDirectoriesById.get(id)!
+    const previous = cachedSessionsById.get(id)
+    // Rebuilding on streaming metadata must not turn duplicate sidebar entries
+    // into per-token log traffic. Record changes to the winner's routing/model.
+    if (previous && cachedSessionDirectoryById.get(id) === directory && previous.directory === session.directory
+      && previous.model?.providerID === session.model?.providerID && previous.model?.id === session.model?.id && previous.model?.variant === session.model?.variant) continue
+    recordSessionRouting({ action: "index-replace", source: "send-index", sessionId: id, directory, ownerDirectory: session.directory,
+      previousDirectory: earlier.directory, model: session.model, previousModel: earlier.session.model,
+      updated: session.time?.updated, previousUpdated: earlier.session.time?.updated })
   }
   cachedSessionManager = stores
   cachedSessionSlices = nextSlices

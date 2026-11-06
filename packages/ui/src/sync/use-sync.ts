@@ -19,6 +19,7 @@ import {
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { getSessionMaterializationStatus } from "./materialization"
 import { getRuntimeKey } from "@/lib/runtime-switch"
+import { recordSessionRouting } from "@/lib/diagnostics/session-routing"
 
 // Shared across useSync() hook instances for the same live store. Weak store
 // ownership prevents a disposed directory's request from blocking a replacement
@@ -140,8 +141,12 @@ export function useSync() {
         await Promise.all([
           shouldFetchSession
             ? (async () => {
+                const request = recordSessionRouting({ action: "fetch-start", source: "reactive", runtimeKey, sessionId: sessionID, directory: targetDirectory,
+                  previousDirectory: directory, revision: generation, captureSite: true })
                 try {
                   const session = await retry(() => opencodeClient.getSession(sessionID, targetDirectory))
+                  recordSessionRouting({ action: "fetch-result", source: "reactive", runtimeKey, request, sessionId: sessionID, directory: targetDirectory,
+                    ownerDirectory: session.directory, model: session.model, updated: session.time.updated, outcome: isStale() ? "stale" : "accepted" })
                   if (!isStale()) {
                     const nextSession = stripSessionDiffSnapshots(session)
                     const s = targetStore.getState()
@@ -151,6 +156,7 @@ export function useSync() {
                     }
                   }
                 } catch (e) {
+                  recordSessionRouting({ action: "fetch-result", source: "reactive", runtimeKey, request, sessionId: sessionID, directory: targetDirectory, outcome: "failed" })
                   console.error("[sync] failed to fetch session", sessionID, e)
                 }
               })()

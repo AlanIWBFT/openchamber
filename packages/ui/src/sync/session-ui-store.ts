@@ -13,6 +13,7 @@
  */
 
 import type { ContextPartMetadata } from "@/lib/messages/contextParts"
+import { recordSessionRouting } from "@/lib/diagnostics/session-routing"
 import { readEffortRevision, rememberEffort } from "@/lib/modelEfforts"
 import { create } from "zustand"
 import { type Metadata, type Part, type Session, type TextPart } from "@/lib/opencode/model"
@@ -213,12 +214,16 @@ export async function routeMessage(params: {
   // show, so only a genuine change travels with the prompt. Resolved when the
   // request is about to leave: a session created from a draft has its record,
   // with the model it was created on, only once `ready` settles.
-  const sendSelection = () => resolveCheckedSendSelection(params.sessionId, sendDirectory(), {
-    providerID: params.providerID,
-    modelID: params.modelID,
-    variant: params.variant,
-    agent: params.agent,
-  })
+  const sendSelection = () => {
+    const directory = sendDirectory()
+    recordSessionRouting({ action: "send-route", source: "send", sessionId: params.sessionId, directory, previousDirectory: requestDirectory })
+    return resolveCheckedSendSelection(params.sessionId, directory, {
+      providerID: params.providerID,
+      modelID: params.modelID,
+      variant: params.variant,
+      agent: params.agent,
+    })
+  }
   // A context item becomes a synthetic message, which carries text only. Any
   // file it brought rides with the send so the attachment still arrives.
   const contextItems = (params.additionalParts ?? [])
@@ -1570,6 +1575,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const fallbackDir = opencodeClient.getDirectory() ?? directoryState.currentDirectory ?? null
     const knownDir = (directoryHint ? normalizePath(directoryHint) : null) ?? sessionDir
     const resolvedDir = knownDir ?? fallbackDir
+    recordSessionRouting({ action: "select", source: "selection", sessionId: id ?? undefined, directory: resolvedDir,
+      previousDirectory: directoryState.currentDirectory, ownerDirectory: sessionDir, guessed: knownDir === null, revision: navigationRevision })
     // `fallbackDir` is the active directory, not this session's directory. It
     // keeps routing usable while the owning directory store bootstraps, but it
     // must never be remembered: a persisted guess outlives the race that

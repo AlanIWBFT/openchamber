@@ -15,6 +15,7 @@ import { countSyncPersistenceSerialization, countSyncPersistenceStorageWrite } f
 import { isChatDirectoryPath } from "@/lib/chatDirectories"
 import { isVSCodeRuntime } from "@/lib/desktop"
 import { z } from "zod"
+import { recordSessionRouting } from "@/lib/diagnostics/session-routing"
 
 /** Cap persisted session lists so localStorage stays bounded per directory. */
 const PERSISTED_SESSION_LIMIT = 50
@@ -89,12 +90,18 @@ function readCache<T>(directory: string, key: CacheKey): T | undefined {
     const currentKey = cacheKey(directory, key)
     if (key === "sessions") {
       const pending = pendingSessionWrites.get(currentKey)
-      if (pending) return pending.sessions as T
+      if (pending) {
+        recordSessionRouting({ action: "cache-read", source: "pending", directory, cacheKey: currentKey, count: pending.sessions.length })
+        return pending.sessions as T
+      }
     }
-    const raw = localStorage.getItem(currentKey)
-      ?? localStorage.getItem(legacyCacheKey(directory, key))
+    const current = localStorage.getItem(currentKey)
+    const raw = current ?? localStorage.getItem(legacyCacheKey(directory, key))
     if (!raw) return undefined
-    return JSON.parse(raw) as T
+    const parsed = JSON.parse(raw) as T
+    if (key === "sessions") recordSessionRouting({ action: "cache-read", source: current === null ? "legacy" : "v2", directory,
+      cacheKey: current === null ? legacyCacheKey(directory, key) : currentKey, count: Array.isArray(parsed) ? parsed.length : undefined })
+    return parsed
   } catch {
     return undefined
   }
@@ -202,9 +209,13 @@ function tryWriteCacheValue<T>(key: string, legacyKey: string, value: T): boolea
   return tryWriteSerialized(key, serialized, legacyKey)
 }
 
-function writeSessionCache(key: string, legacyKey: string, sessions: Session[]): void {
+function writeSessionCache(key: string, legacyKey: string, sessions: Session[], directory: string): void {
   const recentSessions = selectRecentSessions(sessions, PERSISTED_SESSION_LIMIT).map(toPersistedSession)
-  if (tryWriteCacheValue(key, legacyKey, recentSessions)) return
+  if (tryWriteCacheValue(key, legacyKey, recentSessions)) {
+    recordSessionRouting({ action: "cache-write", source: "v2", directory, cacheKey: key, count: recentSessions.length, outcome: "completed" })
+    return
+  }
+  recordSessionRouting({ action: "cache-write", source: "v2", directory, cacheKey: key, count: recentSessions.length, outcome: "failed" })
 
   // Replacing a stale value can fail when unrelated localStorage data has
   // grown. Remove that value and retain as much recent history as still fits.
@@ -216,11 +227,15 @@ function writeSessionCache(key: string, legacyKey: string, sessions: Session[]):
   }
 
   for (const limit of SESSION_CACHE_FALLBACK_LIMITS) {
-    if (tryWriteCacheValue(key, legacyKey, selectRecentSessions(recentSessions, limit))) return
+    if (tryWriteCacheValue(key, legacyKey, selectRecentSessions(recentSessions, limit))) {
+      recordSessionRouting({ action: "cache-write", source: "v2", directory, cacheKey: key, count: Math.min(recentSessions.length, limit), outcome: "completed" })
+      return
+    }
   }
 
   // An empty v2 value is a tombstone: never resurrect stale legacy sessions.
-  tryWriteCacheValue(key, legacyKey, [])
+  const written = tryWriteCacheValue(key, legacyKey, [])
+  recordSessionRouting({ action: "cache-write", source: "v2", directory, cacheKey: key, count: 0, outcome: written ? "completed" : "failed" })
 }
 
 /** Write every pending session snapshot of the active runtime now. */
@@ -256,7 +271,8 @@ function scheduleSessionCacheWrite(directory: string, sessions: Session[]): void
   const runtimeKey = getRuntimeKey() || "local"
   const key = `${storagePrefixForRuntime(runtimeKey, directory)}.sessions`
   const legacyKey = legacyCacheKey(directory, "sessions")
-  scheduleSessionWrite({ runtimeKey, key, sessions, write: () => writeSessionCache(key, legacyKey, sessions) })
+  if (!pendingSessionWrites.has(key)) recordSessionRouting({ action: "cache-queue", source: "pending", runtimeKey, directory, cacheKey: key, count: sessions.length })
+  scheduleSessionWrite({ runtimeKey, key, sessions, write: () => writeSessionCache(key, legacyKey, sessions, directory) })
 }
 
 function cancelPendingSessionWrites(runtimeKey: string): void {
@@ -350,7 +366,7 @@ export function persistSessions(directory: string, sessions: Session[] | undefin
   }
   if (sessions.length === 0) {
     pendingSessionWrites.delete(key)
-    writeSessionCache(key, legacyCacheKey(directory, "sessions"), sessions)
+    writeSessionCache(key, legacyCacheKey(directory, "sessions"), sessions, directory)
     return
   }
   scheduleSessionCacheWrite(directory, sessions)

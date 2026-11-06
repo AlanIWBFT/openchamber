@@ -25,7 +25,21 @@ Events from the server cross a process boundary, so `parseFileDiagnostics()` val
 - Web or desktop connected to a remote runtime (another machine's server, an SSH host): capture records nothing, the `OpenCode load` line says it was not read, and the export reads only the active server through the runtime API. `readServerHealth()` samples its `/health` into a list built for that export (repeating the server's last health failure, launch and restart every time), and the three OpenCode probes run against it, so the header, current health and probe results describe the remote OpenCode. Local files, the server journal, the SSH manager and the UI buffer, turn errors and rejected sends are skipped and `Sources` says so. A failed health request or probe appears as `unavailable` or a `probe failed` event. A runtime switch while either export is collecting returns an "Export interrupted" file instead of mixing two runtimes; a switch also clears the buffer and the label map.
 - VS Code, hosted mobile (the phone layout served by the web build) and the Capacitor app render their own roots without `MainLayout`, so the dialog is not mounted. `SessionErrorNotice` reads `DiagnosticDialogAvailableContext` (`dialog-availability.ts`, provided by `MainLayout`) and hides its status link there.
 
-Everything is process-local: reloading the UI empties the renderer buffer, restarting the server empties the journal.
+The timeline buffers are process-local: reloading the UI empties the renderer buffer, restarting the server empties the journal. Session routing records also reach the desktop file as described below.
+
+## Session routing diagnostics
+
+`session-routing.ts` owns fixed-field observations for directory-store membership, reactive and reconnect reads, bootstrap, cache restoration and writes, indexes, selection, moves and model switching. The shared recorder is always active. Session, directory, cache, runtime and model values become page-scoped opaque labels; the desktop file includes the page ID and sequence so separate windows and reloads cannot reuse a label's meaning. The console-only `__opencodeDebug.diagnoseSessionDirectory()` exposes the current session's labels for local correlation. Logs contain no original IDs, paths, titles, prompts or API bodies. Foreign insertions retain only code basenames and line/column positions from the synchronous writer's stack.
+
+Local Electron uses the existing electron-log preload through `desktop.ts` at `info` level, under `[session-routing]`. Its rotation and retention are owned by the desktop logger. Web, VS Code, hosted mobile and Capacitor retain the structured events in the renderer timeline. Remote runtimes do not write to the local desktop file. Async observations keep their request's runtime key; results arriving after a switch to another runtime are discarded before reaching either sink. Ordinary observations are bounded to 200 per second, with dropped counts on the next emitted event; cache-mismatch incidents bypass that limit. Identity maps are bounded. Time, cost and token-only session updates emit no per-record observations.
+
+The main web/desktop app shows a persistent toast when a fresh server read proves that a matching stale cache would have suppressed a requested model switch. The check includes the containing store the former send route would have selected, even after ownership routing is corrected. A parent project's worktree copy alone is not an incident. The notification is deduplicated per runtime and session until another read confirms the cached models agree. VS Code, hosted mobile, Capacitor and Mini Chat do not mount this notification or the main diagnostic dialog.
+
+The toast opens the existing diagnostic dialog with a frozen incident reference and the preceding 200 timeline events. Clearing or overflowing the live timeline cannot erase that snapshot while the toast is present. Earlier desktop events survive reloads in the log file; page-scoped labels are not stable across reloads.
+
+### Why routing records use an explicit desktop sink
+
+The production console wrapper discards arguments and the desktop does not forward renderer console messages. Writing the recorder's bounded, anonymized payload through the existing preload preserves the first wrong-store write across Ctrl+R without enabling unrestricted console capture.
 
 ## OpenCode memory snapshot
 
