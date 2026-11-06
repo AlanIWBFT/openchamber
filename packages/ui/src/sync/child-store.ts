@@ -7,6 +7,7 @@ import { normalizePath } from "@/lib/pathNormalization"
 import { startSessionLoadPerformanceEvent } from "./session-load-performance"
 import { countSyncPerformance } from "./performance-diagnostics"
 import { isFilesystemError } from "@/lib/api/files-errors"
+import { observeSessionRouting } from "@/lib/diagnostics/session-routing"
 
 export type DirectoryStore = State & {
   /** Apply a partial state update */
@@ -311,6 +312,7 @@ function createDirectoryStore(directory: string, seedSessions: boolean): StoreAp
   // A directory the owner says not to seed, an isolated space this window does
   // not know among them, starts empty and waits for the authoritative list.
   const cachedSessions = (seedSessions ? cached.sessions : undefined) ?? INITIAL_STATE.session
+  observeSessionRouting(directory, cachedSessions, [], "restore")
 
   const store = create<DirectoryStore>()((set) => ({
     ...INITIAL_STATE,
@@ -331,7 +333,10 @@ function createDirectoryStore(directory: string, seedSessions: boolean): StoreAp
     if (state.vcs !== prev.vcs) persistVcs(directory, state.vcs)
     if (state.projectMeta !== prev.projectMeta) persistProjectMeta(directory, state.projectMeta)
     if (state.icon !== prev.icon) persistIcon(directory, state.icon)
-    if (state.session !== prev.session) persistSessions(directory, state.session)
+    if (state.session !== prev.session) {
+      observeSessionRouting(directory, state.session, prev.session, "store")
+      persistSessions(directory, state.session)
+    }
     notifyChangedBlockingRequests(permissionSubscribersByStore, "permissionChangeCallbacks", store, state.permission, prev.permission)
     notifyChangedBlockingRequests(formSubscribersByStore, "formChangeCallbacks", store, state.form, prev.form)
     // Row badges read forms from the cross-directory index until this store's

@@ -13,6 +13,7 @@
  */
 
 import type { ContextPartMetadata } from "@/lib/messages/contextParts"
+import { recordSessionRouting } from "@/lib/diagnostics/session-routing"
 import { readEffortRevision, rememberEffort } from "@/lib/modelEfforts"
 import { create } from "zustand"
 import { type Metadata, type Part, type Session, type TextPart } from "@/lib/opencode/model"
@@ -205,7 +206,7 @@ export async function routeMessage(params: {
   // The request goes to the directory the session lives in when it leaves:
   // a session created from a draft can end up elsewhere than where its first
   // message was shown, and its record is there.
-  const sendDirectory = () => getSyncSessionDirectory(params.sessionId) ?? requestDirectory
+  const sendDirectory = () => getAuthoritativeSessionDirectory(params.sessionId) ?? requestDirectory
   // The session carries its own model and agent server-side. Sending them on
   // every turn would switch the session to whatever the composer happens to
   // show, so only a genuine change travels with the prompt. Resolved when the
@@ -213,6 +214,7 @@ export async function routeMessage(params: {
   // with the model it was created on, only once `ready` settles.
   const sendSelection = async () => {
     const directory = sendDirectory()
+    recordSessionRouting({ action: "send-route", source: "send", sessionId: params.sessionId, directory, previousDirectory: requestDirectory })
     const selection = await resolveSendSelection(params.sessionId, directory, {
       providerID: params.providerID,
       modelID: params.modelID,
@@ -1552,6 +1554,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const fallbackDir = opencodeClient.getDirectory() ?? directoryState.currentDirectory ?? null
     const knownDir = (directoryHint ? normalizePath(directoryHint) : null) ?? sessionDir
     const resolvedDir = knownDir ?? fallbackDir
+    recordSessionRouting({ action: "select", source: "selection", sessionId: id ?? undefined, directory: resolvedDir,
+      previousDirectory: directoryState.currentDirectory, ownerDirectory: sessionDir, guessed: knownDir === null, revision: navigationRevision })
     // `fallbackDir` is the active directory, not this session's directory. It
     // keeps routing usable while the owning directory store bootstraps, but it
     // must never be remembered: a persisted guess outlives the race that

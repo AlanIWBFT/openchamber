@@ -13,6 +13,7 @@
  */
 
 import { isLocationNotFoundError } from "./location-errors"
+import { recordSessionRouting } from "@/lib/diagnostics/session-routing"
 import { ClientError, OpenCode, type OpenCodeClient } from "@opencode/client"
 import type {
   FileDiffInfo,
@@ -1185,7 +1186,15 @@ class OpencodeService {
   }
 
   async switchSessionModel(id: string, model: ModelSelection, directory?: string | null): Promise<void> {
-    await call("session.switchModel", () => this.clientFor(directory).session.switchModel({ sessionID: id, model: toModelRef(model) }))
+    const runtimeKey = getRuntimeKey()
+    const request = recordSessionRouting({ action: "model-switch", source: "send", runtimeKey, sessionId: id, directory, model: toModelRef(model), outcome: "started" })
+    try {
+      await call("session.switchModel", () => this.clientFor(directory).session.switchModel({ sessionID: id, model: toModelRef(model) }))
+      recordSessionRouting({ action: "model-switch", source: "send", runtimeKey, request, sessionId: id, directory, model: toModelRef(model), outcome: "completed" })
+    } catch (error) {
+      recordSessionRouting({ action: "model-switch", source: "send", runtimeKey, request, sessionId: id, directory, outcome: "failed" })
+      throw error
+    }
   }
 
   async switchSessionAgent(id: string, agent: string, directory?: string | null): Promise<void> {

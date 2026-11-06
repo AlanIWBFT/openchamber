@@ -243,9 +243,11 @@ The composer compares normalized attachment MIME types with the selected model's
 
 Attachment drafts stay in memory for the page's lifetime, including composer remounts, independently of text persistence. `selectAttachmentDraft` saves the outgoing list and restores the rendered composer's runtime, directory, and session before paint. Switching cancels unfinished attachment reads. Send and queue recovery pass their captured draft identity so a late failure restores files to the source rather than the currently open session. Clearing or deleting a draft releases only its files. Opening a new-session draft leaves the outgoing session's files available for a return visit. With a chat pinned in the side panel two composers are on screen; each shows its own draft's files (`useDraftAttachedFiles`) and the selected slot follows the composer the user works in (composer documentation, *Pinned composer*).
 
-### Why sends read the server's agent
+### Why sends read the server's selections
 
-`resolveSendSelection` reads the session through the runtime-aware SDK before comparing a requested agent. A directory sync record can miss an agent switch and already match the picker while the server still runs another agent. The server read makes that send recover and skips switch records when the server already matches. Failed reads are definite pre-send failures and roll back without prompt-confirmation reads; a runtime instance change discards the response, including a switch away and back. Model and effort comparisons use the current sync record after the read, so events received during it remain visible. Sends without an agent make no extra read.
+`resolveSendSelection` reads the session through the runtime-aware SDK before comparing its model, effort and requested agent. A stale directory copy can already match the picker while the server runs another selection. Both comparisons use the same server response, including sends without an agent. Failed reads are definite pre-send failures and roll back without prompt-confirmation reads; a runtime instance change discards the response, including a switch away and back.
+
+The send directory comes from the session record's ownership resolver. The directory of a store containing that record can be a parent project or a stale copy and grants no ownership. Routing diagnostics retain the containing-store comparison so repairing sends does not hide recurring pollution. The recorder and its notification contract are documented in `../lib/diagnostics/DOCUMENTATION.md`.
 
 ## Catalog changes apply live
 

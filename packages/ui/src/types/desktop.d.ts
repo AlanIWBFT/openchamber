@@ -9,6 +9,7 @@ declare global {
     __OPENCHAMBER_ELECTRON__?: { runtime?: string; arch?: string; trayEnabled?: boolean; nativeFrame?: boolean };
     __OPENCHAMBER_PLATFORM__?: string;
     __OPENCHAMBER_DESKTOP_BOOT_OUTCOME__?: DesktopBootOutcome;
+    __electronLog?: { info?: (...data: string[]) => void };
   }
 
   interface WebviewElement extends HTMLElement {

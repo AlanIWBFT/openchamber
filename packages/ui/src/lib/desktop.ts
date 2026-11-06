@@ -142,6 +142,12 @@ export const hasDesktopInvoke = (): boolean => {
 
 export const canUseElectronDesktopIPC = (): boolean => isElectronShell() && hasDesktopInvoke();
 
+/** Sends the routing recorder's anonymized JSON through the installed log preload. */
+export const writeDesktopRoutingDiagnostic = (serialized: string): void => {
+  if (!canUseElectronDesktopIPC() || !isDesktopLocalOriginActive()) return;
+  window.__electronLog?.info?.('[session-routing]', serialized);
+};
+
 /** Linux's PRIMARY buffer is reachable only through the local Electron bridge. */
 export const createDesktopClipboardAPI = (): RuntimeAPIs['clipboard'] => {
   const bridge = getDesktopBridge()?.clipboard;

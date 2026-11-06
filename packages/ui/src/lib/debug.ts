@@ -5,6 +5,7 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { opencodeClient } from '@/lib/opencode/client';
 import { checkIsGitRepository } from '@/lib/gitApi';
 import { streamDebugEnabled } from '@/stores/utils/streamDebug';
+import { getSessionRoutingIdentity } from '@/lib/diagnostics/session-routing';
 import { copyTextToClipboard as copyPlainTextToClipboard } from '@/lib/clipboard';
 import { getSyncSessions, getSyncMessages, getSyncParts, getAllSyncSessions, getSyncSessionDirectory, getDirectoryState } from '@/sync/sync-refs';
 import {
@@ -473,6 +474,7 @@ export const debugUtils = {
 
     const report = {
       sessionId: targetSessionId,
+      routingLog: getSessionRoutingIdentity(targetSessionId, routedDirectory),
       isCurrentSession: targetSessionId === sessionState.currentSessionId,
       routedDirectory,
       resolvedFrom: resolution.source,
