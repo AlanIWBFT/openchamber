@@ -3309,7 +3309,7 @@ export async function forkAfterMessage(sessionId: string, messageId: string): Pr
   const { store, directory } = dirStoreForSession(sessionId)
   const messages = store.getState().message[sessionId] ?? []
 
-  const forkedSession = await forkAtTranscriptCut(sessionId, transcriptCutAfterMessage(messages, messageId), directory, expectedRuntimeKey)
+  const forkedSession = await forkAtTranscriptCut(sessionId, { before: transcriptCutAfterMessage(messages, messageId) }, directory, expectedRuntimeKey)
   if (isStaleRuntime(expectedRuntimeKey)) return null
   const forkDirectory = resolveSessionOwnedDirectory(forkedSession) ?? directory
   openForkedSession(store, forkedSession, forkDirectory)

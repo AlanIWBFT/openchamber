@@ -3,14 +3,13 @@ import { isSpaceDirectory } from '@/lib/spaces/space-route';
 import { useUIStore } from '@/stores/useUIStore';
 import type { Message, Part, Session } from '@/lib/opencode/model';
 import { opencodeClient, type SkillMentions } from '@/lib/opencode/client';
-import { findMessagePageItem } from '@/lib/opencode/messagePaging';
 import * as sessionActions from '@/sync/session-actions';
 import { withBtwSessionLink, withBtwSessionMarker, withoutBtwSessionLink, withoutBtwSessionMarker } from '@/lib/sessionBtwMetadata';
 import { useBtwStore } from '@/stores/useBtwStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
 import { getSyncChildStores, getSyncMessages, registerSessionDirectory } from '@/sync/sync-refs';
-import { forkAtTranscriptCut, transcriptCutAfterMessage } from '@/sync/transcript-cut';
+import { forkAtTranscriptCut } from '@/sync/transcript-cut';
 import { Binary } from '@/sync/binary';
 import type { ContextPartMetadata } from '@/lib/messages/contextParts';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
@@ -151,9 +150,6 @@ export const findLastCompletedAssistantMessageID = (messages: readonly Message[]
 
 export const btwSessionTitle = (question: string): string => `btw: ${question}`;
 
-/** An idle parent's answer sits right behind its `idle` record, so one short page usually holds it. */
-const SERVER_TAIL_PAGE_SIZE = 10;
-
 /**
  * Insert the fork into its directory child store so the sidebar picks it up
  * immediately, mirroring `forkFromMessage` in session-actions.
@@ -172,28 +168,6 @@ function insertForkIntoDirectoryStore(session: Session, directory: string): void
     sessions.splice(searchResult.index, 0, session);
     store.setState({ session: sessions });
   }
-}
-
-/**
- * The cut after `answerID` as the server sees it, for a parent that looks idle
- * here. The server can already hold a turn this window has not received, and
- * an omitted `before` would copy it. `undefined` means the answer's turn is
- * still the newest thing on the server, so the whole transcript is the answer's.
- * An answer the server does not list cannot bound the fork, so it fails.
- */
-async function serverCutAfterAnswer(
-  sessionID: string,
-  answerID: string,
-  directory: string,
-): Promise<string | undefined> {
-  const newestFirst: Message[] = [];
-  const answer = await findMessagePageItem(sessionID, ({ info }) => {
-    if (info.id === answerID) return true;
-    newestFirst.push(info);
-    return false;
-  }, { limit: SERVER_TAIL_PAGE_SIZE }, directory);
-  if (!answer) throw new Error('No safe transcript boundary to fork from');
-  return transcriptCutAfterMessage([answer.info, ...newestFirst.reverse()], answerID);
 }
 
 /** Preparation can be discarded until the server-side fork starts. */
@@ -240,9 +214,8 @@ export async function startBtwSession(input: StartBtwInput): Promise<Session> {
     const parentMessages = getSyncMessages(input.parentSessionId, input.directory);
     const forkPointMessageID = findLastCompletedAssistantMessageID(parentMessages);
     if (!forkPointMessageID) throw new Error('No completed turn to fork from');
-    const before = transcriptCutAfterMessage(parentMessages, forkPointMessageID)
-      ?? await serverCutAfterAnswer(input.parentSessionId, forkPointMessageID, input.directory);
-    const forked = await forkAtTranscriptCut(input.parentSessionId, before, input.directory, expectedRuntimeKey);
+    // The inclusive cut also works at idle and stays fixed if the parent advances.
+    const forked = await forkAtTranscriptCut(input.parentSessionId, { through: forkPointMessageID }, input.directory, expectedRuntimeKey);
 
     // The server may canonicalize the worktree path; the prompt must use the
     // same directory identity as the forked session.
@@ -250,6 +223,12 @@ export async function startBtwSession(input: StartBtwInput): Promise<Session> {
     try {
       if (getRuntimeKey() !== expectedRuntimeKey) throw new Error('runtime changed');
       registerSessionDirectory(forked.id, sessionDirectory);
+      // Older servers can ignore the experimental field and fork their current tail.
+      if (forked.fork?.sessionID !== input.parentSessionId
+        || forked.fork.boundary.type !== 'through'
+        || forked.fork.boundary.messageID !== forkPointMessageID) {
+        throw new Error('No safe transcript boundary to fork from');
+      }
       const selections = useSelectionStore.getState();
       selections.saveSessionModelSelection(forked.id, input.providerID, input.modelID);
       if (input.agent) {

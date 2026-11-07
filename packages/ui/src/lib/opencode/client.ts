@@ -516,6 +516,8 @@ export type MessagePage = {
   cursor: { previous?: string; next?: string }
 }
 
+export type SessionForkCut = { before?: string; through?: never } | { before?: never; through: string }
+
 /**
  * A message a session's pending OpenCode inbox item stands for, projected the
  * way `session.inbox.enqueued` paints it live. Control items (compaction,
@@ -1788,13 +1790,16 @@ class OpencodeService {
   }
 
   /**
-   * Forks the session. `before` copies the transcript up to but excluding that
-   * message; omitting it copies the whole transcript (OpenCode 2.0.8 replaced
-   * the `boundary` object with this single optional message id).
+   * `before` excludes its message; `through` includes it via the experimental
+   * inclusive boundary. Omitting both copies the whole transcript.
    */
-  async forkSession(sessionId: string, options?: { before?: string; directory?: string | null }): Promise<Session> {
+  async forkSession(sessionId: string, options?: SessionForkCut & { directory?: string | null }): Promise<Session> {
     const info = await call("session.fork", () =>
-      this.clientFor(options?.directory).session.fork({ sessionID: sessionId, before: options?.before }),
+      this.clientFor(options?.directory).session.fork({
+        sessionID: sessionId,
+        before: options?.before,
+        experimental: options?.through ? { through: options.through } : undefined,
+      }),
     )
     return projectSession(info)
   }

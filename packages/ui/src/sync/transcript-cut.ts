@@ -3,23 +3,23 @@ import { readShellCompletion } from "@/lib/opencode/background-shell"
 import { readSubagentRun } from "@/lib/opencode/subagent-run"
 import { readDispatchedSessionResult } from "@/lib/opencode/dispatched-session"
 import { readWorkflowReport } from "@/lib/workflows/report"
-import { isOpencodeNotFound, opencodeClient } from "@/lib/opencode/client"
+import { isOpencodeNotFound, opencodeClient, type SessionForkCut } from "@/lib/opencode/client"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 
 export async function forkAtTranscriptCut(
   sessionID: string,
-  before: string | undefined,
+  cut: SessionForkCut,
   directory: string | null | undefined,
   expectedRuntimeKey: string,
 ) {
   const fork = () => {
     if (getRuntimeKey() !== expectedRuntimeKey) throw new Error("runtime changed")
-    return opencodeClient.forkSession(sessionID, { before, directory })
+    return opencodeClient.forkSession(sessionID, { ...cut, directory })
   }
   try {
     return await fork()
   } catch (error) {
-    if (!before || !isOpencodeNotFound(error)) throw error
+    if (!(cut.before || cut.through) || !isOpencodeNotFound(error)) throw error
     // A locally visible cut may not be persisted yet. Never widen it on retry.
     return fork()
   }
