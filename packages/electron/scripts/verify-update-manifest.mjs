@@ -10,8 +10,8 @@ export const parseUpdateManifest = (content) => {
   const files = [];
   let entry = null;
   for (const line of lines) {
-    const start = line.match(/^\s{2}-\s+(url|sha512|size|blockMapSize):\s*(\S+)\s*$/);
-    const field = start || line.match(/^\s{4}(url|sha512|size|blockMapSize):\s*(\S+)\s*$/);
+    const start = line.match(/^\s{2}-\s+(url|sha512|size|blockMapSize|isAdminRightsRequired):\s*(\S+)\s*$/);
+    const field = start || line.match(/^\s{4}(url|sha512|size|blockMapSize|isAdminRightsRequired):\s*(\S+)\s*$/);
     if (start) {
       if (entry) files.push(entry);
       entry = {};
@@ -42,6 +42,9 @@ export const verifyUpdateManifest = ({ manifestPath, artifactPaths, expectedVers
   const artifacts = artifactPaths.map((artifactPath) => {
     const name = path.basename(artifactPath);
     const entry = manifest.files.find((file) => decodeURIComponent(path.basename(file.url)) === name);
+    if (name.endsWith('.exe') && entry.isAdminRightsRequired !== 'true') {
+      throw new Error(`Windows machine-wide update requires isAdminRightsRequired: true for ${name}`);
+    }
     const bytes = fs.readFileSync(artifactPath);
     if (entry.size !== bytes.length) {
       throw new Error(`Update manifest size mismatch for ${name}: expected ${bytes.length}, got ${entry.size}`);
