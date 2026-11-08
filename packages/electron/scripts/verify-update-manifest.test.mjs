@@ -84,3 +84,12 @@ test('rejects a listed file whose bytes changed', (t) => {
   fs.writeFileSync(value.artifactPaths[1], 'tampered');
   assert.throws(() => verifyUpdateManifest({ ...value, expectedVersion: '1.15.0' }), /mismatch for OpenChamber-1\.15\.0-linux-amd64\.deb/);
 });
+
+test('requires elevation metadata on Windows installers', (t) => {
+  const name = 'OpenChamber-1.15.0-win-x64.exe';
+  const value = fixture(t, 'latest.yml', [name]);
+  assert.throws(() => verifyUpdateManifest({ ...value, expectedVersion: '1.15.0' }), /isAdminRightsRequired/);
+  const content = fs.readFileSync(value.manifestPath, 'utf8');
+  fs.writeFileSync(value.manifestPath, content.replace('releaseDate:', '    isAdminRightsRequired: true\nreleaseDate:'));
+  assert.equal(verifyUpdateManifest({ ...value, expectedVersion: '1.15.0' }).artifacts[0].name, name);
+});
