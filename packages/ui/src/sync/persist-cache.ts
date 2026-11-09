@@ -16,6 +16,7 @@ import { countSyncPersistenceSerialization, countSyncPersistenceStorageWrite } f
 import { isChatDirectoryPath } from "@/lib/chatDirectories"
 import { isVSCodeRuntime } from "@/lib/desktop"
 import { z } from "zod"
+import { normalizePath } from "@/lib/pathNormalization"
 
 /** Cap persisted session lists so localStorage stays bounded per directory. */
 const PERSISTED_SESSION_LIMIT = 50
@@ -326,7 +327,15 @@ function parseCachedSessions(records: readonly unknown[]): Session[] {
 function readCachedSessions(directory: string): Session[] | undefined {
   const cached = readCache<unknown>(directory, "sessions")
   if (!Array.isArray(cached)) return undefined
-  return parseCachedSessions(cached)
+  const sessions = selectDirectoryCacheSessions(directory, parseCachedSessions(cached))
+  if (sessions.length !== cached.length) persistSessions(directory, sessions)
+  return sessions
+}
+
+function selectDirectoryCacheSessions(directory: string, sessions: Session[]): Session[] {
+  if (directory === MANAGED_CHATS_CACHE_SCOPE) return sessions
+  const owner = normalizePath(directory)
+  return sessions.filter((session) => normalizePath(session.directory) === owner)
 }
 
 export function readDirCache(directory: string): PersistedDirCache {
@@ -349,6 +358,7 @@ export function persistSessions(directory: string, sessions: Session[] | undefin
     writeCache(directory, "sessions", undefined)
     return
   }
+  sessions = selectDirectoryCacheSessions(directory, sessions)
   if (sessions.length === 0) {
     pendingSessionWrites.delete(key)
     writeSessionCache(key, legacyCacheKey(directory, "sessions"), sessions)

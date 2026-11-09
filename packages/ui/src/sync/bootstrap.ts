@@ -17,6 +17,7 @@ import {
   type DirectoryRecoverySource,
 } from "./directory-recovery-snapshots"
 import { noteQuestionFormSnapshot } from "./recoverable-questions"
+import { normalizePath } from "@/lib/pathNormalization"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
@@ -152,10 +153,15 @@ async function initializeDirectory(input: DirectoryBootstrapInput, sessions: Pro
         await readDirectoryStatusSnapshot(store, async () => {
           const statuses = await opencodeClient.getActiveSessionStatuses(directory)
           if (statuses === null) throw new Error("session.active failed")
-          return selectHeldSessionStatuses(statuses, store.getState().session)
+          const owned = store.getState().session.filter((session) => normalizePath(session.directory) === normalizePath(directory))
+          return selectHeldSessionStatuses(statuses, owned)
         }, (session_status) => {
           if (input.isStale?.() || !isCurrentRequest()) return false
-          return commit({ session_status, sessionStatusReady: true })
+          // Preserve status-only events received during the read, but never a
+          // known worktree record's activity in the parent project's store.
+          const owners = new Map(store.getState().session.map((session) => [session.id, normalizePath(session.directory)]))
+          const scoped = Object.fromEntries(Object.entries(session_status).filter(([id]) => !owners.has(id) || owners.get(id) === normalizePath(directory)))
+          return commit({ session_status: scoped, sessionStatusReady: true })
         })
       }, "active-session")
     }),

@@ -46,8 +46,7 @@ import { retry } from "./retry"
 import { touchStreamingSession, updateChangedStreamingSessions, updateStreamingState } from "./streaming"
 import { countSyncPerformance } from "./performance-diagnostics"
 import { runBackgroundNetworkTask } from "@/lib/background-network"
-import { selectHeldSessionStatuses } from "./directory-recovery-snapshots"
-import { hasPromptInFlight, withPromptsInFlight } from "./prompts-in-flight"
+import { hasPromptInFlight } from "./prompts-in-flight"
 import { applyRecoverableQuestionEvents, deriveRecoveredQuestions, noteQuestionFormSnapshot, useRecoverableQuestionsStore, type RecoveredQuestion } from "./recoverable-questions"
 import { adoptSessionMove, setActionRefs } from "./session-actions"
 import { subscribeSessionAdmission } from "./session-admission"
@@ -969,16 +968,28 @@ async function resyncDirectorySessionStatuses(
   // of active sessions — reconciled per `mode` (absence ≠ idle under monotonic).
   return readDirectoryStatusSnapshot(store, () => opencodeClient.getActiveSessionStatuses(directory), (nextStatuses) => {
     if (isStale?.() || !isCurrentRequest()) return false
-    const currentInvalidated = store.getState().sessionStatusInvalidated
+    const current = store.getState()
+    const currentInvalidated = current.sessionStatusInvalidated
+    const sessions = new Map(current.session.map((session) => [session.id, session]))
+    const ownedIds = new Set(getDirectoryOwnedSessionIds(directory, current.session))
     const eligibleIds = candidateSessionIds.filter((id) => (
-      !currentInvalidated?.[id] || currentInvalidated === invalidatedAtStart
+      (!currentInvalidated?.[id] || currentInvalidated === invalidatedAtStart)
+      && (!sessions.has(id) || ownedIds.has(id))
     ))
-    applySessionStatusSnapshot(store, nextStatuses, eligibleIds, mode)
+    // The active snapshot covers the host. Unknown candidates came from this
+    // store's events/messages; recovery confirms their ownership before loading.
+    const scopedIds = new Set([...ownedIds, ...eligibleIds])
+    const scopedStatuses = Object.fromEntries(Object.entries(nextStatuses).filter(([id]) => scopedIds.has(id)))
+    const retainedStatuses = Object.fromEntries(Object.entries(current.session_status).filter(([id]) => !sessions.has(id) || ownedIds.has(id)))
+    if (Object.keys(retainedStatuses).length !== Object.keys(current.session_status).length) {
+      store.setState({ session_status: retainedStatuses })
+    }
+    applySessionStatusSnapshot(store, scopedStatuses, eligibleIds, mode)
     if (mode === "authoritative") {
       store.setState({ sessionStatusReady: true })
-      const state = store.getState()
-      applyGlobalSessionStatusSnapshot(directory, withPromptsInFlight(selectHeldSessionStatuses(nextStatuses, state.session), state.session_status), getDirectoryOwnedSessionIds(directory, state.session))
-      for (const sessionId of candidateSessionIds) {
+      const ownedStatuses = Object.fromEntries(Object.entries(scopedStatuses).filter(([id]) => ownedIds.has(id)))
+      applyGlobalSessionStatusSnapshot(directory, ownedStatuses, [...ownedIds])
+      for (const sessionId of eligibleIds) {
         markRecordedInterruptedTurn(store, sessionId)
       }
     }
@@ -1229,9 +1240,14 @@ const ingestDirectoryStateIntoRoutingIndex = (
   state: State,
 ) => {
   const nextSessionIds = new Set<string>()
+  const foreignSessionIds = new Set<string>()
 
   for (const session of state.session) {
     if (!session?.id) {
+      continue
+    }
+    if (session.directory && normalizePath(session.directory) !== normalizePath(directory)) {
+      foreignSessionIds.add(session.id)
       continue
     }
     nextSessionIds.add(session.id)
@@ -1239,6 +1255,7 @@ const ingestDirectoryStateIntoRoutingIndex = (
   }
 
   for (const sessionID of Object.keys(state.message)) {
+    if (foreignSessionIds.has(sessionID)) continue
     nextSessionIds.add(sessionID)
     setIndexedSessionDirectory(routingIndex, sessionID, directory)
     setIndexedSessionMessages(routingIndex, sessionID, directory, state.message[sessionID] ?? EMPTY_MESSAGES)
@@ -1642,7 +1659,7 @@ export async function resyncBlockingRequestsForActiveDirectory(
   await resyncBlockingRequestsForDirectory(directory, store, undefined, { isStale: () => childStores.getChild(directory) !== store })
 }
 
-async function resyncDirectoryAfterReconnect(
+export async function resyncDirectoryAfterReconnect(
   directory: string,
   store: StoreApi<DirectoryStore>,
   routingIndex: EventRoutingIndex,
@@ -1666,18 +1683,27 @@ async function resyncDirectoryAfterReconnect(
   // the server announces live, statuses and pending requests, is read again.
   if (reason !== "stream-replayed") await Promise.all(candidateSessionIds.map(async (sessionId) => {
     syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })
+    const revision = store.getState().sessionRevision ?? 0
+    const isSessionStale = () => isStale() || (store.getState().sessionDeletedRevision?.[sessionId] ?? 0) > revision
     const loader = getImperativeSessionMessageLoader()
-    const [session] = await Promise.all([
-      retry(() => opencodeClient.getSession(sessionId, directory)).catch(() => null),
-      loader?.refreshTail({ directory, sessionID: sessionId }, RECONNECT_MESSAGE_LIMIT) ?? Promise.resolve(),
-    ])
-    if (isStale()) return
-    if (!session || loader?.getSnapshot({ directory, sessionID: sessionId }).status === "error") succeeded = false
+    const session = await retry(() => opencodeClient.getSession(sessionId, directory)).catch(() => null)
+    const ownsSession = session && normalizePath(session.directory) === normalizePath(directory)
+    if (isSessionStale()) return
+    if (!session) { succeeded = false; return }
+    if (!ownsSession) {
+      useGlobalSessionsStore.getState().upsertSession(session)
+      adoptSessionMove(sessionId, directory, session.directory)
+      return
+    }
+
+    await loader?.refreshTail({ directory, sessionID: sessionId }, RECONNECT_MESSAGE_LIMIT)
+    if (isSessionStale()) return
+    if (loader?.getSnapshot({ directory, sessionID: sessionId }).status === "error") succeeded = false
     markRecordedInterruptedTurn(store, sessionId)
-    if (!session) return
 
     const nextSession = stripSessionDiffSnapshots(session)
     store.setState((state: DirectoryStore) => {
+      if ((state.sessionEventRevision?.[sessionId] ?? 0) > revision) return state
       const sessions = upsertSessionRecord(state.session, nextSession)
       let sessionTotal = state.sessionTotal
 
@@ -1697,7 +1723,10 @@ async function resyncDirectoryAfterReconnect(
   }))
 
   if (isStale()) return
-  const blockingRequestsSucceeded = await resyncBlockingRequestsForDirectory(directory, store, candidateSessionIds, { isStale })
+  const remainingCandidateIds = candidateSessionIds.filter((id) => !store.getState().sessionDeletedRevision?.[id])
+  const blockingRequestsSucceeded = await resyncBlockingRequestsForDirectory(directory, store, remainingCandidateIds, {
+    isStale: () => isStale() || remainingCandidateIds.some((id) => Boolean(store.getState().sessionDeletedRevision?.[id])),
+  })
 
   if (isStale()) return
   ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
@@ -2540,6 +2569,14 @@ export function handleEvent(
   })
   const reducerChanged = typeof reducerResult === "boolean" ? reducerResult : reducerResult.changed
   const materializationResult = typeof reducerResult === "boolean" ? undefined : reducerResult.materialization
+  // A status/message-only session has no record for the reducer to patch, but
+  // its move must still retire source reads and route subsequent events away.
+  if (payload.type === "session.patched" && payload.properties.patch.directory
+    && (reducerChanged || !current.session.some((session) => session.id === payload.properties.sessionID))
+    && normalizeEventDirectory(payload.properties.patch.directory) !== normalizeEventDirectory(directoryBeforePatch ?? resolvedDirectory)
+    && expectedRuntimeKey === getRuntimeKey()) {
+    sessionMove = { sessionID: payload.properties.sessionID, from: resolvedDirectory, to: payload.properties.patch.directory }
+  }
   // Retire old reads even if a local send already removed the reverted range.
   // Only optimistic messages surviving the reducer may enter the next fetch.
   if (payload.type === "session.revert.committed") {
@@ -2587,18 +2624,6 @@ export function handleEvent(
     } else {
       countSyncPerformance("directoryStorePublications")
       store.setState(draft)
-    }
-    // The session moved to another directory: the chat reads and sends there
-    // from now on, so its messages and live state follow it.
-    const destinationDirectory = payload.type === "session.patched" ? payload.properties.patch.directory : undefined
-    if (
-      eventSessionID
-      && destinationDirectory
-      && directoryBeforePatch
-      && normalizeEventDirectory(destinationDirectory) !== normalizeEventDirectory(directoryBeforePatch)
-      && expectedRuntimeKey === getRuntimeKey()
-    ) {
-      sessionMove = { sessionID: eventSessionID, from: resolvedDirectory, to: destinationDirectory }
     }
     const sessionID = eventSessionID
     const messageID = eventMessageID

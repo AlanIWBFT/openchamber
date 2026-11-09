@@ -1,6 +1,7 @@
 import type { Message, Part, Session, SessionStatus } from "@/lib/opencode/model"
 import { getLastConversationMessage, isIncompleteAssistantTurn } from "@/lib/opencode/model"
 import { getSessionMaterializationStatus } from "./materialization"
+import { normalizePath } from "@/lib/pathNormalization"
 
 type ReconnectMaterializationState = {
   session: Session[]
@@ -165,5 +166,8 @@ export function getReconnectCandidateSessionIds(state: ReconnectMaterializationS
     }
   }
 
-  return Array.from(ids)
+  if (!options?.directory || ids.size === 0) return Array.from(ids)
+  const directory = normalizePath(options.directory)
+  const owners = new Map(state.session.map((session) => [session.id, normalizePath(session.directory)]))
+  return Array.from(ids).filter((id) => !owners.get(id) || owners.get(id) === directory)
 }
