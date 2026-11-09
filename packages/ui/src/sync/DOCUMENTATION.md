@@ -857,6 +857,33 @@ Only archive events accepted by the reducer affect recovery snapshots. A rejecte
 
 Global status reconciliation takes known session IDs only from records owned by the queried directory. A project store may contain worktree sessions; a parent-directory snapshot must not settle those sessions in the global activity index.
 
+Reconnect and watchdog status reads filter the host-wide snapshot before publishing
+to a directory store. Recovery includes that directory's records and existing
+event/message candidates whose ownership is still unknown. Known worktree records
+in a parent project's list never become the parent's recovery candidates. A detail
+read must confirm ownership before the message loader starts; moves, removals and
+runtime changes supersede pending recovery. Newer session events remain authoritative
+while the transcript loads. Rebuilding the event index skips known foreign records
+and transcripts so an aggregate project list cannot reassign live routing.
+Bootstrap applies the same ownership filter after reconciling in-flight status
+events. Recovery removes known foreign statuses already held by a parent store,
+without settling the real owner's activity. Move events also retire reads for
+status/message-only sessions whose first detail has not arrived; those sessions
+must recover their transcript at the destination rather than restoring the source.
+If a reconnect detail reveals a move missed during the stream gap, recovery applies
+the same local handoff and records its source as `reconnect`.
+
+### Why directory startup snapshots keep only owned sessions
+
+Older recovery wrote foreign sessions into directory caches, and those copies
+survived reloads. Directory snapshots now filter ownership on write and read; reading
+an old mixed snapshot schedules its repaired value, or immediately writes an empty
+tombstone when nothing belongs there. A failed storage write cannot make the foreign
+records enter memory. Authoritative project lists may still aggregate worktree
+records, and the global and managed-chat snapshots retain their cross-directory
+coverage. Using cached membership as proof of ownership would restore the same
+pollution before any authoritative request finished.
+
 Directory session lists record whether their current snapshot is empty, persisted, live-event-derived, or authoritative. Bootstrap captures a mutation revision before starting its requests. Its completion replaces persisted data, including with a successful empty response, then overlays only session events and direct move/archive/delete mutations newer than that revision. It must not preserve the entire cached list as a race fallback because that would retain stale persisted sessions.
 
 The roots request is authoritative for root completeness. The broader child-session request has independent completeness: a successful empty response clears stale children, while a failed request preserves known children and their required ancestors without turning the failure into an empty snapshot.

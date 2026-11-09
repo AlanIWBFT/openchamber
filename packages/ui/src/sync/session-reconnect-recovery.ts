@@ -9,6 +9,8 @@ import { syncDebug } from "./debug"
 import { opencodeClient } from "@/lib/opencode/client"
 import { resolveGlobalSessionDirectory, useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
 import { isSpaceDirectory } from "@/lib/spaces/space-route"
+import { normalizePath } from "@/lib/pathNormalization"
+import { adoptSessionMove } from "./session-actions"
 import { applyGlobalSessionStatusEvents, buildActiveListReconcileEvents, watchGlobalSessionStatusWrites } from "./global-session-status"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import { getImperativeSessionMessageLoader } from "./session-message-loader"
@@ -39,18 +41,25 @@ export async function resyncDirectoryAfterReconnect(
 
   if (reason !== "stream-replayed") await Promise.all(candidateSessionIds.map(async (sessionId) => {
     syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })
+    const revision = store.getState().sessionRevision ?? 0
+    const staleSession = () => isStale() || (store.getState().sessionDeletedRevision?.[sessionId] ?? 0) > revision
     const loader = getImperativeSessionMessageLoader()
-    const [session] = await Promise.all([
-      retry(() => opencodeClient.getSession(sessionId, directory)).catch(() => null),
-      loader?.refreshTail({ directory, sessionID: sessionId }, RECONNECT_MESSAGE_LIMIT) ?? Promise.resolve(),
-    ])
-    if (isStale()) return
-    if (!session || loader?.getSnapshot({ directory, sessionID: sessionId }).status === "error") succeeded = false
+    const session = await retry(() => opencodeClient.getSession(sessionId, directory)).catch(() => null)
+    if (staleSession()) return
+    if (!session) { succeeded = false; return }
+    if (normalizePath(directory) !== normalizePath(session.directory)) {
+      useGlobalSessionsStore.getState().upsertSession(session)
+      adoptSessionMove(sessionId, directory, session.directory)
+      return
+    }
+    await loader?.refreshTail({ directory, sessionID: sessionId }, RECONNECT_MESSAGE_LIMIT)
+    if (staleSession()) return
+    if (loader?.getSnapshot({ directory, sessionID: sessionId }).status === "error") succeeded = false
     markRecordedInterruptedTurn(store, sessionId)
-    if (!session) return
 
     const nextSession = stripSessionDiffSnapshots(session)
     store.setState((state: DirectoryStore) => {
+      if ((state.sessionEventRevision?.[sessionId] ?? 0) > revision) return state
       const sessions = upsertSessionRecord(state.session, nextSession)
       let sessionTotal = state.sessionTotal
 
@@ -70,7 +79,10 @@ export async function resyncDirectoryAfterReconnect(
   }))
 
   if (isStale()) return
-  const blockingRequestsSucceeded = await resyncBlockingRequestsForDirectory(directory, store, candidateSessionIds, { isStale })
+  const remaining = candidateSessionIds.filter((id) => !store.getState().sessionDeletedRevision?.[id])
+  const blockingRequestsSucceeded = await resyncBlockingRequestsForDirectory(directory, store, remaining, {
+    isStale: () => isStale() || remaining.some((id) => Boolean(store.getState().sessionDeletedRevision?.[id])),
+  })
 
   if (isStale()) return
   ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())

@@ -138,9 +138,14 @@ export const ingestDirectoryStateIntoRoutingIndex = (
   state: State,
 ) => {
   const nextSessionIds = new Set<string>()
+  const foreignIds = new Set<string>()
 
   for (const session of state.session) {
     if (!session?.id) {
+      continue
+    }
+    if (session.directory && normalizePath(session.directory) !== normalizePath(directory)) {
+      foreignIds.add(session.id)
       continue
     }
     nextSessionIds.add(session.id)
@@ -148,6 +153,7 @@ export const ingestDirectoryStateIntoRoutingIndex = (
   }
 
   for (const sessionID of Object.keys(state.message)) {
+    if (foreignIds.has(sessionID)) continue
     nextSessionIds.add(sessionID)
     setIndexedSessionDirectory(routingIndex, sessionID, directory)
     setIndexedSessionMessages(routingIndex, sessionID, directory, state.message[sessionID] ?? EMPTY_MESSAGES)
@@ -397,3 +403,4 @@ export const updateRoutingIndexFromEvent = (
       return
   }
 }
+import { normalizePath } from "@/lib/pathNormalization"

@@ -262,8 +262,8 @@ function startBootstrap(
       path: { directory: "C:/repo", worktree: "C:/repo", home: "C:/home" },
     },
     loadSessions: () => {
-      // SAFETY: Bootstrap scopes statuses by ID; this fixture reads no other session fields.
-      store.setState({ session: [{ id: "ses_a" } as Session] })
+      // SAFETY: Bootstrap reads only the session's ID and directory in this fixture.
+      store.setState({ session: [{ id: "ses_a", directory: "C:/repo" } as Session] })
     },
   })
   return {
@@ -283,6 +283,18 @@ async function bootstrapWithStatus(statusResult: BootstrapStatusResult) {
 }
 
 describe("bootstrapDirectory session status", () => {
+  test("filters worktree activity after reconciling in-flight status changes", async () => {
+    let resolveStatus!: (result: BootstrapStatusResult) => void
+    const bootstrap = startBootstrap(new Promise<BootstrapStatusResult>((resolve) => { resolveStatus = resolve }))
+    await bootstrap.requestStarted
+    const own = bootstrap.getState().session[0]
+    bootstrap.setState({ session: [own, { ...own, id: "ses_worktree", directory: "C:/repo-worktree" }],
+      session_status: { ses_a: BUSY, ses_worktree: BUSY, ses_new_event: BUSY } })
+    resolveStatus({ ses_a: BUSY, ses_worktree: BUSY, ses_unrelated: BUSY })
+    await bootstrap.promise
+    expect(bootstrap.getState().session_status).toEqual({ ses_a: BUSY, ses_new_event: BUSY })
+  })
+
   test("preserves a usable older response when the newer bootstrap fails", async () => {
     let resolveStatus!: (result: BootstrapStatusResult) => void
     const older = startBootstrap(new Promise<BootstrapStatusResult>((resolve) => { resolveStatus = resolve }))

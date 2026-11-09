@@ -99,6 +99,30 @@ afterEach(() => {
 })
 
 describe("persisted directory sessions", () => {
+  test("repairs foreign records in an old directory snapshot before seeding a store", async () => {
+    const legacyKey = legacySessionKey(directory)
+    storage.setItem(legacyKey, JSON.stringify([session(1, 1), session(2, 2, "Foreign", "/elsewhere")]))
+    expect(readDirCache(directory).sessions?.map((item) => item.id)).toEqual(["ses_001"])
+    await waitForPersistence()
+    expect(storage.getItem(legacyKey)).toBeNull()
+    expect(readDirCache(directory).sessions?.map((item) => item.id)).toEqual(["ses_001"])
+  })
+
+  test("a snapshot containing only foreign sessions becomes an empty tombstone", () => {
+    const legacyKey = legacySessionKey(directory)
+    storage.setItem(legacyKey, JSON.stringify([session(2, 2, "Foreign", "/elsewhere")]))
+    expect(readDirCache(directory).sessions).toEqual([])
+    expect(storage.getItem(legacyKey)).toBeNull()
+    expect(readDirCache(directory).sessions).toEqual([])
+  })
+
+  test("directory persistence excludes foreign records and normalizes Windows ownership", async () => {
+    persistSessions("C:/repo", [session(1, 1, "Own", "c:\\repo\\"), session(2, 2, "Foreign", "C:/repo-other")])
+    expect(readDirCache("C:/repo").sessions?.map((item) => item.id)).toEqual(["ses_001"])
+    await waitForPersistence()
+    expect(JSON.parse(storage.values.values().next().value ?? "[]").map((item: Session) => item.id)).toEqual(["ses_001"])
+  })
+
   test("keeps one runtime-scoped startup snapshot for managed chats", async () => {
     const chat = session(1, 2, "Chat", "/home/user/.config/openchamber/chats/2026-08-21/session-a")
     persistManagedChatSessions([session(2, 3), chat])

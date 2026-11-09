@@ -435,6 +435,12 @@ export function handleEvent(
     onLoadMcp: () => scheduleMcpStatusRefresh(resolvedDirectory),
   })
   const reducerChanged = typeof reducerResult === "boolean" ? reducerResult : reducerResult.changed
+  if (payload.type === "session.patched" && payload.properties.patch.directory
+    && (reducerChanged || !current.session.some((session) => session.id === payload.properties.sessionID))
+    && normalizeEventDirectory(payload.properties.patch.directory) !== normalizeEventDirectory(directoryBeforePatch ?? resolvedDirectory)
+    && expectedRuntimeKey === getRuntimeKey()) {
+    sessionMove = { sessionID: payload.properties.sessionID, from: resolvedDirectory, to: payload.properties.patch.directory }
+  }
   const materializationResult = typeof reducerResult === "boolean" ? undefined : reducerResult.materialization
   if (payload.type === "session.revert.committed") {
     const { sessionID } = payload.properties
@@ -480,16 +486,6 @@ export function handleEvent(
     } else {
       countSyncPerformance("directoryStorePublications")
       store.setState(draft)
-    }
-    const destinationDirectory = payload.type === "session.patched" ? payload.properties.patch.directory : undefined
-    if (
-      eventSessionID
-      && destinationDirectory
-      && directoryBeforePatch
-      && normalizeEventDirectory(destinationDirectory) !== normalizeEventDirectory(directoryBeforePatch)
-      && expectedRuntimeKey === getRuntimeKey()
-    ) {
-      sessionMove = { sessionID: eventSessionID, from: resolvedDirectory, to: destinationDirectory }
     }
     const sessionID = eventSessionID
     const messageID = eventMessageID

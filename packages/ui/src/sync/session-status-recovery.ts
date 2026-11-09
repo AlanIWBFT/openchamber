@@ -2,8 +2,8 @@ import type { StoreApi } from "zustand"
 import type { SessionStatus } from "@/lib/opencode/model"
 import { type DirectoryStore } from "./child-store"
 import { runBackgroundNetworkTask } from "@/lib/background-network"
-import { beginSessionStatusRequest, readDirectoryStatusSnapshot, selectHeldSessionStatuses } from "./directory-recovery-snapshots"
-import { hasPromptInFlight, withPromptsInFlight } from "./prompts-in-flight"
+import { beginSessionStatusRequest, readDirectoryStatusSnapshot } from "./directory-recovery-snapshots"
+import { hasPromptInFlight } from "./prompts-in-flight"
 import { getReconnectCandidateSessionIds } from "./reconnect-recovery"
 import { opencodeClient } from "@/lib/opencode/client"
 import { applyGlobalSessionStatusSnapshot, getDirectoryOwnedSessionIds } from "./global-session-status"
@@ -113,16 +113,23 @@ export async function resyncDirectorySessionStatuses(
   const isCurrentRequest = beginSessionStatusRequest(store)
   return readDirectoryStatusSnapshot(store, () => opencodeClient.getActiveSessionStatuses(directory), (nextStatuses) => {
     if (isStale?.() || !isCurrentRequest()) return false
-    const currentInvalidated = store.getState().sessionStatusInvalidated
+    const current = store.getState()
+    const currentInvalidated = current.sessionStatusInvalidated
+    const known = new Set(current.session.map((session) => session.id))
+    const owned = new Set(getDirectoryOwnedSessionIds(directory, current.session))
     const eligibleIds = candidateSessionIds.filter((id) => (
-      !currentInvalidated?.[id] || currentInvalidated === invalidatedAtStart
+      (!currentInvalidated?.[id] || currentInvalidated === invalidatedAtStart) && (!known.has(id) || owned.has(id))
     ))
-    applySessionStatusSnapshot(store, nextStatuses, eligibleIds, mode)
+    const scoped = new Set([...owned, ...eligibleIds])
+    const scopedStatuses = Object.fromEntries(Object.entries(nextStatuses).filter(([id]) => scoped.has(id)))
+    const retained = Object.fromEntries(Object.entries(current.session_status).filter(([id]) => !known.has(id) || owned.has(id)))
+    if (Object.keys(retained).length !== Object.keys(current.session_status).length) store.setState({ session_status: retained })
+    applySessionStatusSnapshot(store, scopedStatuses, eligibleIds, mode)
     if (mode === "authoritative") {
       store.setState({ sessionStatusReady: true })
-      const state = store.getState()
-      applyGlobalSessionStatusSnapshot(directory, withPromptsInFlight(selectHeldSessionStatuses(nextStatuses, state.session), state.session_status), getDirectoryOwnedSessionIds(directory, state.session))
-      for (const sessionId of candidateSessionIds) {
+      const ownedStatuses = Object.fromEntries(Object.entries(scopedStatuses).filter(([id]) => owned.has(id)))
+      applyGlobalSessionStatusSnapshot(directory, ownedStatuses, [...owned])
+      for (const sessionId of eligibleIds) {
         markRecordedInterruptedTurn(store, sessionId)
       }
     }

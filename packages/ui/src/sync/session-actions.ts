@@ -367,7 +367,21 @@ export function adoptSessionMove(sessionId: string, sourceDirectory: string, des
   const session = _childStores?.getChild(sourceDirectory)?.getState().session.find((candidate) => candidate.id === sessionId)
     ?? _childStores?.getChild(destinationDirectory)?.getState().session.find((candidate) => candidate.id === sessionId)
     ?? useGlobalSessionsStore.getState().entityById.get(sessionId)
-  if (!session) return
+  if (!session) {
+    // Events can precede the first session detail. Retire that pending read
+    // even without a record, and let the destination recover its transcript.
+    const sourceStore = _childStores?.getChild(sourceDirectory)
+    _childStores?.ensureChild(destinationDirectory, { bootstrap: false })
+    invalidateSessionLoads(sessionId, [sourceDirectory, destinationDirectory])
+    if (sourceStore) {
+      invalidateMessageSnapshots(sourceStore, sessionId)
+      sourceStore.setState(sessionMutationPatch(sourceStore.getState(), sessionId, true))
+    }
+    dropSessionLiveStateOutside(sessionId, destinationDirectory)
+    registerSessionDirectory(sessionId, destinationDirectory)
+    useSessionUIStore.getState().setSessionDirectory(sessionId, destinationDirectory)
+    return
+  }
   relocateSession(session, sourceDirectory, destinationDirectory)
 }
 
