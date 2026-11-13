@@ -83,6 +83,9 @@ request, and each wait request carries that same idle stop.
   boundary, and a wake just delivered must first show as a running turn. The
   id is saved before the send because a second attempt would otherwise mint
   another and OpenCode would admit the wake twice.
+- Unreadable or invalid archive state postpones the wake without spending its
+  send-attempt budget. Confirmed archive or a tagged missing session ends all
+  its waits without waking it.
 
 ## Persistence
 

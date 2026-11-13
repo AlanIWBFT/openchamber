@@ -76,7 +76,7 @@ export const createSessionArchive = ({ store, openCode }: SessionArchiveOptions)
 
   const archivedAt = async (sessionID: string) => {
     const at = await openCode.readArchivedAt(sessionID);
-    if (at === undefined) throw new Error(`Session ${sessionID} was not found`);
+    if (at === undefined) throw Object.assign(new Error(`Session ${sessionID} was not found`), { _tag: 'SessionNotFoundError', status: 404 });
     return at;
   };
 

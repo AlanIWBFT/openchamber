@@ -636,9 +636,17 @@ export function createExtensionWaitsRuntime({
     if (!isCurrent(wait)) return undefined;
     if (!statuses) return retry(wait, 'OpenCode could not be asked');
     if (statuses[sessionID]) return undefined;
-    const archived = await Promise.resolve(isSessionArchived(sessionID)).catch(() => false) === true;
+    let archived;
+    try {
+      archived = z.boolean().safeParse(await isSessionArchived(sessionID));
+    } catch (error) {
+      if (!isCurrent(wait)) return;
+      if (error instanceof Error && '_tag' in error && error._tag === 'SessionNotFoundError') return settle(wait, ...waitsOf(sessionID));
+      return arm(sessionID, retryDelayMs(MAX_DELIVERY_FAILURES));
+    }
     if (!isCurrent(wait)) return undefined;
-    if (archived) return settle(wait, ...waitsOf(sessionID));
+    if (!archived.success) return arm(sessionID, retryDelayMs(MAX_DELIVERY_FAILURES));
+    if (archived.data) return settle(wait, ...waitsOf(sessionID));
     if (!wait.wake.messageID) {
       const messageID = createMessageId(now());
       try {

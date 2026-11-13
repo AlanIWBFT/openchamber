@@ -96,7 +96,7 @@ const createService = ({ start = () => ({ ok: true, state: { checks: 0 }, label:
   return { calls: requests.events, proxyServiceRequest, checked: () => requests.waitFor((call) => call.path === '/waits/check') };
 };
 
-const createRuntime = async ({ dataDir, catalog = [guest()], service = createService(), openCode = createOpenCode(), timers, insideSpace, retryDelayMs = () => 5 } = {}) => {
+const createRuntime = async ({ dataDir, catalog = [guest()], service = createService(), openCode = createOpenCode(), timers, insideSpace, isSessionArchived, retryDelayMs = () => 5 } = {}) => {
   let eventHandler = () => {};
   const clock = { now: 1_000_000 };
   // `catalogError` set: the catalog read fails with it.
@@ -118,7 +118,8 @@ const createRuntime = async ({ dataDir, catalog = [guest()], service = createSer
     quietMs: 0,
     retryDelayMs,
     warn: () => {},
-    timers,
+    isSessionArchived,
+    ...(timers ? { timers } : {}),
     insideSpace,
   });
   runtimes.push(runtime);
@@ -182,6 +183,29 @@ describe('isWaitProvider', () => {
 });
 
 describe('createExtensionWaitsRuntime', () => {
+  for (const state of ['unknown', 'invalid', 'archived', 'missing']) {
+    it(`never wakes a session whose archive state is ${state}`, async () => {
+      const isSessionArchived = vi.fn(async () => {
+        if (state === 'unknown') throw new Error('network unavailable');
+        if (state === 'missing') throw Object.assign(new Error('gone'), { _tag: 'SessionNotFoundError', status: 404 });
+        return state === 'archived' ? true : undefined;
+      });
+      const service = createService({ check: (body) => ({ results: body.waits.map((wait) => ({ id: wait.id, fired: true, summary: 'Ready' })) }) });
+      const { runtime, openCode, advance } = await createRuntime({ service, isSessionArchived });
+      await runtime.startWait({ sessionID: SESSION, directory: DIRECTORY, source: 'wait-kit/timer', args: { seconds: 5 } });
+      await advance();
+      if (state === 'unknown' || state === 'invalid') {
+        expect(await until(() => isSessionArchived.mock.calls.length > 8)).toBe(true);
+        expect(runtime.snapshot().waits).toHaveLength(1);
+        expect(openCode.state.admitted).toEqual([]);
+        isSessionArchived.mockResolvedValue(true);
+      }
+      expect(await until(() => runtime.snapshot().waits.length === 0)).toBe(true);
+      expect(openCode.state.admitted).toEqual([]);
+      if (state === 'missing' || state === 'archived') expect(isSessionArchived).toHaveBeenCalledTimes(1);
+    });
+  }
+
   it('starts a wait on the service, checks it, and wakes the session once when it fires', async () => {
     const service = createService({
       check: (body) => ({ results: body.waits.map((wait) => ({ id: wait.id, fired: true, summary: 'Five seconds passed' })) }),
