@@ -64,6 +64,7 @@ const createOpenCode = ({ active = {}, onPrompt = async () => {}, reply = 'Done.
     }
     if (method === 'GET' && pathname === '/api/session') return json({ data: [] });
     if (method === 'POST' && pathname === '/api/session') return json({ data: { id: 'ses_dream' } });
+    if (method === 'POST' && pathname.endsWith('/stop')) return json({ data: { matched: 0, terminated: 0, failed: 0 } });
     if (method === 'POST' && pathname.endsWith('/prompt')) {
       await onPrompt(body);
       return json({ data: {} });
@@ -93,6 +94,7 @@ const createDreaming = ({ openCode, settings = {}, clock = { now: Date.now() }, 
   resolveProjectId,
   measureIndex: () => ({ budget: 8000, used: 100, omitted: 0 }),
   hiddenSessions,
+  createSessionId: () => 'ses_dream',
   buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
   getOpenCodeAuthHeaders: () => ({}),
   resolveSessionDefaults: () => ({ providerID: 'zai', modelID: 'glm', variant: null, agent: null }),
@@ -142,6 +144,74 @@ describe('when a pass runs', () => {
 });
 
 describe('a pass', () => {
+  for (const retry of ['check', 'shutdown']) test(`retries a failed stop for its owned hidden session on ${retry}`, async () => {
+    await fill(12);
+    const openCode = createOpenCode();
+    const original = openCode.fetchImpl;
+    let stops = 0;
+    const cleanup = [];
+    openCode.fetchImpl = async (url, init = {}) => {
+      const pathname = new URL(url).pathname;
+      if (pathname.endsWith('/stop')) {
+        cleanup.push(`stop ${pathname}`);
+        return Response.json({ data: { matched: 1, terminated: stops++ ? 1 : 0, failed: stops === 1 ? 1 : 0 } });
+      }
+      if (init.method === 'DELETE') cleanup.push(`delete ${pathname}`);
+      return original(url, init);
+    };
+    const runtime = createDreaming({ openCode });
+    await runtime.check();
+    expect(cleanup).toEqual(['stop /api/session/ses_dream/stop']);
+    if (retry === 'check') await runtime.check();
+    else await runtime.stop({ deadline: Date.now() + 5000 });
+    expect(cleanup).toEqual(['stop /api/session/ses_dream/stop', 'stop /api/session/ses_dream/stop', 'delete /api/session/ses_dream']);
+  });
+
+  for (const phase of ['create', 'prompt', 'poll', 'delete']) {
+    test(`shutdown joins a pass during ${phase} and cleans only its owned session`, async () => {
+      await fill(12);
+      const openCode = createOpenCode();
+      const original = openCode.fetchImpl;
+      const entered = Promise.withResolvers();
+      const release = Promise.withResolvers();
+      let prompted = false;
+      let held = false;
+      const paths = [];
+      openCode.fetchImpl = async (url, init = {}) => {
+        const pathname = new URL(url).pathname;
+        paths.push(`${init.method} ${pathname}`);
+        if (pathname.endsWith('/prompt')) prompted = true;
+        const current = init.method === 'DELETE' ? 'delete'
+          : pathname.endsWith('/prompt') ? 'prompt'
+          : init.method === 'POST' && pathname === '/api/session' ? 'create'
+          : prompted && pathname === '/api/session/active' ? 'poll' : null;
+        if (current === phase && !held) { held = true; entered.resolve(); await release.promise; }
+        if (pathname.endsWith('/stop')) return Response.json({ data: { matched: 0, terminated: 0, failed: 0 } });
+        return original(url, init);
+      };
+      const runtime = createDreaming({ openCode });
+      const checking = runtime.check();
+      await entered.promise;
+      let stopped = false;
+      const stopping = Promise.resolve(runtime.stop({ deadline: Date.now() + 5000 })).then(() => { stopped = true; });
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(stopped).toBe(false);
+      } finally {
+        release.resolve();
+        await Promise.all([checking, stopping]);
+      }
+      if (phase === 'create') expect(paths.some((value) => value.endsWith('/prompt'))).toBe(false);
+      expect(paths.filter((value) => value.endsWith('/stop'))).toEqual(['POST /api/session/ses_dream/stop']);
+      expect(paths.filter((value) => value.startsWith('DELETE'))).toEqual(['DELETE /api/session/ses_dream']);
+      expect((await memory.readDreamState(PROJECT)).record).not.toBeNull();
+      const count = paths.length;
+      runtime.start();
+      await runtime.check();
+      expect(paths).toHaveLength(count);
+    });
+  }
+
   test('runs hidden, records what changed and removes its session', async () => {
     await fill(12);
     const hiddenSessions = createHiddenSessionRegistry();
@@ -193,7 +263,7 @@ describe('a pass', () => {
     } });
     await createDreaming({ openCode, passTimeoutMs: 20 }).check();
 
-    expect(openCode.calls.some((call) => call.pathname.endsWith('/interrupt'))).toBe(true);
+    expect(openCode.calls.some((call) => call.pathname.endsWith('/stop'))).toBe(true);
     const state = await memory.readDreamState(PROJECT);
     expect(state.record).toMatchObject({ status: 'failed', error: 'The pass did not finish in time', removed: 1 });
     // What it changed before stopping can still be undone.

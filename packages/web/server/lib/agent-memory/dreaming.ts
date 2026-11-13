@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Session } from '@opencode/schema';
 
 import { asNonEmptyString } from '../shared/guards.js';
 import { isMemoryRecord as isRecord } from './contracts.js';
@@ -54,6 +55,7 @@ interface DreamPassTarget {
 }
 
 interface DreamDependencies {
+  createSessionId?: () => string;
   agentMemoryRuntime: AgentMemoryRuntime;
   readSettings: () => Promise<DreamSettings | null>;
   resolveProjectId: (directory: string) => Promise<string>;
@@ -80,6 +82,7 @@ interface DreamDependencies {
 }
 
 interface DreamSessionRequest {
+  id: string;
   title: string;
   location: { directory: string };
   metadata: { hidden: boolean; openchamber: { kind: string } };
@@ -88,9 +91,9 @@ interface DreamSessionRequest {
 }
 
 interface DreamRequestOptions {
-  directory?: string;
+  directory?: string | undefined;
   body?: DreamSessionRequest | { text: string };
-  signal?: AbortSignal;
+  signal?: AbortSignal | null;
 }
 
 interface DreamRequestHeaders {
@@ -249,6 +252,7 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
     resolveProjectId,
     measureIndex,
     hiddenSessions,
+    createSessionId = () => Session.ID.create(),
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     emitMemoryChanged = () => {},
@@ -267,23 +271,51 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let running: Promise<void> | null = null;
+  let stopping: Promise<void> | null = null;
   let stopped = true;
   let leftoversRemoved = false;
+  const pendingCleanup = new Map<string, string | undefined>();
+  const lifetime = new AbortController();
+  const cleanupDeadline = new AbortController();
+  let shutdownTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const request = async (method: string, pathname: string, { directory, body, signal }: DreamRequestOptions = {}) => {
+  const request = async (method: string, pathname: string, { directory, body, signal = lifetime.signal }: DreamRequestOptions = {}) => {
     const timeout = AbortSignal.timeout(requestTimeoutMs);
     const headers: DreamRequestHeaders = { ...getOpenCodeAuthHeaders() };
     if (directory) headers['x-opencode-directory'] = encodeURIComponent(directory);
-    const init: RequestInit = { method, headers, signal: signal ? AbortSignal.any([signal, timeout]) : timeout };
+    const requestSignal = AbortSignal.any([timeout, cleanupDeadline.signal, ...(signal ? [signal] : [])]);
+    requestSignal.throwIfAborted();
+    const init: RequestInit = { method, headers, signal: requestSignal };
     if (body) {
       headers['content-type'] = 'application/json';
       init.body = JSON.stringify(body);
     }
     const response = await fetchImpl(buildOpenCodeUrl(pathname, ''), init);
-    if (!response.ok) throw new Error(`${method} ${pathname} answered ${response.status}`);
     const text = await response.text();
+    if (!response.ok) {
+      let detail: unknown;
+      try { detail = JSON.parse(text); } catch { /* Non-JSON HTTP error. */ }
+      throw Object.assign(new Error(`${method} ${pathname} answered ${response.status}`), { status: response.status, _tag: isRecord(detail) ? detail._tag : undefined });
+    }
     const answer: unknown = text ? JSON.parse(text) : null;
     return answer;
+  };
+
+  const removeOwnedSession = async (sessionID: string, directory?: string) => {
+    pendingCleanup.set(sessionID, directory);
+    // Stop owns the turn and persistent execs. A failed stop leaves the hidden
+    // record for the next cleanup instead of deleting its ownership evidence.
+    const answer = await request('POST', `/api/session/${encodeURIComponent(sessionID)}/stop`, { directory, signal: null })
+      .catch((error) => {
+        if (error?._tag === 'SessionNotFoundError') return null;
+        throw error;
+      });
+    if (answer !== null) {
+      const result = z.object({ failed: z.number().int().nonnegative() }).parse(isRecord(answer) ? answer.data ?? answer : answer);
+      if (result.failed > 0) throw new Error(`Could not stop ${result.failed} memory pass commands`);
+      await request('DELETE', `/api/session/${encodeURIComponent(sessionID)}`, { signal: null });
+    }
+    pendingCleanup.delete(sessionID);
   };
 
   const activeSessionIds = async () => {
@@ -293,6 +325,12 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
   };
 
   const removeLeftovers = async () => {
+    // Visibility is not ownership: failed cleanup remains hidden, but still
+    // belongs to us and must be retried independently of the discovery filter.
+    for (const [sessionID, directory] of pendingCleanup) {
+      lifetime.signal.throwIfAborted();
+      await removeOwnedSession(sessionID, directory).catch(() => {});
+    }
     if (leftoversRemoved) return;
     let cursor: string | null = null;
     let complete = true;
@@ -302,8 +340,9 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
       for (const session of sessions) {
         if (!isRecord(session) || !isRecord(session.metadata) || !isRecord(session.metadata.openchamber)
           || session.metadata.openchamber.kind !== DREAM_SESSION_KIND || hiddenSessions.has(session.id)) continue;
+        lifetime.signal.throwIfAborted();
         hiddenSessions.add(session.id);
-        await request('DELETE', `/api/session/${encodeURIComponent(String(session.id))}`).catch(() => { complete = false; });
+        await removeOwnedSession(String(session.id), isRecord(session.location) && typeof session.location.directory === 'string' ? session.location.directory : undefined).catch(() => { complete = false; });
       }
       cursor = asNonEmptyString(isRecord(answer) && isRecord(answer.cursor) ? answer.cursor.next : undefined);
       if (!cursor) break;
@@ -397,21 +436,31 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
     let error: string | null = null;
     let merged: z.infer<typeof mergedReportSchema> = { project: 0, global: 0, toDocs: [] };
     const controller = new AbortController();
+    const signal = AbortSignal.any([lifetime.signal, controller.signal]);
     const timeout = setTimer(() => controller.abort(), passTimeoutMs);
     try {
+      signal.throwIfAborted();
+      // `hidden` keeps the session from every client from its first event on
+      // (`../opencode/hidden-sessions.js`); the kind is how a leftover is found.
       const session: DreamSessionRequest = {
+        id: createSessionId(),
         title: 'Memory dreaming',
         location: { directory },
         metadata: { hidden: true, openchamber: { kind: DREAM_SESSION_KIND } },
         permissions: DREAM_PERMISSIONS,
       };
       if (model) session.model = model;
-      const created = createdSessionSchema.safeParse(await request('POST', '/api/session', { directory, body: session }));
-      if (!created.success) throw new Error('OpenCode did not say which session it created');
-      sessionID = created.data;
+      sessionID = session.id;
       hiddenSessions.add(sessionID);
+      // Preallocate the supported OpenCode id so an uncertain response never
+      // loses ownership. Join this one create during shutdown, bounded by the
+      // host deadline, then clean it up; never retry by creating another id.
+      const created = createdSessionSchema.safeParse(await request('POST', '/api/session', { directory, body: session, signal: controller.signal }));
+      if (!created.success || created.data !== sessionID) throw new Error('OpenCode did not confirm the owned session');
+      signal.throwIfAborted();
       await request('POST', `/api/session/${sessionID}/prompt`, {
         directory,
+        signal,
         body: {
           text: buildDreamPrompt({
             directory,
@@ -424,27 +473,36 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
       const promptedAt = now();
       let seenRunning = false;
       for (;;) {
-        await new Promise<void>((resolve) => setTimer(resolve, pollIntervalMs));
-        if (controller.signal.aborted) throw new Error('aborted');
-        const active = await request('GET', '/api/session/active', { signal: controller.signal });
+        signal.throwIfAborted();
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => { clearTimer(waitTimer); reject(signal.reason); };
+          const waitTimer = setTimer(() => { signal.removeEventListener('abort', abort); resolve(); }, pollIntervalMs);
+          signal.addEventListener('abort', abort, { once: true });
+        });
+        signal.throwIfAborted();
+        const active = await request('GET', '/api/session/active', { signal });
         const data = isRecord(active) && isRecord(active.data) ? active.data : isRecord(active) ? active : {};
         if (data[sessionID]) seenRunning = true;
         else if (seenRunning || now() - promptedAt > START_GRACE_MS) break;
       }
-      const answer = messagesSchema.safeParse(await request('GET', `/api/session/${sessionID}/message`, { directory }));
+      signal.throwIfAborted();
+      const answer = messagesSchema.safeParse(await request('GET', `/api/session/${sessionID}/message`, { directory, signal }));
+      signal.throwIfAborted();
       if (!answer.success) throw new Error('Could not read how the pass ended');
       const messages = answer.data;
       const failure = readTurnFailure(messages);
       if (failure) throw new Error(failure);
       merged = readMergedCount(messages);
     } catch (caught) {
-      error = controller.signal.aborted ? 'The pass did not finish in time' : (caught instanceof Error ? caught.message : String(caught));
-      if (sessionID) await request('POST', `/api/session/${sessionID}/interrupt`, { directory }).catch(() => {});
+      error = lifetime.signal.aborted ? 'OpenChamber is shutting down'
+        : controller.signal.aborted ? 'The pass did not finish in time' : (caught instanceof Error ? caught.message : String(caught));
     } finally {
       clearTimer(timeout);
       if (sessionID) {
-        await request('DELETE', `/api/session/${sessionID}`).catch(() => {
+        await removeOwnedSession(sessionID, directory).catch((caught) => {
           leftoversRemoved = false;
+          error ??= caught instanceof Error ? caught.message : String(caught);
+          log(`could not clean up ${sessionID}: ${error}`);
         });
       }
     }
@@ -488,15 +546,19 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
   };
 
   const check = async (): Promise<void> => {
+    if (lifetime.signal.aborted) return;
     if (running) return running;
     running = (async () => {
       let next = CHECK_INTERVAL_MS;
       try {
         await removeLeftovers().catch(() => {});
+        lifetime.signal.throwIfAborted();
         const settings = await readSettings();
+        lifetime.signal.throwIfAborted();
         if (settings?.agentMemoryToolEnabled !== true || settings?.agentMemoryDreamingEnabled !== true) return;
         if ((await activeSessionIds()).length > 0) return;
         const pass = await findDuePass(settings);
+        lifetime.signal.throwIfAborted();
         if (!pass) return;
         await runPass(settings, pass);
         next = FOLLOW_UP_DELAY_MS;
@@ -512,14 +574,28 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
 
   return {
     start() {
-      if (!stopped) return;
+      if (!stopped || lifetime.signal.aborted) return;
       stopped = false;
       schedule(START_DELAY_MS);
     },
-    stop() {
+    stop({ deadline }: { deadline?: number } = {}) {
+      if (stopping) return stopping;
       stopped = true;
       if (timer) clearTimer(timer);
       timer = null;
+      if (!lifetime.signal.aborted) {
+        lifetime.abort(new Error('OpenChamber is shutting down'));
+        if (deadline !== undefined && Number.isFinite(deadline)) shutdownTimer = setTimer(() => cleanupDeadline.abort(new Error('Memory dreaming shutdown timed out')), Math.max(0, deadline - now()));
+      }
+      stopping = Promise.resolve(running).then(async () => {
+        for (const [sessionID, directory] of pendingCleanup) {
+          await removeOwnedSession(sessionID, directory).catch((error) => log(`could not clean up ${sessionID}: ${error.message}`));
+        }
+      }).finally(() => {
+        if (shutdownTimer) clearTimer(shutdownTimer);
+        shutdownTimer = null;
+      });
+      return stopping;
     },
     check,
   };

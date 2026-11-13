@@ -78,6 +78,30 @@ describe('graceful shutdown runtime', () => {
     vi.restoreAllMocks();
   });
 
+  it.each(['memoryDreaming', 'sessionTodosRuntime', 'extensionWaitsRuntime'])('joins %s under the shared shutdown deadline', async (name) => {
+    vi.useFakeTimers();
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const pending = Promise.withResolvers();
+    const stop = vi.fn(() => name === 'extensionWaitsRuntime' ? undefined : pending.promise);
+    const flush = vi.fn(() => pending.promise);
+    const exit = vi.fn();
+    const start = Date.now();
+    const runtime = createRuntime(null, { [name]: { stop, flush }, process: { exit } });
+    const shuttingDown = runtime.gracefulShutdown({ deadline: start + 35000, exitProcess: true });
+    expect(stop).toHaveBeenCalledOnce();
+    if (name === 'memoryDreaming') expect(stop).toHaveBeenCalledWith({ deadline: start + 34500 });
+    if (name === 'extensionWaitsRuntime') expect(flush).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(34499);
+    expect(exit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await shuttingDown;
+    expect(exit).toHaveBeenCalledExactlyOnceWith(0);
+    expect(warning).toHaveBeenCalledWith('Error stopping backend resources:', expect.objectContaining({ message: expect.stringContaining('shutdown timed out') }));
+    pending.reject(new Error('late drain failure'));
+    await Promise.resolve();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it.each([false, true])('waits for an in-flight review Stop to persist before exit (cleanup fails: %s)', async (stopFails) => {
     const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-review-shutdown-'));
     const filePath = path.join(dataDir, 'auto-review.json');
@@ -494,6 +518,26 @@ describe('graceful shutdown runtime', () => {
     await runtime.gracefulShutdown({ exitProcess: false });
 
     expect(openCodeProcess.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one backend grace window between workflow reports and memory cleanup', async () => {
+    vi.useFakeTimers();
+    const report = Promise.withResolvers();
+    const dreaming = Promise.withResolvers();
+    const backend = vi.fn(async () => {});
+    const runtime = createRuntime(null, {
+      workflowRuntime: { shutdown: () => report.promise },
+      memoryDreaming: { stop: () => dreaming.promise }, stopManagedOpenCode: backend,
+    });
+    const closing = runtime.gracefulShutdown();
+    await vi.advanceTimersByTimeAsync(1000);
+    report.resolve();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(backend).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(backend).toHaveBeenCalledTimes(1);
+    dreaming.resolve();
+    await closing;
   });
 
   it('preserves the terminal grace period within the longer shared deadline', async () => {

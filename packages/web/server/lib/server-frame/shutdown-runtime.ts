@@ -30,9 +30,10 @@ interface ShutdownDependencies {
   contextObligatoryRuntime?: OptionalStop;
   sessionWarmingRuntime?: OptionalStop;
   sessionTodosRuntime?: OptionalStop;
+  memoryDreaming?: { stop: (options: { deadline: number }) => Promise<void> | void };
   autoReviewRuntime?: (Partial<Stop> & { flush?: () => Promise<void> }) | null;
   prWatchRuntime?: OptionalStop;
-  extensionWaitsRuntime?: OptionalStop;
+  extensionWaitsRuntime?: (Partial<Stop> & { flush?: Cleanup }) | null;
   mergeFollowRuntime?: OptionalStop;
   messageQueueRuntime?: OptionalStop;
   dispatchResultsRuntime?: OptionalStop;
@@ -95,6 +96,7 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
     contextObligatoryRuntime,
     sessionWarmingRuntime,
     sessionTodosRuntime,
+    memoryDreaming,
     autoReviewRuntime,
     prWatchRuntime,
     extensionWaitsRuntime = null,
@@ -166,7 +168,21 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
       ? options.deadline
       : Date.now() + shutdownTimeoutMs;
     const remaining = () => Math.max(0, deadline - Date.now());
+    const drain = async (name: string, operation: () => unknown) => {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          operation(),
+          new Promise((_, reject) => {
+            timeout = setTimeout(() => reject(new Error(`${name} shutdown timed out`)), Math.max(0, remaining() - SHUTDOWN_FINALIZATION_RESERVE_MS));
+          }),
+        ]);
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
 
+    let dreamCleanup: void | Promise<void>;
     const cleanupOperations = [
       () => clearInterval(getRelayReconcileTimer() ?? undefined),
       () => getGuestSurfaceRuntime()?.stop(),
@@ -183,24 +199,16 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
       () => sessionGoalRuntime?.stop?.(),
       () => contextObligatoryRuntime?.stop?.(),
       () => sessionWarmingRuntime?.stop?.(),
-      () => sessionTodosRuntime?.stop?.(),
+      () => drain('Session todos', () => sessionTodosRuntime?.stop?.()),
+      () => drain('Memory dreaming', () => (dreamCleanup = memoryDreaming?.stop({ deadline: Math.max(Date.now(), deadline - SHUTDOWN_FINALIZATION_RESERVE_MS) }))),
+      () => drain('Extension waits', () => extensionWaitsRuntime?.flush?.()),
       async () => {
         autoReviewRuntime?.stop?.();
         if (!autoReviewRuntime?.flush) return;
         // Stop only disarms the loop. Join in-flight Stop work and its writes so
         // restart cannot mistake an unpersisted stopping run for a running one.
         // Share the host budget: a stuck send must not hold daemon exit forever.
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-        try {
-          await Promise.race([
-            autoReviewRuntime.flush(),
-            new Promise((_, reject) => {
-              timeout = setTimeout(() => reject(new Error('Auto-review shutdown timed out')), Math.max(0, remaining() - SHUTDOWN_FINALIZATION_RESERVE_MS));
-            }),
-          ]);
-        } finally {
-          clearTimeout(timeout);
-        }
+        await drain('Auto-review', () => autoReviewRuntime.flush?.());
       },
       () => prWatchRuntime?.stop?.(),
       () => mergeFollowRuntime?.stop?.(),
@@ -235,9 +243,9 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         const workflowDrain = workflowRuntime?.shutdown();
-        if (workflowDrain) {
+        if (workflowDrain || dreamCleanup) {
           await Promise.race([
-            workflowDrain,
+            Promise.allSettled([workflowDrain, dreamCleanup]),
             new Promise<void>(resolve => { timer = setTimeout(resolve, Math.max(0, Math.min(2000, remaining() - SHUTDOWN_FINALIZATION_RESERVE_MS))); }),
           ]);
         }

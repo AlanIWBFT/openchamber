@@ -86,6 +86,9 @@ request, and each wait request carries that same idle stop.
 - Unreadable or invalid archive state postpones the wake without spending its
   send-attempt budget. Confirmed archive or a tagged missing session ends all
   its waits without waking it.
+- Stop closes admission, unsubscribes, aborts outstanding requests and disarms
+  timers. Flush joins service checks and wake attempts before the last write,
+  within the host shutdown deadline.
 
 ## Persistence
 

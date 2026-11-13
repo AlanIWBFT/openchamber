@@ -64,6 +64,14 @@ keeping them apart keeps an agent mistake out of the user's notes.
   the pass ran cannot be told from the pass's own and is undone with it.
 - A pass's session carries `metadata.hidden: true` and is deleted when the pass
   ends, so no client or server-side consumer ever sees it.
+- Shutdown closes admission, cancels sends and polling, and joins the pass through
+  its final memory record. Session creation uses a preallocated OpenCode ID and
+  is joined even when shutdown starts before its answer; an uncertain answer
+  never triggers a second creation. Cleanup calls `session.stop` for that ID
+  before deleting it, so persistent commands have the same owner. A failed stop
+  retains the hidden record and its cleanup ownership for the next check.
+  Requests and the host drain share the shutdown
+  deadline; they do not stop unrelated user sessions.
 
 ### Why boundary types retain unchecked fields
 

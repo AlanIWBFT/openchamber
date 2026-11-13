@@ -271,6 +271,10 @@ export function createExtensionWaitsRuntime({
   let writePromise = Promise.resolve();
   let stopped = false;
   const controller = new AbortController();
+  const inFlight = new Set<Promise<unknown>>();
+  const track = trackOperations(inFlight);
+  const unsubscribers: Array<() => void> = [];
+  const requireRunning = () => { if (stopped) throw httpError('OpenChamber is shutting down', 503); };
   let checkTimer: WaitTimer | null = null;
   const checking = new Set<string>();
   const checkFailures = new Map<string, number>();
@@ -381,6 +385,7 @@ export function createExtensionWaitsRuntime({
   };
 
   const ask = async (guest: WaitProvider, requestPath: string, body: WaitServiceBody) => {
+    requireRunning();
     let answer;
     try {
       answer = await proxyServiceRequest({
@@ -402,6 +407,7 @@ export function createExtensionWaitsRuntime({
       const unavailable = UNAVAILABLE_CODES.has(failureCode(error) ?? '');
       throw Object.assign(httpError(`The extension's service could not be reached: ${failureMessage(error) ?? error}`, unavailable ? 503 : 502), { unavailable });
     }
+    requireRunning();
     if (answer.status !== 200) throw httpError(`The extension's service answered HTTP ${answer.status}`, 502);
     return parseJson(answer.body);
   };
@@ -446,6 +452,7 @@ export function createExtensionWaitsRuntime({
         parsed = waitCheckResultSchema.safeParse(body);
         if (!parsed.success) throw httpError('The extension\'s service answered a check with an unexpected body', 502);
       } catch (error) {
+        if (stopped) return;
         const failures = (checkFailures.get(key) ?? 0) + 1;
         checkFailures.set(key, failures);
         if (failures === 1) warn(`[extension-waits] ${key}: a check failed (${failureMessage(error) ?? error}); trying again later`);
@@ -458,6 +465,7 @@ export function createExtensionWaitsRuntime({
         }
         continue;
       }
+      if (stopped) return;
       checkFailures.delete(key);
       for (const wait of batch) wait.failingSince = null;
       const byId = new Map(batch.map((wait) => [wait.id, wait]));
@@ -477,9 +485,10 @@ export function createExtensionWaitsRuntime({
     }
   };
 
-  async function runChecks() {
+  const runChecks = track(async () => {
     if (stopped) return;
     await load();
+    if (stopped) return;
     const due = Array.from(waits.values()).filter((wait) => !wait.wake && wait.nextCheckAt <= now() && !checking.has(wait.id));
     for (const wait of due) checking.add(wait.id);
     try {
@@ -494,7 +503,7 @@ export function createExtensionWaitsRuntime({
       for (const sessionID of waking) arm(sessionID, 0);
     }
     scheduleChecks();
-  }
+  });
 
   const checkDue = async (dueWaits: Wait[]) => {
     for (const wait of dueWaits) {
@@ -510,6 +519,7 @@ export function createExtensionWaitsRuntime({
       for (const wait of due) wait.nextCheckAt = now() + 60_000;
       return;
     }
+    if (stopped) return;
     const groups = new Map<string, { guest: WaitProvider; type: WaitContribution; waits: Wait[] }>();
     const unavailable: Wait[] = [];
     const dropped: Wait[] = [];
@@ -539,7 +549,8 @@ export function createExtensionWaitsRuntime({
     body?: ReturnType<typeof buildWakeMessage> & { id: string; delivery: 'steer'; resume: true };
   } = {}) => {
     const headers: OpenCodeRequestHeaders = { Accept: 'application/json', ...getOpenCodeAuthHeaders() };
-    const init: RequestInit = { method, headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) };
+    requireRunning();
+    const init: RequestInit = { method, headers, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(FETCH_TIMEOUT_MS)]) };
     if (body) {
       headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(body);
@@ -553,7 +564,7 @@ export function createExtensionWaitsRuntime({
     return unwrapOpenCodeResponse(await response.json().catch(() => null));
   };
 
-  const activityProbe = createSessionActivityProbe({ buildOpenCodeUrl, getOpenCodeAuthHeaders, timeoutMs: FETCH_TIMEOUT_MS, fetchImpl });
+  const activityProbe = createSessionActivityProbe({ buildOpenCodeUrl, getOpenCodeAuthHeaders, timeoutMs: FETCH_TIMEOUT_MS, fetchImpl, signal: controller.signal });
 
   const clearWakeTimer = (sessionID: string) => {
     const timer = wakeTimers.get(sessionID);
@@ -614,7 +625,8 @@ export function createExtensionWaitsRuntime({
 
   const settle = (wait: Wait, ...ending: Wait[]) => drop(...ending).catch((error) => retry(wait, `the wait could not be removed: ${failureMessage(error) ?? error}`));
 
-  async function deliver(sessionID: string) {
+  const deliver = track(async (sessionID: string) => {
+    if (stopped) return;
     if (delivering.has(sessionID)) {
       deferred.add(sessionID);
       return;
@@ -628,7 +640,7 @@ export function createExtensionWaitsRuntime({
       delivering.delete(sessionID);
       if (deferred.delete(sessionID)) arm(sessionID);
     }
-  }
+  });
 
   async function attemptWake(wait: Wait & WakingWait) {
     const { sessionID } = wait;
@@ -695,7 +707,8 @@ export function createExtensionWaitsRuntime({
     return { waiting: waitsOf(sessionID).map(toPublicWait), sources };
   };
 
-  const startWait = async ({ sessionID: rawSessionID, directory, source, args: rawArgs }: StartWaitInput) => {
+  const startWait = track(async ({ sessionID: rawSessionID, directory, source, args: rawArgs }: StartWaitInput) => {
+    requireRunning();
     if (insideSpace) throw httpError('Waits are not available inside an isolated space', 400);
     const sessionID = requireSession(rawSessionID, 'wait.start');
     const name = isTextInput(source) ? source.trim() : '';
@@ -712,6 +725,7 @@ export function createExtensionWaitsRuntime({
       throw httpError(`The extension catalog could not be read: ${failureMessage(error) ?? error}`, 503);
     }
     const guest = providers.get(guestId);
+    requireRunning();
     const type = guest?.waits.find((entry) => entry.id === typeId);
     if (!guest || !type) throw httpError(`No extension offers the wait "${source}" here; wait.list names the ones this session can start`, 404);
     const args = parseArgs(type.params, rawArgs);
@@ -721,7 +735,7 @@ export function createExtensionWaitsRuntime({
     } finally {
       release();
     }
-  };
+  });
 
   const parseArgs = (params: Record<string, GuestWaitParam> | undefined, rawArgs: StartWaitInput['args']) => {
     const given = isTextInput(rawArgs) ? parseJson(rawArgs) ?? rawArgs : rawArgs;
@@ -737,6 +751,7 @@ export function createExtensionWaitsRuntime({
       throw httpError(`minutes must be a whole number from 1 to ${TIMER_MINUTES_MAX}`, 400);
     }
     await load();
+    requireRunning();
     const release = reserve(sessionID);
     try {
       const startedAt = now();
@@ -818,6 +833,8 @@ export function createExtensionWaitsRuntime({
   const keepWait = async (record: Wait, release: Release, next: string) => {
     try {
       await mutate(() => {
+        requireRunning();
+        // The reservation turns into the wait itself.
         release();
         waits.set(record.id, record);
         return () => {
@@ -831,9 +848,11 @@ export function createExtensionWaitsRuntime({
     return { waiting: toPublicWait(record), next };
   };
 
-  const stopWaits = async (rawSessionID: StopWaitInput['sessionID'], waitId?: StopWaitInput['waitId']) => {
+  const stopWaits = track(async (rawSessionID: StopWaitInput['sessionID'], waitId?: StopWaitInput['waitId']) => {
+    requireRunning();
     const sessionID = requireSession(rawSessionID, 'wait.stop');
     await load();
+    requireRunning();
     const every = waitId === undefined || waitId === null || waitId === '';
     const ending = waitsOf(sessionID).filter((wait) => every || wait.id === waitId);
     if (!every && ending.length === 0) throw httpError(`This session has no wait ${waitId}; wait.list names its waits`, 404);
@@ -843,9 +862,13 @@ export function createExtensionWaitsRuntime({
       throw httpError(`OpenChamber could not save the stop, so the wait goes on: ${failureMessage(error) ?? error}`, 500);
     }
     return { waiting: waitsOf(sessionID).map(toPublicWait), stopped: ending.length };
-  };
+  });
 
-  const reconcile = async () => {
+  /**
+   * The catalog changed (pause, removal, a withdrawn approval, an update):
+   * waits whose extension can no longer wake anyone end now, with a wake.
+   */
+  const reconcile = track(async () => {
     if (stopped) return;
     await load();
     let providers;
@@ -854,6 +877,8 @@ export function createExtensionWaitsRuntime({
     } catch {
       return;
     }
+    if (stopped) return;
+    // A timer has no extension that could go away.
     const pending = Array.from(waits.values()).filter((wait) => !wait.wake && !isTimer(wait));
     const unavailable = pending.filter((wait) => wait.guestId === null || !providers.has(wait.guestId));
     const dropped = pending.filter((wait) => {
@@ -867,7 +892,7 @@ export function createExtensionWaitsRuntime({
     await commit(...sessions).catch(() => undefined);
     for (const sessionID of sessions) arm(sessionID, 0);
     scheduleChecks();
-  };
+  });
 
   const processPayload = (payload: Parameters<typeof statusEventSchema.safeParse>[0]) => {
     if (stopped) return;
@@ -882,6 +907,7 @@ export function createExtensionWaitsRuntime({
   };
 
   const start = (globalEventHub?: PrWatchEventHub | null) => {
+    if (stopped) return () => {};
     const unsubscribeEvent = globalEventHub?.subscribeEvent((event) => {
       for (const payload of event?.translated?.() ?? []) processPayload(payload);
     });
@@ -895,15 +921,18 @@ export function createExtensionWaitsRuntime({
         for (const wait of waits.values()) if (wait.wake) arm(wait.sessionID);
       })
       .catch((error) => warn('[extension-waits] failed to load waits:', failureMessage(error) ?? error));
-    return () => {
+    const unsubscribe = () => {
       unsubscribeEvent?.();
       unsubscribeStatus?.();
     };
+    unsubscribers.push(unsubscribe);
+    return unsubscribe;
   };
 
   const stop = () => {
     stopped = true;
     controller.abort();
+    for (const unsubscribe of unsubscribers.splice(0)) unsubscribe();
     if (checkTimer) timers.clearTimeout(checkTimer);
     checkTimer = null;
     for (const timer of wakeTimers.values()) timers.clearTimeout(timer);
@@ -921,7 +950,11 @@ export function createExtensionWaitsRuntime({
     runChecks,
     start,
     stop,
-    flush: () => writePromise,
+    flush: async () => {
+      await Promise.allSettled([loadPromise]);
+      while (inFlight.size > 0) await Promise.allSettled([...inFlight]);
+      await writePromise;
+    },
   };
 }
 
@@ -949,3 +982,4 @@ export function registerExtensionWaitsRoutes(app: Application, runtime: ReturnTy
     }
   });
 }
+import { trackOperations } from '../shared/in-flight.js';
