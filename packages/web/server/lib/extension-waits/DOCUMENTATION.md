@@ -68,6 +68,10 @@ idle-stop rules.
   subagent runs, one wake at a time per session, the message id minted and
   persisted before the first attempt, OpenCode's 409 counts as delivered, 404
   ends the wait, eight failed attempts give up.
+- Archive lookup failure or an invalid state uses the same bounded delivery
+  retry; it never grants permission to resume. Confirmed archive or a tagged
+  `SessionNotFoundError` ends all waits for that session without a wake. The
+  archive adapter preserves the typed missing-session error.
 
 ## Persistence
 

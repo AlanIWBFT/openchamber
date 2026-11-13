@@ -659,9 +659,16 @@ export function createExtensionWaitsRuntime({
     if (!isCurrent(wait)) return undefined;
     if (subagents === null) return retry(wait, 'OpenCode could not be asked');
     if (subagents) return arm(sessionID, subagentRecheckMs);
-    const archived = await Promise.resolve(isSessionArchived(sessionID)).catch(() => false) === true;
+    let archived;
+    try {
+      archived = z.boolean().safeParse(await isSessionArchived(sessionID));
+    } catch (error) {
+      if (error?._tag === 'SessionNotFoundError') return settle(wait, ...waitsOf(sessionID));
+      return retry(wait, `Session archive state is unknown: ${error?.message ?? error}`);
+    }
     if (!isCurrent(wait)) return undefined;
-    if (archived) return settle(wait, ...waitsOf(sessionID));
+    if (!archived.success) return retry(wait, 'Session archive state is unknown');
+    if (archived.data) return settle(wait, ...waitsOf(sessionID));
     if (!wait.wake.messageID) {
       // No message goes out under an id a restart would not know: a second
       // attempt then mints another and OpenCode admits the wake twice.

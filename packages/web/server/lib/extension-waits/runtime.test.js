@@ -69,7 +69,7 @@ const createService = ({ start = () => ({ ok: true, state: { checks: 0 }, label:
   return { calls, proxyServiceRequest };
 };
 
-const createRuntime = async ({ dataDir, catalog = [guest()], service = createService(), openCode = createOpenCode(), timers, insideSpace } = {}) => {
+const createRuntime = async ({ dataDir, catalog = [guest()], service = createService(), openCode = createOpenCode(), timers, insideSpace, isSessionArchived } = {}) => {
   let eventHandler = () => {};
   const clock = { now: 1_000_000 };
   // `catalogError` set: the catalog read fails with it.
@@ -92,6 +92,7 @@ const createRuntime = async ({ dataDir, catalog = [guest()], service = createSer
     retryDelayMs: () => 5,
     subagentRecheckMs: 5,
     warn: () => {},
+    isSessionArchived,
     ...(timers ? { timers } : {}),
     insideSpace,
   });
@@ -155,6 +156,23 @@ describe('isWaitProvider', () => {
 });
 
 describe('createExtensionWaitsRuntime', () => {
+  for (const state of ['unknown', 'invalid', 'archived', 'missing']) {
+    it(`never wakes a session whose archive state is ${state}`, async () => {
+      const isSessionArchived = vi.fn(async () => {
+        if (state === 'unknown') throw new Error('network unavailable');
+        if (state === 'missing') throw Object.assign(new Error('gone'), { _tag: 'SessionNotFoundError', status: 404 });
+        return state === 'archived' ? true : undefined;
+      });
+      const service = createService({ check: (body) => ({ results: body.waits.map((wait) => ({ id: wait.id, fired: true, summary: 'Ready' })) }) });
+      const { runtime, openCode, advance } = await createRuntime({ service, isSessionArchived });
+      await runtime.startWait({ sessionID: SESSION, directory: DIRECTORY, source: 'wait-kit/timer', args: { seconds: 5 } });
+      await advance();
+      expect(await until(() => runtime.snapshot().waits.length === 0)).toBe(true);
+      expect(openCode.state.admitted).toEqual([]);
+      expect(isSessionArchived).toHaveBeenCalledTimes(state === 'unknown' || state === 'invalid' ? 8 : 1);
+    });
+  }
+
   it('starts a wait on the service, checks it, and wakes the session once when it fires', async () => {
     const service = createService({
       check: (body) => ({ results: body.waits.map((wait) => ({ id: wait.id, fired: true, summary: 'Five seconds passed' })) }),

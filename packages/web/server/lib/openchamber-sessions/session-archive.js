@@ -82,7 +82,7 @@ export const createSessionArchive = ({ store, openCode }) => {
   // read as permission to resume or deliver a result.
   const archivedAt = async (sessionID) => {
     const value = await openCode.readArchivedAt(sessionID);
-    if (value === undefined) throw new Error(`Session ${sessionID} was not found`);
+    if (value === undefined) throw Object.assign(new Error(`Session ${sessionID} was not found`), { _tag: 'SessionNotFoundError', status: 404 });
     return value;
   };
 
