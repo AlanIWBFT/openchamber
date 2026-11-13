@@ -24,6 +24,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     contextObligatoryRuntime,
     sessionWarmingRuntime,
     sessionTodosRuntime,
+    memoryDreaming,
     autoReviewRuntime,
     prWatchRuntime,
     extensionWaitsRuntime = null,
@@ -101,6 +102,19 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       ? options.deadline
       : Date.now() + shutdownTimeoutMs;
     const remaining = () => Math.max(0, deadline - Date.now());
+    const drain = async (name, operation) => {
+      let timeout;
+      try {
+        await Promise.race([
+          operation(),
+          new Promise((_, reject) => {
+            timeout = setTimeout(() => reject(new Error(`${name} shutdown timed out`)), Math.max(0, remaining() - SHUTDOWN_FINALIZATION_RESERVE_MS));
+          }),
+        ]);
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
 
     // Both embedded stop() and daemon exits use this sequence. Close admission
     // synchronously above, then stop viewers before draining their services.
@@ -120,24 +134,16 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       () => sessionGoalRuntime?.stop?.(),
       () => contextObligatoryRuntime?.stop?.(),
       () => sessionWarmingRuntime?.stop?.(),
-      () => sessionTodosRuntime?.stop?.(),
+      () => drain('Session todos', () => sessionTodosRuntime?.stop?.()),
+      () => drain('Memory dreaming', () => memoryDreaming?.stop?.({ deadline: Math.max(Date.now(), deadline - SHUTDOWN_FINALIZATION_RESERVE_MS) })),
+      () => drain('Extension waits', () => extensionWaitsRuntime?.flush?.()),
       async () => {
         autoReviewRuntime?.stop?.();
         if (!autoReviewRuntime?.flush) return;
         // Stop only disarms the loop. Join in-flight Stop work and its writes so
         // restart cannot mistake an unpersisted stopping run for a running one.
         // Share the host budget: a stuck send must not hold daemon exit forever.
-        let timeout;
-        try {
-          await Promise.race([
-            autoReviewRuntime.flush(),
-            new Promise((_, reject) => {
-              timeout = setTimeout(() => reject(new Error('Auto-review shutdown timed out')), Math.max(0, remaining() - SHUTDOWN_FINALIZATION_RESERVE_MS));
-            }),
-          ]);
-        } finally {
-          clearTimeout(timeout);
-        }
+        await drain('Auto-review', () => autoReviewRuntime.flush());
       },
       () => prWatchRuntime?.stop?.(),
       () => mergeFollowRuntime?.stop?.(),

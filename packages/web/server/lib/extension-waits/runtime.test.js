@@ -173,6 +173,31 @@ describe('createExtensionWaitsRuntime', () => {
     });
   }
 
+  it('joins a service admission in flight and refuses its late answer after stop', async () => {
+    const gate = Promise.withResolvers();
+    const entered = Promise.withResolvers();
+    const service = createService({ start: async () => { entered.resolve(); await gate.promise; return { ok: true }; } });
+    const { runtime } = await createRuntime({ service });
+    const admission = runtime.startWait({ sessionID: SESSION, directory: DIRECTORY, source: 'wait-kit/timer', args: { seconds: 5 } });
+    const outcome = admission.then(() => 'admitted', () => 'refused');
+    await entered.promise;
+    runtime.stop();
+    let flushed = false;
+    const flushing = runtime.flush().then(() => { flushed = true; });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(flushed).toBe(false);
+    } finally {
+      gate.resolve();
+      await flushing;
+      await outcome;
+    }
+    expect(await outcome).toBe('refused');
+    expect(runtime.snapshot().waits).toEqual([]);
+    await expect(runtime.startWait({ sessionID: SESSION, directory: DIRECTORY, source: 'wait-kit/timer', args: { seconds: 5 } })).rejects.toMatchObject({ status: 503 });
+    expect(service.calls).toHaveLength(1);
+  });
+
   it('starts a wait on the service, checks it, and wakes the session once when it fires', async () => {
     const service = createService({
       check: (body) => ({ results: body.waits.map((wait) => ({ id: wait.id, fired: true, summary: 'Five seconds passed' })) }),

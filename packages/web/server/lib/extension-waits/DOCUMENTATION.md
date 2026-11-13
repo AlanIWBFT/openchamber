@@ -72,6 +72,10 @@ idle-stop rules.
   retry; it never grants permission to resume. Confirmed archive or a tagged
   `SessionNotFoundError` ends all waits for that session without a wake. The
   archive adapter preserves the typed missing-session error.
+- Stop closes admission and subscriptions, aborts service and OpenCode reads,
+  and disarms timers. Flush joins starts, checks, reconciliation and wake attempts
+  before their final persistence queue. A late service answer cannot admit a new
+  wait. The host waits for this drain within its shared shutdown deadline.
 
 ## Persistence
 

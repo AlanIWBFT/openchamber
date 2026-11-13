@@ -247,6 +247,17 @@ export function createExtensionWaitsRuntime({
   let writePromise = Promise.resolve();
   let stopped = false;
   const controller = new AbortController();
+  const inFlight = new Set();
+  const unsubscribers = [];
+  const track = (operation) => (...args) => {
+    const pending = operation(...args);
+    inFlight.add(pending);
+    void pending.then(() => inFlight.delete(pending), () => inFlight.delete(pending));
+    return pending;
+  };
+  const requireRunning = () => {
+    if (stopped) throw httpError('OpenChamber is shutting down', 503);
+  };
   // Checks: one timer for the earliest due wait, one request per type at a time.
   let checkTimer = null;
   const checking = new Set();
@@ -385,6 +396,7 @@ export function createExtensionWaitsRuntime({
 
   /** Posts one request to the guest's service; answers the parsed JSON body, or throws with a status for the agent. */
   const ask = async (guest, requestPath, body) => {
+    requireRunning();
     let answer;
     try {
       answer = await proxyServiceRequest({
@@ -406,6 +418,7 @@ export function createExtensionWaitsRuntime({
       const unavailable = UNAVAILABLE_CODES.has(error?.code);
       throw Object.assign(httpError(`The extension's service could not be reached: ${error?.message ?? error}`, unavailable ? 503 : 502), { unavailable });
     }
+    requireRunning();
     if (answer.status !== 200) throw httpError(`The extension's service answered HTTP ${answer.status}`, 502);
     return parseJson(answer.body);
   };
@@ -453,6 +466,7 @@ export function createExtensionWaitsRuntime({
         parsed = waitCheckResultSchema.safeParse(body);
         if (!parsed.success) throw httpError('The extension\'s service answered a check with an unexpected body', 502);
       } catch (error) {
+        if (stopped) return;
         const failures = (checkFailures.get(key) ?? 0) + 1;
         checkFailures.set(key, failures);
         if (failures === 1) warn(`[extension-waits] ${key}: a check failed (${error?.message ?? error}); trying again later`);
@@ -465,6 +479,7 @@ export function createExtensionWaitsRuntime({
         }
         continue;
       }
+      if (stopped) return;
       checkFailures.delete(key);
       for (const wait of batch) wait.failingSince = null;
       const byId = new Map(batch.map((wait) => [wait.id, wait]));
@@ -486,9 +501,10 @@ export function createExtensionWaitsRuntime({
     }
   };
 
-  async function runChecks() {
+  const runChecks = track(async () => {
     if (stopped) return;
     await load();
+    if (stopped) return;
     const due = Array.from(waits.values()).filter((wait) => !wait.wake && wait.nextCheckAt <= now() && !checking.has(wait.id));
     // Claimed before the first await: a run a stop, a start or a wake schedules
     // meanwhile must not check them a second time.
@@ -506,7 +522,7 @@ export function createExtensionWaitsRuntime({
       for (const sessionID of waking) arm(sessionID, 0);
     }
     scheduleChecks();
-  }
+  });
 
   const checkDue = async (dueWaits) => {
     // A timer is due on the clock alone: marked before the catalog read, so a
@@ -522,11 +538,13 @@ export function createExtensionWaitsRuntime({
       providers = await listProviders();
     } catch (error) {
       // A catalog that cannot be read changes nothing: it is not an empty catalog.
+      if (stopped) return;
       warn('[extension-waits] the extension catalog could not be read:', error?.message ?? error);
       for (const wait of due) wait.nextCheckAt = now() + 60_000;
       return;
     }
     /** `<guestId>/<type>` → { guest, type, waits } */
+    if (stopped) return;
     const groups = new Map();
     const unavailable = [];
     const dropped = [];
@@ -549,8 +567,9 @@ export function createExtensionWaitsRuntime({
   // --- wake ----------------------------------------------------------------
 
   const openCodeRequest = async (fetchPath, { method = 'GET', body } = {}) => {
+    requireRunning();
     const headers = { Accept: 'application/json', ...getOpenCodeAuthHeaders() };
-    const init = { method, headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) };
+    const init = { method, headers, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(FETCH_TIMEOUT_MS)]) };
     if (body) {
       headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(body);
@@ -564,7 +583,7 @@ export function createExtensionWaitsRuntime({
     return unwrapOpenCodeResponse(await response.json().catch(() => null));
   };
 
-  const activityProbe = createSessionActivityProbe({ buildOpenCodeUrl, getOpenCodeAuthHeaders, timeoutMs: FETCH_TIMEOUT_MS, fetchImpl });
+  const activityProbe = createSessionActivityProbe({ buildOpenCodeUrl, getOpenCodeAuthHeaders, timeoutMs: FETCH_TIMEOUT_MS, fetchImpl, signal: controller.signal });
 
   const clearWakeTimer = (sessionID) => {
     const timer = wakeTimers.get(sessionID);
@@ -629,7 +648,8 @@ export function createExtensionWaitsRuntime({
   /** Removes waits a wake is done with; a removal that could not be saved is tried again like a failed delivery. */
   const settle = (wait, ...ending) => drop(...ending).catch((error) => retry(wait, `the wait could not be removed: ${error?.message ?? error}`));
 
-  async function deliver(sessionID) {
+  const deliver = track(async (sessionID) => {
+    if (stopped) return;
     if (delivering.has(sessionID)) {
       // An idle event or another wait's wake while an attempt is in flight:
       // tried again once that attempt is over, never lost.
@@ -646,7 +666,7 @@ export function createExtensionWaitsRuntime({
       // After the quiet delay: a wake just delivered must first show as a running turn.
       if (deferred.delete(sessionID)) arm(sessionID);
     }
-  }
+  });
 
   async function attemptWake(wait) {
     const { sessionID } = wait;
@@ -729,7 +749,8 @@ export function createExtensionWaitsRuntime({
    * fails now instead of never waking; a timer is kept once its minutes check
    * out.
    */
-  const startWait = async ({ sessionID: rawSessionID, directory, source, args: rawArgs }) => {
+  const startWait = track(async ({ sessionID: rawSessionID, directory, source, args: rawArgs }) => {
+    requireRunning();
     if (insideSpace) throw httpError('Waits are not available inside an isolated space', 400);
     const sessionID = requireSession(rawSessionID, 'wait.start');
     const name = typeof source === 'string' ? source.trim() : '';
@@ -745,6 +766,7 @@ export function createExtensionWaitsRuntime({
       throw httpError(`The extension catalog could not be read: ${error?.message ?? error}`, 503);
     }
     const guest = providers.get(guestId);
+    requireRunning();
     const type = guest?.waits.find((entry) => entry.id === typeId);
     if (!guest || !type) throw httpError(`No extension offers the wait "${source}" here; wait.list names the ones this session can start`, 404);
     const args = parseArgs(type.params, rawArgs);
@@ -756,7 +778,7 @@ export function createExtensionWaitsRuntime({
     } finally {
       release();
     }
-  };
+  });
 
   /** The agent's arguments checked against a source's params. */
   const parseArgs = (params, rawArgs) => {
@@ -775,6 +797,7 @@ export function createExtensionWaitsRuntime({
       throw httpError(`minutes must be a whole number from 1 to ${TIMER_MINUTES_MAX}`, 400);
     }
     await load();
+    requireRunning();
     const release = reserve(sessionID);
     try {
       const startedAt = now();
@@ -860,6 +883,7 @@ export function createExtensionWaitsRuntime({
   const keepWait = async (record, release, next) => {
     try {
       await mutate(() => {
+        requireRunning();
         // The reservation turns into the wait itself.
         release();
         waits.set(record.id, record);
@@ -875,9 +899,11 @@ export function createExtensionWaitsRuntime({
   };
 
   /** Stops the wait `waitId`, or every wait of the session without it; nothing it stopped wakes the session. */
-  const stopWaits = async (rawSessionID, waitId) => {
+  const stopWaits = track(async (rawSessionID, waitId) => {
+    requireRunning();
     const sessionID = requireSession(rawSessionID, 'wait.stop');
     await load();
+    requireRunning();
     const every = waitId === undefined || waitId === null || waitId === '';
     const ending = waitsOf(sessionID).filter((wait) => every || wait.id === waitId);
     if (!every && ending.length === 0) throw httpError(`This session has no wait ${waitId}; wait.list names its waits`, 404);
@@ -887,13 +913,13 @@ export function createExtensionWaitsRuntime({
       throw httpError(`OpenChamber could not save the stop, so the wait goes on: ${error?.message ?? error}`, 500);
     }
     return { waiting: waitsOf(sessionID).map(toPublicWait), stopped: ending.length };
-  };
+  });
 
   /**
    * The catalog changed (pause, removal, a withdrawn approval, an update):
    * waits whose extension can no longer wake anyone end now, with a wake.
    */
-  const reconcile = async () => {
+  const reconcile = track(async () => {
     if (stopped) return;
     await load();
     let providers;
@@ -902,6 +928,7 @@ export function createExtensionWaitsRuntime({
     } catch {
       return;
     }
+    if (stopped) return;
     // A timer has no extension that could go away.
     const pending = Array.from(waits.values()).filter((wait) => !wait.wake && !isTimer(wait));
     const unavailable = pending.filter((wait) => !providers.has(wait.guestId));
@@ -913,7 +940,7 @@ export function createExtensionWaitsRuntime({
     await commit(...sessions).catch(() => undefined);
     for (const sessionID of sessions) arm(sessionID, 0);
     scheduleChecks();
-  };
+  });
 
   const processPayload = (payload) => {
     if (stopped) return;
@@ -928,6 +955,7 @@ export function createExtensionWaitsRuntime({
   };
 
   const start = (globalEventHub) => {
+    if (stopped) return () => {};
     const unsubscribeEvent = globalEventHub?.subscribeEvent((event) => {
       for (const payload of event?.translated?.() ?? []) processPayload(payload);
     });
@@ -941,15 +969,18 @@ export function createExtensionWaitsRuntime({
         for (const wait of waits.values()) if (wait.wake) arm(wait.sessionID);
       })
       .catch((error) => warn('[extension-waits] failed to load waits:', error?.message ?? error));
-    return () => {
+    const unsubscribe = () => {
       unsubscribeEvent?.();
       unsubscribeStatus?.();
     };
+    unsubscribers.push(unsubscribe);
+    return unsubscribe;
   };
 
   const stop = () => {
     stopped = true;
     controller.abort();
+    for (const unsubscribe of unsubscribers.splice(0)) unsubscribe();
     if (checkTimer) timers.clearTimeout(checkTimer);
     checkTimer = null;
     for (const timer of wakeTimers.values()) timers.clearTimeout(timer);
@@ -967,7 +998,11 @@ export function createExtensionWaitsRuntime({
     runChecks,
     start,
     stop,
-    flush: () => writePromise,
+    flush: async () => {
+      await Promise.allSettled([loadPromise]);
+      while (inFlight.size > 0) await Promise.allSettled([...inFlight]);
+      await writePromise;
+    },
   };
 }
 

@@ -202,6 +202,15 @@ export const createSessionTodosRuntime = ({
   let persistTimer = null;
   let writeChain = Promise.resolve();
   let stopped = false;
+  let stopPromise = null;
+  const controller = new AbortController();
+  const inFlight = new Set();
+  const track = (operation) => (...args) => {
+    const pending = operation(...args);
+    inFlight.add(pending);
+    void pending.then(() => inFlight.delete(pending), () => inFlight.delete(pending));
+    return pending;
+  };
   const unsubscribers = [];
 
   const headers = (directory) => {
@@ -212,14 +221,17 @@ export const createSessionTodosRuntime = ({
   };
 
   const readJson = async (route, { directory = '', query } = {}) => {
+    controller.signal.throwIfAborted();
     const url = buildOpenCodeUrl(route, '');
     const response = await fetchImpl(query ? `${url}?${new URLSearchParams(query)}` : url, {
       method: 'GET',
       headers: headers(directory),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
     });
     if (!response.ok) throw new Error(`${route} answered ${response.status}`);
-    return unwrapOpenCodeResponse(await response.json());
+    const body = await response.json();
+    controller.signal.throwIfAborted();
+    return unwrapOpenCodeResponse(body);
   };
 
   // ----- Persistence -----
@@ -269,7 +281,7 @@ export const createSessionTodosRuntime = ({
       parsed = { success: false };
     }
     // Derived data: a file this version cannot read is rebuilt from the history.
-    if (!parsed.success) return;
+    if (stopped || !parsed.success) return;
     for (const [sessionId, value] of Object.entries(parsed.data.sessions)) {
       const record = storedRecordSchema.safeParse(value);
       if (!sessionIdSchema.safeParse(sessionId).success || !record.success || records.has(sessionId)) continue;
@@ -382,6 +394,7 @@ export const createSessionTodosRuntime = ({
    * connection to this server may not have dropped.
    */
   const onConnected = () => {
+    if (stopped) return;
     openCalls.clear();
     flags.clear();
     // The flag may have been turned off unseen.
@@ -485,7 +498,7 @@ export const createSessionTodosRuntime = ({
       if (stopped) return;
       const found = await findInHistory(sessionId, before?.checkedThrough ?? null);
       // An event wrote a newer list meanwhile.
-      if ((records.get(sessionId)?.generation ?? null) !== startedAt) return;
+      if (stopped || (records.get(sessionId)?.generation ?? null) !== startedAt) return;
       const todos = found.todos ?? before?.todos ?? [];
       const unchanged = before && found.todos === null;
       if (unchanged) {
@@ -508,29 +521,41 @@ export const createSessionTodosRuntime = ({
    * off in the session's directory (and for an isolated space, whose history
    * this server cannot read), else the list. Throws when it cannot be told.
    */
-  const read = async (sessionId, directory) => {
+  const read = track(async (sessionId, directory) => {
+    controller.signal.throwIfAborted();
     if (isSpaceDirectory(directory) || !(await isEnabled(directory))) return { revision, state: 'off' };
+    controller.signal.throwIfAborted();
     if (!records.get(sessionId)?.verified) await refreshFromHistory(sessionId, directory);
+    controller.signal.throwIfAborted();
     return { revision, state: 'ready', todos: records.get(sessionId)?.todos ?? [] };
-  };
+  });
 
-  const start = async () => {
+  const start = track(async () => {
+    if (stopped) return;
     await load();
+    if (stopped) return;
     unsubscribers.push(globalEventHub.subscribeEvent((event) => processPayload(event?.payload)));
     unsubscribers.push(globalEventHub.subscribeStatus((status) => {
       if (status?.type === 'connect') onConnected();
     }));
-  };
+  });
 
-  const stop = async () => {
+  const stop = () => {
+    if (stopPromise) return stopPromise;
     stopped = true;
+    controller.abort();
     for (const unsubscribe of unsubscribers.splice(0)) unsubscribe?.();
+    const needsPersist = Boolean(persistTimer);
     if (persistTimer) {
       clearTimer(persistTimer);
       persistTimer = null;
-      await writeFile();
     }
-    await writeChain;
+    stopPromise = (async () => {
+      while (inFlight.size > 0) await Promise.allSettled([...inFlight]);
+      if (needsPersist) await writeFile();
+      await writeChain;
+    })();
+    return stopPromise;
   };
 
   return { start, stop, read, processPayload, onConnected };

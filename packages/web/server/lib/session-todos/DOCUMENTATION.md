@@ -63,6 +63,10 @@ the data dir, the `/api/session-todos/:sessionId` route and the
   space's own OpenCode.
 - A route that cannot tell (OpenCode did not answer) fails with 502; the UI
   keeps what it shows.
+- Stop closes read and event admission, aborts history/config requests, and joins
+  startup and in-flight reads before the final queued write. Late answers cannot
+  install subscriptions, publish lists or schedule more writes. The host bounds
+  this drain by its shared shutdown deadline.
 
 ## Decisions
 

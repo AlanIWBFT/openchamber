@@ -2548,6 +2548,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   contextObligatoryRuntime,
   sessionWarmingRuntime,
   sessionTodosRuntime,
+  memoryDreaming,
   autoReviewRuntime,
   prWatchRuntime,
   extensionWaitsRuntime,

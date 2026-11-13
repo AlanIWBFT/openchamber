@@ -18,6 +18,7 @@
  */
 
 import { z } from 'zod';
+import { Session } from '@opencode/schema';
 
 import { asNonEmptyString, isRecord } from '../shared/guards.js';
 
@@ -196,6 +197,7 @@ export const createMemoryDreaming = (deps) => {
     resolveProjectId,
     measureIndex,
     hiddenSessions,
+    createSessionId = () => Session.ID.create(),
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     emitMemoryChanged = () => {},
@@ -214,22 +216,50 @@ export const createMemoryDreaming = (deps) => {
 
   let timer = null;
   let running = null;
+  let stopping = null;
   let stopped = true;
   let leftoversRemoved = false;
+  const pendingCleanup = new Map();
+  const lifetime = new AbortController();
+  const cleanupDeadline = new AbortController();
+  let shutdownTimer = null;
 
-  const request = async (method, pathname, { directory, body, signal } = {}) => {
+  const request = async (method, pathname, { directory, body, signal = lifetime.signal } = {}) => {
     const timeout = AbortSignal.timeout(requestTimeoutMs);
     const headers = { ...getOpenCodeAuthHeaders() };
     if (directory) headers['x-opencode-directory'] = encodeURIComponent(directory);
-    const init = { method, headers, signal: signal ? AbortSignal.any([signal, timeout]) : timeout };
+    const requestSignal = AbortSignal.any([timeout, cleanupDeadline.signal, ...(signal ? [signal] : [])]);
+    requestSignal.throwIfAborted();
+    const init = { method, headers, signal: requestSignal };
     if (body) {
       headers['content-type'] = 'application/json';
       init.body = JSON.stringify(body);
     }
     const response = await fetchImpl(buildOpenCodeUrl(pathname, ''), init);
-    if (!response.ok) throw new Error(`${method} ${pathname} answered ${response.status}`);
     const text = await response.text();
+    if (!response.ok) {
+      let detail;
+      try { detail = JSON.parse(text); } catch { /* An HTTP error need not have a JSON body. */ }
+      throw Object.assign(new Error(`${method} ${pathname} answered ${response.status}`), { status: response.status, _tag: detail?._tag });
+    }
     return text ? JSON.parse(text) : null;
+  };
+
+  const removeOwnedSession = async (sessionID, directory) => {
+    pendingCleanup.set(sessionID, directory);
+    // Stop owns the turn and persistent execs. A failed stop leaves the hidden
+    // record for the next cleanup instead of deleting its ownership evidence.
+    const answer = await request('POST', `/api/session/${encodeURIComponent(sessionID)}/stop`, { directory, signal: null })
+      .catch((error) => {
+        if (error?._tag === 'SessionNotFoundError') return null;
+        throw error;
+      });
+    if (answer !== null) {
+      const result = z.object({ failed: z.number().int().nonnegative() }).parse(answer?.data ?? answer);
+      if (result.failed > 0) throw new Error(`Could not stop ${result.failed} memory pass commands`);
+      await request('DELETE', `/api/session/${encodeURIComponent(sessionID)}`, { signal: null });
+    }
+    pendingCleanup.delete(sessionID);
   };
 
   const activeSessionIds = async () => {
@@ -244,6 +274,12 @@ export const createMemoryDreaming = (deps) => {
    * them by kind meanwhile (`../opencode/hidden-sessions.js`).
    */
   const removeLeftovers = async () => {
+    // Visibility is not ownership: failed cleanup remains hidden, but still
+    // belongs to us and must be retried independently of the discovery filter.
+    for (const [sessionID, directory] of pendingCleanup) {
+      lifetime.signal.throwIfAborted();
+      await removeOwnedSession(sessionID, directory).catch(() => {});
+    }
     if (leftoversRemoved) return;
     let cursor = null;
     let complete = true;
@@ -251,9 +287,10 @@ export const createMemoryDreaming = (deps) => {
       const answer = await request('GET', `/api/session?limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
       const sessions = Array.isArray(answer?.data) ? answer.data : Array.isArray(answer) ? answer : [];
       for (const session of sessions) {
+        lifetime.signal.throwIfAborted();
         if (session?.metadata?.openchamber?.kind !== DREAM_SESSION_KIND || hiddenSessions.has(session.id)) continue;
         hiddenSessions.add(session.id);
-        await request('DELETE', `/api/session/${encodeURIComponent(session.id)}`).catch(() => { complete = false; });
+        await removeOwnedSession(session.id, session.location?.directory).catch(() => { complete = false; });
       }
       cursor = asNonEmptyString(answer?.cursor?.next);
       if (!cursor) break;
@@ -338,11 +375,14 @@ export const createMemoryDreaming = (deps) => {
     let error = null;
     let merged = { project: 0, global: 0, toDocs: [] };
     const controller = new AbortController();
+    const signal = AbortSignal.any([lifetime.signal, controller.signal]);
     const timeout = setTimer(() => controller.abort(), passTimeoutMs);
     try {
+      signal.throwIfAborted();
       // `hidden` keeps the session from every client from its first event on
       // (`../opencode/hidden-sessions.js`); the kind is how a leftover is found.
       const session = {
+        id: createSessionId(),
         title: 'Memory dreaming',
         location: { directory },
         metadata: { hidden: true, openchamber: { kind: DREAM_SESSION_KIND } },
@@ -350,12 +390,17 @@ export const createMemoryDreaming = (deps) => {
       };
       // Without a model OpenCode starts the session on its own default.
       if (model) session.model = model;
-      const created = createdSessionSchema.safeParse(await request('POST', '/api/session', { directory, body: session }));
-      if (!created.success) throw new Error('OpenCode did not say which session it created');
-      sessionID = created.data;
+      sessionID = session.id;
       hiddenSessions.add(sessionID);
+      // Preallocate the supported OpenCode id so an uncertain response never
+      // loses ownership. Join this one create during shutdown, bounded by the
+      // host deadline, then clean it up; never retry by creating another id.
+      const created = createdSessionSchema.safeParse(await request('POST', '/api/session', { directory, body: session, signal: controller.signal }));
+      if (!created.success || created.data !== sessionID) throw new Error('OpenCode did not confirm the owned session');
+      signal.throwIfAborted();
       await request('POST', `/api/session/${sessionID}/prompt`, {
         directory,
+        signal,
         body: {
           text: buildDreamPrompt({
             directory,
@@ -369,28 +414,37 @@ export const createMemoryDreaming = (deps) => {
       const promptedAt = now();
       let seenRunning = false;
       for (;;) {
-        await new Promise((resolve) => setTimer(resolve, pollIntervalMs));
-        if (controller.signal.aborted) throw new Error('aborted');
-        const active = await request('GET', '/api/session/active', { signal: controller.signal });
+        signal.throwIfAborted();
+        await new Promise((resolve, reject) => {
+          const abort = () => { clearTimer(waitTimer); reject(signal.reason); };
+          const waitTimer = setTimer(() => { signal.removeEventListener('abort', abort); resolve(); }, pollIntervalMs);
+          signal.addEventListener('abort', abort, { once: true });
+        });
+        signal.throwIfAborted();
+        const active = await request('GET', '/api/session/active', { signal });
         const data = isRecord(active?.data) ? active.data : isRecord(active) ? active : {};
         if (data[sessionID]) seenRunning = true;
         else if (seenRunning || now() - promptedAt > START_GRACE_MS) break;
       }
-      const answer = messagesSchema.safeParse(await request('GET', `/api/session/${sessionID}/message`, { directory }));
+      signal.throwIfAborted();
+      const answer = messagesSchema.safeParse(await request('GET', `/api/session/${sessionID}/message`, { directory, signal }));
+      signal.throwIfAborted();
       if (!answer.success) throw new Error('Could not read how the pass ended');
       const messages = answer.data;
       const failure = readTurnFailure(messages);
       if (failure) throw new Error(failure);
       merged = readMergedCount(messages);
     } catch (caught) {
-      error = controller.signal.aborted ? 'The pass did not finish in time' : (caught instanceof Error ? caught.message : String(caught));
-      if (sessionID) await request('POST', `/api/session/${sessionID}/interrupt`, { directory }).catch(() => {});
+      error = lifetime.signal.aborted ? 'OpenChamber is shutting down'
+        : controller.signal.aborted ? 'The pass did not finish in time' : (caught instanceof Error ? caught.message : String(caught));
     } finally {
       clearTimer(timeout);
       // Stays registered as hidden: events after the delete, or a session whose delete failed, stay unseen.
       if (sessionID) {
-        await request('DELETE', `/api/session/${sessionID}`).catch(() => {
+        await removeOwnedSession(sessionID, directory).catch((caught) => {
           leftoversRemoved = false;
+          error ??= caught instanceof Error ? caught.message : String(caught);
+          log(`could not clean up ${sessionID}: ${error}`);
         });
       }
     }
@@ -435,15 +489,19 @@ export const createMemoryDreaming = (deps) => {
 
   /** One look: a pass when one is due and nothing runs, then the next look. */
   const check = async () => {
+    if (lifetime.signal.aborted) return;
     if (running) return running;
     running = (async () => {
       let next = CHECK_INTERVAL_MS;
       try {
         await removeLeftovers().catch(() => {});
+        lifetime.signal.throwIfAborted();
         const settings = await readSettings();
+        lifetime.signal.throwIfAborted();
         if (settings?.agentMemoryToolEnabled !== true || settings?.agentMemoryDreamingEnabled !== true) return;
         if ((await activeSessionIds()).length > 0) return;
         const pass = await findDuePass(settings);
+        lifetime.signal.throwIfAborted();
         if (!pass) return;
         await runPass(settings, pass);
         next = FOLLOW_UP_DELAY_MS;
@@ -459,14 +517,28 @@ export const createMemoryDreaming = (deps) => {
 
   return {
     start() {
-      if (!stopped) return;
+      if (!stopped || lifetime.signal.aborted) return;
       stopped = false;
       schedule(START_DELAY_MS);
     },
-    stop() {
+    stop({ deadline } = {}) {
+      if (stopping) return stopping;
       stopped = true;
       if (timer) clearTimer(timer);
       timer = null;
+      if (!lifetime.signal.aborted) {
+        lifetime.abort(new Error('OpenChamber is shutting down'));
+        if (Number.isFinite(deadline)) shutdownTimer = setTimer(() => cleanupDeadline.abort(new Error('Memory dreaming shutdown timed out')), Math.max(0, deadline - now()));
+      }
+      stopping = Promise.resolve(running).then(async () => {
+        for (const [sessionID, directory] of pendingCleanup) {
+          await removeOwnedSession(sessionID, directory).catch((error) => log(`could not clean up ${sessionID}: ${error.message}`));
+        }
+      }).finally(() => {
+        if (shutdownTimer) clearTimer(shutdownTimer);
+        shutdownTimer = null;
+      });
+      return stopping;
     },
     check,
   };

@@ -99,6 +99,44 @@ describe('whether the tool is on', () => {
 });
 
 describe('session todos', () => {
+  it('cancels and joins a late history read before its final persist', async () => {
+    const { runtime, fetchImpl, events, dataDir } = makeRuntime();
+    await runtime.start();
+    const original = fetchImpl.getMockImplementation();
+    const entered = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    let requestSignal;
+    fetchImpl.mockImplementation(async (url, init) => {
+      if (new URL(url).pathname.endsWith('/message')) {
+        requestSignal = init.signal;
+        entered.resolve();
+        await release.promise;
+        return Response.json({ data: [message(200, [todoCall(list(['Late', 'pending']))])], cursor: {} });
+      }
+      return original(url, init);
+    });
+    const reading = runtime.read(SESSION, DIRECTORY).catch(() => undefined);
+    await entered.promise;
+    callTodos(runtime, list(['Accepted before stop', 'completed']));
+    let stopped = false;
+    const stopping = runtime.stop().then(() => { stopped = true; });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(requestSignal.aborted).toBe(true);
+      expect(stopped).toBe(false);
+    } finally {
+      release.resolve();
+      await Promise.all([reading, stopping]);
+    }
+    expect(events.filter((event) => event.properties.todos)).toHaveLength(1);
+    const files = await fs.promises.readdir(dataDir);
+    const saved = JSON.parse(await fs.promises.readFile(path.join(dataDir, files.find((file) => file.endsWith('.json'))), 'utf8'));
+    expect(saved.sessions[SESSION].todos).toEqual(list(['Accepted before stop', 'completed']));
+    const calls = fetchImpl.mock.calls.length;
+    await expect(runtime.read(SESSION, DIRECTORY)).rejects.toBeDefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(calls);
+  });
+
   it('stays off and reads no history while the tool is off', async () => {
     const { runtime, messageReads } = makeRuntime({ config: [] });
     expect(await runtime.read(SESSION, DIRECTORY)).toMatchObject({ state: 'off' });
