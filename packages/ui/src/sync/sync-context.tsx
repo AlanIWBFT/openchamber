@@ -3530,10 +3530,7 @@ export function SyncProvider(props: {
         if (!replayReset && isFirstConnect && !pipelineDisconnectedBeforeFirstConnectRef.current) {
           return
         }
-        if (!replayReset && isRecentBoot()) {
-          return
-        }
-        if (replayed) {
+        if (replayed && !replayReset) {
           // Every event of the gap arrived, so transcripts and session records
           // are not read again.
           for (const dir of childStores.children.keys()) triggerDirectoryResync(dir, "stream-replayed")

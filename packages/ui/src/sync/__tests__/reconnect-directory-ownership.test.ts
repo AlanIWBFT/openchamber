@@ -48,8 +48,32 @@ function setup(onMessages?: () => void) {
   setSyncRefs(opencodeClient.getSdkClient(), manager, directory, (id, owner) => routing.sessionDirectoryById.set(id, owner))
   routing.sessionDirectoryById.set(other.id, other.directory)
   const recover = (isStale = () => false) => resyncDirectoryAfterReconnect(directory, store, routing, "stale-status-resync", isStale)
-  return { directory, own, other, store, manager, status, getSession, forms, messageReads, routing, recover }
+  return { directory, own, other, store, manager, status, getSession, forms, permissions, messageReads, routing, recover }
 }
+
+test("a complete replay refreshes live status and pending requests without rereading records or transcripts", async () => {
+  const { directory, own, store, status, getSession, forms, permissions, messageReads, routing } = setup()
+  const permission = { id: "per_after_replay", sessionID: own.id, action: "edit", resources: [], metadata: {} }
+  permissions.mockResolvedValue([permission])
+  expect(await resyncDirectoryAfterReconnect(directory, store, routing, "stream-replayed", () => false)).toBe(true)
+  expect(status).toHaveBeenCalledTimes(1)
+  expect(forms).toHaveBeenCalledTimes(1)
+  expect(permissions).toHaveBeenCalledTimes(1)
+  expect(store.getState().session_status[own.id]).toEqual({ type: "busy" })
+  expect(store.getState().permission[own.id]).toEqual([permission])
+  expect(getSession).not.toHaveBeenCalled()
+  expect(messageReads).toEqual([])
+})
+
+test("a gap repair after replay still rereads the transcript and reports failed live reads", async () => {
+  const { directory, own, store, status, getSession, messageReads, routing } = setup()
+  store.setState({ session_status: { [own.id]: { type: "busy" } } })
+  status.mockResolvedValue(null)
+  expect(await resyncDirectoryAfterReconnect(directory, store, routing, "stream-replayed", () => false)).toBe(false)
+  expect(getSession).not.toHaveBeenCalled()
+  expect(await resyncDirectoryAfterReconnect(directory, store, routing, "stream-reconnect", () => false)).toBe(false)
+  expect(messageReads).toEqual([own.id])
+})
 
 test("a global active snapshot recovers only this directory's sessions", async () => {
   const { own, other, store, getSession, messageReads, routing, recover } = setup()
