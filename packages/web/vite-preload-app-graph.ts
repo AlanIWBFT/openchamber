@@ -1,4 +1,4 @@
-import type { Plugin } from 'vite';
+import { normalizePath, type Plugin } from 'vite';
 
 /**
  * Starts fetching the desktop application's code while the document is still
@@ -54,7 +54,7 @@ export const preloadAppGraph = (options: {
       handler(_html, context) {
         const bundle = context.bundle;
         if (!bundle || !context.chunk || !context.filename.endsWith(`/${options.document}`)) return;
-        const app = Object.values(bundle).find((chunk) => chunk.type === 'chunk' && Object.hasOwn(chunk.modules, options.appModule));
+        const app = Object.values(bundle).find((chunk) => chunk.type === 'chunk' && Object.hasOwn(chunk.modules, normalizePath(options.appModule)));
         if (!app) {
           this.error(`preloadAppGraph: no chunk for ${options.appModule}`);
         }
