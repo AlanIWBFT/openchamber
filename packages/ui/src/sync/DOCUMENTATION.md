@@ -153,6 +153,13 @@ time, so continuing could compact an unrelated session with the same ID. Returni
 to the original runtime does not resume the cancelled operation.
 ## Message creation order and read recovery
 
+A WebSocket ready frame proving the retained suffix covers the previous cursor
+uses the upstream replay recovery path: status, forms, permissions and running
+execs still refresh, while session/transcript rereads are skipped. Missing cursors,
+SSE and replay resets use full recovery, including reconnects during startup's
+recent-boot window. A gap requested while replay recovery runs queues a full repair
+after it, under the same runtime, SDK, directory and snapshot revision guards.
+
 Stored message reads carry the backend's creation `seq`. This orders messages;
 it is not an update revision. Parts retain their order within the message array.
 Queued input and live records whose creation sequence is not yet known stay
