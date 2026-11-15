@@ -167,5 +167,5 @@ export const createSharePageStore = ({ fsPromises, path, dataDir, now = Date.now
     return [...groups.values()];
   };
 
-  return { load, save, saveDocument, readDocument, get, list };
+  return { load, save, saveDocument, readDocument, get, list, flush: () => writeChain };
 };

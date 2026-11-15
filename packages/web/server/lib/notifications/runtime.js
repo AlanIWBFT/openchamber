@@ -264,6 +264,7 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   // Answers to shared pages waiting to be announced together (`notifyShareAnswer`).
   let shareAnswerBatch = null;
+  let shareAnswersStopped = false;
 
   /**
    * Answers of this session still waiting in the batch are handled too. The
@@ -1411,7 +1412,7 @@ export const createNotificationTriggerRuntime = (deps) => {
    */
   const announceShareAnswers = async (answers) => {
     const settings = await readSettingsFromDisk();
-    if (settings.notifyOnCompletion === false) return;
+    if (shareAnswersStopped || settings.notifyOnCompletion === false) return;
     const texts = notificationTexts(settings.locale);
     const newest = answers.at(-1);
     const labels = [...new Set(answers.map((answer) => answer.label))];
@@ -1422,9 +1423,11 @@ export const createNotificationTriggerRuntime = (deps) => {
     const { sessionId } = newest;
     const tag = `share-${sessionId}`;
     const claim = await claimPushTag(tag, { sessionId });
+    if (shareAnswersStopped) return;
     // The turn the delivery wakes must not clear it, unless it already started.
     claim.skipTurnStart = !answers.some((answer) => answer.sessionId === sessionId && answer.woken);
     const { name: sessionName, directory } = await readSessionSummary(sessionId);
+    if (shareAnswersStopped) return;
     const awayOnly = settings.notificationMode !== 'always';
     const osAllowed = settings.nativeNotificationsEnabled === true && !(awayOnly && (isAnyUiVisible() || getIsWindowFocused?.() === true));
     const payload = { title, body, tag, kind: 'share-answer', sessionId, directory, requireHidden: awayOnly };
@@ -1439,11 +1442,12 @@ export const createNotificationTriggerRuntime = (deps) => {
       tag,
       data: { url: buildSessionDeepLinkUrl(sessionId), sessionId, sessionName, type: 'share-answer' },
     }, { requireNoSse: true });
-    sendToChannels({ kind: 'share-answer', title, body, tag, sessionId, directory, sessionName }, settings);
+    if (!shareAnswersStopped) sendToChannels({ kind: 'share-answer', title, body, tag, sessionId, directory, sessionName }, settings);
   };
 
   /** `{ sessionId, label, title, summary }` of one delivered answer. */
   const notifyShareAnswer = (answer) => {
+    if (shareAnswersStopped) return;
     const batch = shareAnswerBatch ?? { answers: [], firstAt: Date.now(), timer: null };
     shareAnswerBatch = batch;
     batch.answers.push({ ...answer, woken: false });
@@ -1459,6 +1463,11 @@ export const createNotificationTriggerRuntime = (deps) => {
   };
 
   return {
+    stopShareAnswers: () => {
+      shareAnswersStopped = true;
+      if (shareAnswerBatch) clearTimeout(shareAnswerBatch.timer);
+      shareAnswerBatch = null;
+    },
     notifyShareAnswer,
     maybeSendPushForTrigger,
     setAutoAcceptSession,

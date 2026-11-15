@@ -119,8 +119,8 @@ export function createLaterPages({
   getOpenCodeAuthHeaders,
   // Publishes `openchamber:render-later.updated` on the control stream.
   broadcastUiEvent = null,
-  // Archive is OpenChamber's (sessionArchive.archiveState): 'archived' gets the
-  // answer without being woken; 'unknown' waits for the next attempt.
+  // OpenCode owns archive state: archived gets the answer without being woken,
+  // unknown waits for the next attempt, and missing ends delivery.
   readArchiveState = async () => 'active',
   archiveReadTimeoutMs = FETCH_TIMEOUT_MS,
   fetchImpl = fetch,
@@ -139,6 +139,19 @@ export function createLaterPages({
   const deliveryTimers = new Map();
   const delivering = new Set();
   const deliveryFailures = new Map();
+  let stopped = false;
+  const controller = new AbortController();
+  const inFlight = new Set();
+  const unsubscribers = new Set();
+  const track = (operation) => (...args) => {
+    const pending = operation(...args);
+    inFlight.add(pending);
+    void pending.then(() => inFlight.delete(pending), () => inFlight.delete(pending));
+    return pending;
+  };
+  const requireRunning = () => {
+    if (stopped) throw new OpenChamberControlError('OpenChamber is shutting down', 503);
+  };
 
   const pagesOf = (sessionId) => Array.from(pages.values()).filter((page) => page.sessionId === sessionId);
   const publicPage = (page) => toPublicPage(page, Boolean(page.messageID) && deliveryFailures.has(keyOf(page.sessionId, page.callId)));
@@ -236,9 +249,11 @@ export function createLaterPages({
 
   /** Keeps the page of this call open until the user answers it; resolves once it is saved. */
   const open = async ({ sessionId, callId, title, question = '', questionCaptured, directory }) => {
+    requireRunning();
     const key = keyOf(sessionId, callId);
     try {
       await mutate(() => {
+        requireRunning();
         if (pages.has(key)) throw new OpenChamberControlError('This call already shows a page', 409);
         const values = Array.from(pages.values());
         const evicted = values.length >= MAX_PAGES ? values.find((page) => page.answer && !page.messageID) : undefined;
@@ -260,12 +275,14 @@ export function createLaterPages({
 
   /** The chat's answer: saved with the id its message goes out under, then delivered. A page answers once. */
   const answer = async (input) => {
+    requireRunning();
     const { sessionId, callId, answer: given } = readPageAnswer(input);
     const key = keyOf(sessionId, callId);
     const messageID = createMessageId(now());
     let changed;
     try {
       changed = await mutate(() => {
+        requireRunning();
         const page = pages.get(key);
         if (!page || page.answer) return null;
         page.answer = given;
@@ -278,6 +295,7 @@ export function createLaterPages({
         };
       }, [sessionId]);
     } catch (error) {
+      if (error instanceof OpenChamberControlError) throw error;
       throw new OpenChamberControlError(`OpenChamber could not save the answer, so the page stays open: ${error?.message ?? error}`, 500);
     }
     if (!changed) throw new OpenChamberControlError('This page is no longer waiting for an answer', 404);
@@ -286,11 +304,12 @@ export function createLaterPages({
   };
 
   const arm = (key, delayMs) => {
+    if (stopped) return;
     const existing = deliveryTimers.get(key);
     if (existing) timers.clearTimeout(existing);
     const timer = timers.setTimeout(() => {
       deliveryTimers.delete(key);
-      deliver(key).catch((error) => warn('[render.page] answer delivery failed:', error?.message ?? error));
+      track(deliver)(key).catch((error) => warn('[render.page] answer delivery failed:', error?.message ?? error));
     }, Math.max(0, delayMs));
     timer.unref?.();
     deliveryTimers.set(key, timer);
@@ -306,6 +325,7 @@ export function createLaterPages({
   }, [page.sessionId]);
 
   const retry = (key, page, reason) => {
+    if (stopped) return;
     const count = (deliveryFailures.get(key) ?? 0) + 1;
     deliveryFailures.set(key, count);
     if (count === 1) {
@@ -321,13 +341,14 @@ export function createLaterPages({
 
   // Bounded like the POST: a read that fails, stalls or answers anything else is 'unknown'.
   const readArchive = (sessionId) => {
-    const signal = AbortSignal.timeout(archiveReadTimeoutMs);
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(archiveReadTimeoutMs)]);
     const timedOut = new Promise((resolve) => signal.addEventListener('abort', () => resolve('unknown'), { once: true }));
     const read = Promise.resolve().then(() => readArchiveState(sessionId, { signal })).catch(() => 'unknown');
-    return Promise.race([read, timedOut]).then((state) => (state === 'archived' || state === 'active' ? state : 'unknown'));
+    return Promise.race([read, timedOut]).then((state) => (state === 'archived' || state === 'active' || state === 'missing' ? state : 'unknown'));
   };
 
   async function deliver(key) {
+    if (stopped) return;
     const page = pages.get(key);
     if (!page?.messageID) {
       deliveryFailures.delete(key);
@@ -341,6 +362,12 @@ export function createLaterPages({
       // as dispatch results do. An unknown state sends nothing: waking a
       // session that may be archived is worse than answering a little later.
       const archive = await readArchive(page.sessionId);
+      if (stopped) return;
+      if (archive === 'missing') {
+        deliveryFailures.delete(key);
+        await markDelivered(page).catch((error) => retry(key, page, `the delivery could not be saved: ${error?.message ?? error}`));
+        return;
+      }
       if (archive === 'unknown') {
         retry(key, page, 'the archive state of the session could not be read');
         return;
@@ -349,7 +376,7 @@ export function createLaterPages({
         method: 'POST',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...getOpenCodeAuthHeaders() },
         body: JSON.stringify({ id: page.messageID, ...buildLaterAnswerMessage(page), delivery: 'steer', resume: archive === 'active' }),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(FETCH_TIMEOUT_MS)]),
       }).catch((error) => ({ ok: false, status: 0, error }));
       await response.body?.cancel?.().catch(() => undefined);
       // 409: an earlier attempt landed. 404: nobody is left to tell.
@@ -369,6 +396,7 @@ export function createLaterPages({
   };
 
   const processPayload = (payload) => {
+    if (stopped) return;
     const deleted = parse(deletedEventSchema, payload);
     if (!deleted) return;
     const { sessionID } = deleted.properties;
@@ -383,6 +411,7 @@ export function createLaterPages({
   };
 
   const start = (globalEventHub) => {
+    if (stopped) return () => {};
     const unsubscribeEvent = globalEventHub?.subscribeEvent((event) => {
       for (const payload of event?.translated?.() ?? []) processPayload(payload);
     });
@@ -391,11 +420,27 @@ export function createLaterPages({
       if (status?.type === 'connect') deliverPending();
     });
     void load().then(deliverPending).catch((error) => warn('[render.page] failed to load later pages:', error?.message ?? error));
-    return () => {
+    const unsubscribe = () => {
       unsubscribeEvent?.();
       unsubscribeStatus?.();
+      unsubscribers.delete(unsubscribe);
     };
+    unsubscribers.add(unsubscribe);
+    return unsubscribe;
   };
 
-  return { load, snapshot, open, answer, processPayload, start, flush: () => writePromise };
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    controller.abort();
+    for (const timer of deliveryTimers.values()) timers.clearTimeout(timer);
+    deliveryTimers.clear();
+    for (const unsubscribe of unsubscribers) unsubscribe();
+  };
+  const flush = async () => {
+    while (inFlight.size > 0) await Promise.allSettled([...inFlight]);
+    await writePromise;
+  };
+
+  return { load, snapshot, open: track(open), answer: track(answer), processPayload, start, stop, flush };
 }

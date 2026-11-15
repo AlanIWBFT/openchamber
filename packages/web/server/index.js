@@ -1505,6 +1505,7 @@ const sharePagesRuntime = createSharePagesRuntime({
   relay: createShareRelayClient({ getSigner: createRelayShareSigner({ crypto, relayKeyStore }) }),
   postSynthetic: workflowAgentSessions.postSynthetic,
   onAnswerDelivered: (answer) => notificationTriggerRuntime.notifyShareAnswer(answer),
+  readArchiveState: (sessionID, options) => openChamberSessionService.sessionArchive.archiveState(sessionID, options),
   broadcast: (event) => broadcastOpenChamberUiEvent(event),
   isAvailable: isSharingAvailable,
   isRelayBaseAllowed,
@@ -1524,7 +1525,7 @@ const receivedPagesRuntime = createReceivedPagesRuntime({
   broadcast: (event) => broadcastOpenChamberUiEvent(event),
 });
 // Reports wait for OpenCode, which answers once the event hub connects.
-globalMessageStreamHub.subscribeStatus((status) => {
+const stopBackgroundReportSubscription = globalMessageStreamHub.subscribeStatus((status) => {
   if (status?.type !== 'connect') return;
   void workflowRuntime.deliverPending();
   void sharePagesRuntime.poll();
@@ -2552,6 +2553,10 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   autoReviewRuntime,
   prWatchRuntime,
   extensionWaitsRuntime,
+  laterPagesRuntime,
+  sharePagesRuntime,
+  notificationTriggerRuntime,
+  stopBackgroundReportSubscription,
   messageQueueRuntime,
   mergeFollowRuntime,
   dispatchResultsRuntime,

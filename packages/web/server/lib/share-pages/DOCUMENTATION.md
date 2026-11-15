@@ -84,7 +84,9 @@ Every change to a group is broadcast on the OpenChamber control stream as
   (`../relay/host-client.js`).
 - An answer is decrypted and stored with a message id minted before the first
   delivery attempt, so a retry never posts it twice. Delivery is
-  `POST /api/session/:id/synthetic` with `delivery: 'steer'`, `resume: true`;
+  `POST /api/session/:id/synthetic` with `delivery: 'steer'`. Every attempt reads
+  OpenCode's archive state: active uses `resume: true`, archived records with
+  `resume: false`, unknown waits for the next poll, and missing ends delivery;
   409 counts as delivered, 404 (session gone) too. Four attempts with backoff
   per poll; what is still undelivered goes out on the next poll, after a
   restart as well.
@@ -114,6 +116,13 @@ Every change to a group is broadcast on the OpenChamber control stream as
 - A restart in the middle of an upload is finished at start from the stored
   document, for the recipients still `preparing`; the card posts only while
   the document is preparing, so nothing else would.
+- Host shutdown closes admission and stops the heartbeat and reconnect triggers
+  synchronously. No new upload, delivery or relay close starts after that fence.
+  An already-issued upload or close still saves its reply, because a close may
+  carry the only remaining answer. In-flight operations and store writes drain
+  within the host's shared deadline, never waiting for a recipient to answer.
+  Saved undelivered answers retain their message ids on restart. A failed delivery
+  acknowledgment save rolls back in memory too, so the next poll retries it.
 - In enterprise mode sharing exists only with a pinned relay
   (`isSharingAvailable`), and no call reaches a relay other than the pinned one
   (`isRelayBaseAllowed`), so a share made on another relay before the mode came
@@ -232,6 +241,13 @@ share.
 The nudge reaches only a host with a live private relay control socket, which
 most installs do not run. Polling once a minute while something is open costs
 one request per relay, and the relay's own state is authoritative either way.
+
+### Why shutdown drains accepted work instead of waiting for remote completion
+
+Recipients may answer days later. Durable answer and delivery-id records let the
+next host resume them without holding exit open. The existing host deadline still
+bounds uploads or closes already in flight; a hard kill or exhausted deadline
+cannot guarantee their final local write.
 
 ## Runtime parity
 

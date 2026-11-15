@@ -28,6 +28,10 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     autoReviewRuntime,
     prWatchRuntime,
     extensionWaitsRuntime = null,
+    laterPagesRuntime = null,
+    sharePagesRuntime = null,
+    notificationTriggerRuntime = null,
+    stopBackgroundReportSubscription = () => {},
     mergeFollowRuntime,
     messageQueueRuntime,
     dispatchResultsRuntime,
@@ -95,6 +99,10 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     extensionServiceLifetime?.stop?.();
     // The same for wait checks: a refused check would back off a healthy type.
     extensionWaitsRuntime?.stop?.();
+    laterPagesRuntime?.stop?.();
+    sharePagesRuntime?.stop?.();
+    notificationTriggerRuntime?.stopShareAnswers?.();
+    stopBackgroundReportSubscription();
     syncToHmrState();
     console.log('Starting graceful shutdown...');
     const exitProcess = typeof options.exitProcess === 'boolean' ? options.exitProcess : getExitOnShutdown();
@@ -137,6 +145,8 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       () => drain('Session todos', () => sessionTodosRuntime?.stop?.()),
       () => drain('Memory dreaming', () => memoryDreaming?.stop?.({ deadline: Math.max(Date.now(), deadline - SHUTDOWN_FINALIZATION_RESERVE_MS) })),
       () => drain('Extension waits', () => extensionWaitsRuntime?.flush?.()),
+      () => drain('Later pages', () => laterPagesRuntime?.flush?.()),
+      () => drain('Shared pages', () => sharePagesRuntime?.flush?.()),
       async () => {
         autoReviewRuntime?.stop?.();
         if (!autoReviewRuntime?.flush) return;
