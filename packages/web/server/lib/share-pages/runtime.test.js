@@ -64,7 +64,7 @@ const createFakeRelay = () => {
   return { relay, shares, answer, failNext };
 };
 
-const createHarness = async ({ dataDir, relayFake = createFakeRelay(), available = () => true, allowed = () => true, postSynthetic = vi.fn(async () => {}), failSaves = () => false, onAnswerDelivered = vi.fn() } = {}) => {
+const createHarness = async ({ dataDir, relayFake = createFakeRelay(), available = () => true, allowed = () => true, postSynthetic = vi.fn(async () => {}), failSaves = () => false, onAnswerDelivered = vi.fn(), readArchiveState } = {}) => {
   const directory = dataDir ?? await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-share-pages-'));
   if (!dataDir) directories.push(directory);
   const diskStore = createSharePageStore({ fsPromises: fs, path, dataDir: directory });
@@ -76,12 +76,14 @@ const createHarness = async ({ dataDir, relayFake = createFakeRelay(), available
     },
   };
   const broadcast = vi.fn();
+  const clearIntervalImpl = vi.fn();
   let clock = new Date(2026, 10, 13, 17, 0).getTime();
   const runtime = createSharePagesRuntime({
     crypto,
     store,
     relay: relayFake.relay,
     postSynthetic,
+    readArchiveState,
     onAnswerDelivered,
     broadcast,
     isAvailable: available,
@@ -90,9 +92,10 @@ const createHarness = async ({ dataDir, relayFake = createFakeRelay(), available
     now: () => clock,
     sleep: async () => {},
     setIntervalImpl: () => ({ unref() {} }),
+    clearIntervalImpl,
     logger: { warn: () => {} },
   });
-  return { runtime, store, broadcast, postSynthetic, onAnswerDelivered, relayFake, directory, advance: (ms) => { clock += ms; } };
+  return { runtime, store, broadcast, postSynthetic, onAnswerDelivered, relayFake, directory, clearIntervalImpl, advance: (ms) => { clock += ms; } };
 };
 
 const share = (input) => parseShareRequest({ recipients: ['Юля', 'Denis'], ...input });
@@ -114,6 +117,78 @@ describe('parseShareRequest', () => {
 });
 
 describe('share pages runtime', () => {
+  it.each(['active', 'archived', 'unknown', 'missing'])('uses authoritative %s state before delivering an answer', async (state) => {
+    let archive = state;
+    const h = await createHarness({ readArchiveState: async () => archive });
+    await h.runtime.createGroup({ sessionId: 'ses_1', callId: 'call_1', title: 'T', share: share({ recipients: ['Yulia'] }) });
+    const uploaded = await h.runtime.uploadDocument('ses_1', 'call_1', { html: '<p>Choose</p>' });
+    const recipient = uploaded.recipients[0];
+    await h.relayFake.answer(recipient.link, recipient.pin, { data: { pick: 'B' }, summary: 'B' });
+    await h.runtime.poll();
+    if (state === 'unknown') {
+      expect(h.postSynthetic).not.toHaveBeenCalled();
+      expect(h.relayFake.relay.close).not.toHaveBeenCalled();
+      archive = 'active';
+      await h.runtime.poll();
+    }
+    if (state === 'missing') expect(h.postSynthetic).not.toHaveBeenCalled();
+    else expect(h.postSynthetic).toHaveBeenCalledExactlyOnceWith('ses_1', expect.objectContaining({ resume: state !== 'archived' }));
+    expect(h.relayFake.relay.close).toHaveBeenCalledOnce();
+    h.runtime.stop();
+    await h.runtime.flush();
+  });
+
+  it('stops polling and new work, then retries an unconfirmed delivery under its saved id after restart', async () => {
+    const entered = Promise.withResolvers();
+    const delivery = Promise.withResolvers();
+    const first = await createHarness({ postSynthetic: vi.fn(async (_id, message) => {
+      entered.resolve(message.id);
+      return delivery.promise;
+    }) });
+    await first.runtime.createGroup({ sessionId: 'ses_1', callId: 'call_1', title: 'T', share: share({ recipients: ['Yulia'] }) });
+    const uploaded = await first.runtime.uploadDocument('ses_1', 'call_1', { html: '<p>Choose</p>' });
+    const recipient = uploaded.recipients[0];
+    await first.relayFake.answer(recipient.link, recipient.pin, { data: { pick: 'B' }, summary: 'B' });
+    const polling = first.runtime.poll();
+    const messageId = await entered.promise;
+    first.runtime.stop();
+    expect(first.clearIntervalImpl).toHaveBeenCalledOnce();
+    await expect(first.runtime.createGroup({ sessionId: 'ses_1', callId: 'new', title: 'T', share: share() })).rejects.toMatchObject({ statusCode: 503 });
+    delivery.reject(new Error('connection closed before acknowledgment'));
+    await polling;
+    await first.runtime.flush();
+    await first.runtime.poll();
+    expect(first.postSynthetic).toHaveBeenCalledOnce();
+    expect(first.relayFake.relay.close).not.toHaveBeenCalled();
+    const second = await createHarness({ dataDir: first.directory, relayFake: first.relayFake, postSynthetic: vi.fn(async () => {
+      throw Object.assign(new Error('already admitted'), { status: 409 });
+    }) });
+    await second.runtime.start();
+    expect(second.postSynthetic).toHaveBeenCalledExactlyOnceWith('ses_1', expect.objectContaining({ id: messageId }));
+    expect(second.relayFake.relay.close).toHaveBeenCalledOnce();
+    second.runtime.stop();
+    await second.runtime.flush();
+  });
+
+  it('retries the same delivery when saving its acknowledgment failed', async () => {
+    let fail = false;
+    const h = await createHarness({ failSaves: () => fail, postSynthetic: vi.fn(async () => { fail = true; }) });
+    await h.runtime.createGroup({ sessionId: 'ses_1', callId: 'call_1', title: 'T', share: share({ recipients: ['Yulia'] }) });
+    const uploaded = await h.runtime.uploadDocument('ses_1', 'call_1', { html: '<p>Choose</p>' });
+    const recipient = uploaded.recipients[0];
+    await h.relayFake.answer(recipient.link, recipient.pin, { summary: 'B' });
+    await h.runtime.poll();
+    expect(h.relayFake.relay.close).not.toHaveBeenCalled();
+    const messageId = h.postSynthetic.mock.calls[0][1].id;
+    fail = false;
+    h.postSynthetic.mockImplementation(async () => { throw Object.assign(new Error('already admitted'), { status: 409 }); });
+    await h.runtime.poll();
+    expect(h.postSynthetic.mock.calls[1][1].id).toBe(messageId);
+    expect(h.relayFake.relay.close).toHaveBeenCalledOnce();
+    h.runtime.stop();
+    await h.runtime.flush();
+  });
+
   it('uploads one sealed page per recipient, delivers an answer into the session, and closes it', async () => {
     const harness = await createHarness();
     const { runtime, relayFake, postSynthetic, broadcast } = harness;

@@ -5,6 +5,7 @@ import { OpenChamberControlError, controlErrorFields } from '../openchamber-cont
 import type { ControlInput } from '../openchamber-control/contracts.js';
 import type { Request } from '../shared/http-contracts.js';
 import type { SyntheticMessage } from '../workflows/contracts.js';
+import { trackOperations } from '../shared/in-flight.js';
 import type { JsonValue } from './contracts.js';
 import type { createSharePageStore, ShareGroup } from './store.js';
 import type { createShareRelayClient, ShareState } from './relay-client.js';
@@ -118,6 +119,7 @@ export interface ShareDocumentInput {
 }
 
 export interface SharePagesOptions {
+  readArchiveState?: (sessionID: string, options: { signal: AbortSignal }) => Promise<'active' | 'archived' | 'unknown' | 'missing'>;
   crypto: typeof import('node:crypto');
   store: ReturnType<typeof createSharePageStore>;
   relay: ReturnType<typeof createShareRelayClient>;
@@ -129,7 +131,8 @@ export interface SharePagesOptions {
   resolveRelayBase: () => Promise<string>;
   now?: () => number;
   sleep?: (duration: number) => Promise<void>;
-  setIntervalImpl?: (callback: () => void, duration: number) => { unref?: () => void };
+  setIntervalImpl?: typeof setInterval;
+  clearIntervalImpl?: typeof clearInterval;
   logger?: Pick<Console, 'warn'>;
 }
 
@@ -196,6 +199,8 @@ export const createSharePagesRuntime = ({
   store,
   relay,
   postSynthetic,
+  readArchiveState = async () => 'active',
+  // Hears each answer OpenCode admitted into its session (the user's notification).
   onAnswerDelivered = () => {},
   broadcast = () => {},
   isAvailable,
@@ -204,8 +209,14 @@ export const createSharePagesRuntime = ({
   now = Date.now,
   sleep = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
   setIntervalImpl = setInterval,
+  clearIntervalImpl = clearInterval,
   logger = console,
 }: SharePagesOptions) => {
+  let stopped = false;
+  const controller = new AbortController();
+  const inFlight = new Set<Promise<unknown>>();
+  const track = trackOperations(inFlight);
+  const requireRunning = () => { if (stopped) throw new OpenChamberControlError('OpenChamber is shutting down', 503); };
   const locks = new Map<string, Promise<unknown>>();
   const withLock = <Result>(groupId: string, task: () => Promise<Result>) => {
     const previous = locks.get(groupId) ?? Promise.resolve();
@@ -252,11 +263,13 @@ export const createSharePagesRuntime = ({
   });
 
   const findGroup = async (sessionId: Request['params'][string] | undefined, callId: Request['params'][string] | undefined) => {
+    requireRunning();
     if (!isString(sessionId) || !isString(callId) || !sessionId || !callId) {
       throw new OpenChamberControlError('sessionId and callId are required', 400);
     }
     if (!isAvailable()) throw enterpriseRefusal();
     const group = await store.get(shareGroupId(crypto, sessionId, callId));
+    requireRunning();
     if (!group || group.sessionId !== sessionId || group.callId !== callId) {
       throw new OpenChamberControlError('No shared page for this call', 404);
     }
@@ -265,12 +278,14 @@ export const createSharePagesRuntime = ({
   };
 
   const createGroup = async ({ sessionId, callId, title, share }: CreateShareGroupInput) => {
+    requireRunning();
     if (!isAvailable()) throw enterpriseRefusal();
     if (!sessionId || !callId) {
       throw new OpenChamberControlError('This connection cannot share pages; show the page without share', 400);
     }
     const id = shareGroupId(crypto, sessionId, callId);
     const existing = await store.get(id);
+    requireRunning();
     if (existing) return { recipients: existing.recipients.map(({ label }) => label), expiresAt: existing.expiresAt };
     const createdAt = now();
     const group: ShareGroup = {
@@ -302,6 +317,7 @@ export const createSharePagesRuntime = ({
         error: null,
       })),
     };
+    requireRunning();
     try {
       await persist(group);
     } catch (error) {
@@ -324,6 +340,7 @@ export const createSharePagesRuntime = ({
     try {
       const keys = await deriveShareKeys(fromBase64Url(recipient.linkKey), recipient.pin);
       const blob = await sealJson(keys.encKey, document, DOCUMENT_AAD);
+      requireRunning();
       const created = await relay.create(group.relayBase, blob, {
         kind: group.kind,
         wantsAnswer: group.expectAnswer,
@@ -333,6 +350,7 @@ export const createSharePagesRuntime = ({
       if (!isCreatedShare(created)) throw new Error('The relay answered without a share id');
       Object.assign(recipient, { shareId: created.id, url: created.url, status: 'open', error: null });
     } catch (error) {
+      if (stopped) throw error;
       logger.warn(`[share-pages] upload for ${group.id}/${recipient.recipientId} failed:`, controlErrorFields(error)?.message ?? error);
       Object.assign(recipient, { status: 'failed', error: `Could not upload: ${controlErrorFields(error)?.message ?? 'unknown error'}` });
     }
@@ -344,6 +362,7 @@ export const createSharePagesRuntime = ({
   };
 
   const uploadPending = async (group: ShareGroup, input: ShareDocumentInput, statuses: ShareRecipient['status'][]) => {
+    requireRunning();
     const pending = group.recipients.filter((recipient) => !recipient.shareId && statuses.includes(recipient.status));
     if (pending.length === 0) throw new OpenChamberControlError('Every recipient already has this page', 409);
     if (now() > group.expiresAt - MIN_REMAINING_MS) {
@@ -352,6 +371,7 @@ export const createSharePagesRuntime = ({
       throw new OpenChamberControlError('The share expired before its page was uploaded', 409);
     }
     let html = group.documentState === 'ready' ? await store.readDocument(group.id) : null;
+    requireRunning();
     const firstDocument = html === null;
     if (html === null) {
       html = isString(input.html) ? input.html : '';
@@ -369,6 +389,7 @@ export const createSharePagesRuntime = ({
       await persist(group);
     }
     for (const recipient of pending) {
+      if (stopped) break;
       await uploadOne(group, recipient, document);
       await persist(group);
     }
@@ -381,7 +402,7 @@ export const createSharePagesRuntime = ({
     await commit(group, recipient, () => mergeState(group, recipient, state));
   };
 
-  const commit = async (group: ShareGroup, recipient: ShareRecipient, mutate: () => Promise<void>) => {
+  const commit = async (group: ShareGroup, recipient: ShareRecipient, mutate: () => void | Promise<void>) => {
     const before = structuredClone(recipient);
     await mutate();
     if (JSON.stringify(recipient) === JSON.stringify(before)) return;
@@ -435,32 +456,38 @@ export const createSharePagesRuntime = ({
     }
   };
 
+  const readArchive = (sessionId: string) => {
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+    return Promise.race([readArchiveState(sessionId, { signal }).catch(() => 'unknown' as const),
+      new Promise<'unknown'>((resolve) => signal.addEventListener('abort', () => resolve('unknown'), { once: true }))]);
+  };
   const deliver = async (group: ShareGroup, recipient: ShareRecipient, delivery: NonNullable<ShareRecipient['delivery']>) => {
     const message = {
       id: delivery.messageId,
       text: buildShareAnswerText(group, recipient),
       description: `Answer from ${recipient.label}`,
       metadata: { source: SHARE_ANSWER_SOURCE, callId: group.callId, recipientId: recipient.recipientId, label: recipient.label, title: group.title },
-      delivery: 'steer',
-      resume: true,
+      delivery: 'steer' as const,
     };
     for (let attempt = 1; attempt <= DELIVERY_ATTEMPTS; attempt += 1) {
+      if (stopped) return;
+      const archive = await readArchive(group.sessionId);
+      if (stopped || !['active', 'archived', 'missing'].includes(archive)) return;
       let admitted = false;
       try {
-        await postSynthetic(group.sessionId, message);
-        admitted = true;
+        if (archive !== 'missing') {
+          await postSynthetic(group.sessionId, { ...message, resume: archive === 'active' });
+          admitted = true;
+        }
       } catch (error) {
         if (controlErrorFields(error)?.status !== 409 && controlErrorFields(error)?.status !== 404) {
           logger.warn(`[share-pages] delivering an answer of ${group.id} failed:`, controlErrorFields(error)?.message ?? error);
-          if (attempt < DELIVERY_ATTEMPTS) await sleep(DELIVERY_BASE_DELAY_MS * 2 ** (attempt - 1));
+          if (!stopped && attempt < DELIVERY_ATTEMPTS) await sleep(DELIVERY_BASE_DELAY_MS * 2 ** (attempt - 1));
           continue;
         }
       }
-      await withLock(group.id, async () => {
-        delivery.delivered = true;
-        await persist(group);
-      });
-      if (admitted) {
+      await withLock(group.id, () => commit(group, recipient, () => { delivery.delivered = true; }));
+      if (admitted && !stopped) {
         if (recipient.answer === null) throw new TypeError("Cannot read properties of null (reading 'summary')");
         onAnswerDelivered({ sessionId: group.sessionId, label: recipient.label, title: group.title, summary: recipient.answer.summary });
       }
@@ -469,6 +496,7 @@ export const createSharePagesRuntime = ({
   };
 
   const closeShare = async (group: ShareGroup, recipient: ShareRecipient & { shareId: string }) => {
+    if (stopped) return;
     let closed: ShareState | null = null;
     try {
       closed = await relay.close(group.relayBase, recipient.shareId);
@@ -489,6 +517,8 @@ export const createSharePagesRuntime = ({
   };
 
   const pollOnce = async () => {
+    if (stopped) return;
+    if (stopped) return;
     lastPollAt = now();
     const groups = await store.list();
     const byBase = new Map<string, Map<string, { group: ShareGroup; recipient: ShareRecipient }>>();
@@ -501,6 +531,7 @@ export const createSharePagesRuntime = ({
       }
     }
     for (const [base, entries] of byBase) {
+      if (stopped) return;
       if (!isRelayBaseAllowed(base)) continue;
       let states;
       try {
@@ -510,6 +541,7 @@ export const createSharePagesRuntime = ({
         continue;
       }
       for (const state of states) {
+        if (stopped) return;
         const entry = entries.get(state?.id);
         if (!entry) continue;
         await withLock(entry.group.id, () => applyState(entry.group, entry.recipient, state)).catch((error) => {
@@ -518,6 +550,7 @@ export const createSharePagesRuntime = ({
       }
     }
     for (const group of groups) {
+      if (stopped) return;
       if (group.recipients.some((recipient) => LIVE_STATUSES.has(recipient.status) && now() > group.expiresAt + RELAY_FORGETS_AFTER_MS)) {
         await withLock(group.id, async () => {
           for (const recipient of group.recipients) if (LIVE_STATUSES.has(recipient.status)) recipient.status = 'expired';
@@ -535,6 +568,7 @@ export const createSharePagesRuntime = ({
   let rerun = false;
   let lastPollAt = 0;
   const poll = () => {
+    if (stopped) return Promise.resolve();
     if (ticking) {
       rerun = true;
       return ticking;
@@ -543,16 +577,17 @@ export const createSharePagesRuntime = ({
       do {
         rerun = false;
         await pollOnce().catch((error) => logger.warn('[share-pages] poll failed:', controlErrorFields(error)?.message ?? error));
-      } while (rerun);
+      } while (rerun && !stopped);
     })().finally(() => { ticking = null; });
     return ticking;
-  };
+  });
 
   const hasLiveWork = async () => (await store.list()).some((group) => group.recipients.some(needsWork));
 
   let heartbeat: ReturnType<NonNullable<SharePagesOptions['setIntervalImpl']>> | null = null;
   let lastBeatAt = 0;
   const beat = async () => {
+    if (stopped) return;
     const at = now();
     const gap = at - lastBeatAt;
     lastBeatAt = at;
@@ -560,7 +595,7 @@ export const createSharePagesRuntime = ({
     if (gap > WAKE_GAP_MS || at - lastPollAt >= POLL_INTERVAL_MS) await poll();
   };
   function ensureHeartbeat() {
-    if (heartbeat) return;
+    if (stopped || heartbeat) return;
     lastBeatAt = now();
     heartbeat = setIntervalImpl(() => { void beat(); }, HEARTBEAT_MS);
     heartbeat.unref?.();
@@ -571,6 +606,7 @@ export const createSharePagesRuntime = ({
     const recipient = group.recipients.find((entry) => entry.recipientId === recipientId);
     if (!recipient) throw new OpenChamberControlError('No such recipient', 404);
     return withLock(group.id, async () => {
+      requireRunning();
       if (recipient.status === 'cancelled') return viewOf(group);
       if (recipient.status === 'answered') throw new OpenChamberControlError('They already answered', 409);
       if (recipient.status === 'expired') throw new OpenChamberControlError('The link already expired', 409);
@@ -579,6 +615,7 @@ export const createSharePagesRuntime = ({
         const [state] = await relay.states(group.relayBase, [recipient.shareId]).catch((error) => {
           throw new OpenChamberControlError(`Could not reach the relay: ${controlErrorFields(error)?.message ?? 'unknown error'}`, 502);
         });
+        requireRunning();
         if (state?.status === 'answered') {
           await applyState(group, recipient, state);
           throw new OpenChamberControlError('They answered before the link was withdrawn', 409);
@@ -602,13 +639,16 @@ export const createSharePagesRuntime = ({
   };
 
   const handleShareState = async (shareId: ShareRecipient['shareId']) => {
+    if (stopped) return;
     if (!isString(shareId)) return;
     const known = (await store.list()).some((group) => group.recipients.some((recipient) => recipient.shareId === shareId));
     if (known) await poll();
   };
 
   const start = async () => {
+    if (stopped) return;
     await store.load();
+    if (stopped) return;
     ensureHeartbeat();
     await resumeUploads();
     await poll();
@@ -616,6 +656,7 @@ export const createSharePagesRuntime = ({
 
   const resumeUploads = async () => {
     for (const group of await store.list()) {
+      if (stopped) return;
       if (group.documentState !== 'ready' || !isAvailable() || !isRelayBaseAllowed(group.relayBase)) continue;
       if (!group.recipients.some((recipient) => !recipient.shareId && recipient.status === 'preparing')) continue;
       await withLock(group.id, () => uploadPending(group, {}, ['preparing'])).catch((error) => {
@@ -624,5 +665,23 @@ export const createSharePagesRuntime = ({
     }
   };
 
-  return { isAvailable, parseRequest: parseShareRequest, createGroup, getGroup, uploadDocument, cancelRecipient, preview, poll, handleShareState, start };
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    controller.abort();
+    if (heartbeat) clearIntervalImpl(heartbeat);
+    heartbeat = null;
+    rerun = false;
+  };
+  const flush = async () => {
+    await ticking;
+    while (inFlight.size > 0) await Promise.allSettled([...inFlight]);
+    await store.flush();
+  };
+
+  return {
+    isAvailable, parseRequest: parseShareRequest, createGroup: track(createGroup), getGroup,
+    uploadDocument: track(uploadDocument), cancelRecipient: track(cancelRecipient), preview,
+    poll, handleShareState, start: track(start), stop, flush,
+  };
 };

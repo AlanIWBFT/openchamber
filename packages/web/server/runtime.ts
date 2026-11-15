@@ -1428,6 +1428,7 @@ const sharePagesRuntime = createSharePagesRuntime({
   relay: createShareRelayClient({ getSigner: createRelayShareSigner({ crypto, relayKeyStore }) }),
   postSynthetic: workflowAgentSessions.postSynthetic,
   onAnswerDelivered: (answer) => notificationTriggerRuntime.notifyShareAnswer(answer),
+  readArchiveState: (sessionID, options) => openChamberSessionService.sessionArchive.archiveState(sessionID, options),
   broadcast: (event) => broadcastOpenChamberUiEvent(event),
   isAvailable: isSharingAvailable,
   isRelayBaseAllowed,
@@ -1445,7 +1446,7 @@ const receivedPagesRuntime = createReceivedPagesRuntime({
   allowedBases: async () => allowedReceiveBases(await readSettingsFromDiskMigrated().catch(() => null)),
   broadcast: (event) => broadcastOpenChamberUiEvent(event),
 });
-globalMessageStreamHub.subscribeStatus((status) => {
+const stopBackgroundReportSubscription = globalMessageStreamHub.subscribeStatus((status) => {
   if (status?.type !== 'connect') return;
   void workflowRuntime.deliverPending();
   void sharePagesRuntime.poll();
@@ -2368,6 +2369,10 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   autoReviewRuntime,
   prWatchRuntime,
   extensionWaitsRuntime,
+  laterPagesRuntime,
+  sharePagesRuntime,
+  notificationTriggerRuntime,
+  stopBackgroundReportSubscription,
   messageQueueRuntime,
   mergeFollowRuntime,
   dispatchResultsRuntime,

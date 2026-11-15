@@ -158,8 +158,9 @@ constructor retains its existing `Object.assign` behavior.
   `../dispatch-results` does) gets `resume: false`: the message is recorded and
   nothing wakes. The state comes from `sessionArchive.archiveState`
   (`../openchamber-sessions/session-archive.js`), which tells `archived`,
-  `active` and `unknown` apart, unlike `isArchived`, which calls a failed read
-  active. The read is bounded like the POST (15 s, its signal cancels the
+  `active`, `missing` and `unknown` apart from OpenCode's record alone; legacy
+  archive files are only migration sources. Missing ends delivery without a POST.
+  The read is bounded like the POST (15 s, its signal cancels the
   OpenCode request); a failed, stalled or unknown read sends nothing and goes
   to the retry below, so an archived session is never woken on a guess and
   the page shows `undelivered` meanwhile. Its text sits in `<openchamber-page-answer call=… outcome=…>`:
@@ -188,6 +189,10 @@ constructor retains its existing `Object.assign` behavior.
   answered, `undelivered` while delivery fails); every change broadcasts `openchamber:render-later.updated`
   `{ revision, sessionID, pages[] }`, and the chat reads it through
   `packages/ui/src/sync/later-pages.ts` (`usePageAsk`).
+  Host shutdown closes admission, cancels archive/delivery requests and removes
+  timers and event subscriptions synchronously. Accepted answers and delivery ids
+  drain within the host's existing deadline. A restart retries saved undelivered
+  answers under the same ids; shutdown never waits for an unanswered page.
   Known limits: the OpenChamber server inside an isolated space refuses
   `answerLater` with `503`, as it refuses extension waits and `pr.watch`
   (`index.js` gives it no `laterPages`), because the host's chat reads later

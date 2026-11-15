@@ -34,6 +34,10 @@ interface ShutdownDependencies {
   autoReviewRuntime?: (Partial<Stop> & { flush?: () => Promise<void> }) | null;
   prWatchRuntime?: OptionalStop;
   extensionWaitsRuntime?: (Partial<Stop> & { flush?: Cleanup }) | null;
+  laterPagesRuntime?: (Partial<Stop> & { flush?: Cleanup }) | null;
+  sharePagesRuntime?: (Partial<Stop> & { flush?: Cleanup }) | null;
+  notificationTriggerRuntime?: { stopShareAnswers?: Cleanup } | null;
+  stopBackgroundReportSubscription?: Cleanup;
   mergeFollowRuntime?: OptionalStop;
   messageQueueRuntime?: OptionalStop;
   dispatchResultsRuntime?: OptionalStop;
@@ -100,6 +104,10 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
     autoReviewRuntime,
     prWatchRuntime,
     extensionWaitsRuntime = null,
+    laterPagesRuntime = null,
+    sharePagesRuntime = null,
+    notificationTriggerRuntime = null,
+    stopBackgroundReportSubscription = () => {},
     mergeFollowRuntime,
     messageQueueRuntime,
     dispatchResultsRuntime,
@@ -161,6 +169,10 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
     extensionSessionEvents?.stop?.();
     extensionServiceLifetime?.stop?.();
     extensionWaitsRuntime?.stop?.();
+    laterPagesRuntime?.stop?.();
+    sharePagesRuntime?.stop?.();
+    notificationTriggerRuntime?.stopShareAnswers?.();
+    stopBackgroundReportSubscription();
     syncToHmrState();
     console.log('Starting graceful shutdown...');
     const exitProcess = isBoolean(options.exitProcess) ? options.exitProcess : getExitOnShutdown();
@@ -202,6 +214,8 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
       () => drain('Session todos', () => sessionTodosRuntime?.stop?.()),
       () => drain('Memory dreaming', () => (dreamCleanup = memoryDreaming?.stop({ deadline: Math.max(Date.now(), deadline - SHUTDOWN_FINALIZATION_RESERVE_MS) }))),
       () => drain('Extension waits', () => extensionWaitsRuntime?.flush?.()),
+      () => drain('Later pages', () => laterPagesRuntime?.flush?.()),
+      () => drain('Shared pages', () => sharePagesRuntime?.flush?.()),
       async () => {
         autoReviewRuntime?.stop?.();
         if (!autoReviewRuntime?.flush) return;

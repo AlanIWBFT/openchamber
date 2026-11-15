@@ -32,6 +32,15 @@ const settle = async () => {
 };
 
 describe('shared page answer notifications', () => {
+  it('drops pending notifications and refuses new ones once the host stops', async () => {
+    const h = harness();
+    h.runtime.notifyShareAnswer(answer('Yulia'));
+    h.runtime.stopShareAnswers();
+    h.runtime.notifyShareAnswer(answer('Denis'));
+    await settle();
+    for (const sink of [h.native, h.ui, h.push, h.apns, h.channels]) expect(sink).not.toHaveBeenCalled();
+  });
+
   it('announces one delivered answer everywhere, with the toast for open windows', async () => {
     const h = harness();
     h.runtime.notifyShareAnswer(answer('Yulia'));

@@ -386,6 +386,7 @@ export const createNotificationTriggerRuntime = (deps: NotificationTriggerDepend
   };
 
   let shareAnswerBatch: ShareAnswerBatch | null = null;
+  let shareAnswersStopped = false;
 
   const dropPendingShareAnswers = (sessionId: string, turnStart: boolean) => {
     const batch = shareAnswerBatch;
@@ -1385,7 +1386,7 @@ export const createNotificationTriggerRuntime = (deps: NotificationTriggerDepend
 
   const announceShareAnswers = async (answers: ShareAnswerBatch['answers']) => {
     const settings = await readSettingsFromDisk();
-    if (settings.notifyOnCompletion === false) return;
+    if (shareAnswersStopped || settings.notifyOnCompletion === false) return;
     const texts = notificationTexts(localeOf(settings.locale));
     const newest = answers.at(-1);
     if (!newest) throw new TypeError('Missing newest share answer');
@@ -1397,8 +1398,11 @@ export const createNotificationTriggerRuntime = (deps: NotificationTriggerDepend
     const { sessionId } = newest;
     const tag = `share-${sessionId}`;
     const claim = await claimPushTag(tag, { sessionId });
+    if (shareAnswersStopped) return;
+    // The turn the delivery wakes must not clear it, unless it already started.
     claim.skipTurnStart = !answers.some((answer) => answer.sessionId === sessionId && answer.woken);
     const { name: sessionName, directory } = await readSessionSummary(sessionId);
+    if (shareAnswersStopped) return;
     const awayOnly = settings.notificationMode !== 'always';
     const osAllowed = settings.nativeNotificationsEnabled === true && !(awayOnly && (isAnyUiVisible() || getIsWindowFocused?.() === true));
     const payload = { title, body, tag, kind: 'share-answer', sessionId, directory, requireHidden: awayOnly };
@@ -1412,10 +1416,11 @@ export const createNotificationTriggerRuntime = (deps: NotificationTriggerDepend
       tag,
       data: { url: buildSessionDeepLinkUrl(sessionId), sessionId, sessionName, type: 'share-answer' },
     }, { requireNoSse: true });
-    sendToChannels({ kind: 'share-answer', title, body, tag, sessionId, directory, sessionName }, settings);
+    if (!shareAnswersStopped) sendToChannels({ kind: 'share-answer', title, body, tag, sessionId, directory, sessionName }, settings);
   };
 
   const notifyShareAnswer = (answer: ShareAnswerNotice) => {
+    if (shareAnswersStopped) return;
     const batch: ShareAnswerBatch = shareAnswerBatch ?? { answers: [], firstAt: Date.now(), timer: null };
     shareAnswerBatch = batch;
     batch.answers.push({ ...answer, woken: false });
@@ -1431,6 +1436,11 @@ export const createNotificationTriggerRuntime = (deps: NotificationTriggerDepend
   };
 
   return {
+    stopShareAnswers: () => {
+      shareAnswersStopped = true;
+      if (shareAnswerBatch) clearTimeout(shareAnswerBatch.timer);
+      shareAnswerBatch = null;
+    },
     notifyShareAnswer,
     maybeSendPushForTrigger,
     setAutoAcceptSession,

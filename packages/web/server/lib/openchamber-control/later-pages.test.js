@@ -92,6 +92,49 @@ const deliveredFields = (text) => {
 const open = { sessionId: 'ses_1', callId: 'call_1', title: 'Pick a layout', question: 'Which layout?', directory: '/repo' };
 
 describe('later pages', () => {
+  it('ends delivery to a missing session without posting or retrying', async () => {
+    const h = createPages(await tempDir(), { readArchiveState: async () => 'missing' });
+    await h.pages.open(open);
+    await h.pages.answer({ sessionId: 'ses_1', callId: 'call_1', summary: 'B' });
+    await h.run();
+    expect(h.posts).toHaveLength(0);
+    expect(h.delays).toEqual([0]);
+    expect(h.pages.snapshot().pages[0].undelivered).toBeUndefined();
+  });
+
+  it('stops an archive read and resumes the saved answer under the same id after restart', async () => {
+    const dataDir = await tempDir();
+    const entered = Promise.withResolvers();
+    const first = createPages(dataDir, { readArchiveState: async (_id, { signal }) => {
+      entered.resolve(signal);
+      return new Promise(() => {});
+    } });
+    const unsubscribeEvent = vi.fn();
+    const unsubscribeStatus = vi.fn();
+    first.pages.start({ subscribeEvent: () => unsubscribeEvent, subscribeStatus: () => unsubscribeStatus });
+    await first.pages.open(open);
+    await first.pages.answer({ sessionId: 'ses_1', callId: 'call_1', summary: 'B', data: { pick: 2 } });
+    const saved = JSON.parse(await fs.readFile(path.join(dataDir, 'render-later-pages.json'), 'utf8'));
+    const running = first.run();
+    const signal = await entered.promise;
+    first.pages.stop();
+    await first.pages.flush();
+    await running;
+    expect(signal.aborted).toBe(true);
+    expect(unsubscribeEvent).toHaveBeenCalledOnce();
+    expect(unsubscribeStatus).toHaveBeenCalledOnce();
+    expect(first.posts).toHaveLength(0);
+    await expect(first.pages.open({ ...open, callId: 'call_2' })).rejects.toMatchObject({ statusCode: 503 });
+    const second = createPages(dataDir);
+    second.pages.start(null);
+    await second.pages.load();
+    await second.run();
+    expect(second.posts).toHaveLength(1);
+    expect(second.posts[0].body.id).toBe(saved.pages[0].messageID);
+    second.pages.stop();
+    await second.pages.flush();
+  });
+
   it('delivers an answer once, as a steer that starts a turn when the session is idle', async () => {
     const dataDir = await tempDir();
     const { pages, posts, run, broadcastUiEvent } = createPages(dataDir);

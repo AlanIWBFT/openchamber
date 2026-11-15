@@ -78,11 +78,12 @@ describe('graceful shutdown runtime', () => {
     vi.restoreAllMocks();
   });
 
-  it.each(['memoryDreaming', 'sessionTodosRuntime', 'extensionWaitsRuntime'])('joins %s under the shared shutdown deadline', async (name) => {
+  it.each(['memoryDreaming', 'sessionTodosRuntime', 'extensionWaitsRuntime', 'laterPagesRuntime', 'sharePagesRuntime'])('joins %s under the shared shutdown deadline', async (name) => {
     vi.useFakeTimers();
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const pending = Promise.withResolvers();
-    const stop = vi.fn(() => name === 'extensionWaitsRuntime' ? undefined : pending.promise);
+    const hasFlush = ['extensionWaitsRuntime', 'laterPagesRuntime', 'sharePagesRuntime'].includes(name);
+    const stop = vi.fn(() => hasFlush ? undefined : pending.promise);
     const flush = vi.fn(() => pending.promise);
     const exit = vi.fn();
     const start = Date.now();
@@ -90,7 +91,7 @@ describe('graceful shutdown runtime', () => {
     const shuttingDown = runtime.gracefulShutdown({ deadline: start + 35000, exitProcess: true });
     expect(stop).toHaveBeenCalledOnce();
     if (name === 'memoryDreaming') expect(stop).toHaveBeenCalledWith({ deadline: start + 34500 });
-    if (name === 'extensionWaitsRuntime') expect(flush).toHaveBeenCalledOnce();
+    if (hasFlush) expect(flush).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(34499);
     expect(exit).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
