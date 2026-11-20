@@ -8,6 +8,7 @@ import path from 'node:path';
 import { resolveBunExecutable } from './bun-executable.mjs';
 import { explicitServiceBundler } from './service-bundler.mjs';
 import { forkInputsCurrent, sourceRootFor } from './fork-server-inputs.mjs';
+import { ensureWindowsServiceHelpers } from './fork-server-helpers.mjs';
 
 // Bundling takes seconds and the native packages are small; past this, the network is the problem.
 const PREPARE_TIMEOUT_MS = 180_000;
@@ -32,6 +33,7 @@ export const ensureBundledOpenCodeServer = (repoRoot, source, callerEnv = proces
   const electronDir = path.join(repoRoot, 'packages', 'electron');
   const dir = path.join(electronDir, 'resources', 'opencode-server');
   const version = readJson(path.join(electronDir, 'package.json')).devDependencies['@opencode/server'];
+  if (source && process.platform === 'win32') ensureWindowsServiceHelpers(electronDir, source, callerEnv);
   const current = () => {
     const manifest = stagedFor(dir, version);
     return manifest && (!source || forkInputsCurrent(electronDir, source, manifest, bundler));

@@ -68,7 +68,8 @@ export function recordForkInputs(electron, source, inputs, extra, bundler = expl
   const sorted = [...files].sort();
   const ids = inputIds(sorted, source);
   const stamp = execFileSync('git', ['hash-object', '--stdin'], { cwd: source, input: JSON.stringify([sorted, ids]), encoding: 'utf8', windowsHide: true }).trim();
-  const commit = execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: source, encoding: 'utf8', windowsHide: true }).trim();
+  const commit = process.env.OPENCHAMBER_OPENCODE_SOURCE_COMMIT || execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: source, encoding: 'utf8', windowsHide: true }).trim();
+  if (!/^[a-f\d]{40}$/i.test(commit)) throw new Error('Expected the full OpenCode source commit');
   const dest = cachePath(electron);
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.writeFileSync(dest, JSON.stringify({ root: source, stamp, ids, files: sorted, bundler }));

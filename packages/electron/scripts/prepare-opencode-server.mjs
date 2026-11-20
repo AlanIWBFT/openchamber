@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveTargetArchitecture } from './target-architecture.mjs';
 import { recordForkInputs } from '../../../scripts/lib/fork-server-inputs.mjs';
+import { helperOutput, windowsServiceHelpers } from '../../../scripts/lib/fork-server-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
@@ -223,13 +224,10 @@ const main = async () => {
 
   if (source) {
     if (platform === 'win32') {
-      for (const [key, relative] of [
-        ['processBroker', 'packages/util/src/windows-process-broker/bin/OpenCode.ProcessBroker.exe'],
-        ['recycleHelper', 'packages/core/src/windows-recycle/bin/Release/netstandard2.0/OpenCode.Windows.RecycleBin.dll'],
-      ]) {
-        const file = path.join(source, relative);
+      for (const helper of windowsServiceHelpers) {
+        const file = helperOutput(source, helper);
         copy(file, path.join(assetsDir, path.basename(file)));
-        manifest[key] = path.basename(file);
+        manifest[helper.key] = path.basename(file);
         extra.push(file);
       }
     }
@@ -240,7 +238,7 @@ const main = async () => {
     const repo = path.resolve(electronRoot, '../..');
     manifest.fork = recordForkInputs(electronRoot, source, inputs, [
       ...extra, path.join(photonDir, 'photon_rs_bg.wasm'), path.join(source, 'bun.lock'), path.join(repo, 'bun.lock'),
-      fileURLToPath(import.meta.url), path.join(__dirname, 'target-architecture.mjs'), path.join(repo, 'scripts/lib/fork-server-inputs.mjs'),
+      fileURLToPath(import.meta.url), path.join(__dirname, 'target-architecture.mjs'), path.join(repo, 'scripts/lib/fork-server-inputs.mjs'), path.join(repo, 'scripts/lib/fork-server-helpers.mjs'),
     ]);
   }
 

@@ -23,6 +23,7 @@ The web server owns starting and stopping it. `lib/opencode/env-runtime.js` reso
 - It is a server script, never a command. The web server never puts its folder on `PATH` or its path in `OPENCODE_BINARY`, so a terminal or an agent's shell runs the user's own `opencode` or none.
 - The staged natives match the target platform and architecture, not the build host's: Windows arm64 builds on x64 and macOS x64 on arm64. `verify-opencode-server.mjs` reads every native file's header to prove it.
 - Fork packages support Windows x64 and arm64 and Linux x64. The Windows process broker runs out of process and stays x64 on both Windows architectures. In-process bindings must match the architecture of Electron's Node runtime.
+- With no explicit CLI or service selection on Windows, dev tooling checks each helper's sources and output before reusing the service bundle. Core builds the recycle DLL; Util publishes the x64 NativeAOT broker. The first run needs their .NET and Visual Studio build tools. Editing just one project rebuilds just that helper.
 - The bundle carries the JavaScript of the Claude Agent SDK, at the version `@opencode/core` names as its optional peer, so OpenCode's Claude Agent provider works. The SDK's platform package (a Claude Code binary) stays out: the provider runs the user's `claude`.
 
 ## Decisions
