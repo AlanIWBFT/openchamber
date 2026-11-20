@@ -468,6 +468,7 @@ const runError = (stop) => {
 // ---------------------------------------------------------------- commands
 
 const run = async (options) => {
+  if (process.platform === 'win32') throw new Error('Live model benchmarks are not supported on Windows: stopping an instance requires POSIX process groups. Use report or regrade for saved runs.');
   if (!options.models) throw new Error('--models provider/model[#variant],... is required');
   const models = String(options.models).split(',').map(parseModel);
   // OpenChamber puts its tools behind Code Mode with no setting for it; the

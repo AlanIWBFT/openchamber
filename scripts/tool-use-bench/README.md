@@ -1,5 +1,7 @@
 # Tool-use bench
 
+Windows supports `report` and `regrade` on saved results. `run` needs POSIX process groups to stop its servers and exits on Windows before opening the login database or starting an instance.
+
 Checks whether an agent reaches OpenChamber's own tools (`openchamber`, `openchamber_memory`, `openchamber_schedule` and the rest) when it should. Most of them sit behind OpenCode's Code Mode (`packages/web/server/lib/agent-tool/DOCUMENTATION.md`), so a change to their descriptions, catalog lines or the session guidance is checked here. It also records what a session costs in context: the size of the first request of every run.
 
 ## Run
