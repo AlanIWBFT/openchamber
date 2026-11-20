@@ -56,7 +56,6 @@ interface TextSelectionMenuProps {
   containerRef: React.RefObject<HTMLElement | null>;
   readingKey: string;
   canReadAloud: boolean;
-  uiRenderSelection?: boolean;
   frameSelections?: boolean;
 }
 
@@ -93,7 +92,7 @@ const ownsSelection = (container: HTMLElement, range: Range): boolean => {
   return messageId !== null && messageId === messageIdOf(range.endContainer);
 };
 
-const TextSelectionMenuImpl: React.FC<TextSelectionMenuProps> = ({ containerRef, readingKey, canReadAloud, frameSelections = false, uiRenderSelection = false }) => {
+const TextSelectionMenuImpl: React.FC<TextSelectionMenuProps> = ({ containerRef, readingKey, canReadAloud, frameSelections = false }) => {
   const guestActions = useGuestActions();
   const { t } = useI18n();
   const [position, setPosition] = React.useState<MenuPosition>({ x: 0, y: 0, placement: 'above', show: false });
@@ -101,7 +100,7 @@ const TextSelectionMenuImpl: React.FC<TextSelectionMenuProps> = ({ containerRef,
   const [selectedText, setSelectedText] = React.useState('');
   const [selectedTextMarkdown, setSelectedTextMarkdown] = React.useState('');
   const [selectedMessageId, setSelectedMessageId] = React.useState<string | null>(null);
-  const { isPlaying: isReading, play: playReading, stop: stopReading } = useMessageTTS(uiRenderSelection ? selectedMessageId ?? readingKey : readingKey);
+  const { isPlaying: isReading, play: playReading, stop: stopReading } = useMessageTTS(readingKey);
   const [selectedAnchor, setSelectedAnchor] = React.useState<ChatQuoteAnchor | null>(null);
   const [commentMode, setCommentMode] = React.useState(false);
   const commentModeRef = React.useRef(false);
@@ -247,7 +246,7 @@ const TextSelectionMenuImpl: React.FC<TextSelectionMenuProps> = ({ containerRef,
   React.useEffect(() => {
     const scope = containerRef.current;
     const partId = selectedAnchor?.page?.kind === 'ui' ? selectedAnchor.page.partId : null;
-    if (!uiRenderSelection || !commentMode || !scope || !selectedMessageId || !partId || !selectedAnchor) return;
+    if (!commentMode || !scope || !selectedMessageId || !partId || !selectedAnchor) return;
     const selector = `[data-ui-render-message="${CSS.escape(selectedMessageId)}"][data-ui-render-part="${CSS.escape(partId)}"]`;
     let frame: number | null = null;
     const restore = () => {
@@ -279,7 +278,7 @@ const TextSelectionMenuImpl: React.FC<TextSelectionMenuProps> = ({ containerRef,
       observer.disconnect();
       if (frame !== null) window.cancelAnimationFrame(frame);
     };
-  }, [commentMode, containerRef, getDesktopPosition, isMobile, selectedAnchor, selectedMessageId, uiRenderSelection, updateCommentRects]);
+  }, [commentMode, containerRef, getDesktopPosition, isMobile, selectedAnchor, selectedMessageId, updateCommentRects]);
 
   const addMarkdownToChat = React.useCallback((markdownText: string) => {
     const markdownBlock = wrapMarkdownSelectionForChat(markdownText);
@@ -429,14 +428,6 @@ const TextSelectionMenuImpl: React.FC<TextSelectionMenuProps> = ({ containerRef,
     }
 
     const range = selection.getRangeAt(0);
-    if (uiRenderSelection) {
-      const element = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
-      const page = element?.closest('[data-ui-render-hoisted]');
-      if (!page || !page.contains(range.endContainer)) {
-        if (!isDraggingRef.current) hideMenu();
-        return;
-      }
-    }
     
     if (!ownsSelection(container, range)) {
       if (!isDraggingRef.current) {
@@ -456,9 +447,7 @@ const TextSelectionMenuImpl: React.FC<TextSelectionMenuProps> = ({ containerRef,
       plainText: text,
       markdownText: rangeToMarkdown(range, text),
       rect,
-      messageId: uiRenderSelection
-        ? anchorElement?.closest('[data-ui-render-message]')?.getAttribute('data-ui-render-message') ?? null
-        : anchorElement?.closest('[data-message-id]')?.getAttribute('data-message-id') ?? null,
+      messageId: anchorElement?.closest('[data-message-id]')?.getAttribute('data-message-id') ?? null,
       range: measuredRange.cloneRange(),
     };
     replaced?.clear?.();
@@ -466,16 +455,14 @@ const TextSelectionMenuImpl: React.FC<TextSelectionMenuProps> = ({ containerRef,
     if (!isDraggingRef.current) {
       showMenu();
     }
-  }, [containerRef, hideMenu, showMenu, uiRenderSelection]);
+  }, [containerRef, hideMenu, showMenu]);
 
   React.useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const handleMouseDown = (event: MouseEvent) => {
-      // SAFETY: a MouseEvent target inside the document is always a Node;
-      // `contains` only needs that.
-      if (commentModeRef.current && menuRef.current?.contains(event.target as Node)) {
+      if (commentModeRef.current && event.target instanceof Node && menuRef.current?.contains(event.target)) {
         return;
       }
       if (mobileCommentActiveRef.current) {
@@ -603,18 +590,10 @@ const TextSelectionMenuImpl: React.FC<TextSelectionMenuProps> = ({ containerRef,
     const pending = pendingSelectionRef.current;
     if (pending && !pending.range) return pending.anchor ?? null;
     if (!container || !pending?.range) return null;
-    if (uiRenderSelection) {
-      const element = pending.range.startContainer instanceof Element ? pending.range.startContainer : pending.range.startContainer.parentElement;
-      const page = element?.closest('[data-ui-render-part]');
-      const partId = page?.getAttribute('data-ui-render-part');
-      if (!page || !partId) return null;
-      const anchor = captureChatQuoteAnchor(page, pending.range);
-      return anchor ? { ...anchor, page: { partId, kind: 'ui' } } : null;
-    }
     const scope = container.closest('[data-scrollbar="chat"]');
     const roots = scope && pending.messageId ? findChatQuoteRoots(scope, pending.messageId) : [];
     return captureChatQuoteAnchor(roots.includes(container) ? roots : [container], pending.range);
-  }, [containerRef, uiRenderSelection]);
+  }, [containerRef]);
 
   const openComment = React.useCallback((initialText: string) => {
     if (!selectedTextMarkdown) return;

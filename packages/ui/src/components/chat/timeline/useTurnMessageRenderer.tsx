@@ -114,8 +114,6 @@ export const useTurnMessageRenderer = ({
         }
         return {
             turnId: turn.turnId,
-            summaryBody: turn.summaryText,
-            activityParts: turn.activityParts,
             headerMessageId: turn.headerMessageId,
             hasTools: turn.hasTools,
             hasReasoning: turn.hasReasoning,
@@ -123,7 +121,7 @@ export const useTurnMessageRenderer = ({
             userMessageCreatedAt: typeof userCreatedAt === 'number' ? userCreatedAt : undefined,
             assistantVariant,
         };
-    }, [turn.activityParts, turn.changedFiles, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summaryText, turn.turnId, turn.assistantMessages, turn.userMessage.info]);
+    }, [turn.changedFiles, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.turnId, turn.assistantMessages, turn.userMessage.info]);
 
     const explorationByMessage = React.useMemo(() => {
         const anchored = new Map<string, TurnExplorationGroup[]>();
@@ -168,8 +166,6 @@ export const useTurnMessageRenderer = ({
                     hasTools: turn.hasTools,
                     hasReasoning: turn.hasReasoning,
                     ...(shouldAttachFullTurnContext ? {
-                        summaryBody: turnGroupingContextBase.summaryBody,
-                        activityParts: turnGroupingContextBase.activityParts,
                         headerMessageId: turnGroupingContextBase.headerMessageId,
                         changedFiles: turnGroupingContextBase.changedFiles,
                         userMessageCreatedAt: turnGroupingContextBase.userMessageCreatedAt,

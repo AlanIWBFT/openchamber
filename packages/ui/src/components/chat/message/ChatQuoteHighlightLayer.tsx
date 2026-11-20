@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 
 import {
     findChatQuoteRoots,
@@ -58,8 +59,7 @@ interface ChatQuoteHighlightLayerProps {
     scrollNode: HTMLElement | null;
     loadHistoryUntilMessage: (messageId: string) => Promise<boolean>;
     scrollToMessage: (messageId: string, options?: { behavior?: ScrollBehavior }) => Promise<boolean>;
-    resolveUiPageMessageId?: (messageId: string, partId: string) => string;
-    scrollToUiPageRow?: (messageId: string) => boolean;
+    scrollToUiPageRow?: (messageId: string, partId: string) => boolean;
 }
 
 function markAtPoint(ranges: Map<string, Range[]>, x: number, y: number): string | null {
@@ -115,7 +115,6 @@ export const ChatQuoteHighlightLayer = React.memo(function ChatQuoteHighlightLay
     scrollNode,
     loadHistoryUntilMessage,
     scrollToMessage,
-    resolveUiPageMessageId,
     scrollToUiPageRow,
 }: ChatQuoteHighlightLayerProps) {
     const session = React.useContext(ChatColumnSessionContext);
@@ -123,6 +122,7 @@ export const ChatQuoteHighlightLayer = React.memo(function ChatQuoteHighlightLay
     const chipFocusedMarkId = React.useSyncExternalStore(store.subscribe, store.getChipFocus);
     const [popover, setPopover] = React.useState<PopoverState | null>(null);
     const [editing, setEditing] = React.useState(false);
+    const [closedQuote, setClosedQuote] = React.useState<{ summary: HTMLElement; text: string } | null>(null);
     const focusedMarkId = chipFocusedMarkId ?? popover?.markId ?? null;
     const rangesRef = React.useRef(new Map<string, Range[]>());
     const [owners] = React.useState(() => ({
@@ -137,8 +137,6 @@ export const ChatQuoteHighlightLayer = React.memo(function ChatQuoteHighlightLay
     scrollNodeRef.current = scrollNode;
     const scrollToMessageRef = React.useRef(scrollToMessage);
     scrollToMessageRef.current = scrollToMessage;
-    const resolveUiPageMessageIdRef = React.useRef(resolveUiPageMessageId);
-    resolveUiPageMessageIdRef.current = resolveUiPageMessageId;
     const scrollToUiPageRowRef = React.useRef(scrollToUiPageRow);
     scrollToUiPageRowRef.current = scrollToUiPageRow;
     const loadHistoryUntilMessageRef = React.useRef(loadHistoryUntilMessage);
@@ -150,6 +148,7 @@ export const ChatQuoteHighlightLayer = React.memo(function ChatQuoteHighlightLay
     React.useEffect(() => () => {
         revealGenerationRef.current += 1;
         cancelRevealRef.current?.();
+        setClosedQuote(null);
     }, [scrollNode, store, session?.sessionId, session?.directory]);
 
     React.useEffect(() => {
@@ -224,6 +223,7 @@ export const ChatQuoteHighlightLayer = React.memo(function ChatQuoteHighlightLay
 
     const reveal = React.useCallback((messageId: string, anchor: ChatQuoteAnchor) => {
         cancelRevealRef.current?.();
+        setClosedQuote(null);
         const scrollToMessage = scrollToMessageRef.current;
         const scrollNode = scrollNodeRef.current;
         const generation = ++revealGenerationRef.current;
@@ -254,41 +254,49 @@ export const ChatQuoteHighlightLayer = React.memo(function ChatQuoteHighlightLay
             const loaded = await loadHistoryUntilMessageRef.current(messageId).catch(() => false);
             if (!loaded || !isCurrent()) return;
 
+            const showClosedQuote = () => {
+                if (!scrollNode || !anchor.page) return false;
+                const summary = scrollNode.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"] [data-closed-page="${CSS.escape(anchor.page.partId)}"]`);
+                if (!summary) return false;
+                dispatchNavigationRelease(scrollNode);
+                setClosedQuote({ summary, text: anchor.text });
+                summary.scrollIntoView({ block: 'center', inline: 'nearest' });
+                return true;
+            };
+            if (showClosedQuote()) return;
             if (anchor.page && anchor.page.kind !== 'ui') {
                 const { partId } = anchor.page;
-                await scrollToMessage(messageId, { behavior: 'auto' }).catch(() => false);
+                if (!scrollToUiPageRowRef.current?.(messageId, partId)) await scrollToMessage(messageId, { behavior: 'auto' }).catch(() => false);
                 for (let attempt = 0; attempt < REVEAL_ATTEMPTS; attempt += 1) {
                     await nextFrame();
                     if (!isCurrent()) return;
-                    if (revealPageMark(partId, anchor)) return;
+                    if (showClosedQuote() || revealPageMark(partId, anchor)) return;
                 }
                 return;
             }
-            const targetMessageId = anchor.page?.kind === 'ui'
-                ? resolveUiPageMessageIdRef.current?.(messageId, anchor.page.partId) ?? messageId
-                : messageId;
             const uiRoot = anchor.page && scrollNode ? findUiRenderQuoteRoot(scrollNode, messageId, anchor.page.partId) : null;
             const mounted = uiRoot !== null || (scrollNodeRef.current ? findChatQuoteRoots(scrollNodeRef.current, messageId).length > 0 : false);
-            let pageRowRequested = anchor.page?.kind === 'ui' && uiRoot === null && scrollToUiPageRowRef.current?.(messageId) === true;
+            let pageRowRequested = anchor.page?.kind === 'ui' && uiRoot === null && scrollToUiPageRowRef.current?.(messageId, anchor.page.partId) === true;
             const scrolled = uiRoot !== null || pageRowRequested
-                || await scrollToMessage(targetMessageId, { behavior: 'auto' }).catch(() => false);
+                || await scrollToMessage(messageId, { behavior: 'auto' }).catch(() => false);
             if (!isCurrent() || !scrollNode) return;
             if (!scrolled && !mounted) return;
             let steps = 0;
             const tryReveal = () => {
                 frame = null;
                 if (!isCurrent()) { cancel(); return; }
+                if (showClosedQuote()) { cancel(); return; }
                 const pageRoot = anchor.page ? findUiRenderQuoteRoot(scrollNode, messageId, anchor.page.partId) : null;
                 const roots = anchor.page ? pageRoot ? [pageRoot] : [] : findChatQuoteRoots(scrollNode, messageId);
-                if (anchor.page?.kind === 'ui' && roots.length === 0 && !pageRowRequested && scrollToUiPageRowRef.current?.(messageId)) {
+                if (anchor.page?.kind === 'ui' && roots.length === 0 && !pageRowRequested && scrollToUiPageRowRef.current?.(messageId, anchor.page.partId)) {
                     pageRowRequested = true;
                     return;
                 }
                 if (roots.length === 0 || roots.some((root) => root.querySelector('[data-chat-quote-pending]'))) return;
                 const parts = resolveChatQuoteRanges(roots, anchor);
-                if (!parts && steps < REVEAL_ATTEMPTS && messageContinuesBelow(scrollNode, targetMessageId)) {
+                if (!parts && steps < REVEAL_ATTEMPTS && messageContinuesBelow(scrollNode, messageId)) {
                     dispatchNavigationRelease(scrollNode);
-                    scrollToNextSlice(scrollNode, targetMessageId);
+                    scrollToNextSlice(scrollNode, messageId);
                     steps += 1;
                     return;
                 }
@@ -302,7 +310,7 @@ export const ChatQuoteHighlightLayer = React.memo(function ChatQuoteHighlightLay
                     paintFlash([]);
                 }, FLASH_DURATION_MS);
             };
-            const selector = `[data-message-id="${CSS.escape(targetMessageId)}"]`;
+            const selector = `[data-message-id="${CSS.escape(messageId)}"]`;
             const pageSelector = anchor.page?.kind === 'ui'
                 ? `[data-ui-render-message="${CSS.escape(messageId)}"][data-ui-render-part="${CSS.escape(anchor.page.partId)}"]`
                 : null;
@@ -312,7 +320,7 @@ export const ChatQuoteHighlightLayer = React.memo(function ChatQuoteHighlightLay
                     const element = record.target instanceof Element ? record.target : record.target.parentElement;
                     if (pageSelector && element?.closest(pageSelector)) return true;
                     const message = element?.closest('[data-message-id]');
-                    if (message?.getAttribute('data-message-id') === targetMessageId) return true;
+                    if (message?.getAttribute('data-message-id') === messageId) return true;
                     return [...record.addedNodes].some((node) => node instanceof Element
                         && (node.matches(selector) || node.querySelector(selector)
                             || (pageSelector && (node.matches(pageSelector) || node.querySelector(pageSelector)))));
@@ -481,9 +489,7 @@ export const ChatQuoteHighlightLayer = React.memo(function ChatQuoteHighlightLay
             }
         };
         const handlePressOutside = (event: PointerEvent) => {
-            // SAFETY: a pointer event target inside the document is always a
-            // Node; `contains` only needs that.
-            if (popoverElementRef.current?.contains(event.target as Node)) return;
+            if (event.target instanceof Node && popoverElementRef.current?.contains(event.target)) return;
             if (markAtPoint(rangesRef.current, event.clientX, event.clientY) === openMarkId) return;
             closePopover();
         };
@@ -500,7 +506,9 @@ export const ChatQuoteHighlightLayer = React.memo(function ChatQuoteHighlightLay
         };
     }, [cancelClose, closePopover, isInPopoverCorridor, openMarkId, scheduleClose]);
 
-    return popover && openMark ? (
+    return <>
+        {closedQuote && createPortal(<blockquote className="my-1 whitespace-pre-wrap break-words border-s-2 ps-2 text-muted-foreground">{closedQuote.text}</blockquote>, closedQuote.summary)}
+        {popover && openMark ? (
         <ChatQuoteMarkPopover
             ref={popoverElementRef}
             anchorRect={popover.rect}
@@ -514,5 +522,6 @@ export const ChatQuoteHighlightLayer = React.memo(function ChatQuoteHighlightLay
                 closePopover();
             }}
         />
-    ) : null;
+        ) : null}
+    </>;
 });

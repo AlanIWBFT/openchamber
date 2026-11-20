@@ -20,7 +20,6 @@ import { FormDockModeContext, resolveFormDockMode, resolveFormsInChat } from './
 import { ChatColumnProviders } from './column/ChatColumnProviders';
 import { ChatViewport } from './column/ChatViewport';
 import { ComposerSlot } from './column/ComposerSlot';
-import { HoistedUiPageSelection } from './column/HoistedUiPageSelection';
 import { ReturnToParentButton } from './column/ReturnToParentButton';
 import { resolveSessionPlaceholder } from './column/sessionPlaceholder';
 import { useAutoOpenDraft, useChatColumnSelection } from './column/useChatColumnSelection';
@@ -223,7 +222,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         chatQuoteHighlights,
         loadQuoteSource,
         scrollToQuoteSource,
-        resolveUiPageMessageId,
         scrollToUiPageRow,
     } = useColumnQuoteNavigation({
         currentSessionKey,
@@ -366,10 +364,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                     scrollNode={scrollNode}
                     loadHistoryUntilMessage={loadQuoteSource}
                     scrollToMessage={scrollToQuoteSource}
-                    resolveUiPageMessageId={resolveUiPageMessageId}
                     scrollToUiPageRow={scrollToUiPageRow}
                 />
-                {scrollNode && currentSessionId ? <HoistedUiPageSelection key={currentSessionKey ?? currentSessionId} scrollNode={scrollNode} sessionId={currentSessionId} /> : null}
                 <div
                     ref={chatRootRef}
                     data-composer-bound

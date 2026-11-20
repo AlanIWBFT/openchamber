@@ -1,3 +1,4 @@
+import { isUiBlockTextPart } from '@/lib/messages/uiBlockText';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -163,7 +164,7 @@ describe('session leaf subscriptions', () => {
       const projection = projectTurnRecords(records, { showTurnChangedFiles: false, showReasoningTraces: false })
       const rows = buildTimelineRows(projection.turns.map(turn => ({ kind: 'turn' as const, key: `turn:${turn.turnId}`, turn, isLastTurn: true })),
         { collapsedActivity: true, expandedTurns: new Map(), showReasoningTraces: false }, [])
-      pageKeys = rows.filter(row => row.kind === 'turn-pages').map(row => row.key)
+      pageKeys = rows.flatMap(row => row.kind !== 'turn-message' ? [] : (row.entry.turn.assistantMessages.find(m => m.info.id === row.messageId)?.parts ?? []).filter(p => isUiBlockTextPart(p) || (p.type === 'tool' && p.tool === 'openchamber_render')).map(p => `page:${p.id}`))
       return null
     }
     await act(async () => root.render(<SyncProvider sdk={createSdk()} directory=""><Timeline /></SyncProvider>))

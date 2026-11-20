@@ -1,3 +1,6 @@
+import { SegmentContext } from '../../components/toolSegmentContext';
+import { ToolSegmentDisclosure } from '../../components/ToolSegmentDisclosure';
+import { hiddenToolCount, hiddenToolRow } from '../../lib/turns/toolSegments';
 import React from 'react';
 import { ExplorationToolGroup } from '../parts/ExplorationToolGroup';
 import type { Part, ToolPart as ToolPartType } from '@/lib/opencode/model';
@@ -6,18 +9,15 @@ import type { TurnGroupingContext } from '../../lib/turns/types';
 import ToolPart from '../parts/ToolPart';
 import AssistantTextPart from '../parts/AssistantTextPart';
 import ReasoningPart from '../parts/ReasoningPart';
-import { isEmptyTextPart } from '../partUtils';
 import { isInvisibleText } from '@/lib/invisibleText';
 import { FadeInOnReveal } from '../FadeInOnReveal';
 import { SessionNoticeBlock } from '../SessionNoticeBlock';
 import { readSessionNoticePart } from '@/lib/opencode/session-notices';
 import { StaticToolRow } from '../parts/ProgressiveGroup';
 import { isExpandableTool } from '../parts/toolRenderUtils';
-import { ShownPartCard, ShownToolCard } from '../parts/ShownToolCard';
+import { ShownToolCard } from '../parts/ShownToolCard';
 import { isExecuteTool, isShownInPlace } from '@/lib/opencode/tools';
-import { LiveActivityCollapse } from '../../components/LiveActivityCollapse';
 import { isToolRowShown } from '../../lib/turns/activityRows';
-import { LiveFinalActivityContext, LiveTurnHoistedCommandsContext, LiveTurnHoistedPagesContext } from '../../components/liveActivityContext';
 import { MessageSliceContext } from '../messageSliceContext';
 import { MessageSelectionMark } from '../../messageSelection/MessageSelectionMark';
 import { useUIStore } from '@/stores/useUIStore';
@@ -31,8 +31,6 @@ export const useAssistantRenderedParts = ({
     messageActionButtons,
     answerSelectionKey,
     effectiveStreamPhase,
-    hasStopFinish,
-    isLastAssistantInTurn,
     turnGroupingContext,
     showReasoningTraces,
     expandedTools,
@@ -50,8 +48,6 @@ export const useAssistantRenderedParts = ({
     messageActionButtons: React.ReactNode;
     answerSelectionKey: string | null;
     effectiveStreamPhase: StreamPhase;
-    hasStopFinish: boolean;
-    isLastAssistantInTurn: boolean;
     turnGroupingContext: TurnGroupingContext | undefined;
     showReasoningTraces: boolean;
     expandedTools: Set<string>;
@@ -63,9 +59,7 @@ export const useAssistantRenderedParts = ({
     lastRenderableTextPartIndex: number;
 }) => {
     const collapsibleThinkingBlocks = useUIStore((state) => state.collapsibleThinkingBlocks);
-    const liveFinalActivity = React.useContext(LiveFinalActivityContext);
-    const hoistedPages = React.useContext(LiveTurnHoistedPagesContext);
-    const hoistedCommands = React.useContext(LiveTurnHoistedCommandsContext);
+    const segments = React.useContext(SegmentContext);
     const slice = React.useContext(MessageSliceContext);
     const nestedTools = React.useMemo(() => ({ expanded: expandedTools, toggle: onToggleTool }), [expandedTools, onToggleTool]);
 
@@ -75,22 +69,7 @@ export const useAssistantRenderedParts = ({
             return first ? [[first.id, group] as const] : [];
         }));
         const explorationPartIds = new Set(turnGroupingContext?.explorationPartIds ?? []);
-        const answerRendered: React.ReactNode[] = [];
-        const activityRendered: React.ReactNode[] = [];
-        let rendered = answerRendered;
-        const splitLiveActivity = liveFinalActivity?.messageId === messageId;
-        let hasRenderedAnswerText = false;
-        const isFinalLiveAnswer = splitLiveActivity || (isLastAssistantInTurn && hasStopFinish);
-        const hasEarlierVisibleActivity = isFinalLiveAnswer && Boolean(turnGroupingContext?.activityParts?.some((activity) => {
-            if (activity.messageId === messageId) {
-                return false;
-            }
-            if (activity.part.type === 'tool') {
-                return isToolRowShown(activity.part);
-            }
-            return showReasoningTraces && !isEmptyTextPart(activity.part);
-        }));
-
+        const rendered: React.ReactNode[] = [];
         let sliceStarted = !slice?.from;
         const firstTextPartId = visibleParts.find((candidate) => candidate.type === 'text')?.id;
         let i = 0;
@@ -104,32 +83,17 @@ export const useAssistantRenderedParts = ({
                 }
             }
             if (slice?.to && (slice.to.offset === 0 ? part.id === slice.to.partId : visibleParts[i - 1]?.id === slice.to.partId)) break;
-            rendered = splitLiveActivity && part.type !== 'text' ? activityRendered : answerRendered;
+            const position = segments?.index.byPart.get(part.id);
+            if (segments && position) {
+                if (position.index === 0 && hiddenToolCount(position.segment, segments.preview)) {
+                    rendered.push(<ToolSegmentDisclosure key={`segment:${part.id}`} segment={position.segment} selectionKey={segments.index.hasAnswerText ? answerSelectionKey : null} />);
+                }
+                if (hiddenToolRow(part, position, segments.expanded(position.segment.id), segments.preview)) { i++; continue; }
+            }
 
             if (part.type === 'text') {
-                if (part.id && hoistedPages?.has(part.id)) {
-                    i++;
-                    continue;
-                }
                 const textStart = slice?.from?.partId === part.id ? slice.from.offset : 0;
                 const textEnd = slice?.to?.partId === part.id && slice.to.offset > 0 ? slice.to.offset : undefined;
-                if (textStart > 0 || (slice?.from && part.id !== firstTextPartId)) {
-                    hasRenderedAnswerText = true;
-                } else if (isFinalLiveAnswer && !hasRenderedAnswerText && (rendered.length > 0 || activityRendered.length > 0 || hasEarlierVisibleActivity || turnGroupingContext?.earlierAssistantText)) {
-                    rendered.push(
-                        <div
-                            key={`final-answer-divider-${messageId}`}
-                            aria-hidden="true"
-                            className="mt-1.5 mb-3 h-px w-full bg-muted-foreground/20"
-                        />
-                    );
-                }
-                if (splitLiveActivity && !hasRenderedAnswerText && textStart === 0) {
-                    for (const pagePart of liveFinalActivity?.pages ?? []) {
-                        rendered.push(<ShownPartCard key={`page-${pagePart.id}`} part={pagePart} onShowPopup={onShowPopup} />);
-                    }
-                }
-                hasRenderedAnswerText = true;
                 rendered.push(
                     <div
                         key={`assistant-text-${messageId}-${i}`}
@@ -223,15 +187,13 @@ export const useAssistantRenderedParts = ({
                     i++;
                     continue;
                 }
-                if (hoistedCommands?.has(toolPart.id) || !isToolRowShown(toolPart)) {
+                if (!isToolRowShown(toolPart)) {
                     i++;
                     continue;
                 }
 
                 if (isShownInPlace(toolPart.tool, toolPart.state)) {
-                    if (!hoistedPages?.has(toolPart.id)) {
-                        rendered.push(<ShownToolCard key={`page-${toolPart.id}`} part={toolPart} onShowPopup={onShowPopup} />);
-                    }
+                    rendered.push(<ShownToolCard key={`page-${toolPart.id}`} part={toolPart} onShowPopup={onShowPopup} />);
                     i++;
                     continue;
                 }
@@ -280,26 +242,13 @@ export const useAssistantRenderedParts = ({
             i++;
         }
 
-        if (splitLiveActivity && liveFinalActivity && (!slice?.from || activityRendered.length > 0)) {
-            return [
-                <LiveActivityCollapse key="final-message-activity" expanded={liveFinalActivity.expanded}
-                    id={slice?.from ? undefined : liveFinalActivity.contentId}>
-                    {activityRendered}
-                </LiveActivityCollapse>,
-                ...answerRendered,
-            ];
-        }
-        return answerRendered;
+        return rendered;
     }, [
         alwaysShowMessageActions,
-        hoistedPages,
-        hoistedCommands,
         collapsibleThinkingBlocks,
         expandedTools,
         isMobile,
-        liveFinalActivity,
-        isLastAssistantInTurn,
-        hasStopFinish,
+        segments,
         lastRenderableTextPartIndex,
         messageId,
         messageActionButtons,

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Message, Metadata, Part, ToolPart } from '@/lib/opencode/model';
 import { projectTurnRecords } from './projectTurnRecords';
+import { toolSegments } from './toolSegments';
 import type { ChatMessageEntry } from './types';
 
 function createMessageEntry({
@@ -358,7 +359,6 @@ describe('projectTurnRecords', () => {
         expect(next.turns).toHaveLength(1);
         expect(next.turns[0]).not.toBe(initial.turns[0]);
         expect(next.turns[0]?.hasTools).toBe(true);
-        expect(next.turns[0]?.activityParts).toHaveLength(1);
         expect(next.turns[0]?.stream.isStreaming).toBe(true);
         expect(next.turns[0]?.stream.isRetrying).toBe(false);
     });
@@ -377,7 +377,7 @@ describe('projectTurnRecords', () => {
         const projection = projectTurnRecords([user, assistant]);
 
         expect(projection.turns[0]?.hasTools).toBe(true);
-        expect(projection.turns[0]?.activityParts.map((record) => record.id)).toEqual(['exec-1', 'terminate-1']);
+        expect([...toolSegments(projection.turns[0], true).byPart.keys()]).toEqual(['exec-1', 'terminate-1']);
     });
 
     test('does not create tool Activity for a message containing only successful exec follow-ups', () => {
@@ -393,7 +393,7 @@ describe('projectTurnRecords', () => {
         const projection = projectTurnRecords([user, assistant]);
 
         expect(projection.turns[0]?.hasTools).toBe(false);
-        expect(projection.turns[0]?.activityParts).toEqual([]);
+        expect(toolSegments(projection.turns[0], true).segments).toHaveLength(0);
     });
 
     test('keeps historical Todo calls in Activity', () => {
@@ -406,7 +406,7 @@ describe('projectTurnRecords', () => {
         const projection = projectTurnRecords([user, assistant]);
 
         expect(projection.turns[0]?.hasTools).toBe(true);
-        expect(projection.turns[0]?.activityParts.map((record) => record.id)).toEqual(['todo-1']);
+        expect([...toolSegments(projection.turns[0], true).byPart.keys()]).toEqual(['todo-1']);
     });
 
     test('keeps failed todo updates in Activity', () => {
@@ -419,7 +419,7 @@ describe('projectTurnRecords', () => {
         const projection = projectTurnRecords([user, assistant]);
 
         expect(projection.turns[0]?.hasTools).toBe(true);
-        expect(projection.turns[0]?.activityParts.map((record) => record.id)).toEqual(['todo-1']);
+        expect([...toolSegments(projection.turns[0], true).byPart.keys()]).toEqual(['todo-1']);
     });
 
     test('reuses the whole turns array when every turn is unchanged', () => {
@@ -514,6 +514,6 @@ describe('projectTurnRecords', () => {
         const projection = projectTurnRecords([user, assistant]);
 
         const turn = projection.turns[0];
-        expect(turn?.activityParts.map((activity) => [activity.partIndex, activity.kind])).toEqual([[1, 'tool']]);
+        expect([...toolSegments(turn, true).byPart.keys()]).toEqual(['ap2']);
     });
 });

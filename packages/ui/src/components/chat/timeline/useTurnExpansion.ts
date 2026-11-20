@@ -1,3 +1,4 @@
+import type { ToggleTurnActivity } from './types';
 import React from 'react';
 
 const TURN_EXPANSION_CACHE_MAX = 4000;
@@ -32,13 +33,13 @@ export const useTurnExpansion = (activityRenderMode: string) => {
         setTurnExpansion(readTurnExpansionCache(activityRenderMode));
     }, [activityRenderMode]);
 
-    const toggleTurnActivity = React.useCallback((turnId: string) => {
+    const toggleTurnActivity = React.useCallback<ToggleTurnActivity>((ids, expanded) => {
         setTurnExpansion((previous) => {
-            const expanded = !(previous.get(turnId) ?? defaultExpanded);
-            writeTurnExpansionCache(turnId, expanded);
-            return new Map(previous).set(turnId, expanded);
+            const next = new Map(previous);
+            for (const id of ids) { writeTurnExpansionCache(id, expanded); next.set(id, expanded); }
+            return next;
         });
-    }, [defaultExpanded]);
+    }, []);
 
     const turnExpansionRef = React.useRef(turnExpansion);
     turnExpansionRef.current = turnExpansion;

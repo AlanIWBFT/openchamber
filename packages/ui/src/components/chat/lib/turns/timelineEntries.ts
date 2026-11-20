@@ -15,14 +15,12 @@ export type TimelineEntry =
         key: string;
         turn: TurnRecord;
         isLastTurn: boolean;
-        hasLaterAssistant?: boolean;
         nextEntryFirstMessage?: ChatMessageEntry;
     };
 
 type HistoryEntriesInput = {
     staticTurns: readonly TurnRecord[];
     lastTurnId: string | null;
-    turnsWithLaterAssistant: ReadonlySet<string>;
     messages: readonly ChatMessageEntry[];
     ungroupedMessageIds: ReadonlySet<string>;
     hasStreamingTurn: boolean;
@@ -40,7 +38,6 @@ const entryFirstMessage = (entry: TimelineEntry): ChatMessageEntry => (
 const orderHistoryEntries = ({
     staticTurns,
     lastTurnId,
-    turnsWithLaterAssistant,
     messages,
     ungroupedMessageIds,
     hasStreamingTurn,
@@ -50,7 +47,6 @@ const orderHistoryEntries = ({
         key: `turn:${turn.turnId}`,
         turn,
         isLastTurn: turn.turnId === lastTurnId,
-        hasLaterAssistant: turnsWithLaterAssistant.has(turn.turnId),
     }));
     if (ungroupedMessageIds.size === 0) return turnEntries;
 
@@ -84,7 +80,6 @@ const isSameEntry = (previous: TimelineEntry, next: TimelineEntry): boolean => {
     if (previous.kind === 'turn' && next.kind === 'turn') {
         return previous.turn === next.turn
             && previous.isLastTurn === next.isLastTurn
-            && previous.hasLaterAssistant === next.hasLaterAssistant
             && previous.nextEntryFirstMessage === next.nextEntryFirstMessage;
     }
     if (previous.kind === 'ungrouped' && next.kind === 'ungrouped') {

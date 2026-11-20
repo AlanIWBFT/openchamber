@@ -80,7 +80,7 @@ export interface TimelineListHandle {
 export type LinkedMessageState = 'exists' | 'missing' | 'unknown';
 
 interface TimelineAnchorHandle {
-    alignViewportAnchor: (anchor: MessageViewportAnchor) => ViewportAnchorAlignment;
+    alignViewportAnchor: (anchor: MessageViewportAnchor, revealFolded?: boolean) => ViewportAnchorAlignment;
 }
 
 interface UseChatTimelineScrollOptions {
@@ -474,7 +474,7 @@ export const useChatTimelineScroll = ({
         releaseReveal: (() => void) | null,
     ): boolean => {
         const { anchor } = target;
-        const first = messageListRef.current?.alignViewportAnchor(anchor) ?? 'missing';
+        const first = messageListRef.current?.alignViewportAnchor(anchor, target.kind === 'link') ?? 'missing';
         if (first === 'missing') return false;
         holdRememberedPosition();
 
@@ -522,7 +522,7 @@ export const useChatTimelineScroll = ({
                 finish();
                 return;
             }
-            const result = messageListRef.current?.alignViewportAnchor(anchor) ?? 'missing';
+            const result = messageListRef.current?.alignViewportAnchor(anchor, target.kind === 'link') ?? 'missing';
             frames += 1;
             stable = result === 'aligned' ? stable + 1 : 0;
             if (stable >= 2) settle();

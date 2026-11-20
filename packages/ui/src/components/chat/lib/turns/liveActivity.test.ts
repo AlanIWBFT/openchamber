@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { AssistantMessage, Part, ToolPart, ToolStateCompleted } from '@/lib/opencode/model';
 import { attachSyntheticContext } from '../attachSyntheticContext';
-import { getLiveFinalMessage, getRunningCommandMessages, getShownPages, getTurnsWithLaterAssistant, hasLiveActivity, projectLiveActivityPreview, splitLiveActivityAtPages, uiPageMessageId } from './liveActivity';
 import { projectTurnRecords } from './projectTurnRecords';
 import { summarizeLiveActivity } from './liveActivitySummary';
 import type { ChatMessageEntry } from './types';
@@ -59,49 +58,14 @@ function tool(id: string, name: string, options: {
 const diff = '@@ -1,1 +1,2 @@\n-before\n+after\n+added';
 
 describe('live turn boundaries', () => {
-    test('a pending user prompt does not count as a later assistant response', () => {
-        const turns = projectTurnRecords([user(), assistant('a', [tool('read', 'read')]), user('next')]).turns;
-        expect(getTurnsWithLaterAssistant(turns).size).toBe(0);
-    });
-
-    test('an assistant with the next visible parent retires the previous turn', () => {
-        const turns = projectTurnRecords([
-            user(), assistant('a', [text('Checking'), tool('read', 'read')]), user('next'),
-            assistant('b', [tool('shell', 'shell')]),
-        ]).turns;
-        expect([...getTurnsWithLaterAssistant(turns)]).toEqual(['user']);
-        expect(getLiveFinalMessage(turns[0].assistantMessages)).toBeUndefined();
-    });
-
     test('hidden user continuations keep their visible turn open', () => {
         const turns = projectTurnRecords([
             user(), assistant('a', [tool('read', 'read')]), user('hidden', true),
             assistant('b', [tool('shell', 'shell')]),
         ], { mergeHiddenUserTurns: true }).turns;
         expect(turns).toHaveLength(1);
-        expect(getTurnsWithLaterAssistant(turns).size).toBe(0);
     });
 
-    test('only stop text is a final answer, not a tool step or an earlier stop', () => {
-        const final = assistant('final', [text('Done')], { finish: 'stop' });
-        expect(getLiveFinalMessage([final])).toBe(final);
-        expect(getLiveFinalMessage([assistant('progress', [text('Checking')], { finish: 'tool-calls' })])).toBeUndefined();
-        expect(getLiveFinalMessage([final, assistant('continued', [tool('read', 'read')])])).toBeUndefined();
-        expect(getLiveFinalMessage([assistant('form', [text('Which?'), tool('form', 'form', { status: 'running' })])])).toBeUndefined();
-    });
-
-    test('a stop step whose only text is a zero-width space is not a final answer', () => {
-        expect(getLiveFinalMessage([assistant('blank', [text('\u200B')], { finish: 'stop' })])).toBeUndefined();
-    });
-
-    test('plumbing messages after the final answer stay transparent', () => {
-        const final = assistant('final', [text('Done')], { finish: 'stop' });
-        const synthetic: ChatMessageEntry = {
-            info: { id: 'synthetic', sessionID: 'session', role: 'synthetic', time: { created: 3 }, text: 'plugin prompt' },
-            parts: [],
-        };
-        expect(getLiveFinalMessage([final, synthetic])).toBe(final);
-    });
 
     test('a notice between two answers splits the turn, so each answer stays outside Activity', () => {
         const first = assistant('first', [text('First answer')], { finish: 'stop' });
@@ -111,8 +75,6 @@ describe('live turn boundaries', () => {
         ]), { mergeHiddenUserTurns: true }).turns;
 
         expect(turns.map((turn) => turn.turnId)).toEqual(['user', 'instructions']);
-        expect(turns.map((turn) => getLiveFinalMessage(turn.assistantMessages))).toEqual([first, second]);
-        expect([...getTurnsWithLaterAssistant(turns)]).toEqual(['user']);
     });
 
     test('a notice between the steps of one run leaves the turn whole', () => {
@@ -124,7 +86,6 @@ describe('live turn boundaries', () => {
 
         expect(turns).toHaveLength(1);
         expect(turns[0].assistantMessageIds).toEqual(['step', 'final']);
-        expect(getLiveFinalMessage(turns[0].assistantMessages)).toBe(final);
     });
 
     test('a notice after an answer that the next prompt follows opens no turn', () => {
@@ -136,158 +97,9 @@ describe('live turn boundaries', () => {
         expect(projectTurnRecords(messages).turns.map((turn) => turn.turnId)).toEqual(['user', 'next']);
     });
 
-    test('a notice row alone makes no fold, so it shows above the answer', () => {
-        const messages = attachSyntheticContext([
-            user(),
-            { info: { id: 'n1', sessionID: 'session', role: 'synthetic', time: { created: 1 }, text: 'wait', description: 'Waiting for quota reset' }, parts: [] },
-            assistant('a', [text('Done')], { finish: 'stop' }),
-        ]);
-        const turn = projectTurnRecords(messages).turns[0];
-
-        expect(turn.activityParts).toHaveLength(1);
-        expect(hasLiveActivity(turn, true)).toBe(false);
-    });
-
-    test('activity requires tools or visible reasoning, never a text-only reply even while it streams', () => {
-        const reasoning: Part = { type: 'reasoning', id: 'thinking', messageID: 'a', sessionID: 'session', text: 'Thinking', time: { start: 1, end: 2 } };
-        const turn = projectTurnRecords([user(), assistant('a', [reasoning, text('Done')], { finish: 'stop' })]).turns[0];
-        expect(hasLiveActivity(turn, false)).toBe(false);
-        expect(hasLiveActivity(turn, true)).toBe(true);
-        expect(hasLiveActivity(projectTurnRecords([user(), assistant('a', [text('Hello')], { finish: 'stop' })]).turns[0], true)).toBe(false);
-        expect(hasLiveActivity(projectTurnRecords([user(), assistant('a', [text('Checking')])]).turns[0], true)).toBe(false);
-        expect(hasLiveActivity(projectTurnRecords([user(), assistant('a', [text('Checking'), tool('read', 'read')])]).turns[0], true)).toBe(true);
-        expect(hasLiveActivity(projectTurnRecords([user(), assistant('a', [tool('task', 'subagent')])]).turns[0], true)).toBe(true);
-    });
-
-    test('subagent calls stay inside the turn Activity', () => {
-        const onlySubagent = projectTurnRecords([user(), assistant('a', [tool('sub', 'subagent'), text('Done')], { finish: 'stop' })]).turns[0];
-        expect(hasLiveActivity(onlySubagent, true)).toBe(true);
-        const withRead = projectTurnRecords([user(), assistant('a', [tool('sub', 'subagent'), tool('read', 'read'), text('Done')], { finish: 'stop' })]).turns[0];
-        expect(hasLiveActivity(withRead, true)).toBe(true);
-    });
-});
-
-describe('live collapsed preview', () => {
-    test('workflow cards keep page boundaries and do not spend collapsed preview rows', () => {
-        const workflow = tool('workflow', 'openchamber_workflow');
-        workflow.state = { status: 'completed', input: {}, metadata: {}, time: { start: 1, end: 2 },
-            output: JSON.stringify({ ok: true, action: 'workflow.run', data: { runId: 'wf_test' } }) };
-        const before = tool('before', 'exec_command', { metadata: { processRunning: true } });
-        const after = tool('after', 'read');
-        const record = projectTurnRecords([user(), assistant('step', [before, workflow, text('After the plan'), after])]).turns[0];
-        expect(getShownPages(record.assistantMessages)).toEqual([workflow]);
-        const segments = splitLiveActivityAtPages(record);
-        expect(segments).toHaveLength(2);
-        expect(segments[0].page).toBe(workflow);
-        expect(segments[0].messages.flatMap((message) => message.parts)).toEqual([before]);
-        expect(segments[1].messages.flatMap((message) => message.parts)).toEqual([text('After the plan'), after]);
-        const preview = projectLiveActivityPreview(record, true);
-        expect(preview.messages.flatMap((message) => message.parts)).toEqual([before, after]);
-        expect(preview.pinnedText?.part.text).toBe('After the plan');
-        expect(getRunningCommandMessages(record.assistantMessages)[0].parts).toEqual([before]);
-    });
-    test('running command projection honors terminal metadata and preserves Script child identity', () => {
-        const root = tool('root', 'exec_command', { metadata: { processRunning: true } });
-        const source = assistant('a', [
-            root,
-            tool('exited', 'exec_command', { status: 'running', metadata: { processRunning: false } }),
-            tool('failed', 'exec_command', { status: 'error', metadata: { processRunning: true } }),
-            tool('exec-error', 'exec_command', { metadata: { processRunning: true, execError: 'failed' } }),
-            tool('follow-up', 'poll_exec', { metadata: { processRunning: true } }),
-            tool('starting', 'exec_command', { status: 'running' }),
-            tool('script', 'execute', { metadata: { toolCalls: [
-                { id: 'child', name: 'exec_command', tool: 'functions.exec_command', status: 'completed',
-                    input: { cmd: 'child-command' }, metadata: { processRunning: true }, time: { start: 1, end: 2 } },
-                { id: 'ended', name: 'exec_command', tool: 'functions.exec_command', status: 'completed',
-                    metadata: { processRunning: false }, time: { start: 1, end: 2 } },
-            ] } }),
-        ]);
-        const result = getRunningCommandMessages([source]);
-        expect(result).toHaveLength(1);
-        expect(result[0].info).toBe(source.info);
-        expect(result[0].parts.map((part) => part.id)).toEqual(['root', 'starting', 'script:child:child']);
-        expect(result[0].parts[0]).toBe(root);
-        expect(source.parts).toHaveLength(7);
-        expect(getRunningCommandMessages([source], new Set(['script']))[0].parts.map((part) => part.id)).toEqual(['script:child:child']);
-        expect(getRunningCommandMessages([source], new Set(['root']))[0].parts).toEqual([root]);
-        expect(getRunningCommandMessages([source], new Set())).toEqual([]);
-    });
-
-    test('successful pages do not spend rows, while pending and failed pages stay in the preview', () => {
-        const commands = Array.from({ length: 6 }, (_, index) => tool(`cmd-${index}`, 'shell'));
-        const input = { action: 'render.page', parameters: { html: '<p>Page</p>', title: 'Page' } };
-        const record = projectTurnRecords([user(), assistant('step', [
-            ...commands,
-            tool('page', 'openchamber_render', { input, metadata: { openchamber: { ok: true } } }),
-            tool('pending', 'openchamber_render', { input, status: 'running' }),
-            tool('failed', 'openchamber_render', { input, status: 'error' }),
-        ])]).turns[0];
-        const preview = projectLiveActivityPreview(record, true);
-        expect(preview.messages.flatMap((message) => message.parts.map((part) => part.id)))
-            .toEqual([...commands.slice(1).map((part) => part.id), 'pending', 'failed']);
-        expect(preview.hiddenCount).toBe(1);
-    });
-
-    test('keeps seven most recent rows and one live note without changing source messages', () => {
-        const parts = [text('Latest note'), ...Array.from({ length: 10 }, (_, index) => tool(`cmd-${index}`, 'shell'))];
-        const record = projectTurnRecords([user(), assistant('step', parts)]).turns[0];
-        const preview = projectLiveActivityPreview(record, true);
-        expect(preview.messages.flatMap((message) => message.parts.map((part) => part.id))).toEqual(
-            Array.from({ length: 7 }, (_, index) => `cmd-${index + 3}`),
-        );
-        expect(preview.pinnedText?.part.text).toBe('Latest note');
-        expect(preview.hiddenCount).toBe(3);
-        expect(record.assistantMessages[0].parts).toBe(parts);
-        expect(parts).toHaveLength(11);
-    });
-
-    test('a cross-message Exploration is one complete native row even with many calls', () => {
-        const calls = Array.from({ length: 100 }, (_, index) => assistant(`read-${index}`, [tool(`read-${index}`, 'read')]));
-        const commands = Array.from({ length: 6 }, (_, index) => tool(`cmd-${index}`, 'shell'));
-        const record = projectTurnRecords([user(), ...calls, assistant('commands', commands)]).turns[0];
-        const preview = projectLiveActivityPreview(record, true);
-        expect(preview.messages.map((message) => message.info.id)).toEqual(['read-0', 'commands']);
-        expect(preview.messages.flatMap((message) => message.parts)).toHaveLength(7);
-        expect(preview.hiddenCount).toBe(0);
-        expect(record.explorationGroups[0].parts).toHaveLength(100);
-    });
-
-    test('hidden reasoning, empty text and successful exec controls do not spend the preview budget', () => {
-        const reasoning: Part = { type: 'reasoning', id: 'thinking', sessionID: 'session', messageID: 'a', text: 'Thinking', time: { start: 1, end: 2 } };
-        const commands = Array.from({ length: 8 }, (_, index) => tool(`cmd-${index}`, 'shell'));
-        const record = projectTurnRecords([user(), assistant('a', [...commands, reasoning, text(' '), tool('poll', 'poll_exec', { metadata: { execID: 7 } })])]).turns[0];
-        const preview = projectLiveActivityPreview(record, false);
-        expect(preview.pinnedText).toBeUndefined();
-        expect(preview.messages.flatMap((message) => message.parts.map((part) => part.id))).toEqual(commands.slice(1).map((part) => part.id));
-    });
-
-    test('the latest growing text is pinned without requiring a tool or message completion', () => {
-        const record = projectTurnRecords([user(), assistant('a', [text('Older'), tool('read', 'read')]), assistant('b', [text('Growing')])]).turns[0];
-        const preview = projectLiveActivityPreview(record, true);
-        expect(preview.pinnedText?.message.info.id).toBe('b');
-        expect(preview.pinnedText?.part.text).toBe('Growing');
-        expect(preview.messages.flatMap((message) => message.parts.map((part) => part.id))).toEqual(['Older', 'read']);
-    });
-
 });
 
 describe('live activity report', () => {
-    test('counts exec roots once and keeps background state independent of a final answer', () => {
-        const root = tool('exec', 'exec_command', { metadata: { execID: 7, execDisplay: 'root', processRunning: true } });
-        const final = assistant('final', [text('Done')], { finish: 'stop' });
-        const followUps = ['poll_exec', 'write_stdin', 'terminate_exec'].map((name) => tool(name, name, {
-            metadata: { execID: 7, processRunning: true },
-        }));
-        expect(summarizeLiveActivity([assistant('a', [root, root, ...followUps]), final]))
-            .toMatchObject({ commands: 1, runningCommands: 1 });
-        const exited = tool('exec', 'exec_command', { metadata: { execID: 7, execDisplay: 'root', processRunning: false, exitCode: 0 } });
-        expect(summarizeLiveActivity([assistant('a', [exited, ...followUps]), final]))
-            .toMatchObject({ commands: 1, runningCommands: 0 });
-        expect(summarizeLiveActivity([assistant('a', [
-            tool('failed', 'exec_command', { status: 'error', metadata: { exitCode: 1 } }),
-            tool('denied', 'exec_command', { status: 'error' }),
-        ])])).toMatchObject({ commands: 1, runningCommands: 0 });
-    });
 
     test('groups exploration and web calls without pretending their counts are file counts', () => {
         const result = summarizeLiveActivity([assistant('a', [
@@ -423,52 +235,5 @@ describe('live activity report', () => {
             { file: '/project/noop', additions: 0, deletions: 0, status: 'modified' },
             { file: '/project/empty', additions: 0, deletions: 0, status: 'added' },
         ] } })])])).toMatchObject({ files: 1, additions: 0, deletions: 0, hasCompleteDiff: true });
-    });
-});
-
-describe('getShownPages', () => {
-    test('a rendered page maps to the final row only when the collapsed turn has a final answer', () => {
-        const page = { ...tool('page', 'openchamber_render', { input: { action: 'render.page', parameters: { ui: 'root = Stack([])' } }, metadata: { openchamber: { ok: true } } }), messageID: 'source' };
-        const source = assistant('source', [page], { finish: 'tool-calls' });
-        const answer = assistant('answer', [text('Done')], { finish: 'stop' });
-        const pending = projectTurnRecords([user(), source], { showTurnChangedFiles: false }).turns[0];
-        const complete = projectTurnRecords([user(), source, answer], { showTurnChangedFiles: false }).turns[0];
-        expect(uiPageMessageId(pending, false, 'source', 'page')).toBe('source');
-        expect(uiPageMessageId(complete, false, 'source', 'page')).toBe('answer');
-        expect(uiPageMessageId(complete, true, 'source', 'page')).toBe('source');
-    });
-
-    test('keeps text with a UI block in view, except the final answer and code samples', () => {
-        const block = text('Overview:\n```openui-lang\nroot = Stack([])\n```');
-        const sample = text('```openui-lang literal\nroot = Stack([])\n```');
-        const step = assistant('step', [block, sample], { finish: 'tool-calls' });
-        const answer = assistant('answer', [text('```openui-lang\nroot = Stack([])\n```')], { finish: 'stop' });
-        expect(getShownPages([step, answer], answer)).toEqual([block]);
-    });
-
-    test('a form stays in view while it waits and folds with Activity once it settles; a page that only shows stays', () => {
-        const form = { action: 'render.page', parameters: { ui: 'root = Stack([])', title: 'Scope', awaitAnswer: true } };
-        const page = { action: 'render.page', parameters: { html: '<p>a</p>', title: 'Mockup' } };
-        const waiting = tool('waiting', 'openchamber_render', { status: 'running', input: form });
-        const answered = tool('answered', 'openchamber_render', { input: form, metadata: { openchamber: { ok: true, answer: { answered: true, summary: 'Minimal', data: {} } } } });
-        const inChat = tool('in-chat', 'openchamber_render', { input: form, metadata: { openchamber: { ok: true, answer: { answered: false } } } });
-        const stopped = tool('stopped', 'openchamber_render', { status: 'error', input: form, error: 'aborted' });
-        const shown = tool('shown', 'openchamber_render', { input: page, metadata: { openchamber: { ok: true } } });
-        const step = assistant('step', [waiting, answered, inChat, stopped, shown], { finish: 'tool-calls' });
-        expect(getShownPages([step]).map((part) => part.id)).toEqual(['waiting', 'shown']);
-    });
-
-    test('a settled form after shown text stays between it and the reply; a secret card still folds', () => {
-        const form = { action: 'render.page', parameters: { ui: 'root = Stack([])', title: 'Scope', awaitAnswer: true } };
-        const answer = { metadata: { openchamber: { ok: true, answer: { answered: true, summary: 'Minimal', data: {} } } } };
-        const lead = text('Overview:\n```openui-lang\nroot = Stack([])\n```\nThe one decision:');
-        const asked = tool('asked', 'openchamber_render', { input: form, ...answer });
-        const again = tool('again', 'openchamber_render', { input: form, ...answer });
-        const reply = assistant('reply', [text('It stayed scoped.')], { finish: 'stop' });
-        const step = assistant('step', [lead, asked, again], { finish: 'tool-calls' });
-        expect(getShownPages([step, reply], reply)).toEqual([lead, asked, again]);
-
-        const secret = tool('secret', 'openchamber_secret', { input: { action: 'secret.request', parameters: { name: 'TOKEN' } } });
-        expect(getShownPages([assistant('step', [lead, secret], { finish: 'tool-calls' })])).toEqual([lead]);
     });
 });

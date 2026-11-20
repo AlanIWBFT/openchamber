@@ -20,7 +20,7 @@ import type { RuntimeAPIs } from '@/lib/api/types';
 const { default: MessageList } = await import('./MessageList');
 const { MarkdownContent } = await import('./MarkdownRendererImpl');
 
-test('quote reveal opens real folded Activity, including a source prepended from history', async () => {
+test('quote reveal finds visible answer text, including a source prepended from history', async () => {
     const dom = new Window({ url: 'https://app.test' });
     const frames = new Map<number, FrameRequestCallback>();
     let nextFrame = 0;
@@ -44,7 +44,7 @@ test('quote reveal opens real folded Activity, including a source prepended from
         return result;
     };
     const values = {
-        window: dom, document: dom.document, navigator: dom.navigator, HTMLElement: dom.HTMLElement, Element: dom.Element,
+        window: dom, document: dom.document, navigator: dom.navigator, HTMLElement: dom.HTMLElement, Element: dom.Element, Event: dom.Event, CustomEvent: dom.CustomEvent,
         Node: dom.Node, localStorage: dom.localStorage, sessionStorage: dom.sessionStorage,
         getComputedStyle: dom.getComputedStyle.bind(dom), ResizeObserver: dom.ResizeObserver, MutationObserver: dom.MutationObserver,
         requestAnimationFrame, cancelAnimationFrame, Highlight: TestHighlight,
@@ -85,6 +85,15 @@ test('quote reveal opens real folded Activity, including a source prepended from
         ];
     };
     const recent = turn('recent', 10);
+    for (const kind of ['ui', 'html']) {
+        recent[1].parts.push({
+            id: `closed-${kind}`, sessionID: 'quote-navigation', messageID: 'recent-source', type: 'tool',
+            tool: 'openchamber_render', callID: `closed-${kind}`, state: {
+                status: 'completed', time: { start: 1, end: 2 }, input: { awaitAnswer: true, [kind]: kind === 'html' ? '<p>Which layout?</p>' : 'root = Text("Which layout?")' },
+                output: '', metadata: { openchamber: { ok: true, answer: { answered: true, summary: 'Layout B', data: null } } },
+            },
+        });
+    }
     const older = turn('older', 1);
     let messages = recent;
     let store: ChatQuoteHighlightStore | undefined;
@@ -141,16 +150,24 @@ test('quote reveal opens real folded Activity, including a source prepended from
     try {
         await render();
         for (let index = 0; index < 5; index += 1) await flush();
-        expect(host.querySelector('[data-message-id="recent-source"]')).toBeNull();
+        expect(Boolean(host.querySelector('[data-message-id="recent-source"]'))).toBe(true);
         await reveal('recent');
         await expectHighlight('recent');
+        for (const kind of ['ui', 'html']) {
+            await act(async () => store?.reveal('recent-source', { text: 'Which layout?', prefix: '', suffix: '', start: 0, page: { partId: `closed-${kind}`, kind: kind === 'ui' ? kind : undefined } }));
+            for (let i = 0; i < 5; i++) await flush();
+            const summary = host.querySelector(`[data-closed-page="closed-${kind}"]`);
+            expect(summary?.textContent).toContain('Layout B');
+            expect(summary?.querySelector('blockquote')?.textContent).toBe('Which layout?');
+            expect(host.querySelectorAll('blockquote')).toHaveLength(1);
+            expect(summary?.querySelector('iframe')).toBeNull();
+        }
         highlights.clear();
         await reveal('older');
         expect(finishLoad).toBeDefined();
         messages = [...older, ...recent];
         await render();
         for (let index = 0; index < 5; index += 1) await flush();
-        expect(host.querySelector('[data-message-id="older-source"]')).toBeNull();
         await act(async () => finishLoad?.(true));
         await expectHighlight('older');
     } finally {

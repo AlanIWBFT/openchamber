@@ -43,7 +43,6 @@ const build = (messages: ChatMessageEntry[], previous: TimelineEntry[], tail?: C
     return buildHistoryEntries({
         staticTurns,
         lastTurnId: projection.lastTurnId,
-        turnsWithLaterAssistant: new Set(),
         messages,
         ungroupedMessageIds: projection.ungroupedMessageIds,
         hasStreamingTurn: true,

@@ -175,38 +175,6 @@ const areTurnActivityRecordsEqual = (left: TurnActivityRecord, right: TurnActivi
     && areRenderRelevantPartsEqual([left.part], [right.part]);
 };
 
-const areRelevantActivityPartsEqual = (
-  left: TurnActivityRecord[] | undefined,
-  right: TurnActivityRecord[] | undefined,
-  messageId: string,
-): boolean => {
-  let leftIndex = 0;
-  let rightIndex = 0;
-
-  while (true) {
-    while (leftIndex < (left?.length ?? 0) && left?.[leftIndex]?.messageId !== messageId) {
-      leftIndex += 1;
-    }
-    while (rightIndex < (right?.length ?? 0) && right?.[rightIndex]?.messageId !== messageId) {
-      rightIndex += 1;
-    }
-
-    const leftRecord = left?.[leftIndex];
-    const rightRecord = right?.[rightIndex];
-
-    if (!leftRecord || !rightRecord) {
-      return leftRecord === rightRecord;
-    }
-
-    if (!areTurnActivityRecordsEqual(leftRecord, rightRecord)) {
-      return false;
-    }
-
-    leftIndex += 1;
-    rightIndex += 1;
-  }
-};
-
 const areStringListsEqual = (left: string[] | undefined, right: string[] | undefined): boolean => {
   if (left === right) return true;
   if (!left || !right || left.length !== right.length) return false;
@@ -255,10 +223,6 @@ export const areRelevantTurnGroupingContextsEqual = (
 
   const headerRelevant = left.headerMessageId === messageId || right.headerMessageId === messageId;
   if (headerRelevant && left.headerMessageId !== right.headerMessageId) {
-    return false;
-  }
-
-  if (!areRelevantActivityPartsEqual(left.activityParts, right.activityParts, messageId)) {
     return false;
   }
 

@@ -70,19 +70,11 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Thinking block UI (`ReasoningTimelineBlock`), summary + optional duration.
   - Presentation titles accept inline content. `TimelineNotice` uses this for completed compactions, appending the recorded `providerID/id` in the description color (also on empty-summary rows). Attribution comes from the stored compaction message or `session.compaction.ended`, never the current session selection. Running, failed, and older model-less compactions have no attribution. Custom presentation headers can shrink and wrap long identifiers; ordinary thinking rows retain their existing layout.
 
-- `components/LiveTurnActivity.tsx` (relative to the chat folder)
-  - Owns the turn disclosure whenever the turn has visible Activity content.
-    Activity Default chooses its initial expansion; either mode can toggle it.
-  - The turn's rows (`lib/turns/timelineRows.ts`) are the fold's header,
-    the steps once it is opened, and the final answer; `TurnFold` draws the
-    header and, folded, what stays in view. `components/LiveActivityCollapse.tsx`
-    shows or hides the folded content at once; `components/liveActivityContext.ts` scopes the final message's non-text
-    disclosure without changing message context or tool rendering.
-  - `lib/turns/liveActivity.ts` owns final-answer and interruption boundaries.
-  - `lib/turns/liveActivitySummary.ts` derives the report from tool results.
+- `components/ToolSegmentDisclosure.tsx` (relative to the chat folder)
+  - Expands one run of tool records in its original position. See “Optional history disclosure” below for the preview rules.
 
 - `ShownToolCard.tsx`
-  - What a call drawn in place of its row shows (`isShownInPlace` in `@/lib/opencode/tools`): the run a completed `workflow.run` call proposed (`proposedWorkflowRunId`, read from the call's result envelope), the images a completed `image.generate` call saved (`generatedImagePaths`, drawn by `GeneratedImages.tsx` through the chat's Markdown media, so they load lazily and open in the gallery; each has a download above it that saves the file itself at full size through the same grant, with `saveFile.ts`, which a shown page's download uses too), the card of an `openchamber_secret` call (`requestedSecret`), else the page of an `openchamber_render` call. The user is meant to see all of them, so they are hoisted to the answer with the turn's pages when Activity is collapsed. A form or secret card that asked the user is hoisted only while it waits: once answered, answered in the chat instead, or stopped, it is a step like the question tool's card and folds with Activity (`getShownPages`). It was hoisted for good before, which left every answered form at full height above the reply. A settled form right after text a collapsed Activity keeps in view stays out of the fold as one line saying how it was answered (`SettledAskLine`): with the form folded away, that text and the reply read as one passage with the question gone from between them.
+`ShownToolCard` draws the tool's page or approval at its source. Submitted or closed forms become an answer summary there.
 - `SecretRequestCard.tsx`
   - The card an agent asks for a secret on: label, reason, a masked field that password managers are told to skip, an eye that reveals the typed value for this client only, Save securely and Decline. The value goes to the server through `answerSecretRequest` (`@/lib/secretRequestAnswer`) and never into the call. A refused answer (answered elsewhere, turn ended) shows a toast and keeps the card. Once this client answered, the call shows as its tool row (below). The answer names the session's directory, so a card in an isolated space reaches the space's server, where the call waits and the agent's commands run. A card that waits is brought into view the way a waiting page is (`data-waiting-page`, `dispatchPageWaiting`).
   - `SecretRunCard` is the card of a `secret.run` call (`requestedSecretRun`): the command line as the user approved it (`secretRunCommandLine`, the server's rule mirrored), then one masked field per secret the server still needs, each with "Remember in this chat for 10 minutes", off by default, and Run and Decline. While the call runs, the call alone cannot tell its stage, so the card reads the live state: once the server announces the card as waiting (`useIsCallWaiting`, the global blocking-requests index), the card reads which fields to ask and which the chat reuses from the server (`readSecretRunFields`), so a reload or another device draws the same card.
@@ -108,8 +100,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Full screen opens the page in a dialog, inset from its edges and as tall as the page up to the window, past which the page scrolls. Download saves the page with the theme it was viewed in; on Capacitor it goes through the native share sheet, and VS Code shows no download because its bridge has no save route for HTML.
   - A page can name an image file on the machine by its absolute path (`renderPageImages.ts`). The page cannot read files, so before drawing it the chat asks the image grant route for the paths the page names (the server checks them against the call's stored HTML; see `packages/web/server/lib/markdown-image-grants/`), reads each through `/api/fs/raw` as a data URL and puts it in place of the path. A data URL, not the asset URL: the asset URL carries the URL auth token, which the page's script would see. The page is drawn once its images are in, never before and again after, since a second draw reloads it; its space stays reserved meanwhile. The chat sends every path the page names in one request with the page's call id, and the server shows them in page order while their files add up to 25 MB; the agent's tool result names the rest. An image that does not load keeps its path. VS Code reads workspace images through its file bridge, one by one in page order up to the same 25 MB, since no server weighs the page there, and has no temporary-directory images. A page that scrolls away is remembered with its images in place so it comes back without reading them again; remembered pages are bounded by their total length, 100 MB of characters (about a byte each), and past it the oldest go and read their images again when scrolled back to.
   - VS Code's webview CSP allows inline scripts but no remote ones, and a `srcdoc` page inherits that policy, so the tool description tells agents to draw with inline SVG or their own script.
-  - A completed UI page hoisted outside a message body gets the chat column's selection menu; a waiting form keeps its existing behavior. Its quotes carry the source message and render part as their rendering identity, with offsets inside that page. The highlight layer finds the same page after it moves; reveal maps its source to the final message row when one draws it, without rewriting sent messages. The column owns the menu so an open comment survives the page moving or the fold changing rows.
-  - A page is never folded away, and neither is the text of an earlier step that holds a UI block (`ShownPartCard` draws either). `getShownPages` and `LiveTurnHoistedPagesContext` keep these parts out of message rows so they are not drawn twice. Before a final answer, `splitLiveActivityAtPages` creates independently expandable segments at exact part boundaries, including multiple pages within one message. `timelineRows` keeps each page as its own virtual row between those segments. Once the final answer arrives, its message draws the pages above its first answer text.
+  - Page quotes retain the source message and render part, with offsets inside the page. Reveal targets the virtual row containing that part, including pages that follow long, sliced prose.
+  - Pages render at their source, so a tool disclosure cannot change their order or remount a form.
 
 - `BlockLine.tsx`
   - The vertical connector line left of a collapsible block's body. It is also a click target: clicking it folds/expands the block via its header toggle handler (`onToggle`), or toggles the nearest native `<details>` when no handler is passed (JSON summary sections). Geometry is inline-styled (12px hit strip centered on the 1px line) so it does not depend on compiled Tailwind classes.
@@ -511,52 +503,37 @@ The chat has one render mode: parts stream in and stay in the order they ran.
 The Sorted mode, which folded a turn's work into one block above its answers,
 was removed; a stored `chatRenderMode: 'sorted'` reads as Collapsed Activity
 (`lib/settings/parsers.ts`, `parseActivityRenderMode`). Both defaults use the
-same Activity disclosure and preserve the original rows, their order and their
-individual controls. Expanded opens it initially; Collapsed starts folded.
+same per-segment disclosures and preserve the original row order and controls.
+Expanded opens the segments initially; Collapsed starts with tool previews.
 There is no inner scroller or separate message-window virtualization.
 
-The active turn has its Activity header from the first step. Folded, it shows
-only the latest 7 rows, counting an Exploration group once and keeping it whole.
-The latest prose is pinned separately below those rows. `projectLiveActivityPreview`
-projects visible parts without modifying the durable messages. Hidden running
-commands (including Script children) remain visible above the preview and are
-excluded from the overflow count; after the turn stops, all running commands
-remain visible while the rest folds completely. The more button opens the fold.
-When the cut moves down, `useActivityRowGlide`
-replays the jump as a 220 ms glide of the rows (FLIP, `transform` only, skipped
-with reduced motion). While the turn works what stays in view (the rows
-above and below its pages) never shrinks (`useLiveRowsFloor`): it keeps the
-tallest height it has had, its rows right under the header and the space it
-keeps below the newest row, where the next step lands (kept above the rows, it
-read as a hole under the header). Rows differ in height (a one-line text, a tool row), so a step that
-pushed a tall row out for a short one shrank the window, and a reader following
-the end glided down for one step and was pulled back up by the next. A change of
-width is no step: the rows re-wrap and the floor takes their new height, or a
-chat narrowed and widened again (a panel opened and closed) kept the narrow
-height as empty space above the rows until the fold was opened. Nor is a big row
-leaving the window: the floor holds at most 96 px, or a long reply among the
-latest rows (one with a table, before the reader's answer to its question)
-left hundreds of pixels of empty space under the steps that followed. The trim
-stays while the settled fold closes and lifts when the reader opens it.
-
+All assistant text and rendered pages stay in their original message rows. A form
+keeps its component and input when adjacent work expands. Workflow approvals,
+generated images, session notices and secret requests also stay in place.
+Between these outputs, `toolSegments.ts` collects the visible work rows.
+An Exploration group counts once; hidden exec controls and invisible reasoning
+do not create a segment. Only the last segment in the session shows its last
+seven rows. Earlier segments, including singletons, show a summary until
+opened. A later prompt or text-only turn does not take over the preview.
+A live command remains accessible beyond this budget. A collapsed
+Script shows its running command rows; opening it shows the full call list.
+The full-width Activity
+header summarizes that segment's actions, including Script children and calls
+inside Exploration: files changed (with line counts only for complete diffs),
+exploration, commands, web research and subagents. Its first detail stays on
+screen in narrow columns. Unclassified work falls back to a row count.
+When only some rows are hidden, a muted “more…” line sits between the summary
+and the preview. Clicking either line expands that segment. The prompt's actions menu expands
+or collapses the whole turn. Manual choices survive new segments and the end
+of a turn; an output arriving or a page being answered does not age the work.
 A long turn, in either mode, is several list rows: a row per step once the
 fold is open, a step that ran dozens of calls cut every 24 parts, and a long
 answer cut between its blocks (`lib/turns/timelineRows.ts`). The list mounts
 only the rows near the view.
 
-A final assistant message with `finish: stop`
-collapses the earlier messages and the final message's non-text parts, keeping
-the answer and its existing footer outside. Intermediate-text summary fallback
-and compaction summaries never become final answers. An older turn without a
-final answer collapses as soon as a later visible turn opens, including an
-optimistic user prompt before the next assistant message arrives,
-keeping the text of its latest assistant message containing prose outside the
-fold through the final-answer disclosure. That message's tools and reasoning
-stay at their original positions among the activity rows. Its finish state is
-unchanged. Removing a failed optimistic prompt restores the previous live
-preview; a prompt still in the composer's queue opens no timeline turn. The row
-owning the active streaming message keeps reading live parts even after a new
-prompt moves the tail, until the stream hands off and its base snapshot catches up.
+Ending the turn adds no visual divider before its last text. Its footer still
+offers whole-turn copy and changed files. Older messages and pending follow-up prompts never move an
+answer or page to another row.
 Hidden user continuations retain
 the visible-turn mapping established by `projectTurnRecords`. A notice the
 timeline skips that separates a `stop` answer from the next assistant message
@@ -630,9 +607,8 @@ subcommands. Unknown tools and administrative tools stay in the disclosure
 without a guessed summary category.
 
 Unified Exec commands count their `exec_command` roots, never their polling,
-stdin, or termination controls. A final answer still collapses the outer
-Activity while root `processRunning` metadata keeps a running-command count
-visible in its header. Updated root metadata clears that count on exit;
+stdin, or termination controls. Root `processRunning` metadata keeps a
+running-command count visible in its segment header. Updated root metadata clears that count on exit;
 finishing the assistant turn does not end a background command. Expanded
 Activity retains the local exploration groups and command controls.
 
@@ -670,14 +646,6 @@ A tool row that arrived while its turn ran used to wipe in over 500 ms and
 type its title out. Opening a session whose live turn had over a hundred
 tool calls started an animation for each of them, and the switch felt heavy.
 Rows now appear as they are, and no list of revealed calls is kept per message.
-
-### Why empty reasoning does not separate the answer
-
-`MessageBody` omits reasoning containing only whitespace or default-ignorable
-characters before adding its React element. The final-answer divider counts
-preceding rendered elements, so adding a reasoning element whose child returns
-`null` would leave a divider above a direct answer. Visible reasoning and tool
-rows keep their divider.
 
 ### Why media reconnects in layout setup
 

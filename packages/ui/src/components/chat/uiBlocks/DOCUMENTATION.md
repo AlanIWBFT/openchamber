@@ -59,7 +59,7 @@ A `Table` in a block becomes a GFM table string drawn by the chat's Markdown ren
 
 ### Why text with a block stays out of a collapsed Activity
 
-Text the agent wrote before a later step counts as a step, so a collapsed Activity used to fold it away, blocks included: a showcase of eight blocks followed by one question showed only the question. `getShownPages` lists such text with the pages, so it stays in view like them (`message/parts/DOCUMENTATION.md`).
+UI block text stays in its source message, including before the assistant runs more tools. Expanding tool records does not remount it.
 
 ### Why blocks and HTML pages share one visual kit
 

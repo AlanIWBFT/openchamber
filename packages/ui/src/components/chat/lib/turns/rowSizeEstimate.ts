@@ -1,7 +1,7 @@
 import type { Part } from '@/lib/opencode/model';
 import { isShownInPlace } from '@/lib/opencode/tools';
-import { filterVisibleParts, isEmptyTextPart } from '../../message/partUtils';
-import { getShownPages, isSettledAsk, type ShownPart } from './liveActivity';
+import { filterVisibleParts, isTranscriptPart } from '../../message/partUtils';
+import { hiddenToolCount, hiddenToolRow, toolSegments } from './toolSegments';
 import type { TimelineRow } from './timelineRows';
 import type { ChatMessageEntry } from './types';
 
@@ -24,7 +24,6 @@ const DETAILED_TOOL_EXTRA_PX = 14;
 const DETAILED_TOOLS = new Set(['patch', 'edit', 'write', 'subagent', 'task']);
 const TURN_END_PX = 76;
 const TURN_END_WITHOUT_ANSWER_PX = 8;
-const FOLD_HEADER_PX = 40;
 const SHOWN_PAGE_PX = 320;
 const UNGROUPED_PX = 120;
 const PATCH_FILE_CHIP_PX = 155;
@@ -76,7 +75,7 @@ const sliceText = (part: Part & { type: 'text' }, row: Extract<TimelineRow, { ki
 };
 
 const rowParts = (message: ChatMessageEntry, row: Extract<TimelineRow, { kind: 'turn-message' }>, metrics: RowSizeMetrics): Part[] => {
-    const parts = filterVisibleParts(message.parts, { includeReasoning: metrics.showReasoningTraces }).filter((part) => !isEmptyTextPart(part));
+    const parts = filterVisibleParts(message.parts, { includeReasoning: metrics.showReasoningTraces }).filter(isTranscriptPart);
     const start = row.slice?.from ? parts.findIndex((part) => part.id === row.slice?.from?.partId) : 0;
     const endCut = row.slice?.to;
     let end = parts.length;
@@ -89,38 +88,33 @@ const rowParts = (message: ChatMessageEntry, row: Extract<TimelineRow, { kind: '
 
 type TurnRowOf<K extends TimelineRow['kind']> = Extract<TimelineRow, { kind: K }>;
 
-const hoistedPages = (row: TurnRowOf<'turn-message' | 'turn-pages'>) => {
-    if (!row.underFold) return [];
-    const finalMessage = row.finalMessageId ? row.entry.turn.assistantMessages.find((message) => message.info.id === row.finalMessageId) : undefined;
-    return getShownPages(row.entry.turn.assistantMessages, finalMessage);
-};
-
-const hoistedHeight = (pages: ShownPart[], metrics: RowSizeMetrics): number => pages.reduce(
-    (height, page) => height + (page.type === 'tool' && isSettledAsk(page) ? metrics.lineHeight : SHOWN_PAGE_PX),
-    0,
-);
-
 const messageRowHeight = (row: TurnRowOf<'turn-message'>, metrics: RowSizeMetrics): number | undefined => {
     const message = row.entry.turn.assistantMessages.find((candidate) => candidate.info.id === row.messageId);
     if (!message) return undefined;
-    const hoisted = hoistedPages(row);
+    const index = toolSegments(row.entry.turn, metrics.showReasoningTraces);
+    const preview = row.ownsToolPreview ? index.segments.at(-1) : undefined;
     const parts = rowParts(message, row, metrics);
-    const firstText = row.final ? parts.find((part) => part.type === 'text') : undefined;
-    const answerStartsHere = firstText !== undefined
-        && message.parts.find((part) => part.type === 'text' && !isEmptyTextPart(part))?.id === firstText.id
-        && !(row.slice?.from?.partId === firstText.id && row.slice.from.offset > 0);
-    let height = answerStartsHere ? hoistedHeight(hoisted, metrics) : 0;
+    let height = 0;
     let hasText = false;
     for (const part of parts) {
+        const position = index.byPart.get(part.id);
+        if (position) {
+            const expanded = row.expandedSegments.get(position.segment.id) ?? row.expanded;
+            const hidden = hiddenToolCount(position.segment, preview);
+            if (!position.index && hidden) {
+                height += metrics.lineHeight;
+                if (!expanded && position.segment === preview && hidden < position.segment.rows.length) height += 24; // xs disclosure button (h-6)
+            }
+            if (hiddenToolRow(part, position, expanded, preview)) continue;
+        }
         if (part.type === 'text') {
-            if (hoisted.some((page) => page.id === part.id)) continue;
             hasText = true;
             height += markdownHeight(sliceText(part, row), metrics.columnWidth);
         } else if (part.type === 'reasoning') {
             if (!part.text.trim()) continue;
             height += metrics.collapsibleThinkingBlocks ? metrics.lineHeight : markdownHeight(part.text, metrics.columnWidth);
         } else if (part.type === 'tool' && isShownInPlace(part.tool, part.state)) {
-            if (!hoisted.some((page) => page.id === part.id)) height += SHOWN_PAGE_PX;
+            height += SHOWN_PAGE_PX;
         } else if (part.type === 'tool') {
             height += toolHeight(part, metrics);
         } else {
@@ -146,8 +140,6 @@ export const estimateTimelineRowSize = (row: TimelineRow, metrics: RowSizeMetric
     switch (row.kind) {
         case 'ungrouped': return UNGROUPED_PX;
         case 'turn-head': height = promptHeight(row.entry.turn.userMessage, metrics); break;
-        case 'turn-fold': height = FOLD_HEADER_PX; break;
-        case 'turn-pages': height = hoistedHeight(hoistedPages(row), metrics); break;
         case 'turn-message': {
             const message = messageRowHeight(row, metrics);
             return message === undefined ? undefined : Math.round(message);

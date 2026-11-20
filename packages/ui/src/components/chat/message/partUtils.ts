@@ -2,6 +2,7 @@ import { isInvisibleText } from '@/lib/invisibleText';
 import { readBrowserAnnotationPrompt } from '@/lib/browser/annotationPrompt';
 import { readContextPart } from '@/lib/messages/contextParts';
 import type { Part } from '@/lib/opencode/model';
+import { shouldHideExecFollowUp } from './unifiedExec';
 
 const COLLAPSED_LINES = 2;
 
@@ -46,6 +47,8 @@ export const isEmptyTextPart = (part: Part): boolean => {
 interface VisibleFilterOptions {
     includeReasoning?: boolean;
 }
+
+export const isTranscriptPart = (part: Part): boolean => !isEmptyTextPart(part) && (part.type !== 'tool' || !shouldHideExecFollowUp(part));
 
 export const filterVisibleParts = (parts: Part[], options: VisibleFilterOptions = {}): Part[] => {
     const { includeReasoning = true } = options;

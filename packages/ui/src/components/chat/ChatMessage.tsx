@@ -17,6 +17,7 @@ import { useChatSurfaceMode } from './useChatSurfaceMode';
 
 import MessageBody, { type MessageExtraAction } from './message/MessageBody';
 import { GuestIcon } from '@/components/layout/GuestRailIcon';
+import { useTurnToolAction } from './components/useTurnToolAction';
 import { useGuestActions } from '@/hooks/useGuestSurfaces';
 import { buildGuestMessageItem, guestMessageActionsFor } from '@/lib/guests/actions';
 import { runGuestAction } from '@/lib/guests/run-action';
@@ -529,24 +530,26 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     }, [sessionId, message.info.id]);
 
     const guestActionEntries = useGuestActions();
+    const turnToolAction = useTurnToolAction(isUser);
     const messageRecordRef = React.useRef(message);
     messageRecordRef.current = message;
     const guestMessageActions = React.useMemo<MessageExtraAction[] | undefined>(() => {
-        if (guestActionEntries.length === 0 || !sessionId) return undefined;
-        const entries = guestMessageActionsFor(guestActionEntries, isUser ? 'user' : 'assistant');
-        if (entries.length === 0) return undefined;
-        return entries.map((entry) => ({
+        const entries = sessionId ? guestMessageActionsFor(guestActionEntries, isUser ? 'user' : 'assistant') : [];
+        const actions: MessageExtraAction[] = entries.map((entry) => ({
             id: `guest:${entry.guest.id}:${entry.action.id}`,
             label: entry.action.label,
             icon: <GuestIcon icon={entry.icon} iconSrc={entry.iconSrc} className="size-3.5" />,
             onSelect: () => {
+                if (!sessionId) return;
                 const sessionTitle = useGlobalSessionsStore.getState().entityById.get(sessionId)?.title ?? null;
                 const directory = useSessionUIStore.getState().getDirectoryForSession(sessionId);
                 const item = buildGuestMessageItem(entry.action.id, { sessionId, sessionTitle, directory }, messageRecordRef.current);
                 void runGuestAction(entry, item, t);
             },
         }));
-    }, [guestActionEntries, isUser, sessionId, t]);
+        if (turnToolAction) actions.unshift(turnToolAction);
+        return actions.length ? actions : undefined;
+    }, [guestActionEntries, isUser, turnToolAction, sessionId, t]);
 
     const { onSelectMessages, promptUnitKey } = useMessageSelectionEntry({
         sessionId, messageId: message.info.id, isUser, turnId: turnGroupingContext?.turnId, hasTextContent,

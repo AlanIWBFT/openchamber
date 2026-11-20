@@ -41,12 +41,6 @@ export interface TurnExplorationGroup {
     isTail: boolean;
 }
 
-export interface TurnSummaryRecord {
-    text?: string;
-    sourceMessageId?: string;
-    sourcePartId?: string;
-}
-
 export interface TurnStreamState {
     isStreaming: boolean;
     isRetrying: boolean;
@@ -64,10 +58,7 @@ export interface TurnRecord {
     assistantMessageIds: string[];
     assistantMessages: ChatMessageEntry[];
     waitingNotices?: ChatMessageEntry[];
-    activityParts: TurnActivityRecord[];
     explorationGroups: TurnExplorationGroup[];
-    summary: TurnSummaryRecord;
-    summaryText?: string;
     hasTools: boolean;
     hasReasoning: boolean;
     changedFiles?: TurnChangedFile[];
@@ -111,8 +102,6 @@ export interface TurnGroupingContext {
     opensAnswerText?: boolean;
     earlierAssistantText?: string[];
     isLatestTurn: boolean;
-    summaryBody?: string;
-    activityParts?: TurnActivityRecord[];
     explorationGroups?: TurnExplorationGroup[];
     explorationPartIds?: string[];
     headerMessageId?: string;

@@ -27,7 +27,6 @@ import { getToolOutput } from '../toolOutput';
 import { toAbsoluteFilePath } from '@/lib/path-utils';
 import { executeOutputTruncation, executeScript, isEditTool, isReadTool, isExecuteTool, isFileChangeTool, isPatchTool, isQuestionTool, isShellTool, isSubagentTool, isTodoWriteTool, isWebSearchTool, todoWriteItems, isWriteTool, isOpenChamberTool, openChamberCallSummary } from '@/lib/opencode/tools';
 import { createScriptToolProjection } from '@/lib/opencode/script';
-import { LiveTurnHoistedCommandsContext } from '../../../components/liveActivityContext';
 import { getUnifiedExecCommand, getUnifiedExecMetadata, getUnifiedExecOutput, isExecCommandTool, isUnifiedExecTool } from '../../unifiedExec';
 import ToolPart from '../ToolPart';
 import { CopyToolOutputButton } from './CopyToolOutputButton';
@@ -61,7 +60,7 @@ interface ToolExpandedContentProps {
     state: ToolStateUnion;
     currentDirectory: string;
     isExpanded: boolean;
-    nestedTools?: ToolExpansionState;
+    nestedTools: ToolExpansionState;
     onShowPopup?: (content: ToolPopupContent) => void;
     presentation: GuestToolRule | null;
     headerActionsSlot: HTMLElement | null;
@@ -72,7 +71,7 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
     state,
     currentDirectory,
     isExpanded,
-    nestedTools,
+    nestedTools: expansion,
     onShowPopup,
     presentation,
     headerActionsSlot,
@@ -138,18 +137,7 @@ export const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.mem
     const isExecute = isExecuteTool(part.tool);
     const executeCode = React.useMemo(() => (isExecute ? executeScript(input) : undefined), [input, isExecute]);
     const project = React.useMemo(() => createScriptToolProjection({ id: part.id, sessionID: part.sessionID, messageID: part.messageID }), [part.id, part.sessionID, part.messageID]);
-    const hoistedCommands = React.useContext(LiveTurnHoistedCommandsContext);
-    const executeEntries = React.useMemo(() => isExecute ? project(metadata).filter((entry) => (
-        entry.kind !== 'part' || !hoistedCommands?.has(entry.part.id)
-    )) : [], [isExecute, project, metadata, hoistedCommands]);
-    const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(() => new Set());
-    const toggle = React.useCallback((id: string) => setExpanded(previous => {
-        const next = new Set(previous);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-    }), []);
-    const expansion = nestedTools ?? { expanded, toggle };
+    const executeEntries = React.useMemo(() => isExecute ? project(metadata) : [], [isExecute, project, metadata]);
     const executeTruncation = React.useMemo(
         () => (isExecute ? executeOutputTruncation(metadata) : null),
         [isExecute, metadata],

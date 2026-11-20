@@ -46,12 +46,9 @@ export const useColumnQuoteNavigation = ({
             ...options,
         });
     }, [currentSessionKey, currentSessionKeyRef, messageListRef, scrollToTimelineMessage]);
-    const resolveUiPageMessageId = React.useCallback((messageId: string, partId: string) => (
-        messageListRef.current?.resolveUiPageMessageId(messageId, partId) ?? messageId
-    ), [messageListRef]);
-    const scrollToUiPageRow = React.useCallback((messageId: string) => (
-        messageListRef.current?.scrollToUiPageRow(messageId) ?? false
+    const scrollToUiPageRow = React.useCallback((messageId: string, partId: string) => (
+        messageListRef.current?.scrollToUiPageRow(messageId, partId) ?? false
     ), [messageListRef]);
 
-    return { chatQuoteHighlights, loadQuoteSource, scrollToQuoteSource, resolveUiPageMessageId, scrollToUiPageRow };
+    return { chatQuoteHighlights, loadQuoteSource, scrollToQuoteSource, scrollToUiPageRow };
 };

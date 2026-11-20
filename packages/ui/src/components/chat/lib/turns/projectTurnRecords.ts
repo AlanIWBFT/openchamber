@@ -3,7 +3,7 @@ import { isHiddenUserMessage } from '../../message/hiddenUserMessage';
 import { createNoticeTurnSplitter, isTurnOpeningNotice } from '../timelineRoles';
 import { projectTurnActivity } from './projectTurnActivity';
 import { projectTurnIndexes } from './projectTurnIndexes';
-import { projectTurnChangedFiles, projectTurnSummary } from './projectTurnSummary';
+import { projectTurnChangedFiles } from './projectTurnSummary';
 import type {
     ChatMessageEntry,
     TurnMessageRecord,
@@ -113,12 +113,6 @@ const hydrateTurnRecord = (
     const { assistantMessages, turnId } = turn;
     const { showTurnChangedFiles } = effectiveOptions;
 
-    let summary: TurnRecord['summary'] | undefined;
-    const readSummary = () => {
-        summary ??= projectTurnSummary(assistantMessages);
-        return summary;
-    };
-
     let changedFiles: { value: TurnRecord['changedFiles'] } | undefined;
     const readChangedFiles = (): TurnRecord['changedFiles'] => {
         if (changedFiles) return changedFiles.value;
@@ -136,10 +130,7 @@ const hydrateTurnRecord = (
 
     const lazy = <T>(read: () => T): PropertyDescriptor => ({ get: read, enumerable: true, configurable: true });
     Object.defineProperties(turn, {
-        summary: lazy(readSummary),
-        summaryText: lazy(() => readSummary().text),
         changedFiles: lazy(readChangedFiles),
-        activityParts: lazy(() => readActivity().activityParts),
         explorationGroups: lazy(() => readActivity().explorationGroups),
         hasTools: lazy(() => readActivity().hasTools),
         hasReasoning: lazy(() => readActivity().hasReasoning),
@@ -211,10 +202,7 @@ export const projectTurnRecords = (
             messages: [createTurnMessageRecord(message, index)],
             assistantMessageIds: [],
             assistantMessages: [],
-            activityParts: [],
             explorationGroups: [],
-            summary: {},
-            summaryText: undefined,
             hasTools: false,
             hasReasoning: false,
             changedFiles: undefined,

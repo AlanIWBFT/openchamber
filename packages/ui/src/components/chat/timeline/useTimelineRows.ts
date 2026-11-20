@@ -1,7 +1,8 @@
 import React from 'react';
 
 import { turnHeaderCanStick } from '../lib/turns/stickyPrompt';
-import { getTurnsWithLaterAssistant } from '../lib/turns/liveActivity';
+import { toolSegments } from '../lib/turns/toolSegments';
+import type { LiveTailStore } from './liveTailStore';
 import type { ChatMessageEntry } from '../lib/turns/types';
 import { useTurnRecords } from '../hooks/useTurnRecords';
 import { buildHistoryEntries, findFirstVisibleMessageId } from '../lib/turns/timelineEntries';
@@ -17,26 +18,19 @@ export const useTimelineRows = (
         showTurnChangedFiles: boolean;
         showReasoningTraces: boolean;
         stickyUserHeader: boolean;
+        activeStreamingMessageId: string | null;
+        liveTail: LiveTailStore;
         defaultActivityExpanded: boolean;
         turnExpansion: Map<string, boolean>;
     },
 ) => {
-    const { showTurnChangedFiles, showReasoningTraces, stickyUserHeader, defaultActivityExpanded, turnExpansion } = options;
+    const { showTurnChangedFiles, showReasoningTraces, stickyUserHeader, defaultActivityExpanded, turnExpansion, activeStreamingMessageId, liveTail } = options;
     const { projection, staticTurns, streamingTurn } = useTurnRecords(displayMessages, {
         sessionKey,
         showTurnChangedFiles,
         showReasoningTraces,
     });
     const hasUngroupedStaticEntries = projection.ungroupedMessageIds.size > 0;
-    const tailHasAssistant = Boolean(streamingTurn?.assistantMessages.length);
-    const turnsWithLaterAssistant = React.useMemo(() => {
-        if (defaultActivityExpanded) return new Set<string>();
-        const retired = getTurnsWithLaterAssistant(staticTurns);
-        if (tailHasAssistant) {
-            for (const turn of staticTurns) retired.add(turn.turnId);
-        }
-        return retired;
-    }, [defaultActivityExpanded, staticTurns, tailHasAssistant]);
     const staticEntryMessages = hasUngroupedStaticEntries ? displayMessages : EMPTY_STATIC_ENTRY_MESSAGES;
     const staticEntryUngroupedIds = hasUngroupedStaticEntries ? projection.ungroupedMessageIds : EMPTY_UNGROUPED_MESSAGE_IDS;
     const trailingStreamingEntry = React.useMemo<RenderEntry | undefined>(() => {
@@ -80,7 +74,6 @@ export const useTimelineRows = (
         const entries = buildHistoryEntries({
             staticTurns,
             lastTurnId: projection.lastTurnId,
-            turnsWithLaterAssistant,
             messages: staticEntryMessages,
             ungroupedMessageIds: staticEntryUngroupedIds,
             hasStreamingTurn,
@@ -88,22 +81,32 @@ export const useTimelineRows = (
         }, previousHistoryEntriesRef.current);
         previousHistoryEntriesRef.current = entries;
         return entries;
-    }), [hasStreamingTurn, projection.lastTurnId, staticEntryMessages, staticEntryUngroupedIds, staticTurns, trailingEntryFirstMessage, turnsWithLaterAssistant]);
+    }), [hasStreamingTurn, projection.lastTurnId, staticEntryMessages, staticEntryUngroupedIds, staticTurns, trailingEntryFirstMessage]);
 
     const allEntries = React.useMemo(() => {
         return trailingStreamingEntry ? [...historyEntries, trailingStreamingEntry] : historyEntries;
     }, [historyEntries, trailingStreamingEntry]);
 
+    const liveSourceEntry = React.useMemo(() => activeStreamingMessageId
+        ? allEntries.find((entry) => entry.kind === 'turn' ? entry.turn.assistantMessageIds.includes(activeStreamingMessageId) : entry.message.info.id === activeStreamingMessageId) ?? trailingStreamingEntry
+        : trailingStreamingEntry, [activeStreamingMessageId, allEntries, trailingStreamingEntry]);
+    const liveKey = liveSourceEntry?.key;
+    const liveHasSegments = React.useSyncExternalStore(liveTail.subscribe, () => {
+        const entry = liveTail.get();
+        return entry?.key === liveKey && entry?.kind === 'turn'
+            ? toolSegments(entry.turn, showReasoningTraces).segments.length > 0 : undefined;
+    });
     const previousRowsRef = React.useRef<RenderRow[]>([]);
     const rows = React.useMemo(() => streamPerfMeasure('ui.message_list.render_rows_ms', () => {
         const next = buildTimelineRows(allEntries, {
             collapsedActivity: !defaultActivityExpanded,
             expandedTurns: turnExpansion,
+            liveToolPresence: liveKey && liveHasSegments !== undefined ? { key: liveKey, hasSegments: liveHasSegments } : undefined,
             showReasoningTraces,
         }, previousRowsRef.current);
         previousRowsRef.current = next;
         return next;
-    }), [allEntries, defaultActivityExpanded, showReasoningTraces, turnExpansion]);
+    }), [allEntries, defaultActivityExpanded, showReasoningTraces, turnExpansion, liveKey, liveHasSegments]);
 
     const stickyRowIndices = React.useMemo(() => {
         if (!stickyUserHeader) return undefined;
@@ -114,5 +117,5 @@ export const useTimelineRows = (
         return indices.length > 0 ? indices : undefined;
     }, [rows, stickyUserHeader]);
 
-    return { projection, allEntries, trailingStreamingEntry, rows, stickyRowIndices };
+    return { allEntries, liveSourceEntry, rows, stickyRowIndices };
 };

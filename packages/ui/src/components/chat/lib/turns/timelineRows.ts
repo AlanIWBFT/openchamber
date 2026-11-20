@@ -1,7 +1,7 @@
 import { isHiddenUserMessage } from '../../message/hiddenUserMessage';
-import { filterVisibleParts, isEmptyTextPart } from '../../message/partUtils';
+import { filterVisibleParts, isTranscriptPart } from '../../message/partUtils';
 import { answerChunkCuts } from './answerChunks';
-import { getLiveFinalMessage, hasLiveActivity, projectFoldMessages, splitLiveActivityAtPages } from './liveActivity';
+import { hiddenToolCount, hiddenToolRow, toolSegments } from './toolSegments';
 import type { TimelineEntry } from './timelineEntries';
 import type { ChatMessageEntry } from './types';
 
@@ -20,31 +20,27 @@ export type MessageSlice = {
 export type TimelineRow =
     | { kind: 'ungrouped'; key: string; entry: UngroupedEntry }
     | ({ kind: 'turn-head'; key: string } & TurnRowFields)
-    | ({ kind: 'turn-fold'; key: string } & TurnRowFields)
-    | ({ kind: 'turn-pages'; key: string } & TurnRowFields)
     | ({
         kind: 'turn-message';
         key: string;
         messageId: string;
+        foldedHeader?: string;
         slice: MessageSlice | null;
-        final: boolean;
     } & TurnRowFields);
 
 type TurnRowFields = {
     entry: TurnEntry;
-    underFold: boolean;
-    finalMessageId: string | undefined;
+    ownsToolPreview: boolean;
+    expandedSegments: ReadonlyMap<string, boolean>;
     gapBelow: boolean;
-    foldId: string;
     expanded: boolean;
-    segmentId?: string;
-    pageId?: string;
 };
 
 export type TimelineRowsOptions = {
     collapsedActivity: boolean;
     expandedTurns: ReadonlyMap<string, boolean>;
     showReasoningTraces: boolean;
+    liveToolPresence?: { key: string; hasSegments: boolean };
 };
 
 const isMessageCompleted = (message: ChatMessageEntry): boolean => (
@@ -58,7 +54,7 @@ const messageCuts = (message: ChatMessageEntry, showReasoningTraces: boolean): T
     const cuts: TextCut[] = [];
     let partsInRow = 0;
     for (const part of filterVisibleParts(message.parts, { includeReasoning: showReasoningTraces })) {
-        if (isEmptyTextPart(part)) continue;
+        if (!isTranscriptPart(part)) continue;
         if (partsInRow === PARTS_PER_ROW) {
             cuts.push({ partId: part.id, offset: 0 });
             partsInRow = 0;
@@ -73,20 +69,35 @@ const messageCuts = (message: ChatMessageEntry, showReasoningTraces: boolean): T
 };
 
 const sliceKey = (cut: TextCut) => `${cut.partId}:${cut.offset}`;
+const noExpansion: ReadonlyMap<string, boolean> = new Map();
 
-const turnRows = (entry: TurnEntry, options: TimelineRowsOptions): TimelineRow[] => {
+export function pageRowIndex(rows: TimelineRow[], first: number, messageId: string, partId: string): number | undefined {
+    const head = rows[first];
+    if (head?.kind !== 'turn-message' || head.messageId !== messageId) return undefined;
+    const parts = head.entry.turn.assistantMessages.find(message => message.info.id === messageId)?.parts;
+    const position = parts?.findIndex(part => part.id === partId) ?? -1;
+    if (!parts || position < 0) return undefined;
+    for (let i = first; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.kind !== 'turn-message' || row.messageId !== messageId) break;
+        const cut = row.slice?.to;
+        if (!cut || parts.findIndex(part => part.id === cut.partId) > position) return i;
+    }
+}
+
+const turnRows = (entry: TurnEntry, options: TimelineRowsOptions, ownsToolPreview: boolean): TimelineRow[] => {
     const { turn } = entry;
-    const underFold = hasLiveActivity(turn, options.showReasoningTraces);
-    const finalMessage = underFold ? getLiveFinalMessage(turn.assistantMessages, !entry.isLastTurn) : undefined;
-    let fields: TurnRowFields = { entry, underFold, finalMessageId: finalMessage?.info.id, gapBelow: false,
-        foldId: turn.turnId, expanded: underFold && (options.expandedTurns.get(turn.turnId) ?? !options.collapsedActivity) };
+    const index = toolSegments(turn, options.showReasoningTraces);
+    const preview = ownsToolPreview ? index.segments.at(-1) : undefined;
+    const canFold = index.segments.some(segment => hiddenToolCount(segment, preview));
+    const fields: TurnRowFields = { entry, ownsToolPreview, expandedSegments: canFold ? options.expandedTurns : noExpansion, gapBelow: false, expanded: canFold && !options.collapsedActivity };
     const rows: TimelineRow[] = [{ kind: 'turn-head', key: entry.key, ...fields }];
-    const addMessage = (message: ChatMessageEntry, final = false) => {
+    const addMessage = (message: ChatMessageEntry) => {
         const messageId = message.info.id;
-        const key = `step:${messageId}${fields.segmentId ? `:segment:${fields.segmentId}` : !final && messageId === fields.finalMessageId ? ':activity' : ''}`;
+        const key = `step:${messageId}`;
         const cuts = messageCuts(message, options.showReasoningTraces);
         if (cuts.length === 0) {
-            rows.push({ kind: 'turn-message', key, ...fields, messageId, slice: null, final });
+            rows.push({ kind: 'turn-message', key, ...fields, messageId, slice: null });
             return;
         }
         cuts.forEach((cut, index) => {
@@ -97,31 +108,27 @@ const turnRows = (entry: TurnEntry, options: TimelineRowsOptions): TimelineRow[]
                 ...fields,
                 messageId,
                 slice: from ? { from, to: cut, index, count: cuts.length + 1 } : { to: cut, index, count: cuts.length + 1 },
-                final,
             });
         });
         const last = cuts[cuts.length - 1];
-        rows.push({ kind: 'turn-message', key: `${key}:${sliceKey(last)}`, ...fields, messageId, slice: { from: last, index: cuts.length, count: cuts.length + 1 }, final });
+        rows.push({ kind: 'turn-message', key: `${key}:${sliceKey(last)}`, ...fields, messageId, slice: { from: last, index: cuts.length, count: cuts.length + 1 } });
     };
 
-    if (underFold) {
-        const projected = projectFoldMessages(turn, finalMessage?.info.id);
-        const segments = finalMessage ? [] : splitLiveActivityAtPages(turn);
-        if (segments.some((segment) => segment.page)) {
-            for (const segment of segments) {
-                fields = { ...fields, foldId: segment.id, segmentId: segment.id, pageId: segment.page?.id,
-                    expanded: options.expandedTurns.get(segment.id) ?? !options.collapsedActivity };
-                rows.push({ kind: 'turn-fold', key: `fold:${segment.id}`, ...fields });
-                if (fields.expanded) segment.messages.forEach((message) => addMessage(message));
-                if (segment.page) rows.push({ kind: 'turn-pages', key: `page:${segment.page.id}`, ...fields });
-            }
-        } else {
-            rows.push({ kind: 'turn-fold', key: `fold:${turn.turnId}`, ...fields });
-            if (fields.expanded) projected.activityMessages.forEach((message) => addMessage(message));
-            if (projected.finalMessage) addMessage(projected.finalMessage, true);
+    for (const message of turn.assistantMessages) {
+        const notice = message.info.role === 'assistant' && (message.info.error || message.info.retry);
+        if (!notice && !index.hasOtherContent.has(message.info.id) && index.byMessage.has(message.info.id) && message.parts.every(part => {
+            const pos = index.byPart.get(part.id);
+            return !pos || hiddenToolRow(part, pos, options.expandedTurns.get(pos.segment.id) ?? !options.collapsedActivity, preview);
+        })) {
+            const head = message.parts.find(part => index.byPart.has(part.id));
+            const first = head && index.byPart.get(head.id);
+            if (first?.index === 0) rows.push({
+                kind: 'turn-message', key: `step:${message.info.id}`, messageId: message.info.id,
+                ...fields, foldedHeader: first.segment.id, slice: null,
+            });
+            continue;
         }
-    } else {
-        turn.assistantMessages.forEach((message) => addMessage(message));
+        addMessage(message);
     }
 
     const last = rows[rows.length - 1];
@@ -138,10 +145,9 @@ const isSameSlice = (previous: MessageSlice | null, next: MessageSlice | null): 
 const isSameRow = (previous: TimelineRow, next: TimelineRow): boolean => {
     if (previous.kind !== next.kind || previous.entry !== next.entry) return false;
     if (previous.kind === 'ungrouped' || next.kind === 'ungrouped') return true;
-    if (previous.gapBelow !== next.gapBelow || previous.underFold !== next.underFold || previous.finalMessageId !== next.finalMessageId) return false;
-    if (previous.foldId !== next.foldId || previous.expanded !== next.expanded || previous.segmentId !== next.segmentId || previous.pageId !== next.pageId) return false;
+    if (previous.ownsToolPreview !== next.ownsToolPreview || previous.gapBelow !== next.gapBelow || previous.expanded !== next.expanded || previous.expandedSegments !== next.expandedSegments) return false;
     if (previous.kind === 'turn-message' && next.kind === 'turn-message') {
-        return previous.messageId === next.messageId && previous.final === next.final && isSameSlice(previous.slice, next.slice);
+        return previous.messageId === next.messageId && previous.foldedHeader === next.foldedHeader && isSameSlice(previous.slice, next.slice);
     }
     return true;
 };
@@ -154,8 +160,18 @@ export const buildTimelineRows = (
     const previousByKey = new Map<string, TimelineRow>();
     for (const row of previous) previousByKey.set(row.key, row);
     const rows: TimelineRow[] = [];
+    let previewOwner: TurnEntry | undefined;
+    for (let i = entries.length - 1; i >= 0; i--) {
+        const entry = entries[i];
+        if (entry.kind !== 'turn') continue;
+        const live = options.liveToolPresence;
+        if (live && live.key === entry.key ? live.hasSegments : toolSegments(entry.turn, options.showReasoningTraces).segments.length > 0) {
+            previewOwner = entry;
+            break;
+        }
+    }
     for (const entry of entries) {
-        const built: TimelineRow[] = entry.kind === 'turn' ? turnRows(entry, options) : [{ kind: 'ungrouped', key: entry.key, entry }];
+        const built: TimelineRow[] = entry.kind === 'turn' ? turnRows(entry, options, entry === previewOwner) : [{ kind: 'ungrouped', key: entry.key, entry }];
         for (const row of built) {
             const reusable = previousByKey.get(row.key);
             rows.push(reusable && isSameRow(reusable, row) ? reusable : row);

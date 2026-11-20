@@ -7,8 +7,7 @@ import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import type { RuntimeAPIs } from '@/lib/api/types';
 import { I18nProvider } from '@/lib/i18n';
 import { SyncProvider } from '@/sync/sync-context';
-import type { ChatMessageEntry, TurnGroupingContext } from '../lib/turns/types';
-import { projectTurnActivity } from '../lib/turns/projectTurnActivity';
+import type { TurnGroupingContext } from '../lib/turns/types';
 
 const { default: MessageBody } = await import('./MessageBody');
 
@@ -59,42 +58,12 @@ const renderStreamingReasoning = (parts: Part[]) => renderToStaticMarkup(
   </RuntimeAPIContext.Provider>,
 );
 const divider = 'mt-1.5 mb-3 h-px w-full bg-muted-foreground/20';
-const assistant = (id: string, parts: Part[]): ChatMessageEntry => ({
-  info: { id, sessionID: 'session', role: 'assistant', agent: 'build', providerID: 'mock', modelID: 'mock', finish: 'stop', time: { created: 1, completed: 2 } },
-  parts,
-});
 
 describe('final answer divider', () => {
-  test('omits the divider for a direct answer without reasoning', () => {
-    expect(renderAnswer([answer])).not.toContain(divider);
-  });
-
-  for (const text of ['', ' \n\t', '\u200b\u2060']) {
-    test(`omits the divider for an invisible reasoning part ${JSON.stringify(text)}`, () => {
-      expect(renderAnswer([reasoning(text), answer])).not.toContain(divider);
-    });
-  }
-
-  test('keeps the divider after visible reasoning', () => {
-    expect(renderAnswer([reasoning('Checking the response.'), answer])).toContain(divider);
-  });
-
-  test('omits the divider when reasoning is hidden', () => {
-    expect(renderAnswer([reasoning('Checking the response.'), answer], context, false)).not.toContain(divider);
-  });
-
-  test('ignores invisible reasoning in an earlier assistant step', () => {
-    const activity = projectTurnActivity({ turnId: 'turn', assistantMessages: [assistant('earlier-step', [reasoning('')])], showReasoningTraces: true });
-    expect(renderAnswer([answer], {
-      ...context, ...activity, isFirstAssistantInTurn: false,
-    })).not.toContain(divider);
-  });
-
-  test('keeps the divider after visible reasoning in an earlier assistant step', () => {
-    const activity = projectTurnActivity({ turnId: 'turn', assistantMessages: [assistant('earlier-step', [reasoning('Checking the response.')])], showReasoningTraces: true });
-    expect(renderAnswer([answer], {
-      ...context, ...activity, isFirstAssistantInTurn: false,
-    })).toContain(divider);
+  test('does not separate settled answer text from earlier work', () => {
+    const markup = renderAnswer([reasoning('Checking the response.'), answer], { ...context, earlierAssistantText: ['First reply.'] });
+    expect(markup).toContain('data-message-text-export-source="true"');
+    expect(markup).not.toContain(divider);
   });
 
 

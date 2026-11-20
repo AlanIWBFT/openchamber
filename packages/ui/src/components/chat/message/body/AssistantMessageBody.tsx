@@ -3,8 +3,7 @@ import React from 'react';
 import { MessageFilesDisplay } from '../../FileAttachment';
 import type { StreamPhase } from '../types';
 import { cn } from '@/lib/utils';
-import { isEmptyTextPart } from '../partUtils';
-import { shouldHideExecFollowUp } from '../unifiedExec';
+import { isTranscriptPart } from '../partUtils';
 import { ErrorResponseDetails } from '@/components/chat/ErrorResponseDetails';
 import { SaveProjectPlanDialog } from '@/components/session/SaveProjectPlanDialog';
 import { ForkSessionDialog } from '@/components/session/ForkSessionDialog';
@@ -98,7 +97,7 @@ export const AssistantMessageBody = React.memo(({
     const awaitingMessageCompletion = !isMessageCompleted;
 
     const visibleParts = React.useMemo(() => {
-        return parts.filter((part) => !isEmptyTextPart(part) && (part.type !== 'tool' || !shouldHideExecFollowUp(part)));
+        return parts.filter(isTranscriptPart);
     }, [parts]);
 
     const assistantTextParts = React.useMemo(() => {
@@ -207,8 +206,6 @@ export const AssistantMessageBody = React.memo(({
         messageActionButtons,
         answerSelectionKey,
         effectiveStreamPhase,
-        hasStopFinish,
-        isLastAssistantInTurn,
         turnGroupingContext,
         showReasoningTraces,
         expandedTools,

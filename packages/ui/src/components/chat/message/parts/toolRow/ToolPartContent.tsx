@@ -1,3 +1,5 @@
+import ToolPart from '../ToolPart';
+import { runningCommandParts } from '@/lib/opencode/exec-metadata';
 import React from 'react';
 import { pixelFontSize } from '@/lib/typography';
 import { formatDirectoryDisplayPath, getReadToolDisplayType } from '../toolRenderUtils';
@@ -54,6 +56,15 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
         if (!isExpanded) dispatchRowExpand(rowRef.current);
         toggleRow(toolId);
     };
+    const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(() => new Set());
+    const toggle = React.useCallback((id: string) => setExpanded(previous => {
+        const next = new Set(previous);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+    }), []);
+    const expansion = nestedTools ?? { expanded, toggle };
+    const liveChildren = React.useMemo(() => !isExpanded && isExecuteTool(part.tool) ? runningCommandParts(part) : [], [isExpanded, part]);
     const state = part.state;
     const stateWithData = state as ToolStateWithMetadata;
     const metadata = stateWithData.metadata;
@@ -383,6 +394,11 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
                 )}
             </div>
 
+            {liveChildren.map(child => (
+                <div className="ms-4" key={child.id}>
+                    <ToolPart part={child} isExpanded={expansion.expanded.has(child.id)} onToggle={expansion.toggle} isMobile={isMobile} onShowPopup={onShowPopup} />
+                </div>
+            ))}
             <div
                 ref={expandedContentRef}
                 aria-hidden={!isExpanded}
@@ -396,7 +412,7 @@ export const ToolPartContent: React.FC<ToolPartProps & { header?: ToolRowHeader;
                     <BlockBody onToggle={() => onToggle(part.id)}>
                         {contentCompletion.status === 'whole' ? (
                             <ToolExpandedContent
-                                nestedTools={nestedTools}
+                                nestedTools={expansion}
                                 part={part}
                                 state={state}
                                 currentDirectory={currentDirectory}

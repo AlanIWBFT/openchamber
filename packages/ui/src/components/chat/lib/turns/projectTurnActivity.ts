@@ -52,14 +52,12 @@ interface ProjectActivityInput {
 }
 
 interface ProjectActivityResult {
-    activityParts: TurnActivityRecord[];
     explorationGroups: TurnExplorationGroup[];
     hasTools: boolean;
     hasReasoning: boolean;
 }
 
 export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivityResult => {
-    const activityParts: TurnActivityRecord[] = [];
     const explorationGroups: TurnExplorationGroup[] = [];
     let explorationParts: TurnActivityRecord[] = [];
     const flushExploration = (isTail = false) => {
@@ -77,29 +75,20 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
             const explorationTool = part.type === 'tool' && isExplorationGroupTool(part.tool);
             if (!explorationTool && (part.type === 'tool' || (part.type === 'text' && getPartText(part))
                 || (part.type === 'reasoning' && input.showReasoningTraces && getPartText(part)))) flushExploration();
-            let kind: TurnActivityRecord['kind'];
             if (part.type === 'tool') {
                 hasTools = true;
-                kind = 'tool';
+                if (explorationTool) explorationParts.push({
+                    ...buildTurnPartRecord(input.turnId, message.info.id, part, partIndex),
+                    kind: 'tool',
+                });
             } else if (part.type === 'reasoning' && getPartText(part)) {
                 hasReasoning = true;
-                kind = 'reasoning';
-            } else {
-                return;
             }
-
-            const activity: TurnActivityRecord = {
-                ...buildTurnPartRecord(input.turnId, message.info.id, part, partIndex),
-                kind,
-            };
-            activityParts.push(activity);
-            if (explorationTool) explorationParts.push(activity);
         });
     });
     flushExploration(true);
 
     return {
-        activityParts,
         explorationGroups,
         hasTools,
         hasReasoning,

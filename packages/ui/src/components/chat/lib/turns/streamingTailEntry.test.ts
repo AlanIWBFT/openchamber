@@ -43,9 +43,7 @@ const turnEntry = (assistant: ChatMessageEntry): StreamingTailEntry => {
             messages: [],
             assistantMessageIds: [assistant.info.id],
             assistantMessages: [assistant],
-            activityParts: [],
             explorationGroups: [],
-            summary: {},
             hasTools: false,
             hasReasoning: false,
             stream: { isStreaming: true, isRetrying: false },
@@ -117,7 +115,7 @@ describe('buildLiveStreamingEntry', () => {
         expect(next.kind).toBe('turn');
         if (next.kind !== 'turn') return;
         expect(next.turn.assistantMessages[0]?.parts).toBe(liveParts);
-        expect(next.turn.activityParts.length).toBeGreaterThan(0);
+        expect(next.turn.hasReasoning).toBe(true);
     });
 
     test('updates an ungrouped streaming message with live parts', () => {
@@ -210,7 +208,7 @@ describe('buildLiveStreamingEntry', () => {
         if (next.kind !== 'turn') return;
         expect(next.turn.turnId).toBe('notice_1');
         expect(next.turn.assistantMessages[0]?.parts).toBe(liveParts);
-        expect(next.turn.activityParts.length).toBeGreaterThan(0);
+        expect(next.turn.hasReasoning).toBe(true);
     });
 
     test('never erases record parts with an empty live array', () => {

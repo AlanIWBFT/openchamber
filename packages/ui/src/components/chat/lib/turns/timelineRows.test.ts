@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import type { AssistantMessage, Part, TextPart, ToolPart } from '@/lib/opencode/model';
 import { answerChunkCuts } from './answerChunks';
 import { projectTurnRecords } from './projectTurnRecords';
-import { buildTimelineRows, type TimelineRowsOptions } from './timelineRows';
+import { hiddenToolRow, toolSegments } from './toolSegments';
+import { buildTimelineRows, pageRowIndex, type TimelineRowsOptions } from './timelineRows';
 import type { TimelineEntry } from './timelineEntries';
 import type { ChatMessageEntry } from './types';
 
@@ -39,6 +40,30 @@ const turnEntry = (messages: ChatMessageEntry[]): TimelineEntry => {
 const summary: TimelineRowsOptions = { collapsedActivity: false, expandedTurns: new Map(), showReasoningTraces: true };
 const collapsed: TimelineRowsOptions = { collapsedActivity: true, expandedTurns: new Map(), showReasoningTraces: true };
 
+test('a page quote targets its own source slice after a long answer', () => {
+    const page = { ...readPart, id: 'page', tool: 'openchamber_render' } as const;
+    const rows = buildTimelineRows([turnEntry([assistant('answer', [textPart('prose', longAnswer), page], 'stop')])], collapsed, []);
+    expect(rows.length).toBeGreaterThan(3);
+    expect(pageRowIndex(rows, 1, 'answer', 'page')).toBe(rows.length - 1);
+    expect(pageRowIndex(rows, 1, 'answer', 'missing')).toBeUndefined();
+});
+
+test('only the newest segment previews work; older singletons fold and running commands stay visible', () => {
+    const cmd = (id: string, running = false): ToolPart => ({
+        ...readPart, id, callID: id, tool: 'exec_command',
+        state: { status: 'completed', input: { cmd: id }, output: '', metadata: { execDisplay: 'root', processRunning: running }, time: { start: 1, end: 2 } },
+    });
+    const parts = [cmd('only'), textPart('a', 'First'), cmd('live', true), cmd('done'), textPart('b', 'Second')];
+    const visible = (parts: Part[]) => {
+        const entry = turnEntry([assistant('step', parts)]);
+        if (entry.kind !== 'turn') throw Error('Expected a turn');
+        const index = toolSegments(entry.turn, true);
+        return [...index.byPart].filter(([, pos]) => !hiddenToolRow(pos.segment.rows[pos.index], pos, false, index.segments.at(-1))).map(([id]) => id);
+    };
+    expect(visible(parts)).toEqual(['live', 'done']);
+    expect(visible([...parts, cmd('third'), textPart('c', 'Third'), cmd('latest')])).toEqual(['live', 'latest']);
+});
+
 describe('answerChunkCuts', () => {
     test('leaves a short text whole', () => {
         expect(answerChunkCuts(paragraph(1).repeat(10))).toEqual([]);
@@ -66,13 +91,20 @@ describe('answerChunkCuts', () => {
 });
 
 describe('buildTimelineRows', () => {
+    test('keeps an interrupted step after another segment takes its preview', () => {
+        const cmd = (id: string): ToolPart => ({ ...readPart, id, messageID: id, tool: 'exec_command' });
+        const interrupted = assistant('two', [cmd('two')], 'stop');
+        if (interrupted.info.role !== 'assistant') throw Error('Expected assistant');
+        interrupted.info.error = { type: 'SessionAborted', message: 'Stopped by user' };
+        const entry = turnEntry([assistant('one', [cmd('one')]), interrupted, assistant('three', [textPart('t', 'Next'), cmd('three')])]);
+        expect(buildTimelineRows([entry], collapsed, []).map(row => row.key)).toContain('step:two');
+    });
     test('draws a turn as its prompt row and a row per step', () => {
         const rows = buildTimelineRows([turnEntry([
             assistant('step', [readPart, textPart('note', 'Reading')], 'tool-calls'),
             assistant('answer', [textPart('final', 'Done')], 'stop'),
         ])], summary, []);
-        expect(rows.map((row) => row.key)).toEqual(['turn:user', 'fold:user', 'step:step', 'step:answer']);
-        expect(rows.map((row) => row.kind !== 'ungrouped' && row.gapBelow)).toEqual([false, false, false, true]);
+        expect(rows.map(row => row.key)).toEqual(['turn:user', 'step:step', 'step:answer']);
     });
 
     test('cuts a finished long answer into rows that name their slice', () => {
@@ -89,8 +121,8 @@ describe('buildTimelineRows', () => {
     test('cuts a step that ran dozens of calls into rows of parts, while it still runs', () => {
         const calls: Part[] = Array.from({ length: 30 }, (_, index) => ({ ...readPart, id: `read-${index}`, callID: `read-${index}` }));
         const rows = buildTimelineRows([turnEntry([assistant('step', calls)])], summary, []);
-        expect(rows.map((row) => row.key)).toEqual(['turn:user', 'fold:user', 'step:step', 'step:step:read-24:0']);
-        expect(rows[2]?.kind === 'turn-message' && rows[2].slice).toEqual({ to: { partId: 'read-24', offset: 0 }, index: 0, count: 2 });
+        expect(rows.map((row) => row.key)).toEqual(['turn:user', 'step:step', 'step:step:read-24:0']);
+        expect(rows[1]?.kind === 'turn-message' && rows[1].slice).toEqual({ to: { partId: 'read-24', offset: 0 }, index: 0, count: 2 });
     });
 
     test('keeps an answer still being written in one row', () => {
@@ -98,20 +130,16 @@ describe('buildTimelineRows', () => {
         expect(rows.map((row) => row.key)).toEqual(['turn:user', 'step:answer']);
     });
 
-    test('under a closed fold, the steps are the fold row and the answer follows it', () => {
+    test('singleton work stays at its original position in either default mode', () => {
         const entry = turnEntry([
             assistant('step', [readPart], 'tool-calls'),
             assistant('answer', [textPart('final', 'Done')], 'stop'),
         ]);
         const rows = buildTimelineRows([entry], collapsed, []);
-        expect(rows.map((row) => row.key)).toEqual(['turn:user', 'fold:user', 'step:answer']);
-        expect(rows.every((row) => row.kind === 'ungrouped' || row.underFold)).toBe(true);
-        // The fold leaves out the answer these rows name, not one it finds on its own.
-        expect(rows.every((row) => row.kind === 'ungrouped' || row.finalMessageId === 'answer')).toBe(true);
-        expect(rows.at(-1)?.kind === 'turn-message' && rows.at(-1)).toMatchObject({ final: true });
+        expect(rows.map((row) => row.key)).toEqual(['turn:user', 'step:step', 'step:answer']);
 
         const opened = buildTimelineRows([entry], { ...collapsed, expandedTurns: new Map([['user', true]]) }, []);
-        expect(opened.map((row) => row.key)).toEqual(['turn:user', 'fold:user', 'step:step', 'step:answer']);
+        expect(opened.map((row) => row.key)).toEqual(rows.map(row => row.key));
     });
 
     test('keeps the row objects that did not change', () => {

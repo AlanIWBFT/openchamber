@@ -1,16 +1,16 @@
 import React from 'react';
-import { projectFoldMessages, splitLiveActivityAtPages } from '../lib/turns/liveActivity';
+import { toolSegments } from '../lib/turns/toolSegments';
 
 import type { RenderEntry, RenderRow } from './types';
 
-export const useTimelineRowIndexes = (rows: RenderRow[], allEntries: RenderEntry[]) => {
+export const useTimelineRowIndexes = (rows: RenderRow[], allEntries: RenderEntry[], showReasoningTraces: boolean) => {
     return React.useMemo(() => {
         const messageIndexes = new Map<string, number>();
         const turnIndexes = new Map<string, number>();
         const rowIndexes = new Map<string, number>();
+        const foldedAnchors = new Map<string, { segmentId: string; source: string; part: string }>();
         const collapsible = new Map<string, string[]>();
         const all = new Map<string, string[]>();
-        const foldIndexes = new Map<string, number>();
         rows.forEach((row, index) => {
             rowIndexes.set(row.key, index);
             if (row.kind === 'ungrouped') {
@@ -21,35 +21,37 @@ export const useTimelineRowIndexes = (rows: RenderRow[], allEntries: RenderEntry
             if (row.kind === 'turn-head') {
                 turnIndexes.set(turnId, index);
                 messageIndexes.set(row.entry.turn.userMessage.info.id, index);
-            } else if (row.kind === 'turn-fold') {
-                if (!foldIndexes.has(turnId)) foldIndexes.set(turnId, index);
-                const segment = row.segmentId && splitLiveActivityAtPages(row.entry.turn).find((item) => item.id === row.segmentId);
-                const messages = segment ? segment.messages : projectFoldMessages(row.entry.turn, row.finalMessageId).activityMessages;
-                for (const message of messages) {
-                    collapsible.set(message.info.id, [...(collapsible.get(message.info.id) ?? []), row.foldId]);
-                    if (!messageIndexes.has(message.info.id)) messageIndexes.set(message.info.id, index);
-                }
             } else if (row.kind === 'turn-message') {
-                if (!row.slice?.from && (row.final || !messageIndexes.has(row.messageId) || rows[messageIndexes.get(row.messageId)!]?.kind === 'turn-fold')) messageIndexes.set(row.messageId, index);
+                if (!row.slice?.from) messageIndexes.set(row.messageId, index);
                 if (row.slice?.from) rowIndexes.set(`step:${row.messageId}:${row.slice.from.partId}:${row.slice.from.offset}`, index);
             }
         });
         for (const entry of allEntries) {
             if (entry.kind !== 'turn') continue;
             const { turnId, assistantMessages } = entry.turn;
-            const fallback = foldIndexes.get(turnId) ?? turnIndexes.get(turnId);
+            const segments = toolSegments(entry.turn, showReasoningTraces);
+            for (const [message, ids] of segments.byMessage) collapsible.set(message, [...ids]);
+            const fallback = turnIndexes.get(turnId);
             assistantMessages.forEach((message) => {
                 const messageId = message.info.id;
-                if (!messageIndexes.has(messageId) && fallback !== undefined) messageIndexes.set(messageId, fallback);
-                all.set(messageId, collapsible.get(messageId) ?? [turnId]);
+                const rowIndex = messageIndexes.get(messageId);
+                const row = rowIndex !== undefined ? rows[rowIndex] : undefined;
+                if (!row || (row.kind === 'turn-message' && row.foldedHeader)) {
+                    if (!row && fallback !== undefined) messageIndexes.set(messageId, fallback);
+                    const first = message.parts.find(part => segments.byPart.has(part.id));
+                    const segment = first && segments.byPart.get(first.id)?.segment;
+                    if (segment) foldedAnchors.set(messageId, { segmentId: segment.id, source: segment.rows[0].messageID, part: segment.rows[0].id });
+                }
+                all.set(messageId, collapsible.get(messageId) ?? []);
             });
         }
         return {
             messageIndexMap: messageIndexes,
             turnIndexMap: turnIndexes,
             rowIndexByKey: rowIndexes,
+            foldedAnchorByMessage: foldedAnchors,
             collapsibleTurnByMessageId: collapsible,
             turnByAssistantMessageId: all,
         };
-    }, [allEntries, rows]);
+    }, [allEntries, rows, showReasoningTraces]);
 };

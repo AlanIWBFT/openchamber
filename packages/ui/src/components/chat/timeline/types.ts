@@ -7,7 +7,7 @@ export type RenderEntry = TimelineEntry;
 export type RenderRow = TimelineRowRecord;
 export type TurnEntry = Extract<RenderEntry, { kind: 'turn' }>;
 
-export type ToggleTurnActivity = (turnId: string) => void;
+export type ToggleTurnActivity = (ids: readonly string[], expanded: boolean) => void;
 
 export type RetryOverlay = {
     sessionId: string;
@@ -28,13 +28,12 @@ export type TimelineScrollContainerProps = {
 };
 
 export interface MessageListHandle {
-    resolveUiPageMessageId: (messageId: string, partId: string) => string;
-    scrollToUiPageRow: (messageId: string) => boolean;
+    scrollToUiPageRow: (messageId: string, partId: string) => boolean;
     scrollToTurnId: (turnId: string, options?: { behavior?: ScrollBehavior }) => boolean;
     scrollToMessageId: (messageId: string, options?: { behavior?: ScrollBehavior }) => boolean;
     captureViewportAnchor: () => MessageViewportAnchor | null;
     restoreViewportAnchor: (anchor: MessageViewportAnchor) => boolean;
-    alignViewportAnchor: (anchor: MessageViewportAnchor) => ViewportAnchorAlignment;
+    alignViewportAnchor: (anchor: MessageViewportAnchor, revealFolded?: boolean) => ViewportAnchorAlignment;
     hasMessageRow: (messageId: string) => boolean;
     holdViewportAnchor: (anchor: { messageId: string; offsetTop: number }) => void;
     isHistoryVirtualized: () => boolean;

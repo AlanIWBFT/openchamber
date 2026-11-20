@@ -1,3 +1,5 @@
+import { isInvisibleText } from '@/lib/invisibleText'
+import { runningCommandParts } from '@/lib/opencode/exec-metadata'
 import React, { useRef, useCallback } from "react"
 import type { StoreApi } from "zustand"
 import type { Message, Part } from "@/lib/opencode/model"
@@ -160,6 +162,18 @@ const isShownPart = (part: Part): boolean => isUiBlockTextPart(part) || (part.ty
 const hasMessageStructureChange = (previous: Part[], current: Part[] | undefined): boolean => {
   if (previous === current) return false
   if (hasTaskSessionIdentityChange(previous, current)) return true
+  if (previous.length !== (current?.length ?? 0)) return true
+  if (current && previous.some((part, i) => {
+    const next = current[i]
+    if (part === next) return false
+    if (part.type !== next.type) return true
+    if (part.type === 'tool' && next.type === 'tool') return part.id !== next.id || part.state.status !== next.state.status
+      || (runningCommandParts(part).length > 0) !== (runningCommandParts(next).length > 0)
+    if ((part.type === 'text' || part.type === 'reasoning') && (next.type === 'text' || next.type === 'reasoning')) {
+      return isInvisibleText(part.text) !== isInvisibleText(next.text)
+    }
+    return false
+  })) return true
   const before = previous.filter(isShownPart)
   const after = (current ?? EMPTY_PARTS).filter(isShownPart)
   return before.length !== after.length || before.some((part, index) => {

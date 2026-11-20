@@ -8,7 +8,6 @@ import { getMarkdownProcessingOptions } from '@/components/chat/markdown/streamd
 import {
     captureChatQuoteAnchor,
     chatQuoteAnchorSchema,
-    findChatQuoteRoots,
     findUiRenderQuoteRoot,
     legacyChatQuoteAnchor,
     locateChatQuote,
@@ -41,23 +40,18 @@ const selectText = (root: Element, text: string, occurrence = 0): Range => {
 };
 
 describe('chat quote anchors', () => {
-    test('a quote on a hoisted UI page follows that page into the final answer', () => {
+    test('a selection on the second inline page still targets it after surrounding tool text changes', () => {
         const oldCSS = Object.getOwnPropertyDescriptor(globalThis, 'CSS');
         Object.defineProperty(globalThis, 'CSS', { configurable: true, value: { escape: (value: string) => value } });
         try {
             const scope = renderRoot('<div data-message-id="source"><div data-ui-render-message="source" data-ui-render-part="first">the same text</div><div data-ui-render-message="source" data-ui-render-part="second">the same text</div></div>');
             const first = findUiRenderQuoteRoot(scope, 'source', 'first')!;
             const second = findUiRenderQuoteRoot(scope, 'source', 'second')!;
-            const anchor = chatQuoteAnchorSchema.parse({ ...captureChatQuoteAnchor(second, selectText(second, 'same text'))!, page: { partId: 'second', kind: 'ui' } });
-
-            scope.innerHTML = '<div data-message-id="final"><div data-chat-quote-root></div></div>';
-            const finalRoot = scope.querySelector('[data-chat-quote-root]')!;
-            finalRoot.append(first, second);
-            const moved = findUiRenderQuoteRoot(scope, 'source', anchor.page!.partId)!;
-            expect(resolveChatQuoteAnchor(moved, anchor)?.startContainer.parentElement).toBe(second);
-
-            const ordinary = captureChatQuoteAnchor(finalRoot, selectText(second, 'same text'))!;
-            expect(resolveChatQuoteRanges(findChatQuoteRoots(scope, 'final'), ordinary)?.[0].startContainer.parentElement).toBe(second);
+            const anchor = chatQuoteAnchorSchema.parse(captureChatQuoteAnchor([scope], selectText(second, 'same text')));
+            expect(anchor.page).toEqual({ partId: 'second', kind: 'ui' });
+            first.before('newly expanded tool output'.repeat(10));
+            const source = findUiRenderQuoteRoot(scope, 'source', anchor.page!.partId)!;
+            expect(resolveChatQuoteAnchor(source, anchor)?.startContainer.parentElement === second).toBe(true);
         } finally {
             if (oldCSS) Object.defineProperty(globalThis, 'CSS', oldCSS);
             else Reflect.deleteProperty(globalThis, 'CSS');

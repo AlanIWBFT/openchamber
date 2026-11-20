@@ -3,7 +3,7 @@ import type { AssistantMessage, Part, ToolPart, UserMessage } from '@/lib/openco
 import { projectTurnRecords } from './projectTurnRecords';
 import type { ChatMessageEntry } from './types';
 
-// Counts reads of each part's `type`, the first field the summary, activity
+// Counts reads of each part's `type`, the first field the activity
 // and changed-files projections inspect.
 const countPartReads = (part: Part, counter: { reads: number }): Part => {
     const counted = { ...part };
@@ -71,23 +71,22 @@ describe('projectTurnRecords lazy derived fields', () => {
         const projection = projectTurnRecords(messages, { showTurnChangedFiles: true, mergeHiddenUserTurns: true });
 
         expect(projection.turns).toHaveLength(100);
-        // Hydrating summary, activity and changed files for every turn up
+        // Hydrating activity and changed files for every turn up
         // front read each assistant part several times (recorded: 2700 reads
         // for 300 parts). Only rendered turns pay for them now.
         expect(counter.reads).toBe(0);
 
         const rendered = projection.turns.slice(-3);
         for (const turn of rendered) {
-            void turn.activityParts;
+            void turn.explorationGroups;
             void turn.changedFiles;
-            void turn.summaryText;
         }
         const readsForThreeTurns = counter.reads;
         expect(readsForThreeTurns).toBeGreaterThan(0);
 
         // Reading again is free: each turn derives its fields once.
         for (const turn of rendered) {
-            void turn.activityParts;
+            void turn.explorationGroups;
             void turn.hasTools;
             void turn.changedFiles;
         }
@@ -98,11 +97,9 @@ describe('projectTurnRecords lazy derived fields', () => {
         const counter = { reads: 0 };
         const [turn] = projectTurnRecords(buildSession(1, counter), { showTurnChangedFiles: true }).turns;
 
-        expect(turn?.summaryText).toBe('Done.');
         expect(turn?.hasTools).toBe(true);
         expect(turn?.hasReasoning).toBe(true);
         expect(turn?.changedFiles?.map((file) => file.file)).toEqual(['/repo/a0.ts']);
-        expect(turn?.activityParts.map((activity) => activity.kind)).toEqual(['reasoning', 'tool']);
     });
 
     test('hides changed files when the setting is off', () => {
@@ -119,7 +116,7 @@ describe('projectTurnRecords lazy derived fields', () => {
 
         const copy = { ...turn, assistantMessages: [] };
 
-        expect(copy.summaryText).toBe('Done.');
-        expect(copy.activityParts).toBe(turn.activityParts);
+        expect(copy.changedFiles).toBe(turn.changedFiles);
+        expect(copy.explorationGroups).toBe(turn.explorationGroups);
     });
 });

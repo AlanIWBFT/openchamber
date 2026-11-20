@@ -8,7 +8,6 @@ import { INITIAL_STATE, type State } from './types';
 import { buildTimelineRows } from '@/components/chat/lib/turns/timelineRows';
 import { projectTurnRecords } from '@/components/chat/lib/turns/projectTurnRecords';
 import { buildLiveStreamingEntry } from '@/components/chat/lib/turns/streamingTailEntry';
-import { projectLiveActivityPreview } from '@/components/chat/lib/turns/liveActivity';
 
 // v2 messages carry no `parentID`; the argument is kept only so the fixtures
 // still read as "this reply belongs to that prompt".
@@ -68,12 +67,12 @@ describe('buildSessionMessageRecordsSnapshot', () => {
     const options = { showTurnChangedFiles: false, showReasoningTraces: false };
     let snapshot = buildSessionMessageRecordsSnapshot(state({ message: { ses_1: messages }, part: { assistant_1: [read, textPart('text', prose)] } }),
       'ses_1', undefined, true, assistant.id);
-    for (const [suffix, page, changed] of [
-      [fence + 'openui-lan', false, false],
-      [fence + 'openui-lang', true, true],
-      [fence + 'openui-lang literal', false, true],
-      [fence + 'openui-lang\nroot = Stack([', true, true],
-      [fence + 'openui-lang\nroot = Stack([Text("Result")])\n' + fence + '\nAfter table.', true, false],
+    for (const [suffix, changed] of [
+      [fence + 'openui-lan', false],
+      [fence + 'openui-lang', true],
+      [fence + 'openui-lang literal', true],
+      [fence + 'openui-lang\nroot = Stack([', true],
+      [fence + 'openui-lang\nroot = Stack([Text("Result")])\n' + fence + '\nAfter table.', false],
     ] as const) {
       const parts = [read, textPart('text', prose + suffix)];
       const next = buildSessionMessageRecordsSnapshot(state({ message: { ses_1: messages }, part: { assistant_1: parts } }), 'ses_1', snapshot, true, assistant.id);
@@ -81,9 +80,8 @@ describe('buildSessionMessageRecordsSnapshot', () => {
       const base = { kind: 'turn' as const, key: 'turn:user_1', turn: projectTurnRecords(next.list, options).turns[0], isLastTurn: true };
       const rows = buildTimelineRows([base], { collapsedActivity: true, expandedTurns: new Map(), showReasoningTraces: false }, []);
       const live = buildLiveStreamingEntry(base, { ...options, livePartsByMessageId: { assistant_1: parts } });
-      const preview = projectLiveActivityPreview(live.turn, false);
-      expect(rows.some(row => row.kind === 'turn-pages' && row.pageId === 'text')).toBe(page);
-      expect(page ? live.turn.assistantMessages[0].parts.includes(parts[1]) : preview.pinnedText?.part.text === prose + suffix).toBe(true);
+      expect(rows.some(row => row.kind === 'turn-message' && row.messageId === assistant.id)).toBe(true);
+      expect(live.turn.assistantMessages[0].parts).toContain(parts[1]);
       snapshot = next;
     }
     const finished: Message = { ...assistant, time: { created: 1, completed: 3 }, finish: 'stop' };
@@ -91,8 +89,7 @@ describe('buildSessionMessageRecordsSnapshot', () => {
     const final = buildSessionMessageRecordsSnapshot(state({ message: { ses_1: [user, finished] }, part: { assistant_1: parts } }), 'ses_1', snapshot);
     const rows = buildTimelineRows(projectTurnRecords(final.list, options).turns.map(turn => ({ kind: 'turn' as const, key: turn.turnId, turn, isLastTurn: true })),
       { collapsedActivity: true, expandedTurns: new Map(), showReasoningTraces: false }, []);
-    expect(rows.some(row => row.kind === 'turn-message' && row.final && row.messageId === assistant.id)).toBe(true);
-    expect(rows.some(row => row.kind === 'turn-pages')).toBe(false);
+    expect(rows.some(row => row.kind === 'turn-message' && row.messageId === assistant.id)).toBe(true);
   });
 
   for (const [tool, input, output] of [
@@ -121,7 +118,7 @@ describe('buildSessionMessageRecordsSnapshot', () => {
     expect(snapshot([], shown).list[0].parts).toEqual([]);
   });
 
-  test('publishes a waiting page into timeline rows while its message is still streaming', () => {
+  test('publishes a waiting page into the visible answer group while its message is still streaming', () => {
     const user = message('user_1', 'user');
     const assistant = message('assistant_1', 'assistant');
     const messages = [user, assistant];
@@ -135,7 +132,8 @@ describe('buildSessionMessageRecordsSnapshot', () => {
     const projection = projectTurnRecords(next.list, { showTurnChangedFiles: false, showReasoningTraces: false });
     const rows = buildTimelineRows(projection.turns.map(turn => ({ kind: 'turn' as const, key: `turn:${turn.turnId}`, turn, isLastTurn: true })),
       { collapsedActivity: true, expandedTurns: new Map(), showReasoningTraces: false }, []);
-    expect(rows.some(row => row.kind === 'turn-pages' && row.pageId === page.id)).toBe(true);
+    expect(rows.some(row => row.kind === 'turn-message' && row.messageId === assistant.id)).toBe(true);
+    expect(projection.turns[0].assistantMessages[0].parts).toEqual([...initial, page]);
     const delta = [...initial, { ...page, state: { ...page.state, metadata: { progress: 'still waiting' } } }];
     const unchanged = buildSessionMessageRecordsSnapshot(state({ message: { ses_1: messages }, part: { assistant_1: delta } }), 'ses_1', next, true, assistant.id);
     expect(unchanged).toBe(next);

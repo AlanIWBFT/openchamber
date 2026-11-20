@@ -2,9 +2,6 @@ import type { Part, ToolPart } from '@/lib/opencode/model';
 import { filterVisibleParts, isEmptyTextPart } from '../../message/partUtils';
 import { readUnifiedExecMetadata, shouldHideExecFollowUpState } from '@/lib/opencode/tools';
 
-
-export const LIVE_ACTIVITY_VISIBLE_ROWS = 7;
-
 const isToolRunning = (status: string | undefined): boolean => (
     status === 'pending' || status === 'running' || status === 'started'
 );
@@ -16,7 +13,6 @@ export const isToolRowShown = (toolPart: ToolPart): boolean => {
     return state.time.end >= state.time.start;
 };
 
-/** Whether a visible part draws one row. */
 const isActivityRowPart = (part: Part): boolean => {
     if (part.type === 'tool') return isToolRowShown(part)
         && !shouldHideExecFollowUpState(part.tool, part.state.status, readUnifiedExecMetadata(part.state.status === 'pending' ? undefined : part.state.metadata));

@@ -61,7 +61,14 @@ function joinStreams(roots: readonly Element[]) {
 }
 
 export function captureChatQuoteAnchor(roots: Element | readonly Element[], range: Range): ChatQuoteAnchor | null {
-    const list = Array.isArray(roots) ? roots : [roots];
+    const ownerRoots: readonly Element[] = Array.isArray(roots) ? roots : [roots];
+    const common = range.commonAncestorContainer;
+    // SAFETY: nodeType 1 identifies an Element, including nodes owned by another window.
+    const element = common.nodeType === 1 ? common as Element : common.parentElement;
+    const page = element?.closest('[data-ui-render-part]');
+    const partId = page?.getAttribute('data-ui-render-part');
+    const pageOwned = Boolean(partId && page && ownerRoots.some(root => root.contains(page)));
+    const list = pageOwned && page ? [page] : ownerRoots;
     const startIndex = list.findIndex((root) => root.contains(range.startContainer));
     const endIndex = list.findIndex((root) => root.contains(range.endContainer));
     if (startIndex < 0 || endIndex < startIndex) return null;
@@ -70,12 +77,14 @@ export function captureChatQuoteAnchor(roots: Element | readonly Element[], rang
     const end = bases[endIndex] + streamOffset(list[endIndex], range.endContainer, range.endOffset);
     const text = stream.slice(start, end);
     if (!text.trim()) return null;
-    return {
+    const anchor: ChatQuoteAnchor = {
         text,
         prefix: stream.slice(Math.max(0, start - CONTEXT_LENGTH), start),
         suffix: stream.slice(end, end + CONTEXT_LENGTH),
         start,
     };
+    if (pageOwned && partId) anchor.page = { partId, kind: 'ui' };
+    return anchor;
 }
 
 export function locateChatQuote(stream: string, anchor: ChatQuoteAnchor): number | null {

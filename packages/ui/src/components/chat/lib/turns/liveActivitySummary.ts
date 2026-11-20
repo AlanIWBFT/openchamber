@@ -1,4 +1,5 @@
 import { activityToolCalls } from '@/lib/opencode/tool-activity';
+import type { Part } from '@/lib/opencode/model';
 import { getRelativeFilePath, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
 import {
     isExplorationTool,
@@ -70,6 +71,10 @@ interface FileChangeRecord {
 }
 
 export function summarizeLiveActivity(messages: readonly ChatMessageEntry[]): LiveActivitySummary {
+    return summarizeActivityGroups(messages.map(message => [message.info.id, message.parts] as const));
+}
+
+export function summarizeActivityGroups(groups: Iterable<readonly [string, readonly Part[]]>): LiveActivitySummary {
     const summary: LiveActivitySummary = {
         files: 0, changedFiles: [], additions: 0, deletions: 0, hasCompleteDiff: true,
         explored: false, commands: 0, runningCommands: 0, researched: false, subagents: 0,
@@ -77,7 +82,7 @@ export function summarizeLiveActivity(messages: readonly ChatMessageEntry[]): Li
     const changedFiles = new Map<string, FileChangeRecord>();
     const subagents = new Set<string>();
     const seenCalls = new Set<string>();
-    for (const message of messages) {
+    for (const [messageId, parts] of groups) {
         const cwd = '';
         const root = '';
         const canonicalPath = (path: string) => {
@@ -92,8 +97,8 @@ export function summarizeLiveActivity(messages: readonly ChatMessageEntry[]): Li
             return absolute.startsWith('/') ? toAbsoluteFilePath('/', absolute.slice(1)) : absolute;
         };
         const keyOf = (canonical: string) => /^([A-Za-z]:\/|\/\/)/.test(canonical) ? canonical.toLowerCase() : canonical;
-        for (const call of activityToolCalls(message.parts)) {
-            const callKey = `${message.info.id}:${call.id}`;
+        for (const call of activityToolCalls(parts)) {
+            const callKey = `${messageId}:${call.id}`;
             if (seenCalls.has(callKey)) continue;
             seenCalls.add(callKey);
             const { tool, status, metadata, input } = call;

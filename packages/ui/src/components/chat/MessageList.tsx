@@ -85,19 +85,18 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
     const { turnExpansion, toggleTurnActivity, expandTurnActivity } = useTurnExpansion(activityRenderMode);
     const { baseDisplayMessages, displayMessages } = useDisplayMessages(messages, sessionKey, directory, retryOverlay);
-    const { projection, allEntries, trailingStreamingEntry, rows, stickyRowIndices } = useTimelineRows(sessionKey, displayMessages, {
+    const [liveTail] = React.useState(createLiveTailStore);
+    const { allEntries, liveSourceEntry, rows, stickyRowIndices } = useTimelineRows(sessionKey, displayMessages, {
         showTurnChangedFiles,
         showReasoningTraces,
         stickyUserHeader,
         defaultActivityExpanded,
         turnExpansion,
+        activeStreamingMessageId,
+        liveTail,
     });
-    const liveSourceEntry = React.useMemo(() => activeStreamingMessageId
-        ? allEntries.find((entry) => entry.kind === 'turn' ? entry.turn.assistantMessageIds.includes(activeStreamingMessageId) : entry.message.info.id === activeStreamingMessageId) ?? trailingStreamingEntry
-        : trailingStreamingEntry, [activeStreamingMessageId, allEntries, trailingStreamingEntry]);
     const footerWithApprovals = useApprovalFooter(sessionKey, directory, baseDisplayMessages, liveSourceEntry, listFooter);
 
-    const [liveTail] = React.useState(createLiveTailStore);
     const {
         listRef,
         handleRegisterList,
@@ -107,13 +106,11 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     } = useTimelineListBinding({ registerList, onIsAtEndChange, onTimelineDataChange, onListMetricsChange });
     const { shouldAnimateUserMessage, onUserAnimationConsumed } = useUserSendAnimation(sessionKey, messages);
 
-    const indexes = useTimelineRowIndexes(rows, allEntries);
+    const indexes = useTimelineRowIndexes(rows, allEntries, showReasoningTraces);
     useMessageListHandle(ref, {
         sessionKey,
         listRef,
         rows,
-        projection,
-        defaultActivityExpanded,
         indexes,
         expandTurnActivity,
     });

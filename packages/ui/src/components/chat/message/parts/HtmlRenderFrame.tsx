@@ -311,6 +311,9 @@ export function ShownPage({ part }: { part: ToolPart }) {
     const page = React.useMemo(() => renderedPage(part.tool, part.state), [part.tool, part.state]);
     const ask = usePageAsk(part, page?.ask);
     if (!page || !ask) return null;
+    if (!page.share && ask.kind !== 'show' && ask.kind !== 'waiting' && ask.kind !== 'later') {
+        return <div className="mb-1" data-closed-page={part.id}><PageAskStatus ask={ask} answeredSummary={ask.kind === 'answered' ? ask.summary : undefined} /></div>;
+    }
     const plainPage = page.ui
         ? <UiPageFrame part={part} source={page.ui} ask={ask} />
         : <HtmlRenderFrame part={part} html={page.html} title={page.title || t('chat.htmlRender.untitled')} ask={ask} />;
