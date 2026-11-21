@@ -523,16 +523,16 @@ export class ChildStoreManager {
     const queued = new Set<string>()
     if (this.disposed) return queued
     for (const [directory, store] of this.children) {
-      if (store.getState().status === "loading") continue
+      if (isSpaceDirectory(directory) || store.getState().status === "loading") continue
       this.staleDirectories.add(directory)
     }
     const current = currentDirectory ? normalizePath(currentDirectory) : null
-    if (current && this.staleDirectories.has(current)) {
+    if (current && !isSpaceDirectory(current) && this.staleDirectories.has(current)) {
       this.requestBootstrap({ directory: current, priority: "selected", reason: "server-connected", force: true })
       queued.add(current)
     }
     for (const directory of [...this.staleDirectories]) {
-      if (queued.has(directory) || !this.staleDirectories.has(directory)) continue
+      if (isSpaceDirectory(directory) || queued.has(directory) || !this.staleDirectories.has(directory)) continue
       const demand = this.aggregateBootstrapDemand(directory)
       if (demand && demand.priority !== "background") {
         this.queueBootstrap({ ...demand, force: true })
@@ -564,7 +564,7 @@ export class ChildStoreManager {
     const queued = new Set<string>()
     if (this.disposed) return queued
     for (const [directory, state] of [...this.bootstrapStates]) {
-      if (state !== "failed") continue
+      if (state !== "failed" || isSpaceDirectory(directory)) continue
       const demand = this.aggregateBootstrapDemand(directory)
       if (demand && demand.priority !== "background") {
         this.queueBootstrap({ ...demand, force: true })

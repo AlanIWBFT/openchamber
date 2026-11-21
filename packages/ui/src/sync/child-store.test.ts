@@ -860,6 +860,14 @@ describe('ChildStoreManager after an OpenCode stream restart', () => {
     manager.ensureChild(directory, { bootstrap: false }).setState({ status: 'complete', ...patch });
   };
 
+  test('a host reconnect does not bootstrap a selected space', () => {
+    const manager = new ChildStoreManager();
+    const space = '/spaces/a1b2c3d4e5f6/app';
+    bootstrapped(manager, space);
+    expect(manager.refreshAfterStreamRestart(space).has(space)).toBe(false);
+    manager.disposeAll();
+  });
+
   // Before: every bootstrapped store re-read at once (six bootstraps here, each
   // about eight requests and a location start on v2).
   test('re-reads only stores in use or showing live state, the rest on their next demand', async () => {

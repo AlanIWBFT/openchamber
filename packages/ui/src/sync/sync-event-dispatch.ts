@@ -27,6 +27,7 @@ import { toast } from "@/components/ui"
 import { applyGlobalSessionStatusEvent } from "./global-session-status"
 import { applyGlobalBlockingRequestEvents } from "./global-blocking-requests"
 import { applyBackgroundShellEvents, directoriesWithRunningShells, refreshBackgroundShells } from "./background-shells"
+import { isSpaceDirectory } from "@/lib/spaces/space-route"
 import { applyBackgroundImageEvents, refreshBackgroundImages } from "./background-images"
 import { applySessionLiveWorkEvents } from "./session-live-work"
 import { applyReplyCommandEvents } from "./reply-commands"
@@ -221,7 +222,7 @@ export function handleEvent(
         getImperativeSessionMessageLoader()?.markHistoryStale()
         const refreshing = childStores.refreshAfterStreamRestart(opencodeClient.getDirectory())
         for (const dir of directoriesWithRunningShells()) {
-          if (refreshing.has(normalizePath(dir) ?? dir)) continue
+          if (isSpaceDirectory(dir) || refreshing.has(normalizePath(dir) ?? dir)) continue
           void runBackgroundNetworkTask(() => refreshBackgroundShells(dir, (target) => opencodeClient.listRunningShells(target)))
             .catch(() => undefined)
         }
