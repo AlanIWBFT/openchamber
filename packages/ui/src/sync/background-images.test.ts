@@ -86,10 +86,9 @@ describe('background image index', () => {
     expect(ids()).toEqual([]);
   });
 
-  test('a failed read changes nothing, and an OpenCode without a job list leaves the events in charge', async () => {
+  test('a failed job read preserves the last live image state', async () => {
     applyBackgroundImageEvents('/repo', [started('image_1')]);
     await expect(refreshBackgroundImages(async () => { throw new Error('down'); })).rejects.toThrow('down');
-    await refreshBackgroundImages(async () => null);
     expect(ids()).toEqual(['image_1']);
   });
 

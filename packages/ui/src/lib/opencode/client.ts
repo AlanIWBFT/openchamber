@@ -1648,14 +1648,9 @@ class OpencodeService {
     if (result.failed > 0) throw new Error(`Failed to stop ${result.failed} exec commands`)
   }
 
-  async listRunningImageJobs(): Promise<RunningImageJob[] | null> {
-    try {
-      const jobs = await call("job.list", () => this.client.experimental.job.list({ kind: "image", status: "running" }))
-      return jobs.flatMap((job) => runningImageJobFromWire(job) ?? [])
-    } catch (error) {
-      if (isOpencodeNotFound(error)) return null
-      throw error
-    }
+  async listRunningImageJobs(): Promise<RunningImageJob[]> {
+    const jobs = await call("job.list", () => this.client.experimental.job.list({ kind: "image", status: "running" }))
+    return jobs.flatMap((job) => runningImageJobFromWire(job) ?? [])
   }
 
   async listRunningShells(directory: string): Promise<{ directory: string; shells: RunningShell[] }> {

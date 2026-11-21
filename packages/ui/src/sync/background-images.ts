@@ -121,13 +121,13 @@ export const replaceImageJobs = (jobs: readonly RunningImageJob[], since: number
 };
 
 export const refreshBackgroundImages = async (
-  listRunningImageJobs: () => Promise<RunningImageJob[] | null>,
+  listRunningImageJobs: () => Promise<RunningImageJob[]>,
 ): Promise<void> => {
   const startedGeneration = generation;
   const read = ++readCount;
   const since = revision;
   const jobs = await listRunningImageJobs();
-  if (jobs === null || startedGeneration !== generation || read < appliedRead) return;
+  if (startedGeneration !== generation || read < appliedRead) return;
   appliedRead = read;
   replaceImageJobs(jobs, since);
 };
