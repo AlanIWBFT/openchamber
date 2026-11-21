@@ -746,24 +746,6 @@ async function fetchDistTags() {
   }
 }
 
-export async function fetchRequiredOpenCodeVersion(version: VersionValue) {
-  const target = normalizeTargetVersion(version);
-  if (!target) return null;
-  try {
-    const request = resolveNpmRegistryRequest(PACKAGE_NAME, target);
-    const response = await fetch(request.url, {
-      headers: { Accept: 'application/json', ...request.headers },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!response.ok) return null;
-    const data: JsonValue = await response.json();
-    const engines = hasJsonFields(data) ? data.engines : undefined;
-    return /^>=\s*v?(\d+\.\d+\.\d+)$/.exec(String((hasJsonFields(engines) ? engines.opencode : undefined) ?? '').trim())?.[1] ?? null;
-  } catch {
-    return null;
-  }
-}
-
 async function getLatestVersion() {
   const tags = await fetchDistTags();
   return (hasJsonFields(tags) && tags.latest) || null;

@@ -3416,7 +3416,6 @@ export const dict: Record<I18nKey, string> = {
   'updateDialog.status.autoReloadHint': 'ستُعاد تحميل الصفحة تلقائيًا عند اكتمال التحديث.',
   'updateDialog.fallback.updateViaTerminal': 'أو حدّث عبر الطرفية:',
   'updateDialog.desktopHostInstall': 'يتوفر OpenChamber {version}. حدّثه على الكمبيوتر الذي يعمل عليه.',
-  'updateDialog.openCodeTooOld': 'يتطلب OpenChamber {version} الإصدار OpenCode {required}. يعمل هذا الخادم بالإصدار {current}. حدّث OpenCode أولًا.',
   'updateDialog.actions.copyCommand': 'نسخ الأمر',
   'updateDialog.actions.copied': 'تم النسخ!',
   'updateDialog.status.downloadingPayload': 'جارٍ تنزيل حزمة التحديث…',

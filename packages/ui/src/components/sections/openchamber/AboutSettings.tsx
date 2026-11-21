@@ -285,8 +285,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
       ? t('settings.openchamber.about.actions.updateAppToVersion', { version })
       : t('settings.openchamber.about.actions.updateOpenChamberToVersion', { version });
   })();
-  const needsNewerOpenCode = (info: UpdateInfo | null) => info?.installBlocked === 'opencode-version';
-  const isInstallBlocked = (info: UpdateInfo | null) => Boolean(info?.installBlocked) && !needsNewerOpenCode(info);
+  const isInstallBlocked = (info: UpdateInfo | null) => Boolean(info?.installBlocked);
   const installBlocked = update.available && isInstallBlocked(update.info);
 
   const appDownloadUrl = isAndroidApp && updateStore.runtimeType === 'mobile' && updateStore.available
@@ -360,17 +359,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   };
 
   const renderManualUpdateNotice = (info: UpdateInfo | null) => {
-    if (info?.installBlocked === 'opencode-version') {
-      return (
-        <p className="typography-meta text-[var(--status-warning)]">
-          {t('updateDialog.openCodeTooOld', {
-            version: describeVersion(info.version || ''),
-            required: info.requiredOpenCodeVersion || '',
-            current: info.openCodeVersion || '',
-          })}
-        </p>
-      );
-    }
     if (info?.installBlocked === 'desktop-host') {
       return (
         <p className="typography-meta text-muted-foreground">
@@ -418,7 +406,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
       size="sm"
       variant="outline"
       onClick={() => setServerUpdateDialogOpen(true)}
-      disabled={needsNewerOpenCode(remoteHostUpdate?.info ?? null)}
     >
       <Icon name="download" className="size-4" />
       {serverUpdateLabel(remoteHostUpdate?.info ?? null)}
@@ -606,7 +593,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               variant="default"
               size="sm"
               onClick={() => setUpdateDialogOpen(true)}
-              disabled={needsNewerOpenCode(update.info)}
               className="w-auto justify-center gap-2"
             >
               <Icon name="download" className="size-4" />

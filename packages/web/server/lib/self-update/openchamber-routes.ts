@@ -1,6 +1,5 @@
 import { publicEnterprisePolicy } from '../enterprise-mode.js';
 import { withUserEnv } from '../injected-env.js';
-import { isOpenCodeOlderThan } from '../opencode/compatibility.js';
 import { webPackagePaths } from '../web-package-paths.js';
 import type { Application, QueryValue } from '../shared/http-contracts.js';
 import type { JsonValue } from '../shared/json-values.js';
@@ -23,7 +22,6 @@ export interface OpenChamberRouteDependencies {
   fetchFreeZenModels: ReturnType<typeof createNotificationTemplateRuntime>['fetchFreeZenModels'];
   getCachedZenModels: ReturnType<typeof createNotificationTemplateRuntime>['getCachedZenModels'];
   desktopUpdater?: DesktopUpdater | null | undefined;
-  getOpenCodeCompatibility: () => Promise<{ version: string | null }>;
 }
 
 type RouteUpdateInfo = Omit<UpdateCheckResult, 'currentVersion' | 'body'> & {
@@ -31,8 +29,6 @@ type RouteUpdateInfo = Omit<UpdateCheckResult, 'currentVersion' | 'body'> & {
   body?: string | null | undefined;
   updateOwner?: string;
   installBlocked?: string;
-  requiredOpenCodeVersion?: string;
-  openCodeVersion?: string;
 };
 
 type LaunchOptions = {
@@ -105,20 +101,9 @@ export const registerOpenChamberRoutes = (app: Application, dependencies: OpenCh
     fetchFreeZenModels,
     getCachedZenModels,
     desktopUpdater,
-    getOpenCodeCompatibility,
   } = dependencies;
 
   let desktopRestartError: string | null = null;
-
-  const readOpenCodeShortfall = async (version: UpdateCheckResult['version']) => {
-    const { fetchRequiredOpenCodeVersion } = await import('../package-manager.js');
-    const requiredOpenCodeVersion = await fetchRequiredOpenCodeVersion(version);
-    if (!requiredOpenCodeVersion) return null;
-    const openCodeVersion = (await getOpenCodeCompatibility().catch(() => null))?.version ?? null;
-    return openCodeVersion && isOpenCodeOlderThan(openCodeVersion, requiredOpenCodeVersion)
-      ? { requiredOpenCodeVersion, openCodeVersion }
-      : null;
-  };
 
   const readLaunchState = async () => {
     const address = server.address();
@@ -203,10 +188,7 @@ export const registerOpenChamberRoutes = (app: Application, dependencies: OpenCh
         const { checkForUpdates, isUnmanagedInstall } = await import('../package-manager.js');
         updateInfo = await checkForUpdates(updateRequest);
         if (updateInfo?.available && updateRequest.appType === 'web') {
-          const openCodeShortfall = await readOpenCodeShortfall(updateInfo.version);
-          if (openCodeShortfall) {
-            updateInfo = { ...updateInfo, installBlocked: 'opencode-version', ...openCodeShortfall };
-          } else if (isUnmanagedInstall()) {
+          if (isUnmanagedInstall()) {
             updateInfo = { ...updateInfo, installBlocked: 'manual-install' };
           } else {
             const { isForegroundService, systemdServiceUnit, isLaunchdService } = await readLaunchState();
@@ -296,15 +278,6 @@ export const registerOpenChamberRoutes = (app: Application, dependencies: OpenCh
       const updateInfo = await checkForUpdates();
       if (!updateInfo.available) {
         return res.status(400).json({ error: 'No update available' });
-      }
-
-      const openCodeShortfall = await readOpenCodeShortfall(updateInfo.version);
-      if (openCodeShortfall) {
-        return res.status(409).json({
-          code: 'OPENCODE_TOO_OLD',
-          error: `OpenChamber ${updateInfo.version} needs OpenCode ${openCodeShortfall.requiredOpenCodeVersion}. This server has ${openCodeShortfall.openCodeVersion}. Update OpenCode first.`,
-          ...openCodeShortfall,
-        });
       }
 
       if (isUnmanagedInstall()) {

@@ -122,7 +122,6 @@ export const createBootstrapRuntime = (dependencies: BootstrapDependencies) => {
       limitFailoverRuntime,
       pluginNotificationEmitter,
       desktopUpdater,
-      getOpenCodeCompatibility,
       skipBodyParsing,
     } = options;
 
@@ -228,7 +227,6 @@ export const createBootstrapRuntime = (dependencies: BootstrapDependencies) => {
       fetchFreeZenModels,
       getCachedZenModels,
       desktopUpdater,
-      getOpenCodeCompatibility,
     });
 
     return {

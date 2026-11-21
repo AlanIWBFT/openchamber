@@ -177,7 +177,6 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
 
   const isWebRuntime = runtimeType === 'web';
   const desktopHostInstall = isWebRuntime && info?.installBlocked === 'desktop-host';
-  const needsNewerOpenCode = isWebRuntime && info?.installBlocked === 'opencode-version';
   const isMobileRuntime = runtimeType === 'mobile';
   const updateCommand = info?.updateCommand || 'openchamber update';
 
@@ -439,16 +438,6 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
             </p>
           )}
 
-          {needsNewerOpenCode && (
-            <p className="mt-4 typography-meta text-[var(--status-warning)]">
-              {t('updateDialog.openCodeTooOld', {
-                version: describeVersion(info?.version || '', info?.currentVersion),
-                required: info?.requiredOpenCodeVersion || '',
-                current: info?.openCodeVersion || '',
-              })}
-            </p>
-          )}
-
           {(error || webError) && (
             <div className="p-3 mt-4 bg-[var(--status-error-background)] border border-[var(--status-error-border)] rounded-lg">
               <p className="text-sm text-[var(--status-error)]">{error || webError}</p>
@@ -521,7 +510,6 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
             {isWebRuntime && !isWebUpdating && !desktopHostInstall && (
               <button
                 onClick={handleWebUpdate}
-                disabled={needsNewerOpenCode}
                 className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Icon name="download" className="h-4 w-4" />

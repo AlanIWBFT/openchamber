@@ -19,9 +19,7 @@ export type UpdateInfo = {
   nextSuggestedCheckInSec?: number;
   packageManager?: string;
   updateCommand?: string;
-  installBlocked?: 'service-manager' | 'manual-install' | 'desktop-host' | 'opencode-version';
-  requiredOpenCodeVersion?: string;
-  openCodeVersion?: string;
+  installBlocked?: 'service-manager' | 'manual-install' | 'desktop-host';
 };
 
 export type UpdateProgress = {
