@@ -14,7 +14,7 @@ test('service preparation rejects an invalid override without selecting another 
 
 test('a CLI the caller names wins and nothing is prepared', () => {
   const env = devOpenCodeEnv('missing checkout', { OPENCODE_BINARY: process.execPath, OPENCHAMBER_BUNDLED_OPENCODE_SERVER_DIR: 'unused' });
-  assert.deepEqual(env, { OPENCODE_BINARY: process.execPath });
+  assert.deepEqual(env, { OPENCODE_BINARY: process.execPath, OPENCHAMBER_DEV_OPENCODE_ENTRY: process.execPath });
 });
 
 test('invalid explicit CLI never falls back to another backend', () => {
@@ -36,7 +36,7 @@ test('an explicit service must be a fork of the pinned version but need not have
   manifest('2.3.0', { commit: 'older', stamp: 'abc' });
   assert.throws(() => devOpenCodeEnv(root, cfg), /Expected a fork/);
   manifest('2.3.2', { commit: 'older', stamp: 'abc' });
-  assert.deepEqual(devOpenCodeEnv(root, cfg), cfg);
+  assert.deepEqual(devOpenCodeEnv(root, cfg), { ...cfg, OPENCHAMBER_DEV_OPENCODE_ENTRY: path.join(dir, 'serve.mjs') });
 });
 
 test('a failed preparation stops at once and says what to run', () => {

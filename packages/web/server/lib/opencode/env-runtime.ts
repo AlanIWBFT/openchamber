@@ -6,6 +6,7 @@ import { readEnterprisePolicy } from '../enterprise-mode.js';
 import { clearAppImageArgv0FromProcessEnv } from '../inherited-env.js';
 import { resolveGitBinary } from '../git/git-binary.js';
 import { mergePathValues } from './path-utils.js';
+import { configuredBinaryError } from './binary-selection-error.js';
 import { bundledOpenCodeServerLaunch, isBundledOpenCodeServer, isRetiredBundledCliSetting, resolveBundledOpenCodeServer } from './bundled-opencode-server.js';
 import type { SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
 import type { ManagedOpenCodeLaunchSpec } from './lifecycle.js';
@@ -985,41 +986,8 @@ export const createOpenCodeEnvRuntime = (deps: OpenCodeEnvDependencies) => {
   const isKnownOpenCodeDesktopAppPath = (candidate: string) => isMacOpenCodeAppBundlePath(candidate)
     || isWindowsOpenCodeDesktopAppPath(candidate);
 
-  const createConfiguredOpencodeBinaryError = (raw: string, normalized: string | null) => {
-    const configured = raw.trim();
-    const candidate = normalized !== null && normalized.trim().length > 0 ? normalized.trim() : configured;
-    const messageSuffix = 'OpenChamber needs the standalone opencode CLI. Install it and set settings.opencodeBinary to the CLI path, for example ~/.opencode/bin/opencode, or leave the setting empty to use PATH lookup.';
-    const error: NodeJS.ErrnoException = (() => {
-      if (isKnownOpenCodeDesktopAppPath(candidate) || isKnownOpenCodeDesktopAppPath(configured)) {
-        const platformName = process.platform === 'win32' ? 'Windows desktop app install' : 'macOS desktop app bundle';
-        return new Error(`Configured OpenCode binary points at the ${platformName}, not the CLI: ${candidate}. ${messageSuffix}`);
-      }
-
-      try {
-        const configuredStat = fs.statSync(configured);
-        if (configuredStat.isDirectory()) {
-          return new Error(`Configured OpenCode binary directory does not contain an executable ${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}: ${configured}. ${messageSuffix}`);
-        }
-      } catch {
-        void 0;
-      }
-
-      try {
-        const stat = fs.statSync(candidate);
-        if (stat.isDirectory()) {
-          return new Error(`Configured OpenCode binary directory does not contain an executable ${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}: ${candidate}. ${messageSuffix}`);
-        }
-        if (!stat.isFile()) {
-          return new Error(`Configured OpenCode binary is not a file: ${candidate}. ${messageSuffix}`);
-        }
-        return new Error(`Configured OpenCode binary is not executable: ${candidate}. ${messageSuffix}`);
-      } catch {
-        return new Error(`Configured OpenCode binary not found: ${candidate}. ${messageSuffix}`);
-      }
-    })();
-    error.code = 'OPENCODE_BINARY_INVALID';
-    return error;
-  };
+  const createConfiguredOpencodeBinaryError = (raw: string, normalized: string | null) =>
+    configuredBinaryError(raw.trim(), normalized, isKnownOpenCodeDesktopAppPath);
 
   const createConfiguredWslOpencodeError = (raw: string) => new Error(
     `Configured settings.opencodeBinary uses WSL but OpenChamber could not resolve a WSL OpenCode command: ${raw}. Ensure WSL is available and opencode is installed in the configured distro.`
@@ -1081,6 +1049,22 @@ export const createOpenCodeEnvRuntime = (deps: OpenCodeEnvDependencies) => {
     return { pinned: true, binary: normalized, error: null };
   };
 
+  const applyDevSelection = () => {
+    const entry = process.env.OPENCHAMBER_DEV_OPENCODE_ENTRY;
+    if (!entry) return null;
+    const bundled = isBundledOpenCodePath(entry);
+    if (!bundled && !isExecutable(entry)) throw createConfiguredOpencodeBinaryError(entry, entry);
+    clearWslOpencodeResolution();
+    state.resolvedOpencodeBinary = entry;
+    state.resolvedOpencodeBinarySource = bundled ? 'bundled' : 'env';
+    if (!bundled) {
+      process.env.OPENCODE_BINARY = entry;
+      prependToPath(path.dirname(entry));
+      ensureOpencodeShimRuntime(entry);
+    }
+    return entry;
+  };
+
   const applyOpencodeBinaryFromSettings = async (options: { strict?: boolean } = {}) => {
     const strict = options?.strict === true;
     const pin = applyPinnedOpencodeBinary();
@@ -1090,6 +1074,8 @@ export const createOpenCodeEnvRuntime = (deps: OpenCodeEnvDependencies) => {
       console.warn(pin.error.message);
       return null;
     }
+    const devEntry = applyDevSelection();
+    if (devEntry) return devEntry;
     try {
       const settings = await readSettingsFromDiskMigrated();
       if (!isSettingsObject(settings)) {
@@ -1162,6 +1148,8 @@ export const createOpenCodeEnvRuntime = (deps: OpenCodeEnvDependencies) => {
   const ensureOpencodeCliEnv = () => {
     const pin = applyPinnedOpencodeBinary();
     if (pin.pinned) return pin.binary;
+    const devEntry = applyDevSelection();
+    if (devEntry) return devEntry;
 
     if (state.resolvedOpencodeBinary) {
       if (state.useWslForOpencode || state.resolvedOpencodeBinarySource === 'bundled') {

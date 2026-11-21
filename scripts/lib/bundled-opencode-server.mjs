@@ -72,7 +72,7 @@ export function devOpenCodeEnv(repoRoot, callerEnv = process.env) {
     }
     fs.accessSync(cli, fs.constants.X_OK);
     console.log(`[dev] OpenCode CLI: ${cli}`);
-    return { OPENCODE_BINARY: cli };
+    return { OPENCODE_BINARY: cli, OPENCHAMBER_DEV_OPENCODE_ENTRY: cli };
   }
   const explicit = callerEnv.OPENCHAMBER_BUNDLED_OPENCODE_SERVER_DIR;
   const dir = explicit ? path.resolve(explicit) : ensureBundledOpenCodeServer(repoRoot, sourceRootFor(repoRoot, callerEnv), callerEnv);
@@ -82,5 +82,5 @@ export function devOpenCodeEnv(repoRoot, callerEnv = process.env) {
     throw new Error(`Expected a fork OpenCode server ${version} for ${process.platform}-${process.arch} in ${dir}`);
   }
   console.log(`[dev] ${explicit ? 'Selected' : 'Worktree'} OpenCode server ${version} (${manifest.fork.commit}): ${dir}`);
-  return { OPENCHAMBER_BUNDLED_OPENCODE_SERVER_DIR: dir };
+  return { OPENCHAMBER_BUNDLED_OPENCODE_SERVER_DIR: dir, OPENCHAMBER_DEV_OPENCODE_ENTRY: path.join(dir, 'serve.mjs') };
 }

@@ -458,6 +458,20 @@ describe('OpenCode env runtime', () => {
       expect(process.env.OPENCODE_BINARY).toBe(pinned);
     });
 
+    it('honors the HMR selection over a saved binary but not over the administrator', async () => {
+      const selected = createCli('openchamber-selected-fork-');
+      vi.stubEnv('OPENCHAMBER_DEV_OPENCODE_ENTRY', selected);
+      try {
+        let pin = null;
+        const { runtime } = createRuntime({ opencodeBinary: createCli('openchamber-saved-') }, { readPinnedOpencodeBinary: () => pin });
+        expect(await runtime.applyOpencodeBinaryFromSettings()).toBe(selected);
+        expect(runtime.ensureOpencodeCliEnv()).toBe(selected);
+        pin = createCli('openchamber-policy-');
+        expect(await runtime.applyOpencodeBinaryFromSettings()).toBe(pin);
+        expect(runtime.ensureOpencodeCliEnv()).toBe(pin);
+      } finally { vi.unstubAllEnvs(); }
+    });
+
     it('accepts a directory that holds the CLI', async () => {
       const pinned = createCli('openchamber-pinned-dir-');
       const { runtime } = createRuntime({}, { readPinnedOpencodeBinary: () => path.dirname(pinned) });
