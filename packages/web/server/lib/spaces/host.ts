@@ -193,9 +193,14 @@ export function createSpacesHost({
   clearTimer = clearInterval,
 }: SpacesHostOptions) {
   const owner = readOrCreateOwner(dataDir);
-  const toolsSource = createRegistryToolsSource(readHostToolVersions());
-  const dockerPlace = place ?? createDockerPlace({ runCommand, openCommandStream, dockerPath, colimaPath, owner, toolsSource });
-  const sshPlace = sshDockerHost === null ? null : createDockerPlace({ runCommand, openCommandStream, dockerPath, dockerHost: sshDockerHost, id: DOCKER_SSH_PLACE_ID, owner, toolsSource });
+  const toolsSource = !place || sshDockerHost !== null ? createRegistryToolsSource({ ...readHostToolVersions(), forkCliPath: hostEnvironment.OPENCHAMBER_SPACE_OPENCODE_CLI }) : null;
+  const makePlace = (ssh: string | null) => {
+    if (!toolsSource) throw new SpaceError('fork_cli_required', 'The Docker place requires the Linux fork CLI.');
+    const options = { runCommand, openCommandStream, dockerPath, colimaPath, owner, toolsSource };
+    return createDockerPlace(ssh ? { ...options, dockerHost: ssh, id: DOCKER_SSH_PLACE_ID } : options);
+  };
+  const dockerPlace = place ?? makePlace(null);
+  const sshPlace = sshDockerHost === null ? null : makePlace(sshDockerHost);
   const dockerSetup = createDockerSetup({ runCommand, findProgram, dockerPath, environment: hostEnvironment, check: () => dockerPlace.check(), logger });
   const registry = createPlaceRegistry(sshPlace ? [dockerPlace, sshPlace] : [dockerPlace]);
   registry.seal();

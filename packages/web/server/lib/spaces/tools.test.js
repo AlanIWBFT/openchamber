@@ -9,7 +9,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createPackedToolsSource, createRegistryToolsSource, readHostToolVersions, requireToolsSource, toolsContentKey } from './tools.js';
 
 const IMAGE = 'node@sha256:aaaa';
-const VERSIONS = { webVersion: '1.24.2', openCodeVersion: '1.18.31' };
+const forkCliPath = path.join(import.meta.dirname, 'fixtures/fork-cli.sh');
+const cli = { name: 'opencode', bytes: fs.readFileSync(forkCliPath) };
+const VERSIONS = { webVersion: '1.24.2', openCodeVersion: '1.18.31', forkCliPath };
 
 let directory;
 const tarball = (name, content) => {
@@ -48,12 +50,12 @@ describe('createRegistryToolsSource', () => {
     const source = createRegistryToolsSource(VERSIONS);
 
     expect(source.description).toBe('web 1.24.2, opencode 1.18.31');
-    expect(source.files).toEqual([]);
+    expect(source.files).toEqual([cli]);
     expect(JSON.parse(source.packageJson)).toEqual({
       name: 'openchamber-space-tools',
       private: true,
       // bun and pnpm ride along at exact versions, the runtimes setup commands reach for.
-      dependencies: { '@openchamber/web': '1.24.2', '@opencode/cli': '1.18.31', '@opencode/plugin': '1.18.31', bun: '1.4.4', pnpm: '12.11.2' },
+      dependencies: { '@openchamber/web': '1.24.2', '@opencode/plugin': '1.18.31', bun: '1.4.4', pnpm: '12.11.2' },
     });
   });
 
@@ -65,16 +67,23 @@ describe('createRegistryToolsSource', () => {
   it('accepts a prerelease version', () => {
     expect(createRegistryToolsSource({ ...VERSIONS, webVersion: '1.25.0-beta.1' }).description).toContain('1.25.0-beta.1');
   });
+
+  it('requires a local CLI and keys the tools volume by its bytes', () => {
+    expect(() => createRegistryToolsSource({ ...VERSIONS, forkCliPath: '' })).toThrow(/OPENCHAMBER_SPACE_OPENCODE_CLI/);
+    const other = createRegistryToolsSource({ ...VERSIONS, forkCliPath: tarball('other-cli', 'another build') });
+    expect(toolsContentKey(other, IMAGE)).not.toBe(toolsContentKey(createRegistryToolsSource(VERSIONS), IMAGE));
+  });
 });
 
 describe('createPackedToolsSource', () => {
   it('installs both tarballs by path and makes every sdk in the tree the local one', () => {
-    const source = createPackedToolsSource({ webTarballPath: tarball('web.tgz', 'web bytes'), sdkTarballPath: tarball('sdk.tgz', 'sdk bytes'), openCodeVersion: '1.18.31' });
+    const source = createPackedToolsSource({ ...VERSIONS, webTarballPath: tarball('web.tgz', 'web bytes'), sdkTarballPath: tarball('sdk.tgz', 'sdk bytes') });
 
     expect(source.description).toBe('development build');
     expect(source.files).toEqual([
       { name: 'openchamber-web.tgz', bytes: Buffer.from('web bytes') },
       { name: 'openchamber-sdk.tgz', bytes: Buffer.from('sdk bytes') },
+      cli,
     ]);
     expect(JSON.parse(source.packageJson)).toEqual({
       name: 'openchamber-space-tools',
@@ -82,7 +91,6 @@ describe('createPackedToolsSource', () => {
       dependencies: {
         '@openchamber/web': 'file:/tmp/openchamber-fill/openchamber-web.tgz',
         '@openchamber/sdk': 'file:/tmp/openchamber-fill/openchamber-sdk.tgz',
-        '@opencode/cli': '1.18.31',
         '@opencode/plugin': '1.18.31',
         bun: '1.4.4',
         pnpm: '12.11.2',
@@ -93,7 +101,7 @@ describe('createPackedToolsSource', () => {
 
   it('hashes the tarballs once, when the source is made', () => {
     const webTarballPath = tarball('web-once.tgz', 'first');
-    const source = createPackedToolsSource({ webTarballPath, sdkTarballPath: tarball('sdk-once.tgz', 'sdk'), openCodeVersion: '1.18.31' });
+    const source = createPackedToolsSource({ ...VERSIONS, webTarballPath, sdkTarballPath: tarball('sdk-once.tgz', 'sdk') });
     const key = toolsContentKey(source, IMAGE);
 
     fs.writeFileSync(webTarballPath, 'changed later');
@@ -109,7 +117,7 @@ describe('createPackedToolsSource', () => {
 });
 
 describe('toolsContentKey', () => {
-  const packed = (webContent) => createPackedToolsSource({ webTarballPath: tarball(`web-${webContent}.tgz`, webContent), sdkTarballPath: tarball('sdk-key.tgz', 'sdk'), openCodeVersion: '1.18.31' });
+  const packed = (webContent) => createPackedToolsSource({ ...VERSIONS, webTarballPath: tarball(`web-${webContent}.tgz`, webContent), sdkTarballPath: tarball('sdk-key.tgz', 'sdk') });
 
   it('is 16 hex characters and the same for the same content', () => {
     const key = toolsContentKey(createRegistryToolsSource(VERSIONS), IMAGE);

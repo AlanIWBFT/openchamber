@@ -158,10 +158,13 @@ export function createDockerPlace({ runCommand, openCommandStream = openCommandS
     return entry;
   };
 
-  const requireSpaceContainer = async (spaceId: string) => {
+  const requireSpaceContainer = async (spaceId: string, currentTools = false) => {
     const name = spaceResourceName(spaceId, ROLE_SPACE);
     const entry = await inspectOwnContainer(spaceId, name);
     if (entry) {
+      if (currentTools && !entry.Mounts?.some(m => m.Destination === TOOLS_MOUNT_PATH && m.Name === tools.volume)) {
+        throw new SpaceError('space_tools_outdated', 'Stop and start this space to use the configured OpenChamber fork CLI. Its work and home volumes are retained.');
+      }
       return entry;
     }
     if (await inspectOwnContainer(spaceId, spaceResourceName(spaceId, ROLE_SPACE, ASIDE_SUFFIX))) {
@@ -484,13 +487,13 @@ export function createDockerPlace({ runCommand, openCommandStream = openCommandS
     if (execRole(options.target) === ROLE_GATEKEEPER) {
       await requireGatekeeperContainer(spaceId);
     } else {
-      await requireSpaceContainer(spaceId);
+      await requireSpaceContainer(spaceId, true);
     }
     return execInContainer(spaceId, argv, options);
   };
 
   const execArgv = async (spaceId: string): Promise<[string, ...string[]]> => {
-    const entry = await requireSpaceContainer(spaceId);
+    const entry = await requireSpaceContainer(spaceId, true);
     if (entry.State?.Running !== true) {
       throw new SpaceError('space_not_running', `Space ${spaceId} is stopped. Start it, then try again.`);
     }

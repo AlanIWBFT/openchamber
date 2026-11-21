@@ -19,7 +19,7 @@ const OUTER_NETWORK = `openchamber-space-${ID}-outer-network`;
 const WORK = `openchamber-space-${ID}-volume-work`;
 const HOME = `openchamber-space-${ID}-volume-home`;
 
-const SOURCE = createRegistryToolsSource({ webVersion: '1.24.2', openCodeVersion: '1.18.31' });
+const SOURCE = createRegistryToolsSource({ webVersion: '1.24.2', openCodeVersion: '1.18.31', forkCliPath: `${import.meta.dirname}/../fixtures/fork-cli.sh` });
 const KEY = toolsContentKey(SOURCE, SPACE_BASE_IMAGE);
 const TOOLS = `openchamber-tools-${OWNER}-${KEY}`;
 const NOW = new Date('2026-09-20T08:00:00.000Z');
@@ -928,6 +928,14 @@ describe('docker place: exec, stop, start, verify', () => {
     expect(opened).toEqual([]);
   });
 
+  it('leaves an old running space alone and refuses its backend until the user switches tools', async () => {
+    const fake = createFakeDocker({ resources: spaceResources({ tools: 'old-upstream-tools' }) });
+    const place = makePlace(fake);
+    await expect(place.connect(ID)).rejects.toMatchObject({ code: 'space_tools_outdated' });
+    expect(changes(fake)).toEqual([]);
+    expect((await place.list())[0].state).toBe('running');
+  });
+
   it('stops the space, starts the same container again, and waits for its server', async () => {
     const fake = createFakeDocker({ resources: [toolsResource(), ...spaceResources()] });
     const place = makePlace(fake);
@@ -1092,8 +1100,8 @@ describe('docker place: tools volume', () => {
     const input = fill.options.stdin;
     expect(Buffer.isBuffer(input)).toBe(true);
     const header = JSON.parse(input.subarray(0, input.indexOf(10)).toString('utf8'));
-    expect(header).toEqual({ key: KEY, files: [{ name: 'package.json', bytes: Buffer.byteLength(SOURCE.packageJson) }] });
-    expect(input.subarray(input.indexOf(10) + 1).toString('utf8')).toBe(SOURCE.packageJson);
+    expect(header).toEqual({ key: KEY, files: [{ name: 'package.json', bytes: Buffer.byteLength(SOURCE.packageJson) }, { name: 'opencode', bytes: SOURCE.files[0].bytes.length }] });
+    expect(input.subarray(input.indexOf(10) + 1)).toEqual(Buffer.concat([Buffer.from(SOURCE.packageJson), SOURCE.files[0].bytes]));
   });
 
   it('checks the fill marker without a network, read-only, as the space user', async () => {

@@ -180,5 +180,5 @@ export function createDockerTools({ engine, owner, toolsSource, image, now, wait
     oneShots: [...(await findOurs('container', { role: ROLE_TOOLS_FILL })), ...(await findOurs('container', { role: ROLE_TOOLS_CHECK }))],
   });
 
-  return { ensure, prune, removeIfUnlabelled, listOurs };
+  return { volume, ensure, prune, removeIfUnlabelled, listOurs };
 }

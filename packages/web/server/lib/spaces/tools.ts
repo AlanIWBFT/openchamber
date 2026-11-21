@@ -44,7 +44,13 @@ const requireRevision = (value: string) => {
   return value;
 };
 
-const openCodePackages = <Version>(version: Version) => ({ '@opencode/cli': version, '@opencode/plugin': version });
+const openCodePackages = <Version>(version: Version) => ({ '@opencode/plugin': version });
+
+const forkCliFile = (file: string | undefined): ToolsFile => {
+  if (!file) throw new SpaceError('fork_cli_required', 'Set OPENCHAMBER_SPACE_OPENCODE_CLI to the Linux OpenChamber fork CLI for the container architecture, then enable isolated spaces.');
+  try { return { name: 'opencode', bytes: fs.readFileSync(file) }; }
+  catch { throw new SpaceError('fork_cli_required', `Cannot read the Linux OpenChamber fork CLI at ${file}.`); }
+};
 
 const RUNTIME_PACKAGES = Object.freeze({ bun: '1.4.4', pnpm: '12.11.2' });
 
@@ -67,23 +73,23 @@ export function readHostToolVersions(packageJsonUrl = webPackagePaths.packageJso
 const isVersionManifest = (value: unknown): value is { version?: unknown; dependencies?: unknown } => value instanceof Object;
 const isVersionDependencies = (value: unknown): value is { '@opencode/client'?: unknown } => value instanceof Object;
 
-export function createRegistryToolsSource({ webVersion, openCodeVersion, revision = '' }: { webVersion: unknown; openCodeVersion: unknown; revision?: string }) {
-  const files: ToolsFile[] = [];
+export function createRegistryToolsSource({ webVersion, openCodeVersion, revision = '', forkCliPath = process.env.OPENCHAMBER_SPACE_OPENCODE_CLI }: { webVersion: unknown; openCodeVersion: unknown; revision?: string; forkCliPath?: string | undefined }) {
   const packages = {
     '@openchamber/web': requireVersion(webVersion, '@openchamber/web'),
     ...openCodePackages(requireVersion(openCodeVersion, 'OpenCode')),
     ...RUNTIME_PACKAGES,
   };
+  const cli = forkCliFile(forkCliPath);
   return finishSource({
     kind: 'registry',
     description: `web ${webVersion}, opencode ${openCodeVersion}`,
-    canonical: { kind: 'registry', packages, revision: requireRevision(revision) },
+    canonical: { kind: 'registry', packages, forkCli: sha256(cli.bytes), revision: requireRevision(revision) },
     packageJson: packageJsonText({ dependencies: packages }),
-    files,
+    files: [cli],
   });
 }
 
-export function createPackedToolsSource({ webTarballPath, sdkTarballPath, openCodeVersion, revision = '' }: { webTarballPath: string; sdkTarballPath: string; openCodeVersion: unknown; revision?: string }) {
+export function createPackedToolsSource({ webTarballPath, sdkTarballPath, openCodeVersion, revision = '', forkCliPath = process.env.OPENCHAMBER_SPACE_OPENCODE_CLI }: { webTarballPath: string; sdkTarballPath: string; openCodeVersion: unknown; revision?: string; forkCliPath?: string | undefined }) {
   const read = (filePath: string, what: string) => {
     try {
       return fs.readFileSync(filePath);
@@ -94,6 +100,7 @@ export function createPackedToolsSource({ webTarballPath, sdkTarballPath, openCo
   const files = [
     { name: WEB_TARBALL_NAME, bytes: read(webTarballPath, 'web') },
     { name: SDK_TARBALL_NAME, bytes: read(sdkTarballPath, 'sdk') },
+    forkCliFile(forkCliPath),
   ];
   const packages = { ...openCodePackages(requireVersion(openCodeVersion, 'OpenCode')), ...RUNTIME_PACKAGES };
   return finishSource({

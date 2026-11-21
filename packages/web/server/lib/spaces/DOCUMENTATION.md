@@ -2,6 +2,10 @@
 
 An isolated space lets an agent work inside a container, on a copy of the project; when the task is done, the user applies the result to their own repository or discards it. The motives, all in scope: protect the user's machine, let the agent run without permission prompts, keep host secrets away from the agent, and keep project tooling off the host. This file is the module's contract: the design it follows, what each part owns, and what was measured.
 
+## Fork CLI for isolated spaces
+
+Set `OPENCHAMBER_SPACE_OPENCODE_CLI` on the host to the compiled Linux fork `opencode` executable for the Docker machine's architecture before enabling spaces. The host transfers its bytes to the tools volume. The filler checks `--openchamber-info` before marking the volume ready. No upstream CLI is downloaded. A new executable changes the volume key. Stop and start an existing space to switch tools while retaining its work and home volumes; reconnecting never restarts it on the user's behalf.
+
 ## Design
 
 **The boundary rule.** Every limit is a restriction the agent cannot undo from inside; a promise is worthless. Everything that crosses the boundary crosses because the user decided it, one item at a time. The host treats everything that comes out of a space as untrusted data to display, never as a command. Apply this to every change: a choice that relies on the agent behaving is wrong.
@@ -400,7 +404,7 @@ Contents: `@openchamber/web`, `@opencode/cli`, and `@opencode/plugin` at the ver
 
 The Docker place gets its source at construction, `createDockerPlace({ ..., toolsSource })`.
 
-- `createRegistryToolsSource({ webVersion, openCodeVersion })` asks the registry for exact versions of the three packages. `readHostToolVersions()` reads them from `packages/web/package.json`: the version of `web`, and the version of its `@opencode/client` dependency for OpenCode. A range or a URL is rejected.
+- `createRegistryToolsSource({ webVersion, openCodeVersion, forkCliPath })` uses the registry for web, plugin, and other npm tools, never for the CLI. `readHostToolVersions()` reads the exact web and OpenCode package pins from the host manifest. The compiled fork CLI is supplied as a local file in both source modes.
 - `createPackedToolsSource({ webTarballPath, sdkTarballPath, openCodeVersion })` is a development build. Its `package.json` uses `file:` dependencies for both tarballs and `"overrides": { "@openchamber/sdk": "$@openchamber/sdk" }`, so every sdk in the tree is the local one. The tarballs are read and hashed once, when the source is made.
 - Both take an optional `revision`. It changes the key and nothing that gets installed, for the day the same packages must be filled again.
 

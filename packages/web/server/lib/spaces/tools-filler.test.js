@@ -52,10 +52,9 @@ describe.skipIf(process.platform === 'win32')('FILLER_PROGRAM, run', () => {
   const FAKE_NPM = `#!/bin/sh
 echo "$@" > npm-args.txt
 [ -f fail-npm ] && exit 3
-mkdir -p node_modules/.bin node_modules/@opencode/plugin node_modules/@opencode/cli node_modules/bun
-touch node_modules/.bin/openchamber node_modules/.bin/opencode
+mkdir -p node_modules/.bin node_modules/@opencode/plugin node_modules/bun
+touch node_modules/.bin/openchamber
 [ -f skip-plugin ] || echo '{}' > node_modules/@opencode/plugin/package.json
-echo "import fs from 'node:fs'; fs.writeFileSync('postinstall-ran', 'yes');" > node_modules/@opencode/cli/postinstall.mjs
 echo "require('node:fs').writeFileSync('install-ran', 'yes');" > node_modules/bun/install.js
 printf '#!/bin/sh\necho 1.0.0\n' > node_modules/.bin/bun
 printf '#!/bin/sh\necho 1.0.0\n' > node_modules/.bin/pnpm
@@ -104,19 +103,18 @@ chmod +x node_modules/.bin/bun node_modules/.bin/pnpm
 
   const fill = (stdin) => runCommand(process.execPath, ['--import', fetchStub, '-e', program, tools, staging], { stdin, timeoutMs: 30_000 });
   const rawInput = (header, ...bodies) => Buffer.concat([Buffer.from(`${JSON.stringify(header)}\n`), ...bodies.map((body) => Buffer.from(body))]);
+  const cli = { name: 'opencode', bytes: fs.readFileSync(new URL('./fixtures/fork-cli.sh', import.meta.url)) };
 
   it('writes package.json to the tools directory, tarballs to staging, installs, and writes the marker last', async () => {
     const bytes = Buffer.from([31, 139, 0, 10, 255, 0]);
-    const result = await fill(buildFillInput({ key: KEY, packageJson: '{"name":"x"}', files: [{ name: 'openchamber-web.tgz', bytes }] }));
+    const result = await fill(buildFillInput({ key: KEY, packageJson: '{"name":"x"}', files: [cli, { name: 'openchamber-web.tgz', bytes }] }));
 
     expect(result).toMatchObject({ code: 0 });
     expect(fs.readFileSync(path.join(tools, 'package.json'), 'utf8')).toBe('{"name":"x"}');
     expect(fs.readFileSync(path.join(staging, 'openchamber-web.tgz'))).toEqual(bytes);
     expect(fs.existsSync(path.join(tools, 'openchamber-web.tgz'))).toBe(false);
     expect(fs.readFileSync(path.join(tools, 'npm-args.txt'), 'utf8').trim()).toBe(`install --ignore-scripts --no-audit --no-fund --cache ${path.join(staging, 'npm-cache')}`);
-    // The one install script that runs: the OpenCode launcher needs its binary linked.
-    expect(fs.readFileSync(path.join(tools, 'node_modules', '@opencode/cli', 'postinstall-ran'), 'utf8')).toBe('yes');
-    // bun's install script runs for the same reason, and uv arrives beside the other programs.
+    expect(fs.readFileSync(path.join(tools, 'node_modules/.bin/opencode'))).toEqual(cli.bytes);
     expect(fs.readFileSync(path.join(tools, 'node_modules', 'bun', 'install-ran'), 'utf8')).toBe('yes');
     expect(fs.readFileSync(path.join(root, 'fetched-url'), 'utf8')).toBe(`https://github.com/astral-sh/uv/releases/download/0.13.1/${UV_NAME}.tar.gz`);
     for (const name of ['uv', 'uvx']) expect(fs.statSync(path.join(tools, 'node_modules', '.bin', name)).mode & 0o111).not.toBe(0);
@@ -127,7 +125,7 @@ chmod +x node_modules/.bin/bun node_modules/.bin/pnpm
 
   it('writes no marker when the uv download does not match its pinned checksum', async () => {
     fs.writeFileSync(path.join(root, 'tampered'), '');
-    const result = await fill(buildFillInput({ key: KEY, packageJson: '{}' }));
+    const result = await fill(buildFillInput({ key: KEY, packageJson: '{}', files: [cli] }));
 
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('the uv download does not match its pinned checksum');
@@ -146,7 +144,7 @@ chmod +x node_modules/.bin/bun node_modules/.bin/pnpm
 
   it('writes no marker when a needed package is missing after the install', async () => {
     fs.writeFileSync(path.join(tools, 'skip-plugin'), '');
-    const result = await fill(buildFillInput({ key: KEY, packageJson: '{}' }));
+    const result = await fill(buildFillInput({ key: KEY, packageJson: '{}', files: [cli] }));
 
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('node_modules/@opencode/plugin/package.json is missing');
