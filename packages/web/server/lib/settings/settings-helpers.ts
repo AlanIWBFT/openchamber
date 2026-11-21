@@ -244,7 +244,7 @@ type StringSettingsKey =
   | 'uiFont' | 'monoFont' | 'customUiFont' | 'customMonoFont' | 'uiFontWeight' | 'githubClientId' | 'githubScopes'
   | 'gitlabClientId' | 'fileEditorVimMappings' | 'tunnelProvider' | 'tunnelMode' | 'lastSelectedModel'
   | 'pwaAppName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'browserProvider' | 'agentMemoryDreamingModel'
-  | 'agentMemoryDreamingVariant' | 'agentImageModel' | 'isolatedSpacesSshHost' | 'openCodeUpdateToastDismissedVersion'
+  | 'agentMemoryDreamingVariant' | 'agentImageModel' | 'isolatedSpacesSshHost'
   | 'terminalShell' | 'openInAppId' | 'globalBehaviorPrompt' | 'responseStylePreset' | 'responseStyleCustomInstructions'
   | 'sttServerUrl' | 'sttModel' | 'sttEndpointPath' | 'sttLocalModel' | 'sttLanguage' | 'sidebarProjectDisplayMode'
   | 'sidebarViewMode' | 'sidebarListSessionGrouping' | 'sidebarGrouping' | 'sidebarProjectSortOrder'
@@ -366,7 +366,6 @@ export const createSettingsHelpers = (dependencies: SettingsHelpersDependencies)
   const STT_ENDPOINT_PATH_MAX_LENGTH = 1024;
   const STT_MODEL_MAX_LENGTH = 256;
   const STT_LANGUAGE_MAX_LENGTH = 64;
-  const VERSION_STRING_MAX_LENGTH = 128;
   const SHORTCUT_OVERRIDE_KEY_MAX_LENGTH = 128;
   const SHORTCUT_OVERRIDE_VALUE_MAX_LENGTH = 128;
   const PWA_ORIENTATION_VALUES = new Set(['system', 'portrait', 'landscape']);
@@ -1126,10 +1125,6 @@ export const createSettingsHelpers = (dependencies: SettingsHelpersDependencies)
     }
     const sshHost = sshHostSchema.safeParse(candidate.isolatedSpacesSshHost);
     if (sshHost.success) result.isolatedSpacesSshHost = sshHost.data;
-    if (isString(candidate.openCodeUpdateToastDismissedVersion)) {
-      const version = candidate.openCodeUpdateToastDismissedVersion.trim();
-      result.openCodeUpdateToastDismissedVersion = version.slice(0, VERSION_STRING_MAX_LENGTH);
-    }
     if (isBoolean(candidate.showToolFileIcons)) {
       result.showToolFileIcons = candidate.showToolFileIcons;
     }

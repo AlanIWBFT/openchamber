@@ -3,7 +3,6 @@ import { OpenCodeCompatibilityGate } from '@/components/update/OpenCodeCompatibi
 import React from 'react';
 
 import { AboutSettings } from '@/components/sections/openchamber/AboutSettings';
-import { OpenCodeUpdateToast } from '@/components/update/OpenCodeUpdateToast';
 import { MobileAppUpdateToast } from '@/components/update/MobileAppUpdateToast';
 import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
 import { Button } from '@/components/ui/button';
@@ -1298,7 +1297,6 @@ function MobileAppContent({ apis }: MobileAppProps) {
             <div className="h-full bg-background text-foreground">
               <AppStartupOverlay ready={!isNativeMobileApp || !lastSessionRestorePending} animated />
               <SyncAppEffects backgroundWorkEnabled={isInitialized} />
-              <OpenCodeUpdateToast />
               <MobileAppUpdateToast />
               <MobileShell onActiveConnectionDeleted={() => {
                 suppressAutoConnectUntilManualConnect();

@@ -4,7 +4,7 @@ import { createRemovalTombstones } from './inlineCommentRemovals';
 import { resolveCommentTarget } from './inlineCommentTarget';
 import { fetchLastAssistantMessageText } from './notificationMessage';
 import { findMessagePageItem } from '@openchamber/ui/lib/opencode/messagePaging';
-import { BridgeRequestError, onCommand, onThemeChange, postBridgeNotification, proxyApiRequest, proxySessionMessageRequest, sendBridgeMessage, sendBridgeMessageWithOptions, startSseProxy, stopSseProxy } from './api/bridge';
+import { BridgeRequestError, onCommand, onThemeChange, postBridgeNotification, proxyApiRequest, proxySessionMessageRequest, sendBridgeMessage, startSseProxy, stopSseProxy } from './api/bridge';
 import { vscodeStreamPerfCount, vscodeStreamPerfMeasure, vscodeStreamPerfObserve } from './api/streamPerf';
 import { quotaGiftResetBridgePayload } from './quotaGiftResetRequest';
 import { extractBodyBase64, extractBodyText, extractJsonBody, hasInitBody } from './requestBodyTransport';
@@ -1164,21 +1164,6 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
 
   if (pathname === '/api/opencode/compatibility' && method === 'GET') {
     return jsonResponse(await sendBridgeMessage('api:opencode/compatibility'));
-  }
-
-  if (pathname === '/api/opencode/install-v2' && method === 'POST') {
-    return jsonResponse(await sendBridgeMessageWithOptions('api:opencode/install-v2', undefined, { timeoutMs: 0 }));
-  }
-
-  if (pathname === '/api/opencode/upgrade-status' && method === 'GET') {
-    const data = await sendBridgeMessage('api:opencode/upgrade-status');
-    return jsonResponse(data);
-  }
-
-  if (pathname === '/api/opencode/upgrade' && method === 'POST') {
-    const body = await extractJsonBody(input, init, method);
-    const result = await sendBridgeMessageWithOptions<{ status: number; body: unknown }>('api:opencode/upgrade', body, { timeoutMs: 0 });
-    return jsonResponse(result.body, result.status);
   }
 
   if (pathname === '/api/zen/models' && method === 'GET') {

@@ -12,7 +12,6 @@ import { activateQuotaGiftReset, fetchQuotaForProvider, listConfiguredQuotaProvi
 import { credentialStatus, deleteCredential, importCursorCredential, normalizeCredential, readCredential, validateCredential, writeCredential, type ManagedProvider } from './quotaCredentials';
 import { getSessionActivitySnapshot } from './sessionActivityWatcher';
 import { sessionNotificationSchema } from './sessionNotifications';
-import { getOpenCodeUpgradeStatus, upgradeManagedOpenCode } from './opencode-upgrade-runtime';
 import { normalizeWindowsDriveLetter, pathsEqualWithNormalizedDriveLetter } from './pathUtils';
 import { resolveWorkspaceFolders } from './workspaceResolver';
 import { isFileDeletionPatch, reconstructOriginalContentFromPatch } from './patchReconstruction';
@@ -233,20 +232,6 @@ export async function handleSystemBridgeMessage(
 
     case 'api:opencode/compatibility': {
       return { id, type, success: true, data: await ctx?.manager?.getCompatibility() };
-    }
-
-    case 'api:opencode/install-v2': {
-      if (!ctx?.manager) return { id, type, success: false, error: 'OpenCode manager is unavailable.' };
-      await ctx.manager.installV2();
-      return { id, type, success: true, data: { success: true } };
-    }
-
-    case 'api:opencode/upgrade-status': {
-      return { id, type, success: true, data: await getOpenCodeUpgradeStatus(ctx?.manager) };
-    }
-
-    case 'api:opencode/upgrade': {
-      return { id, type, success: true, data: await upgradeManagedOpenCode(ctx?.manager) };
     }
 
     case 'api:session-activity:get': {

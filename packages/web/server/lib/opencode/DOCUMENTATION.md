@@ -491,8 +491,6 @@ Nullish body destructuring retains the original Node error message.
   - `GET /api/config/settings`
   - `PUT /api/config/settings`
   - `GET /api/config/opencode-resolution`
-  - `POST /api/opencode/upgrade` (enforces the active runtime's upgrade capability, shares concurrent upgrade requests and runs the resolved CLI with `upgrade`; the existing Reload action restarts managed OpenCode afterwards)
-  - `GET /api/opencode/upgrade-status` (returns version availability plus the authoritative `upgrade.supported`, `upgrade.manager`, and `upgrade.reason` capability)
   - `GET /api/provider/:providerId/source`
   - `PUT /api/provider` (create/update custom OpenAI-compatible provider config in OpenCode user/project/custom layers via `scope`; secrets stay in auth via the OpenCode auth API)
   - `POST /api/provider/discover-models` (user-initiated custom-provider model discovery; fetches the configured `/models` path server-side and optionally enriches exact model matches from the shared models.dev cache). A form with a client certificate (`tls`) presents it on an `https` endpoint as OpenCode would: `{file:...}` and `{env:...}` are resolved here, the request goes through `node:https` on a connection of its own (the global fetch takes no certificate in Node, and the shared agent pools sockets without the passphrase in its key), and redirects are not followed.
@@ -503,7 +501,7 @@ Nullish body destructuring retains the original Node error message.
 
 ### Server-owned read deadlines
 
-Version and upgrade-status reads of `/api/info` use the health probe's 3-second
+Version reads of `/api/info` use the health probe's 3-second
 timeout. An aborted read returns the route's existing error response. These
 routes register before the generic proxy and need their own deadline.
 
@@ -520,8 +518,8 @@ executable before writing the setting. A rejected selection leaves the existing
 service running. Clearing the field restores default resolution.
 
 Desktop's bundled service updates with the app. Users replace standalone fork
-CLIs manually. The install and upgrade routes return 409, and checking the
-installed version never contacts an upstream package registry. Development
+CLIs manually. `/api/opencode/version` reports the installed version without
+contacting a package registry. Development
 launches honor the CLI or service selected for HMR over a saved binary setting;
 an administrator's machine pin still takes precedence.
 

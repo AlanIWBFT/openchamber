@@ -17,8 +17,7 @@ import { formatCanaryBuild, parseCanaryVersion, type UpdateChannel } from '@/lib
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { loadDesktopSettings, updateDesktopSettings } from '@/lib/persistence';
 import { copyTextToClipboard } from '@/lib/clipboard';
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
-import { fetchOpenCodeUpgradeStatus, runOpenCodeUpgrade, type OpenCodeUpgradeStatus } from '@/components/update/openCodeUpgrade';
+import { readInstalledOpenCodeVersion } from '@/lib/opencode/installed-version';
 import { useDesktopRemoteHostActive } from '@/hooks/useDesktopRemoteHostActive';
 import { getDesktopAppVersion } from '@/lib/desktopNative';
 import { getUpdateCheckErrorMessage } from '@/lib/updateCheckError';
@@ -74,54 +73,6 @@ function useConnectedServerUpdate(enabled: boolean) {
   }, [enabled]);
 
   return { ...state, check };
-}
-
-type OpenCodeUpgradePhase =
-  | { kind: 'idle' }
-  | { kind: 'upgrading' }
-  | { kind: 'installed'; version: string | null }
-  | { kind: 'failed'; error: string };
-
-function useOpenCodeUpgrade(failedFallback: string) {
-  const [status, setStatus] = React.useState<OpenCodeUpgradeStatus | null>(null);
-  const [phase, setPhase] = React.useState<OpenCodeUpgradePhase>({ kind: 'idle' });
-
-  const refresh = React.useCallback(async (): Promise<OpenCodeUpgradeStatus | null> => {
-    try {
-      const next = await fetchOpenCodeUpgradeStatus();
-      setStatus(next);
-      return next;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  React.useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const upgrade = React.useCallback(async () => {
-    setPhase({ kind: 'upgrading' });
-    try {
-      const version = await runOpenCodeUpgrade(failedFallback);
-      setPhase({ kind: 'installed', version });
-    } catch (error) {
-      setPhase({ kind: 'failed', error: error instanceof Error ? error.message : failedFallback });
-    }
-  }, [failedFallback]);
-
-  const reloadAfterUpgrade = React.useCallback(async (reload: () => Promise<void>) => {
-    await reload().catch(() => undefined);
-    const next = await refresh();
-    if (!next?.currentVersion) return;
-    setPhase((current) => {
-      if (current.kind !== 'installed') return current;
-      if (current.version && current.version.replace(/^v/, '') !== next.currentVersion) return current;
-      return { kind: 'idle' };
-    });
-  }, [refresh]);
-
-  return { status, phase, refresh, upgrade, reloadAfterUpgrade };
 }
 
 function useNativeAppVersion(enabled: boolean): string | null {
@@ -267,9 +218,12 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
       cancelled = true;
     };
   }, [isDesktopApp, isNpmServer, openChamberVersion]);
-  const openCode = useOpenCodeUpgrade(t('opencodeUpdate.toast.failed.description'));
-  const openCodeVersion = openCode.status?.currentVersion ?? null;
-  const openCodeUpdateVersion = openCode.phase.kind === 'installed' ? null : openCode.status?.availableVersion ?? null;
+  const [openCodeVersion, setOpenCodeVersion] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    void readInstalledOpenCodeVersion().then(version => { if (!cancelled) setOpenCodeVersion(version); });
+    return () => { cancelled = true; };
+  }, []);
   const [commandCopied, setCommandCopied] = React.useState(false);
 
   const serverUpdateLabel = (info: UpdateInfo | null) => {
@@ -336,7 +290,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     void update.checkForUpdates();
     if (remoteHostUpdate) void remoteHostUpdate.check();
     if (isAndroidApp) void updateStore.checkForUpdates();
-    void openCode.refresh();
+    void readInstalledOpenCodeVersion().then(setOpenCodeVersion);
   };
 
   const copyManualCommand = async (command: string) => {
@@ -344,18 +298,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     if (!result.ok) return;
     setCommandCopied(true);
     setTimeout(() => setCommandCopied(false), 2000);
-  };
-
-  const reloadOpenCode = () => {
-    void openCode.reloadAfterUpgrade(async () => {
-      await reloadOpenCodeConfiguration({
-        message: t('opencodeUpdate.toast.reload.message'),
-        scopes: ['all'],
-      });
-    }).then(() => {
-      void update.checkForUpdates();
-      if (remoteHostUpdate) void remoteHostUpdate.check();
-    });
   };
 
   const renderManualUpdateNotice = (info: UpdateInfo | null) => {
@@ -426,56 +368,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     />
   ) : null;
 
-  const openCodeUpdate = (() => {
-    const { phase } = openCode;
-    if (phase.kind === 'installed') {
-      return {
-        action: (
-          <Button type="button" size="sm" variant="outline" onClick={reloadOpenCode}>
-            {t('opencodeUpdate.toast.actions.reload')}
-          </Button>
-        ),
-        note: (
-          <p className="typography-meta text-muted-foreground">
-            {phase.version
-              ? t('settings.openchamber.about.openCode.installedVersion', { version: phase.version })
-              : t('settings.openchamber.about.openCode.installed')}
-          </p>
-        ),
-      };
-    }
-    if (!openCodeUpdateVersion) return null;
-    if (!openCode.status?.supported) {
-      return {
-        action: null,
-        note: (
-          <p className="typography-meta text-muted-foreground">
-            {t('settings.openchamber.about.openCode.manualUpdate', { version: openCodeUpdateVersion })}
-          </p>
-        ),
-      };
-    }
-    const upgrading = phase.kind === 'upgrading';
-    return {
-      action: (
-        <Button type="button" size="sm" variant="outline" onClick={() => void openCode.upgrade()} disabled={upgrading}>
-          {upgrading ? <Spinner className="size-4" /> : <Icon name="download" className="size-4" />}
-          {upgrading
-            ? t('opencodeUpdate.toast.upgrading.title')
-            : t('settings.openchamber.about.actions.updateOpenCodeToVersion', { version: openCodeUpdateVersion })}
-        </Button>
-      ),
-      note: phase.kind === 'failed'
-        ? <p className="typography-meta text-[var(--status-error)]">{phase.error}</p>
-        : null,
-    };
-  })();
-  const openCodeUpdateControls = openCodeUpdate ? (
-    <div className="flex flex-col items-center gap-2">
-      {openCodeUpdate.note}
-      {openCodeUpdate.action}
-    </div>
-  ) : null;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -612,9 +504,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
           </div>
         )}
 
-        {openCodeUpdateControls && (
-          <div className="flex justify-center text-center">{openCodeUpdateControls}</div>
-        )}
 
         {[update.error, remoteHostUpdate?.error].filter(Boolean).map((error) => (
           <p key={error} className="rounded-xl bg-[var(--status-error-background)] px-3 py-2 typography-meta text-[var(--status-error)]">
@@ -702,7 +591,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   const notes = [
     manualUpdateNotice,
     remoteHostUpdateNotice,
-    openCodeUpdate?.note ?? null,
     ...[update.error, remoteHostUpdate?.error].filter(Boolean).map((error) => (
       <p key={error} className="rounded-lg bg-[var(--status-error-background)] px-3 py-2 typography-meta text-[var(--status-error)]">
         {error}
@@ -787,7 +675,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
           </SettingsFieldRow>
           <SettingsFieldRow label={t('settings.openchamber.about.field.openCodeVersion')} {...valueRow}>
             {versionValue(openCodeVersion || t('settings.openchamber.about.state.unknown'))}
-            {openCodeUpdate?.action}
           </SettingsFieldRow>
           <InstanceServiceUrls label={t('settings.openchamber.about.field.instanceUrls')} />
         </div>

@@ -8,8 +8,6 @@ const createManager = (): OpenCodeManager => ({
   stop: async () => {},
   restart: async () => {},
   refreshPluginSwitches: async () => ({ updated: true, requiresManualRestart: false }),
-  upgradeCli: async () => {},
-  installV2: async () => {},
   getCompatibility: async () => ({ state: 'compatible', version: '2.0.15', installation: 'managed', binary: null, minimumVersion: '2.0.15', canInstall: false }),
   setWorkingDirectory: async (path) => ({ success: true, path }),
   getStatus: () => 'connected',

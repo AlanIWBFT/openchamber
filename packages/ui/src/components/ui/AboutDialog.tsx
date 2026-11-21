@@ -12,6 +12,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useI18n } from '@/lib/i18n';
 import { getDesktopAppVersion } from '@/lib/desktopNative';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { readInstalledOpenCodeVersion } from '@/lib/opencode/installed-version';
 
 const VERSION_SLOT = '\u0000';
 
@@ -95,23 +96,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
     if (!open) return;
 
     let cancelled = false;
-    const fetchOpenCodeVersion = async () => {
-      let currentVersion = '';
-      try {
-        const response = await runtimeFetch('/api/opencode/upgrade-status', {
-          headers: { Accept: 'application/json' },
-        });
-        if (response.ok) {
-          const data = await response.json().catch(() => null) as null | { currentVersion?: unknown };
-          currentVersion = typeof data?.currentVersion === 'string' ? data.currentVersion.trim() : '';
-        }
-      } catch {
-        // OpenCode version is best-effort in About.
-      }
-      if (!cancelled) setOpenCodeVersion(currentVersion || null);
-    };
-
-    void fetchOpenCodeVersion();
+    void readInstalledOpenCodeVersion().then(version => { if (!cancelled) setOpenCodeVersion(version); });
     return () => {
       cancelled = true;
     };

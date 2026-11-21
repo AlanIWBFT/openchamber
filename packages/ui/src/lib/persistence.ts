@@ -157,16 +157,6 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
     localStorage.removeItem('openchamber.pwaName');
   }
   setStoredMobileKeyboardMode(settings.mobileKeyboardMode);
-  if (typeof settings.openCodeUpdateToastDismissedVersion === 'string') {
-    const version = settings.openCodeUpdateToastDismissedVersion.trim();
-    if (version) {
-      localStorage.setItem('opencode-update-toast-dismissed-version', version);
-    } else {
-      localStorage.removeItem('opencode-update-toast-dismissed-version');
-    }
-  } else {
-    localStorage.removeItem('opencode-update-toast-dismissed-version');
-  }
   if (typeof settings.dictationEnabled === 'boolean') {
     localStorage.setItem('dictationEnabled', String(settings.dictationEnabled));
   } else {

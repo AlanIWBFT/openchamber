@@ -28,7 +28,7 @@ import {
   isUnsafeUnauthenticatedLanAllowed,
   readAdvertisedLanUrl,
 } from './lib/security/bind-host.js';
-import { isEnterpriseMode, isNetworkAccessBlocked, NETWORK_ACCESS_BLOCKED_ERROR, readEnterprisePolicy, watchEnterprisePolicy } from './lib/enterprise-mode.js';
+import { isEnterpriseMode, isNetworkAccessBlocked, NETWORK_ACCESS_BLOCKED_ERROR, watchEnterprisePolicy } from './lib/enterprise-mode.js';
 import {
   TUNNEL_MODE_MANAGED_LOCAL,
   TUNNEL_MODE_MANAGED_REMOTE,
@@ -86,7 +86,6 @@ import { guardOpenCodeFetch } from './lib/opencode-trust/fetch-guard.js';
 import { createStaticRoutesRuntime } from './lib/server-frame/static-routes-runtime.js';
 import { createSettingsRuntime } from './lib/settings/settings-runtime.js';
 import { createOpenCodeResolutionRuntime } from './lib/opencode/opencode-resolution-runtime.js';
-import { resolveOpenCodeUpgradeCapability } from './lib/opencode/upgrade-capability.js';
 import { createBootstrapRuntime } from './lib/server-frame/bootstrap-runtime.js';
 import { createSessionRuntime } from './lib/opencode/session-runtime.js';
 import { configureOpenCodeRuntimeProviders, resetOpenCodeRuntimeProviders } from './lib/small-model/client.js';
@@ -1928,19 +1927,6 @@ const getOpenCodeCompatibility = async () => {
   return checkOpenCodeCompatibility(async () => binary ? readOpenCodeCliVersion(resolveManagedOpenCodeLaunchSpec(binary)) : null, installation, binary);
 };
 
-const getOpenCodeUpgradeCapability = () => {
-  const activeBinary = lastOpenCodeLaunchDiagnostics?.sourceBinary
-    || lastOpenCodeLaunchDiagnostics?.binary
-    || resolvedOpencodeBinary;
-  return resolveOpenCodeUpgradeCapability({
-    isExternal: isExternalOpenCode,
-    hasManagedProcess: Boolean(openCodeProcess),
-    activeBinary,
-    isBundledBinary: isBundledOpenCodePath,
-    pinnedByPolicy: Boolean(readEnterprisePolicy().opencodeBinary),
-  });
-};
-
 const restartOpenCode: typeof openCodeLifecycleRuntime.restartOpenCode = (...args) => openCodeLifecycleRuntime.restartOpenCode(...args);
 const waitForOpenCodeReady: typeof openCodeLifecycleRuntime.waitForOpenCodeReady = (...args) => openCodeLifecycleRuntime.waitForOpenCodeReady(...args);
 const refreshOpenCodeAfterConfigChange: typeof openCodeLifecycleRuntime.refreshOpenCodeAfterConfigChange = (...args) => openCodeLifecycleRuntime.refreshOpenCodeAfterConfigChange(...args);
@@ -2996,7 +2982,6 @@ async function main(options: WebUiServerOptions = {}) {
     deleteImportedTheme,
     refreshOpenCodeAfterConfigChange,
     getOpenCodeResolutionSnapshot,
-    getOpenCodeUpgradeCapability,
     getOpenCodeCompatibility,
     validateSelectedCli: file => validateSelectedCli(file, resolveManagedOpenCodeLaunchSpec),
     formatSettingsResponse,

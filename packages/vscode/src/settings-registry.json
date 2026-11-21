@@ -241,9 +241,6 @@
       "scope": "instance",
       "computed": true
     },
-    "openCodeUpdateToastDismissedVersion": {
-      "scope": "instance"
-    },
     "autoDeleteEnabled": {
       "scope": "instance"
     },

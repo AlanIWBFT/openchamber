@@ -7,7 +7,6 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
 import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
-import { OpenCodeUpdateToast } from '@/components/update/OpenCodeUpdateToast';
 import { AppLinkConfirmDialog } from '@/components/chat/AppLinkConfirmDialog';
 import { SnippetQuickCreateDialog } from '@/components/snippets/SnippetQuickCreateDialog';
 import { GlobalQuestionDialogs } from '@/components/layout/GlobalQuestionDialogs';
@@ -141,7 +140,6 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
                 <SnippetQuickCreateDialog />
                 <GlobalQuestionDialogs />
                 <OpenCodeTrustDialog />
-                <OpenCodeUpdateToast />
                 <Toaster position="top-center" />
                 <ConfigUpdateOverlay />
               </div>

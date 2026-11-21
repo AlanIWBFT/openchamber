@@ -25,7 +25,6 @@ import { isString, isBoolean } from '../shared/object-guards.js';
 import type { Application, RequestHandler } from '../shared/http-contracts.js';
 import type { JsonObject } from '../shared/json-values.js';
 import type { createOpenCodeResolutionRuntime } from './opencode-resolution-runtime.js';
-import type { resolveOpenCodeUpgradeCapability } from './upgrade-capability.js';
 import type { OpenCodeCompatibility } from './compatibility.js';
 import type { getProviderSources, removeProviderConfig, upsertProviderConfig } from './providers.js';
 import type { createProjectDirectoryRuntime } from '../projects/project-directory-runtime.js';
@@ -35,7 +34,6 @@ import type { DiscoverProviderModelsOptions } from './model-discovery.js';
 export interface OpenCodeRouteDependencies<Settings extends { opencodeBinary?: unknown } | null, SettingsResponse> {
   crypto: typeof import('node:crypto');
   getOpenCodeResolutionSnapshot: ReturnType<typeof createOpenCodeResolutionRuntime>['getOpenCodeResolutionSnapshot'];
-  getOpenCodeUpgradeCapability: () => ReturnType<typeof resolveOpenCodeUpgradeCapability>;
   getOpenCodeCompatibility: () => Promise<OpenCodeCompatibility>;
   validateSelectedCli: (value: string) => Promise<void>;
   formatSettingsResponse: (settings: Settings) => SettingsResponse;
@@ -86,7 +84,6 @@ export const registerOpenCodeRoutes = <Settings extends { opencodeBinary?: unkno
   const {
     crypto: _crypto,
     getOpenCodeResolutionSnapshot,
-    getOpenCodeUpgradeCapability,
     getOpenCodeCompatibility,
     formatSettingsResponse,
     readSettingsFromDiskMigrated,
@@ -131,54 +128,6 @@ export const registerOpenCodeRoutes = <Settings extends { opencodeBinary?: unkno
   app.get('/api/opencode/compatibility', async (_req, res) => {
     try { res.json(await getOpenCodeCompatibility()); }
     catch { res.status(503).json({ error: 'Could not check OpenCode compatibility.' }); }
-  });
-
-  app.post('/api/opencode/install-v2', (_req, res) => res.status(409).json({ success: false, error: forkRequired }));
-
-  app.post('/api/opencode/upgrade', async (_req, res) => {
-    const capability = getOpenCodeUpgradeCapability();
-      const bundled = capability.reason === 'bundled';
-      const pinned = capability.reason === 'policy';
-      return res.status(409).json({
-        success: false,
-        code: bundled ? 'OPENCODE_UPGRADE_MANAGED_BY_OPENCHAMBER' : 'OPENCODE_UPGRADE_UNSUPPORTED',
-        error: bundled
-          ? 'OpenCode is bundled with OpenChamber Desktop and updates with the app.'
-          : pinned
-            ? 'Your administrator manages this OpenCode installation.'
-            : forkRequired,
-      });
-  });
-
-  app.get('/api/opencode/upgrade-status', async (_req, res) => {
-    try {
-      const capability = getOpenCodeUpgradeCapability();
-      const healthResponse = await fetch(buildOpenCodeUrl('/api/info', ''), {
-          method: 'GET',
-          headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-          signal: AbortSignal.timeout(OPENCODE_INFO_TIMEOUT_MS),
-        });
-      const rawInfo: unknown = await healthResponse.json().catch(() => null);
-      const info = routeInputFields(rawInfo);
-      if (!healthResponse.ok) {
-        return res.status(healthResponse.status).json({
-          available: null,
-          error: info?.error || healthResponse.statusText || 'Failed to read OpenCode version',
-        });
-      }
-      const currentVersion = isString(info?.version) ? info.version.replace(/^v/, '') : null;
-      return res.json({
-        available: false,
-        currentVersion,
-        latestVersion: null,
-        upgrade: capability,
-      });
-    } catch (error) {
-      return res.status(500).json({
-        available: null,
-        error: error instanceof Error ? error.message : 'Failed to check OpenCode upgrade status',
-      });
-    }
   });
 
   const probeOpenCodeHealth = async () => {

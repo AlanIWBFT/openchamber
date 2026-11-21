@@ -70,8 +70,6 @@ export interface OpenCodeManager {
   stop(): Promise<void>;
   restart(): Promise<void>;
   refreshPluginSwitches(): Promise<{ updated: boolean; requiresManualRestart: boolean }>;
-  upgradeCli(): Promise<void>;
-  installV2(): Promise<void>;
   getCompatibility(): Promise<OpenCodeCompatibility>;
   setWorkingDirectory(path: string): Promise<SetWorkingDirectoryResult>;
   getStatus(): ConnectionStatus;
@@ -945,8 +943,6 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
       const binary = cliPath || resolveOpencodeCliPath();
       return checkOpenCodeCompatibility(async () => binary ? readOpenCodeCliVersion(resolveWindowsLaunchSpec(binary, []), { env: process.env }) : null, 'managed', binary);
     },
-    installV2: async () => { throw new Error(forkRequired); },
-    upgradeCli: async () => { throw new Error(forkRequired); },
     setWorkingDirectory,
     refreshPluginSwitches: async () => {
       if (useConfiguredUrl) return { updated: false, requiresManualRestart: false };
