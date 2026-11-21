@@ -1,5 +1,3 @@
-// A missing comparison ref is a transfer owned by the comparison request.
-// Use the same immutable plan, credentials, deadline and audit as explicit Fetch.
 import type { GitRouteDependencies } from './routes.js';
 import type { Response } from '../shared/http-contracts.js';
 import { hasSourceControlErrorCode } from '../source-control/input-guards.js';
@@ -41,7 +39,7 @@ export const fetchMissingRangeRef = async ({ directory, remote, branch, response
     const plan = await networkOperations.plan({
       operation: 'fetch', fetchScope: 'ref', directory,
       repositoryId: binding.repositoryId, bindingRevision: binding.revision, configRevision: read.repository.configRevision,
-      remote: { name: remote, endpoint: grant.fetch }, transportMode: grant.mode,
+      remote: { name: remote, endpoint: { ...grant.fetch } }, transportMode: grant.mode,
       sourceRef: `refs/heads/${branch}`, destinationRef: `refs/remotes/${remote}/${branch}`,
     });
     operationId = plan.operationId;

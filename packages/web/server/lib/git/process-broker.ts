@@ -410,7 +410,6 @@ class Client {
     const id = this.nextId;
     this.nextId += 1n;
     const env = options.env || globalThis.process.env;
-    // Match child_process.spawn, including simple-git's inherited environment keys.
     const environment: [string, string][] = [];
     for (const key in env) {
       if (env[key] !== undefined) environment.push([key, String(env[key])]);

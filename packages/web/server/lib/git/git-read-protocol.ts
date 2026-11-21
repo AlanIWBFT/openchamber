@@ -1,3 +1,4 @@
+import { isString } from '../shared/object-guards.js';
 import type { GitReadResults } from './service.js';
 
 interface ReadPayloads {
@@ -20,7 +21,7 @@ export type WorkerRequest = {
   [K in ReadOperation]: { type: 'request'; requestId: string; operation: K; payload: GitReadInputs[K]; cancellationBuffer: SharedArrayBuffer }
 }[ReadOperation];
 export type WorkerInput = WorkerRequest | { type: 'cancel'; requestId: string; reason: ReadFailure };
-export type WorkerOutput = { type: 'response'; requestId: string } & ({ ok: true; result: unknown } | { ok: false; error: ReadFailure });
-export function failureCode(error: unknown): string | undefined {
-  return error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+export type WorkerOutput = { type: 'response'; requestId: string } & ({ ok: true; result: ReadResult<ReadOperation> } | { ok: false; error: ReadFailure });
+export function failureCode(error: Error): string | undefined {
+  return 'code' in error && isString(error.code) ? error.code : undefined;
 }

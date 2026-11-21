@@ -1904,10 +1904,10 @@ describe('batched project reads', () => {
       return new Response(stream.readable);
     }) as typeof fetch;
     try {
-      const fast = getGitStatus('/stream/fast');
-      const plain = getGitStatus('/stream/plain');
-      const failed = getGitStatus('/stream/failed').then(() => null, (error: Error) => error);
-      const missing = getGitStatus('/stream/missing').then(() => null, (error: Error) => error);
+      const fast = getPassiveGitStatus('/stream/fast');
+      const plain = getPassiveGitStatus('/stream/plain');
+      const failed = getPassiveGitStatus('/stream/failed').then(() => null, (error: Error) => error);
+      const missing = getPassiveGitStatus('/stream/missing').then(() => null, (error: Error) => error);
       await started;
       expect(calls).toHaveLength(1);
       expect(String(calls[0].input)).toContain('/api/git/status/batch');
@@ -1924,7 +1924,7 @@ describe('batched project reads', () => {
       expect(await failed).toBeInstanceOf(GitRepositoryUnreadableError);
       await writer.close();
       expect((await missing)?.message).toContain('before every directory answered');
-      expect((await getGitStatus('/stream/fast')).current).toBe('中文分支');
+      expect((await getPassiveGitStatus('/stream/fast')).current).toBe('中文分支');
       expect(calls).toHaveLength(1);
     } finally {
       restoreMocks();
@@ -1954,14 +1954,14 @@ describe('batched project reads', () => {
     }) as typeof fetch;
     try {
       const directories = ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => `${oldServer}/${name}`);
-      const statuses = await Promise.all(directories.map((directory) => getGitStatus(directory)));
+      const statuses = await Promise.all(directories.map((directory) => getPassiveGitStatus(directory)));
       expect(statuses.map((status) => status.current)).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
       expect(calls.filter((url) => url.includes('/api/git/status/batch'))).toHaveLength(1);
       expect(peakReads).toBeLessThanOrEqual(2);
 
       // The server is remembered: later reads go straight to the single route.
       calls.length = 0;
-      const later = await Promise.all([`${oldServer}/g`, `${oldServer}/h`].map((directory) => getGitStatus(directory)));
+      const later = await Promise.all([`${oldServer}/g`, `${oldServer}/h`].map((directory) => getPassiveGitStatus(directory)));
       expect(later.map((status) => status.current)).toEqual(['g', 'h']);
       expect(calls.some((url) => url.includes('/api/git/status/batch'))).toBe(false);
     } finally {
@@ -1978,7 +1978,7 @@ describe('batched project reads', () => {
       return new Response('boom', { status: 500, statusText: 'Internal Server Error' });
     }) as typeof fetch;
     try {
-      const reads = ['x', 'y'].map((name) => getGitStatus(`/spaces/0123456789ac/${name}`).then(() => null, (error: Error) => error));
+      const reads = ['x', 'y'].map((name) => getPassiveGitStatus(`/spaces/0123456789ac/${name}`).then(() => null, (error: Error) => error));
       const errors = await Promise.all(reads);
       expect(errors.every((error) => error?.message.includes('500'))).toBe(true);
       expect(calls).toHaveLength(1);

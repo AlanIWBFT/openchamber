@@ -71,8 +71,6 @@ export async function resolveGerritProjectsFromDirectory(directory: string, inst
   const loadStatus = dependencies.getStatus ?? getStatus;
   const parseRemote = (remote: GerritRemote) => parseGerritRemoteUrl(remote.pushUrl || remote.fetchUrl, instance)
     ?? parseGerritRemoteUrl(remote.fetchUrl, instance);
-  // Status already names its branch. Reuse the narrow worker-backed context
-  // instead of doing repository discovery and remote process launches here.
   const context = dependencies.branch
     ? await getPrGitContext(directory, dependencies.branch, { signal: dependencies.signal })
     : null;

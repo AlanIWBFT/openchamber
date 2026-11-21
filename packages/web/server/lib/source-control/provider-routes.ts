@@ -727,8 +727,6 @@ export function registerProviderRoutes(app: Router, {
       try {
         const status = await withTimeout(
           async (signal) => {
-            // The tip probe shares the deadline and worker ownership with the
-            // provider read. A failed probe cannot reuse another tip's answer.
             const localTip = descriptor.capabilities.createVia === 'push' ? await readBranchTip(directory, branch, { signal }) : null;
             signal.throwIfAborted();
             cacheContext = {
@@ -740,7 +738,6 @@ export function registerProviderRoutes(app: Router, {
               const fresh = statusCache.fresh(cacheContext);
               if (fresh) return fresh;
             }
-            // A mutation that lands while this read runs keeps the read from storing.
             const started = statusCache.begin();
             const answer = await impl.resources.changeRequestStatus({ session, context: trustedContext, directory, branch, remote, force }, { signal });
             signal.throwIfAborted();

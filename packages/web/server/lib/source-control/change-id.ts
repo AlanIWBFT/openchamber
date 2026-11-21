@@ -89,7 +89,7 @@ export async function readBranchTip(directory: string, branch: string, options: 
     const sha = (await git(directory, ['rev-parse', '-q', '--verify', '--end-of-options', `refs/heads/${refArgument(branch, 'branch')}^{commit}`])).trim();
     return SHA_RE.test(sha) ? sha : null;
   } catch (error) {
-    throwIfGitReadCancelled(options, error);
+    throwIfGitReadCancelled(options, error instanceof Error ? error : undefined);
     if (hasSourceControlErrorCode(error) && error.code === 'ETIMEDOUT') throw error;
     return null;
   }

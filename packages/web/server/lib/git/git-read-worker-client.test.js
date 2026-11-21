@@ -42,7 +42,7 @@ const itIf = (condition) => condition ? it : it.skip;
 
 describe('GitReadWorkerClient', () => {
   it.each([false, true])('lets a Node owner exit after its request settles (cancel=%s)', (cancel) => {
-    const moduleUrl = new URL('./git-read-worker-client.js', import.meta.url).href;
+    const moduleUrl = new URL('./git-read-worker-client.ts', import.meta.url).href;
     const source = `
       import { Worker } from 'node:worker_threads';
       import { GitReadWorkerClient } from ${JSON.stringify(moduleUrl)};
@@ -54,7 +54,8 @@ describe('GitReadWorkerClient', () => {
       client.run('status', {}, { signal: controller.signal }).then(console.log, (error) => console.log(error.message));
       if (${cancel}) controller.abort(new Error('cancelled'));
     `;
-    expect(execFileSync(process.execPath, ['--input-type=module', '--eval', source], {
+    const loader = new URL('../../../scripts/register-server-sources.mjs', import.meta.url).href;
+    expect(execFileSync(process.execPath, ['--import', loader, '--input-type=module', '--eval', source], {
       encoding: 'utf8', timeout: 5_000, windowsHide: true,
     }).trim()).toBe(cancel ? 'cancelled' : 'done');
   });
@@ -69,7 +70,7 @@ describe('GitReadWorkerClient', () => {
     expect(results).toHaveLength(GIT_READ_WORKER_POOL_SIZE);
     for (const result of results) {
       expect(result.status).toBe('rejected');
-      expect(result.reason).toMatchObject({ message: 'Unsupported Git read operation: unsupported' });
+      expect(result.reason).toMatchObject({ message: 'Unsupported Git read operation' });
     }
   });
 

@@ -206,7 +206,7 @@ export interface IntegrateStateInput extends IntegratePlanInput {
 }
 export interface DiffOptions extends GitReadOptions {
   path?: string | undefined;
-  staged?: boolean;
+  staged?: boolean | undefined;
   contextLines?: number | undefined;
   previousPath?: string | undefined;
 }

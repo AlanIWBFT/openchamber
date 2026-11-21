@@ -133,7 +133,6 @@ export function createGerritClient({
       let response;
       try {
         response = await fetchImpl(url.toString(), { method, headers, body: payload, redirect: 'manual', signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
-        // Node answers a manual redirect with its 3xx; a browser-like fetch with an opaque one.
         if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
           await response.body?.cancel().catch(() => {});
           throw new GerritRequestError('provider-error', 'Gerrit answered with a redirect; requests stay on the instance', response.status || 502);

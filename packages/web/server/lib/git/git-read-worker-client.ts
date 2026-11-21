@@ -1,4 +1,4 @@
-import { SHARE_ENV, Worker } from 'node:worker_threads';
+import { SHARE_ENV, Worker, type WorkerOptions } from 'node:worker_threads';
 import { getProcessBrokerWorkerData } from './process-broker.js';
 import { failureCode, type GitReadInputs, type ReadFailure, type ReadOperation, type ReadResult, type WorkerOutput } from './git-read-protocol.js';
 
@@ -7,7 +7,7 @@ type Lane = { worker: Worker | null; activeRequest: Pending | null; circuitOpen:
 interface Pending {
   requestId: string; operation: ReadOperation; payload: GitReadInputs[ReadOperation]; signal: AbortSignal | undefined;
   cancellationBuffer: SharedArrayBuffer; cancellationView: Int32Array; lane: Lane | null; settled: boolean; onAbort: (() => void) | null;
-  resolve(value: unknown): void; reject(error: unknown): void;
+  resolve(value: ReadResult<ReadOperation>): void; reject(error: Error): void;
 }
 
 export const GIT_READ_WORKER_UNAVAILABLE_CODE = 'GIT_READ_WORKER_UNAVAILABLE';
@@ -22,14 +22,18 @@ const createAbortError = (signal?: AbortSignal): Error => signal?.reason instanc
   ? signal.reason
   : Object.assign(new Error('Git read cancelled'), { code: 'ABORT_ERR' });
 
-const createWorkerError = (payload: ReadFailure) => Object.assign(new Error(payload.message || 'Git read worker failed'), { code: payload.code, ...(payload.status !== undefined && { status: payload.status }) });
+const createWorkerError = (payload: ReadFailure) => {
+  const error = Object.assign(new Error(payload.message || 'Git read worker failed'), { code: payload.code });
+  if (payload.status !== undefined) Object.assign(error, { status: payload.status });
+  return error;
+};
 
-const defaultCreateWorker = () => new Worker(
-  new URL(import.meta.url.endsWith('.ts') ? './git-read-worker.ts' : './git-read-worker.js', import.meta.url),
-  { env: SHARE_ENV, workerData: getProcessBrokerWorkerData(), ...(import.meta.url.endsWith('.ts') && !process.versions.bun
-    ? { execArgv: [...process.execArgv, '--import', new URL('../../../scripts/register-server-sources.mjs', import.meta.url).href] }
-    : {}) },
-);
+const defaultCreateWorker = () => {
+  const source = import.meta.url.endsWith('.ts');
+  const options: WorkerOptions = { env: SHARE_ENV, workerData: getProcessBrokerWorkerData() };
+  if (source && !process.versions.bun) options.execArgv = [...process.execArgv, '--import', new URL('../../../scripts/register-server-sources.mjs', import.meta.url).href];
+  return new Worker(new URL(source ? './git-read-worker.ts' : './git-read-worker.js', import.meta.url), options);
+};
 
 export class GitReadWorkerClient {
   readonly createWorker: () => Worker;
@@ -53,7 +57,7 @@ export class GitReadWorkerClient {
   }
 
   run<K extends ReadOperation>(operation: K, payload: GitReadInputs[K], options?: ReadOptions): Promise<ReadResult<K>>;
-  run(operation: ReadOperation, payload: GitReadInputs[ReadOperation], { signal }: ReadOptions = {}): Promise<unknown> {
+  run(operation: ReadOperation, payload: GitReadInputs[ReadOperation], { signal }: ReadOptions = {}): Promise<ReadResult<ReadOperation>> {
     if (signal?.aborted) {
       return Promise.reject(createAbortError(signal));
     }
@@ -94,7 +98,7 @@ export class GitReadWorkerClient {
     const worker = this.createWorker();
     lane.worker = worker;
     worker.on('message', (message) => this.handleMessage(lane, worker, message));
-    worker.on('error', (error) => this.handleWorkerFailure(lane, worker, error));
+    worker.on('error', (error) => this.handleWorkerFailure(lane, worker, error instanceof Error ? error : new Error(String(error))));
     worker.on('exit', (code) => {
       if (code !== 0) {
         this.handleWorkerFailure(lane, worker, new Error(`Git read worker exited with code ${code}`));
@@ -137,7 +141,8 @@ export class GitReadWorkerClient {
             payload: request.payload,
             cancellationBuffer: request.cancellationBuffer,
           });
-        } catch (error) {
+        } catch (cause) {
+          const error = cause instanceof Error ? cause : new Error(String(cause));
           if (lane.worker) {
             this.handleWorkerFailure(lane, lane.worker, error);
             continue;
@@ -172,7 +177,7 @@ export class GitReadWorkerClient {
           reason: { message: error.message, code: failureCode(error) },
         });
       } catch {
-        // The worker failure/exit handler owns cleanup when IPC is already gone.
+        void 0;
       }
       this.settleRequest(request, error);
       lane.worker?.unref?.();
@@ -207,7 +212,7 @@ export class GitReadWorkerClient {
     worker.unref?.();
     if (!request.settled) {
       if (message.ok) {
-        this.settleRequest(request, null, message.result);
+        this.settleRequest(request, message);
       } else {
         this.settleRequest(request, createWorkerError(message.error));
       }
@@ -217,7 +222,7 @@ export class GitReadWorkerClient {
     this.pump();
   }
 
-  handleWorkerFailure(lane: Lane, worker: Worker, error: unknown) {
+  handleWorkerFailure(lane: Lane, worker: Worker, error: Error) {
     if (!worker || lane.worker !== worker) {
       return;
     }
@@ -244,16 +249,16 @@ export class GitReadWorkerClient {
     }
   }
 
-  settleRequest(request: Pending, error: unknown, result?: unknown) {
+  settleRequest(request: Pending, outcome: Error | Extract<WorkerOutput, { ok: true }>) {
     if (request.settled) {
       return;
     }
     request.settled = true;
     this.detachAbortListener(request);
-    if (error) {
-      request.reject(error);
+    if (outcome instanceof Error) {
+      request.reject(outcome);
     } else {
-      request.resolve(result);
+      request.resolve(outcome.result);
     }
   }
 

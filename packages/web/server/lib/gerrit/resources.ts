@@ -258,12 +258,6 @@ export function createGerritResourceService({
   };
 
   return {
-    /**
-     * A local branch's change, found by the Change-Id trailer of its tip
-     * commit, not by its name: a Gerrit change has no source branch.
-     * `localRevision.uploadedAs` is the patchset whose commit is the local
-     * tip, null when the local commit is not uploaded yet.
-     */
     async changeRequestStatus(directory: string, branch: string, remote?: string, options: Deadline = {}) {
       const { signal } = options;
       signal?.throwIfAborted();

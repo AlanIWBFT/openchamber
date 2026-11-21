@@ -605,7 +605,7 @@ const isHistoricalPrOfCheckout = async (directory: string, pr: Pick<Pull, 'head'
     return equivalent;
   } catch (error) {
     throwIfAborted(signal);
-    if (failureCode(error) === GIT_READ_WORKER_UNAVAILABLE_CODE) throw error;
+    if (error instanceof Error && failureCode(error) === GIT_READ_WORKER_UNAVAILABLE_CODE) throw error;
     return false;
   }
 };
@@ -684,7 +684,7 @@ const findBranchPrCandidates = async ({ octokit, target, branch, sourceCandidate
 
 export { findBranchPrCandidates };
 
-export async function resolveGitHubPrStatus({ octokit, directory, branch, remoteName, sourceRemoteName = null, force = false, requestHost, signal }: StatusInput & { signal?: AbortSignal }, { readGitContext = getPrGitContext } = {}) {
+export async function resolveGitHubPrStatus({ octokit, directory, branch, remoteName, sourceRemoteName = null, force = false, requestHost, signal }: StatusInput & { signal?: AbortSignal | undefined }, { readGitContext = getPrGitContext } = {}) {
   throwIfAborted(signal);
   if (!(await directoryExists(directory))) {
     return { repo: null, pr: null, defaultBranch: null, resolvedRemoteName: null };

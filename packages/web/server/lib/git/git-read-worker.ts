@@ -1,4 +1,5 @@
 import { parentPort } from 'node:worker_threads';
+import { z } from 'zod';
 import { failureCode, type ReadFailure, type WorkerInput, type WorkerRequest } from './git-read-protocol.js';
 
 import { getFileDiff, getPrGitContext, getStatus, isAncestorOfHead, isPatchEquivalentOfHead, readRenameableGeneratedBranch, withGitReadEnvironment } from './service.js';
@@ -16,10 +17,10 @@ const createCancellationError = (reason?: ReadFailure) => Object.assign(
   { code: reason?.code ? String(reason.code) : 'ABORT_ERR' },
 );
 
-const serializeError = (error: unknown) => ({
-  message: error instanceof Error ? error.message : String(error || 'Git read worker failed'),
+const serializeError = (error: Error): ReadFailure => ({
+  message: error.message,
   code: failureCode(error),
-  status: error instanceof Error && 'status' in error && typeof error.status === 'number' && Number.isInteger(error.status) ? error.status : undefined,
+  status: 'status' in error ? z.number().int().safeParse(error.status).data : undefined,
 });
 
 const port = parentPort;
@@ -75,7 +76,7 @@ const runRequest = async (message: WorkerRequest) => {
       type: 'response',
       requestId: message.requestId,
       ok: false,
-      error: serializeError(error),
+      error: serializeError(error instanceof Error ? error : new Error(String(error || 'Git read worker failed'))),
     });
   } finally {
     if (activeRequest === request) {

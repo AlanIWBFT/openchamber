@@ -162,16 +162,14 @@ export function registerGitRoutes(app: Application, {
   createHttpsCredentialReference, resolveSourceControlAccount, errorRedactionSecrets = [], worktreeBootstrapStore,
   emitWorktreeChanged, buildOpenCodeUrl, getOpenCodeAuthHeaders, onBranchRewritten,
 }: GitRouteDependencies = {}) {
-  let gitLibraries: GitLibraries | null = null;
-  const getGitLibraries = async () => {
-    if (!gitLibraries) {
-      gitLibraries = await import('./index.js');
-      if (emitWorktreeChanged) {
-        gitLibraries.subscribeWorktreeTopologyChanges(emitWorktreeChanged);
-      }
-    }
-    return gitLibraries;
-  };
+  let gitLibraries: Promise<GitLibraries> | null = null;
+  const getGitLibraries = () => gitLibraries ??= import('./index.js').then(libraries => {
+    if (emitWorktreeChanged) libraries.subscribeWorktreeTopologyChanges(emitWorktreeChanged);
+    return libraries;
+  }).catch(error => {
+    gitLibraries = null;
+    throw error;
+  });
 
   const GIT_DIFFS_MAX_PATHS = 1000;
   const GIT_PATH_ERROR_STATUS = new Map<unknown, number>([['path_not_found', 404], ['nested_repository', 422], ['untracked_directory', 422]]);

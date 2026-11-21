@@ -36,7 +36,7 @@ diff --git a/dist/src/lib/types/index.d.ts b/dist/src/lib/types/index.d.ts
 @@ -49,6 +49,7 @@
  export interface SimpleGitPluginConfig {
      abort: AbortSignal;
-+    spawn: (command: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv }) => Pick<import('child_process').ChildProcessWithoutNullStreams, 'stdout' | 'stderr' | 'stdin' | 'kill' | 'on'>;
++    spawn: (command: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv }) => Pick<import('child_process').ChildProcessWithoutNullStreams, 'stdout' | 'stderr' | 'stdin' | 'kill'> & NodeJS.EventEmitter;
      /**
       * Environment variables in the guarded `GitEnvKeys` set (every `GIT_`-prefixed
       * key plus known-vulnerable non-prefixed keys such as `EDITOR` / `PAGER`) are
