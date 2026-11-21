@@ -1,4 +1,4 @@
-import { readOpenCodeInfo, readExternalOpenCodeVersion, isSupportedOpenCodeVersion, requireOpenCodeV2, UnsupportedOpenCodeVersionError } from './compatibility.js';
+import { readOpenCodeInfo, readExternalOpenCodeVersion, isSupportedOpenCodeVersion, requireOpenCodeV2, UnsupportedOpenCodeVersionError, UnsupportedOpenCodeDistributionError } from './compatibility.js';
 import { spawn, spawnSync } from 'node:child_process';
 import { accessSync, constants as fsConstants, statSync } from 'node:fs';
 import net from 'node:net';
@@ -10,9 +10,9 @@ import { hasChildProcessExited, waitForChildProcessClose } from './managed-proce
 import { applyProviderEnvAliases } from './provider-env-aliases.js';
 import { overlayEnvironment } from '../environment/variables.js';
 import { recordStartupPerformance } from '../diagnostics/startup-performance.js';
-import { topUpV1Migration } from './v1-migration-topup.js';
+import { resolveOpenCodeDbPath, topUpV1Migration } from './v1-migration-topup.js';
 import { bundledNodeProxyArgs } from './bundled-opencode-server.js';
-import { bundledDatabase, readLegacySessionAdvice } from './v1-desktop-notice.js';
+import { readLegacySessionAdvice } from './v1-desktop-notice.js';
 import { serverDiagnosticJournal } from '../diagnostics/server-journal.js';
 import type { ChildProcess } from 'node:child_process';
 import type { Application } from '../shared/http-contracts.js';
@@ -168,7 +168,6 @@ interface AgentPresenceHeaders extends Record<string, string> {
   'x-opencode-directory'?: string;
 }
 
-const isString = (value: unknown): value is string => typeof value === 'string';
 const isObject = (value: unknown): value is object => value !== null && typeof value === 'object';
 const hasErrorFields = (cause: unknown): cause is { name?: unknown; code?: unknown; message?: unknown } => cause != null;
 const errorFields = <Cause>(cause: Cause) => {
@@ -176,7 +175,6 @@ const errorFields = <Cause>(cause: Cause) => {
   throw new TypeError(`Cannot read properties of ${cause} (reading 'message')`);
 };
 const optionalErrorFields = <Cause>(cause: Cause) => hasErrorFields(cause) ? cause : undefined;
-const hasVersion = (value: unknown): value is { version: unknown } => value != null && 'version' in Object(value);
 const hasAgentData = (value: unknown): value is { data: unknown } => value != null && 'data' in Object(value);
 const hasAgentId = (value: unknown): value is { id: unknown } => value != null && 'id' in Object(value);
 
@@ -200,16 +198,6 @@ const OPENCODE_REQUIRED_MAJOR_VERSION = 2;
 const OPENCODE_VERSION_REQUIREMENT_DETAIL =
   `OpenChamber requires OpenCode ${OPENCODE_REQUIRED_MAJOR_VERSION}.x`;
 
-const classifyOpenCodeVersion = (version: string | undefined): { ok: true } | { ok: false; detail: string } => {
-  if (version === undefined) return { ok: true };
-  const match = version.match(/v?(\d+)\./);
-  if (!match) return { ok: true };
-  if (Number(match[1]) >= OPENCODE_REQUIRED_MAJOR_VERSION) return { ok: true };
-  return {
-    ok: false,
-    detail: `${OPENCODE_VERSION_REQUIREMENT_DETAIL}, found ${version.trim()}. Update OpenCode and start OpenChamber again.`,
-  };
-};
 const WARMUP_DIRECTORY_LIMIT = 1;
 const WARMUP_REQUEST_TIMEOUT_MS = 30000;
 const MANAGED_STDERR_TAIL_MAX_BYTES = 32 * 1024;
@@ -822,30 +810,20 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
           },
         };
       }
-      let body: unknown;
-      try {
-        body = await response.json();
-      } catch {
+      const info = await readOpenCodeInfo(response);
+      if (!info || !isSupportedOpenCodeVersion(info.version)) {
         return {
           healthy: false,
-          failure: {
-            class: 'invalid_response',
-            detail: 'Info endpoint returned invalid JSON',
-          },
-        };
-      }
-      const version = classifyOpenCodeVersion(hasVersion(body) && isString(body.version) ? body.version : undefined);
-      if (!version.ok) {
-        return {
-          healthy: false,
-          failure: { class: 'invalid_response', detail: version.detail },
+          failure: { class: 'invalid_response', detail: OPENCODE_VERSION_REQUIREMENT_DETAIL },
         };
       }
       return { healthy: true, failure: null };
     } catch (error) {
       return {
         healthy: false,
-        failure: classifyHealthProbeError(error),
+        failure: error instanceof UnsupportedOpenCodeDistributionError
+          ? { class: 'invalid_response', detail: error.message }
+          : classifyHealthProbeError(error),
       };
     }
   };
@@ -887,8 +865,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
 
   const readUnsupportedExternalOpenCodeVersion = async (port: number, origin: string | null | undefined) => {
     if (!port || port <= 0) return null;
-    const version = await readExternalOpenCodeVersion(origin ?? `http://127.0.0.1:${port}`, getOpenCodeAuthHeaders())
-      .catch(() => null);
+    const version = await readExternalOpenCodeVersion(origin ?? `http://127.0.0.1:${port}`, getOpenCodeAuthHeaders());
     return version && !isSupportedOpenCodeVersion(version) ? version : null;
   };
 
@@ -1072,6 +1049,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
         syncToHmrState();
         return serverInstance;
       } catch (error) {
+        if (error instanceof UnsupportedOpenCodeDistributionError || error instanceof UnsupportedOpenCodeVersionError) throw error;
         lastError.cause = error;
         if (state.isShuttingDown || isBinaryRejected(error)
           || optionalErrorFields(error)?.code === 'OPENCHAMBER_OPENCODE_EXIT_UNCONFIRMED') {
@@ -1433,11 +1411,8 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
         console.log(`Using external OpenCode server at ${label} (skip-start mode)`);
         state.openCodeBaseUrl = env.ENV_CONFIGURED_OPENCODE_HOST?.origin ?? null;
         setOpenCodePort(env.ENV_EFFECTIVE_PORT);
-        state.isOpenCodeReady = true;
+        state.isOpenCodeReady = false;
         state.isExternalOpenCode = true;
-        diagnosticJournal.record('external connected');
-        state.lastOpenCodeError = null;
-        state.openCodeNotReadySince = 0;
         syncToHmrState();
       } else if (env.ENV_EFFECTIVE_PORT && await probeExternalOpenCode(env.ENV_EFFECTIVE_PORT, env.ENV_CONFIGURED_OPENCODE_HOST?.origin)) {
         assertNotShuttingDown();
@@ -1782,8 +1757,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
       const child = state.openCodeProcess;
       if (!child || state.isExternalOpenCode || state.isShuttingDown || !managedProcessEnv
         || process.env.OPENCHAMBER_RUNTIME !== 'desktop' || launch?.wrapperType !== 'bundled-server') return null;
-      const database = bundledDatabase(launch.sourceBinary, managedProcessEnv);
-      const advice = database && await readLegacySessionAdvice(database);
+      const advice = await readLegacySessionAdvice(resolveOpenCodeDbPath(managedProcessEnv));
       return child === state.openCodeProcess && !state.isExternalOpenCode && !state.isShuttingDown ? advice || null : null;
     },
     getDefaultOpenCodeDirectory: () => getValidatedDefaultDirectory(),

@@ -47,7 +47,7 @@ test('a failed preparation stops at once and says what to run', () => {
     fs.writeFileSync(path.join(electron, 'package.json'), JSON.stringify({ devDependencies: { '@opencode/server': '2.3.0' } }));
     fs.writeFileSync(path.join(electron, 'scripts', 'prepare-opencode-server.mjs'), 'console.error("getaddrinfo ENOTFOUND registry.npmjs.org"); process.exit(1)\n');
     assert.throws(
-      () => ensureBundledOpenCodeServer(root),
+      () => ensureBundledOpenCodeServer(root, root),
       /Could not prepare the bundled OpenCode server 2\.3\.0 \(.*ENOTFOUND registry\.npmjs\.org.*\).*prepare:opencode-server.*OPENCODE_BINARY/s,
     );
   } finally {

@@ -1354,7 +1354,7 @@ export const dict: Record<I18nKey, string> = {
   'onboarding.chooser.tabs.localInstall': 'Lokalna instalacja',
   'onboarding.chooser.tabs.connectRemote': 'Połącz zdalnie',
   'onboarding.localSetup.title': 'Konfiguracja OpenCode',
-  'onboarding.localSetup.description': 'Zainstaluj CLI OpenCode v2 aby kontynuować.',
+  'onboarding.localSetup.description': 'Wybierz CLI OpenCode z forka OpenChamber lub użyj wbudowanej usługi. Samodzielne CLI aktualizuj ręcznie.',
   'onboarding.localSetup.dialog.selectOpencodeBinary': 'Wybierz binarkę opencode',
   'onboarding.localSetup.errors.cliNotReady': 'OpenCode CLI nie jest jeszcze gotowy. Potwierdź, że instalacja jest kompletna i spróbuj ponownie.',
   'onboarding.localSetup.errors.detectionFailed': 'Wykrywanie nie powiodło się',

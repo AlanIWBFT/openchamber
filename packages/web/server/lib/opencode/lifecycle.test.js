@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { injectedEnvKeys } from '../injected-env.js';
 
 const spawnMock = vi.fn();
+const forkInfo = { distribution: 'openchamber', version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } };
 const spawnSyncMock = vi.fn();
 const recordStartupPerformanceMock = vi.fn();
 
@@ -335,7 +336,7 @@ describe('OpenCode lifecycle', () => {
   it('records an authoritative ready terminal event for external startup', async () => {
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } }),
+      json: async () => forkInfo,
     }));
     const runtime = createRuntime({
       env: {
@@ -367,7 +368,7 @@ describe('OpenCode lifecycle', () => {
   it('recovers an external OPENCODE_HOST connection using its configured endpoint', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } }),
+      json: async () => forkInfo,
     }));
     globalThis.fetch = fetchMock;
     const runtime = createRuntime({}, {
@@ -420,7 +421,7 @@ describe('OpenCode lifecycle', () => {
     let healthy = false;
     globalThis.fetch = vi.fn(async () => {
       if (!healthy) throw new Error('fetch failed');
-      return { ok: true, json: async () => ({ version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } }) };
+      return { ok: true, json: async () => forkInfo };
     });
     const runtime = createRuntime({ reapManagedOrphanedProcesses: vi.fn(async () => ({ reaped: 0 })) }, {}, {
       ENV_CONFIGURED_OPENCODE_PORT: null,
@@ -455,7 +456,7 @@ describe('OpenCode lifecycle', () => {
       ENV_SKIP_OPENCODE_START: true,
     },
   );
-  const supportedInfo = { version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } };
+  const supportedInfo = forkInfo;
 
   it('bounds an external re-probe whose body stalls, then recovers on a later one', async () => {
     vi.useFakeTimers();
@@ -534,7 +535,7 @@ describe('OpenCode lifecycle', () => {
     }
   });
 
-  it('attaches to an OPENCODE_HOST running OpenCode v1 instead of starting a managed server', async () => {
+  it('refuses an unmarked OPENCODE_HOST instead of selecting a different backend', async () => {
     const requested = [];
     globalThis.fetch = vi.fn(async (url) => {
       const href = String(url);
@@ -553,12 +554,9 @@ describe('OpenCode lifecycle', () => {
     await runtime.bootstrapOpenCodeAtStartup();
 
     expect(spawnMock).not.toHaveBeenCalled();
-    expect(requested).toContain('http://seamus:4095/global/health');
-    expect(runtime.testState.isExternalOpenCode).toBe(true);
+    expect(new Set(requested)).toEqual(new Set(['http://seamus:4095/api/info']));
     expect(runtime.testState.isOpenCodeReady).toBe(false);
-    expect(runtime.testState.openCodeBaseUrl).toBe('http://seamus:4095');
-    expect(runtime.testState.openCodePort).toBe(4095);
-    expect(runtime.testState.lastOpenCodeError).toContain('1.18.32');
+    expect(runtime.testState.lastOpenCodeError).toContain('OpenChamber fork');
   });
 
   it('warms only the last-used directory after a successful bootstrap', async () => {
@@ -569,7 +567,7 @@ describe('OpenCode lifecycle', () => {
     await fs.mkdir(otherProject);
     const fetchMock = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } }),
+      json: async () => forkInfo,
     }));
     globalThis.fetch = fetchMock;
     const runtime = createRuntime({
@@ -607,7 +605,7 @@ describe('OpenCode lifecycle', () => {
     await fs.mkdir(stale);
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } }),
+      json: async () => forkInfo,
     }));
     const runtime = createRuntime({
       env: {
@@ -648,7 +646,7 @@ describe('OpenCode lifecycle', () => {
     let warmup = [];
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } }),
+      json: async () => forkInfo,
     }));
     const runtime = createRuntime({
       env: {
@@ -688,7 +686,7 @@ describe('OpenCode lifecycle', () => {
     await fs.mkdir(current);
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } }),
+      json: async () => forkInfo,
     }));
     const runtime = createRuntime({
       env: {
@@ -723,7 +721,7 @@ describe('OpenCode lifecycle', () => {
     await fs.mkdir(surviving);
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } }),
+      json: async () => forkInfo,
     }));
     // The warm pass offered both; only the first was cached as the default.
     const runtime = createRuntime({
@@ -758,7 +756,7 @@ describe('OpenCode lifecycle', () => {
     let current = stale;
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } }),
+      json: async () => forkInfo,
     }));
     const runtime = createRuntime({
       env: {
@@ -797,7 +795,7 @@ describe('OpenCode lifecycle', () => {
     await fs.mkdir(locked);
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } }),
+      json: async () => forkInfo,
     }));
     const runtime = createRuntime({
       env: {
@@ -834,7 +832,7 @@ describe('OpenCode lifecycle', () => {
     globalThis.fetch = vi.fn(async (url, init) => {
       requested.push([String(url), init?.headers?.['x-opencode-directory'] ?? null]);
       if (String(url).endsWith('/api/info')) {
-        return { ok: true, json: async () => ({ version: '2.2.5', pid: 1, urls: [], paths: { tmp: '/tmp' } }) };
+        return { ok: true, json: async () => forkInfo };
       }
       return { ok: true, json: async () => ({ data: [{ id: 'build' }] }) };
     });

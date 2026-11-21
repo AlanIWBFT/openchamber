@@ -1,10 +1,15 @@
 import { parseArgs, usage } from './args.mjs';
+import { distribution } from '@opencode/protocol/distribution';
 
 // eslint-disable-next-line no-undef
 const OPENCODE_VERSION = __OPENCODE_SERVER_VERSION__;
 
 const main = async () => {
   delete process.env.ELECTRON_RUN_AS_NODE;
+  if (process.argv.length === 3 && process.argv[2] === '--openchamber-info') {
+    process.stdout.write(`${JSON.stringify({ distribution, version: OPENCODE_VERSION })}\n`);
+    return;
+  }
 
   let options;
   try {

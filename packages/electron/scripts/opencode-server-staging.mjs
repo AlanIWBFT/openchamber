@@ -54,11 +54,12 @@ export const verifyOpenCodeServer = (dir, { platform, arch, version, runtime }) 
   const manifestPath = path.join(dir, 'assets', 'manifest.json');
   if (!fs.existsSync(manifestPath)) throw new Error(`Bundled OpenCode server has no asset manifest: ${manifestPath}`);
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  if (!manifest.fork?.commit || !manifest.fork.stamp) throw new Error('Bundled OpenCode server is missing its fork build identity');
   if (manifest.version !== version) throw new Error(`Bundled OpenCode server version mismatch: expected ${version}, got ${manifest.version}`);
   if (manifest.platform !== platform || manifest.arch !== arch) {
     throw new Error(`Bundled OpenCode server was staged for ${manifest.platform}-${manifest.arch}, expected ${platform}-${arch}`);
   }
-  if (manifest.fork && platform === 'win32') {
+  if (platform === 'win32') {
     for (const key of ['processBroker', 'recycleHelper']) {
       if (!manifest[key] || !fs.statSync(path.join(dir, 'assets', manifest[key]), { throwIfNoEntry: false })?.isFile()) {
         throw new Error(`Bundled OpenCode server is missing its ${key}`);

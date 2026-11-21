@@ -3354,7 +3354,7 @@ export const dict: Record<I18nKey, string> = {
   'onboarding.chooser.tabs.localInstall': '로컬 설치',
   'onboarding.chooser.tabs.connectRemote': '원격 연결',
   'onboarding.localSetup.title': 'OpenCode 설정',
-  'onboarding.localSetup.description': '계속하려면 OpenCode v2 CLI를 설치하세요.',
+  'onboarding.localSetup.description': 'OpenChamber 포크의 OpenCode CLI를 선택하거나 내장 서비스를 사용하세요. 독립 실행형 CLI는 직접 업데이트하세요.',
   'onboarding.localSetup.dialog.selectOpencodeBinary': 'opencode 바이너리 선택',
   'onboarding.localSetup.errors.cliNotReady': 'OpenCode CLI가 아직 준비되지 않았습니다. 설치가 완료되었는지 확인하고 다시 시도하세요.',
   'onboarding.localSetup.errors.detectionFailed': '감지에 실패했습니다',

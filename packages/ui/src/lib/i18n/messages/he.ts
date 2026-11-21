@@ -3288,7 +3288,7 @@ export const dict = {
   'onboarding.chooser.tabs.localInstall': 'התקנה מקומית',
   'onboarding.chooser.tabs.connectRemote': 'חיבור מרוחק',
   'onboarding.localSetup.title': 'הגדרת OpenCode',
-  'onboarding.localSetup.description': 'כדי להמשיך יש להתקין את OpenCode v2 CLI.',
+  'onboarding.localSetup.description': 'יש לבחור ב־CLI של OpenCode מההסתעפות של OpenChamber או להשתמש בשירות המובנה. את ה־CLI העצמאי יש לעדכן ידנית.',
   'onboarding.localSetup.dialog.selectOpencodeBinary': 'בחירת קובץ ההפעלה של opencode',
   'onboarding.localSetup.errors.cliNotReady': 'OpenCode CLI עדיין לא מוכן. יש לוודא שההתקנה הסתיימה ולנסות שוב.',
   'onboarding.localSetup.errors.detectionFailed': 'האיתור נכשל',

@@ -3320,7 +3320,7 @@ export const dict: Record<I18nKey, string> = {
   'onboarding.chooser.tabs.localInstall': '本地安装',
   'onboarding.chooser.tabs.connectRemote': '连接远程',
   'onboarding.localSetup.title': '设置 OpenCode',
-  'onboarding.localSetup.description': '安装 OpenCode v2 CLI 以继续。',
+  'onboarding.localSetup.description': '请选择本 OpenChamber fork 的 OpenCode CLI，或使用内置服务。独立 CLI 需手动更新。',
   'onboarding.localSetup.dialog.selectOpencodeBinary': '选择 OpenCode 可执行文件',
   'onboarding.localSetup.errors.cliNotReady': 'OpenCode CLI 尚未就绪。请确认安装完成后重试。',
   'onboarding.localSetup.errors.detectionFailed': '检测失败',

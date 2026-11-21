@@ -210,7 +210,7 @@ describe('running background jobs', () => {
   });
 
   it('tells an OpenCode without the route from one that could not answer', async () => {
-    expect(await probeAnswering(() => new Response(null, { status: 404 })).fetchRunningExecs()).toEqual([]);
+    expect(await probeAnswering(() => new Response(null, { status: 404 })).fetchRunningExecs()).toBeNull();
     expect(await probeAnswering(() => new Response(null, { status: 403 })).fetchRunningExecs()).toBeNull();
     expect(await probeAnswering(() => Response.json({ data: {} })).fetchRunningExecs()).toBeNull();
     expect(await probeAnswering(() => new Response(null, { status: 404 })).fetchRunningBackgroundJobs('root')).toBeUndefined();

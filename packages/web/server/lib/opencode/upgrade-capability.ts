@@ -52,9 +52,5 @@ export const resolveOpenCodeUpgradeCapability = ({
     };
   }
 
-  return {
-    supported: true,
-    manager: 'opencode',
-    reason: null,
-  };
+  return { supported: false, manager: null, reason: 'unavailable' };
 };

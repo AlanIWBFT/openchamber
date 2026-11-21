@@ -3289,7 +3289,7 @@ export const dict: Record<I18nKey, string> = {
   'onboarding.chooser.tabs.localInstall': 'تثبيت محلي',
   'onboarding.chooser.tabs.connectRemote': 'اتصال بخادم بعيد',
   'onboarding.localSetup.title': 'إعداد OpenCode',
-  'onboarding.localSetup.description': 'ثبّت OpenCode v2 CLI للمتابعة.',
+  'onboarding.localSetup.description': 'اختر أداة OpenCode من فرع OpenChamber أو استخدم الخدمة المضمّنة. حدّث الأداة المستقلة يدويًا.',
   'onboarding.localSetup.dialog.selectOpencodeBinary': 'اختر الملف التنفيذي لـ opencode',
   'onboarding.localSetup.errors.cliNotReady': 'OpenCode CLI ليس جاهزًا بعد. يُرجى التأكد من اكتمال التثبيت والمحاولة مجددًا.',
   'onboarding.localSetup.errors.detectionFailed': 'تعذّر الاكتشاف',

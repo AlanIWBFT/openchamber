@@ -3058,7 +3058,7 @@ export const dict = {
   'onboarding.chooser.tabs.localInstall': 'Lokale Installation',
   'onboarding.chooser.tabs.connectRemote': 'Entfernte Verbindung',
   'onboarding.localSetup.title': 'Einrichtung von OpenCode',
-  'onboarding.localSetup.description': 'Installieren Sie die OpenCode v2 CLI, um fortzufahren.',
+  'onboarding.localSetup.description': 'Wählen Sie die OpenCode-CLI des OpenChamber-Forks oder nutzen Sie den mitgelieferten Dienst. Aktualisieren Sie eine separate CLI manuell.',
   'onboarding.localSetup.dialog.selectOpencodeBinary': 'opencode-Binärdatei auswählen',
   'onboarding.localSetup.errors.cliNotReady': 'OpenCode CLI ist noch nicht bereit. Bitte bestätigen Sie, dass die Installation abgeschlossen ist, und versuchen Sie es erneut.',
   'onboarding.localSetup.errors.detectionFailed': 'Erkennung fehlgeschlagen',

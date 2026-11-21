@@ -447,16 +447,12 @@ stays unchanged; runtimes without the setter retain their existing behavior.
 
 ## OpenCode version requirement
 
-The extension requires OpenCode 2.x. `opencode.ts` runs `opencode --version` before
-spawning a managed server and refuses to start on anything else
-(`opencodeVersion.ts` parses the CLI's `opencode v2.0.2` line). A 1.x binary would
-start and serve a different API, leaving the user with a webview that loads and
-then fails every request, so the failure is reported up front instead.
-
-Readiness comes from the `server listening on <url>` line on stdout, confirmed
-by `GET /api/info` (OpenCode 2.0.8 removed `/api/health`). A 200 is the whole
-readiness answer; the payload carries `{ version, pid, urls, paths }` and no
-`healthy` field.
+The extension accepts only the OpenChamber fork of OpenCode. Before spawning a
+selected CLI it reads `opencode --openchamber-info`; a configured server URL
+must identify itself through `GET /api/info` before the webview can use it.
+Both report `distribution: "openchamber"` and the backend version.
+Users update a standalone CLI manually; the extension does not install an
+upstream release.
 
 ## Machine-specific settings
 

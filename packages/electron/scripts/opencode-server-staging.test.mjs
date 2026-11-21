@@ -15,6 +15,7 @@ const writeElf = (filePath, architecture) => {
 };
 
 const manifest = {
+  fork: { commit: 'fixture', stamp: 'inputs' },
   version: '2.3.0',
   platform: 'linux',
   arch: 'x64',
@@ -45,7 +46,7 @@ const target = { platform: 'linux', arch: 'x64', version: '2.3.0' };
 
 test('requires both Windows fork helpers even when all manifest keys are present', (context) => {
   const helpers = { processBroker: 'OpenCode.ProcessBroker.exe', recycleHelper: 'OpenCode.Windows.RecycleBin.dll' };
-  const dir = stage({ platform: 'win32', fork: { commit: 'fixture' }, ...helpers });
+  const dir = stage({ platform: 'win32', ...helpers });
   context.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const windows = { ...target, platform: 'win32' };
   assert.throws(() => verifyOpenCodeServer(dir, windows), /missing its processBroker/);
@@ -53,8 +54,14 @@ test('requires both Windows fork helpers even when all manifest keys are present
   assert.throws(() => verifyOpenCodeServer(dir, windows), /missing its recycleHelper/);
 });
 
-test('pins the bundled server to an exact OpenCode 2.x release', () => {
-  assert.match(readPinnedOpenCodeServerVersion(), /^2\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+test('refuses staging without fork provenance even at the pinned version', (context) => {
+  const dir = stage({ fork: undefined });
+  context.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  assert.throws(() => verifyOpenCodeServer(dir, target), /fork build identity/);
+});
+
+test('pins the bundled server to an exact release', () => {
+  assert.match(readPinnedOpenCodeServerVersion(), /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
 });
 
 test('accepts a complete staging for its target and runs its --version', () => {

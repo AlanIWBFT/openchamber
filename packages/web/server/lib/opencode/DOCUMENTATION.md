@@ -507,66 +507,23 @@ Version and upgrade-status reads of `/api/info` use the health probe's 3-second
 timeout. An aborted read returns the route's existing error response. These
 routes register before the generic proxy and need their own deadline.
 
-## CLI upgrades
+## Backend selection and updates
 
-`cli-upgrade.js` runs the host-resolved executable and wrapper arguments with
-`upgrade`, without a shell or client-supplied arguments. OpenCode chooses the
-installer. Web, hosted mobile, Capacitor, and Desktop with a separately installed
-CLI use this server path. VS Code uses the same executor from its extension host.
-Bundled Desktop, external URL connections, and unavailable CLIs remain
-unsupported at the host boundary.
+Only the OpenChamber fork is supported. A selected CLI reports its distribution
+and version with `--openchamber-info`; a running backend reports them on
+`GET /api/info`. The expected distribution is `openchamber`. An unmarked
+upstream or older fork is incompatible, even at the same version. Failure to
+reach the server is not evidence of a different distribution. The proxy's
+ordinary reconnect grace applies only to a previously ready address.
+When the user saves a new non-empty CLI path, the host checks the selected
+executable before writing the setting. A rejected selection leaves the existing
+service running. Clearing the field restores default resolution.
 
-On macOS and Linux an upgrade leaves the current server running, and the toast's
-Reload action restarts it using the installed version. On Windows the managed
-server stops for the install and starts again afterwards, also when the install
-fails (`restartOpenCode(reason, { whileStopped })`; VS Code does the same with
-its own stop and start). Failed installations return an error and can be
-retried; installer output is not returned or logged because it can contain registry
-credentials. Requests from multiple clients share the in-flight operation. The
-executor supplies EOF and bounds captured output; installation has no fixed time
-limit, and the VS Code bridge does not apply its usual 30-second request timeout.
-
-### Why Windows stops the server for an upgrade and not lets OpenCode handle it
-
-Windows refuses to delete the last link of a running executable. OpenCode guards
-its own upgrade process and `serve --service` by holding a second link in its
-cache, but our `serve --stdio` server gets no such link. npm then cannot replace
-`opencode.exe` and leaves the package without it, so every later start fails
-until the user reinstalls OpenCode. Stopping the server costs a few seconds of
-downtime that the Reload action would cost anyway.
-
-### Migrating an installed v1 CLI
-
-`GET /api/opencode/compatibility` reads the local CLI version without starting
-its server, or probes an external server's JSON version contract (`/api/info`,
-then v1's `/global/health` even when the first probe fails or hangs). When
-`OPENCODE_HOST`/`OPENCODE_PORT` points at a server that identifies as v1 or a
-2.x below the minimum, startup attaches to it as external and not ready rather
-than spawning a managed instance, so this check reports its version. A confirmed
-managed v1 CLI on macOS, Linux or Windows (x64/arm64) advertises `canInstall`;
-bundled binaries and external connections do not.
-
-`POST /api/opencode/install-v2` rechecks that capability and shares one operation
-across concurrent clients. `v2-install.js` resolves a validated stable v2
-release from npm. On macOS/Linux it downloads the official
-`https://opencode.ai/v2/install` script and runs it with that release and
-`--no-modify-path`. That script is bash, so on Windows it downloads the npm
-platform package the script would fetch (`@opencode/cli-windows-arm64` on
-arm64, `@opencode/cli-windows-x64-baseline` on x64, like the desktop bundle), checks it against the `sha512` integrity
-npm publishes, and unpacks `opencode.exe` with the system `tar.exe`. Both
-paths then verify the resulting executable.
-It installs into the host user's standard `~/.opencode/bin`. Existing npm/Bun
-packages remain installed; the host selects the new binary through
-`opencodeBinary`, restarts OpenCode, and waits for v2 readiness before replying.
-
-A filesystem lock prevents separate hosts sharing a home from installing at
-the same time. The installer has a five-minute deadline and owns its subprocess
-group. Existing executable/shim files are restored after an installation or
-verification failure. If rollback fails, backups and the lock remain under
-`.opencode/bin/.openchamber-install` for manual recovery. A successful install
-followed by a settings/restart failure keeps v2 on disk; Check again can retry
-the restart. A host crash may also leave the lock for manual recovery.
-Installer output is discarded, not forwarded to clients or logs.
+Desktop's bundled service updates with the app. Users replace standalone fork
+CLIs manually. The install and upgrade routes return 409, and checking the
+installed version never contacts an upstream package registry. Development
+launches honor the CLI or service selected for HMR over a saved binary setting;
+an administrator's machine pin still takes precedence.
 
 ## Public exports (response-envelope.js)
 - `unwrapOpenCodeResponse(body)`: strips OpenCode 2.x's response envelope. A single record (`GET /api/session/:id`, one message) arrives as `{ data }`, some routes as `{ location, data }`, pages as `{ data, cursor }`. Records and plain lists are unwrapped; pages keep the envelope for their cursor. Every server-side OpenCode read goes through it: unwrapping only on `location` left record envelopes in place, so `parentID` and message ids read as missing.

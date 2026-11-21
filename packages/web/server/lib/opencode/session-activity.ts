@@ -167,7 +167,6 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
       }).catch(() => null);
       if (!response) return null;
       const body: JsonValue = await response.json().catch(() => null);
-      if (response.status === 404 && !(hasTag(body) ? body._tag : undefined)) return [];
       if (!response.ok) return null;
       const parsed = runningExecsSchema.safeParse(unwrapOpenCodeResponse(body));
       return parsed.success ? parsed.data : null;

@@ -3353,7 +3353,7 @@ export const dict: Record<I18nKey, string> = {
   'onboarding.chooser.tabs.localInstall': 'ローカルインストール',
   'onboarding.chooser.tabs.connectRemote': 'リモートに接続',
   'onboarding.localSetup.title': 'OpenCodeのセットアップ',
-  'onboarding.localSetup.description': 'OpenCode v2 CLIをインストールして続行します。',
+  'onboarding.localSetup.description': 'OpenChamber フォークの OpenCode CLI を選択するか、内蔵サービスを使用してください。単体の CLI は手動で更新してください。',
   'onboarding.localSetup.dialog.selectOpencodeBinary': 'opencodeバイナリを選択',
   'onboarding.localSetup.errors.cliNotReady': 'OpenCode CLIの準備ができていません。インストールが完了していることを確認してもう一度お試しください。',
   'onboarding.localSetup.errors.detectionFailed': '検出に失敗しました',

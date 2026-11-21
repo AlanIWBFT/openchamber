@@ -35,7 +35,7 @@ export interface OpenCodeProxyDependencies {
   fs?: { promises: { realpath: (directory: string) => Promise<string> } };
   OPEN_CODE_READY_GRACE_MS: number;
   LONG_REQUEST_TIMEOUT_MS: number;
-  getRuntime: () => Pick<OpenCodeLifecycleState, 'openCodePort' | 'openCodeBaseUrl' | 'isOpenCodeReady' | 'openCodeNotReadySince' | 'isRestartingOpenCode'>;
+  getRuntime: () => Pick<OpenCodeLifecycleState, 'openCodePort' | 'openCodeBaseUrl' | 'isOpenCodeReady' | 'openCodeNotReadySince' | 'isRestartingOpenCode'> & { previouslyReady: boolean };
   getOpenCodeAuthHeaders: () => Record<string, string>;
   buildOpenCodeUrl: (route: string, prefix: string) => string;
   ensureOpenCodeApiPrefix: () => void;
@@ -945,7 +945,7 @@ export const registerOpenCodeProxy = (app: Application, deps: OpenCodeProxyDepen
   const isStillWaiting = (runtimeState: ReturnType<OpenCodeProxyDependencies['getRuntime']>) => {
     const waitElapsed = runtimeState.openCodeNotReadySince === 0 ? 0 : Date.now() - runtimeState.openCodeNotReadySince;
     return (
-      (!runtimeState.isOpenCodeReady && (runtimeState.openCodeNotReadySince === 0 || waitElapsed < OPEN_CODE_READY_GRACE_MS)) ||
+      (!runtimeState.isOpenCodeReady && (!runtimeState.previouslyReady || runtimeState.openCodeNotReadySince === 0 || waitElapsed < OPEN_CODE_READY_GRACE_MS)) ||
       runtimeState.isRestartingOpenCode ||
       !runtimeState.openCodePort
     );

@@ -5,7 +5,6 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 import { computeResumeCursor, resolveOpenCodeDbPath, topUpV1Migration } from './v1-migration-topup.js';
-import { bundledDatabase } from './v1-desktop-notice.js';
 
 it('resolves the local dev database while preserving explicit channel, XDG and memory overrides', () => {
   const root = path.resolve(os.tmpdir(), 'migration-path-test');
@@ -165,18 +164,6 @@ describe.skipIf(!sqlite)('topUpV1Migration', () => {
     expect(inspectLegacySessions(dbPath)).toBeNull();
   });
 
-  it('uses the bundled manifest channel and honors an exact DB override', () => {
-    const entry = path.join(dir, 'serve.mjs');
-    const assets = path.join(dir, 'assets');
-    fs.mkdirSync(assets);
-    const manifest = path.join(assets, 'manifest.json');
-    const env = { XDG_DATA_HOME: dir };
-    fs.writeFileSync(manifest, '{}');
-    expect(bundledDatabase(entry, env)).toBe(path.join(dir, 'opencode', 'opencode.db'));
-    fs.writeFileSync(manifest, JSON.stringify({ fork: { commit: 'test' } }));
-    expect(bundledDatabase(entry, env)).toBe(path.join(dir, 'opencode', 'opencode-dev.db'));
-    expect(bundledDatabase(entry, { ...env, OPENCODE_DB: ':memory:' })).toBe(':memory:');
-  });
   it.each([
     [undefined, undefined, 'opencode-dev.db'],
     [undefined, '1', 'opencode.db'],

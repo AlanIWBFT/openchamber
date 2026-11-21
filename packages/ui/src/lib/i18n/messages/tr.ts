@@ -3201,7 +3201,7 @@ export const dict = {
   'onboarding.chooser.tabs.localInstall': 'Yerel Kurulum',
   'onboarding.chooser.tabs.connectRemote': 'Uzak Bağlantı',
   'onboarding.localSetup.title': 'OpenCode Kurulumu',
-  'onboarding.localSetup.description': 'Devam etmek için OpenCode v2 CLI\'yı kurun.',
+  'onboarding.localSetup.description': 'OpenChamber çatalının OpenCode CLI aracını seçin veya yerleşik hizmeti kullanın. Bağımsız CLI aracını elle güncelleyin.',
   'onboarding.localSetup.dialog.selectOpencodeBinary': 'opencode binary dosyasını seç',
   'onboarding.localSetup.errors.cliNotReady': 'OpenCode CLI henüz hazır değil. Kurulumun tamamlandığından emin olup yeniden deneyin.',
   'onboarding.localSetup.errors.detectionFailed': 'Algılama başarısız oldu',

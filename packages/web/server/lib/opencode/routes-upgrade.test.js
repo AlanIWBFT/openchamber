@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { registerOpenCodeRoutes } from './routes.js';
+import { validateSelectedCli } from './selected-cli.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -36,6 +37,16 @@ const createApp = (overrides = {}) => {
 };
 
 describe('OpenCode upgrade routes', () => {
+  it('rejects the wrong CLI before writing settings and leaves clearing a path available', async () => {
+    const persistSettings = vi.fn(async update => update);
+    const validate = vi.fn(file => validateSelectedCli(file, binary => ({ binary, args: [] })));
+    const { app } = createApp({ persistSettings, validateSelectedCli: validate, readSettingsFromDiskMigrated: async () => ({ opencodeBinary: '/working/fork' }) });
+    await request(app).put('/api/config/settings').send({ opencodeBinary: process.execPath }).expect(400);
+    expect(persistSettings).not.toHaveBeenCalled();
+    await request(app).put('/api/config/settings').send({ opencodeBinary: '' }).expect(200);
+    expect(validate).toHaveBeenCalledTimes(1);
+    expect(persistSettings).toHaveBeenCalledTimes(1);
+  });
   it.each([
     ['/api/opencode/upgrade-status', 'available'],
     ['/api/opencode/version', 'version'],
@@ -54,7 +65,7 @@ describe('OpenCode upgrade routes', () => {
     expect(response.body.error).not.toBe('');
   });
 
-  it('uses the configured registry for the v2 package version without exposing URL credentials', async () => {
+  it('only checks the local version even when a package registry is configured', async () => {
     const previousRegistry = process.env.npm_config_registry;
     const previousUserConfig = process.env.npm_config_userconfig;
     process.env.npm_config_userconfig = `${import.meta.dirname}/missing-test.npmrc`;
@@ -63,10 +74,8 @@ describe('OpenCode upgrade routes', () => {
     const { app } = createApp({ getOpenCodeUpgradeCapability: () => supportedCapability });
     try {
       const response = await request(app).get('/api/opencode/upgrade-status').expect(200);
-      expect(response.body).toMatchObject({ available: true, currentVersion: '2.0.21', latestVersion: '2.0.22' });
-      const call = globalThis.fetch.mock.calls.find(([url]) => String(url).includes('mirror.example.com'));
-      expect(String(call[0])).toBe('https://mirror.example.com/npm/@opencode%2Fcli/latest');
-      expect(new Headers(call[1].headers).get('Authorization')).toBe(`Basic ${Buffer.from('user:p@ss').toString('base64')}`);
+      expect(response.body).toMatchObject({ available: false, currentVersion: '2.0.21', latestVersion: null });
+      expect(globalThis.fetch.mock.calls.map(([url]) => String(url))).toEqual(['http://127.0.0.1:4096/api/info']);
     } finally {
       if (previousRegistry === undefined) delete process.env.npm_config_registry;
       else process.env.npm_config_registry = previousRegistry;
@@ -106,7 +115,7 @@ describe('OpenCode upgrade routes', () => {
     expect(response.body).toEqual({
       available: false,
       currentVersion: '1.18.8',
-      latestVersion: '2.0.3',
+      latestVersion: null,
       upgrade: {
         supported: false,
         manager: 'openchamber',
@@ -115,12 +124,12 @@ describe('OpenCode upgrade routes', () => {
     });
   });
 
-  it('runs the managed CLI and leaves restart to the existing Reload action', async () => {
+  it('does not upgrade a selected CLI or restart its server', async () => {
     globalThis.fetch = vi.fn();
     const { app, dependencies } = createApp({ getOpenCodeUpgradeCapability: () => supportedCapability });
     await request(app).post('/api/opencode/upgrade').send({ target: 'ignored', binary: 'ignored' })
-      .expect(200, { success: true });
-    expect(dependencies.upgradeOpenCodeCli).toHaveBeenCalledExactlyOnceWith();
+      .expect(409);
+    expect(dependencies.upgradeOpenCodeCli).not.toHaveBeenCalled();
     expect(dependencies.refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
@@ -131,31 +140,6 @@ describe('OpenCode upgrade routes', () => {
     expect(dependencies.upgradeOpenCodeCli).not.toHaveBeenCalled();
   });
 
-  it('shares an installation between concurrent requests and allows retry after failure', async () => {
-    let fail;
-    let started;
-    const began = new Promise((resolve) => { started = resolve; });
-    const upgradeOpenCodeCli = vi.fn(() => { started(); return new Promise((_resolve, reject) => { fail = reject; }); });
-    let arrived;
-    let requests = 0;
-    const bothArrived = new Promise((resolve) => { arrived = resolve; });
-    const { app } = createApp({ getOpenCodeUpgradeCapability: () => {
-      requests += 1;
-      if (requests === 2) arrived();
-      return supportedCapability;
-    }, upgradeOpenCodeCli });
-    const first = request(app).post('/api/opencode/upgrade').send({}).then((response) => response);
-    await began;
-    const second = request(app).post('/api/opencode/upgrade').send({}).then((response) => response);
-    await bothArrived;
-    fail(new Error('Installation failed'));
-    const responses = await Promise.all([first, second]);
-    expect(responses.map((response) => response.status)).toEqual([500, 500]);
-    expect(upgradeOpenCodeCli).toHaveBeenCalledTimes(1);
-    upgradeOpenCodeCli.mockResolvedValueOnce();
-    await request(app).post('/api/opencode/upgrade').send({}).expect(200);
-    expect(upgradeOpenCodeCli).toHaveBeenCalledTimes(2);
-  });
 });
 
 describe('OpenCode v1 migration routes', () => {
@@ -171,23 +155,13 @@ describe('OpenCode v1 migration routes', () => {
     }
   });
 
-  it('shares installation and restart across concurrent requests and permits retry after failure', async () => {
-    let finish;
-    const installOpenCodeV2 = vi.fn(() => new Promise((resolve) => { finish = resolve; }));
+  it('refuses even when an old host advertises automatic installation', async () => {
+    const installOpenCodeV2 = vi.fn();
     const { app } = createApp({
       getOpenCodeCompatibility: async () => ({ state: 'incompatible', version: '1.18.30', installation: 'managed', canInstall: true }),
       installOpenCodeV2,
     });
-    const first = request(app).post('/api/opencode/install-v2').then(response => response);
-    const second = request(app).post('/api/opencode/install-v2').then(response => response);
-    await vi.waitFor(() => expect(installOpenCodeV2).toHaveBeenCalledTimes(1));
-    finish();
-    const replies = await Promise.all([first, second]);
-    expect(replies.map(reply => reply.status)).toEqual([200, 200]);
-    installOpenCodeV2.mockRejectedValueOnce(new Error('private installer output'));
-    const failed = await request(app).post('/api/opencode/install-v2').expect(500);
-    expect(JSON.stringify(failed.body)).not.toContain('private installer output');
-    installOpenCodeV2.mockResolvedValueOnce(undefined);
-    await request(app).post('/api/opencode/install-v2').expect(200);
+    await request(app).post('/api/opencode/install-v2').expect(409);
+    expect(installOpenCodeV2).not.toHaveBeenCalled();
   });
 });

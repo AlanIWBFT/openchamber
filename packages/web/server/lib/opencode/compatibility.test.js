@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import webPackage from '../../../package.json' with { type: 'json' };
-import { describeOpenCodeCompatibility, readOpenCodeCliVersion, readExternalOpenCodeVersion, readOpenCodeInfo, requireOpenCodeV2, UnsupportedOpenCodeVersionError } from './compatibility.js';
+import { describeOpenCodeCompatibility, checkOpenCodeCompatibility, readOpenCodeCliVersion, readExternalOpenCodeVersion, readOpenCodeInfo, requireOpenCodeV2, UnsupportedOpenCodeVersionError } from './compatibility.js';
 
 const cli = (output, code = 0) => ({ binary: process.execPath, args: ['-e', `console.log(${JSON.stringify(output)}); process.exit(${code})`, '--'] });
+const fork = version => ({ distribution: 'openchamber', version });
 
 describe('OpenCode compatibility', () => {
-  it('recognizes both CLI version formats before launching a server', async () => {
-    expect(await readOpenCodeCliVersion(cli('1.18.32'))).toBe('1.18.32');
-    expect(await requireOpenCodeV2(cli('opencode v2.2.4'))).toBe('2.2.4');
-    await expect(requireOpenCodeV2(cli('2.2.3'))).rejects.toBeInstanceOf(UnsupportedOpenCodeVersionError);
-    await expect(requireOpenCodeV2(cli('1.18.32'))).rejects.toBeInstanceOf(UnsupportedOpenCodeVersionError);
+  it('checks the fork identity before applying the version requirement', async () => {
+    await expect(readOpenCodeCliVersion(cli('2.3.2'))).rejects.toThrow(/fork/);
+    expect(await requireOpenCodeV2(cli(JSON.stringify(fork('2.3.2'))))).toBe('2.3.2');
+    await expect(requireOpenCodeV2(cli(JSON.stringify(fork('2.2.3'))))).rejects.toBeInstanceOf(UnsupportedOpenCodeVersionError);
     await expect(readOpenCodeCliVersion(cli('2.0.19', 1))).rejects.toThrow();
     await expect(readOpenCodeCliVersion(cli('error, requires 2.0.19'))).rejects.toThrow();
   });
@@ -18,34 +18,35 @@ describe('OpenCode compatibility', () => {
     const launch = {
       binary: process.execPath,
       args: ['-e', 'console.log(process.env.OPENCHAMBER_TEST_VERSION ?? "missing")', '--'],
-      env: { OPENCHAMBER_TEST_VERSION: '2.3.0' },
+      env: { OPENCHAMBER_TEST_VERSION: JSON.stringify(fork('2.3.0')) },
     };
     expect(await readOpenCodeCliVersion(launch)).toBe('2.3.0');
   });
 
   it('does not accept HTTP 200 HTML or malformed JSON as readiness', async () => {
-    expect(await readOpenCodeInfo(new Response('<html>OpenCode</html>'))).toBeNull();
-    expect(await readOpenCodeInfo(Response.json({ healthy: true }))).toBeNull();
-    expect(await readOpenCodeInfo(Response.json({ version: 'not a version' }))).toBeNull();
-    expect(await readOpenCodeInfo(Response.json({ version: '2.0.19' }))).toEqual({ version: '2.0.19' });
+    await expect(readOpenCodeInfo(new Response('<html>OpenCode</html>'))).rejects.toThrow(/fork/);
+    await expect(readOpenCodeInfo(Response.json({ version: '2.3.2' }))).rejects.toThrow(/fork/);
+    await expect(readOpenCodeInfo(Response.json({ ...fork('2.3.2'), distribution: 'other' }))).rejects.toThrow(/fork/);
+    expect(await readOpenCodeInfo(Response.json(fork('2.3.2')))).toEqual(fork('2.3.2'));
   });
 
-  it('identifies external v1 through its legacy health contract', async () => {
+  it('refuses an unmarked endpoint without trying legacy routes', async () => {
     const requests = [];
     const fetchImpl = async (url) => {
       requests.push(url.pathname);
       return url.pathname === '/api/info' ? new Response('<html/>') : Response.json({ healthy: true, version: '1.18.32' });
     };
-    expect(await readExternalOpenCodeVersion('http://localhost:4096', {}, fetchImpl)).toBe('1.18.32');
-    expect(requests).toEqual(['/api/info', '/global/health']);
+    const read = () => readExternalOpenCodeVersion('http://localhost:4096', {}, fetchImpl);
+    expect(await checkOpenCodeCompatibility(read, 'external')).toMatchObject({ state: 'incompatible', canInstall: false });
+    expect(requests).toEqual(['/api/info']);
   });
 
-  it('still identifies v1 when its /api/info fallback hangs or fails', async () => {
+  it('keeps a timeout unavailable rather than reporting the wrong distribution', async () => {
     const fetchImpl = async (url) => {
       if (url.pathname === '/api/info') throw new DOMException('The operation timed out.', 'TimeoutError');
       return Response.json({ healthy: true, version: '1.18.32' });
     };
-    expect(await readExternalOpenCodeVersion('http://localhost:4096', {}, fetchImpl)).toBe('1.18.32');
+    expect(await checkOpenCodeCompatibility(() => readExternalOpenCodeVersion('http://localhost:4096', {}, fetchImpl), 'external')).toMatchObject({ state: 'unavailable' });
   });
 
   it.each([401, 403])('does not call an auth failure v1 (%s)', async (status) => {
@@ -59,32 +60,27 @@ describe('OpenCode compatibility', () => {
 
   it('accepts 2.x from the minimum on and nothing older or of another major', () => {
     for (const version of ['2.2.4', '2.2.5', '2.3.0', '2.2.4-beta.1']) {
-      expect(describeOpenCodeCompatibility(version, 'managed', true).state).toBe('compatible');
+      expect(describeOpenCodeCompatibility(version, 'managed').state).toBe('compatible');
     }
     for (const version of ['1.18.32', '2.0.32', '2.1.4', '2.2.3', '3.0.0']) {
-      expect(describeOpenCodeCompatibility(version, 'managed', true).state).toBe('incompatible');
+      expect(describeOpenCodeCompatibility(version, 'managed').state).toBe('incompatible');
     }
-    expect(describeOpenCodeCompatibility('2.1.4', 'managed', true).minimumVersion).toBe('2.2.4');
+    expect(describeOpenCodeCompatibility('2.1.4', 'managed').minimumVersion).toBe('2.2.4');
   });
 
   it('publishes the minimum in the package, where an older server reads it before updating', () => {
-    const { minimumVersion } = describeOpenCodeCompatibility(null, 'managed', false);
+    const { minimumVersion } = describeOpenCodeCompatibility(null, 'managed');
     expect(webPackage.engines.opencode).toBe(`>=${minimumVersion}`);
   });
 
   it('reports which local CLI was checked', () => {
-    expect(describeOpenCodeCompatibility('2.0.16', 'managed', true, '/opt/homebrew/bin/opencode').binary).toBe('/opt/homebrew/bin/opencode');
-    expect(describeOpenCodeCompatibility('2.0.16', 'external', false).binary).toBeNull();
+    expect(describeOpenCodeCompatibility('2.0.16', 'managed', '/opt/homebrew/bin/opencode').binary).toBe('/opt/homebrew/bin/opencode');
+    expect(describeOpenCodeCompatibility('2.0.16', 'external').binary).toBeNull();
   });
 
-  it('only offers installation for a known managed CLI older than the minimum', () => {
-    expect(describeOpenCodeCompatibility('1.18.32', 'managed', true)).toMatchObject({ state: 'incompatible', canInstall: true });
-    expect(describeOpenCodeCompatibility('2.0.32', 'managed', true)).toMatchObject({ state: 'incompatible', canInstall: true });
-    for (const installation of ['external', 'bundled']) {
-      expect(describeOpenCodeCompatibility('1.18.32', installation, true).canInstall).toBe(false);
-    }
-    for (const version of [null, '2.2.4', '3.0.0']) {
-      expect(describeOpenCodeCompatibility(version, 'managed', true).canInstall).toBe(false);
+  it('never installs a CLI from upstream', () => {
+    for (const installation of ['managed', 'external', 'bundled']) {
+      expect(describeOpenCodeCompatibility('1.18.32', installation).canInstall).toBe(false);
     }
   });
 });

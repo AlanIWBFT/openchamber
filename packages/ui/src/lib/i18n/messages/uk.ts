@@ -3310,7 +3310,7 @@ export const dict: Record<I18nKey, string> = {
   "onboarding.chooser.tabs.localInstall": "Локальне встановлення",
   "onboarding.chooser.tabs.connectRemote": "Підключення до віддаленого",
   "onboarding.localSetup.title": "Налаштування OpenCode",
-  "onboarding.localSetup.description": "Установіть OpenCode v2 CLI, щоб продовжити.",
+  "onboarding.localSetup.description": "Виберіть CLI OpenCode із форка OpenChamber або скористайтеся вбудованою службою. Окремий CLI оновлюйте вручну.",
   "onboarding.localSetup.dialog.selectOpencodeBinary": "Вибрати виконуваний файл opencode",
   "onboarding.localSetup.errors.cliNotReady": "OpenCode CLI ще не готовий. Підтвердьте, що встановлення завершено, і повторіть спробу.",
   "onboarding.localSetup.errors.detectionFailed": "Не вдалося виявити",

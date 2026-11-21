@@ -75,7 +75,7 @@ test('v1 recovery replaces the application once the check confirms an incompatib
   expect(host.textContent).not.toContain('Application mounted');
   expect(host.textContent).toContain('OpenCode v2 required');
   expect(host.textContent).toContain('1.18.30');
-  expect(host.querySelector('a')?.href).toBe('https://opencode.ai/download');
+  expect(host.querySelector('a[href*="opencode.ai/download"]')).toBeNull();
   expect(document.getElementById('initial-loading')).toBeNull();
   expect(requests).toHaveLength(1);
   expect(requests[0]).toContain('/api/opencode/compatibility');
@@ -161,34 +161,20 @@ test('a stale compatible result cannot dismiss recovery after a runtime switch',
   expect(host.textContent).toContain('OpenCode v2 required');
 });
 
-test('update has a disabled progress state and reloads only after the host completes installation', async () => {
-  let reloads = 0;
-  Object.defineProperty(window.location, 'reload', { configurable: true, value: () => { reloads += 1; } });
+test('an older host cannot offer to install an upstream CLI', async () => {
   respond = async () => version('1.18.30', true);
   await render();
   const button = Array.from(host.querySelectorAll('button')).find(item => item.textContent?.includes('Update to OpenCode v2'));
-  if (!button) throw new Error('Missing update action');
-  let complete: (response: Response) => void = () => { throw new Error('Missing install request'); };
-  respond = () => new Promise<Response>((resolve) => { complete = resolve; });
-  await act(async () => button.click());
-  expect(button.disabled).toBe(true);
-  expect(host.querySelector('[role="status"]')?.textContent).toContain('Installing OpenCode v2');
-  expect(requests.filter(url => url.includes('/install-v2'))).toHaveLength(1);
-  expect(reloads).toBe(0);
-  await act(async () => complete(Response.json({ success: true })));
-  expect(reloads).toBe(1);
+  expect(button).toBeUndefined();
+  expect(requests.some(url => url.includes('/install-v2'))).toBe(false);
 });
 
-test('failed installation keeps recovery visible and makes retry available', async () => {
-  respond = async () => version('1.18.30', true);
+test('an unmarked CLI explains which build to select', async () => {
+  respond = async () => Response.json({ state: 'incompatible', installation: 'managed', binary: '/bin/opencode', version: null, canInstall: false });
   await render();
-  const button = Array.from(host.querySelectorAll('button')).find(item => item.textContent?.includes('Update to OpenCode v2'));
-  if (!button) throw new Error('Missing update action');
-  respond = async () => new Response(null, { status: 500 });
-  await act(async () => button.click());
   expect(host.textContent).not.toContain('Application mounted');
-  expect(host.querySelector('[role="alert"]')).not.toBeNull();
-  expect(button.disabled).toBe(false);
+  expect(host.textContent).toContain('OpenChamber fork');
+  expect(host.textContent).toContain('/bin/opencode');
 });
 
 const checkAgain = () => {
@@ -204,7 +190,7 @@ test('checking again refreshes v1 without an error, restart, reload, or applicat
   respond = async () => version('1.18.31', true);
   await checkAgain();
   expect(host.textContent).toContain('1.18.31');
-  expect(host.textContent).toContain('Update to OpenCode v2');
+  expect(host.textContent).not.toContain('Update to OpenCode v2');
   expect(host.querySelector('[role="alert"]')).toBeNull();
   expect(requests).toHaveLength(2);
   expect(requests.every(url => url.includes('/api/opencode/compatibility'))).toBe(true);

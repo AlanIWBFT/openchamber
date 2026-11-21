@@ -25,7 +25,8 @@ const packageDir = (name, fromDir) => {
 const readManifest = (dir) => JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
 
 const source = process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR && fs.realpathSync(process.env.OPENCHAMBER_OPENCODE_SOURCE_DIR);
-const serverDir = source ? path.join(source, 'packages/server') : packageDir('@opencode/server', electronRoot);
+if (!source) throw new Error('Set OPENCHAMBER_OPENCODE_SOURCE_DIR to the OpenChamber fork of OpenCode before packaging.');
+const serverDir = path.join(source, 'packages/server');
 const coreDir = packageDir('@opencode/core', serverDir);
 const pinnedVersion = readManifest(electronRoot).devDependencies['@opencode/server'];
 const serverVersion = readManifest(serverDir).version;
@@ -154,7 +155,7 @@ ${code.slice(start)}`,
 const main = async () => {
   const platform = process.env.OPENCHAMBER_OPENCODE_SERVER_PLATFORM || process.platform;
   const { node: arch } = resolveTargetArchitecture();
-  if (source && !(platform === 'win32' || (platform === 'linux' && arch === 'x64'))) throw new Error(`Unsupported local OpenCode target: ${platform}-${arch}`);
+  if (!(platform === 'win32' || (platform === 'linux' && arch === 'x64'))) throw new Error(`Unsupported local OpenCode target: ${platform}-${arch}`);
   const extra = [];
   const forkSourcePlugin = {
     name: 'openchamber-local-opencode',
@@ -184,13 +185,12 @@ const main = async () => {
     sourcemap: 'none',
     naming: { entry: '[name].mjs', chunk: 'chunks/[name]-[hash].mjs', asset: 'chunks/[name]-[hash].[ext]' },
     conditions: ['node'],
-    metafile: Boolean(source),
+    metafile: true,
     define: {
       __OPENCODE_SERVER_VERSION__: JSON.stringify(serverVersion),
-      __OPENCHAMBER_SERVER_CHANNEL__: JSON.stringify(source ? 'dev' : 'latest'),
       'process.env.WS_NO_BUFFER_UTIL': JSON.stringify('1'),
     },
-    plugins: [...(source ? [forkSourcePlugin] : []), claudeAgentSdkPlugin(claudeAgentSdkEntry), nativeLoaderPlugin],
+    plugins: [forkSourcePlugin, claudeAgentSdkPlugin(claudeAgentSdkEntry), nativeLoaderPlugin],
   });
   if (!result.success) {
     for (const message of result.logs) console.error(message);
@@ -222,25 +222,23 @@ const main = async () => {
   copy(path.join(photonDir, 'photon_rs_bg.wasm'), path.join(assetsDir, 'photon_rs_bg.wasm'));
   manifest.photonWasm = 'photon_rs_bg.wasm';
 
-  if (source) {
-    if (platform === 'win32') {
-      for (const helper of windowsServiceHelpers) {
-        const file = helperOutput(source, helper);
-        copy(file, path.join(assetsDir, path.basename(file)));
-        manifest[helper.key] = path.basename(file);
-        extra.push(file);
-      }
+  if (platform === 'win32') {
+    for (const helper of windowsServiceHelpers) {
+      const file = helperOutput(source, helper);
+      copy(file, path.join(assetsDir, path.basename(file)));
+      manifest[helper.key] = path.basename(file);
+      extra.push(file);
     }
-    const inputs = Object.keys(result.metafile.inputs);
-    for (const name of ['packages/server/src/process.ts', 'packages/core/src/tool/plugin/unified-exec.ts']) {
-      if (!inputs.some(input => path.resolve(input) === path.resolve(source, name))) throw new Error(`Bundle does not include local ${name}`);
-    }
-    const repo = path.resolve(electronRoot, '../..');
-    manifest.fork = recordForkInputs(electronRoot, source, inputs, [
-      ...extra, path.join(photonDir, 'photon_rs_bg.wasm'), path.join(source, 'bun.lock'), path.join(repo, 'bun.lock'),
-      fileURLToPath(import.meta.url), path.join(__dirname, 'target-architecture.mjs'), path.join(repo, 'scripts/lib/fork-server-inputs.mjs'), path.join(repo, 'scripts/lib/fork-server-helpers.mjs'),
-    ]);
   }
+  const inputs = Object.keys(result.metafile.inputs);
+  for (const name of ['packages/server/src/process.ts', 'packages/core/src/tool/plugin/unified-exec.ts']) {
+    if (!inputs.some(input => path.resolve(input) === path.resolve(source, name))) throw new Error(`Bundle does not include local ${name}`);
+  }
+  const repo = path.resolve(electronRoot, '../..');
+  manifest.fork = recordForkInputs(electronRoot, source, inputs, [
+    ...extra, path.join(photonDir, 'photon_rs_bg.wasm'), path.join(source, 'bun.lock'), path.join(repo, 'bun.lock'),
+    fileURLToPath(import.meta.url), path.join(__dirname, 'target-architecture.mjs'), path.join(repo, 'scripts/lib/fork-server-inputs.mjs'), path.join(repo, 'scripts/lib/fork-server-helpers.mjs'),
+  ]);
 
   fs.writeFileSync(path.join(assetsDir, 'manifest.json'), `${JSON.stringify({ version: serverVersion, platform, arch, ...manifest }, null, 2)}\n`);
   console.log(`[electron] prepared OpenCode server ${serverVersion} for ${platform}-${arch}: ${path.relative(electronRoot, outputDir)}`);

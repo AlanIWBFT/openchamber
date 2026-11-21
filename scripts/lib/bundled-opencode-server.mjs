@@ -33,15 +33,14 @@ export const ensureBundledOpenCodeServer = (repoRoot, source, callerEnv = proces
   const electronDir = path.join(repoRoot, 'packages', 'electron');
   const dir = path.join(electronDir, 'resources', 'opencode-server');
   const version = readJson(path.join(electronDir, 'package.json')).devDependencies['@opencode/server'];
-  if (source && process.platform === 'win32') ensureWindowsServiceHelpers(electronDir, source, callerEnv);
   const current = () => {
     const manifest = stagedFor(dir, version);
-    return manifest && (!source || forkInputsCurrent(electronDir, source, manifest, bundler));
+    return manifest && forkInputsCurrent(electronDir, source, manifest, bundler);
   };
   if (current()) return dir;
   const env = { ...callerEnv };
   if (bundler) env.OPENCHAMBER_OPENCODE_BUN_RUNTIME = bundler;
-  if (source) env.OPENCHAMBER_OPENCODE_SOURCE_DIR = source;
+  env.OPENCHAMBER_OPENCODE_SOURCE_DIR = source;
   delete env.OPENCHAMBER_TARGET_ARCH;
   delete env.ELECTRON_BUILDER_ARCH;
   delete env.OPENCHAMBER_OPENCODE_SERVER_PLATFORM;
@@ -75,7 +74,12 @@ export function devOpenCodeEnv(repoRoot, callerEnv = process.env) {
     return { OPENCODE_BINARY: cli, OPENCHAMBER_DEV_OPENCODE_ENTRY: cli };
   }
   const explicit = callerEnv.OPENCHAMBER_BUNDLED_OPENCODE_SERVER_DIR;
-  const dir = explicit ? path.resolve(explicit) : ensureBundledOpenCodeServer(repoRoot, sourceRootFor(repoRoot, callerEnv), callerEnv);
+  const prepareWorktree = () => {
+    const source = sourceRootFor(repoRoot, callerEnv);
+    if (process.platform === 'win32') ensureWindowsServiceHelpers(path.join(repoRoot, 'packages/electron'), source, callerEnv);
+    return ensureBundledOpenCodeServer(repoRoot, source, callerEnv);
+  };
+  const dir = explicit ? path.resolve(explicit) : prepareWorktree();
   const version = readJson(path.join(repoRoot, 'packages/electron/package.json')).devDependencies['@opencode/server'];
   const manifest = stagedFor(dir, version);
   if (!manifest?.fork?.commit || !manifest.fork.stamp) {

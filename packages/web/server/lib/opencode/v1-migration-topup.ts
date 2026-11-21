@@ -26,9 +26,9 @@ export interface V1MigrationOutcome {
   reason?: string;
 }
 
-export const resolveOpenCodeDbPath = (env: NodeJS.ProcessEnv = process.env, channel: 'dev' | 'latest' = 'dev') => {
+export const resolveOpenCodeDbPath = (env: NodeJS.ProcessEnv = process.env) => {
   const dataDir = getOpenCodeDataDir(env);
-  const separated = channel === 'dev' && !['1', 'true'].includes(env.OPENCODE_DISABLE_CHANNEL_DB ?? '');
+  const separated = !['1', 'true'].includes(env.OPENCODE_DISABLE_CHANNEL_DB ?? '');
   const filename = env.OPENCODE_DB ?? (separated ? 'opencode-dev.db' : 'opencode.db');
   return filename === ':memory:' ? filename : path.resolve(dataDir, filename);
 };

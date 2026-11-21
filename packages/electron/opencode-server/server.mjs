@@ -13,7 +13,7 @@ import { LayerNode } from '@opencode/util/effect/layer-node';
 import { Observability } from '@opencode/util/observability';
 import { AppProcess } from '@opencode/util/process';
 
-const OPENCODE_CHANNEL = __OPENCHAMBER_SERVER_CHANNEL__;
+const OPENCODE_CHANNEL = 'dev';
 const OPENCODE_ARTIFACT = 'openchamber-desktop';
 
 const truthy = (value) => value === '1' || value?.toLowerCase() === 'true';

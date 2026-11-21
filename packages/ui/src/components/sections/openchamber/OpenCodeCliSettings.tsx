@@ -78,7 +78,10 @@ export const OpenCodeCliSettings: React.FC = () => {
           || (trimmed.startsWith("'") && trimmed.endsWith("'")))
         ? trimmed.slice(1, -1).trim()
         : trimmed;
-      await updateDesktopSettings({ opencodeBinary: unquoted });
+      if (!(await updateDesktopSettings({ opencodeBinary: unquoted })).ok) {
+        toast.error(t('onboarding.localSetup.description'));
+        return;
+      }
       await reloadOpenCodeConfiguration({
         message: t('settings.openchamber.opencodeCli.actions.restartingOpenCode'),
         scopes: ['all'],

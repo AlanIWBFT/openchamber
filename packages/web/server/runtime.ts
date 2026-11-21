@@ -1,5 +1,5 @@
-import { installOpenCodeV2, supportsOpenCodeV2Install } from './lib/opencode/v2-install.js';
-import { describeOpenCodeCompatibility, readOpenCodeCliVersion, readExternalOpenCodeVersion } from './lib/opencode/compatibility.js';
+import { checkOpenCodeCompatibility, readOpenCodeCliVersion, readExternalOpenCodeVersion } from './lib/opencode/compatibility.js';
+import { validateSelectedCli } from './lib/opencode/selected-cli.js';
 import 'reflect-metadata';
 import express from 'express';
 import { buildRestartNotification } from './lib/notifications/restart-notification.js';
@@ -86,7 +86,6 @@ import { guardOpenCodeFetch } from './lib/opencode-trust/fetch-guard.js';
 import { createStaticRoutesRuntime } from './lib/server-frame/static-routes-runtime.js';
 import { createSettingsRuntime } from './lib/settings/settings-runtime.js';
 import { createOpenCodeResolutionRuntime } from './lib/opencode/opencode-resolution-runtime.js';
-import { runOpenCodeCliUpgrade } from './lib/opencode/cli-upgrade.js';
 import { resolveOpenCodeUpgradeCapability } from './lib/opencode/upgrade-capability.js';
 import { createBootstrapRuntime } from './lib/server-frame/bootstrap-runtime.js';
 import { createSessionRuntime } from './lib/opencode/session-runtime.js';
@@ -814,6 +813,8 @@ let lastOpenCodeHealthFailure: OpenCodeLifecycleState['lastOpenCodeHealthFailure
 let lastManagedOpenCodeProcess: OpenCodeLifecycleState['lastManagedOpenCodeProcess'] = null;
 let lastOpenCodeRestartDiagnostics: OpenCodeLifecycleState['lastOpenCodeRestartDiagnostics'] = null;
 let isOpenCodeReady = false;
+let verifiedBackendAddress: string | null = null;
+const backendAddress = () => openCodePort ? `${openCodeBaseUrl ?? 'loopback'}:${openCodePort}` : null;
 let openCodeNotReadySince = 0;
 let isExternalOpenCode = false;
 let exitOnShutdown = true;
@@ -1636,6 +1637,7 @@ const serverUtilsRuntime = createServerUtilsRuntime({
     openCodeBaseUrl,
     openCodeNotReadySince,
     isOpenCodeReady,
+    previouslyReady: verifiedBackendAddress !== null && verifiedBackendAddress === backendAddress(),
     isRestartingOpenCode,
   }),
   getOpenCodeAuthHeaders,
@@ -1813,7 +1815,10 @@ const openCodeLifecycleState = {
   get lastOpenCodeRestartDiagnostics() { return lastOpenCodeRestartDiagnostics; },
   set lastOpenCodeRestartDiagnostics(value: typeof lastOpenCodeRestartDiagnostics) { lastOpenCodeRestartDiagnostics = value; },
   get isOpenCodeReady() { return isOpenCodeReady; },
-  set isOpenCodeReady(value: typeof isOpenCodeReady) { isOpenCodeReady = value; },
+  set isOpenCodeReady(value: typeof isOpenCodeReady) {
+    isOpenCodeReady = value;
+    if (value) verifiedBackendAddress = backendAddress();
+  },
   get openCodeNotReadySince() { return openCodeNotReadySince; },
   set openCodeNotReadySince(value: typeof openCodeNotReadySince) { openCodeNotReadySince = value; },
   get isExternalOpenCode() { return isExternalOpenCode; },
@@ -1916,14 +1921,11 @@ configureProjectStartCommandSource(openCodeProjectStartCommandSource({ buildOpen
 const getOpenCodeCompatibility = async () => {
   if (isExternalOpenCode || ENV_SKIP_OPENCODE_START) {
     const base = ENV_CONFIGURED_OPENCODE_HOST?.origin || openCodeBaseUrl || `http://127.0.0.1:${openCodePort || ENV_EFFECTIVE_PORT}`;
-    const version = await readExternalOpenCodeVersion(base, getOpenCodeAuthHeaders()).catch(() => null);
-    return describeOpenCodeCompatibility(version, 'external', false);
+    return checkOpenCodeCompatibility(() => readExternalOpenCodeVersion(base, getOpenCodeAuthHeaders()), 'external');
   }
   const binary = ensureOpencodeCliEnv();
   const installation = isBundledOpenCodePath(binary) ? 'bundled' : 'managed';
-  const version = await readOpenCodeCliVersion(resolveManagedOpenCodeLaunchSpec(binary)).catch(() => null);
-  const pinnedByPolicy = Boolean(readEnterprisePolicy().opencodeBinary);
-  return describeOpenCodeCompatibility(version, installation, supportsOpenCodeV2Install() && !pinnedByPolicy, binary || null);
+  return checkOpenCodeCompatibility(async () => binary ? readOpenCodeCliVersion(resolveManagedOpenCodeLaunchSpec(binary)) : null, installation, binary);
 };
 
 const getOpenCodeUpgradeCapability = () => {
@@ -2997,24 +2999,7 @@ async function main(options: WebUiServerOptions = {}) {
     getOpenCodeResolutionSnapshot,
     getOpenCodeUpgradeCapability,
     getOpenCodeCompatibility,
-    installOpenCodeV2: async () => {
-      const binary = await installOpenCodeV2({
-        env: { ...getLoginShellEnvSnapshot(), ...process.env, PATH: buildManagedOpenCodePath() },
-      });
-      await persistSettings({ opencodeBinary: binary });
-      await refreshOpenCodeAfterConfigChange('OpenCode v2 installation');
-      await waitForOpenCodeReady();
-    },
-    upgradeOpenCodeCli: () => {
-      const launch = resolveManagedOpenCodeLaunchSpec(lastOpenCodeLaunchDiagnostics?.sourceBinary || resolvedOpencodeBinary);
-      const upgrade = () => runOpenCodeCliUpgrade(launch, {
-        env: { ...getLoginShellEnvSnapshot(), ...process.env, PATH: buildManagedOpenCodePath() },
-        cwd: os.homedir(),
-      });
-      // external: https://learn.microsoft.com/en-us/windows/win32/fileio/creating-and-opening-files Windows cannot replace the running executable; the managed process stops during installation.
-      if (process.platform !== 'win32') return upgrade();
-      return restartOpenCode('opencode-upgrade', { whileStopped: upgrade });
-    },
+    validateSelectedCli: file => validateSelectedCli(file, resolveManagedOpenCodeLaunchSpec),
     formatSettingsResponse,
     readSettingsFromDisk,
     readSettingsFromDiskMigrated,

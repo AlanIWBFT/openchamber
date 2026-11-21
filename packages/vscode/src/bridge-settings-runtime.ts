@@ -1,4 +1,6 @@
 import { OPENCODE_CONFIG_DIR } from './opencodeConfigPaths';
+import { validateSelectedCli } from '../../web/server/lib/opencode/selected-cli.js';
+import { resolveWindowsLaunchSpec } from './opencode-launch';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -409,6 +411,9 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
   }
 
   const persistedCurrent = readPersistedSettings(ctx);
+  if (typeof restChanges.opencodeBinary === 'string' && restChanges.opencodeBinary && restChanges.opencodeBinary !== persistedCurrent.opencodeBinary) {
+    await validateSelectedCli(restChanges.opencodeBinary, file => resolveWindowsLaunchSpec(file, []));
+  }
   const persistable: Record<string, unknown> = { ...persistedCurrent, ...restChanges };
   for (const key of keysToClear) {
     delete persistable[key];

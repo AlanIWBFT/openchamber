@@ -17,12 +17,7 @@ export const fetchOpenCodeCompatibility = async (): Promise<OpenCodeCompatibilit
   return openCodeCompatibilitySchema.parse(await response.json());
 };
 
-export const recoverOpenCode = async (action: 'install-v2' | 'reconnect' = 'reconnect'): Promise<{ state: 'recovered' } | { state: 'incompatible'; compatibility: OpenCodeCompatibility }> => {
-  if (action === 'install-v2') {
-    const response = await runtimeFetch('/api/opencode/install-v2', { method: 'POST' });
-    if (!response.ok) throw new Error('OpenCode v2 installation failed');
-    return { state: 'recovered' };
-  }
+export const recoverOpenCode = async (): Promise<{ state: 'recovered' } | { state: 'incompatible'; compatibility: OpenCodeCompatibility }> => {
   const compatibility = await fetchOpenCodeCompatibility();
   if (compatibility.state === 'incompatible') return { state: 'incompatible', compatibility };
   if (compatibility.state === 'unavailable') throw new Error('Could not determine OpenCode compatibility');

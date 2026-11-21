@@ -4,8 +4,18 @@ import { z } from 'zod';
 
 const execute = promisify(execFile);
 const versionSchema = z.string().regex(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/);
-const infoSchema = z.object({ version: versionSchema });
-const legacyHealthSchema = z.object({ version: versionSchema, healthy: z.boolean() });
+const infoSchema = z.object({ distribution: z.literal('openchamber'), version: versionSchema });
+export const forkRequired = 'Select a CLI built from the OpenChamber fork of OpenCode, or use the bundled service.';
+
+export class UnsupportedOpenCodeDistributionError extends Error {
+  readonly code = 'OPENCODE_BINARY_INVALID';
+  constructor() { super(forkRequired); }
+}
+
+const requireForkIdentity = (info: ReturnType<typeof infoSchema.safeParse>) => {
+  if (!info.success) throw new UnsupportedOpenCodeDistributionError();
+  return info.data;
+};
 
 export interface OpenCodeCompatibility {
   state: 'unavailable' | 'compatible' | 'incompatible';
@@ -51,19 +61,26 @@ export const isSupportedOpenCodeVersion = (version: string) => versionSchema.saf
 
 export const readOpenCodeInfo = async (response: Response) => {
   if (!response.ok) return null;
-  const parsed = infoSchema.safeParse(await response.json().catch(() => null));
-  return parsed.success ? parsed.data : null;
+  const body: unknown = await response.json().catch(() => null);
+  return requireForkIdentity(infoSchema.safeParse(body));
 };
 
 export const readOpenCodeCliVersion = async (launch: OpenCodeCliLaunch, options: OpenCodeCliOptions = {}) => {
-  const { stdout } = await execute(launch.binary, [...launch.args, '--version'], {
+  const { stdout } = await execute(launch.binary, [...launch.args, '--openchamber-info'], {
     ...options,
     env: { ...(options.env ?? process.env), ...launch.env },
     encoding: 'utf8', timeout: 15_000, maxBuffer: 16 * 1024, windowsHide: true,
+  }).catch(error => {
+    if (!z.object({ code: z.number() }).safeParse(error).success) throw error;
+    throw new UnsupportedOpenCodeDistributionError();
   });
-  const match = /^(?:opencode\s+v?)?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\s*$/.exec(stdout.trim());
-  if (!match) throw new Error('Could not determine the installed OpenCode version.');
-  return match[1] ?? '';
+  return parseCliIdentity(stdout).version;
+};
+
+export const parseCliIdentity = (output: string) => {
+  let value: unknown;
+  try { value = JSON.parse(output); } catch { throw new UnsupportedOpenCodeDistributionError(); }
+  return requireForkIdentity(infoSchema.safeParse(value));
 };
 
 export class UnsupportedOpenCodeVersionError extends Error {
@@ -83,24 +100,25 @@ export const requireOpenCodeV2 = async (launch: OpenCodeCliLaunch, options?: Ope
 };
 
 export const readExternalOpenCodeVersion = async (baseUrl: string, headers: Record<string, string>, fetchImpl = fetch) => {
-  const request = (pathname: string) => fetchImpl(new URL(pathname, baseUrl), {
+  const response = await fetchImpl(new URL('/api/info', baseUrl), {
     headers: { ...headers, Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(5000),
-  });
-  const response = await request('/api/info').catch(() => null);
-  if (response && (response.status === 401 || response.status === 403)) return null;
-  const info = response ? await readOpenCodeInfo(response) : null;
-  if (info) return info.version;
-  const legacy = await request('/global/health');
-  if (!legacy.ok) return null;
-  const parsed = legacyHealthSchema.safeParse(await legacy.json().catch(() => null));
-  return parsed.success && parsed.data.version.startsWith('1.') ? parsed.data.version : null;
+  }).catch(() => null);
+  return response ? (await readOpenCodeInfo(response))?.version ?? null : null;
 };
 
-export const describeOpenCodeCompatibility = (version: string | null, installation: OpenCodeCompatibility['installation'], canInstall: boolean, binary: string | null = null): OpenCodeCompatibility => ({
+export const describeOpenCodeCompatibility = (version: string | null, installation: OpenCodeCompatibility['installation'], binary: string | null = null): OpenCodeCompatibility => ({
   state: version === null ? 'unavailable' : isSupportedOpenCodeVersion(version) ? 'compatible' : 'incompatible',
   version,
   installation,
   binary,
   minimumVersion: MINIMUM_OPENCODE_VERSION,
-  canInstall: version !== null && isOlderThanMinimum(version) && installation === 'managed' && canInstall,
+  canInstall: false,
 });
+
+export const checkOpenCodeCompatibility = async (read: () => Promise<string | null>, installation: OpenCodeCompatibility['installation'], binary: string | null = null): Promise<OpenCodeCompatibility> => {
+  try { return describeOpenCodeCompatibility(await read(), installation, binary); }
+  catch (error) {
+    const status = describeOpenCodeCompatibility(null, installation, binary);
+    return error instanceof UnsupportedOpenCodeDistributionError ? { ...status, state: 'incompatible' } : status;
+  }
+};

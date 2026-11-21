@@ -5,20 +5,17 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Icon } from "@/components/icon/Icon";
 import { loadDesktopSettings, updateDesktopSettings } from '@/lib/persistence';
-import { copyTextToClipboard } from '@/lib/clipboard';
 import { restartDesktopApp } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
 import { useWaitingBlink } from '@/hooks/useDurationTicker';
 import { RemoteConnectionForm } from './RemoteConnectionForm';
 import { desktopHostsGet, desktopHostsSet } from '@/lib/desktopHosts';
 import { useI18n } from '@/lib/i18n';
+import { toast } from '@/components/ui';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { useEnterprisePolicyStore } from '@/stores/useEnterprisePolicyStore';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 
-const INSTALL_COMMAND = 'curl -fsSL https://opencode.ai/v2/install | bash';
-const WINDOWS_INSTALL_COMMAND = 'npm install -g @opencode/cli';
-const DOCS_URL = 'https://opencode.ai/download';
 const POLL_INTERVAL_MS = 2500;
 
 type OnboardingPlatform = 'macos' | 'linux' | 'windows' | 'unknown';
@@ -28,34 +25,6 @@ type ChooserScreenProps = {
   localAvailable?: boolean;
 };
 
-function InstallCommand({ windows, onCopy, copyTitle }: { windows: boolean; onCopy: () => void; copyTitle: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 w-full">
-      <ScrollableOverlay as="code" outerClassName="overlay-scrollbar-wrapper--no-gutter flex-1 min-w-0" fillContainer={false} className="text-start whitespace-nowrap">
-        {windows ? (
-          <span style={{ color: 'var(--syntax-keyword)' }}>{WINDOWS_INSTALL_COMMAND}</span>
-        ) : (
-          <>
-            <span style={{ color: 'var(--syntax-keyword)' }}>curl</span>
-            <span className="text-muted-foreground"> -fsSL </span>
-            <span style={{ color: 'var(--syntax-string)' }}>https://opencode.ai/v2/install</span>
-            <span className="text-muted-foreground"> | </span>
-            <span style={{ color: 'var(--syntax-keyword)' }}>bash</span>
-          </>
-        )}
-      </ScrollableOverlay>
-      <button
-        onClick={onCopy}
-        className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors shrink-0"
-        title={copyTitle}
-        aria-label={copyTitle}
-      >
-        <Icon name="file-copy" className="h-4 w-4" />
-      </button>
-    </div>
-  );
-}
-
 function WatchingDot() {
   const blink = useWaitingBlink(true);
   return <span className={cn('absolute inset-0 rounded-full', blink)} style={{ backgroundColor: 'var(--primary-base)' }} />;
@@ -63,7 +32,6 @@ function WatchingDot() {
 
 export function ChooserScreen({ onCliAvailable, localAvailable = true }: ChooserScreenProps) {
   const { t } = useI18n();
-  const [copied, setCopied] = React.useState(false);
   const [isDesktopApp, setIsDesktopApp] = React.useState(false);
   const [isApplyingPath, setIsApplyingPath] = React.useState(false);
   const [isManualChecking, setIsManualChecking] = React.useState(false);
@@ -71,7 +39,7 @@ export function ChooserScreen({ onCliAvailable, localAvailable = true }: Chooser
   const pinnedBinary = useEnterprisePolicyStore((state) => state.opencodeBinary);
   const [platform, setPlatform] = React.useState<OnboardingPlatform>('unknown');
   const [activeTab, setActiveTab] = React.useState<'local' | 'remote'>(() => localAvailable ? 'local' : 'remote');
-  const [advancedOpen, setAdvancedOpen] = React.useState(false);
+  const [advancedOpen, setAdvancedOpen] = React.useState(true);
   const [troubleOpen, setTroubleOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -205,7 +173,10 @@ export function ChooserScreen({ onCliAvailable, localAvailable = true }: Chooser
   const handleApplyPath = React.useCallback(async () => {
     setIsApplyingPath(true);
     try {
-      await updateDesktopSettings({ opencodeBinary: opencodeBinary.trim() });
+      if (!(await updateDesktopSettings({ opencodeBinary: opencodeBinary.trim() })).ok) {
+        toast.error(t('onboarding.localSetup.description'));
+        return;
+      }
       if (isDesktopApp) {
         await persistFirstChoice('local');
         await restartDesktopApp();
@@ -215,22 +186,11 @@ export function ChooserScreen({ onCliAvailable, localAvailable = true }: Chooser
     } finally {
       setTimeout(() => setIsApplyingPath(false), 1000);
     }
-  }, [isDesktopApp, opencodeBinary, persistFirstChoice]);
+  }, [isDesktopApp, opencodeBinary, persistFirstChoice, t]);
 
-  const handleCopy = React.useCallback(async () => {
-    const result = await copyTextToClipboard(platform === 'windows' ? WINDOWS_INSTALL_COMMAND : INSTALL_COMMAND);
-    if (result.ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } else {
-      console.error('Failed to copy:', result.error);
-    }
-  }, [platform]);
-
-  const docsUrl = DOCS_URL;
   const binaryPlaceholder =
     platform === 'windows'
-      ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\opencode.cmd'
+      ? 'C:\\Tools\\OpenCode\\opencode.exe'
       : platform === 'linux'
         ? '/home/you/.opencode/bin/opencode'
         : '/Users/you/.opencode/bin/opencode';
@@ -301,30 +261,9 @@ export function ChooserScreen({ onCliAvailable, localAvailable = true }: Chooser
 
         {showLocal && (
           <div className="mt-6">
-            {platform === 'windows' && (
-              <div className="mb-4 rounded-lg border border-border p-4">
-                <div className="text-sm text-foreground">{t('onboarding.localSetup.windows.title')}</div>
-                <ol className="mt-2 list-decimal space-y-1 ps-5 text-sm text-muted-foreground">
-                  <li>{t('onboarding.localSetup.windows.stepRunInstallInWsl')}</li>
-                  <li>{t('onboarding.localSetup.windows.stepSetBinaryPath')}</li>
-                </ol>
-              </div>
-            )}
-
             <p className="text-center text-sm leading-relaxed text-muted-foreground text-balance">
-              {t('onboarding.localSetup.intro')}
+              {t('onboarding.localSetup.description')}
             </p>
-
-            <div className="app-region-no-drag mt-3 rounded-lg border border-border bg-background/60 px-4 py-3 font-mono text-sm">
-              {copied ? (
-                <div className="flex items-center gap-2" style={{ color: 'var(--status-success)' }}>
-                  <Icon name="check" className="h-4 w-4" />
-                  {t('onboarding.common.status.copiedToClipboard')}
-                </div>
-              ) : (
-                <InstallCommand windows={platform === 'windows'} onCopy={handleCopy} copyTitle={t('onboarding.common.copyToClipboard')} />
-              )}
-            </div>
 
             <div className="app-region-no-drag mt-3 flex items-center gap-2.5 px-1" role="status" aria-live="polite">
               <span className="relative inline-flex h-2 w-2 shrink-0" aria-hidden>
@@ -403,17 +342,6 @@ export function ChooserScreen({ onCliAvailable, localAvailable = true }: Chooser
               </details>
             </div>
 
-            <div className="app-region-no-drag mt-5 text-center">
-              <a
-                href={docsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {platform === 'windows' ? t('onboarding.localSetup.docs.windows') : t('onboarding.localSetup.docs.default')}
-                <Icon name="external-link" className="h-3 w-3" />
-              </a>
-            </div>
           </div>
         )}
       </div>

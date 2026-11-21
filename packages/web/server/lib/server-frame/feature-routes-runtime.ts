@@ -159,7 +159,7 @@ type RouteDependencies =
   & Pick<SettingsRuntime, 'readSettingsFromDisk' | 'readSettingsFromDiskMigrated' | 'persistSettings' | 'persistResolvedSettings'>
   & Pick<ReturnType<typeof createProjectDirectoryRuntime>, 'resolveProjectDirectory' | 'resolveOptionalProjectDirectory'>
   & Pick<Parameters<typeof registerSettingsUtilityRoutes>[1], 'readCustomThemesFromDisk' | 'saveImportedTheme' | 'deleteImportedTheme' | 'refreshOpenCodeAfterConfigChange'>
-  & Pick<Parameters<typeof registerOpenCodeRoutes>[1], 'crypto' | 'getOpenCodeResolutionSnapshot' | 'getOpenCodeUpgradeCapability' | 'upgradeOpenCodeCli' | 'getOpenCodeCompatibility' | 'installOpenCodeV2'>
+  & Pick<Parameters<typeof registerOpenCodeRoutes>[1], 'crypto' | 'getOpenCodeResolutionSnapshot' | 'getOpenCodeUpgradeCapability' | 'getOpenCodeCompatibility' | 'validateSelectedCli'>
   & Pick<ScheduledTaskOptions, 'projectConfigRuntime' | 'scheduledTasksRuntime' | 'sanitizeProjects'>
   & Required<Pick<ScheduledTaskOptions, 'scheduledTaskService'>>
   & Pick<Parameters<typeof registerSkillRoutes>[1], 'sanitizeSkillCatalogs' | 'isUnsafeSkillRelativePath' | 'getOpenCodePort'>
@@ -346,9 +346,8 @@ export const createFeatureRoutesRuntime = (dependencies: FeatureRuntimeDependenc
       refreshOpenCodeAfterConfigChange,
       getOpenCodeResolutionSnapshot,
       getOpenCodeUpgradeCapability,
-      upgradeOpenCodeCli,
       getOpenCodeCompatibility,
-      installOpenCodeV2,
+      validateSelectedCli,
       formatSettingsResponse,
       readSettingsFromDisk,
       readSettingsFromDiskMigrated,
@@ -413,9 +412,8 @@ export const createFeatureRoutesRuntime = (dependencies: FeatureRuntimeDependenc
       crypto,
       getOpenCodeResolutionSnapshot,
       getOpenCodeUpgradeCapability,
-      upgradeOpenCodeCli,
       getOpenCodeCompatibility,
-      installOpenCodeV2,
+      validateSelectedCli,
       formatSettingsResponse,
       readSettingsFromDiskMigrated,
       persistSettings,

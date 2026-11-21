@@ -8,6 +8,7 @@ Sections: Runtimes and backends, Platform scope, Localization, Composer, Session
 
 ## Runtimes and backends
 
+- This fork supports only the OpenChamber distribution of OpenCode. The bundled service, a selected CLI, and a running backend must identify that distribution. Users update standalone CLIs themselves. Missing fork APIs are errors, not a reason to switch to upstream behavior.
 - OpenCode is the only agent runtime. No ACP, Pi or other backend: there is no gain now that OpenCode 2.x exists (#3654, #2010). Say that reason; OpenChamber is more than a UI for OpenCode.
 - A feature idea is taken on its merits even where OpenCode owns the area. OpenCode is building blocks OpenChamber can rework or route around.
 - The supported remote setup runs OpenChamber and OpenCode on the same server. A local OpenChamber working on a remote OpenCode's filesystem is unsupported (#3113); small real bugs found in such reports still get fixed.
