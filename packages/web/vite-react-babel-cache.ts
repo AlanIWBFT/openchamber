@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, type Hash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -90,29 +90,34 @@ export function cacheReactBabel(plugins: PluginOption[], { directory, root, setu
   const transform = babelPlugin && 'name' in babelPlugin ? babelPlugin.transform : undefined;
   if (!transform || !('handler' in transform)) return plugins;
   const original = transform.handler;
-  let salt: string | null = null;
+  let keyPrefix: Hash | null = null;
+  let build = false;
+  let cacheDirectory = directory;
 
   const cached: typeof original = async function cachedTransform(code, id, options) {
-    if (salt === null || code.includes(root) || code.includes(ROOT_PLACEHOLDER)) return original.call(this, code, id, options);
-    const key = createHash('sha256').update(salt).update('\0').update(toStored(id)).update('\0').update(String(options?.ssr === true)).update('\0').update(code).digest('hex');
-    const file = path.join(directory, `${key}.json`);
+    if (!keyPrefix) return original.call(this, code, id, options);
+    if (build ? code.includes('sourceMappingURL=') : code.includes(root) || code.includes(ROOT_PLACEHOLDER)) return original.call(this, code, id, options);
+    const key = keyPrefix.copy().update(build ? id : toStored(id)).update('\0').update(String(options?.ssr === true)).update('\0').update(code).digest('hex');
+    const file = path.join(cacheDirectory, `${key}.json`);
     const hit = readEntry(file);
     if (hit) {
       const now = new Date();
       fs.utimes(file, now, now, () => {});
       if ('skipped' in hit) return undefined;
-      const map = hit.map === null ? null : JSON.parse(fromStored(JSON.stringify(hit.map)));
+      const map = build || hit.map === null ? hit.map : JSON.parse(fromStored(JSON.stringify(hit.map)));
       // SAFETY: entries are written below from plugin-react's own result, whose map is Babel's source map.
-      return { code: fromStored(hit.code), map: map as SourceMapInput };
+      return { code: build ? hit.code : fromStored(hit.code), map: map as SourceMapInput };
     }
     const result = await original.call(this, code, id, options);
     if (result === undefined || result === null) {
-      writeEntry(directory, file, { skipped: true });
+      writeEntry(cacheDirectory, file, { skipped: true });
     } else {
       const compiled = compiledSchema.safeParse(result);
       if (compiled.success) {
         const map = compiled.data.map ?? null;
-        writeEntry(directory, file, { code: toStored(compiled.data.code), map: map === null ? null : JSON.parse(toStored(JSON.stringify(map))) });
+        writeEntry(cacheDirectory, file, build ? { code: compiled.data.code, map } : {
+          code: toStored(compiled.data.code), map: map === null ? null : JSON.parse(toStored(JSON.stringify(map))),
+        });
       }
     }
     return result;
@@ -121,12 +126,27 @@ export function cacheReactBabel(plugins: PluginOption[], { directory, root, setu
 
   const enable: Plugin = {
     name: 'openchamber:react-babel-cache',
-    apply: 'serve',
     configResolved(config) {
+      keyPrefix = null;
+      build = config.command === 'build';
+      cacheDirectory = build ? `${directory}-build` : directory;
+      if (build && (!config.isProduction || process.env.BABEL_SHOW_CONFIG_FOR || config.plugins.some((plugin) => plugin.api?.reactBabel))) return;
       const versions = toolVersions();
       if (!versions) return;
-      salt = JSON.stringify({ setup, versions, root: toStored(`${config.root}${path.sep}`), production: config.isProduction, hmr: config.server.hmr !== false });
-      pruneOld(directory);
+      const salt = JSON.stringify({ setup, versions, root: build ? config.root : toStored(`${config.root}${path.sep}`), production: config.isProduction, hmr: config.server.hmr !== false });
+      const prefix = createHash('sha256').update(salt).update('\0');
+      if (build) {
+        prefix.update(JSON.stringify([config.mode, process.env.BABEL_ENV, process.versions.node])).update('\0');
+        try {
+          for (const file of [path.join(root, 'bun.lock'), ...config.configFileDependencies]) {
+            prefix.update(file).update('\0').update(fs.readFileSync(file)).update('\0');
+          }
+        } catch {
+          return;
+        }
+      }
+      keyPrefix = prefix;
+      pruneOld(cacheDirectory);
     },
   };
   return [...plugins, enable];

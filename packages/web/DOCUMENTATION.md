@@ -30,7 +30,8 @@ This package owns the browser build, Vite plugins, development launchers and web
 - Theme hot updates publish through the runtime listener and return no Vite modules, which prevents a full-page reload. Invalid or incomplete JSON preserves the last valid theme until a valid save.
 - Each development server uses its own dependency cache. Module matching uses the checkout's real path because Vite module ids resolve symlinks.
 - The React transform cache key covers module identity, source, Babel setup, relevant resolved Vite settings and compiler dependency versions. Unreadable dependency versions disable caching because an upgrade must invalidate its output.
-- Shared cache entries replace only generated checkout-root paths. Modules whose own source names the checkout root bypass caching, and root replacement includes a trailing separator to preserve sibling paths.
+- Development cache entries replace only generated checkout-root paths. Modules whose own source names the checkout root bypass that cache, and root replacement includes a trailing separator to preserve sibling paths.
+- Production builds keep React transforms in a separate `react-babel-build` directory, keyed by checkout and module, and replay code and source maps verbatim. A changed lockfile or Vite config dependency invalidates build entries. Modules with source map directives run through Babel because the input map can change independently. Unreadable inputs, dynamic `reactBabel` hooks and `BABEL_SHOW_CONFIG_FOR` diagnostics bypass the build cache.
 - Chunk-module comparisons normalize path separators because Rollup ids use forward slashes on Windows too.
 - ASCII rewriting preserves regular-expression semantics, including surrogate pairs and already escaped characters. Tagged-template raw text stays unchanged because a tag can observe the escape itself. Source-map builds bypass rewriting because their maps would also need replacement.
 - The custom manifest in `index.html` remains authoritative. The service worker uses a classic bundle for iOS Safari/PWA reliability. The share renderer needs no offline precache because it is read only when a page is shared.
@@ -63,7 +64,7 @@ The packaged entry waits for the local server's runtime configuration before its
 
 ### Why React transforms persist on disk and not only in Vite memory
 
-The React Compiler dominates cold development startup, and its output depends on source and compiler configuration. Repository-relative keys and a root placeholder let worktrees reuse that output across restarts without retaining another checkout's paths.
+The React Compiler dominates cold development startup and repeats the same work across release builds. Development entries can move between worktrees; build entries retain the original paths so a warm build emits the same bytes as a cold build. Both caches discard entries unused for seven days.
 
 ### Why shared pages use a separate bundle and not the app's chunks
 
