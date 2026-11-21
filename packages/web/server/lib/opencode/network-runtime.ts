@@ -1,4 +1,4 @@
-import { readOpenCodeInfo, isSupportedOpenCodeVersion } from './compatibility.js';
+import { readOpenCodeInfo } from './compatibility.js';
 import type { OpenCodeLifecycleState } from './lifecycle.js';
 
 export interface OpenCodeNetworkDependencies {
@@ -67,7 +67,7 @@ export const createOpenCodeNetworkRuntime = (deps: OpenCodeNetworkDependencies) 
         timeout = null;
 
         const info = await readOpenCodeInfo(response);
-        if (info && isSupportedOpenCodeVersion(info.version)) return true;
+        if (info) return true;
       } catch (error) {
         void error;
       } finally {

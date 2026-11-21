@@ -14,12 +14,8 @@ let mounts: number;
 let requests: string[];
 let respond: () => Promise<Response>;
 
-const version = (value: string, canInstall = false) => Response.json({
-  state: value.startsWith('2.') ? 'compatible' : 'incompatible',
-  version: value,
-  installation: 'managed',
-  canInstall,
-});
+const version = (value: string) => Response.json({ state: 'compatible', version: value, installation: 'managed' });
+const wrongCli = (binary: string) => Response.json({ state: 'incompatible', version: null, installation: 'managed', binary });
 
 beforeEach(() => {
   const dom = new Window({ url: 'http://localhost' });
@@ -50,7 +46,7 @@ beforeEach(() => {
   root = createRoot(host);
   mounts = 0;
   requests = [];
-  respond = async () => version('1.18.30');
+  respond = async () => wrongCli('/bad/cli-30');
 });
 
 afterEach(async () => {
@@ -73,15 +69,15 @@ test('v1 recovery replaces the application once the check confirms an incompatib
   document.body.append(splash);
   await render();
   expect(host.textContent).not.toContain('Application mounted');
-  expect(host.textContent).toContain('OpenCode v2 required');
-  expect(host.textContent).toContain('1.18.30');
+  expect(host.textContent).toContain('OpenCode · OpenChamber');
+  expect(host.textContent).toContain('/bad/cli-30');
   expect(host.querySelector('a[href*="opencode.ai/download"]')).toBeNull();
   expect(document.getElementById('initial-loading')).toBeNull();
   expect(requests).toHaveLength(1);
   expect(requests[0]).toContain('/api/opencode/compatibility');
 });
 
-test('the application mounts while the check runs and stays mounted for v2', async () => {
+test('the application mounts while the check runs and stays mounted for a fork CLI', async () => {
   let complete: (response: Response) => void = () => { throw new Error('Missing request'); };
   respond = () => new Promise<Response>((resolve) => { complete = resolve; });
   await render();
@@ -96,17 +92,17 @@ test('a check prefetched at page load answers the gate without a second request'
   prefetchOpenCodeCompatibility();
   await render();
   expect(requests).toHaveLength(1);
-  expect(host.textContent).toContain('OpenCode v2 required');
+  expect(host.textContent).toContain('OpenCode · OpenChamber');
 });
 
 test('a prefetched check that failed before sign-in is asked again when the gate mounts', async () => {
-  respond = async () => requests.length === 1 ? new Response(null, { status: 401 }) : version('1.18.30');
+  respond = async () => requests.length === 1 ? new Response(null, { status: 401 }) : wrongCli('/bad/cli-30');
   prefetchOpenCodeCompatibility();
   await render();
   // The 401 also starts the app's sign-in probe (/auth/session); only the
   // compatibility requests belong to the gate.
   expect(requests.filter((url) => url.includes('/api/opencode/compatibility'))).toHaveLength(2);
-  expect(host.textContent).toContain('OpenCode v2 required');
+  expect(host.textContent).toContain('OpenCode · OpenChamber');
 });
 
 test('turning the gate on checks the new server without remounting the application', async () => {
@@ -129,11 +125,11 @@ test('an unavailable compatibility endpoint leaves the existing connection recov
   respond = async () => new Response(null, { status: 503 });
   await render();
   expect(mounts).toBe(1);
-  expect(host.textContent).not.toContain('OpenCode v2 required');
+  expect(host.textContent).not.toContain('OpenCode · OpenChamber');
 });
 
-test('reconnect returns confirmed v1 without restarting, then uses the existing reload route after installation', async () => {
-  expect(await recoverOpenCode()).toMatchObject({ state: 'incompatible', compatibility: { version: '1.18.30' } });
+test('reconnect returns a rejected CLI without restarting, then uses the existing reload route after installation', async () => {
+  expect(await recoverOpenCode()).toMatchObject({ state: 'incompatible', compatibility: { binary: '/bad/cli-30' } });
   expect(requests).toHaveLength(1);
   requests = [];
   respond = async () => requests.length === 1 ? version('2.0.14') : Response.json({ success: true });
@@ -155,22 +151,14 @@ test('a stale compatible result cannot dismiss recovery after a runtime switch',
     window.dispatchEvent(new window.CustomEvent('openchamber:runtime-endpoint-changed'));
   });
   expect(replies).toHaveLength(2);
-  await act(async () => replies[1](version('1.18.30')));
+  await act(async () => replies[1](wrongCli('/bad/cli-30')));
   await act(async () => replies[0](version('2.0.14')));
   expect(host.textContent).not.toContain('Application mounted');
-  expect(host.textContent).toContain('OpenCode v2 required');
-});
-
-test('an older host cannot offer to install an upstream CLI', async () => {
-  respond = async () => version('1.18.30', true);
-  await render();
-  const button = Array.from(host.querySelectorAll('button')).find(item => item.textContent?.includes('Update to OpenCode v2'));
-  expect(button).toBeUndefined();
-  expect(requests.some(url => url.includes('/install-v2'))).toBe(false);
+  expect(host.textContent).toContain('OpenCode · OpenChamber');
 });
 
 test('an unmarked CLI explains which build to select', async () => {
-  respond = async () => Response.json({ state: 'incompatible', installation: 'managed', binary: '/bin/opencode', version: null, canInstall: false });
+  respond = async () => Response.json({ state: 'incompatible', installation: 'managed', binary: '/bin/opencode', version: null });
   await render();
   expect(host.textContent).not.toContain('Application mounted');
   expect(host.textContent).toContain('OpenChamber fork');
@@ -183,13 +171,13 @@ const checkAgain = () => {
   return act(async () => button.click());
 };
 
-test('checking again refreshes v1 without an error, restart, reload, or application bootstrap', async () => {
+test('checking again refreshes the rejected path without an error, restart, reload, or application bootstrap', async () => {
   let reloads = 0;
   Object.defineProperty(window.location, 'reload', { configurable: true, value: () => { reloads += 1; } });
   await render();
-  respond = async () => version('1.18.31', true);
+  respond = async () => wrongCli('/bad/cli-31');
   await checkAgain();
-  expect(host.textContent).toContain('1.18.31');
+  expect(host.textContent).toContain('/bad/cli-31');
   expect(host.textContent).not.toContain('Update to OpenCode v2');
   expect(host.querySelector('[role="alert"]')).toBeNull();
   expect(requests).toHaveLength(2);
@@ -198,22 +186,22 @@ test('checking again refreshes v1 without an error, restart, reload, or applicat
   expect(host.textContent).not.toContain('Application mounted');
 });
 
-test('failed or unavailable checks preserve known v1; a successful v1 check clears the error', async () => {
+test('failed or unavailable checks preserve a known wrong CLI; a successful recheck clears the error', async () => {
   await render();
-  for (const response of [new Response(null, { status: 503 }), Response.json({ state: 'unavailable', version: null, installation: 'managed', canInstall: false })]) {
+  for (const response of [new Response(null, { status: 503 }), Response.json({ state: 'unavailable', version: null, installation: 'managed' })]) {
     respond = async () => response;
     await checkAgain();
     expect(host.querySelector('[role="alert"]')).not.toBeNull();
-    expect(host.textContent).toContain('1.18.30');
+    expect(host.textContent).toContain('/bad/cli-30');
     expect(host.textContent).not.toContain('Application mounted');
   }
-  respond = async () => version('1.18.31');
+  respond = async () => wrongCli('/bad/cli-31');
   await checkAgain();
   expect(host.querySelector('[role="alert"]')).toBeNull();
-  expect(host.textContent).toContain('1.18.31');
+  expect(host.textContent).toContain('/bad/cli-31');
 });
 
-test('checking again with v2 reloads only after the restart completes', async () => {
+test('checking again with a fork CLI reloads only after the restart completes', async () => {
   let reloads = 0;
   Object.defineProperty(window.location, 'reload', { configurable: true, value: () => { reloads += 1; } });
   await render();
@@ -232,11 +220,11 @@ test('a check again result from the previous runtime cannot replace the current 
   let complete: (response: Response) => void = () => { throw new Error('Missing check request'); };
   respond = () => new Promise<Response>(resolve => { complete = resolve; });
   await checkAgain();
-  respond = async () => version('1.18.32');
+  respond = async () => wrongCli('/bad/cli-32');
   await act(async () => window.dispatchEvent(new window.CustomEvent('openchamber:runtime-endpoint-changed')));
-  await act(async () => complete(version('1.18.31')));
-  expect(host.textContent).toContain('1.18.32');
-  expect(host.textContent).not.toContain('1.18.31');
+  await act(async () => complete(wrongCli('/bad/cli-31')));
+  expect(host.textContent).toContain('/bad/cli-32');
+  expect(host.textContent).not.toContain('/bad/cli-31');
   expect(host.textContent).not.toContain('Application mounted');
 });
 
@@ -253,22 +241,6 @@ test('desktop recovery keeps the instance switcher reachable', async () => {
 test('browser recovery does not offer the desktop instance switcher', async () => {
   await render();
   expect(host.querySelector('[data-oc-host-switcher]')).toBeNull();
-});
-
-test('a 2.x below the minimum asks for an update to that minimum, not for v2', async () => {
-  respond = async () => Response.json({
-    state: 'incompatible',
-    version: '2.0.14',
-    installation: 'managed',
-    minimumVersion: '2.0.15',
-    canInstall: true,
-  });
-  await render();
-  expect(host.textContent).not.toContain('Application mounted');
-  expect(host.textContent).toContain('Update OpenCode');
-  expect(host.textContent).toContain('requires OpenCode 2.0.15 or newer');
-  expect(host.textContent).toContain('2.0.15+');
-  expect(host.textContent).not.toContain('OpenCode v2 required');
 });
 
 // The readiness probe is one desktop command among others (the i18n provider
@@ -297,7 +269,7 @@ test('unconfirmed desktop readiness keeps the authoritative compatibility check'
   await render();
   expect(requests).toHaveLength(1);
   expect(host.textContent).not.toContain('Application mounted');
-  expect(host.textContent).toContain('OpenCode v2 required');
+  expect(host.textContent).toContain('OpenCode · OpenChamber');
 });
 
 test('a failed native readiness read falls back to the compatibility endpoint', async () => {
@@ -317,5 +289,5 @@ test('switching to a remote runtime cannot reuse an in-flight local readiness ve
   await act(async () => complete(true));
   expect(host.textContent).not.toContain('Application mounted');
   expect(requests).toHaveLength(1);
-  expect(host.textContent).toContain('OpenCode v2 required');
+  expect(host.textContent).toContain('OpenCode · OpenChamber');
 });

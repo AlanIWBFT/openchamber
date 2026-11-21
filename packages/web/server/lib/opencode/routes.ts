@@ -1,4 +1,4 @@
-import { readOpenCodeInfo, isSupportedOpenCodeVersion, forkRequired } from './compatibility.js';
+import { readOpenCodeInfo, forkRequired } from './compatibility.js';
 import { createSharedHealthProbe, parseHealthWaitMs, waitForOpenCodeHealth } from './health-wait.js';
 import 'express';
 import fs from 'fs';
@@ -147,7 +147,7 @@ export const registerOpenCodeRoutes = <Settings extends { opencodeBinary?: unkno
         };
       }
       const parsed = await readOpenCodeInfo(Response.json(rawInfo));
-      const healthy = parsed !== null && isSupportedOpenCodeVersion(parsed.version);
+      const healthy = parsed !== null;
       return { healthy, final: true, status: 200, body: { healthy } };
     } catch (error) {
       return {

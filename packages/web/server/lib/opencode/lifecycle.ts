@@ -1,4 +1,4 @@
-import { readOpenCodeInfo, readExternalOpenCodeVersion, isSupportedOpenCodeVersion, requireOpenCodeV2, UnsupportedOpenCodeVersionError, UnsupportedOpenCodeDistributionError } from './compatibility.js';
+import { readOpenCodeInfo, readOpenCodeCliVersion, UnsupportedOpenCodeDistributionError, forkRequired } from './compatibility.js';
 import { spawn, spawnSync } from 'node:child_process';
 import { accessSync, constants as fsConstants, statSync } from 'node:fs';
 import net from 'node:net';
@@ -193,10 +193,6 @@ const HEALTH_CHECK_RESULT_CACHE_MS = parsePositiveInt(process.env.OPENCHAMBER_OP
 const BOOTSTRAP_RETRY_DELAYS_MS = [5_000, 15_000, 30_000, 60_000];
 const EXTERNAL_READINESS_RECHECK_MS = 5_000;
 const OPENCODE_HEALTH_PATH = '/api/info';
-const OPENCODE_REQUIRED_MAJOR_VERSION = 2;
-
-const OPENCODE_VERSION_REQUIREMENT_DETAIL =
-  `OpenChamber requires OpenCode ${OPENCODE_REQUIRED_MAJOR_VERSION}.x`;
 
 const WARMUP_DIRECTORY_LIMIT = 1;
 const WARMUP_REQUEST_TIMEOUT_MS = 30000;
@@ -290,7 +286,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
     managedStartupTimeoutMs = 30_000,
     now = Date.now,
     topUpV1SessionMigration = topUpV1Migration,
-    checkOpenCodeBinary = requireOpenCodeV2,
+    checkOpenCodeBinary = readOpenCodeCliVersion,
     diagnosticJournal = serverDiagnosticJournal,
   } = deps;
 
@@ -805,16 +801,16 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
           failure: {
             class: 'invalid_response',
             detail: response.status === 404
-              ? `${OPENCODE_VERSION_REQUIREMENT_DETAIL}: this server has no /api/info, which every 2.x server serves.`
+              ? forkRequired
               : `Info endpoint returned HTTP ${response.status ?? 'unknown'}`,
           },
         };
       }
       const info = await readOpenCodeInfo(response);
-      if (!info || !isSupportedOpenCodeVersion(info.version)) {
+      if (!info) {
         return {
           healthy: false,
-          failure: { class: 'invalid_response', detail: OPENCODE_VERSION_REQUIREMENT_DETAIL },
+          failure: { class: 'invalid_response', detail: forkRequired },
         };
       }
       return { healthy: true, failure: null };
@@ -854,19 +850,14 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
         signal: controller.signal,
       });
       const info = await Promise.race([readOpenCodeInfo(response), aborted]);
-      return !controller.signal.aborted && info !== null && isSupportedOpenCodeVersion(info.version);
-    } catch {
+      return !controller.signal.aborted && info !== null;
+    } catch (error) {
+      if (error instanceof UnsupportedOpenCodeDistributionError) throw error;
       return false;
     } finally {
       clearTimeout(timeout);
       signal?.removeEventListener('abort', abortFromCaller);
     }
-  };
-
-  const readUnsupportedExternalOpenCodeVersion = async (port: number, origin: string | null | undefined) => {
-    if (!port || port <= 0) return null;
-    const version = await readExternalOpenCodeVersion(origin ?? `http://127.0.0.1:${port}`, getOpenCodeAuthHeaders());
-    return version && !isSupportedOpenCodeVersion(version) ? version : null;
   };
 
   const waitForOpenCodePort = async (timeoutMs = 15000) => {
@@ -895,7 +886,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
 
   const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const isBinaryRejected = (cause: unknown) => cause instanceof UnsupportedOpenCodeVersionError || optionalErrorFields(cause)?.code === 'OPENCODE_BINARY_INVALID';
+  const isBinaryRejected = (cause: unknown) => optionalErrorFields(cause)?.code === 'OPENCODE_BINARY_INVALID';
 
   const startOpenCodeOnce = async (attempt: number) => {
     assertNotShuttingDown();
@@ -1049,7 +1040,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
         syncToHmrState();
         return serverInstance;
       } catch (error) {
-        if (error instanceof UnsupportedOpenCodeDistributionError || error instanceof UnsupportedOpenCodeVersionError) throw error;
+        if (error instanceof UnsupportedOpenCodeDistributionError) throw error;
         lastError.cause = error;
         if (state.isShuttingDown || isBinaryRejected(error)
           || optionalErrorFields(error)?.code === 'OPENCHAMBER_OPENCODE_EXIT_UNCONFIRMED') {
@@ -1234,12 +1225,12 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
         }
 
         const info = await readOpenCodeInfo(response);
-        if (!info) throw new Error('The server did not identify itself as OpenCode 2.x. OpenChamber requires OpenCode 2.x; if the server runs an older OpenCode, upgrade it.');
-        if (!isSupportedOpenCodeVersion(info.version)) throw new UnsupportedOpenCodeVersionError(info.version);
+        if (!info) throw new UnsupportedOpenCodeDistributionError();
         state.isOpenCodeReady = true;
         state.lastOpenCodeError = null;
         return;
       } catch (error) {
+        if (error instanceof UnsupportedOpenCodeDistributionError) throw error;
         lastError.cause = error;
       } finally {
         if (timeout) {
@@ -1384,7 +1375,6 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
   const bootstrapOpenCodeAtStartup = async () => {
     const bootstrapStartedAt = performance.now();
     const bootstrapError: LifecycleFailure = { cause: null };
-    let unsupportedExternalVersion = null;
     recordStartupPerformance('opencode.bootstrap.start');
     try {
       syncFromHmrState();
@@ -1404,40 +1394,28 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
       assertNotShuttingDown();
       const existingProcessHealthy = await isOpenCodeProcessHealthy();
       assertNotShuttingDown();
+      const port = env.ENV_EFFECTIVE_PORT;
+      const origin = env.ENV_CONFIGURED_OPENCODE_HOST?.origin;
+      const selectExternal = (targetPort: number, ready: boolean) => {
+        state.openCodeBaseUrl = origin ?? null;
+        setOpenCodePort(targetPort);
+        state.isExternalOpenCode = true;
+        state.isOpenCodeReady = ready;
+        syncToHmrState();
+      };
       if (existingProcessHealthy) {
         console.log(`[HMR] Reusing existing OpenCode process on port ${state.openCodePort}`);
-      } else if (env.ENV_SKIP_OPENCODE_START && env.ENV_EFFECTIVE_PORT) {
-        const label = env.ENV_CONFIGURED_OPENCODE_HOST ? env.ENV_CONFIGURED_OPENCODE_HOST.origin : `http://localhost:${env.ENV_EFFECTIVE_PORT}`;
-        console.log(`Using external OpenCode server at ${label} (skip-start mode)`);
-        state.openCodeBaseUrl = env.ENV_CONFIGURED_OPENCODE_HOST?.origin ?? null;
-        setOpenCodePort(env.ENV_EFFECTIVE_PORT);
-        state.isOpenCodeReady = false;
-        state.isExternalOpenCode = true;
-        syncToHmrState();
-      } else if (env.ENV_EFFECTIVE_PORT && await probeExternalOpenCode(env.ENV_EFFECTIVE_PORT, env.ENV_CONFIGURED_OPENCODE_HOST?.origin)) {
+      } else if (env.ENV_SKIP_OPENCODE_START && port) {
+        selectExternal(port, false);
+      } else if (port && await probeExternalOpenCode(port, origin).catch(error => {
+        if (error instanceof UnsupportedOpenCodeDistributionError) selectExternal(port, false);
+        throw error;
+      })) {
         assertNotShuttingDown();
-        const label = env.ENV_CONFIGURED_OPENCODE_HOST ? env.ENV_CONFIGURED_OPENCODE_HOST.origin : `http://localhost:${env.ENV_EFFECTIVE_PORT}`;
-        console.log(`Auto-detected existing OpenCode server at ${label}`);
-        state.openCodeBaseUrl = env.ENV_CONFIGURED_OPENCODE_HOST?.origin ?? null;
-        setOpenCodePort(env.ENV_EFFECTIVE_PORT);
-        state.isOpenCodeReady = true;
-        state.isExternalOpenCode = true;
-        diagnosticJournal.record('external connected');
         state.lastOpenCodeError = null;
         state.openCodeNotReadySince = 0;
-        syncToHmrState();
-      } else if (env.ENV_EFFECTIVE_PORT && (unsupportedExternalVersion = await readUnsupportedExternalOpenCodeVersion(
-        env.ENV_EFFECTIVE_PORT,
-        env.ENV_CONFIGURED_OPENCODE_HOST?.origin,
-      ))) {
-        const label = env.ENV_CONFIGURED_OPENCODE_HOST ? env.ENV_CONFIGURED_OPENCODE_HOST.origin : `http://localhost:${env.ENV_EFFECTIVE_PORT}`;
-        console.warn(`OpenCode ${unsupportedExternalVersion} at ${label} is not supported by this OpenChamber`);
-        state.openCodeBaseUrl = env.ENV_CONFIGURED_OPENCODE_HOST?.origin ?? null;
-        setOpenCodePort(env.ENV_EFFECTIVE_PORT);
-        state.isExternalOpenCode = true;
-        diagnosticJournal.record('external unavailable');
-        syncToHmrState();
-        throw new UnsupportedOpenCodeVersionError(unsupportedExternalVersion);
+        selectExternal(port, true);
+        diagnosticJournal.record('external connected');
       } else {
         if (env.ENV_EFFECTIVE_PORT) {
           console.log(`Using OpenCode port from environment: ${env.ENV_EFFECTIVE_PORT}`);

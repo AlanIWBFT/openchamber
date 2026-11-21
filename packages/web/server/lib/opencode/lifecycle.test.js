@@ -554,7 +554,8 @@ describe('OpenCode lifecycle', () => {
     await runtime.bootstrapOpenCodeAtStartup();
 
     expect(spawnMock).not.toHaveBeenCalled();
-    expect(new Set(requested)).toEqual(new Set(['http://seamus:4095/api/info']));
+    expect(requested).toEqual(['http://seamus:4095/api/info']);
+    expect(runtime.testState.isExternalOpenCode).toBe(true);
     expect(runtime.testState.isOpenCodeReady).toBe(false);
     expect(runtime.testState.lastOpenCodeError).toContain('OpenChamber fork');
   });

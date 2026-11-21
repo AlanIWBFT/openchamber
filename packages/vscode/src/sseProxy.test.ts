@@ -8,7 +8,7 @@ const createManager = (): OpenCodeManager => ({
   stop: async () => {},
   restart: async () => {},
   refreshPluginSwitches: async () => ({ updated: true, requiresManualRestart: false }),
-  getCompatibility: async () => ({ state: 'compatible', version: '2.0.15', installation: 'managed', binary: null, minimumVersion: '2.0.15', canInstall: false }),
+  getCompatibility: async () => ({ state: 'compatible', version: '2.0.15', installation: 'managed', binary: null }),
   setWorkingDirectory: async (path) => ({ success: true, path }),
   getStatus: () => 'connected',
   getApiUrl: () => 'http://127.0.0.1:3902',

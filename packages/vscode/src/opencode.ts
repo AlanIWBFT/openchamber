@@ -1,5 +1,5 @@
 import { isRetiredBundledCliSetting } from '../../web/server/lib/opencode/bundled-opencode-server.js';
-import { checkOpenCodeCompatibility, readOpenCodeCliVersion, readExternalOpenCodeVersion, readOpenCodeInfo, isSupportedOpenCodeVersion, parseCliIdentity, forkRequired, type OpenCodeCompatibility } from '../../web/server/lib/opencode/compatibility.js';
+import { checkOpenCodeCompatibility, readOpenCodeCliVersion, readExternalOpenCodeVersion, readOpenCodeInfo, parseCliIdentity, forkRequired, type OpenCodeCompatibility } from '../../web/server/lib/opencode/compatibility.js';
 import * as vscode from 'vscode';
 import * as os from 'os';
 import * as path from 'path';
@@ -490,7 +490,7 @@ async function waitForReady(
         });
 
         const body = await readOpenCodeInfo(res);
-        if (body && isSupportedOpenCodeVersion(body.version)) {
+        if (body) {
           return { ok: true, baseUrl, elapsedMs: Date.now() - start, attempts, version: body.version };
         }
       } catch {
@@ -520,7 +520,6 @@ function assertSupportedOpenCodeBinary(binary: string): void {
   }
   if (result.status !== 0) throw new Error(forkRequired);
   const { version } = parseCliIdentity(result.stdout);
-  if (!isSupportedOpenCodeVersion(version)) throw new Error(`Unsupported OpenChamber fork version ${version}.`);
   getManagerOutputChannel().appendLine(`OpenCode fork version check passed: ${version} (${binary})`);
 }
 
@@ -735,7 +734,7 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
       }
       try {
         const detected = await readExternalOpenCodeVersion(configuredApiUrl, getOpenCodeAuthHeaders());
-        if (!detected || !isSupportedOpenCodeVersion(detected)) throw new Error(forkRequired);
+        if (!detected) throw new Error(forkRequired);
         version = detected;
         setStatus('connected');
       } catch (error) {

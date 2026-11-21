@@ -66,30 +66,14 @@ export const OpenCodeCompatibilityGate: React.FC<React.PropsWithChildren<{ enabl
   };
 
   if (!enabled || compatibility?.state !== 'incompatible') return <>{children}</>;
-  const external = compatibility.installation === 'external';
-  const bundled = compatibility.installation === 'bundled';
-  const minimum = compatibility.minimumVersion;
-  const outdated = Boolean(minimum && compatibility.version?.startsWith('2.'));
-  const descriptionKey = bundled
-    ? 'opencodeCompatibility.bundled'
-    : outdated
-      ? external ? 'opencodeCompatibility.outdatedExternal' : 'opencodeCompatibility.outdatedLocal'
-      : external ? 'opencodeCompatibility.external' : 'opencodeCompatibility.local';
   return (
     <ScrollableOverlay as="section" outerClassName="h-full min-h-0 bg-background" className="app-region-drag flex items-center justify-center px-6 py-10 text-foreground select-none" aria-labelledby={titleId} disableHorizontal>
       <div className="flex w-full max-w-sm flex-col items-center text-center">
         <OpenChamberLogo width={48} height={48} />
-        <h1 id={titleId} className="mt-6 text-xl font-semibold tracking-tight">{t(outdated ? 'opencodeCompatibility.outdatedTitle' : 'opencodeCompatibility.title')}</h1>
+        <h1 id={titleId} className="mt-6 text-xl font-semibold tracking-tight">OpenCode · OpenChamber</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground text-balance">
-          {compatibility.version ? t(descriptionKey, { version: compatibility.version, minimum: minimum ?? '' }) : t('onboarding.localSetup.description')}
+          {t('onboarding.localSetup.description')}
         </p>
-        {compatibility.version && (
-          <div className="mt-5 inline-flex items-center gap-2 rounded-md border border-border px-2.5 py-1 font-mono text-xs" aria-hidden>
-            <span className="text-muted-foreground">{compatibility.version}</span>
-            <Icon name="arrow-right" className="size-3.5 text-muted-foreground" />
-            <span className="text-foreground">{outdated ? `${minimum}+` : '2.x'}</span>
-          </div>
-        )}
         {compatibility.binary && (
           <p className="mt-2 max-w-full break-all font-mono text-xs text-muted-foreground select-text">{compatibility.binary}</p>
         )}

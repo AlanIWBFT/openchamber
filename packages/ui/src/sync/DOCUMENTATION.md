@@ -208,23 +208,7 @@ selected. The gate stays in the tree either way: switching it on or off never
 remounts the application, because a remount on every connect re-runs the
 mobile cold-launch re-probe.
 
-A confirmed incompatible version unmounts the application, removes the HTML
-splash, and shows recovery. There is no session/event polling behind that
-screen. Unknown versions and failed compatibility reads hand control
-to the existing connection recovery instead of claiming the CLI is v1.
-Runtime changes invalidate pending results and require a fresh check.
-
-Recovery offers the host's `canInstall` capability as Update to OpenCode v2.
-The install action uses `/api/opencode/install-v2` and waits for installation,
-version verification, and restart before reloading the UI. Check again refreshes
-a confirmed incompatible version without reporting an operation failure or restarting.
-Failed or unavailable checks preserve the known incompatible state and show an error.
-When v2 is confirmed, Check again invokes the existing `/api/config/reload`
-runtime operation before reloading the UI.
-Failures keep the recovery screen visible with retry and the installation guide.
-Bundled OpenCode points to an OpenChamber update; external runtimes and Windows
-use manual installation. Host-side rules enforce the capability independently
-of button visibility.
+A confirmed wrong distribution shows recovery. Failed reads keep the last confirmed state; switching runtime invalidates pending results. After the user selects a fork CLI, Check again uses the existing reload route. The desktop instance switcher stays available.
 
 ## Ownership map
 
