@@ -252,7 +252,6 @@ export const useSidebarBulkActions = (args: Args) => {
     }
     setBulkDeleteConfirm({ sessionIds, sessionCount: sessionIds.length, archivedBucket: hardDelete });
   }, [executeBulkDelete, selectedIds, showArchiveDialog, showDeletionDialog, setBulkDeleteConfirm, hasSelection]);
-  /** Archive active sessions; already-archived ones can only be deleted. */
   const handleBulkDelete = React.useCallback(() => requestBulkDestructive(bulkScopeIsArchived), [bulkScopeIsArchived, requestBulkDestructive]);
   const handleBulkArchive = React.useCallback(() => requestBulkDestructive(false), [requestBulkDestructive]);
   const handleBulkHardDelete = React.useCallback(() => requestBulkDestructive(true), [requestBulkDestructive]);

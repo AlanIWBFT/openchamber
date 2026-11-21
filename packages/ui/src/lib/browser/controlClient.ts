@@ -134,17 +134,11 @@ const registeredTabs = (): RegisteredTab[] => {
   return [...registered, ...(opener?.tabs() ?? []).filter((tab) => !ids.has(tab.tabId))];
 };
 
-/**
- * The tab an action that names none runs in, or null when the caller has
- * none it may use.
- */
 const defaultTabFor = (caller: Caller, ownedOnly = false): string | null => {
   const shownCandidate = shownTabId ? tabOf(shownTabId) : null;
   const shown = shownCandidate?.directory === shownDirectory ? shownCandidate : null;
   if (!caller.sessionId) {
     if (ownedOnly) return null;
-    // Unknown caller: the tab the user is looking at, else the most recently
-    // registered tab of the project on screen, views before sleeping tabs.
     if (shown) return shown.tabId;
     const onScreen = registeredTabs().filter((tab) => tab.directory === shownDirectory);
     const views = onScreen.filter((tab) => controllers.has(tab.tabId));
@@ -157,9 +151,6 @@ const defaultTabFor = (caller: Caller, ownedOnly = false): string | null => {
   const owned = registeredTabs().filter((tab) => tab.ownerSessionId === caller.sessionId);
   if (owned.length > 0) return owned[owned.length - 1].tabId;
 
-  // No tab of its own: the user's tab on screen, when it is in this session's
-  // project. "Look at what I have open" works; another session's page and
-  // another project's page are left alone.
   if (!ownedOnly && shown && shown.ownerSessionId === null && (!caller.directory || shown.directory === caller.directory)) {
     return shown.tabId;
   }
@@ -349,8 +340,6 @@ const handleRequest = async (request: BrowserControlRequest): Promise<void> => {
       : noTabForSessionError(caller) });
     return;
   }
-  // Falling back to the user's tab: a client holding the session's own tab
-  // must get the request, so it claims first.
   const usesOpener = isOpen && !targetTabId && opener !== null;
   if (!usesOpener && caller.sessionId && tabOf(targetTabId!)?.ownerSessionId !== caller.sessionId) {
     await new Promise((resolve) => setTimeout(resolve, UNKNOWN_TAB_CLAIM_DELAY_MS));

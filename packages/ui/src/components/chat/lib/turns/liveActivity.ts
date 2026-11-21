@@ -1,7 +1,8 @@
 import { isInvisibleText } from '@/lib/invisibleText';
 import { isUiBlockTextPart } from '@/lib/messages/uiBlockText';
 import { getLastConversationRecord, type TextPart, type ToolPart } from '@/lib/opencode/model';
-import { isExplorationPartDisplayReady, isShownInPlace, openChamberToolCall, renderedPage } from '@/lib/opencode/tools';
+import { isShownInPlace, openChamberToolCall, renderedPage } from '@/lib/opencode/tools';
+import { isExplorationPartDisplayReady } from '@/lib/opencode/exploration';
 import { isSessionNoticePart } from '@/lib/opencode/session-notices';
 import { runningCommandParts } from '@/lib/opencode/exec-metadata';
 import { shouldHideExecFollowUp } from '../../message/unifiedExec';
@@ -20,10 +21,6 @@ export function getTurnsWithLaterAssistant(turns: readonly TurnRecord[]): Set<st
 }
 
 export function getLiveFinalMessage(messages: readonly ChatMessageEntry[], hasLaterTurn = false): ChatMessageEntry | undefined {
-    // Do not use projectTurnSummary's intermediate-text fallback. Compaction,
-    // synthetic prompts, skill and shell records are their own message roles
-    // in v2 and can trail the final answer, so the lookup skips them instead
-    // of reading the last record.
     const last = getLastConversationRecord(messages);
     // A following turn moves this activity into history immediately, including
     // an optimistic prompt before the assistant responds. Preserve its prose
@@ -66,11 +63,6 @@ export function hasLiveActivity(turn: TurnRecord, showReasoning: boolean): boole
 
 export type ShownPart = ToolPart | TextPart;
 
-/**
- * A form or secret card that asked the user and no longer waits: answered,
- * answered in the chat instead, or stopped. Like the question tool's card it
- * is a step from then on, so a collapsed Activity folds it.
- */
 export const isSettledAsk = (part: ToolPart): boolean => (
     part.state.status !== 'running' && part.state.status !== 'pending'
     && openChamberToolCall(part.tool, part.state.input)?.awaitsAnswer === true

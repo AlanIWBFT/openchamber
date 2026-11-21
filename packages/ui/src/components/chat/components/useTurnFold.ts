@@ -12,15 +12,8 @@ export const finalActivityContentId = (turnId: string) => `turn-final-activity-$
  * answer, whose own non-text parts fold with the rest.
  */
 export const useTurnFold = (turn: TurnRecord, hasLaterAssistant: boolean, expanded: boolean, finalMessageId: string | undefined) => {
-    // Named by the rows (`timelineRows.ts`), which are built from the turn's
-    // record: a live turn's newest parts may already finish an answer the
-    // record does not have yet, and the answer has no row of its own until it does.
     const { finalMessage, activityMessages } = React.useMemo(() => projectFoldMessages(turn, finalMessageId), [turn, finalMessageId]);
     const settled = Boolean(finalMessage) || hasLaterAssistant;
-    // A page the agent showed is never folded away: it sits below the fold,
-    // above the answer once one arrives, and stays there in a turn that ended
-    // without one.
-    // The final answer's own text is the answer, so it is never hoisted.
     const pages = React.useMemo(() => getShownPages(turn.assistantMessages, turn.assistantMessages.find((message) => message.info.id === finalMessageId)), [turn.assistantMessages, finalMessageId]);
     return { finalMessage, activityMessages, settled, isExpanded: !settled || expanded, pages };
 };

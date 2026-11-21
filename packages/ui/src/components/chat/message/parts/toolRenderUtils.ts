@@ -10,7 +10,6 @@ export const isExpandableTool = (toolName: ToolName): boolean => {
     return !isStaticTool(toolName);
 };
 
-export const isStandaloneTool = (toolName: ToolName): boolean => normalizeToolName(toolName) === 'subagent';
 export const isStaticTool = (toolName: ToolName): boolean => isNavigationTool(toolName);
 export const countExplorationTools = (toolNames: ToolName[]) => {
     return toolNames.reduce<{ search: number; read: number }>((result, toolName) => {

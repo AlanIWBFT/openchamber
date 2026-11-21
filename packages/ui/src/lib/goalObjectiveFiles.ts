@@ -7,7 +7,6 @@ const ObjectiveResponseSchema = z.object({ content: z.string() });
 const objectiveUrl = (sessionId: string): string =>
   `/api/goals/objective/${encodeURIComponent(sessionId)}`;
 
-/** Write the session's objective file; false when the write did not land. */
 export async function writeGoalObjectiveFile(sessionId: string, content: string, options: { ifAbsent?: boolean } = {}): Promise<boolean> {
   try {
     const response = await runtimeFetch(objectiveUrl(sessionId), {

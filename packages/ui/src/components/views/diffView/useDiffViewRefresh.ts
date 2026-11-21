@@ -8,7 +8,7 @@ import type { useGitStore } from '@/stores/useGitStore';
 interface DiffViewRefreshOptions {
     effectiveDirectory: string | undefined;
     setActiveDirectory: ReturnType<typeof useGitStore.getState>['setActiveDirectory'];
-    ensureStatus: ReturnType<typeof useGitStore.getState>['ensureStatus'];
+    ensureStatus: ReturnType<typeof useGitStore.getState>['ensurePassiveStatus'];
     git: GitAPI;
     runtimeKey: string;
     pendingScrollAnchorRestoreRef: React.RefObject<DiffScrollAnchor | null>;

@@ -67,8 +67,7 @@ export const markSessionsDone = async (
   write: typeof setSessionWorkState = setSessionWorkState,
 ): Promise<{ doneIds: string[]; failedIds: string[] } | null> => {
   const isCurrentRuntime = captureRuntimeInstance();
-  const settled = settleRunningOperatorChildren(sessions.map((session) => session.id));
-  if (settled !== true && !await settled) return { doneIds: [], failedIds: [] };
+  if (!await settleRunningOperatorChildren(sessions.map((session) => session.id))) return { doneIds: [], failedIds: [] };
   const outcomes = await mapWithConcurrency([...sessions], MARK_DONE_CONCURRENCY, async (session) => {
     if (!isCurrentRuntime()) return 'stale';
     try {

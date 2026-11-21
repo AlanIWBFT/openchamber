@@ -31,10 +31,6 @@ interface TurnFoldProps {
     renderMessage: (message: ChatMessageEntry) => React.ReactNode;
 }
 
-/**
- * The fold's header. Folded, it also draws what stays in view: a working
- * turn's latest steps, then the pages it showed and the steps after them.
- */
 export function TurnFold({ turn, hasLaterAssistant, expanded, isWorking, streamingMessageId, streamPhase, finalMessageId, onToggle, renderMessage }: TurnFoldProps) {
     const { t } = useI18n();
     const { finalMessage, activityMessages } = useTurnFold(turn, hasLaterAssistant, expanded, finalMessageId);
@@ -49,8 +45,6 @@ export function TurnFold({ turn, hasLaterAssistant, expanded, isWorking, streami
     const handlePointerDown = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
         touchActivation.current = event.pointerType === 'touch';
     }, []);
-    // Folded, a working turn shows only its latest rows (the header counts
-    // the earlier ones) and a settled one shows none.
     const showReasoningTraces = useUIStore((state) => state.showReasoningTraces);
     const preview = React.useMemo(() => expanded ? null
         : projectLiveActivityPreview({ ...turn, assistantMessages: activityMessages }, showReasoningTraces),
@@ -68,8 +62,6 @@ export function TurnFold({ turn, hasLaterAssistant, expanded, isWorking, streami
     const previewRef = React.useRef<HTMLDivElement>(null);
     useActivityRowGlide(rowsRef, hiddenRows, !settled && !expanded);
     useLiveRowsFloor(previewFloorRef, previewRef, !settled && !expanded);
-    // No diff parsing at token frequency. The report is only shown once the
-    // turn settles; later authoritative tool metadata can refine it.
     const summary = React.useMemo(() => settled ? summarizeLiveActivity(turn.assistantMessages) : null,
         [settled, turn.assistantMessages]);
     const fileLabel = summary && summary.files > 0
@@ -199,7 +191,6 @@ function TurnPage({ part }: { part: ShownPart }) {
     );
 }
 
-/** The pages row of an opened fold. */
 export function TurnPagesRow({ turn, pageId }: { turn: TurnRecord; pageId?: string }) {
     const pages = React.useMemo(() => getShownPages(turn.assistantMessages).filter((part) => !pageId || part.id === pageId), [turn.assistantMessages, pageId]);
     return pages.length > 0 ? <TurnPages pages={pages} /> : null;

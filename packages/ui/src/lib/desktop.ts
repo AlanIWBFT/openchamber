@@ -619,11 +619,6 @@ export const completeDesktopHostAction = async (id: number, committed: boolean):
   await invokeDesktop('desktop_complete_host_action', { id, committed });
 };
 
-/**
- * Host work the desktop shell hands to the main window: a pairing link the user
- * confirmed (`openchamber://connect`), or a relay-capable host to activate
- * (`openchamber://host/<id>`). Taking them removes them.
- */
 export const takePendingDesktopHostActions = async (): Promise<PendingDesktopHostAction[]> => {
   if (!isDesktopShell()) return [];
   try {

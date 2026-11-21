@@ -30,8 +30,6 @@ const collectRunWorkSessions = (laneNodes: readonly SessionNode[]): Session[] =>
 export function useRunWork(run: MultiRunSummary, laneNodes: readonly SessionNode[], onNavigate: () => void) {
   const { t } = useI18n();
   const { confirmArchive, dialog: archiveDialog } = useRunArchiveConfirmation();
-  // Selected while the screen shows the run: its overview, or one of its
-  // sessions (a click opens the fusion), as a worktree's row is.
   const overviewKey = useUIStore((state) => state.runOverviewKey);
   const showsMember = useSessionUIStore((state) => state.currentSessionId !== null && run.memberIds.includes(state.currentSessionId));
   const isActive = overviewKey === run.key || (overviewKey === null && showsMember);

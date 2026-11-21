@@ -1625,8 +1625,6 @@ class OpencodeService {
     return dedupeById(lists)
   }
 
-  // -------------------------------------------------------------------------
-  // Shell commands the agent started (background commands)
   async listRunningExecs(): Promise<RunningExec[]> {
     return runningExecsSchema.parse(await call("session.exec.list", () => this.getSdkClient().session.exec.list()))
   }
@@ -1649,7 +1647,6 @@ class OpencodeService {
     }))
     if (result.failed > 0) throw new Error(`Failed to stop ${result.failed} exec commands`)
   }
-  // -------------------------------------------------------------------------
 
   async listRunningImageJobs(): Promise<RunningImageJob[] | null> {
     try {

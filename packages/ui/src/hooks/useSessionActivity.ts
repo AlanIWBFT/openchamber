@@ -5,7 +5,6 @@ import { formTurnHold, useRecoverableQuestionsStore } from '@/sync/recoverable-q
 import { readUnloadedFormToolLinks } from '@/sync/session-actions';
 import { useDirectorySync, useSessionStatus, useSessionStatusSnapshotReady, useSessionMessagesSelector, useSessionPermissions } from '@/sync/sync-context';
 
-// Mirrors OpenCode SessionStatus: busy|retry|idle.
 type SessionActivityPhase = 'idle' | 'busy' | 'retry';
 
 const selectHasPendingAssistant = (messages: Message[]): boolean => (
@@ -118,14 +117,12 @@ export function useSessionActivity(sessionId: string | null | undefined, directo
   const formHoldsTurn = useDirectorySync(React.useCallback((state) => (
     state.form[sessionId ?? '']?.some((form) => formTurnHold(form, state.part, releasedForms) !== 'released') ?? false
   ), [sessionId, releasedForms]), directory);
-  // Forms linked into history not loaded here: read them now, so the phase is right before the user sends.
   const unloadedForms = useDirectorySync(React.useCallback((state) => (
     (state.form[sessionId ?? ''] ?? [])
       .filter((form) => formTurnHold(form, state.part, releasedForms) === 'unknown')
       .map((form) => form.id)
       .join('\n')
   ), [sessionId, releasedForms]), directory);
-  // A refresh of the forms (reconnect, materialization) is a new array: a read that failed is retried then, not in a loop.
   const sessionForms = useDirectorySync(React.useCallback((state) => state.form[sessionId ?? ''], [sessionId]), directory);
   React.useEffect(() => {
     if (sessionId && unloadedForms) readUnloadedFormToolLinks(sessionId);

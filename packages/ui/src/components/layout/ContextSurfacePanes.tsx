@@ -286,14 +286,6 @@ export const ContextSurfacePanes: React.FC = () => {
   const liveBrowserTabLimit = useUIStore((state) => state.liveBrowserTabLimit);
   const agentBrowserSharesLogins = useUIStore((state) => state.agentBrowserSharesLogins);
 
-  // Lets an agent's browser.open create its own tab; the id goes back to the
-  // agent so it keeps working there. Registered here because opening a tab is panel state, not
-  // something the browser view itself can do before it exists. Background on
-  // purpose: an agent working a page must not pop the panel open or steal the
-  // active tab while the user reads something else, and that includes taking
-  // a screenshot of it. The tab appears in the strip of the calling session's
-  // project, which is not always the project on screen, and belongs to that
-  // session.
   React.useEffect(() => registerBrowserOpener({
     open: (url, context) => {
       const directory = context.directory ? normalizeContextPanelDirectoryKey(context.directory) : directoryKey;

@@ -177,7 +177,6 @@ export function useWorktreeWork({ group, projectId, collapsed, onNavigate }: Arg
     })) return;
     await finish(true);
   };
-  /** Done or Track: present while the feature is on, the work is not pinned and there is a session to track. */
   const workAction = sessionWorkEnabled && !pinned && (inWork || sessions.length > 0);
   const toggleWork = (): void => {
     if (inWork) {

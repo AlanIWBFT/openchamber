@@ -11,7 +11,6 @@ const asRecord = (value: JsonValue | undefined): Metadata | null => {
   return parsed.success ? parsed.data : null;
 };
 
-/** Source-owned keys removed from the fork; everything else is kept as copied. */
 export function withoutSourceOwnedLinks(metadata: Metadata, inherited: Metadata = metadata): Metadata {
   const namespace = asRecord(metadata.openchamber);
   if (!namespace) return metadata;

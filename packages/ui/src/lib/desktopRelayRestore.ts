@@ -96,16 +96,11 @@ export const restoreDesktopRelayRuntime = async (
   if (!isElectronShell()) return false;
   const config = await desktopHostsGet().catch(() => null);
   if (!config) return false;
-  // An explicit target (a "new window for host X") wins over the default-host
-  // relaunch logic.
   const hostId = targetHostId || (config.defaultHostId !== 'local' ? config.defaultHostId : null);
   if (!hostId) return false;
   const host = config.hosts.find((entry) => entry.id === hostId);
   if (!host?.relay) return false;
-  // Must match runtimeKeyForHost() in DesktopHostSwitcher so switch/resolve agree.
   const runtimeKey = `host:${host.id}`;
-  // `reconnectActive`: the host was just paired again and carries a new token,
-  // so an already active runtime for it must switch over as well.
   if (getRuntimeKey() === runtimeKey && !options?.reconnectActive) return false;
 
   const switchToDirect = (url: string) => {

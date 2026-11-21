@@ -38,7 +38,6 @@ const useTreeIds = (sessionId: string, workingSessionIds: ReadonlySet<string>): 
   return React.useMemo(() => new Set(treeKey ? treeKey.split('\n') : []), [treeKey]);
 };
 
-/** Commands of this session and of its subagents. */
 const useSessionTreeShells = (sessionId: string): BackgroundCommand[] => {
   const shellSessionIds = useBackgroundShellsStore((state) => state.sessionIds);
   const execSessionIds = useRunningExecsStore((state) => state.sessionIds);
@@ -78,7 +77,6 @@ const useStopShells = (rootSessionId: string, rootDirectory: string | undefined)
   const [stoppingIds, setStoppingIds] = React.useState<ReadonlySet<string>>(() => new Set());
 
   const stop = React.useCallback((shells: readonly BackgroundCommand[]) => {
-    // A command its chat row is stopping already gets no second note.
     const pending = shells.filter((shell) => !stoppingIds.has(shell.id) && !isForegroundShellStopping(shell.id));
     if (pending.length === 0) return;
     setStoppingIds((current) => new Set([...current, ...pending.map((shell) => shell.id)]));
@@ -103,8 +101,6 @@ const useStopShells = (rootSessionId: string, rootDirectory: string | undefined)
       if (execs.length) operations.push(opencodeClient.stopRunningExecs({ sessionID, sessionDirectory, commands: execs })
         .then(() => refreshRunningExecs(() => opencodeClient.listRunningExecs())));
       Promise.all(operations).catch(() => {
-        // A command whose kill went through leaves the list on its own; the
-        // rest become stoppable again.
         setStoppingIds((current) => {
           const next = new Set(current);
           for (const shell of [first, ...rest]) next.delete(shell.id);
@@ -205,8 +201,6 @@ export const BackgroundShellsStrip: React.FC<BackgroundShellsStripProps> = React
   const listId = React.useId();
   const { stoppingIds, stop } = useStopShells(sessionId ?? '', directory);
   const stopOne = React.useCallback((shell: BackgroundCommand) => stop([shell]), [stop]);
-  // Stops started from a command's chat row count too, so Stop all is off
-  // while it would stop nothing and comes back when such a stop fails.
   const foregroundStoppingIds = useForegroundShellStoppingIds();
 
   const count = shells.length + images.length;
