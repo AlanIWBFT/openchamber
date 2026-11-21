@@ -476,9 +476,8 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
           windowsHide: true,
           timeout: Math.max(1, remaining()),
         });
-      } catch {
-      }
-      try { if (!hasChildProcessExited(child)) child.kill('SIGKILL'); } catch {}
+      } catch { void 0; }
+      signalProcessTree('SIGKILL');
     };
 
     if (remaining() === 0) {
@@ -501,7 +500,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
   const closeManagedOpenCodeChild = async (child: ChildProcess, options: { deadline?: number } = {}) => {
     const pid = child?.pid;
     let graceful = hasChildProcessExited(child);
-    const deadline = typeof options.deadline === 'number' && Number.isFinite(options.deadline)
+    const deadline = options.deadline !== undefined && Number.isFinite(options.deadline)
       ? options.deadline
       : Date.now() + MANAGED_SHUTDOWN_TIMEOUT_MS;
     const remaining = () => Math.max(0, deadline - Date.now());
@@ -550,15 +549,12 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
     state.openCodeNotReadySince = Date.now();
     syncToHmrState();
     const owned = new Set(ownedServers);
-    // Include a ready handle inherited through HMR, but never an external server.
     if (state.openCodeProcess && !env.ENV_SKIP_OPENCODE_START && !state.isExternalOpenCode) owned.add(state.openCodeProcess);
     if (owned.size === 0) {
       managedShutdownPromise = Promise.resolve({ graceful: false });
       return managedShutdownPromise;
     }
-    // The same handle owns startup, restart cleanup and application shutdown.
-    // Its close promise includes EOF, any force phase and exit confirmation.
-    const deadline = typeof options.deadline === 'number' && Number.isFinite(options.deadline) ? options.deadline : Date.now() + 35_000;
+    const deadline = options.deadline !== undefined && Number.isFinite(options.deadline) ? options.deadline : Date.now() + 35_000;
     managedShutdownPromise = Promise.allSettled([...owned].map((server) => Promise.resolve().then(() => server.close({ deadline })))).then((results) => {
       const failed = results.find((result) => result.status === 'rejected');
       if (failed) throw failed.reason;
@@ -1101,18 +1097,14 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
   const restartOpenCode = async (reason = 'managed-restart', { whileStopped }: { whileStopped?: () => Promise<void> } = {}) => {
     if (state.isShuttingDown) return;
     if (whileStopped && state.isExternalOpenCode) throw new Error('An external OpenCode server cannot be stopped by OpenChamber.');
-    // Recheck both owners after every wait: several callers can be released
-    // by the same retry, but only one may claim the next restart.
     while (state.currentRestartPromise || bootstrapRetryRun) {
       if (state.currentRestartPromise) {
         if (!whileStopped) {
           await state.currentRestartPromise;
           return;
         }
-        // A restart already in flight never ran this task; restart once more for it.
         await state.currentRestartPromise.catch(() => {});
       } else {
-        // The retry may have read the old configuration, so still restart after it.
         await bootstrapRetryRun;
       }
       if (state.isShuttingDown) return;
@@ -1165,7 +1157,7 @@ export const createOpenCodeLifecycleRuntime = (deps: OpenCodeLifecycleDependenci
           await state.openCodeProcess.close();
         } catch (error) {
           console.warn('Error closing OpenCode process:', error);
-          if (error?.code === 'OPENCHAMBER_OPENCODE_EXIT_UNCONFIRMED') throw error;
+          if (errorFields(error).code === 'OPENCHAMBER_OPENCODE_EXIT_UNCONFIRMED') throw error;
         }
         state.openCodeProcess = null;
         syncToHmrState();

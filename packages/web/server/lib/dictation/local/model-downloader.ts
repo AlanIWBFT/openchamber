@@ -38,7 +38,7 @@ async function hasRequiredFiles(modelDir: string, requiredFiles: string[]) {
 }
 
 async function downloadToFile(url: string, outputPath: string, onProgress: ModelDownloadProgress | undefined, signal?: AbortSignal) {
-  const res = await fetch(url, { signal });
+  const res = await fetch(url, { signal: signal ?? null });
   if (!res.ok) {
     throw new Error(`Failed to download ${url}: ${res.status} ${res.statusText}`);
   }
@@ -90,7 +90,7 @@ async function runArchiveTool(command: string, args: string[], describeFailure: 
       stderr = (stderr + chunk.toString()).slice(-4096);
     });
     const abort = () => {
-      try { child.kill('SIGKILL'); } catch {}
+      try { child.kill('SIGKILL'); } catch { return; }
     };
     const cleanup = () => signal?.removeEventListener('abort', abort);
     signal?.addEventListener('abort', abort, { once: true });

@@ -1483,9 +1483,6 @@ const startLocalServer = async () => {
   const storedPort = Number.isInteger(settings.desktopLocalPort) && settings.desktopLocalPort > 0 && settings.desktopLocalPort <= 65535
     ? settings.desktopLocalPort
     : null;
-  // When the user enables "Desktop Network Access" we bind on all interfaces
-  // so phones/tablets on the same Wi-Fi can reach the app. UI shows a clear
-  // warning and persists the flag via /api/config/settings.
   const lanAccessEnabled = settings.desktopLanAccessEnabled === true;
   setDesktopKeepAwakeActive(settings.desktopKeepAwakeEnabled === true);
   const desktopUiPassword = typeof settings.desktopUiPassword === 'string' ? settings.desktopUiPassword.trim() : '';
@@ -1906,12 +1903,6 @@ const readDeepLinkQueryParam = (raw, name) => {
   }
 };
 
-// Host work the main window's renderer does itself (desktop_take_pending_host_actions):
-// redeeming a pairing link the user confirmed, and activating a host with a
-// relay leg. Both need the E2EE relay client, which lives in the renderer; it
-// probes the direct address first and falls back to the tunnel, like the host
-// switcher. Pairing links carry the one-time secret: they leave this queue only
-// to that renderer and are never logged.
 const pendingHostActions = createDesktopHostActionQueue();
 
 const queueHostAction = (action, onHostSwitch) => {

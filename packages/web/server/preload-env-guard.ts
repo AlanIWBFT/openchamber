@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { basename } from 'node:path';
 
-const GUARD_FILE_NAME = new URL(import.meta.url).pathname.split('/').at(-1)!;
+const GUARD_FILE_NAME = basename(new URL(import.meta.url).pathname);
 
 const findExternalSourceFrame = (stack: string | undefined) => {
   for (const rawFrame of String(stack || '').split('\n').slice(1)) {
@@ -19,7 +20,7 @@ interface Access { operation: string; key: string; frame: string }
 interface CaptureOptions {
   processLike?: { env: NodeJS.ProcessEnv };
   shouldCapture?: () => boolean;
-  settle?: (() => Promise<unknown>) | null;
+  settle?: (() => Promise<void>) | null;
 }
 
 export const capturePreloadEnvironmentAccesses = async <T>(
@@ -53,7 +54,8 @@ export const capturePreloadEnvironmentAccesses = async <T>(
   const guardedEnv = new Proxy(originalEnv, {
     get(target, property) {
       record('read', property);
-      return Reflect.get(target, property);
+      // SAFETY: The Proxy forwards the original key (including symbols) and returns the result untouched. ProcessEnv only declares string keys.
+      return target[property as keyof typeof target];
     },
     has(target, property) {
       record('check', property);

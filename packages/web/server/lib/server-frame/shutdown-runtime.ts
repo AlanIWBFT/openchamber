@@ -50,7 +50,7 @@ interface ShutdownDependencies {
   setTerminalRuntime: (value: null) => void;
   getMessageStreamRuntime: () => Close | null;
   setMessageStreamRuntime: (value: null) => void;
-  stopManagedOpenCode: (options: Pick<ShutdownOptions, 'deadline'>) => Promise<unknown>;
+  stopManagedOpenCode: (options: Pick<ShutdownOptions, 'deadline'>) => Promise<{ graceful: boolean }>;
   stopPermissionAutoAccept?: Cleanup;
   permissionAutoAcceptRuntime?: { shutdown: Cleanup };
   globalMessageStreamHub?: Stop;
@@ -176,11 +176,11 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
     syncToHmrState();
     console.log('Starting graceful shutdown...');
     const exitProcess = isBoolean(options.exitProcess) ? options.exitProcess : getExitOnShutdown();
-    const deadline = typeof options.deadline === 'number' && Number.isFinite(options.deadline)
+    const deadline = options.deadline !== undefined && Number.isFinite(options.deadline)
       ? options.deadline
       : Date.now() + shutdownTimeoutMs;
     const remaining = () => Math.max(0, deadline - Date.now());
-    const drain = async (name: string, operation: () => unknown) => {
+    const drain = async (name: string, operation: Cleanup) => {
       let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
@@ -219,9 +219,6 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
       async () => {
         autoReviewRuntime?.stop?.();
         if (!autoReviewRuntime?.flush) return;
-        // Stop only disarms the loop. Join in-flight Stop work and its writes so
-        // restart cannot mistake an unpersisted stopping run for a running one.
-        // Share the host budget: a stuck send must not hold daemon exit forever.
         await drain('Auto-review', () => autoReviewRuntime.flush?.());
       },
       () => prWatchRuntime?.stop?.(),
@@ -237,8 +234,6 @@ export const createGracefulShutdownRuntime = (dependencies: ShutdownDependencies
       () => forceStopNgrokTunnels?.(),
       stopAllGuestServices,
     ];
-    // Close each runtime's admission before yielding; asynchronous drains must
-    // not delay starting the managed CLI's own deadline-bound cleanup.
     const cleanupPromises = cleanupOperations.map((cleanup) => {
       try {
         return Promise.resolve(cleanup());

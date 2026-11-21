@@ -19,7 +19,7 @@ let ngrokShutdownRequested = false;
 export function forceStopNgrokTunnels() {
   ngrokShutdownRequested = true;
   for (const child of activeNgrokProcesses) {
-    try { child.kill('SIGKILL'); } catch { /* already gone */ }
+    try { child.kill('SIGKILL'); } catch { continue; }
   }
 }
 

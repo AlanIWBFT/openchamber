@@ -528,6 +528,7 @@ describe('graceful shutdown runtime', () => {
     const backend = vi.fn(async () => {});
     const runtime = createRuntime(null, {
       workflowRuntime: { shutdown: () => report.promise },
+      shutdownTimeoutMs: 35_000,
       memoryDreaming: { stop: () => dreaming.promise }, stopManagedOpenCode: backend,
     });
     const closing = runtime.gracefulShutdown();

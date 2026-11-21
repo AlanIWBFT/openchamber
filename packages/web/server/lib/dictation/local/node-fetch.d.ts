@@ -5,5 +5,5 @@ export type NodeFetchResponse = Omit<Response, 'body'> & {
 };
 
 export interface NodeFetch {
-  (input: string): Promise<NodeFetchResponse>;
+  (input: string, init?: RequestInit): Promise<NodeFetchResponse>;
 }

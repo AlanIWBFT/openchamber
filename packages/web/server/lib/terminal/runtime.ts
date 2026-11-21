@@ -1027,8 +1027,8 @@ export function createTerminalRuntime({
     for (const session of sessions.values()) killProcess(session.process, true);
     sessions.clear();
     if (!wsServer) return;
-    for (const client of wsServer.clients) client.terminate();
-    try { wsServer.close(); } catch { /* already closed */ }
+    for (const client of wsServer.clients ?? []) client.terminate();
+    try { wsServer.close(); } catch { void 0; }
     wsServer = null;
   };
   return { shutdown, forceShutdown, listTerminals, readTerminal };

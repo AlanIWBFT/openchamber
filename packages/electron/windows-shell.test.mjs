@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { Arch } from 'electron-builder';
 import afterPack from './scripts/after-pack.cjs';
 import { createInjectedProxyEnvironment, loadWindowsShell, readWindowsEnvironmentSnapshot } from './windows-shell.mjs';
 
@@ -198,13 +199,14 @@ test('Windows shell rejects missing directories and never executes a file', wind
 test('packaging includes a loadable matching Windows shell module and rejects missing or mismatched output', windowsOnly, async (t) => {
   const appOutDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-shell-package-'));
   t.after(() => fs.rm(appOutDir, { recursive: true, force: true }));
-  const context = { electronPlatformName: 'win32', appOutDir, packager: { appInfo: { productFilename: 'OpenChamber' } } };
+  const context = { electronPlatformName: 'win32', arch: Arch[process.arch], appOutDir, packager: { appInfo: { productFilename: 'OpenChamber' } } };
   const resourcesPath = path.join(appOutDir, 'resources');
   const web = 'node_modules/@openchamber/web';
-  const helpers = ['credential-helper.js', 'ssh-wrapper.js', 'repository-credential-helper.js'].map((name) => `${web}/server/lib/git/${name}`);
-  const unpackedFiles = [...helpers, `node_modules/7zip-bin/win/${process.arch}/7za.exe`];
+  const helpers = ['credential-helper', 'ssh-wrapper', 'repository-credential-helper'].flatMap((name) =>
+    ['', '-runtime'].map((suffix) => `${web}/build/server/lib/git/${name}${suffix}.js`));
+  const unpackedFiles = [...helpers, `${web}/build/server/built-in-extensions/registry.json`, `node_modules/7zip-bin/win/${process.arch}/7za.exe`];
   const files = ['dist-bundle/entry.mjs', 'dist-bundle/main.mjs', 'dist-bundle/early-startup.mjs', 'preload.mjs', 'browser-panel-preload.cjs', 'package.json',
-    `${web}/package.json`, `${web}/server/index.js`, ...unpackedFiles];
+    `${web}/package.json`, `${web}/build/server/index.js`, `${web}/build/server/index.js.map`, `${web}/build/bin/cli.js`, ...unpackedFiles];
   const archive = { files: {} };
   for (const file of files) {
     const segments = file.split('/');

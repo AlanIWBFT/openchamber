@@ -25,7 +25,7 @@ let cloudflareShutdownRequested = false;
 export function forceStopCloudflareTunnels() {
   cloudflareShutdownRequested = true;
   for (const child of activeCloudflaredProcesses) {
-    try { child.kill('SIGKILL'); } catch { /* already gone */ }
+    try { child.kill('SIGKILL'); } catch { continue; }
   }
 }
 

@@ -32,6 +32,7 @@ const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
   spawnMock.mockReset();
   spawnSyncMock.mockReset();
   recordStartupPerformanceMock.mockReset();
@@ -1485,7 +1486,7 @@ describe('OpenCode lifecycle', () => {
     const child = createMockChild();
     spawnMock.mockImplementationOnce(() => {
       queueMicrotask(() => {
-        child.stdout.emit('data', 'server listening on http://127.0.0.1:45678\n');
+        child.stdout.emit('data', '{"url":"http://127.0.0.1:45678"}\n');
       });
       return child;
     });
@@ -1501,7 +1502,7 @@ describe('OpenCode lifecycle', () => {
     const [binary, args, options] = spawnMock.mock.calls[0];
 
     expect(binary).toBe('/Applications/OpenChamber.app/Contents/MacOS/OpenChamber');
-    expect(args).toEqual([entry, 'serve', ...(process.platform === 'win32' ? ['--stdio'] : []), '--hostname', '127.0.0.1', '--port', '45678']);
+    expect(args.slice(args.indexOf(entry))).toEqual([entry, 'serve', '--stdio', '--hostname', '127.0.0.1', '--port', '45678']);
     expect(options.env.ELECTRON_RUN_AS_NODE).toBe('1');
     expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
 
@@ -1816,6 +1817,7 @@ describe('OpenCode lifecycle', () => {
   });
 
   it('tops up the v1 session migration before spawning managed OpenCode', async () => {
+    vi.stubEnv('OPENCHAMBER_RUNTIME', 'web');
     const calls = [];
     const topUpV1SessionMigration = vi.fn(() => {
       calls.push('top-up');
