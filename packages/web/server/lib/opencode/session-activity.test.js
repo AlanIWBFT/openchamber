@@ -209,11 +209,11 @@ describe('running background jobs', () => {
     expect((await probe.fetchRunningBackgroundJobs('root')).map((job) => job.startedAt)).toEqual([now - 60 * 1000]);
   });
 
-  it('tells an OpenCode without the route from one that could not answer', async () => {
+  it('treats missing and failed required routes as unknown activity', async () => {
     expect(await probeAnswering(() => new Response(null, { status: 404 })).fetchRunningExecs()).toBeNull();
     expect(await probeAnswering(() => new Response(null, { status: 403 })).fetchRunningExecs()).toBeNull();
     expect(await probeAnswering(() => Response.json({ data: {} })).fetchRunningExecs()).toBeNull();
-    expect(await probeAnswering(() => new Response(null, { status: 404 })).fetchRunningBackgroundJobs('root')).toBeUndefined();
+    expect(await probeAnswering(() => new Response(null, { status: 404 })).fetchRunningBackgroundJobs('root')).toBeNull();
     const gone = () => Response.json({ _tag: 'SessionNotFoundError', message: 'Session not found' }, { status: 404 });
     expect(await probeAnswering(gone).fetchRunningBackgroundJobs('root')).toBeNull();
     expect(await probeAnswering(() => new Response('down', { status: 503 })).fetchRunningBackgroundJobs('root')).toBeNull();

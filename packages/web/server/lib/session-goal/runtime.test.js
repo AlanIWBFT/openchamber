@@ -76,8 +76,7 @@ afterEach(() => {
  * `content[]`, `model`, `finish`, `tokens`), `{ location, data }` envelopes,
  * `/api/session/active` for busy state, and the three continuation calls.
  */
-// Without `jobs` it is an OpenCode before 2.2.6, which has no job list.
-const v2OpenCode = ({ messages, active = {}, childPages = [[]], childrenStatus = 200, shells = [], shellStatus = 200, jobs, execs = [], execStatus = 200, lineages = {}, sessionRecord = {}, sessionRead = async () => {} }) => {
+const v2OpenCode = ({ messages, active = {}, childPages = [[]], childrenStatus = 200, jobs = [], jobStatus = 200, execs = [], execStatus = 200, lineages = {}, sessionRecord = {}, sessionRead = async () => {} }) => {
   const calls = [];
   const json = (data, status = 200) => new Response(JSON.stringify({ location: { directory: '/repo' }, data }), {
     status,
@@ -97,10 +96,8 @@ const v2OpenCode = ({ messages, active = {}, childPages = [[]], childrenStatus =
       const next = index + 1 < childPages.length ? { next: `page-${index + 1}` } : {};
       return json({ data, cursor: next }, childrenStatus);
     }
-    if (url.pathname === '/api/shell') return json(shells, shellStatus);
     if (url.pathname === '/api/experimental/job') {
-      if (jobs === undefined) return new Response(null, { status: 404 });
-      return Response.json({ data: typeof jobs === 'function' ? jobs() : jobs });
+      return Response.json({ data: typeof jobs === 'function' ? jobs() : jobs }, { status: jobStatus });
     }
     if (url.pathname === '/api/session/exec') return json(execs, execStatus);
     if (url.pathname.endsWith('/message')) return json({ data: [...messages].reverse(), cursor: null });
@@ -238,7 +235,7 @@ describe('session goal session-read recovery', () => {
     ['statuses', { active: null }],
     ['active session', { active: { ses_missing: { status: 'running' } } }],
     ['background jobs', { jobs: null }],
-    ['shells', { shellStatus: 503 }],
+    ['jobs', { jobStatus: 503 }],
   ])('blocks after repeated unknown %s without auditing or continuing', async (_name, options) => {
     const test = setup(vi.fn(async () => {}), options);
     await test.start();
@@ -778,7 +775,9 @@ describe.each(['shell', 'exec'])('session goal and background %s commands', (kin
     id: `sh_${startedAt}`, status: 'running', command, cwd: '/repo', shell: 'zsh', file: '/tmp/out',
     metadata: { sessionID: SESSION_ID }, time: { started: startedAt },
   });
-  const commands = (items) => kind === 'shell' ? { shells: items } : {
+  const commands = (items) => kind === 'shell' ? {
+    jobs: items.filter(item => item.metadata.sessionID === SESSION_ID).map(item => ({ kind: 'shell', status: 'running', sessionID: SESSION_ID, command: item.command, time: item.time })),
+  } : {
     execs: items.map((item) => ({ sessionID: item.metadata.sessionID, command: item.command, startedAt: item.time.started })),
   };
 
@@ -792,10 +791,10 @@ describe.each(['shell', 'exec'])('session goal and background %s commands', (kin
     const { runtime } = makeRuntime({ ...seam, getSmallModelService: async () => ({ generateSmallModelText: generate }), recheckMs: 5 });
 
     await runtime.notifyGoalChanged(SESSION_ID, '/repo', { openchamber: { goal: activeGoal() } });
-    await vi.waitFor(() => expect(server.calls.filter((call) => call.path === '/api/shell').length).toBeGreaterThan(1));
+    await vi.waitFor(() => expect(server.calls.filter((call) => call.path === '/api/experimental/job').length).toBeGreaterThan(1));
     expect(generate).not.toHaveBeenCalled();
 
-    (lists.shells ?? lists.execs).length = 0;
+    (lists.jobs ?? lists.execs).length = 0;
     await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
   });
 
@@ -851,7 +850,7 @@ describe.each(['shell', 'exec'])('session goal and background %s commands', (kin
 
   it('does not treat an unreadable command list as "nothing running"', async () => {
     quiet();
-    v2OpenCode({ messages: [userRecord, assistantRecord()], ...(kind === 'shell' ? { shellStatus: 500 } : { execStatus: 500 }) });
+    v2OpenCode({ messages: [userRecord, assistantRecord()], ...(kind === 'shell' ? { jobStatus: 500 } : { execStatus: 500 }) });
     const seam = wired({ openchamber: { goal: activeGoal() } });
     const generate = vi.fn();
     const { runtime } = makeRuntime({ ...seam, getSmallModelService: async () => ({ generateSmallModelText: generate }), recheckMs: 1_000 });

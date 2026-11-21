@@ -481,15 +481,6 @@ export const createSessionGoalRuntime = ({
     timeoutMs: FETCH_TIMEOUT_MS,
   });
 
-  const fetchOwnRunningShells = async (session: JsonObject | JsonValue[], sessionId: string, directory: string) => {
-    const location = jsonFields(jsonFields(session)?.location);
-    const shellDirectory = isString(location?.directory) && location.directory
-      ? location.directory
-      : directory;
-    const shells = shellDirectory ? await activityProbe.fetchRunningShells(shellDirectory) : null;
-    return shells && shells.filter((shell) => shell.sessionID === sessionId);
-  };
-
   const isWorkingStatus = (status: JsonValue | undefined) => Boolean(status);
 
   const readGoal = async (sessionId: string) => parseGoalMetadata({ metadata: await readSessionMetadata?.(sessionId) });
@@ -694,7 +685,7 @@ export const createSessionGoalRuntime = ({
       await retryActivity();
       return;
     }
-    const childrenWorking = backgroundJobs?.some((job) => job.kind !== 'shell')
+    const childrenWorking = backgroundJobs.some((job) => job.kind !== 'shell')
       || await activityProbe.hasWorkingChildren(sessionId, statuses);
     if (!isCurrent()) return;
     if (childrenWorking === null) {
@@ -779,24 +770,21 @@ export const createSessionGoalRuntime = ({
     const assistantText = messagePartsToText(lastAssistant);
 
     if (goal.statusReason !== 'resumed' && !lastAssistantInfo.error) {
-      const jobs = backgroundJobs && await activityProbe.fetchRunningBackgroundJobs(sessionId);
-      const shells = backgroundJobs
-        ? jobs && jobs.filter((job) => job.kind === 'shell')
-        : await fetchOwnRunningShells(session, sessionId, directory);
+      const jobs = await activityProbe.fetchRunningBackgroundJobs(sessionId);
       if (!isCurrent()) return;
       const execs = await activityProbe.fetchRunningExecs();
       if (!isCurrent()) return;
-      if (!shells || !execs) {
+      if (!jobs || !execs) {
         await retryActivity();
         return;
       }
-      if (jobs?.some((job) => job.kind !== 'shell')) {
+      if (jobs.some((job) => job.kind !== 'shell')) {
         attempt.activityFailures = 0;
         armTimer(sessionId, directory, recheckMs);
         return;
       }
       const roundStartedAt = lastUserMessageCreatedAt(messages, goal.createdAt);
-      const waitingOn = shells.filter((shell) => shell.startedAt >= roundStartedAt);
+      const waitingOn = jobs.filter((job) => job.startedAt >= roundStartedAt);
       const currentExecs = execs.filter((entry) => entry.startedAt >= roundStartedAt && Date.now() - entry.startedAt < BACKGROUND_SHELL_WAIT_MS);
       const waitingForExec = currentExecs.some((entry) => entry.sessionID === sessionId)
         || await activityProbe.hasWorkingDescendants(sessionId, Object.fromEntries(currentExecs.map((entry) => [entry.sessionID, true])), Infinity);

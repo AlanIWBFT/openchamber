@@ -31,8 +31,6 @@ export interface RunningSessionJob {
 
 export type SessionActivityProbe = ReturnType<typeof createSessionActivityProbe>;
 
-const hasTag = (value: unknown): value is { _tag?: unknown } => value != null;
-
 const IMAGE_JOB_LIFETIME_MS = 31 * 60 * 1000;
 const MAX_SUBAGENT_DEPTH = 8;
 const sessionLineageSchema = z.object({
@@ -138,7 +136,7 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
     });
   };
 
-  const fetchRunningBackgroundJobs = async (sessionId: string): Promise<RunningSessionJob[] | null | undefined> => {
+  const fetchRunningBackgroundJobs = async (sessionId: string): Promise<RunningSessionJob[] | null> => {
     const base = buildOpenCodeUrl('/api/experimental/job', '');
     const search = new URLSearchParams({ sessionID: sessionId, descendants: 'true', status: 'running' });
     const response = await fetchImpl(`${base}?${search}`, {
@@ -146,10 +144,8 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
       headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
       signal: requestSignal(),
     }).catch(() => null);
-    if (!response) return null;
+    if (!response?.ok) return null;
     const body: JsonValue = await response.json().catch(() => null);
-    if (response.status === 404 && !(hasTag(body) ? body._tag : undefined)) return undefined;
-    if (!response.ok) return null;
     const parsed = backgroundJobsSchema.safeParse(unwrapOpenCodeResponse(body));
     if (!parsed.success) return null;
     const now = Date.now();

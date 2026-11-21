@@ -177,10 +177,8 @@ before touching the filesystem). Rationale: metadata rides every
      unfinished assistant reply → bail; the next idle transition re-arms);
    - background commands: the shells in the job list, read again after the
      messages so a command of the turn just read is listed; it includes the
-     commands the session's subagents started. An OpenCode without the job
-     list is asked `shell.list` for the session's directory (the header-scoped
-     read in `../opencode/session-activity.js`; that location is already
-     running), which sees only the session's own shell commands. The local
+     commands the session's subagents started. A failed job read leaves the
+     activity unknown and the Goal retries. The local
      process-wide `session.exec.list` also covers this session and all its
      descendants, resolved through authoritative parent links. Failed lineage
      reads remain unknown. A command started in this round, at or
