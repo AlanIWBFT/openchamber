@@ -37,6 +37,7 @@ const manualTimers = () => {
     },
     delays,
     delivered: () => finishAttempt?.(),
+    fireNext: () => queue.find((timer) => !timer.cleared)?.fn(),
     // At most `limit` timers, so a delivery that keeps failing ends the test.
     run: async (limit = 50) => {
       for (let ran = 0; queue.length > 0 && ran < limit; ran += 1) {
@@ -55,7 +56,7 @@ const manualTimers = () => {
 const response = (status) => ({ ok: status >= 200 && status < 300, status, body: null });
 
 const createPages = (dataDir, { statuses = [], otherwise = 200, broadcastUiEvent = vi.fn(), readArchiveState, archiveReadTimeoutMs } = {}) => {
-  const { timers, run, delays, delivered } = manualTimers();
+  const { timers, run, delays, delivered, fireNext } = manualTimers();
   const posts = [];
   const fetchImpl = vi.fn(async (url, init) => {
     posts.push({ url, body: JSON.parse(init.body) });
@@ -77,7 +78,7 @@ const createPages = (dataDir, { statuses = [], otherwise = 200, broadcastUiEvent
     slowRetryMs: 300_000,
     warn: () => {},
   });
-  return { pages, posts, run: async (limit) => { await run(limit); await pages.flush(); }, delays, broadcastUiEvent };
+  return { pages, posts, run: async (limit) => { await run(limit); await pages.flush(); }, fireNext, delays, broadcastUiEvent };
 };
 
 // The one JSON line of a delivered message: everything the page or the client gave.
@@ -115,11 +116,10 @@ describe('later pages', () => {
     await first.pages.open(open);
     await first.pages.answer({ sessionId: 'ses_1', callId: 'call_1', summary: 'B', data: { pick: 2 } });
     const saved = JSON.parse(await fs.readFile(path.join(dataDir, 'render-later-pages.json'), 'utf8'));
-    const running = first.run();
+    first.fireNext();
     const signal = await entered.promise;
     first.pages.stop();
     await first.pages.flush();
-    await running;
     expect(signal.aborted).toBe(true);
     expect(unsubscribeEvent).toHaveBeenCalledOnce();
     expect(unsubscribeStatus).toHaveBeenCalledOnce();

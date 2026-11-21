@@ -1,5 +1,6 @@
 import { create, type StoreApi } from "zustand"
 import type { DirState, State } from "./types"
+import { isSpaceDirectory } from "@/lib/spaces/space-route"
 import { INITIAL_STATE, MAX_DIR_STORES, DIR_IDLE_TTL_MS, EVICTION_GRACE_MS, SESSION_STATUS_FALLBACK_TTL_MS } from "./types"
 import { pickDirectoriesToEvict, canDisposeDirectory, hasPendingBlockingRequests } from "./eviction"
 import { forgetDirCache, readDirCache, persistVcs, persistProjectMeta, persistIcon, persistSessions } from "./persist-cache"
@@ -549,6 +550,7 @@ export class ChildStoreManager {
     const queued = new Set<string>()
     if (this.disposed || activeSessionIDs.size === 0) return queued
     for (const directory of [...this.staleDirectories]) {
+      if (isSpaceDirectory(directory)) continue
       if (this.bootstrapQueue.has(directory) || !this.staleDirectories.has(directory)) continue
       const state = this.children.get(directory)?.getState()
       if (!state || !ownsAnySession(state, activeSessionIDs)) continue

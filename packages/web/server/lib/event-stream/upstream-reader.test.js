@@ -501,18 +501,15 @@ describe('createUpstreamSseReader', () => {
     });
 
     const running = reader.start();
-    for (const delay of [5, 10, 5, 5]) {
+    for (const delay of [5, 10, 5, 10]) {
       await vi.advanceTimersByTimeAsync(delay);
     }
     await running;
 
     expect(events).toEqual(['evt-1', 'evt-2']);
     expect(attempt).toBe(5);
-    // Schedule: failures 1..2 escalate 5 -> 10; healthy connect (attempt 3)
-    // resets the counter, so the next failure (attempt 4) waits the base
-    // value again, not the escalated one. The trailing entry is the post-stop
-    // cleanup waitForReconnectDelay that fires before the abort short-circuit.
-    expect(setTimeoutImpl.mock.calls.slice(0, 3).map(([, delay]) => delay)).toEqual([5, 10, 5]);
+    // Data resets the backoff: the subsequent EOF waits 5, and the next 503 waits 10.
+    expect(setTimeoutImpl.mock.calls.map(([, delay]) => delay)).toEqual([5, 10, 5, 10]);
   });
 
   it('keeps immediate reconnect when reconnectDelayMs is zero', async () => {

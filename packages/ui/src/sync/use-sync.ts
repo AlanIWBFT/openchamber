@@ -123,7 +123,6 @@ export function useSync() {
         ? store
         : childStores.ensureChild(targetDirectory, { bootstrap: false })
       const inflight = getSyncSessionInflight(targetStore)
-      // Dedup inflight requests
       const existing = inflight.get(sessionID)
       if (existing?.isCurrent()) return existing.promise
 

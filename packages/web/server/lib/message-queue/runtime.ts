@@ -582,17 +582,12 @@ export function createMessageQueueRuntime({
       : [withMetadata];
   };
 
-  /**
-   * Save the owning prompt's identity before admission. Context travels in the
-   * same request, so retries after a restart deduplicate the whole inbox item.
-   */
   const ensurePromptMessageId = async (item: QueuedItem) => {
     if (item.promptMessageId) return;
     item.promptMessageId = createMessageId(now());
     try {
       await persist();
     } catch (error) {
-      // Unsaved, a crash would mint another id and admit everything twice.
       delete item.promptMessageId;
       throw error;
     }

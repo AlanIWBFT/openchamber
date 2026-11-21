@@ -164,7 +164,7 @@ the proxy's `/api/session` and `/api/session/active` and the control tool's
 events all read through those, so no consumer needs a check of its own. A
 learned id stays for the life of the process, so the events trailing a deleted
 session stay hidden too. A session left by a server that stopped mid-pass is
-deleted on the first look that reaches OpenCode, dreaming on or off.
+deleted on the first look that reaches OpenCode, even if new dreaming passes are disabled in settings. The process-level feature switch also disables the organizer itself. Cleanup keeps ownership of hidden sessions until their commands stop and deletion succeeds; a failed attempt can be retried. During desktop shutdown this cleanup shares the workflow report window.
 
 ### Why undo keeps later writes
 

@@ -1,8 +1,7 @@
 import { create } from "zustand"
 import { z } from "zod"
-import type { FormValue } from "@opencode/client"
 import type { SyncEvent } from "@/lib/opencode/events"
-import type { FormRequest, Message, Metadata, Part, ToolPart } from "@/lib/opencode/model"
+import type { FormRequest, FormValue, Message, Metadata, Part, ToolPart } from "@/lib/opencode/model"
 
 type QuestionToolLink = { messageID: string; toolID: string }
 export type QuestionAskOutcome = "answered" | "dismissed" | "deferred" | "turn-death" | "shutdown" | "pending" | "unresolved"
@@ -123,7 +122,6 @@ export function recoveredQuestionAnswerMetadata(question: RecoveredQuestion, ans
   return { openchamberRecoveredQuestionAnswer: { messageId: link.messageID, toolId: link.toolID, questions, answers } }
 }
 
-// Unknown wording fails closed. Shutdown keeps OpenCode's turn resumable.
 export function classifyQuestionToolError(error: string, errorType: string | undefined, local: boolean): QuestionAskOutcome {
   if (local) return error === "Interrupted" ? "turn-death" : "unresolved"
   if (error === DEFERRED_QUESTION_NOTE) return "deferred"

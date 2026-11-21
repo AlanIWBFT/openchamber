@@ -652,8 +652,6 @@ export const createScheduledTasksRuntime = (deps: ScheduledTasksDependencies) =>
   const runPrompt = async ({ client, sessionID, projectPath, task }: RunContext & { sessionID: string }) => {
     await syncKnowledge(sessionID, projectPath);
 
-    // The briefing belongs to this prompt; OpenCode delivers it immediately
-    // before the authored text, in the same transaction.
     const context = [
       ...(task.execution.goalEnabled ? [{ text: buildGoalIntroText(task.execution.goalTokenBudget) }] : []),
     ];

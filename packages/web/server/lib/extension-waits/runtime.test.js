@@ -119,7 +119,7 @@ const createRuntime = async ({ dataDir, catalog = [guest()], service = createSer
     retryDelayMs,
     warn: () => {},
     isSessionArchived,
-    ...(timers ? { timers } : {}),
+    timers,
     insideSpace,
   });
   runtimes.push(runtime);

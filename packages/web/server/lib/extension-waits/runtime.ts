@@ -1,3 +1,4 @@
+import { trackOperations } from '../shared/in-flight.js';
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'node:crypto';
@@ -834,7 +835,6 @@ export function createExtensionWaitsRuntime({
     try {
       await mutate(() => {
         requireRunning();
-        // The reservation turns into the wait itself.
         release();
         waits.set(record.id, record);
         return () => {
@@ -864,10 +864,6 @@ export function createExtensionWaitsRuntime({
     return { waiting: waitsOf(sessionID).map(toPublicWait), stopped: ending.length };
   });
 
-  /**
-   * The catalog changed (pause, removal, a withdrawn approval, an update):
-   * waits whose extension can no longer wake anyone end now, with a wake.
-   */
   const reconcile = track(async () => {
     if (stopped) return;
     await load();
@@ -878,7 +874,6 @@ export function createExtensionWaitsRuntime({
       return;
     }
     if (stopped) return;
-    // A timer has no extension that could go away.
     const pending = Array.from(waits.values()).filter((wait) => !wait.wake && !isTimer(wait));
     const unavailable = pending.filter((wait) => wait.guestId === null || !providers.has(wait.guestId));
     const dropped = pending.filter((wait) => {
@@ -982,4 +977,3 @@ export function registerExtensionWaitsRoutes(app: Application, runtime: ReturnTy
     }
   });
 }
-import { trackOperations } from '../shared/in-flight.js';

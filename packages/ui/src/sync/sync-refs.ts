@@ -47,7 +47,6 @@ export function getOptionalSyncChildStores(): ChildStoreManager | null {
   return _childStores
 }
 
-/** Read current directory's child store state. Returns undefined if not bootstrapped. */
 export function getDirectoryState(directory?: string): State | undefined {
   const stores = _childStores
   if (!stores) return undefined

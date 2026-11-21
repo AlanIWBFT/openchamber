@@ -111,8 +111,6 @@ export function readDirectoryStatusSnapshot(
       if (current[id]) snapshot[id] = current[id]
       else delete snapshot[id]
     }
-    // OpenCode lists a session as active only once it admits the prompt, so
-    // the snapshot cannot speak for a prompt this page is still sending.
     const protectedSnapshot = withPromptsInFlight(snapshot, current)
     // Reconcile and publish without yielding; keep observing until publication.
     return !commit || commit(protectedSnapshot) ? protectedSnapshot : null

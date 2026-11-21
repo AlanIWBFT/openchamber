@@ -1,6 +1,6 @@
 
 import type { FilePart, FormRequest, JsonValue, Message, Metadata, ModelSelection, Part, PermissionRequest, Session, SyntheticMessage, TextPart, UserMessage } from "@/lib/opencode/model"
-import type { FormValue } from "@opencode/client"
+import type { FormValue } from "@/lib/opencode/model"
 import { compact, partIds } from "@/lib/opencode/model"
 import { attachmentBasename, withMissingCitations } from "@/lib/attachmentIdentity"
 import { isAutoModel } from "@/lib/routing/autoModel"
@@ -1204,11 +1204,8 @@ async function writeSessionMetadataPatch(
   const current = await opencodeClient.getSession(sessionId, targetDirectory)
   if (isStaleRuntime(expectedRuntimeKey)) throw new Error("runtime changed")
   const currentMetadata = getSessionMetadata(current)
-  // OpenCode 2.x only accepts metadata at session creation, so OpenChamber
   // keeps it (see session-archive-batch). The store applies the caller's merge
   // patch inside its metadata write turn. A runtime without that route cannot persist the change, and
-  // reporting success would strand a review or btw link that the next load
-  // silently drops.
   const patch = buildPatch(currentMetadata)
   const result = await requestSessionMetadataUpdate(sessionId, patch, targetDirectory, isMetadataRecord(patch.openchamber) ? forkCleanup : undefined)
   if (result.outcome !== "updated") throw new Error(`session metadata update failed: ${result.reason}`)
@@ -1827,8 +1824,6 @@ async function restoreArchivedSession(
       const before = store.getState()
       const sdk = opencodeClient.getSdkClient()
       const acceptStatus = beginSessionStatusRequest(store)
-      // The restore already committed. A rejected status read is unknown, not
-      // an action failure or a reason to mark this session idle.
       await readDirectoryStatusSnapshot(store, () => opencodeClient.getActiveSessionStatuses(sessionDirectory), (statuses) => {
         if (isStaleRuntime(expectedRuntimeKey) || opencodeClient.getSdkClient() !== sdk
           || !sessionDirectory || _childStores?.getChild(sessionDirectory) !== store) return false
@@ -2158,8 +2153,6 @@ export async function optimisticSend(input: {
 
     // Rollback via optimistic infrastructure. Admitted context comes back
     // with its owning prompt in the next history read. The records
-    // are where the session lives now: a session created from a draft can
-    // have moved to another directory than the one its message was shown in.
     const rollbackDirectory = getSessionDirectory(input.sessionId) ?? targetDirectory
     const rollbackStore = rollbackDirectory && rollbackDirectory !== targetDirectory ? dirStoreForDirectory(rollbackDirectory) : store
     for (const optimisticID of optimisticIDs) {
@@ -2219,8 +2212,6 @@ async function confirmRecentSend(
     && (!directory || _childStores?.getChild(directory) === store)
     && getImperativeSessionMessageLoader() === loader && (!target || loader?.getSnapshot(target).generation === generation)
   try {
-    // Bounded: a connection that never returns must still let the send fail
-    // rather than hang the composer.
     const reconnectDeadline = Date.now() + SEND_CONFIRMATION_RECONNECT_TIMEOUT_MS
     while (isCurrent() && !useConfigStore.getState().isConnected && Date.now() < reconnectDeadline) {
       await wait(SEND_CONFIRMATION_RECONNECT_POLL_MS)
@@ -2512,7 +2503,6 @@ function recoveredAnswerSelection(question: RecoveredQuestion): RecoveredAnswerS
   throw new Error("No model is recorded for this question")
 }
 
-/** Uses the normal send path for rollback and ambiguous-failure confirmation. */
 export async function sendRecoveredFormAnswer(question: RecoveredQuestion, text: string, answer: Record<string, FormValue>): Promise<void> {
   const runtimeKey = getRuntimeKey()
   const isCurrentRuntime = captureRuntimeInstance()
@@ -2765,7 +2755,6 @@ async function stageRevertToMessage(sessionId: string, messageId: string): Promi
     throw new Error(`Revert target ${messageId} disappeared before staging`)
   }
 
-  // Extract message text for prompt restoration.
   const messages = state.message[sessionId] ?? []
   let messageText = ""
   let submittedFileParts: FilePart[] = []
@@ -2862,8 +2851,6 @@ export async function refetchSessionMessages(sessionId: string, complete = false
     return
   }
 
-  // Actions can run in isolated tests before SyncProvider binds the shared
-  // loader. The application runtime always takes the shared path above.
   const runtime = getRuntimeKey()
   const sdk = opencodeClient.getSdkClient()
   const snapshot = beginMessageSnapshot(store, sessionId)

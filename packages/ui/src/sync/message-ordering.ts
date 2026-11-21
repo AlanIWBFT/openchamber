@@ -49,14 +49,12 @@ export const insertMessageChronologically = <T extends Message>(messages: T[], m
   return low
 }
 
-/** Return the messages before the marker's current array position. */
 export const messagesBefore = <T extends Message>(messages: readonly T[], messageID?: string): T[] => {
   if (!messageID) return messages as T[]
   const index = findMessageIndex(messages, messageID)
   return index < 0 ? messages as T[] : messages.slice(0, index)
 }
 
-/** Return the marker and all messages after its current array position. */
 export const messagesFrom = <T extends Message>(messages: readonly T[], messageID?: string): T[] => {
   if (!messageID) return []
   const index = findMessageIndex(messages, messageID)

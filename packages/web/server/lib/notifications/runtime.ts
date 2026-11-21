@@ -1399,7 +1399,6 @@ export const createNotificationTriggerRuntime = (deps: NotificationTriggerDepend
     const tag = `share-${sessionId}`;
     const claim = await claimPushTag(tag, { sessionId });
     if (shareAnswersStopped) return;
-    // The turn the delivery wakes must not clear it, unless it already started.
     claim.skipTurnStart = !answers.some((answer) => answer.sessionId === sessionId && answer.woken);
     const { name: sessionName, directory } = await readSessionSummary(sessionId);
     if (shareAnswersStopped) return;
@@ -1438,7 +1437,7 @@ export const createNotificationTriggerRuntime = (deps: NotificationTriggerDepend
   return {
     stopShareAnswers: () => {
       shareAnswersStopped = true;
-      if (shareAnswerBatch) clearTimeout(shareAnswerBatch.timer);
+      if (shareAnswerBatch?.timer) clearTimeout(shareAnswerBatch.timer);
       shareAnswerBatch = null;
     },
     notifyShareAnswer,

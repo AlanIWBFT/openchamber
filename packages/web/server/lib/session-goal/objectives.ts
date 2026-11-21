@@ -34,7 +34,6 @@ const validateObjective = (sessionId: string, content: ObjectiveContent | undefi
   return text;
 };
 
-/** Write (or overwrite — a new goal replaces the old one) the session's objective. */
 export const writeObjective = async (sessionId: string, content: ObjectiveContent | undefined) => {
   const text = validateObjective(sessionId, content);
   await fs.promises.mkdir(goalsDir(), { recursive: true });
@@ -42,7 +41,6 @@ export const writeObjective = async (sessionId: string, content: ObjectiveConten
   return { content: text };
 };
 
-/** Publish a fork's inherited objective only if nobody has written its own yet. */
 export const copyObjectiveIfAbsent = async (sessionId: string, content: ObjectiveContent | undefined) => {
   const text = validateObjective(sessionId, content);
   await fs.promises.mkdir(goalsDir(), { recursive: true });
@@ -50,8 +48,6 @@ export const copyObjectiveIfAbsent = async (sessionId: string, content: Objectiv
   try {
     const source = path.join(temporary, 'objective.md');
     await fs.promises.writeFile(source, text, 'utf8');
-    // Publish a closed, complete file with no replacement. Writing directly
-    // with wx would still allow a newer writer to race our remaining bytes.
     try {
       await fs.promises.link(source, objectiveFilePath(sessionId));
     } catch (error) {
@@ -62,7 +58,6 @@ export const copyObjectiveIfAbsent = async (sessionId: string, content: Objectiv
   }
 };
 
-/** Returns the objective text, or null when missing/invalid. */
 export const readObjective = async (sessionId: string) => {
   if (!isValidObjectiveKey(sessionId)) return null;
   try {

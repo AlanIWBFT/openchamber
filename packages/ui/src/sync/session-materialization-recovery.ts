@@ -88,6 +88,7 @@ export function enqueueSessionMaterialization(
         isStale,
       })
     } catch {
+      return
     } finally {
       const remainingCooldown = SESSION_MATERIALIZATION_COOLDOWN_MS - (Date.now() - entry.enqueuedAt)
       if (orderRecovery || remainingCooldown <= 0) {

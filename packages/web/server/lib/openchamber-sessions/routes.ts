@@ -1179,7 +1179,7 @@ export const createOpenChamberSessionService = (dependencies: SessionServiceDepe
     if (!parsed.ok) {
       throw new OpenChamberControlError(parsed.error, 400);
     }
-    if (typeof waitForOpenCodeReady === 'function') await waitForOpenCodeReady(10_000, 250);
+    await waitForOpenCodeReady?.(10_000, 250);
     return sessionArchive.archive(parsed.ids);
   };
 
@@ -1188,7 +1188,7 @@ export const createOpenChamberSessionService = (dependencies: SessionServiceDepe
     if (!parsed.ok) {
       throw new OpenChamberControlError(parsed.error, 400);
     }
-    if (typeof waitForOpenCodeReady === 'function') await waitForOpenCodeReady(10_000, 250);
+    await waitForOpenCodeReady?.(10_000, 250);
     return sessionArchive.unarchive(parsed.ids);
   };
 

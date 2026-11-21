@@ -6352,6 +6352,10 @@ describe("sendRecoveredFormAnswer", () => {
       variant: "think",
       queuedGoal: null,
       target: { runtimeKey: "default-runtime", sessionId: "session-a", directory: "/test/project" },
+      metadata: { openchamberRecoveredQuestionAnswer: {
+        messageId: "message-ask", toolId: "tool_ask", questions: [{ header: "Color", question: "Color",
+          options: [{ label: "Red", description: "" }], multiple: false, custom: true }], answers: [["the answer"]],
+      } },
     }])
     // The card is done only after the send was accepted.
     expect(useRecoverableQuestionsStore.getState().outcomes.get("frm_recovered")).toBe("answered")
@@ -6377,11 +6381,10 @@ describe("sendRecoveredFormAnswer", () => {
     const { sendRecoveredFormAnswer, setActionRefs } = await import("./session-actions")
     setActionRefs(createChildStores([["/test/project", questionStore()]]), () => "/test/project")
 
-    await sendRecoveredFormAnswer({ ...question, evidence: "deferred-on-send" }, "the answer")
+    await sendRecoveredFormAnswer({ ...question, evidence: "deferred-on-send" }, "the answer", { q0: "the answer" })
 
-    expect(sendMessageCalls.map((call) => [call.content, call.metadata])).toEqual([
-      [`${DEFERRED_ANSWER_LEAD_IN}\n\nthe answer`, { openchamber: { deferredAnswer: { formID: "frm_recovered" } } }],
-    ])
+    expect(sendMessageCalls.map((call) => call.content)).toEqual([`${DEFERRED_ANSWER_LEAD_IN}\n\nthe answer`])
+    expect(sendMessageCalls[0]?.metadata?.openchamber).toEqual({ deferredAnswer: { formID: "frm_recovered" } })
     expect(useRecoverableQuestionsStore.getState().outcomes.get("frm_recovered")).toBe("answered")
   })
 

@@ -47,7 +47,7 @@ describe('a fork of an agent\'s worker session', () => {
       fork: { id: 'ses_fork', metadata: { openchamber: { kind: 'operator-child', parentID: 'ses_operator' } }, permissions: [{ action: 'bash', resource: '*', effect: 'ask' }, { action: 'question', resource: '*', effect: 'deny' }, { action: 'openchamber_secret', resource: '*', effect: 'deny' }] },
       readObjective: async () => null,
       writeObjective: async () => {},
-      writeMetadata: async (id, patch) => { writes.push([id, patch]); },
+      updateMetadata: async (id, decide) => { writes.push([id, decide({ openchamber: { kind: 'operator-child', parentID: 'ses_operator' } })]); },
       writePermissions: async (id, rules) => { permissions.push([id, rules]); },
     });
     expect(writes).toEqual([['ses_fork', { openchamber: { kind: null, parentID: null } }]]);

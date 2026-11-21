@@ -1983,7 +1983,7 @@ describe('openchamber session routes', () => {
 
     it("brings back the root's workflow agents, which only OpenChamber's metadata links to it", async () => {
       useTree([
-        ...archivedTree,
+        ...structuredClone(archivedTree),
         { id: 'ses_agent', metadata: { openchamber: { kind: 'workflow-agent', parentID: 'ses_root' } }, time: { created: 1, archived: 1700 } },
         { id: 'ses_agent_sub', parentID: 'ses_agent', time: { created: 1, archived: 1700 } },
       ]);

@@ -267,10 +267,10 @@ describe('createGlobalMessageStreamHub', () => {
 
     try {
       hub.start();
-      await waitForAssertion(() => expect(reads).toHaveLength(1));
+      await vi.waitFor(() => expect(reads).toHaveLength(1));
       hub.stop();
       hub.start();
-      await waitForAssertion(() => expect(reads).toHaveLength(2));
+      await vi.waitFor(() => expect(reads).toHaveLength(2));
       expect(hub.isConnected()).toBe(true);
 
       reads[0]({ value: undefined, done: true });

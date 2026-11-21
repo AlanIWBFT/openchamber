@@ -1,3 +1,4 @@
+import { normalizePath } from "@/lib/pathNormalization"
 import { syncEventMessageID, syncEventSessionID, type SyncEvent } from "@/lib/opencode/events"
 import type { Message } from "@/lib/opencode/model"
 import { ChildStoreManager } from "./child-store"
@@ -403,4 +404,3 @@ export const updateRoutingIndexFromEvent = (
       return
   }
 }
-import { normalizePath } from "@/lib/pathNormalization"

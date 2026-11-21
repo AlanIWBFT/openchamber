@@ -2272,7 +2272,11 @@ describe('routeMessage skill invocation', () => {
       const store = childStores.ensureChild('/skills/project', { bootstrap: false });
       store.setState({
         session: [{ id: 'session-command', directory: '/skills/project' }],
-        message: { 'session-command': [{ id: 'msg_boundary', sessionID: 'session-command', role: 'user', time: { created: 1 } }] },
+        message: { 'session-command': [
+          { id: 'msg_previous', sessionID: 'session-command', role: 'assistant', time: { created: 0 } },
+          { id: 'msg_boundary', sessionID: 'session-command', role: 'user', time: { created: 1 } },
+        ] },
+        part: { msg_boundary: [] },
       });
       setActionRefs(childStores, () => '/skills/project');
       setSyncRefs({}, childStores, '/skills/project');
@@ -2280,6 +2284,10 @@ describe('routeMessage skill invocation', () => {
       const stageGate = new Promise((resolve) => { releaseStage = resolve; });
       let started = () => {};
       const stageStarted = new Promise((resolve) => { started = resolve; });
+      const stop = spyOn(opencodeClient, 'stopSession').mockResolvedValue();
+      const readBack = spyOn(opencodeClient, 'getSession').mockResolvedValue({
+        id: 'session-command', directory: '/skills/project', revert: { messageID: 'msg_boundary' },
+      });
       const stage = spyOn(opencodeClient, 'stageRevert').mockImplementation(async () => {
         started();
         await stageGate;
@@ -2299,6 +2307,8 @@ describe('routeMessage skill invocation', () => {
       } finally {
         releaseStage();
         stage.mockRestore();
+        stop.mockRestore();
+        readBack.mockRestore();
         setActionRefs(new ChildStoreManager(), () => '');
       }
     });

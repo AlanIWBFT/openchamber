@@ -110,13 +110,12 @@ const v2OpenCode = ({ messages, active = {}, childPages = [[]], childrenStatus =
     }
     if (url.pathname.startsWith('/api/session/')) {
       const id = decodeURIComponent(url.pathname.slice('/api/session/'.length));
+      if (Object.hasOwn(lineages, id)) {
+        const lineage = lineages[id];
+        return lineage === null ? new Response(null, { status: 503 }) : json(lineage);
+      }
       const record = childPages.flat().find((item) => item.id === id);
       return json(record ?? {}, record ? childrenStatus : 404);
-    }
-    if (url.pathname.startsWith('/api/session/')) {
-      const id = decodeURIComponent(url.pathname.slice('/api/session/'.length));
-      const lineage = lineages[id];
-      return lineage === null ? new Response(null, { status: 503 }) : json(lineage ?? { id });
     }
     return json({});
   });
@@ -805,7 +804,7 @@ describe.each(['shell', 'exec'])('session goal and background %s commands', (kin
     vi.setSystemTime(1_000);
     try {
       quiet();
-      v2OpenCode({ messages: [userRecord, assistantRecord()], ...commands([shell(2, 'bun run dev'), { ...shell(8), metadata: { sessionID: 'ses_other' } }]) });
+      v2OpenCode({ messages: [userRecord, assistantRecord()], ...commands([shell(2, 'bun run dev'), { ...shell(8), metadata: { sessionID: 'ses_other' } }]), lineages: { ses_other: { id: 'ses_other' } } });
       const seam = wired({ openchamber: { goal: activeGoal() } });
       const generate = vi.fn(async () => ({ text: smallModelSays({ all_done: true }) }));
       const { runtime } = makeRuntime({ ...seam, getSmallModelService: async () => ({ generateSmallModelText: generate }) });

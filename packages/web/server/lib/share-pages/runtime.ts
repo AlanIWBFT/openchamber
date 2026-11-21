@@ -200,7 +200,6 @@ export const createSharePagesRuntime = ({
   relay,
   postSynthetic,
   readArchiveState = async () => 'active',
-  // Hears each answer OpenCode admitted into its session (the user's notification).
   onAnswerDelivered = () => {},
   broadcast = () => {},
   isAvailable,
@@ -580,7 +579,7 @@ export const createSharePagesRuntime = ({
       } while (rerun && !stopped);
     })().finally(() => { ticking = null; });
     return ticking;
-  });
+  };
 
   const hasLiveWork = async () => (await store.list()).some((group) => group.recipients.some(needsWork));
 

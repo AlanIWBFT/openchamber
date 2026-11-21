@@ -473,9 +473,6 @@ export function applyDirectoryEvent(
     case "message.updated": {
       let info = event.properties.info
       let messages = draft.message[info.sessionID] ?? []
-      // A compaction settles the record that has been running, the way
-      // OpenCode's own message store does: `session.compaction.ended` carries
-      // no input id, so the settled record keeps the running one's identity.
       const originalIndex = findMessageIndex(messages, info.id)
       if (info.role === "assistant" && originalIndex < 0 && event.properties.stepStartedSeq !== undefined) {
         clearCurrentRetry(draft, info.sessionID, event.properties.stepStartedSeq)

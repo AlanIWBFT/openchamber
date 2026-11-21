@@ -1,3 +1,4 @@
+import { trackOperations } from '../shared/in-flight.js';
 import fs from 'fs';
 import path from 'path';
 import { z } from 'zod';
@@ -288,7 +289,6 @@ export const createSessionTodosRuntime = ({
     } catch {
       parsed = { success: false };
     }
-    // Derived data: a file this version cannot read is rebuilt from the history.
     if (stopped || !parsed.success) return;
     for (const [sessionId, value] of Object.entries(parsed.data.sessions)) {
       const record = storedRecordSchema.safeParse(value);
@@ -486,7 +486,6 @@ export const createSessionTodosRuntime = ({
     const run = lane.then(async () => {
       if (stopped) return;
       const found = await findInHistory(sessionId, before?.checkedThrough ?? null);
-      // An event wrote a newer list meanwhile.
       if (stopped || (records.get(sessionId)?.generation ?? null) !== startedAt) return;
       const todos = found.todos ?? before?.todos ?? [];
       const unchanged = before && found.todos === null;
@@ -544,4 +543,3 @@ export const createSessionTodosRuntime = ({
 
   return { start, stop, read, processPayload, onConnected };
 };
-import { trackOperations } from '../shared/in-flight.js';

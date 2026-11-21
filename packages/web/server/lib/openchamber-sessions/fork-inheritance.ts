@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { OPERATOR_CHILD_KIND } from '../session-lineage.js';
 import { withoutOperatorChildDenials } from './create-session.js';
 import { hasMessage } from './contracts.js';
-import type { MetadataDecider } from './session-metadata-store.js';
+import type { MetadataDecider, SessionMetadata } from './session-metadata-store.js';
 import type { SessionInfo, SessionUpdateInput } from '@opencode/client';
 
 const NamespaceSchema = z.looseObject({
@@ -14,7 +14,7 @@ const NamespaceSchema = z.looseObject({
 });
 const FileBackedGoalSchema = z.looseObject({ id: z.string().min(1), objectiveFile: z.literal(true) });
 
-const openChamberNamespace = (metadata: unknown) => {
+const openChamberNamespace = (metadata: SessionInfo['metadata'] | SessionMetadata | undefined) => {
   const parsed = z.looseObject({ openchamber: NamespaceSchema }).safeParse(metadata);
   return parsed.success ? parsed.data.openchamber : null;
 };

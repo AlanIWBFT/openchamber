@@ -35,7 +35,7 @@ export function projectSessionMessages(records: Iterable<StoredRecord>, role: st
     }
     if (record.type !== 'assistant' || role === 'assistant') continue;
     for (const part of record.content) {
-      if (part.type !== 'tool' || part.state.status !== 'completed') continue;
+      if (part.type !== 'tool' || (part.name !== 'openchamber_render' && part.name !== 'question') || part.state.status !== 'completed') continue;
       const { input, metadata } = part.state;
       let text: string;
       let prefix: string;

@@ -7,7 +7,7 @@ describe('pending workflow reports', () => {
   it('delivers a non-waking report without reading the archive', async () => {
     const readArchive = vi.fn();
     const postSynthetic = vi.fn();
-    const save = vi.fn();
+    const save = vi.fn(async () => {});
     const delivery = createReportDelivery({ readArchive, postSynthetic, save, text: () => 'stopped', sleep: async () => {} });
     const run = { id: 'run', parentSessionId: 'parent', report: { messageId: 'original', delivered: false, resume: false } };
     await delivery.deliver(run);

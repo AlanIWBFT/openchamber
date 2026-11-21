@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Session } from '@opencode/schema';
 
 import { asNonEmptyString } from '../shared/guards.js';
+import { isString } from '../shared/object-guards.js';
 import { isMemoryRecord as isRecord } from './contracts.js';
 import type { MemoryChangedEvent, MemoryEntry, MemoryScope, MemoryTarget } from './contracts.js';
 import type { AgentMemoryRuntime, DreamState } from './runtime.js';
@@ -293,9 +294,9 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
     const response = await fetchImpl(buildOpenCodeUrl(pathname, ''), init);
     const text = await response.text();
     if (!response.ok) {
-      let detail: unknown;
-      try { detail = JSON.parse(text); } catch { /* Non-JSON HTTP error. */ }
-      throw Object.assign(new Error(`${method} ${pathname} answered ${response.status}`), { status: response.status, _tag: isRecord(detail) ? detail._tag : undefined });
+      let tag: string | undefined;
+      try { tag = z.object({ _tag: z.string() }).safeParse(JSON.parse(text)).data?._tag; } catch { tag = undefined; }
+      throw Object.assign(new Error(`${method} ${pathname} answered ${response.status}`), { status: response.status, _tag: tag });
     }
     const answer: unknown = text ? JSON.parse(text) : null;
     return answer;
@@ -303,8 +304,6 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
 
   const removeOwnedSession = async (sessionID: string, directory?: string) => {
     pendingCleanup.set(sessionID, directory);
-    // Stop owns the turn and persistent execs. A failed stop leaves the hidden
-    // record for the next cleanup instead of deleting its ownership evidence.
     const answer = await request('POST', `/api/session/${encodeURIComponent(sessionID)}/stop`, { directory, signal: null })
       .catch((error) => {
         if (error?._tag === 'SessionNotFoundError') return null;
@@ -325,8 +324,6 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
   };
 
   const removeLeftovers = async () => {
-    // Visibility is not ownership: failed cleanup remains hidden, but still
-    // belongs to us and must be retried independently of the discovery filter.
     for (const [sessionID, directory] of pendingCleanup) {
       lifetime.signal.throwIfAborted();
       await removeOwnedSession(sessionID, directory).catch(() => {});
@@ -342,7 +339,7 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
           || session.metadata.openchamber.kind !== DREAM_SESSION_KIND || hiddenSessions.has(session.id)) continue;
         lifetime.signal.throwIfAborted();
         hiddenSessions.add(session.id);
-        await removeOwnedSession(String(session.id), isRecord(session.location) && typeof session.location.directory === 'string' ? session.location.directory : undefined).catch(() => { complete = false; });
+        await removeOwnedSession(String(session.id), isRecord(session.location) && isString(session.location.directory) ? session.location.directory : undefined).catch(() => { complete = false; });
       }
       cursor = asNonEmptyString(isRecord(answer) && isRecord(answer.cursor) ? answer.cursor.next : undefined);
       if (!cursor) break;
@@ -440,8 +437,6 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
     const timeout = setTimer(() => controller.abort(), passTimeoutMs);
     try {
       signal.throwIfAborted();
-      // `hidden` keeps the session from every client from its first event on
-      // (`../opencode/hidden-sessions.js`); the kind is how a leftover is found.
       const session: DreamSessionRequest = {
         id: createSessionId(),
         title: 'Memory dreaming',
@@ -452,9 +447,6 @@ export const createMemoryDreaming = (deps: DreamDependencies) => {
       if (model) session.model = model;
       sessionID = session.id;
       hiddenSessions.add(sessionID);
-      // Preallocate the supported OpenCode id so an uncertain response never
-      // loses ownership. Join this one create during shutdown, bounded by the
-      // host deadline, then clean it up; never retry by creating another id.
       const created = createdSessionSchema.safeParse(await request('POST', '/api/session', { directory, body: session, signal: controller.signal }));
       if (!created.success || created.data !== sessionID) throw new Error('OpenCode did not confirm the owned session');
       signal.throwIfAborted();

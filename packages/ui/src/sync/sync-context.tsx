@@ -38,7 +38,7 @@ import { subscribeSpaceCatalogs } from "./space-catalog-sync"
 import { subscribeSpaceSessionProject } from "./space-session-project"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
-import { spaceIdOfDirectory } from "@/lib/spaces/space-route"
+import { isSpaceDirectory, spaceIdOfDirectory } from "@/lib/spaces/space-route"
 import { isDirectoryOfKnownSpace, isSpaceDirectoryStopped, isSpaceStopped, knownSpaceIds, refreshSpacesJourney, spaceIdsGone, spacesRuntimeGeneration, useSpacesStore } from "@/lib/spaces/spaces-store"
 import { toast } from "@/components/ui"
 import { applyGlobalSessionStatusSnapshot, getDirectoryOwnedSessionIds, setSessionParentResolver, useGlobalSessionStatusStore } from "./global-session-status"
@@ -542,6 +542,7 @@ export function SyncProvider(props: {
       messageLoader.markHistoryStale()
       const gapEndedAt = Date.now()
       for (const dir of childStores.children.keys()) {
+        if (isSpaceDirectory(dir)) continue
         triggerDirectoryResync(dir, reason)
         childDiscoveryDueAtByDirectoryRef.current.set(dir, gapEndedAt)
       }
@@ -611,8 +612,6 @@ export function SyncProvider(props: {
         // WS ready frames and SSE connections both reach this callback, even
         // when the host's upstream connection predates this page.
         void runBackgroundNetworkTask(() => refreshRunningExecs(() => opencodeClient.listRunningExecs())).catch(() => undefined)
-        // The first connection and every one after a gap: spaces being made or whose making failed
-        // are known only to the journey list, and a step announced during the gap was missed.
         if (useUIStore.getState().isolatedSpacesEnabled && !isVSCodeRuntime()) {
           void refreshSpacesJourney().catch(() => undefined)
         }
@@ -631,9 +630,9 @@ export function SyncProvider(props: {
           return
         }
         if (replayed && !replayReset) {
-          // Every event of the gap arrived, so transcripts and session records
-          // are not read again.
-          for (const dir of childStores.children.keys()) triggerDirectoryResync(dir, "stream-replayed")
+          for (const dir of childStores.children.keys()) {
+            if (!isSpaceDirectory(dir)) triggerDirectoryResync(dir, "stream-replayed")
+          }
           void reconcileActivityAfterGap(childStores)
           return
         }

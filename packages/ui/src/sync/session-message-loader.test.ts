@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { MessagePage } from "@/lib/opencode/client"
 import { projectInboxMessage, type InboxMessageItem } from "@/lib/opencode/projection"
-import type { Session, TextPart, ToolPart, UserMessage } from "@/lib/opencode/model"
+import type { Message, Session, TextPart, ToolPart, UserMessage } from "@/lib/opencode/model"
 import { recordDirectoryRecoveryEvent } from "./directory-recovery-snapshots"
 import { applyDirectoryEvent } from "./event-reducer"
 import { isSessionMaterializationStillNeeded } from "./materialization"
@@ -77,7 +77,7 @@ describe("SessionMessageLoader", () => {
     const prompt = createRecord(target.sessionID, "prompt", 1)
     const answer = {
       info: {
-        id: "answer", sessionID: target.sessionID, role: "assistant" as const,
+        id: "answer", seq: 2, sessionID: target.sessionID, role: "assistant" as const,
         time: { created: 2, completed: 3 }, agent: "build", providerID: "test", modelID: "test",
         finish: "stop" as const,
       },
@@ -1074,12 +1074,14 @@ describe("SessionMessageLoader", () => {
 
   test("retries initial coverage after an SDK transport switch for the same runtime", async () => {
     const oldInitial = deferred<ReturnType<typeof response>>()
+    const oldStarted = deferred<void>()
     const oldCalls: Array<{ cursor?: string }> = []
     const newCalls: Array<{ cursor?: string }> = []
     const childStores = new ChildStoreManager()
     const oldSdk: SessionMessagePageSource = {
       getSessionMessages: async (_sessionID, options) => {
         oldCalls.push({ cursor: options?.cursor })
+        oldStarted.resolve()
         return oldInitial.promise
       },
     }
@@ -1097,11 +1099,9 @@ describe("SessionMessageLoader", () => {
       message: { [target.sessionID]: [createRecord(target.sessionID, "cached", 0).info] },
       part: { cached: createRecord(target.sessionID, "cached", 0).parts },
     })
-    await loader.ensure(target)
-    expect(loader.getSnapshot(target).resolved).toBe(true)
-    expect(loader.getSnapshot(target).cursor).toBe(undefined)
     const lookup = loader.loadUntil(target, { kind: "message", messageID: "target" })
-
+    await oldStarted.promise
+    expect(loader.getSnapshot(target).resolved).toBe(false)
     loader.configure({ sdk: newSdk, runtimeKey: "runtime-a" })
     oldInitial.resolve(response([createRecord(target.sessionID, "stale", 1)], "stale-cursor"))
 

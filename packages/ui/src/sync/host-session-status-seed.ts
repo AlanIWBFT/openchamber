@@ -90,7 +90,6 @@ export const seedGlobalSessionStatusFromHost = (force = false): Promise<void> =>
       return session ? resolveGlobalSessionDirectory(session) : null;
     }, (directory) => !isSpaceDirectory(directory) && !stores?.getChild(directory));
     if (!snapshot || !isCurrent()) return;
-    // Turns that begin from here on, the statuses below included, are newer than the map.
     const answeredAt = Date.now();
     const status = useGlobalSessionStatusStore.getState();
     const entities = useGlobalSessionsStore.getState().entityById;
