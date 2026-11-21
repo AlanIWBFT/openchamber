@@ -351,7 +351,6 @@ const announceServiceEnded = (guestId: string) => {
 export const readServicePid = (guestId: string) => runtimes.get(guestId)?.child.pid ?? null;
 
 export const stopAllGuestServices = async () => {
-  // Also cancel requests reading configuration before their runtime is registered.
   stopAllEpoch += 1;
   const starts = [...startingByGuest.values()];
   const ids = new Set([...runtimes.keys(), ...startingByGuest.keys(), ...stoppingByGuest.keys()]);

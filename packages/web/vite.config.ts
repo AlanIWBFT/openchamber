@@ -54,9 +54,6 @@ export default defineConfig({
   cacheDir: process.env.OPENCHAMBER_VITE_CACHE_DIR || undefined,
   plugins: [
     webIconsPlugin(),
-    // The React Compiler is most of a cold dev start; its output is kept on
-    // disk for every checkout of the repository, so a restart or a new
-    // worktree compiles only what changed.
     ...cacheReactBabel(react({ babel: reactBabel }), {
       directory: path.join(os.homedir(), '.cache', 'openchamber', 'react-babel'),
       root: realpathSync(path.resolve(__dirname, '../..')),

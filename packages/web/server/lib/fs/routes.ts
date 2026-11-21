@@ -723,7 +723,6 @@ export const registerFsRoutes = (app: Application, dependencies: FsRouteDependen
     };
     const onSpawn = () => {
       child.unref();
-      // xdg-open can stay attached to the file manager for its whole lifetime.
       if (platform !== 'darwin') resolve();
     };
     child.once('error', onError);

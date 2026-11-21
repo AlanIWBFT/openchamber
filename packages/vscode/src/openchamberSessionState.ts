@@ -33,19 +33,12 @@ import * as path from 'path';
 
 const ARCHIVE_FILE_NAME = 'sessions-archive.json';
 const METADATA_FILE_NAME = 'sessions-metadata.json';
-/** Shared with the web server (`unread-baseline.js`): `{ since }`, written once. */
 const UNREAD_BASELINE_FILE_NAME = 'sessions-unread.json';
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 type JsonObject = { [key: string]: JsonValue };
-/** Free-form JSON attached to a session; the same shape the shared UI's `Metadata` has. */
 export type SessionMetadata = JsonObject;
 
-/**
- * Archive state per session: a number archives, `null` is an explicit
- * unarchive that drops the stamp OpenCode still carries (sessions migrated
- * from v1), and a session that is absent keeps whatever OpenCode says.
- */
 type ArchivedSessions = Record<string, number | null>;
 type StoredSessionMetadata = Record<string, SessionMetadata>;
 
@@ -56,7 +49,6 @@ export type SessionStateFs = {
   mkdir: (dirPath: string, options: { recursive: true }) => Promise<string | undefined>;
 };
 
-/** One session's metadata on OpenCode. `read` resolves `null` for a session OpenCode does not know. */
 export type SessionMetadataOnOpenCode = {
   read: (sessionID: string) => Promise<SessionMetadata | null>;
   write: (sessionID: string, metadata: SessionMetadata) => Promise<void>;
@@ -70,7 +62,6 @@ export type SessionArchiveOnOpenCode = {
   setArchived: (sessionID: string, archived: boolean) => Promise<number | null>;
 };
 
-/** PATCHes in flight at once; one batch is a worktree's sessions. */
 const ARCHIVE_CONCURRENCY = 4;
 
 const pushArchiveState = async (openCode: SessionArchiveOnOpenCode, ids: string[], archived: boolean) => {
@@ -100,12 +91,7 @@ type SessionStateStoreOptions = {
   now?: () => number;
 };
 
-// ---------------------------------------------------------------------------
-// JSON boundary: every byte from disk or from a proxied response enters as a
-// `JsonValue` here, and the guards below are the only narrowing in the module.
-// ---------------------------------------------------------------------------
 
-/** Parses text into a JSON value; `null` when it is not JSON. */
 export const parseJson = (text: string): JsonValue | null => {
   try {
     // SAFETY: JSON.parse can only produce strings, numbers, booleans, null,
@@ -124,7 +110,6 @@ const isJsonString = (value: JsonValue | undefined): value is string => typeof v
 const isTimestamp = (value: JsonValue | undefined): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 
-/** A session id as the bridge or a file carries it: a non-empty trimmed string, else `null`. */
 export const asSessionId = (value: JsonValue | undefined): string | null => {
   if (!isJsonString(value)) return null;
   const trimmed = value.trim();
@@ -149,10 +134,6 @@ export const asSessionIdList = (value: JsonValue | undefined): string[] => {
 export const asSessionMetadata = (value: JsonValue | undefined): SessionMetadata | null =>
   isJsonObject(value) ? value : null;
 
-/**
- * RFC 7386 merge. Returns a new object; `null` in the patch removes the key,
- * and a non-object patch value replaces whatever was there.
- */
 export const mergeMetadataPatch = (current: SessionMetadata | undefined, patch: SessionMetadata): SessionMetadata => {
   const base: SessionMetadata = current ? { ...current } : {};
   for (const [key, value] of Object.entries(patch)) {
@@ -166,7 +147,6 @@ export const mergeMetadataPatch = (current: SessionMetadata | undefined, patch: 
   return base;
 };
 
-/** The shared OpenChamber config directory, the web server's default data dir. */
 export const getOpenChamberDataDir = (): string => {
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA;
@@ -191,12 +171,6 @@ export const createSessionStateStore = ({
   const metadataWrites = new Map<string, Promise<SessionMetadata>>();
   let unreadBaseline: number | null = null;
 
-  /**
-   * Parses one state file. A missing file is the normal first run and reads
-   * as empty; unreadable bytes are moved aside so the next write cannot
-   * overwrite what the user had, and read as empty too. An I/O failure other
-   * than "missing" is reported as `null`: unknown, not empty.
-   */
   const readJsonObjectFile = async (filePath: string): Promise<JsonObject | null> => {
     let raw: string;
     try {
@@ -217,7 +191,6 @@ export const createSessionStateStore = ({
   const writeJsonObjectFile = (filePath: string, value: JsonObject): Promise<void> => {
     const write = async () => {
       await fsPromises.mkdir(dataDir, { recursive: true });
-      // Temp file in the same directory so the rename is atomic on one device.
       const tmpPath = `${filePath}.${process.pid}.tmp`;
       await fsPromises.writeFile(tmpPath, JSON.stringify(value), 'utf8');
       await fsPromises.rename(tmpPath, filePath);
@@ -251,11 +224,6 @@ export const createSessionStateStore = ({
     return result;
   };
 
-  /**
-   * When unread marks start for this data dir (see `withUnreadBaseline`). The
-   * first read creates it; an unreadable file is left alone and reads as
-   * unknown, since a new baseline would mark every turn up to now as seen.
-   */
   const readUnreadBaseline = async (): Promise<number | null> => {
     if (unreadBaseline !== null) return unreadBaseline;
     let raw: string;
@@ -283,7 +251,6 @@ export const createSessionStateStore = ({
     return since;
   };
 
-  /** Drops entries OpenCode now holds; false when the file could not be updated. */
   const forgetEntries = async (ids: string[]): Promise<boolean> => {
     const current = await readArchived();
     if (!current) return false;
@@ -313,9 +280,7 @@ export const createSessionStateStore = ({
 
   return {
     metadataPath,
-    /** `{ [sessionID]: metadata }`, or `null` when the file could not be read. */
     readMetadata,
-    /** The unread baseline in epoch ms, or `null` when it cannot be known. */
     readUnreadBaseline,
     archive: async (ids: string[], openCode: SessionArchiveOnOpenCode) => {
       const { applied, failedIds } = await applyArchive(ids, true, openCode);
@@ -325,7 +290,6 @@ export const createSessionStateStore = ({
       const { applied, failedIds } = await applyArchive(ids, false, openCode);
       return { restored: applied, failedIds };
     },
-    /** The session's full metadata: a legacy entry laid over OpenCode's record. `{}` for an unknown session. */
     getMetadata: async (sessionID: string, openCode: SessionMetadataOnOpenCode): Promise<SessionMetadata> => {
       const stored = await readMetadata();
       if (!stored) throw new Error('session metadata is unavailable: its file could not be read');
@@ -333,11 +297,6 @@ export const createSessionStateStore = ({
       const legacy = stored[sessionID];
       return legacy ? { ...(upstream ?? {}), ...legacy } : upstream ?? {};
     },
-    /**
-     * Applies a merge patch on OpenCode and resolves with the session's full
-     * metadata afterwards. A legacy entry is folded in and then dropped from
-     * the file, since OpenCode now holds it.
-     */
     setMetadata: (sessionID: string, patch: SessionMetadata, openCode: SessionMetadataOnOpenCode, forkCleanup?: { workTitle: JsonValue; goal?: JsonValue }): Promise<SessionMetadata> => {
       const write = (metadataWrites.get(sessionID) ?? Promise.resolve()).catch(() => undefined).then(async () => {
         const stored = await readMetadata();
@@ -359,13 +318,11 @@ export const createSessionStateStore = ({
         const merged = mergeMetadataPatch(current, appliedPatch);
         await openCode.write(sessionID, merged);
         if (legacy) {
-          // Re-read: the web server or another window may have changed the file.
           const latest = await readMetadata();
           if (latest && latest[sessionID]) {
             const next = { ...latest };
             delete next[sessionID];
             await writeJsonObjectFile(metadataPath, next).catch((error) => {
-              // OpenCode holds the record; a stale entry is pushed again later.
               console.warn('[openchamber-sessions] could not update the legacy metadata file:', describeError(error));
             });
           }
@@ -381,11 +338,6 @@ export const createSessionStateStore = ({
 
 export type SessionStateStore = ReturnType<typeof createSessionStateStore>;
 
-/**
- * OpenCode's unread state (`time.idle` past `time.viewed`) predates OpenChamber
- * reading it, so a turn that ended before the baseline and has no newer view
- * is served as viewed when it ended. Mirrors the web server's `unread-baseline.js`.
- */
 const withUnreadBaseline = (record: JsonObject, since: number) => {
   const time = isJsonObject(record.time) ? record.time : null;
   const idle = time ? asTimestamp(time.idle) : null;
@@ -420,11 +372,6 @@ const overlaySessionRecord = (
   return result;
 };
 
-/**
- * Applies `overlaySessionRecord` to a proxied `GET /api/session` list or
- * `GET /api/session/:id` body. Both shapes OpenCode uses are handled: a bare
- * record/array and the `{ data }` envelope. Anything else passes through.
- */
 export const overlaySessionResponseBody = (
   body: JsonValue,
   stored: StoredSessionMetadata | null,
@@ -444,6 +391,5 @@ export const overlaySessionResponseBody = (
   return overlay(body);
 };
 
-/** `GET /api/session` (list) and `GET /api/session/:id` (one record) carry session records to overlay. */
 export const isSessionRecordPath = (pathname: string): boolean =>
   pathname === '/api/session' || /^\/api\/session\/[^/]+$/.test(pathname);

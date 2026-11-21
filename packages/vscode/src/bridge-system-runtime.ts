@@ -21,7 +21,6 @@ import { ENTERPRISE_MODE_ERROR, isEnterpriseMode, publicEnterprisePolicy } from 
 import { discoverProviderModels } from './model-discovery';
 import { openCodeTrust } from './opencodeTrust';
 
-/** The base URL a custom provider was saved with; discovery sends its stored key only there. */
 const readStoredProviderBaseURL = (providerID: string): string | undefined => {
   const provider = readConfig().provider;
   if (!provider || typeof provider !== 'object') return undefined;
@@ -52,14 +51,12 @@ const sessionArchiveOnOpenCode = (manager: OpenCodeManager | undefined): Session
   };
 };
 
-/** Session metadata on the OpenCode instance this window manages. */
 const sessionMetadataOnOpenCode = (manager: OpenCodeManager | undefined): SessionMetadataOnOpenCode => {
   const client = openCodeClientFor(manager);
   return {
     read: async (sessionID) => {
       try {
         const session = await client.session.get({ sessionID });
-        // Round-trip through JSON: the wire type is opaque JSON, the store's is `JsonValue`.
         return asSessionMetadata(parseJson(JSON.stringify(session.metadata ?? {})) ?? undefined) ?? {};
       } catch (error) {
         if (error instanceof Error && isSessionNotFound(error)) return null;
@@ -116,7 +113,6 @@ const getOrCreateInstallId = (scope: string): string => {
 };
 
 const mapNodePlatformToApiPlatform = (value: string): 'macos' | 'windows' | 'linux' | 'android' | 'ios' | 'web' => {
-  // The webview already sends API-shaped values; Node's os.platform() is the fallback source.
   if (value === 'macos' || value === 'windows' || value === 'linux' || value === 'android' || value === 'ios' || value === 'web') {
     return value;
   }
@@ -216,7 +212,6 @@ export async function handleSystemBridgeMessage(
           return { id, type, success: true, data: { version: null, error: 'OpenCode manager unavailable' } };
         }
         const base = `${apiUrl.replace(/\/+$/, '')}/`;
-        // OpenCode 2.0.8 replaced `/api/health` with `/api/info`.
         const response = await fetch(new URL('api/info', base).toString(), {
           method: 'GET',
           headers: { Accept: 'application/json', ...ctx?.manager?.getOpenCodeAuthHeaders() },
@@ -272,8 +267,6 @@ export async function handleSystemBridgeMessage(
       return { id, type, success: true, data: { models } };
     }
 
-    // The same machine policy the web server enforces (policy file or
-    // OPENCHAMBER_ENTERPRISE_MODE in the editor's environment).
     case 'api:openchamber:enterprise-policy': {
       return { id, type, success: true, data: publicEnterprisePolicy() };
     }
@@ -296,8 +289,6 @@ export async function handleSystemBridgeMessage(
         const archRaw = typeof body.arch === 'string' && body.arch.trim().length > 0
           ? body.arch.trim()
           : os.arch();
-        // Enterprise mode keeps the check (security fixes must reach the
-        // machine) but never reports usage.
         const reportUsage = body.reportUsage !== false && !isEnterpriseMode();
 
         const requestBody = {
@@ -362,8 +353,6 @@ export async function handleSystemBridgeMessage(
       try {
         let modifiedUri = vscode.Uri.file(modified);
         const patchText = typeof patch === 'string' && patch.trim().length > 0 ? patch : undefined;
-        // A file the patch deleted is gone from disk: its diff shows the old
-        // content against an empty right side.
         const deleted = patchText !== undefined && isFileDeletionPatch(patchText)
           && !(await vscode.workspace.fs.stat(modifiedUri).then(() => true, () => false));
         const modifiedText = deleted ? '' : (await vscode.workspace.openTextDocument(modifiedUri)).getText();
@@ -499,7 +488,6 @@ export async function handleSystemBridgeMessage(
       if (!providerId) {
         return { id, type, success: false, error: 'Provider ID is required' };
       }
-      // Enterprise mode: providers come only from the OpenCode config.
       if (isEnterpriseMode()) {
         return { id, type, success: false, error: ENTERPRISE_MODE_ERROR };
       }
@@ -549,7 +537,6 @@ export async function handleSystemBridgeMessage(
         const providerID = payload && typeof payload === 'object' && typeof (payload as { providerID?: unknown }).providerID === 'string'
           ? (payload as { providerID: string }).providerID.trim()
           : '';
-        // A stored key that cannot be read leaves discovery to the key in the form.
         const storedAuth = providerID ? await getProviderAuth(providerID).catch(() => null) : null;
         const storedApiKey = storedAuth?.type === 'api' && typeof storedAuth.key === 'string'
           ? storedAuth.key
@@ -649,8 +636,6 @@ export async function handleSystemBridgeMessage(
         }
         const folders = vscode.workspace.workspaceFolders ?? [];
         const uri = vscode.Uri.file(normalizeWindowsDriveLetter(targetPath.trim()));
-        // `Uri.fsPath` lowercases the Windows drive letter again, so both sides
-        // have to go through the shared comparison (see pathUtils).
         const alreadyAdded = folders.some(
           (folder) => pathsEqualWithNormalizedDriveLetter(folder.uri.fsPath, uri.fsPath),
         );
